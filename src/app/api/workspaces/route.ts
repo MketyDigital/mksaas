@@ -13,7 +13,11 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
-  const body = (await request.json().catch(() => ({}))) as { name?: string; slug?: string; description?: string };
+  const contentType = request.headers.get('content-type') || '';
+  const body = contentType.includes('application/json')
+    ? ((await request.json().catch(() => ({}))) as { name?: string; slug?: string; description?: string })
+    : Object.fromEntries(await request.formData()) as { name?: string; slug?: string; description?: string };
+
   const name = String(body.name || '').trim();
   const slug = slugify(String(body.slug || name));
   const description = String(body.description || '').trim();
@@ -29,5 +33,6 @@ export async function POST(request: Request) {
     return created;
   });
 
+  if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(`/t/${tenant.slug}`, request.url));
   return NextResponse.json({ success: true, data: tenant, redirectTo: `/t/${tenant.slug}` });
 }
