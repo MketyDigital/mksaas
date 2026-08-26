@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
+import { AgentPlayground } from '@/features/projects/AgentPlayground';
 import { updateAgent } from '@/features/projects/agent-actions';
 import { db } from '@/shared/db';
 import { agents, projects, tenantMemberships } from '@/shared/db/schema';
@@ -29,21 +30,23 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
       <div>
         <p className="text-sm text-muted-foreground">Agent Builder · {project.name}</p>
         <h1 className="text-3xl font-semibold">{agent.name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Configure the agent, save a draft, then publish when it is ready.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Configure the agent, save a draft, then test it in the runtime playground.</p>
       </div>
+
+      <AgentPlayground agentId={agent.id} tenantSlug={tenantSlug} projectSlug={projectSlug} />
 
       <form action={updateAgent} className="space-y-6">
         <input type="hidden" name="tenantSlug" value={tenantSlug} />
         <input type="hidden" name="projectSlug" value={projectSlug} />
         <input type="hidden" name="agentId" value={agent.id} />
 
-        <section className="rounded-xl border bg-card p-6 space-y-4">
+        <section className="space-y-4 rounded-xl border bg-card p-6">
           <h2 className="font-medium">Identity</h2>
           <label className="grid gap-2 text-sm"><span>Name</span><input name="name" defaultValue={agent.name} required className="rounded-md border bg-background px-3 py-2" /></label>
           <label className="grid gap-2 text-sm"><span>Status</span><select name="status" defaultValue={agent.status} className="rounded-md border bg-background px-3 py-2"><option value="draft">Draft</option><option value="published">Published</option><option value="disabled">Disabled</option></select></label>
         </section>
 
-        <section className="rounded-xl border bg-card p-6 space-y-4">
+        <section className="space-y-4 rounded-xl border bg-card p-6">
           <h2 className="font-medium">Model</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm"><span>Provider</span><select name="provider" defaultValue={agent.provider} className="rounded-md border bg-background px-3 py-2"><option value="platform">Mkety Platform</option><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="custom">Custom</option></select></label>
@@ -51,14 +54,14 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
           </div>
         </section>
 
-        <section className="rounded-xl border bg-card p-6 space-y-4">
+        <section className="space-y-4 rounded-xl border bg-card p-6">
           <h2 className="font-medium">Instructions</h2>
           <textarea name="instructions" defaultValue={agent.instructions ?? ''} rows={10} placeholder="Tell the agent who it is, what it should do, constraints, tone, and goals." className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
         </section>
 
-        <section className="rounded-xl border bg-card p-6 space-y-4">
+        <section className="space-y-4 rounded-xl border bg-card p-6">
           <h2 className="font-medium">Advanced configuration</h2>
-          <p className="text-sm text-muted-foreground">JSON is intentionally provider-neutral so tools, temperature, limits and future settings can be added without another schema migration.</p>
+          <p className="text-sm text-muted-foreground">JSON is provider-neutral so runtime settings can evolve without coupling the agent definition to a provider.</p>
           <textarea name="config" defaultValue={agent.config ?? ''} rows={8} placeholder={'{\n  "temperature": 0.7,\n  "maxOutputTokens": 2048\n}'} className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm" />
         </section>
 
