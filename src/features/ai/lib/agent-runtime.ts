@@ -1,14 +1,8 @@
 import { generateText, streamText, type ModelMessage } from 'ai';
 
 import { createAgentTools } from './agent-tools';
+import { parseAgentRuntimeConfig } from './agent-runtime-config';
 import { getAIModel, getAIProvider } from './provider';
-
-export type AgentRuntimeConfig = {
-  temperature?: number;
-  maxOutputTokens?: number;
-  tools?: string[];
-  maxSteps?: number;
-};
 
 export type AgentRuntimeDefinition = {
   id: string;
@@ -20,38 +14,6 @@ export type AgentRuntimeDefinition = {
   status: string;
   config: string | null;
 };
-
-function parseConfig(value: string | null): AgentRuntimeConfig {
-  if (!value) return {};
-
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
-    const config = parsed as Record<string, unknown>;
-    const result: AgentRuntimeConfig = {};
-
-    if (typeof config.temperature === 'number' && Number.isFinite(config.temperature)) {
-      result.temperature = Math.min(2, Math.max(0, config.temperature));
-    }
-
-    if (typeof config.maxOutputTokens === 'number' && Number.isInteger(config.maxOutputTokens)) {
-      result.maxOutputTokens = Math.min(16384, Math.max(1, config.maxOutputTokens));
-    }
-
-    if (Array.isArray(config.tools)) {
-      result.tools = config.tools.filter((id): id is string => typeof id === 'string');
-    }
-
-    if (typeof config.maxSteps === 'number' && Number.isInteger(config.maxSteps)) {
-      result.maxSteps = Math.min(10, Math.max(1, config.maxSteps));
-    }
-
-    return result;
-  } catch {
-    return {};
-  }
-}
 
 function buildSystemPrompt(agent: AgentRuntimeDefinition): string {
   const instructions = agent.instructions?.trim();
@@ -77,7 +39,7 @@ function getModel(agent: AgentRuntimeDefinition) {
 function prepare(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
   if (agent.status === 'disabled') throw new Error('This agent is disabled.');
 
-  const config = parseConfig(agent.config);
+  const config = parseAgentRuntimeConfig(agent.config);
   const model = getModel(agent);
   const normalizedMessages = normalizeMessages(messages);
 
