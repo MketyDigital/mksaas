@@ -44,7 +44,9 @@ export async function getAllTenantPermissionsForUser(userId: string): Promise<Re
   });
   if (memberships.length === 0) return {};
 
-  const adminResults = new Map(memberships.map((m) => [m.tenant.slug, m.role === 'admin' ? ['*'] : null]));
+  // Keep a concrete string[] value for every tenant so TypeScript does not infer
+  // a nullable Map value for non-admin memberships.
+  const adminResults = new Map<string, string[]>(memberships.map((m) => [m.tenant.slug, m.role === 'admin' ? ['*'] : []]));
   const nonAdmin = memberships.filter((m) => m.role !== 'admin');
   if (nonAdmin.length === 0) return Object.fromEntries(adminResults);
 
