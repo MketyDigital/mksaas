@@ -12,6 +12,7 @@ export * from './assistant-conversations';
 export * from './domains';
 export * from './projects';
 export * from './agents';
+export * from './agent-runs';
 export * from './files';
 export * from './departments';
 export * from './roles';
