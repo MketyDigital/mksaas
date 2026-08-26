@@ -10,8 +10,19 @@ export const env = createEnv({
     AUTH0_CLIENT_ID: z.string().optional(),
     AUTH0_CLIENT_SECRET: z.string().optional(),
     AUTH0_ISSUER: z.url().optional(),
+
+    // Mkety AI Core. Disabled by default; provider credentials are optional.
     OPENAI_API_KEY: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
+    MKETY_AI_PROVIDER: z.enum(['openai', 'groq', 'openrouter', 'custom']).default('openai'),
+    MKETY_AI_MODEL: z.string().default('gpt-4o-mini'),
+    GROQ_API_KEY: z.string().optional(),
+    GROQ_BASE_URL: z.url().default('https://api.groq.com/openai/v1'),
+    OPENROUTER_API_KEY: z.string().optional(),
+    OPENROUTER_BASE_URL: z.url().default('https://openrouter.ai/api/v1'),
+    MKETY_AI_API_KEY: z.string().optional(),
+    MKETY_AI_BASE_URL: z.url().optional(),
+
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_REGION: z.string().optional().default('us-east-1'),
@@ -33,7 +44,7 @@ export const env = createEnv({
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.url().default('http://localhost:3000'),
-    NEXT_PUBLIC_APP_NAME: z.string().default('Next.js SaaS AI Template'),
+    NEXT_PUBLIC_APP_NAME: z.string().default('Mkety'),
     NEXT_PUBLIC_SENTRY_DSN: z.url().optional(),
   },
   runtimeEnv: {
@@ -46,6 +57,14 @@ export const env = createEnv({
     AUTH0_ISSUER: process.env.AUTH0_ISSUER,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    MKETY_AI_PROVIDER: process.env.MKETY_AI_PROVIDER,
+    MKETY_AI_MODEL: process.env.MKETY_AI_MODEL,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+    GROQ_BASE_URL: process.env.GROQ_BASE_URL,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL,
+    MKETY_AI_API_KEY: process.env.MKETY_AI_API_KEY,
+    MKETY_AI_BASE_URL: process.env.MKETY_AI_BASE_URL,
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
     AWS_REGION: process.env.AWS_REGION,
