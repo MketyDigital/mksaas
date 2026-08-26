@@ -30,6 +30,7 @@ async function detectLocale(): Promise<Locale> {
 export default getRequestConfig(async () => {
   const locale = await detectLocale();
   const messages = (await import(`./messages/${locale}.json`)).default;
+  const navMessages = messages.nav as Record<string, string>;
 
   return {
     locale,
@@ -37,9 +38,9 @@ export default getRequestConfig(async () => {
       ...messages,
       landing: landingMessages,
       nav: {
-        ...messages.nav,
-        myProfile: messages.nav?.myProfile ?? (locale === 'es' ? 'Mi perfil' : 'My Profile'),
-        integrations: messages.nav?.integrations ?? (locale === 'es' ? 'Integraciones' : 'Integrations'),
+        ...navMessages,
+        myProfile: navMessages.myProfile ?? (locale === 'es' ? 'Mi perfil' : 'My Profile'),
+        integrations: navMessages.integrations ?? (locale === 'es' ? 'Integraciones' : 'Integrations'),
       },
     },
   };
