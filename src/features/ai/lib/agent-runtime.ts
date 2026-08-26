@@ -1,6 +1,6 @@
 import { generateText, streamText, type ModelMessage } from 'ai';
 
-import { getAIProvider } from './provider';
+import { getAIModel, getAIProvider } from './provider';
 
 export type AgentRuntimeConfig = {
   temperature?: number;
@@ -58,13 +58,12 @@ function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
 }
 
 function getModel(agent: AgentRuntimeDefinition) {
-  const provider = getAIProvider(agent.provider);
-  const model = agent.model?.trim();
-  if (!model) throw new Error('Agent model is not configured.');
+  const provider = getAIProvider(agent.provider as Parameters<typeof getAIProvider>[0]);
+  const model = agent.model?.trim() || getAIModel();
   return provider(model);
 }
 
-export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
+function prepare(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
   if (agent.status === 'disabled') throw new Error('This agent is disabled.');
 
   const config = parseConfig(agent.config);
@@ -72,6 +71,12 @@ export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]
   const normalizedMessages = normalizeMessages(messages);
 
   if (!normalizedMessages.length) throw new Error('At least one user message is required.');
+
+  return { config, model, normalizedMessages };
+}
+
+export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
+  const { config, model, normalizedMessages } = prepare(agent, messages);
 
   return streamText({
     model,
@@ -83,13 +88,7 @@ export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]
 }
 
 export async function testAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
-  if (agent.status === 'disabled') throw new Error('This agent is disabled.');
-
-  const config = parseConfig(agent.config);
-  const model = getModel(agent);
-  const normalizedMessages = normalizeMessages(messages);
-
-  if (!normalizedMessages.length) throw new Error('At least one user message is required.');
+  const { config, model, normalizedMessages } = prepare(agent, messages);
 
   return generateText({
     model,
