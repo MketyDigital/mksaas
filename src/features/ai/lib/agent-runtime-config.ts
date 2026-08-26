@@ -5,6 +5,10 @@ export const agentRuntimeConfigSchema = z.object({
   maxOutputTokens: z.number().int().min(1).max(16384).optional(),
   maxSteps: z.number().int().min(1).max(10).optional(),
   tools: z.array(z.string().min(1)).optional(),
+  knowledge: z.object({
+    enabled: z.boolean().optional(),
+    topK: z.number().int().min(1).max(10).optional(),
+  }).optional(),
 });
 
 export type AgentRuntimeConfig = z.infer<typeof agentRuntimeConfigSchema>;
