@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 export default async function SelectTenantPage() {
   const session = await auth();
 
-  if (!session?.user) redirect('/login');
+  if (!session?.user) redirect('/');
 
   const userRoles = session.user.roles as Record<string, TenantRole> | undefined;
   const tenantSlugs = userRoles ? Object.keys(userRoles) : [];
