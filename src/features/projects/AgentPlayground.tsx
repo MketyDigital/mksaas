@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { useState, type FormEvent } from 'react';
 
 type Message = {
   role: 'user' | 'assistant';
