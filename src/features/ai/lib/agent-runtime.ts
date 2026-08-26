@@ -1,0 +1,101 @@
+import { generateText, streamText, type ModelMessage } from 'ai';
+
+import { getAIProvider } from './provider';
+
+export type AgentRuntimeConfig = {
+  temperature?: number;
+  maxOutputTokens?: number;
+};
+
+export type AgentRuntimeDefinition = {
+  id: string;
+  tenantId: string;
+  name: string;
+  instructions: string | null;
+  provider: string;
+  model: string | null;
+  status: string;
+  config: string | null;
+};
+
+function parseConfig(value: string | null): AgentRuntimeConfig {
+  if (!value) return {};
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+    const config = parsed as Record<string, unknown>;
+    const result: AgentRuntimeConfig = {};
+
+    if (typeof config.temperature === 'number' && Number.isFinite(config.temperature)) {
+      result.temperature = Math.min(2, Math.max(0, config.temperature));
+    }
+
+    if (typeof config.maxOutputTokens === 'number' && Number.isInteger(config.maxOutputTokens)) {
+      result.maxOutputTokens = Math.min(16384, Math.max(1, config.maxOutputTokens));
+    }
+
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function buildSystemPrompt(agent: AgentRuntimeDefinition): string {
+  const instructions = agent.instructions?.trim();
+
+  return instructions
+    ? instructions
+    : `You are ${agent.name}, an AI agent running on the Mkety Platform. Be helpful, accurate, and concise. Do not claim to have performed actions you did not perform.`;
+}
+
+function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
+  return messages.filter((message) => {
+    if (message.role !== 'user' && message.role !== 'assistant') return false;
+    return Array.isArray(message.content) || typeof message.content === 'string';
+  });
+}
+
+function getModel(agent: AgentRuntimeDefinition) {
+  const provider = getAIProvider(agent.provider);
+  const model = agent.model?.trim();
+  if (!model) throw new Error('Agent model is not configured.');
+  return provider(model);
+}
+
+export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
+  if (agent.status === 'disabled') throw new Error('This agent is disabled.');
+
+  const config = parseConfig(agent.config);
+  const model = getModel(agent);
+  const normalizedMessages = normalizeMessages(messages);
+
+  if (!normalizedMessages.length) throw new Error('At least one user message is required.');
+
+  return streamText({
+    model,
+    system: buildSystemPrompt(agent),
+    messages: normalizedMessages,
+    temperature: config.temperature,
+    maxOutputTokens: config.maxOutputTokens,
+  });
+}
+
+export async function testAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
+  if (agent.status === 'disabled') throw new Error('This agent is disabled.');
+
+  const config = parseConfig(agent.config);
+  const model = getModel(agent);
+  const normalizedMessages = normalizeMessages(messages);
+
+  if (!normalizedMessages.length) throw new Error('At least one user message is required.');
+
+  return generateText({
+    model,
+    system: buildSystemPrompt(agent),
+    messages: normalizedMessages,
+    temperature: config.temperature,
+    maxOutputTokens: config.maxOutputTokens,
+  });
+}
