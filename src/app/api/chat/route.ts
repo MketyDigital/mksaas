@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   }).catch((err) => logger.error({ error: err }, 'Failed to log AI conversation'));
 
   const result = streamText({
-    model: provider.chatModel(model),
+    model: provider(model),
     system: systemPrompt,
     messages: modelMessages,
     stopWhen: stepCountIs(5),
