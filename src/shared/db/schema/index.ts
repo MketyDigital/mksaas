@@ -13,6 +13,7 @@ export * from './domains';
 export * from './projects';
 export * from './agents';
 export * from './agent-runs';
+export * from './agent-knowledge';
 export * from './knowledge';
 export * from './knowledge-chunks';
 export * from './files';
