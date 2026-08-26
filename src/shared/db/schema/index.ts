@@ -19,6 +19,7 @@ export * from './tenants';
 export * from './persons';
 export * from './audit';
 export * from './assistant-conversations';
+export * from './domains';
 
 // Files (S3)
 export * from './files';
@@ -48,6 +49,7 @@ export { fileObjectTypeEnum } from './files';
 export { tenantRoleEnum } from './auth';
 export { embeddingEntityTypeEnum } from './embeddings';
 export { webhookDeliveryStatusEnum } from './webhooks';
+export { customDomainStatusEnum } from './domains';
 export {
   integrationProviderEnum,
   integrationSyncModeEnum,
