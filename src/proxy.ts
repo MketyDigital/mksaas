@@ -32,7 +32,7 @@ export default auth(async (request) => {
           if (tenant) {
             effectivePathname = `/t/${tenant.slug}${pathname === '/' ? '' : pathname}`;
             const rewriteUrl = request.nextUrl.clone();
-            rewriteUrl.pathname = effectivePathname;
+            rewriteUrl.pathname = request.auth?.user ? effectivePathname : `/t/${tenant.slug}/login`;
             return NextResponse.rewrite(rewriteUrl);
           }
         }
