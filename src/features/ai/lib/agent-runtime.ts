@@ -2,11 +2,13 @@ import { generateText, streamText, type ModelMessage } from 'ai';
 
 import { createAgentTools } from './agent-tools';
 import { parseAgentRuntimeConfig } from './agent-runtime-config';
+import { buildKnowledgeContext } from './knowledge-context';
 import { getAIModel, getAIProvider } from './provider';
 
 export type AgentRuntimeDefinition = {
   id: string;
   tenantId: string;
+  projectId: string;
   name: string;
   instructions: string | null;
   provider: string;
@@ -15,12 +17,9 @@ export type AgentRuntimeDefinition = {
   config: string | null;
 };
 
-function buildSystemPrompt(agent: AgentRuntimeDefinition): string {
-  const instructions = agent.instructions?.trim();
-
-  return instructions
-    ? instructions
-    : `You are ${agent.name}, an AI agent running on the Mkety Platform. Be helpful, accurate, and concise. Do not claim to have performed actions you did not perform.`;
+function buildSystemPrompt(agent: AgentRuntimeDefinition, knowledgeContext: string): string {
+  const instructions = agent.instructions?.trim() || `You are ${agent.name}, an AI agent running on the Mkety Platform. Be helpful, accurate, and concise. Do not claim to have performed actions you did not perform.`;
+  return knowledgeContext ? `${instructions}\n\n${knowledgeContext}` : instructions;
 }
 
 function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
@@ -36,29 +35,30 @@ function getModel(agent: AgentRuntimeDefinition) {
   return provider(model);
 }
 
-function prepare(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
+async function prepare(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
   if (agent.status === 'disabled') throw new Error('This agent is disabled.');
 
   const config = parseAgentRuntimeConfig(agent.config);
   const model = getModel(agent);
   const normalizedMessages = normalizeMessages(messages);
-
   if (!normalizedMessages.length) throw new Error('At least one user message is required.');
 
-  const tools = createAgentTools(
-    { tenantId: agent.tenantId, agentId: agent.id },
-    config.tools,
-  );
+  const lastUserMessage = [...normalizedMessages].reverse().find((message) => message.role === 'user');
+  const query = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
+  const knowledgeContext = config.knowledge?.enabled !== false && query
+    ? await buildKnowledgeContext({ tenantId: agent.tenantId, projectId: agent.projectId, query, topK: config.knowledge?.topK })
+    : '';
 
-  return { config, model, normalizedMessages, tools };
+  const tools = createAgentTools({ tenantId: agent.tenantId, agentId: agent.id }, config.tools);
+  return { config, model, normalizedMessages, tools, knowledgeContext };
 }
 
-export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
-  const { config, model, normalizedMessages, tools } = prepare(agent, messages);
+export async function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
+  const { config, model, normalizedMessages, tools, knowledgeContext } = await prepare(agent, messages);
 
   return streamText({
     model,
-    system: buildSystemPrompt(agent),
+    system: buildSystemPrompt(agent, knowledgeContext),
     messages: normalizedMessages,
     tools,
     temperature: config.temperature,
@@ -68,11 +68,11 @@ export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]
 }
 
 export async function testAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
-  const { config, model, normalizedMessages, tools } = prepare(agent, messages);
+  const { config, model, normalizedMessages, tools, knowledgeContext } = await prepare(agent, messages);
 
   return generateText({
     model,
-    system: buildSystemPrompt(agent),
+    system: buildSystemPrompt(agent, knowledgeContext),
     messages: normalizedMessages,
     tools,
     temperature: config.temperature,
