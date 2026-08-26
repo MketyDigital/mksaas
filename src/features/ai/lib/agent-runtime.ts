@@ -1,10 +1,13 @@
 import { generateText, streamText, type ModelMessage } from 'ai';
 
+import { createAgentTools } from './agent-tools';
 import { getAIModel, getAIProvider } from './provider';
 
 export type AgentRuntimeConfig = {
   temperature?: number;
   maxOutputTokens?: number;
+  tools?: string[];
+  maxSteps?: number;
 };
 
 export type AgentRuntimeDefinition = {
@@ -34,6 +37,14 @@ function parseConfig(value: string | null): AgentRuntimeConfig {
 
     if (typeof config.maxOutputTokens === 'number' && Number.isInteger(config.maxOutputTokens)) {
       result.maxOutputTokens = Math.min(16384, Math.max(1, config.maxOutputTokens));
+    }
+
+    if (Array.isArray(config.tools)) {
+      result.tools = config.tools.filter((id): id is string => typeof id === 'string');
+    }
+
+    if (typeof config.maxSteps === 'number' && Number.isInteger(config.maxSteps)) {
+      result.maxSteps = Math.min(10, Math.max(1, config.maxSteps));
     }
 
     return result;
@@ -72,29 +83,38 @@ function prepare(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
 
   if (!normalizedMessages.length) throw new Error('At least one user message is required.');
 
-  return { config, model, normalizedMessages };
+  const tools = createAgentTools(
+    { tenantId: agent.tenantId, agentId: agent.id },
+    config.tools,
+  );
+
+  return { config, model, normalizedMessages, tools };
 }
 
 export function runAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
-  const { config, model, normalizedMessages } = prepare(agent, messages);
+  const { config, model, normalizedMessages, tools } = prepare(agent, messages);
 
   return streamText({
     model,
     system: buildSystemPrompt(agent),
     messages: normalizedMessages,
+    tools,
     temperature: config.temperature,
     maxOutputTokens: config.maxOutputTokens,
+    maxSteps: config.maxSteps,
   });
 }
 
 export async function testAgent(agent: AgentRuntimeDefinition, messages: ModelMessage[]) {
-  const { config, model, normalizedMessages } = prepare(agent, messages);
+  const { config, model, normalizedMessages, tools } = prepare(agent, messages);
 
   return generateText({
     model,
     system: buildSystemPrompt(agent),
     messages: normalizedMessages,
+    tools,
     temperature: config.temperature,
     maxOutputTokens: config.maxOutputTokens,
+    maxSteps: config.maxSteps,
   });
 }
