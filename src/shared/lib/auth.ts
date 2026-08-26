@@ -37,6 +37,78 @@ if (env.AUTH0_CLIENT_ID && env.AUTH0_CLIENT_SECRET && env.AUTH0_ISSUER) {
   );
 }
 
+async function ensureDevelopmentWorkspace(user: { id: string; email: string; name?: string | null; image?: string | null }) {
+  if (!env.ENABLE_TEST_LOGIN) return;
+
+  const existingMembership = await db.query.tenantMemberships.findFirst({
+    where: eq(schema.tenantMemberships.userId, user.id),
+    with: { tenant: true },
+  });
+  if (existingMembership) return;
+
+  await db.transaction(async (tx) => {
+    let tenant = await tx.query.tenants.findFirst({ where: eq(schema.tenants.slug, 'test-workspace') });
+
+    if (!tenant) {
+      const [createdTenant] = await tx
+        .insert(schema.tenants)
+        .values({
+          name: 'Test Workspace',
+          slug: 'test-workspace',
+          description: 'Temporary workspace for testing the application before production authentication is configured.',
+        })
+        .returning();
+      tenant = createdTenant;
+    }
+
+    const personName = (user.name || user.email.split('@')[0] || 'Test User').trim().split(/\s+/).filter(Boolean);
+    const [person] = await tx
+      .insert(schema.persons)
+      .values({
+        tenantId: tenant.id,
+        email: user.email,
+        firstName: personName[0] || 'Test',
+        lastName: personName.slice(1).join(' ') || 'User',
+        displayName: user.name?.trim() || user.email.split('@')[0] || 'Test User',
+        avatarUrl: user.image || null,
+        status: 'active',
+        profileInitialized: true,
+      })
+      .returning();
+
+    const [membership] = await tx
+      .insert(schema.tenantMemberships)
+      .values({
+        tenantId: tenant.id,
+        userId: user.id,
+        personId: person.id,
+        role: 'admin',
+      })
+      .returning();
+
+    const existingAdminRole = await tx.query.roles.findFirst({
+      where: eq(schema.roles.tenantId, tenant.id),
+    });
+
+    const adminRole = existingAdminRole
+      ? existingAdminRole
+      : (
+          await tx
+            .insert(schema.roles)
+            .values({
+              tenantId: tenant.id,
+              name: 'Admin',
+              slug: 'admin',
+              description: 'Full workspace administration access',
+              isSystem: true,
+            })
+            .returning()
+        )[0];
+
+    await tx.insert(schema.tenantMembershipRoles).values({ membershipId: membership.id, roleId: adminRole.id });
+  });
+}
+
 // Explicitly opt into passwordless development/test login with ENABLE_TEST_LOGIN=true.
 // This is intentionally disabled by default, including production deployments.
 if (env.ENABLE_TEST_LOGIN) {
@@ -59,6 +131,13 @@ if (env.ENABLE_TEST_LOGIN) {
             .returning();
           user = newUser;
         }
+
+        await ensureDevelopmentWorkspace({
+          id: user.id,
+          email: user.email!,
+          name: user.name,
+          image: user.image,
+        });
 
         return { id: user.id, email: user.email, name: user.name, image: user.image };
       },
