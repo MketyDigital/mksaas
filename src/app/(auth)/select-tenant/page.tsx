@@ -1,9 +1,8 @@
-import { Building2, Sparkles } from 'lucide-react';
+import { Building2, Plus, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
-
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
 
@@ -12,27 +11,16 @@ export const metadata = {
   description: 'Choose an organization to access',
 };
 
-// Force dynamic rendering - this page depends on session data
 export const dynamic = 'force-dynamic';
 
-/**
- * Tenant Selector Page
- *
- * Shown when a user has access to multiple tenants.
- * Allows them to choose which organization to access.
- */
 export default async function SelectTenantPage() {
   const session = await auth();
 
-  // Must be logged in to see this page
-  if (!session?.user) {
-    redirect('/login');
-  }
+  if (!session?.user) redirect('/login');
 
   const userRoles = session.user.roles as Record<string, TenantRole> | undefined;
   const tenantSlugs = userRoles ? Object.keys(userRoles) : [];
 
-  // No memberships - show message
   if (tenantSlugs.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-amber-500/5 p-4">
@@ -40,23 +28,21 @@ export default async function SelectTenantPage() {
           <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-amber-500/10 mb-4">
             <Building2 className="h-8 w-8 text-amber-500" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">No Organizations</h1>
-          <p className="text-muted-foreground mb-4">
-            You&apos;re signed in as <strong>{session.user.email}</strong>, but you don&apos;t have access to any
-            organizations yet.
+          <h1 className="text-2xl font-bold mb-2">No Organizations Yet</h1>
+          <p className="text-muted-foreground mb-6">
+            You&apos;re signed in as <strong>{session.user.email}</strong>. Create your first workspace or ask an organization admin to invite you.
           </p>
-          <p className="text-sm text-muted-foreground">Ask your organization admin to send you an invitation link.</p>
+          <Link href="/create-workspace" className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+            <Plus className="h-4 w-4" />
+            Create workspace
+          </Link>
         </div>
       </div>
     );
   }
 
-  // Single membership - redirect directly
-  if (tenantSlugs.length === 1) {
-    redirect(`/t/${tenantSlugs[0]}`);
-  }
+  if (tenantSlugs.length === 1) redirect(`/t/${tenantSlugs[0]}`);
 
-  // Multiple memberships - show selector
   return (
     <div className="min-h-screen flex items-center justify-center bg-primary/5 p-4 relative overflow-hidden">
       <div className="w-full max-w-md relative">
@@ -77,15 +63,9 @@ export default async function SelectTenantPage() {
             {tenantSlugs.map((slug) => {
               const role = userRoles![slug];
               return (
-                <Link
-                  key={slug}
-                  href={`/t/${slug}`}
-                  className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group"
-                >
+                <Link key={slug} href={`/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Building2 className="h-5 w-5" />
-                    </div>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Building2 className="h-5 w-5" /></div>
                     <div>
                       <p className="font-medium group-hover:text-primary transition-colors">{slug}</p>
                       <p className="text-xs text-muted-foreground capitalize">{role}</p>
@@ -95,6 +75,9 @@ export default async function SelectTenantPage() {
                 </Link>
               );
             })}
+            <Link href="/create-workspace" className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm font-medium hover:bg-muted/40">
+              <Plus className="h-4 w-4" /> Create another workspace
+            </Link>
           </CardContent>
         </Card>
       </div>
