@@ -13,6 +13,8 @@ export * from './domains';
 export * from './projects';
 export * from './agents';
 export * from './agent-runs';
+export * from './knowledge';
+export * from './knowledge-chunks';
 export * from './files';
 export * from './departments';
 export * from './roles';
