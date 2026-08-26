@@ -3,19 +3,20 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { env } from '@/shared/lib/env';
 
 export type MketyAIProvider = 'openai' | 'groq' | 'openrouter' | 'custom';
+export type AgentProvider = MketyAIProvider | 'platform';
 
 type AIProvider = ReturnType<typeof createOpenAI>;
 
 /**
  * Mkety AI provider abstraction.
  *
- * All currently supported providers expose an OpenAI-compatible chat API, which
- * lets the platform keep one application-level AI interface while remaining
- * portable across providers. Providers are opt-in through environment values;
- * no fake credentials are required for disabled providers.
+ * `platform` follows the environment-wide provider. An agent can override it
+ * with an explicit provider while keeping credentials server-side.
  */
-export function getAIProvider(): AIProvider {
-  switch (env.MKETY_AI_PROVIDER) {
+export function getAIProvider(providerOverride: AgentProvider = 'platform'): AIProvider {
+  const provider = providerOverride === 'platform' ? env.MKETY_AI_PROVIDER : providerOverride;
+
+  switch (provider) {
     case 'groq':
       if (!env.GROQ_API_KEY) throw new Error('Groq provider is enabled but GROQ_API_KEY is not configured.');
       return createOpenAI({ apiKey: env.GROQ_API_KEY, baseURL: env.GROQ_BASE_URL, name: 'groq' });
