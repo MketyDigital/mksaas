@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { db } from '@/shared/db';
-import { customDomains } from '@/shared/db/schema';
+import { customDomains, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { eq } from 'drizzle-orm';
 
@@ -26,13 +26,15 @@ export default auth(async (request) => {
       try {
         const domain = await db.query.customDomains.findFirst({
           where: eq(customDomains.hostname, hostname.toLowerCase()),
-          with: { tenant: true },
         });
-        if (domain?.status === 'verified' && domain.tenant) {
-          effectivePathname = `/t/${domain.tenant.slug}${pathname === '/' ? '' : pathname}`;
-          const rewriteUrl = request.nextUrl.clone();
-          rewriteUrl.pathname = effectivePathname;
-          return NextResponse.rewrite(rewriteUrl);
+        if (domain?.status === 'verified') {
+          const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, domain.tenantId) });
+          if (tenant) {
+            effectivePathname = `/t/${tenant.slug}${pathname === '/' ? '' : pathname}`;
+            const rewriteUrl = request.nextUrl.clone();
+            rewriteUrl.pathname = effectivePathname;
+            return NextResponse.rewrite(rewriteUrl);
+          }
         }
       } catch {
         // Custom-domain routing must never break the normal application host.
