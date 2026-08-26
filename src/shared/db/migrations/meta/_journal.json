@@ -15,6 +15,13 @@
       "when": 1772957145761,
       "tag": "0001_silky_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787760000000,
+      "tag": "0002_custom_domains",
+      "breakpoints": true
     }
   ]
 }
