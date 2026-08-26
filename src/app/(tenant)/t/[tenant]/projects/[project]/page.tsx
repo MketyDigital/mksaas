@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { and, desc, eq } from 'drizzle-orm';
 
 import { createAgent } from '@/features/projects/actions';
@@ -34,7 +35,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
       {canManage && (
         <section className="rounded-xl border bg-card p-5">
           <h2 className="font-medium">Create AI agent</h2>
-          <p className="mt-1 text-sm text-muted-foreground">This is the first persistent layer of the Mkety Agent Builder.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Create the agent here, then open it in the full Agent Builder.</p>
           <form action={createAgent} className="mt-4 grid gap-3">
             <input type="hidden" name="tenantSlug" value={tenantSlug} />
             <input type="hidden" name="projectSlug" value={projectSlug} />
@@ -50,14 +51,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
         <h2 className="font-medium">Agents</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           {projectAgents.map((agent) => (
-            <div key={agent.id} className="rounded-xl border bg-card p-5">
+            <Link key={agent.id} href={`/t/${tenantSlug}/projects/${projectSlug}/agents/${agent.slug}`} className="rounded-xl border bg-card p-5 transition hover:bg-muted/40">
               <div className="flex items-center justify-between gap-4">
                 <div className="font-medium">{agent.name}</div>
                 <span className="rounded-full border px-2 py-1 text-xs">{agent.status}</span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">{agent.provider}{agent.model ? ` · ${agent.model}` : ''}</p>
               {agent.instructions && <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{agent.instructions}</p>}
-            </div>
+              {canManage && <p className="mt-4 text-xs font-medium">Open Agent Builder →</p>}
+            </Link>
           ))}
           {projectAgents.length === 0 && <div className="rounded-xl border border-dashed p-8 text-sm text-muted-foreground md:col-span-2">No agents yet.</div>}
         </div>
