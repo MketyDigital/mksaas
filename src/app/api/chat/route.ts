@@ -1,7 +1,7 @@
-import { openai } from '@ai-sdk/openai';
 import { convertToModelMessages, createIdGenerator, stepCountIs, streamText, type UIMessage } from 'ai';
 import { and, eq } from 'drizzle-orm';
 
+import { getAIModel, getAIProvider } from '@/features/ai/lib/provider';
 import { db } from '@/shared/db';
 import { assistantConversations, persons, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -20,8 +20,8 @@ function deriveConversationTitle(messages: UIMessage[]): string {
 }
 
 export async function POST(req: Request) {
-  if (!env.ENABLE_AI_FEATURES || !env.OPENAI_API_KEY) {
-    return new Response('AI features are disabled until ENABLE_AI_FEATURES=true and OPENAI_API_KEY is configured.', { status: 503 });
+  if (!env.ENABLE_AI_FEATURES) {
+    return new Response('AI features are disabled until ENABLE_AI_FEATURES=true.', { status: 503 });
   }
 
   const body = await req.json();
@@ -47,8 +47,17 @@ export async function POST(req: Request) {
   });
   if (!person) return new Response('Workspace profile not found', { status: 409 });
 
+  let provider;
+  try {
+    provider = getAIProvider();
+  } catch (error) {
+    logger.error({ error }, 'Mkety AI provider is not configured');
+    return new Response('AI provider is not configured for this environment.', { status: 503 });
+  }
+
+  const model = getAIModel();
   const modelMessages = await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]);
-  const systemPrompt = `You are an AI assistant for ${tenant.name}.\nYou help users with their questions and tasks.\nBe helpful, concise, and professional.\nCurrent user: ${session.user.name || session.user.email}`;
+  const systemPrompt = `You are the Mkety AI assistant for ${tenant.name}.\nYou help users with their questions and tasks across the Mkety platform.\nBe helpful, concise, and professional.\nDo not claim to have performed actions you did not perform.\nCurrent user: ${session.user.name || session.user.email}`;
 
   const parts = messages.at(-1)?.parts as Array<{ type: string; text?: string }> | undefined;
   const messagePreview = parts?.map((p) => (p.type === 'text' ? p.text : '')).join(' ').slice(0, 100) || '';
@@ -57,12 +66,12 @@ export async function POST(req: Request) {
     actorId: person.id,
     action: AuditActions.AI_CONVERSATION,
     entityType: 'ai_assistant',
-    metadata: { messagePreview, messageCount: messages.length },
-    aiModelVersion: 'gpt-4o',
+    metadata: { messagePreview, messageCount: messages.length, provider: env.MKETY_AI_PROVIDER, model },
+    aiModelVersion: model,
   }).catch((err) => logger.error({ error: err }, 'Failed to log AI conversation'));
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: provider(model),
     system: systemPrompt,
     messages: modelMessages,
     stopWhen: stepCountIs(5),
