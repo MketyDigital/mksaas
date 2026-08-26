@@ -7,22 +7,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  FormFieldError,
-  FormGlobalError,
-  FormLabel,
-  Input,
-} from '@/shared/components/ui';
-
-// ============================================================================
-// Validation Schema
-// ============================================================================
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormFieldError, FormGlobalError, FormLabel, Input } from '@/shared/components/ui';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Please enter a valid email address'),
@@ -30,49 +15,30 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-// ============================================================================
-// Component
-// ============================================================================
-
 interface LoginFormProps {
-  /** Pre-fill email (e.g. from ?email= in URL) */
   initialEmail?: string;
+  enableDevelopmentLogin?: boolean;
 }
 
-export const LoginForm = ({ initialEmail = '' }: LoginFormProps) => {
+export const LoginForm = ({ initialEmail = '', enableDevelopmentLogin = false }: LoginFormProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormValues>({
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: initialEmail,
-    },
+    defaultValues: { email: initialEmail },
   });
 
-  // Callback URL goes to tenant selector which handles smart redirect
   const callbackUrl = '/select-tenant';
 
-  // Handle development credentials login
   const onSubmit = async (data: LoginFormValues) => {
+    if (!enableDevelopmentLogin) return;
     setIsLoading(true);
     setServerError(null);
-
     try {
-      const result = await signIn('development', {
-        email: data.email,
-        redirect: false,
-        callbackUrl,
-      });
-
+      const result = await signIn('development', { email: data.email, redirect: false, callbackUrl });
       if (result?.error) {
         setServerError(result.error);
       } else if (result?.url) {
-        // Keep navigation on current origin even if Auth.js returns an absolute URL with a stale host.
         const target = new URL(result.url, window.location.origin);
         window.location.assign(`${target.pathname}${target.search}${target.hash}`);
       }
@@ -83,7 +49,6 @@ export const LoginForm = ({ initialEmail = '' }: LoginFormProps) => {
     }
   };
 
-  // Handle Auth0 login
   const handleAuth0Login = async () => {
     setIsLoading(true);
     try {
@@ -104,67 +69,34 @@ export const LoginForm = ({ initialEmail = '' }: LoginFormProps) => {
         <CardDescription>Choose your preferred sign in method</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <FormGlobalError visible={!!serverError} id="login-server-error">
-          {serverError}
-        </FormGlobalError>
+        <FormGlobalError visible={!!serverError} id="login-server-error">{serverError}</FormGlobalError>
 
-        {/* Auth0 Login Button */}
-        <Button
-          type="button"
-          className="w-full h-12 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200 text-base font-semibold group"
-          onClick={handleAuth0Login}
-          disabled={isLoading}
-          aria-busy={isLoading}
-        >
-          <Lock className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" />
-          {isLoading ? 'Signing in...' : 'Continue with Auth0'}
-        </Button>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-border/50" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-3 py-1 text-muted-foreground font-medium rounded-full">
-              Or development login
-            </span>
-          </div>
-        </div>
-
-        {/* Development Login Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" aria-label="Development login form" noValidate>
-          <div className="space-y-2">
-            <FormLabel htmlFor="email" required>
-              Email
-            </FormLabel>
-            <Input
-              id="email"
-              type="email"
-              placeholder="user@example.com"
-              {...register('email')}
-              aria-required="true"
-              aria-invalid={hasError ? 'true' : undefined}
-              aria-describedby={emailError ? 'email-error' : serverError ? 'login-server-error' : undefined}
-              className={emailError ? 'h-11 border-destructive focus-visible:ring-destructive' : 'h-11'}
-            />
-            <FormFieldError visible={!!emailError} id="email-error">
-              {emailError}
-            </FormFieldError>
-          </div>
-          <Button
-            type="submit"
-            variant="outline"
-            className="w-full h-11 shadow-sm hover:bg-muted/50 transition-colors"
-            disabled={isLoading}
-            aria-busy={isLoading}
-          >
-            {isLoading ? 'Signing in...' : 'Development Login'}
+        {true && (
+          <Button type="button" className="w-full h-12 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200 text-base font-semibold group" onClick={handleAuth0Login} disabled={isLoading} aria-busy={isLoading}>
+            <Lock className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" />
+            {isLoading ? 'Signing in...' : 'Continue with Auth0'}
           </Button>
-        </form>
+        )}
 
-        <p className="text-xs text-center text-muted-foreground pt-2">
-          Development login is only available in development mode
-        </p>
+        {enableDevelopmentLogin && (
+          <>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border/50" /></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-3 py-1 text-muted-foreground font-medium rounded-full">Or development login</span></div>
+            </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" aria-label="Development login form" noValidate>
+              <div className="space-y-2">
+                <FormLabel htmlFor="email" required>Email</FormLabel>
+                <Input id="email" type="email" placeholder="user@example.com" {...register('email')} aria-required="true" aria-invalid={hasError ? 'true' : undefined} aria-describedby={emailError ? 'email-error' : serverError ? 'login-server-error' : undefined} className={emailError ? 'h-11 border-destructive focus-visible:ring-destructive' : 'h-11'} />
+                <FormFieldError visible={!!emailError} id="email-error">{emailError}</FormFieldError>
+              </div>
+              <Button type="submit" variant="outline" className="w-full h-11 shadow-sm hover:bg-muted/50 transition-colors" disabled={isLoading} aria-busy={isLoading}>
+                {isLoading ? 'Signing in...' : 'Development Login'}
+              </Button>
+            </form>
+            <p className="text-xs text-center text-muted-foreground pt-2">Temporary test login is enabled for this deployment.</p>
+          </>
+        )}
       </CardContent>
     </Card>
   );
