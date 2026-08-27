@@ -2,8 +2,10 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { knowledgeChunks, knowledgeDocuments } from '@/shared/db/schema';
 
-import { chunkText } from './knowledge';
+import { chunkText, type KnowledgeChunkInput } from './knowledge';
 import { embedKnowledgeText } from './knowledge-provider';
+
+type EmbeddedKnowledgeChunk = KnowledgeChunkInput & { embedding: number[] };
 
 export async function ingestKnowledgeText({
   tenantId,
@@ -30,7 +32,7 @@ export async function ingestKnowledgeText({
     );
 
   try {
-    const embeddedChunks = [];
+    const embeddedChunks: EmbeddedKnowledgeChunk[] = [];
     for (const chunk of chunks) {
       const embedding = await embedKnowledgeText(chunk.content);
       embeddedChunks.push({ ...chunk, embedding });
