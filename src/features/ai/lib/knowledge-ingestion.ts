@@ -1,7 +1,7 @@
 import { db } from '@/shared/db';
 import { knowledgeDocuments } from '@/shared/db/schema';
 
-import { chunkText, replaceKnowledgeDocumentChunks } from './knowledge';
+import { chunkText } from './knowledge';
 import { embedKnowledgeText } from './knowledge-provider';
 
 export async function ingestKnowledgeText({
@@ -28,8 +28,6 @@ export async function ingestKnowledgeText({
       embeddedChunks.push({ ...chunk, embedding });
     }
 
-    // Keep the database write in one replacement operation so a failed
-    // ingestion never leaves a mixture of old and new chunks.
     const document = await db.query.knowledgeDocuments.findFirst({
       where: (table, { and, eq }) => and(eq(table.id, documentId), eq(table.tenantId, tenantId), eq(table.projectId, projectId)),
     });
