@@ -30,7 +30,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ agentId
   const [run] = await db.insert(agentRuns).values({ tenantId: tenant.id, projectId: project.id, agentId: agent.id, status: 'running', messages: body.messages }).returning({ id: agentRuns.id });
   try {
     const result = await runAgent(agent, body.messages);
-    return result.toTextStreamResponse({ headers: { 'x-agent-run-id': run.id } });
+    const response = result.toTextStreamResponse({ headers: { 'x-agent-run-id': run.id } });
+    const originalBody = response.body;
+    if (originalBody) {
+      const [clientStream, persistenceStream] = originalBody.tee();
+      void new Response(persistenceStream).text().then(async (output) => {
+        await db.update(agentRuns).set({ status: 'completed', output, completedAt: new Date() }).where(eq(agentRuns.id, run.id));
+      }).catch(async (error) => {
+        await db.update(agentRuns).set({ status: 'error', error: error instanceof Error ? error.message : 'Agent stream failed', completedAt: new Date() }).where(eq(agentRuns.id, run.id));
+      });
+      return new Response(clientStream, { status: response.status, headers: response.headers });
+    }
+    return response;
   } catch (error) {
     logger.error({ error, agentId: agent.id, tenantId: tenant.id, runId: run.id }, 'Agent runtime failed');
     const message = error instanceof Error ? error.message : 'Agent runtime failed.';
