@@ -14,6 +14,7 @@ export * from './projects';
 export * from './agents';
 export * from './agent-runs';
 export * from './agent-knowledge';
+export * from './agent-versions';
 export * from './knowledge';
 export * from './knowledge-chunks';
 export * from './files';
