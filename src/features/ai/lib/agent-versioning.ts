@@ -1,4 +1,4 @@
-import { and, desc, eq, max } from 'drizzle-orm';
+import { and, eq, max } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { agentKnowledge, agentVersions } from '@/shared/db/schema';
 
