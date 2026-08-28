@@ -42,7 +42,11 @@ async function runNode(node: WorkflowNode, data: WorkflowData, tenantId: string,
     const operator = String(node.config.operator ?? 'equals');
     const expected = node.config.value;
     const actual = field.split('.').reduce<unknown>((current, part) => asRecord(current)[part], data);
-    const matched = operator === 'exists' ? actual !== undefined && actual !== null : operator === 'contains' ? String(actual ?? '').includes(String(expected ?? '')) : String(actual ?? '') === String(expected ?? '');
+    const matched = operator === 'exists'
+      ? actual !== undefined && actual !== null
+      : operator === 'contains'
+        ? String(actual ?? '').includes(String(expected ?? ''))
+        : String(actual ?? '') === String(expected ?? '');
     return { ...data, _condition: matched };
   }
 
@@ -52,17 +56,28 @@ async function runNode(node: WorkflowNode, data: WorkflowData, tenantId: string,
     const method = String(node.config.method ?? 'POST').toUpperCase();
     const headers = asRecord(node.config.headers);
     const body = node.config.body === undefined ? undefined : JSON.stringify(node.config.body);
-    const response = await fetch(url, {
-      method,
-      headers: { 'content-type': 'application/json', ...Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, String(value)])) },
-      body,
-      signal: AbortSignal.timeout(15_000),
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`HTTP action failed with ${response.status}: ${text.slice(0, 500)}`);
-    let responseData: unknown = text;
-    try { responseData = JSON.parse(text); } catch { /* keep text */ }
-    return { ...data, http: { status: response.status, body: responseData } };
+    const maxRetries = Math.min(Math.max(Number(node.config.retries ?? 0) || 0, 0), 3);
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: { 'content-type': 'application/json', ...Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, String(value)])) },
+          body,
+          signal: AbortSignal.timeout(15_000),
+        });
+        const text = await response.text();
+        if (!response.ok) throw new Error(`HTTP action failed with ${response.status}: ${text.slice(0, 500)}`);
+        let responseData: unknown = text;
+        try { responseData = JSON.parse(text); } catch { /* keep text */ }
+        return { ...data, http: { status: response.status, body: responseData, attempts: attempt + 1 } };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('HTTP action failed.');
+        if (attempt < maxRetries) await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** attempt, 4000)));
+      }
+    }
+    throw lastError ?? new Error('HTTP action failed.');
   }
 
   if (node.type === 'agent') {
