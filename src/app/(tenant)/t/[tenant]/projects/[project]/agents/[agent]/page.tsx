@@ -1,9 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 import { AgentPlayground } from '@/features/projects/AgentPlayground';
-import { updateAgent } from '@/features/projects/agent-actions';
+import { createAgentVersion, publishAgentVersionAction, updateAgent } from '@/features/projects/agent-actions';
 import { db } from '@/shared/db';
-import { agents, projects, tenantMemberships } from '@/shared/db/schema';
+import { agents, agentVersions, projects, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
@@ -25,12 +25,18 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
   const canManage = membership.role === 'admin' || membership.role === 'manager';
   if (!canManage) return <div className="p-8">You do not have permission to edit this agent.</div>;
 
+  const versions = await db.query.agentVersions.findMany({
+    where: and(eq(agentVersions.tenantId, tenant.id), eq(agentVersions.projectId, project.id), eq(agentVersions.agentId, agent.id)),
+    orderBy: [desc(agentVersions.version)],
+  });
+  const publishedVersion = versions.find((version) => version.status === 'published');
+
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6 md:p-8">
       <div>
         <p className="text-sm text-muted-foreground">Agent Builder · {project.name}</p>
         <h1 className="text-3xl font-semibold">{agent.name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Configure the agent, save a draft, then test it in the runtime playground.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Configure the agent, save a draft, test it, create an immutable version, then publish that version.</p>
       </div>
 
       <AgentPlayground agentId={agent.id} tenantSlug={tenantSlug} projectSlug={projectSlug} />
@@ -43,7 +49,7 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
         <section className="space-y-4 rounded-xl border bg-card p-6">
           <h2 className="font-medium">Identity</h2>
           <label className="grid gap-2 text-sm"><span>Name</span><input name="name" defaultValue={agent.name} required className="rounded-md border bg-background px-3 py-2" /></label>
-          <label className="grid gap-2 text-sm"><span>Status</span><select name="status" defaultValue={agent.status} className="rounded-md border bg-background px-3 py-2"><option value="draft">Draft</option><option value="published">Published</option><option value="disabled">Disabled</option></select></label>
+          <label className="grid gap-2 text-sm"><span>Working status</span><select name="status" defaultValue={agent.status === 'disabled' ? 'disabled' : 'draft'} className="rounded-md border bg-background px-3 py-2"><option value="draft">Draft</option><option value="disabled">Disabled</option></select></label>
         </section>
 
         <section className="space-y-4 rounded-xl border bg-card p-6">
@@ -70,6 +76,39 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
           <a href={`/t/${tenantSlug}/projects/${projectSlug}`} className="rounded-md border px-5 py-2 text-sm">Back to project</a>
         </div>
       </form>
+
+      <section className="space-y-4 rounded-xl border bg-card p-6">
+        <div>
+          <h2 className="font-medium">Versions & publishing</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Create a snapshot after testing. Only an explicitly published version becomes the production configuration.</p>
+        </div>
+        <form action={createAgentVersion}>
+          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+          <input type="hidden" name="projectSlug" value={projectSlug} />
+          <input type="hidden" name="agentId" value={agent.id} />
+          <button className="rounded-md border px-4 py-2 text-sm">Create version {versions.length ? versions[0].version + 1 : 1}</button>
+        </form>
+        <div className="divide-y rounded-lg border">
+          {versions.length ? versions.map((version) => (
+            <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+              <div>
+                <p className="font-medium">Version {version.version}</p>
+                <p className="text-muted-foreground">{version.status}{version.publishedAt ? ` · published ${version.publishedAt.toLocaleString()}` : ''}</p>
+              </div>
+              {version.status !== 'published' ? (
+                <form action={publishAgentVersionAction}>
+                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                  <input type="hidden" name="projectSlug" value={projectSlug} />
+                  <input type="hidden" name="agentId" value={agent.id} />
+                  <input type="hidden" name="versionId" value={version.id} />
+                  <button className="rounded-md bg-primary px-4 py-2 text-primary-foreground">Publish</button>
+                </form>
+              ) : <span className="rounded-full border px-3 py-1 text-xs">Live</span>}
+            </div>
+          )) : <p className="p-4 text-sm text-muted-foreground">No versions yet. Save and test the agent, then create its first version.</p>}
+        </div>
+        {publishedVersion ? <p className="text-xs text-muted-foreground">Production is currently pinned to version {publishedVersion.version}.</p> : null}
+      </section>
     </main>
   );
 }
