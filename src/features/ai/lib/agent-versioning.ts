@@ -1,6 +1,6 @@
 import { and, eq, max } from 'drizzle-orm';
 import { db } from '@/shared/db';
-import { agentKnowledge, agentVersions } from '@/shared/db/schema';
+import { agentKnowledge, agentVersions, agents } from '@/shared/db/schema';
 
 export async function snapshotAgentVersion({ tenantId, projectId, agent }: { tenantId: string; projectId: string; agent: { id: string; name: string; instructions: string | null; provider: string; model: string | null; config: string | null } }) {
   const assigned = await db.select({ documentId: agentKnowledge.documentId }).from(agentKnowledge).where(and(eq(agentKnowledge.tenantId, tenantId), eq(agentKnowledge.projectId, projectId), eq(agentKnowledge.agentId, agent.id)));
@@ -16,6 +16,7 @@ export async function publishAgentVersion(tenantId: string, projectId: string, a
   await db.transaction(async (tx) => {
     await tx.update(agentVersions).set({ status: 'archived' }).where(and(eq(agentVersions.tenantId, tenantId), eq(agentVersions.projectId, projectId), eq(agentVersions.agentId, agentId), eq(agentVersions.status, 'published')));
     await tx.update(agentVersions).set({ status: 'published', publishedAt: new Date() }).where(eq(agentVersions.id, versionId));
+    await tx.update(agents).set({ status: 'published', updatedAt: new Date() }).where(and(eq(agents.id, agentId), eq(agents.tenantId, tenantId), eq(agents.projectId, projectId)));
   });
   return target.version;
 }
