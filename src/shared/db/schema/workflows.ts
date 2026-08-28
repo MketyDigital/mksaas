@@ -15,6 +15,7 @@ export const workflows = appSchema.table(
     description: text('description'),
     status: varchar('status', { length: 30 }).notNull().default('draft'),
     triggerType: varchar('trigger_type', { length: 40 }).notNull().default('manual'),
+    webhookSecret: varchar('webhook_secret', { length: 255 }),
     definition: jsonb('definition').$type<WorkflowDefinition>().notNull().default({ nodes: [] }),
     version: varchar('version', { length: 30 }).notNull().default('1'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
