@@ -25,6 +25,8 @@ export * from './integration-jobs';
 export * from './embeddings';
 export * from './invitations';
 export * from './webhooks';
+export * from './workflows';
+export * from './workflow-runs';
 
 export { personStatusEnum, personRelationTypeEnum, employmentTypeEnum } from './persons';
 export { fileObjectTypeEnum } from './files';
