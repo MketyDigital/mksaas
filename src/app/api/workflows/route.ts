@@ -29,9 +29,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const result = await context(req);
   if ('error' in result) return result.error;
-  const body = (await req.json()) as { name?: string; slug?: string; description?: string; triggerType?: string; definition?: unknown; status?: string };
+  const body = (await req.json()) as { name?: string; slug?: string; description?: string; triggerType?: string; definition?: unknown; status?: string; webhookSecret?: string };
   if (!body.name || !body.slug) return new Response('name and slug are required.', { status: 400 });
   const definition = body.definition && typeof body.definition === 'object' ? body.definition : { nodes: [] };
-  const [workflow] = await db.insert(workflows).values({ tenantId: result.tenant.id, projectId: result.project.id, name: body.name, slug: body.slug, description: body.description, triggerType: body.triggerType ?? 'manual', definition, status: body.status ?? 'draft' }).returning();
+  const [workflow] = await db.insert(workflows).values({ tenantId: result.tenant.id, projectId: result.project.id, name: body.name, slug: body.slug, description: body.description, triggerType: body.triggerType ?? 'manual', webhookSecret: body.webhookSecret, definition, status: body.status ?? 'draft' }).returning();
   return Response.json(workflow, { status: 201 });
 }
