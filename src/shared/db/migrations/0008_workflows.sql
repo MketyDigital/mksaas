@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS "saas_template"."workflows" (
   "description" text,
   "status" varchar(30) NOT NULL DEFAULT 'draft',
   "trigger_type" varchar(40) NOT NULL DEFAULT 'manual',
+  "webhook_secret" varchar(255),
   "definition" jsonb NOT NULL DEFAULT '{"nodes":[]}'::jsonb,
   "version" varchar(30) NOT NULL DEFAULT '1',
   "created_at" timestamptz NOT NULL DEFAULT now(),
