@@ -39,9 +39,29 @@ pnpm test:coverage
 - Prettier for formatting
 - Conventional commits
 
-## Pending reusable managed-hosting billing integration
+## Mkety repository roles
 
-When the Mkety SaaS upgrade begins, **reuse the external managed-hosting billing service built in `MketyDigital/mklms` rather than reimplementing NOWPayments inside MKSaaS**.
+- `MketyDigital/mksaas` is the authoritative development repository for the new Mkety platform/control plane.
+- `MketyDigital/Mkety` is the current live/legacy Mkety product and a reference source for existing product concepts, pricing expectations, Solution Hub language, branding history, and payment behavior. Do not redesign or change the live legacy product unless explicitly instructed.
+- `MketyDigital/mklms` contains the current production billing implementation for the first enterprise product, MkLMS. Treat its billing code and live contract as production infrastructure, not as throwaway template code.
+
+## Mkety billing direction
+
+Mkety Billing should become a uniform MKSaaS billing layer covering plans, subscriptions, invoices, wallet/credits, usage, ledger records, settlement records, and provider-specific adapters.
+
+Payment gateways currently part of the Mkety concept are:
+
+- Selar for local/card-style checkout paths where appropriate;
+- NOWPayments for crypto checkout and settlement.
+
+The correct interpretation of "reuse the MkLMS billing system" is:
+
+- The MkLMS external managed-hosting billing Worker/provider contract is the current production source for Mkety's NOWPayments billing path.
+- Do not freely edit or break the MkLMS billing implementation because it is already serving the first enterprise client product.
+- MKSaaS should consume, wrap, or evolve around that production contract through compatibility-preserving adapters and tenant-backed configuration.
+- Do not copy/rebuild legacy NOWPayments routes inside MKSaaS.
+- Do not force deployed MkLMS customers to change settlement endpoints, installation IDs, shared-secret behavior, or provider credential names.
+- Any future change to the billing Worker must be backward compatible, staged, and validated against MkLMS production requirements first.
 
 Current reusable service contract:
 
@@ -53,6 +73,11 @@ Current reusable service contract:
 - NOWPayments IPN verification fails closed and only `payment_status=finished` creates automatic settlement;
 - customer applications expose a narrow signed settlement endpoint that marks only the identified monthly managed-hosting record `PAID`;
 - manual `PENDING`, `PAID`, and `WAIVED` controls remain available independently;
-- future MKSaaS tenant storage may replace the Worker's secret JSON customer registry without changing existing MkLMS customer settlement endpoints.
+- future MKSaaS tenant storage may replace or feed the Worker's secret JSON customer registry without changing existing MkLMS customer settlement endpoints.
 
-Before integrating, read `MketyDigital/mklms/docs/deployment/external-managed-hosting-billing.md` and the corresponding design/implementation plan in that repository. Preserve compatibility with already-deployed MkLMS customers when moving customer registry/configuration into MKSaaS.
+Before integrating billing, read:
+
+1. `MketyDigital/mksaas/agents.md` for the larger product/control-plane blueprint.
+2. `MketyDigital/Mkety` for legacy/live payment and product behavior.
+3. `MketyDigital/mklms/docs/deployment/external-managed-hosting-billing.md` for the production managed-hosting billing contract.
+4. The corresponding MkLMS design/implementation plan before touching billing-related code.
