@@ -121,7 +121,5 @@ export async function getCurrentRoles(tenantSlug: string): Promise<Role[]> {
 export async function getCurrentUserPermissions(tenantSlug: string): Promise<string[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
-  const fromSession = session.user.permissions?.[tenantSlug];
-  if (fromSession) return fromSession;
   return [...(await getEffectivePermissionKeys(tenantSlug, session.user.id))];
 }
