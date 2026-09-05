@@ -2,6 +2,11 @@ import { render, screen } from '@testing-library/react';
 
 import { AiWorkspaceOverview, buildAiWorkspaceCapabilities } from './AiWorkspaceOverview';
 
+function expectCapabilityHeadingLink(name: string, href: string) {
+  const heading = screen.getByRole('heading', { name });
+  expect(heading.closest('a')).toHaveAttribute('href', href);
+}
+
 describe('AiWorkspaceOverview', () => {
   it('renders the AI workspace capability map', () => {
     render(<AiWorkspaceOverview agentCount={2} canManage projectSlug="demo" tenantSlug="acme" />);
@@ -19,10 +24,10 @@ describe('AiWorkspaceOverview', () => {
   it('links only currently available AI surfaces', () => {
     render(<AiWorkspaceOverview agentCount={1} canManage projectSlug="demo" tenantSlug="acme" />);
 
-    expect(screen.getByRole('link', { name: /^Agents$/i })).toHaveAttribute('href', '/t/acme/projects/demo/ai');
-    expect(screen.getByRole('link', { name: /^Knowledge$/i })).toHaveAttribute('href', '/t/acme/projects/demo/knowledge');
-    expect(screen.queryByRole('link', { name: /^Tools$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /^Publish$/i })).not.toBeInTheDocument();
+    expectCapabilityHeadingLink('Agents', '/t/acme/projects/demo/ai');
+    expectCapabilityHeadingLink('Knowledge', '/t/acme/projects/demo/knowledge');
+    expect(screen.getByRole('heading', { name: 'Tools' }).closest('a')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Publish' }).closest('a')).toBeNull();
   });
 
   it('keeps publish protected while still visible in the AI roadmap', () => {
