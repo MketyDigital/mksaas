@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { createAgent } from '@/features/projects/actions';
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { AiWorkspaceOverview } from '@/features/projects/workspaces/AiWorkspaceOverview';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { db } from '@/shared/db';
@@ -30,6 +31,8 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('ai')}
     >
+      <AiWorkspaceOverview agentCount={projectAgents.length} canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
+
       {access.canManage && (
         <section className="rounded-2xl border bg-card p-5">
           <h2 className="font-medium">Create AI agent</h2>
