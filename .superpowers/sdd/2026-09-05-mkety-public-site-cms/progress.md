@@ -31,6 +31,8 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Wired Public Website & Docs section pages to prefill and validate Mkety defaults for pages, navigation, pricing, docs, and settings.
 - Wired the App Experience control module to validate dashboard/workspace/control-center defaults through the same server action boundary.
 - Added `Mkety Control Center` to the admin sidebar so the platform-control area is reachable from normal admin navigation.
+- Added `src/features/platform-app-experience/control-center-registry.ts` as the central registry for module key, label, route, permission, safety level, domain ownership, editable scope, protected scope, status, and implementation notes.
+- Updated control-center queries and dynamic module pages to render from the central registry, reducing duplicated module definitions and making future build batches easier to continue.
 
 ## Boundary rulings
 
@@ -49,6 +51,8 @@ Ruling: Domain routing must follow the approved Mkety map: `mkety.com` for publi
 Ruling: Platform admin routes should use Mkety-specific guard functions layered on the existing PBAC `requirePermission` system — cost if wrong: replacing PBAC would duplicate authorization logic and make revocation/audit behavior harder to reason about.
 
 Ruling: Draft/publish server actions are currently validated/authorized boundaries with revalidation but no DB mutation until migrations are reconciled and type-checked — cost if wrong: premature DB writes could lock in incorrect migration shape or unsafe revision behavior.
+
+Ruling: Platform Control Center modules now have a single registry source. Future modules should update the registry instead of scattering labels, permissions, domain ownership, and protected/editable scope across pages — cost if wrong: duplicated admin-control rules would drift across the UI.
 
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
