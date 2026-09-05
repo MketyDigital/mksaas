@@ -1,7 +1,13 @@
 import { and, eq } from 'drizzle-orm';
+
 import { db } from '@/shared/db';
 import { projects, tenantMemberships, tenants, workflows } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
+import type { WorkflowDefinition } from '@/shared/db/schema/workflows';
+
+function isWorkflowDefinition(value: unknown): value is WorkflowDefinition {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Array.isArray((value as { nodes?: unknown }).nodes));
+}
 
 async function context(req: Request) {
   const session = await auth();
@@ -31,7 +37,7 @@ export async function POST(req: Request) {
   if ('error' in result) return result.error;
   const body = (await req.json()) as { name?: string; slug?: string; description?: string; triggerType?: string; definition?: unknown; status?: string; webhookSecret?: string };
   if (!body.name || !body.slug) return new Response('name and slug are required.', { status: 400 });
-  const definition = body.definition && typeof body.definition === 'object' ? body.definition : { nodes: [] };
+  const definition: WorkflowDefinition = isWorkflowDefinition(body.definition) ? body.definition : { nodes: [] };
   const [workflow] = await db.insert(workflows).values({ tenantId: result.tenant.id, projectId: result.project.id, name: body.name, slug: body.slug, description: body.description, triggerType: body.triggerType ?? 'manual', webhookSecret: body.webhookSecret, definition, status: body.status ?? 'draft' }).returning();
   return Response.json(workflow, { status: 201 });
 }
