@@ -40,6 +40,11 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Added `src/features/platform-app-experience/server/seed.ts` to seed app.mkety.com dashboard, workspace cards, and Platform Control Center modules into published app-experience database records.
 - Updated platform app-experience loaders to attempt DB reads for dashboard, workspace cards, and control-center modules while preserving safe fallbacks.
 - Updated app-experience schemas so DB-loaded control-center modules preserve domain, status, editable scope, protected scope, and implementation notes.
+- Replaced validation-only CMS action stubs with transactional database draft saves and publish promotion for supported entities: site settings, homepage sections, navigation, pricing, docs, and app experience.
+- Added revision writes for draft/publish mutations through `platform_content_revisions` and `platform_app_experience_revisions`.
+- Updated `PlatformContentDraftForm` with Save draft and Publish draft controls.
+- Added `docs/MKETY_PUBLIC_CMS_DRAFT_PUBLISH_FLOW.md` to document the draft/publish lifecycle, supported entities, permission boundary, revision boundary, and safety exclusions.
+- Updated action tests to cover the persistence request shapes used by the admin CMS forms.
 
 ## Boundary rulings
 
@@ -57,13 +62,13 @@ Ruling: Domain routing must follow the approved Mkety map: `mkety.com` for publi
 
 Ruling: Platform admin routes should use Mkety-specific guard functions layered on the existing PBAC `requirePermission` system — cost if wrong: replacing PBAC would duplicate authorization logic and make revocation/audit behavior harder to reason about.
 
-Ruling: Draft/publish server actions are currently validated/authorized boundaries with revalidation but no DB mutation until migrations are reconciled and type-checked — cost if wrong: premature DB writes could lock in incorrect migration shape or unsafe revision behavior.
-
 Ruling: Platform Control Center modules now have a single registry source. Future modules should update the registry instead of scattering labels, permissions, domain ownership, and protected/editable scope across pages — cost if wrong: duplicated admin-control rules would drift across the UI.
 
 Ruling: Public and app-experience loaders may attempt database reads only with safe fallbacks to code-owned Mkety defaults until migration verification is complete — cost if wrong: public pages could fail if content tables are not yet migrated or seeded.
 
 Ruling: Seed modules must be idempotent and must not overwrite existing admin-managed records — cost if wrong: admin edits could be lost during rollout.
+
+Ruling: Draft/publish actions now perform transactional DB writes for supported CMS entities and record revisions, but must still be verified with type-check/build before merge — cost if wrong: Drizzle type issues or migration mismatches may need correction before production.
 
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
@@ -84,5 +89,5 @@ pnpm build
 - Reconcile manual migration SQL with Drizzle-generated migration output.
 - Verify foreign key names and migration ordering against the repo's migration journal conventions.
 - Verify new route imports and UI component props with `pnpm type-check`.
-- Review DB-backed loaders and seed modules after migration generation to catch any Drizzle typing/import issues.
-- Replace validated draft/publish action stubs with transactional DB writes that create revision snapshots and audit events.
+- Review DB-backed loaders, seed modules, and draft/publish persistence after migration generation to catch any Drizzle typing/import issues.
+- Add first-class audit events for each publish action using the existing Mkety audit table.
