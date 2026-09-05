@@ -17,6 +17,9 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Updated docs metadata from generic template language to Mkety documentation language.
 - Added `docs/MKETY_AUTH_GATEWAY_ARCHITECTURE.md` to adapt the central Mkety Auth Gateway recommendation into the active mksaas architecture.
 - Added Auth Gateway as a Level 4 Security/Identity module in the Platform Control Center defaults.
+- Converted `/docs` landing page to a Mkety documentation hub backed by platform-content defaults.
+- Converted `/docs/[...slug]` article rendering to use Mkety platform docs content instead of old template docs content.
+- Added `Public Website & Docs` control module route and nested module placeholders for pages, navigation, pricing, docs, and settings.
 
 ## Boundary rulings
 
