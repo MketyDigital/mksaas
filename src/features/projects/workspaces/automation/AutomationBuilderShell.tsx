@@ -1,12 +1,9 @@
 import Link from 'next/link';
 
 import type { AutomationRunSummary } from './data';
+import type { WorkflowNodeSummary } from './workflow-nodes';
 
-export type AutomationBuilderNodeSummary = {
-  id: string;
-  type: string;
-  configKeys: string[];
-};
+export type AutomationBuilderNodeSummary = WorkflowNodeSummary;
 
 export type AutomationBuilderWorkflowSummary = {
   id: string;
@@ -52,6 +49,8 @@ export function AutomationBuilderShell({
   recentRuns: AutomationRunSummary[];
 }) {
   const readiness = buildAutomationBuilderReadiness(workflow);
+  const preparedNodeCount = workflow.nodes.filter((node) => node.isSupported).length;
+  const needsReviewNodeCount = workflow.nodes.length - preparedNodeCount;
 
   return (
     <section aria-labelledby="automation-builder-heading" className="space-y-5 rounded-2xl border bg-card p-5 md:p-6">
@@ -92,6 +91,8 @@ export function AutomationBuilderShell({
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           ['Definition inspection', readiness.definitionReady ? 'Ready' : 'Needs nodes'],
+          ['Prepared nodes', String(preparedNodeCount)],
+          ['Needs review', String(needsReviewNodeCount)],
           ['Execution runtime', readiness.executionEnabled ? 'Enabled' : 'Disabled'],
           ['Webhook activation', readiness.webhookActivationEnabled ? 'Enabled' : 'Protected'],
           ['Publish controls', readiness.publishEnabled ? 'Enabled' : 'Protected'],
@@ -110,8 +111,11 @@ export function AutomationBuilderShell({
             {workflow.nodes.map((node) => (
               <div key={node.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                 <div>
-                  <p className="font-medium">{node.type}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{node.type}</p>
+                    <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{node.readinessLabel}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {node.configKeys.length ? `${node.configKeys.length} config keys: ${node.configKeys.join(', ')}` : 'No config keys yet'}
                   </p>
                 </div>
