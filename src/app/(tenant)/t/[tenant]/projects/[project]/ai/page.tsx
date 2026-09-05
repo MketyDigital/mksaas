@@ -1,9 +1,10 @@
 import { and, desc, eq } from 'drizzle-orm';
-import Link from 'next/link';
 
 import { createAgent } from '@/features/projects/actions';
 import { requireProjectAccess } from '@/features/projects/server/access';
-import { AiWorkspaceOverview } from '@/features/projects/workspaces/AiWorkspaceOverview';
+import { AiAgentSummaryGrid } from '@/features/projects/workspaces/ai/AiAgentSummaryGrid';
+import { AiWorkspaceReadiness } from '@/features/projects/workspaces/ai/AiWorkspaceReadiness';
+import { AiWorkspaceStatusPanel } from '@/features/projects/workspaces/ai/AiWorkspaceStatusPanel';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { db } from '@/shared/db';
@@ -24,6 +25,8 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
     orderBy: [desc(agents.createdAt)],
   });
 
+  const knowledgeStatus = access.canManage ? 'Ready for project knowledge' : 'Project knowledge available';
+
   return (
     <WorkspaceShell
       projectName={access.project.name}
@@ -31,12 +34,15 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('ai')}
     >
-      <AiWorkspaceOverview agentCount={projectAgents.length} canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
+      <AiWorkspaceStatusPanel agentCount={projectAgents.length} canManage={access.canManage} knowledgeStatus={knowledgeStatus} />
+
+      <AiWorkspaceReadiness agentCount={projectAgents.length} canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
 
       {access.canManage && (
         <section className="rounded-2xl border bg-card p-5">
-          <h2 className="font-medium">Create AI agent</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Create the agent here, then open it in the full Agent Builder.</p>
+          <p className="text-sm font-medium text-muted-foreground">Agent creation</p>
+          <h2 className="mt-1 text-xl font-semibold">Create AI agent</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Create the agent here, then open it in the full Agent Builder.</p>
           <form action={createAgent} className="mt-4 grid gap-3">
             <input type="hidden" name="tenantSlug" value={access.tenant.slug} />
             <input type="hidden" name="projectSlug" value={access.project.slug} />
@@ -48,34 +54,7 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
         </section>
       )}
 
-      <section>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="font-medium">Agents</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Agents belong to this project and remain scoped to this tenant.</p>
-          </div>
-          <Link href={`/t/${access.tenant.slug}/projects/${access.project.slug}/knowledge`} className="rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted/70">
-            Manage knowledge
-          </Link>
-        </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {projectAgents.map((agent) => (
-            <Link key={agent.id} href={`/t/${access.tenant.slug}/projects/${access.project.slug}/agents/${agent.slug}`} className="rounded-xl border bg-card p-5 transition hover:bg-muted/40">
-              <div className="flex items-center justify-between gap-4">
-                <div className="font-medium">{agent.name}</div>
-                <span className="rounded-full border px-2 py-1 text-xs">{agent.status}</span>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {agent.provider}
-                {agent.model ? ` · ${agent.model}` : ''}
-              </p>
-              {agent.instructions && <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{agent.instructions}</p>}
-              {access.canManage && <p className="mt-4 text-xs font-medium">Open Agent Builder →</p>}
-            </Link>
-          ))}
-          {projectAgents.length === 0 && <div className="rounded-xl border border-dashed p-8 text-sm text-muted-foreground md:col-span-2">No agents yet.</div>}
-        </div>
-      </section>
+      <AiAgentSummaryGrid agents={projectAgents} canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
     </WorkspaceShell>
   );
 }
