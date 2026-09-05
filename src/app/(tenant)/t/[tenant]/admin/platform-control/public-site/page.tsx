@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 interface PublicSiteControlPageProps {
@@ -36,6 +37,7 @@ const sections = [
 
 export default async function PublicSiteControlPage({ params }: PublicSiteControlPageProps) {
   const { tenant } = await params;
+  await requirePlatformContentAccess(tenant);
 
   return (
     <div className="space-y-8">
