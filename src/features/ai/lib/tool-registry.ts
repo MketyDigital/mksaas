@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import type { Tool } from 'ai';
 import { z } from 'zod';
 
-type AgentTool = Tool<any, any>;
+type AgentTool = Tool<unknown, unknown>;
 
 export type AgentToolDefinition = {
   id: string;
