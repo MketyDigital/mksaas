@@ -1,7 +1,16 @@
-CREATE TYPE "saas_template"."platform_app_experience_status" AS ENUM ('draft', 'published', 'archived');
-CREATE TYPE "saas_template"."platform_app_experience_entity" AS ENUM ('dashboard_settings', 'workspace_card', 'control_center_module');
+DO $$ BEGIN
+  CREATE TYPE "saas_template"."platform_app_experience_status" AS ENUM ('draft', 'published', 'archived');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TABLE "saas_template"."platform_app_dashboard_settings" (
+DO $$ BEGIN
+  CREATE TYPE "saas_template"."platform_app_experience_entity" AS ENUM ('dashboard_settings', 'workspace_card', 'control_center_module');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "saas_template"."platform_app_dashboard_settings" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "environment" varchar(40) DEFAULT 'production' NOT NULL,
   "tenant_id" uuid,
@@ -22,7 +31,7 @@ CREATE TABLE "saas_template"."platform_app_dashboard_settings" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE "saas_template"."platform_workspace_cards" (
+CREATE TABLE IF NOT EXISTS "saas_template"."platform_workspace_cards" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid,
   "workspace_key" varchar(80) NOT NULL,
@@ -43,7 +52,7 @@ CREATE TABLE "saas_template"."platform_workspace_cards" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE "saas_template"."platform_app_control_center_modules" (
+CREATE TABLE IF NOT EXISTS "saas_template"."platform_app_control_center_modules" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "module_key" varchar(100) NOT NULL,
   "label" varchar(140) NOT NULL,
@@ -63,7 +72,7 @@ CREATE TABLE "saas_template"."platform_app_control_center_modules" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE "saas_template"."platform_app_experience_revisions" (
+CREATE TABLE IF NOT EXISTS "saas_template"."platform_app_experience_revisions" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "entity_type" "saas_template"."platform_app_experience_entity" NOT NULL,
   "entity_id" uuid NOT NULL,
@@ -73,24 +82,68 @@ CREATE TABLE "saas_template"."platform_app_experience_revisions" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-ALTER TABLE "saas_template"."platform_app_dashboard_settings" ADD CONSTRAINT "platform_app_dashboard_settings_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "saas_template"."tenants"("id") ON DELETE cascade;
-ALTER TABLE "saas_template"."platform_app_dashboard_settings" ADD CONSTRAINT "platform_app_dashboard_settings_created_by_user_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."user"("id") ON DELETE set null;
-ALTER TABLE "saas_template"."platform_app_dashboard_settings" ADD CONSTRAINT "platform_app_dashboard_settings_updated_by_user_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."user"("id") ON DELETE set null;
-ALTER TABLE "saas_template"."platform_workspace_cards" ADD CONSTRAINT "platform_workspace_cards_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "saas_template"."tenants"("id") ON DELETE cascade;
-ALTER TABLE "saas_template"."platform_workspace_cards" ADD CONSTRAINT "platform_workspace_cards_created_by_user_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."user"("id") ON DELETE set null;
-ALTER TABLE "saas_template"."platform_workspace_cards" ADD CONSTRAINT "platform_workspace_cards_updated_by_user_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."user"("id") ON DELETE set null;
-ALTER TABLE "saas_template"."platform_app_control_center_modules" ADD CONSTRAINT "platform_app_control_center_modules_created_by_user_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."user"("id") ON DELETE set null;
-ALTER TABLE "saas_template"."platform_app_control_center_modules" ADD CONSTRAINT "platform_app_control_center_modules_updated_by_user_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."user"("id") ON DELETE set null;
-ALTER TABLE "saas_template"."platform_app_experience_revisions" ADD CONSTRAINT "platform_app_experience_revisions_actor_id_user_id_fk" FOREIGN KEY ("actor_id") REFERENCES "saas_template"."user"("id") ON DELETE set null;
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_app_dashboard_settings" ADD CONSTRAINT "platform_app_dashboard_settings_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "saas_template"."tenants"("id") ON DELETE cascade;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
-CREATE UNIQUE INDEX "platform_app_dashboard_settings_scope_idx" ON "saas_template"."platform_app_dashboard_settings" USING btree ("environment", "tenant_id");
-CREATE INDEX "platform_app_dashboard_settings_status_idx" ON "saas_template"."platform_app_dashboard_settings" USING btree ("status");
-CREATE INDEX "platform_app_dashboard_settings_tenant_idx" ON "saas_template"."platform_app_dashboard_settings" USING btree ("tenant_id");
-CREATE UNIQUE INDEX "platform_workspace_cards_scope_key_idx" ON "saas_template"."platform_workspace_cards" USING btree ("tenant_id", "workspace_key");
-CREATE INDEX "platform_workspace_cards_tenant_sort_idx" ON "saas_template"."platform_workspace_cards" USING btree ("tenant_id", "sort_order");
-CREATE INDEX "platform_workspace_cards_status_idx" ON "saas_template"."platform_workspace_cards" USING btree ("status");
-CREATE UNIQUE INDEX "platform_app_control_center_modules_key_idx" ON "saas_template"."platform_app_control_center_modules" USING btree ("module_key");
-CREATE INDEX "platform_app_control_center_modules_level_sort_idx" ON "saas_template"."platform_app_control_center_modules" USING btree ("level", "sort_order");
-CREATE INDEX "platform_app_control_center_modules_status_idx" ON "saas_template"."platform_app_control_center_modules" USING btree ("status");
-CREATE INDEX "platform_app_experience_revisions_entity_idx" ON "saas_template"."platform_app_experience_revisions" USING btree ("entity_type", "entity_id");
-CREATE INDEX "platform_app_experience_revisions_actor_idx" ON "saas_template"."platform_app_experience_revisions" USING btree ("actor_id");
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_app_dashboard_settings" ADD CONSTRAINT "platform_app_dashboard_settings_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_app_dashboard_settings" ADD CONSTRAINT "platform_app_dashboard_settings_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_workspace_cards" ADD CONSTRAINT "platform_workspace_cards_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "saas_template"."tenants"("id") ON DELETE cascade;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_workspace_cards" ADD CONSTRAINT "platform_workspace_cards_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_workspace_cards" ADD CONSTRAINT "platform_workspace_cards_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_app_control_center_modules" ADD CONSTRAINT "platform_app_control_center_modules_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_app_control_center_modules" ADD CONSTRAINT "platform_app_control_center_modules_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_app_experience_revisions" ADD CONSTRAINT "platform_app_experience_revisions_actor_id_users_id_fk" FOREIGN KEY ("actor_id") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "platform_app_dashboard_settings_scope_idx" ON "saas_template"."platform_app_dashboard_settings" USING btree ("environment", "tenant_id");
+CREATE INDEX IF NOT EXISTS "platform_app_dashboard_settings_status_idx" ON "saas_template"."platform_app_dashboard_settings" USING btree ("status");
+CREATE INDEX IF NOT EXISTS "platform_app_dashboard_settings_tenant_idx" ON "saas_template"."platform_app_dashboard_settings" USING btree ("tenant_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "platform_workspace_cards_scope_key_idx" ON "saas_template"."platform_workspace_cards" USING btree ("tenant_id", "workspace_key");
+CREATE INDEX IF NOT EXISTS "platform_workspace_cards_tenant_sort_idx" ON "saas_template"."platform_workspace_cards" USING btree ("tenant_id", "sort_order");
+CREATE INDEX IF NOT EXISTS "platform_workspace_cards_status_idx" ON "saas_template"."platform_workspace_cards" USING btree ("status");
+CREATE UNIQUE INDEX IF NOT EXISTS "platform_app_control_center_modules_key_idx" ON "saas_template"."platform_app_control_center_modules" USING btree ("module_key");
+CREATE INDEX IF NOT EXISTS "platform_app_control_center_modules_level_sort_idx" ON "saas_template"."platform_app_control_center_modules" USING btree ("level", "sort_order");
+CREATE INDEX IF NOT EXISTS "platform_app_control_center_modules_status_idx" ON "saas_template"."platform_app_control_center_modules" USING btree ("status");
+CREATE INDEX IF NOT EXISTS "platform_app_experience_revisions_entity_idx" ON "saas_template"."platform_app_experience_revisions" USING btree ("entity_type", "entity_id");
+CREATE INDEX IF NOT EXISTS "platform_app_experience_revisions_actor_idx" ON "saas_template"."platform_app_experience_revisions" USING btree ("actor_id");
