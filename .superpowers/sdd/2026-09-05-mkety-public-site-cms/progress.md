@@ -11,4 +11,5 @@
 
 ## Progress
 
-Task 1: in progress — added platform content schema and schema shape tests for public site/docs/pricing/navigation/revisions.
+Task 1: partial — added `src/shared/db/schema/platform-content.ts` and `src/shared/db/schema/platform-content.test.ts` for public site/docs/pricing/navigation/revisions schema foundation.
+Task 1: verification pending — GitHub connector cannot run `pnpm test`, `pnpm type-check`, or `pnpm build` locally in this session; must run in CI/local before merge.
