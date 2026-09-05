@@ -15,10 +15,21 @@ function getExistingNodes(definition: unknown): WorkflowNode[] {
     return [];
   }
 
-  return maybeDefinition.nodes.filter((node): node is WorkflowNode => {
+  return maybeDefinition.nodes.flatMap((node) => {
     const maybeNode = node as Partial<WorkflowNode>;
+    const config = maybeNode.config && typeof maybeNode.config === 'object' && !Array.isArray(maybeNode.config) ? maybeNode.config : null;
 
-    return typeof maybeNode.id === 'string' && typeof maybeNode.type === 'string' && maybeNode.config !== null;
+    if (typeof maybeNode.id !== 'string' || typeof maybeNode.type !== 'string' || !isSupportedDraftNodeType(maybeNode.type) || !config) {
+      return [];
+    }
+
+    return [
+      {
+        config,
+        id: maybeNode.id,
+        type: maybeNode.type,
+      },
+    ];
   });
 }
 
