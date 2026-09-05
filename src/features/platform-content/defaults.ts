@@ -26,13 +26,13 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
 };
 
 export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
-  { label: 'Platform', href: '#platform', area: 'header', sortOrder: 10 },
-  { label: 'Workspaces', href: '#workspaces', area: 'header', sortOrder: 20 },
-  { label: 'SolutionHub', href: '#solutions', area: 'header', sortOrder: 30 },
-  { label: 'Academy', href: '#academy', area: 'header', sortOrder: 40 },
-  { label: 'Pricing', href: '#pricing', area: 'header', sortOrder: 50 },
-  { label: 'Enterprise', href: '#enterprise', area: 'header', sortOrder: 60 },
-  { label: 'Docs', href: '/docs', area: 'header', sortOrder: 70 },
+  { label: 'Platform', href: '#platform', area: 'header', enabled: true, external: false, sortOrder: 10 },
+  { label: 'Workspaces', href: '#workspaces', area: 'header', enabled: true, external: false, sortOrder: 20 },
+  { label: 'SolutionHub', href: '#solutions', area: 'header', enabled: true, external: false, sortOrder: 30 },
+  { label: 'Academy', href: '#academy', area: 'header', enabled: true, external: false, sortOrder: 40 },
+  { label: 'Pricing', href: '#pricing', area: 'header', enabled: true, external: false, sortOrder: 50 },
+  { label: 'Enterprise', href: '#enterprise', area: 'header', enabled: true, external: false, sortOrder: 60 },
+  { label: 'Docs', href: '/docs', area: 'header', enabled: true, external: false, sortOrder: 70 },
 ];
 
 export const defaultHeroSection: PlatformHeroSectionInput = {
@@ -90,6 +90,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     priceLabel: 'Start free',
     billingLabel: 'Usage-based limits apply',
     description: 'For individuals and early teams exploring projects, AI workspace basics, and SolutionHub discovery.',
+    highlighted: false,
     ctaLabel: 'Get Started',
     ctaHref: '/create-workspace',
     features: ['Project workspace', 'AI workspace entry', 'SolutionHub discovery', 'Usage and credits visibility'],
@@ -110,6 +111,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     name: 'Enterprise',
     priceLabel: 'Custom',
     description: 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
+    highlighted: false,
     ctaLabel: 'Talk to Mkety',
     ctaHref: 'mailto:hello@mkety.com',
     features: ['Custom implementation', 'Enterprise support', 'Trading infrastructure options', 'Security and operations review'],
