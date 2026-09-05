@@ -1,23 +1,42 @@
-CREATE TYPE IF NOT EXISTS "saas_template"."platform_content_status" AS ENUM ('draft', 'published', 'archived');
-CREATE TYPE IF NOT EXISTS "saas_template"."platform_navigation_area" AS ENUM ('header', 'footer');
-CREATE TYPE IF NOT EXISTS "saas_template"."platform_content_entity" AS ENUM (
-  'site_settings',
-  'page',
-  'page_section',
-  'navigation_item',
-  'pricing_plan',
-  'pricing_feature',
-  'docs_category',
-  'docs_article'
-);
-CREATE TYPE IF NOT EXISTS "saas_template"."platform_content_action" AS ENUM (
-  'create',
-  'update',
-  'publish',
-  'unpublish',
-  'archive',
-  'delete'
-);
+DO $$ BEGIN
+  CREATE TYPE "saas_template"."platform_content_status" AS ENUM ('draft', 'published', 'archived');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "saas_template"."platform_navigation_area" AS ENUM ('header', 'footer');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "saas_template"."platform_content_entity" AS ENUM (
+    'site_settings',
+    'page',
+    'page_section',
+    'navigation_item',
+    'pricing_plan',
+    'pricing_feature',
+    'docs_category',
+    'docs_article'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "saas_template"."platform_content_action" AS ENUM (
+    'create',
+    'update',
+    'publish',
+    'unpublish',
+    'archive',
+    'delete'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "saas_template"."platform_site_settings" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -178,6 +197,20 @@ CREATE INDEX IF NOT EXISTS "platform_docs_articles_sort_idx" ON "saas_template".
 CREATE INDEX IF NOT EXISTS "platform_content_revisions_entity_idx" ON "saas_template"."platform_content_revisions" ("entity_type", "entity_id");
 CREATE INDEX IF NOT EXISTS "platform_content_revisions_actor_idx" ON "saas_template"."platform_content_revisions" ("actor_id");
 
-ALTER TABLE "saas_template"."platform_page_sections" ADD CONSTRAINT IF NOT EXISTS "platform_page_sections_page_id_platform_pages_id_fk" FOREIGN KEY ("page_id") REFERENCES "saas_template"."platform_pages"("id") ON DELETE cascade;
-ALTER TABLE "saas_template"."platform_pricing_features" ADD CONSTRAINT IF NOT EXISTS "platform_pricing_features_plan_id_platform_pricing_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "saas_template"."platform_pricing_plans"("id") ON DELETE cascade;
-ALTER TABLE "saas_template"."platform_docs_articles" ADD CONSTRAINT IF NOT EXISTS "platform_docs_articles_category_id_platform_docs_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "saas_template"."platform_docs_categories"("id") ON DELETE cascade;
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_page_sections" ADD CONSTRAINT "platform_page_sections_page_id_platform_pages_id_fk" FOREIGN KEY ("page_id") REFERENCES "saas_template"."platform_pages"("id") ON DELETE cascade;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_pricing_features" ADD CONSTRAINT "platform_pricing_features_plan_id_platform_pricing_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "saas_template"."platform_pricing_plans"("id") ON DELETE cascade;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_docs_articles" ADD CONSTRAINT "platform_docs_articles_category_id_platform_docs_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "saas_template"."platform_docs_categories"("id") ON DELETE cascade;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
