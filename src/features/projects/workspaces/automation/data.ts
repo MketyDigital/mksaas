@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { workflowRuns, workflows } from '@/shared/db/schema';
 
-import { buildAutomationWorkspaceMetrics, type AutomationWorkspaceMetrics } from './automation-model';
+import { type AutomationWorkspaceMetrics, buildAutomationWorkspaceMetrics } from './automation-model';
 
 export type AutomationWorkflowSummary = {
   id: string;
