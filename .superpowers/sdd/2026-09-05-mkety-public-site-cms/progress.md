@@ -18,5 +18,5 @@ Task 1: partial — added creator/updater/actor relations for auditable platform
 Task 1: partial — added `migrations/0000_platform_content.sql` for the platform content tables and indexes, then corrected the manual migration to use PostgreSQL-safe idempotent enum/constraint blocks.
 Task 1: partial — considered nested navigation relation but simplified it back to direct parent id only until runtime code needs a relation; this avoids risky self-referential Drizzle typing without local type-check.
 Task 1: partial — added unique environment constraint and status index for singleton-like platform site settings.
-Task 1: partial — added a lightweight lifecycle test assertion for the published state.
+Task 1: partial — added lightweight schema tests for enum lifecycle and platform-level settings table intent.
 Task 1: low-token pause — schema foundation is staged on branch; verification pending because GitHub connector cannot run `pnpm test`, `pnpm type-check`, or `pnpm build` locally in this session.
