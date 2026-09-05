@@ -3,6 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { workflowRuns, workflows } from '@/shared/db/schema';
 
+import type { AutomationBuilderNodeSummary, AutomationBuilderWorkflowSummary } from './AutomationBuilderShell';
 import { type AutomationWorkspaceMetrics, buildAutomationWorkspaceMetrics } from './automation-model';
 
 export type AutomationWorkflowSummary = {
@@ -29,6 +30,43 @@ export type AutomationWorkspaceSnapshot = {
   recentWorkflows: AutomationWorkflowSummary[];
   recentRuns: AutomationRunSummary[];
 };
+
+export type AutomationBuilderSnapshot = {
+  workflow: AutomationBuilderWorkflowSummary;
+  recentRuns: AutomationRunSummary[];
+};
+
+type RawWorkflowNode = {
+  id?: unknown;
+  type?: unknown;
+  config?: unknown;
+};
+
+function toNodeSummaries(definition: unknown): AutomationBuilderNodeSummary[] {
+  const maybeDefinition = definition as { nodes?: RawWorkflowNode[] };
+  const nodes = Array.isArray(maybeDefinition.nodes) ? maybeDefinition.nodes : [];
+
+  return nodes.map((node, index) => {
+    const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config) ? node.config : {};
+
+    return {
+      configKeys: Object.keys(config),
+      id: typeof node.id === 'string' && node.id.length > 0 ? node.id : `node-${index + 1}`,
+      type: typeof node.type === 'string' && node.type.length > 0 ? node.type : 'unknown',
+    };
+  });
+}
+
+function toRunSummary(run: typeof workflowRuns.$inferSelect): AutomationRunSummary {
+  return {
+    completedAt: run.completedAt,
+    id: run.id,
+    startedAt: run.startedAt,
+    status: run.status,
+    triggerType: run.triggerType,
+    workflowId: run.workflowId,
+  };
+}
 
 export async function getAutomationWorkspaceSnapshot({
   projectId,
@@ -61,13 +99,47 @@ export async function getAutomationWorkspaceSnapshot({
       version: workflow.version,
       updatedAt: workflow.updatedAt,
     })),
-    recentRuns: projectRuns.map((run) => ({
-      id: run.id,
-      workflowId: run.workflowId,
-      status: run.status,
-      triggerType: run.triggerType,
-      startedAt: run.startedAt,
-      completedAt: run.completedAt,
-    })),
+    recentRuns: projectRuns.map(toRunSummary),
+  };
+}
+
+export async function getAutomationBuilderSnapshot({
+  projectId,
+  tenantId,
+  workflowSlug,
+}: {
+  tenantId: string;
+  projectId: string;
+  workflowSlug: string;
+}): Promise<AutomationBuilderSnapshot | null> {
+  const workflow = await db.query.workflows.findFirst({
+    where: and(eq(workflows.tenantId, tenantId), eq(workflows.projectId, projectId), eq(workflows.slug, workflowSlug)),
+  });
+
+  if (!workflow) {
+    return null;
+  }
+
+  const nodes = toNodeSummaries(workflow.definition);
+  const recentRuns = await db.query.workflowRuns.findMany({
+    where: and(eq(workflowRuns.tenantId, tenantId), eq(workflowRuns.projectId, projectId), eq(workflowRuns.workflowId, workflow.id)),
+    orderBy: [desc(workflowRuns.startedAt)],
+    limit: 6,
+  });
+
+  return {
+    recentRuns: recentRuns.map(toRunSummary),
+    workflow: {
+      description: workflow.description,
+      id: workflow.id,
+      name: workflow.name,
+      nodeCount: nodes.length,
+      nodes,
+      slug: workflow.slug,
+      status: workflow.status,
+      triggerType: workflow.triggerType,
+      updatedAt: workflow.updatedAt,
+      version: workflow.version,
+    },
   };
 }

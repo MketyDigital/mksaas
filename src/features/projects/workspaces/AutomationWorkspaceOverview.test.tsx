@@ -30,14 +30,15 @@ describe('AutomationWorkspaceOverview', () => {
     expect(webhooks?.href).toBeUndefined();
   });
 
-  it('does not expose active workflow execution links yet', () => {
+  it('does not expose active workflow execution actions yet', () => {
     render(<AutomationWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Run workflow/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Activate workflow/i })).not.toBeInTheDocument();
     expect(screen.getByText(/Automation execution remains intentionally inactive/i)).toBeInTheDocument();
   });
 
-  it('renders recent workflow records without live execution controls', () => {
+  it('links recent workflow records to the read-only builder shell', () => {
     render(
       <AutomationWorkspaceOverview
         projectSlug="demo"
@@ -45,8 +46,8 @@ describe('AutomationWorkspaceOverview', () => {
           ...emptyAutomationWorkspaceSnapshot,
           metrics: {
             ...emptyAutomationWorkspaceSnapshot.metrics,
-            workflowCount: 1,
             draftWorkflowCount: 1,
+            workflowCount: 1,
           },
           recentWorkflows: [
             {
@@ -55,8 +56,8 @@ describe('AutomationWorkspaceOverview', () => {
               slug: 'lead-follow-up',
               status: 'draft',
               triggerType: 'manual',
-              version: '1',
               updatedAt: new Date('2026-09-05T12:00:00Z'),
+              version: '1',
             },
           ],
         }}
@@ -66,6 +67,10 @@ describe('AutomationWorkspaceOverview', () => {
 
     expect(screen.getByText('Lead follow-up')).toBeInTheDocument();
     expect(screen.getByText(/manual trigger/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open builder shell' })).toHaveAttribute(
+      'href',
+      '/t/acme/projects/demo/automation/lead-follow-up',
+    );
     expect(screen.queryByRole('button', { name: /Run workflow/i })).not.toBeInTheDocument();
   });
 });

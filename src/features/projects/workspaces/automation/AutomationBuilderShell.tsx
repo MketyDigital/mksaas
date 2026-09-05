@@ -1,0 +1,155 @@
+import Link from 'next/link';
+
+import type { AutomationRunSummary } from './data';
+
+export type AutomationBuilderNodeSummary = {
+  id: string;
+  type: string;
+  configKeys: string[];
+};
+
+export type AutomationBuilderWorkflowSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: string;
+  triggerType: string;
+  version: string;
+  updatedAt: Date;
+  nodeCount: number;
+  nodes: AutomationBuilderNodeSummary[];
+};
+
+export type AutomationBuilderReadiness = {
+  definitionReady: boolean;
+  executionEnabled: boolean;
+  webhookActivationEnabled: boolean;
+  publishEnabled: boolean;
+  safetyNote: string;
+};
+
+export function buildAutomationBuilderReadiness(workflow: AutomationBuilderWorkflowSummary): AutomationBuilderReadiness {
+  return {
+    definitionReady: workflow.nodeCount > 0,
+    executionEnabled: false,
+    publishEnabled: false,
+    webhookActivationEnabled: false,
+    safetyNote:
+      'Builder inspection is enabled, but execution, webhook activation, publishing, retries, and action dispatch remain disabled until runtime safety is implemented.',
+  };
+}
+
+export function AutomationBuilderShell({
+  projectSlug,
+  recentRuns,
+  tenantSlug,
+  workflow,
+}: {
+  projectSlug: string;
+  tenantSlug: string;
+  workflow: AutomationBuilderWorkflowSummary;
+  recentRuns: AutomationRunSummary[];
+}) {
+  const readiness = buildAutomationBuilderReadiness(workflow);
+
+  return (
+    <section aria-labelledby="automation-builder-heading" className="space-y-5 rounded-2xl border bg-card p-5 md:p-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">Builder shell</p>
+          <h2 className="mt-1 text-xl font-semibold" id="automation-builder-heading">
+            {workflow.name}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {workflow.description || 'Inspect this workflow definition before editing, execution, webhook activation, and publishing are enabled.'}
+          </p>
+        </div>
+        <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">
+          Execution disabled
+        </span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-xl border bg-background p-4">
+          <p className="text-2xl font-semibold">{workflow.nodeCount}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{workflow.nodeCount === 1 ? 'node' : 'nodes'}</p>
+        </div>
+        <div className="rounded-xl border bg-background p-4">
+          <p className="text-2xl font-semibold">{workflow.version}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Version</p>
+        </div>
+        <div className="rounded-xl border bg-background p-4">
+          <p className="text-2xl font-semibold">{recentRuns.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Run records</p>
+        </div>
+        <div className="rounded-xl border bg-background p-4">
+          <p className="text-2xl font-semibold">{readiness.definitionReady ? 'Ready' : 'Empty'}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Definition</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          ['Definition inspection', readiness.definitionReady ? 'Ready' : 'Needs nodes'],
+          ['Execution runtime', readiness.executionEnabled ? 'Enabled' : 'Disabled'],
+          ['Webhook activation', readiness.webhookActivationEnabled ? 'Enabled' : 'Protected'],
+          ['Publish controls', readiness.publishEnabled ? 'Enabled' : 'Protected'],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border bg-background p-4">
+            <p className="text-sm font-medium">{label}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-dashed bg-background p-4">
+        <h3 className="text-sm font-medium">Definition nodes</h3>
+        {workflow.nodes.length ? (
+          <div className="mt-3 divide-y rounded-lg border text-sm">
+            {workflow.nodes.map((node) => (
+              <div key={node.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                <div>
+                  <p className="font-medium">{node.type}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {node.configKeys.length ? `${node.configKeys.length} config keys: ${node.configKeys.join(', ')}` : 'No config keys yet'}
+                  </p>
+                </div>
+                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">Read-only</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No nodes yet. The visual builder can be introduced after schema and runtime safety are expanded.</p>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-dashed bg-background p-4">
+        <h3 className="text-sm font-medium">Recent run records</h3>
+        {recentRuns.length ? (
+          <div className="mt-3 divide-y rounded-lg border text-sm">
+            {recentRuns.map((run) => (
+              <div key={run.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                <div>
+                  <p className="font-medium">{run.status}</p>
+                  <p className="text-xs text-muted-foreground">{run.triggerType} trigger · read-only record</p>
+                </div>
+                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">No retry</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No run records yet. This shell will display historical attempts without exposing run or retry buttons.</p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Link className="rounded-md border px-3 py-2 text-sm font-medium" href={`/t/${tenantSlug}/projects/${projectSlug}/automation`}>
+          Back to Automation Workspace
+        </Link>
+      </div>
+
+      <p className="text-xs leading-5 text-muted-foreground">{readiness.safetyNote}</p>
+    </section>
+  );
+}
