@@ -1,4 +1,4 @@
-import { asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import {
@@ -30,7 +30,11 @@ async function withFallback<T>(read: () => Promise<T | null | undefined>, fallba
 export async function getPublishedAppExperience() {
   return withFallback(async () => {
     const dashboard = await db.query.platformAppDashboardSettings.findFirst({
-      where: isNull(platformAppDashboardSettings.tenantId),
+      where: and(
+        eq(platformAppDashboardSettings.status, PUBLISHED),
+        eq(platformAppDashboardSettings.environment, 'production'),
+        isNull(platformAppDashboardSettings.tenantId),
+      ),
       orderBy: [asc(platformAppDashboardSettings.createdAt)],
     });
 
@@ -41,7 +45,7 @@ export async function getPublishedAppExperience() {
 
     return appExperienceDefaultsSchema.parse({
       dashboard: dashboard
-        ? {
+        ? appDashboardSettingsSchema.parse({
             headline: dashboard.headline,
             description: dashboard.description ?? defaultAppExperience.dashboard.description,
             primaryCta: {
@@ -53,7 +57,7 @@ export async function getPublishedAppExperience() {
                 ? { label: dashboard.secondaryCtaLabel, href: dashboard.secondaryCtaHref }
                 : undefined,
             support: dashboard.supportLabel && dashboard.supportHref ? { label: dashboard.supportLabel, href: dashboard.supportHref } : undefined,
-          }
+          })
         : defaultAppExperience.dashboard,
       workspaces: workspaces.length > 0 ? workspaces : defaultAppExperience.workspaces,
       controlCenterModules: controlCenterModules.length > 0 ? controlCenterModules : platformControlModules,
@@ -64,7 +68,7 @@ export async function getPublishedAppExperience() {
 export async function getPublishedWorkspaceCards() {
   return withFallback(async () => {
     const rows = await db.query.platformWorkspaceCards.findMany({
-      where: eq(platformWorkspaceCards.status, PUBLISHED),
+      where: and(eq(platformWorkspaceCards.status, PUBLISHED), isNull(platformWorkspaceCards.tenantId)),
       orderBy: [asc(platformWorkspaceCards.sortOrder)],
     });
 
