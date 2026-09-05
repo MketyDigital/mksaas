@@ -8,6 +8,14 @@ function isSupportedDraftNodeType(value: string): value is DraftWorkflowNodeType
   return SUPPORTED_DRAFT_NODE_TYPES.includes(value as DraftWorkflowNodeType);
 }
 
+function toNodeConfig(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
 function getExistingNodes(definition: unknown): WorkflowNode[] {
   const maybeDefinition = definition as { nodes?: unknown };
 
@@ -15,22 +23,22 @@ function getExistingNodes(definition: unknown): WorkflowNode[] {
     return [];
   }
 
-  return maybeDefinition.nodes.flatMap((node) => {
+  const nodes: WorkflowNode[] = [];
+
+  for (const node of maybeDefinition.nodes) {
     const maybeNode = node as Partial<WorkflowNode>;
-    const config = maybeNode.config && typeof maybeNode.config === 'object' && !Array.isArray(maybeNode.config) ? maybeNode.config : null;
+    const config = toNodeConfig(maybeNode.config);
 
-    if (typeof maybeNode.id !== 'string' || typeof maybeNode.type !== 'string' || !isSupportedDraftNodeType(maybeNode.type) || !config) {
-      return [];
-    }
-
-    return [
-      {
+    if (typeof maybeNode.id === 'string' && typeof maybeNode.type === 'string' && isSupportedDraftNodeType(maybeNode.type) && config) {
+      nodes.push({
         config,
         id: maybeNode.id,
         type: maybeNode.type,
-      },
-    ];
-  });
+      });
+    }
+  }
+
+  return nodes;
 }
 
 function buildDraftNodeId({ nodeType, position }: { nodeType: DraftWorkflowNodeType; position: number }) {
