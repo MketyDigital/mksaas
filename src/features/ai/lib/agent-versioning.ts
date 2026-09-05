@@ -1,6 +1,7 @@
 import { and, eq, max } from 'drizzle-orm';
+
 import { db } from '@/shared/db';
-import { agentKnowledge, agentVersions, agents } from '@/shared/db/schema';
+import { agentKnowledge, agents, agentVersions } from '@/shared/db/schema';
 
 export async function snapshotAgentVersion({ tenantId, projectId, agent }: { tenantId: string; projectId: string; agent: { id: string; name: string; instructions: string | null; provider: string; model: string | null; config: string | null } }) {
   const assigned = await db.select({ documentId: agentKnowledge.documentId }).from(agentKnowledge).where(and(eq(agentKnowledge.tenantId, tenantId), eq(agentKnowledge.projectId, projectId), eq(agentKnowledge.agentId, agent.id)));
