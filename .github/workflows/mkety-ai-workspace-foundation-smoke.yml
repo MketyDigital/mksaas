@@ -37,7 +37,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run AI workspace tests
-        run: pnpm test -- src/features/projects/workspaces/ai/AiWorkspaceStatusPanel.test.tsx src/features/projects/workspaces/ai/AiWorkspaceReadiness.test.tsx src/features/projects/workspaces/ai/AiAgentSummaryGrid.test.tsx
+        run: pnpm test -- src/features/projects/workspaces/ai/AiWorkspaceStatusPanel.test.tsx src/features/projects/workspaces/ai/AiWorkspaceReadiness.test.tsx src/features/projects/workspaces/ai/AiAgentSummaryGrid.test.tsx src/features/projects/workspaces/ai/AgentBuilderStatusPanel.test.tsx
 
       - name: Type-check
         run: pnpm type-check
