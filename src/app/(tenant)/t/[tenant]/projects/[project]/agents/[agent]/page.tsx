@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { AgentPlayground } from '@/features/projects/AgentPlayground';
 import { createAgentVersion, publishAgentVersionAction, updateAgent } from '@/features/projects/agent-actions';
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { AgentBuilderStatusPanel } from '@/features/projects/workspaces/ai/AgentBuilderStatusPanel';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { db } from '@/shared/db';
@@ -48,7 +49,7 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-sm font-medium text-muted-foreground">Agent Builder</p>
-            <h2 className="mt-1 text-2xl font-semibold">{agent.name}</h2>
+            <h2 className="mt-1 text-2xl font-semibold">Configure {agent.name}</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               Configure the agent, test it in this project, create immutable versions, and publish only after explicit approval.
             </p>
@@ -66,6 +67,19 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
           </div>
         </div>
       </section>
+
+      <AgentBuilderStatusPanel
+        agent={{
+          name: agent.name,
+          status: agent.status,
+          provider: agent.provider,
+          model: agent.model,
+          hasInstructions: Boolean(agent.instructions?.trim()),
+          hasConfig: Boolean(agent.config?.trim()),
+        }}
+        publishedVersionNumber={publishedVersion?.version ?? null}
+        versionCount={versions.length}
+      />
 
       <AgentPlayground agentId={agent.id} tenantSlug={access.tenant.slug} projectSlug={access.project.slug} />
 
