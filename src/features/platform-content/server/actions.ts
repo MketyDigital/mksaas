@@ -17,49 +17,26 @@ import {
   pricingPlanSchema,
   siteSettingsSchema,
 } from '../schemas';
+import {
+  platformContentDraftActionSchema,
+  platformPublishActionSchema,
+  type PlatformContentArea,
+  type PlatformContentDraftActionInput,
+  type PlatformContentEntityType,
+  type PlatformPublishActionInput,
+} from './action-schemas';
 import { recordPlatformContentAuditEvent } from './audit';
 import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
 
-export const platformContentAreaSchema = z.enum(['public-site', 'docs', 'pricing', 'navigation', 'settings', 'app-experience']);
-export const platformContentEntitySchema = z.enum([
-  'site_settings',
-  'page',
-  'page_section',
-  'navigation_item',
-  'pricing_plan',
-  'pricing_feature',
-  'docs_category',
-  'docs_article',
-  'app_experience',
-]);
-
-export const platformContentDraftActionSchema = z.object({
-  area: platformContentAreaSchema,
-  entityType: platformContentEntitySchema,
-  entityKey: z.string().min(1).max(180),
-  payload: z.record(z.string(), z.unknown()),
-});
-
-export const platformPublishActionSchema = z.object({
-  area: platformContentAreaSchema,
-  entityType: platformContentEntitySchema,
-  entityKey: z.string().min(1).max(180),
-});
-
-export type PlatformContentDraftActionInput = z.infer<typeof platformContentDraftActionSchema>;
-export type PlatformPublishActionInput = z.infer<typeof platformPublishActionSchema>;
-
-type Area = z.infer<typeof platformContentAreaSchema>;
-type EntityType = z.infer<typeof platformContentEntitySchema>;
-type ContentEntityType = Exclude<EntityType, 'app_experience'>;
+type ContentEntityType = Exclude<PlatformContentEntityType, 'app_experience'>;
 type MutationDb = Pick<typeof db, 'insert'>;
 
 type ActionResult = {
   ok: true;
   status: 'draft_saved' | 'published';
   actorEmail: string;
-  area: Area;
-  entityType: EntityType;
+  area: PlatformContentArea;
+  entityType: PlatformContentEntityType;
   entityKey: string;
   mutatedRecords: number;
   auditRecorded: boolean;
@@ -69,7 +46,7 @@ const navigationPayloadSchema = z.object({ items: z.array(navigationItemSchema).
 const pricingPayloadSchema = z.object({ plans: z.array(pricingPlanSchema).min(1) });
 const docsPayloadSchema = z.object({ categories: z.array(docsCategorySchema).min(1), articles: z.array(docsArticleSchema).min(1) });
 
-async function requireAreaAccess(tenantSlug: string, area: Area) {
+async function requireAreaAccess(tenantSlug: string, area: PlatformContentArea) {
   return area === 'app-experience' ? requirePlatformAppExperienceAccess(tenantSlug) : requirePlatformContentAccess(tenantSlug);
 }
 
@@ -169,7 +146,7 @@ async function saveSiteSettingsDraft(payload: unknown, actorId: string) {
 async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId: string) {
   const sectionKey = normalizeHomeSectionKey(entityKey);
   const sectionType = legacyHomeSectionKey(sectionKey);
-  const sectionPayload = sectionKey === 'home.hero' ? heroSectionSchema.parse(payload) : z.unknown().parse(payload);
+  const sectionPayload = sectionKey === 'home.hero' ? heroSectionSchema.parse(payload) : payload;
 
   return db.transaction(async (tx) => {
     const existingPage = await tx.query.platformPages.findFirst({ where: eq(schema.platformPages.slug, 'home') });
