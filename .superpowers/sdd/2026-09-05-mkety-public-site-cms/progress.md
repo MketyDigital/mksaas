@@ -55,6 +55,11 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Fixed public homepage loader section-key compatibility so seeded keys (`hero`, `workspaces`, `faq`, `footer`) and admin-saved keys (`home.hero`, `home.workspaces`, `home.faq`, `home.footer`) can both render.
 - Tightened app-experience published reads so global dashboard/workspace content is restricted to published rows with `tenantId` null.
 - Removed the stale public CMS spec restore-required marker now that the full spec is restored at branch tip.
+- Loosened `platform_page_sections.content_json` and revision snapshot JSON types to support validated section payloads that are objects or arrays.
+- Hardened CMS actions by serializing revision snapshots into JSON-safe values before inserting into revision tables.
+- Normalized homepage section keys in draft and publish actions so `hero` and `home.hero` resolve to the same persisted section.
+- Tightened publish operations so site settings, homepage sections, and app-experience global content publish only matching draft rows instead of overly broad records.
+- Made the CMS audit insert null-safe by omitting nullable `entityId` instead of explicitly assigning a null UUID field.
 
 ## Boundary rulings
 
@@ -89,6 +94,10 @@ Ruling: The full original public CMS spec must remain at branch tip, with app-ex
 Ruling: Public homepage rendering must accept both seeded section keys and admin form section keys until the final editor model standardizes section IDs — cost if wrong: admins could save/publish a hero section that does not render.
 
 Ruling: App-experience loaders must read only published global records unless explicitly building tenant-specific app customization — cost if wrong: draft or tenant-specific workspace cards could leak into the global `app.mkety.com` experience.
+
+Ruling: Platform content JSON columns and revision snapshots must allow validated JSON arrays as well as objects because homepage sections like FAQ/footer can be stored as ordered arrays — cost if wrong: seeds and draft saves can fail type-checking or runtime insertion.
+
+Ruling: Revision snapshots should be JSON-serialized before insert so database row objects and Date values do not leak into JSONB writes as unverified runtime objects — cost if wrong: revision writes may fail or store inconsistent values.
 
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
