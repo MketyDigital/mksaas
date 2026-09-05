@@ -5,6 +5,7 @@
  * Run after migrations and seeds:
  *
  *   pnpm db:migrate
+ *   pnpm db:migrate:mkety-content
  *   pnpm db:seed:mkety-content
  *   pnpm db:smoke:mkety-content
  */
@@ -37,7 +38,7 @@ async function main() {
 
   const homepage = await getPublishedHomepageContent();
   assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
-  assertSmoke(homepage.workspaces.items.some((item) => item.title === 'Trading'), 'homepage workspaces should keep Trading visible');
+  assertSmoke(homepage.workspaces.items.some((item) => item.key === 'trading'), 'homepage workspaces should keep Trading visible');
 
   const pricing = await getPublishedPricingPlans();
   assertSmoke(pricing.some((plan) => plan.key === 'enterprise'), 'pricing should include Enterprise plan');
