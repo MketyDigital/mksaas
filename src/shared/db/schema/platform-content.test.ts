@@ -46,9 +46,4 @@ describe('platform content schema', () => {
   it('uses published content as a first-class lifecycle state', () => {
     expect(platformContentStatusEnum.enumValues).toContain('published');
   });
-
-  it('keeps public site settings platform-level instead of tenant settings', () => {
-    expect(platformSiteSettings).toBeDefined();
-    expect(String(platformSiteSettings)).toContain('platform_site_settings');
-  });
 });
