@@ -15,6 +15,8 @@ jest.mock('next-auth/react', () => ({
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+const renderConfiguredLoginForm = () => renderWithProviders(<LoginForm enableAuth0Login enableDevelopmentLogin />);
+
 // Mock window.location
 const mockLocation = {
   href: '',
@@ -35,29 +37,37 @@ describe('LoginForm', () => {
   });
 
   it('renders sign in title and description', () => {
-    renderWithProviders(<LoginForm />);
+    renderConfiguredLoginForm();
 
     expect(screen.getByText('Sign in')).toBeInTheDocument();
     expect(screen.getByText('Choose your preferred sign in method')).toBeInTheDocument();
   });
 
-  it('renders Auth0 login button', () => {
+  it('renders no-provider fallback when no provider is configured', () => {
     renderWithProviders(<LoginForm />);
+
+    expect(screen.getByText(/no authentication provider is configured/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continue with auth0/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /development login/i })).not.toBeInTheDocument();
+  });
+
+  it('renders Auth0 login button', () => {
+    renderConfiguredLoginForm();
 
     expect(screen.getByRole('button', { name: /continue with auth0/i })).toBeInTheDocument();
   });
 
   it('renders development login form with email input', () => {
-    renderWithProviders(<LoginForm />);
+    renderConfiguredLoginForm();
 
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /development login/i })).toBeInTheDocument();
   });
 
   it('shows development login disclaimer', () => {
-    renderWithProviders(<LoginForm />);
+    renderConfiguredLoginForm();
 
-    expect(screen.getByText(/development login is only available in development mode/i)).toBeInTheDocument();
+    expect(screen.getByText(/temporary test login is enabled for this deployment/i)).toBeInTheDocument();
   });
 
   describe('Auth0 Login', () => {
@@ -65,7 +75,7 @@ describe('LoginForm', () => {
       const user = userEvent.setup();
       (signIn as jest.Mock).mockResolvedValue({ ok: true });
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const auth0Button = screen.getByRole('button', { name: /continue with auth0/i });
       await user.click(auth0Button);
@@ -78,7 +88,7 @@ describe('LoginForm', () => {
       // Create a promise that never resolves to keep loading state
       (signIn as jest.Mock).mockImplementation(() => new Promise(() => {}));
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const auth0Button = screen.getByRole('button', { name: /continue with auth0/i });
       await user.click(auth0Button);
@@ -93,7 +103,7 @@ describe('LoginForm', () => {
       const user = userEvent.setup();
       (signIn as jest.Mock).mockRejectedValue(new Error('Auth0 error'));
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const auth0Button = screen.getByRole('button', { name: /continue with auth0/i });
       await user.click(auth0Button);
@@ -107,7 +117,7 @@ describe('LoginForm', () => {
   describe('Development Login', () => {
     it('allows email input', async () => {
       const user = userEvent.setup();
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'test@example.com');
@@ -119,7 +129,7 @@ describe('LoginForm', () => {
       const user = userEvent.setup();
       (signIn as jest.Mock).mockResolvedValue({ ok: true, url: '/select-tenant' });
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'dev@example.com');
@@ -138,7 +148,7 @@ describe('LoginForm', () => {
       const user = userEvent.setup();
       (signIn as jest.Mock).mockResolvedValue({ ok: true, url: '/select-tenant' });
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'dev@example.com');
@@ -155,7 +165,7 @@ describe('LoginForm', () => {
       const user = userEvent.setup();
       (signIn as jest.Mock).mockResolvedValue({ error: 'Invalid email' });
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'invalid@example.com');
@@ -177,7 +187,7 @@ describe('LoginForm', () => {
           }),
       );
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'dev@example.com');
@@ -192,14 +202,14 @@ describe('LoginForm', () => {
     });
 
     it('requires email to submit form', async () => {
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       expect(emailInput).toBeRequired();
     });
 
     it('validates email format', async () => {
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       expect(emailInput).toHaveAttribute('type', 'email');
@@ -211,7 +221,7 @@ describe('LoginForm', () => {
       const user = userEvent.setup();
       (signIn as jest.Mock).mockRejectedValue(new Error('Network error'));
 
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'dev@example.com');
@@ -229,7 +239,7 @@ describe('LoginForm', () => {
 
       // First attempt - fails
       (signIn as jest.Mock).mockResolvedValueOnce({ error: 'First error' });
-      renderWithProviders(<LoginForm />);
+      renderConfiguredLoginForm();
 
       const emailInput = screen.getByLabelText(/email/i);
       await user.type(emailInput, 'dev@example.com');
