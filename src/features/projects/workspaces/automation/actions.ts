@@ -1,0 +1,42 @@
+'use server';
+
+import { and, eq } from 'drizzle-orm';
+import { redirect } from 'next/navigation';
+
+import { requireProjectAccess } from '@/features/projects/server/access';
+import { db } from '@/shared/db';
+import { workflows } from '@/shared/db/schema';
+
+import { buildWorkflowDraftInput } from './workflow-drafts';
+
+export async function createAutomationWorkflowDraft(formData: FormData) {
+  const tenantSlug = String(formData.get('tenantSlug') || '');
+  const projectSlug = String(formData.get('projectSlug') || '');
+  const access = await requireProjectAccess({ projectSlug, tenantSlug });
+
+  if (access.status !== 'ok') {
+    throw new Error(access.reason);
+  }
+
+  if (!access.canManage) {
+    throw new Error('You do not have permission to create automation workflows.');
+  }
+
+  const draft = buildWorkflowDraftInput({
+    description: String(formData.get('description') || ''),
+    name: String(formData.get('name') || ''),
+    projectId: access.project.id,
+    tenantId: access.tenant.id,
+  });
+
+  const existing = await db.query.workflows.findFirst({
+    where: and(eq(workflows.projectId, access.project.id), eq(workflows.slug, draft.slug)),
+  });
+
+  if (existing) {
+    throw new Error('That workflow slug is already in use in this project.');
+  }
+
+  await db.insert(workflows).values(draft);
+  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${draft.slug}`);
+}
