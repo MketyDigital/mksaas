@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react';
 
-import { AutomationBuilderShell, buildAutomationBuilderReadiness } from './AutomationBuilderShell';
+import {
+  AutomationBuilderShell,
+  type AutomationBuilderWorkflowSummary,
+  buildAutomationBuilderReadiness,
+} from './AutomationBuilderShell';
 
-const workflow = {
+const workflow: AutomationBuilderWorkflowSummary = {
   id: 'workflow-1',
   name: 'Lead follow-up',
   slug: 'lead-follow-up',
