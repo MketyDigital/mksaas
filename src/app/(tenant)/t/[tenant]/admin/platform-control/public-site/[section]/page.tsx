@@ -1,6 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
+import {
+  defaultDocsArticles,
+  defaultDocsCategories,
+  defaultHeroSection,
+  defaultPlatformNavigation,
+  defaultPlatformSiteSettings,
+  defaultPricingPlans,
+} from '@/features/platform-content/defaults';
 import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
@@ -8,31 +17,61 @@ interface PublicSiteSectionPageProps {
   params: Promise<{ tenant: string; section: string }>;
 }
 
-const modules: Record<string, { title: string; description: string; items: string[] }> = {
+type PublicSiteModule = {
+  title: string;
+  description: string;
+  items: string[];
+  area: 'public-site' | 'docs' | 'pricing' | 'navigation' | 'settings';
+  entityType: 'site_settings' | 'page_section' | 'navigation_item' | 'pricing_plan' | 'docs_article';
+  entityKey: string;
+  defaultPayload: Record<string, unknown>;
+};
+
+const modules: Record<string, PublicSiteModule> = {
   pages: {
     title: 'Pages & Sections',
     description: 'Manage Mkety public pages, page sections, ordering, CTAs, FAQ content, and metadata.',
     items: ['Homepage hero', 'Platform overview', 'Workspace cards', 'SolutionHub', 'Academy', 'Enterprise', 'FAQ'],
+    area: 'public-site',
+    entityType: 'page_section',
+    entityKey: 'home.hero',
+    defaultPayload: defaultHeroSection,
   },
   navigation: {
     title: 'Navigation',
     description: 'Manage the public header, footer, CTA links, labels, visibility, and sort order.',
     items: ['Header links', 'Footer groups', 'Get Started CTA', 'Docs links', 'External links'],
+    area: 'navigation',
+    entityType: 'navigation_item',
+    entityKey: 'header',
+    defaultPayload: { items: defaultPlatformNavigation },
   },
   pricing: {
     title: 'Pricing Display',
     description: 'Manage the public commercial presentation while keeping real entitlements code-controlled.',
     items: ['Plan cards', 'Feature bullets', 'Usage labels', 'Credits wording', 'Lite Offer', 'Enterprise CTA'],
+    area: 'pricing',
+    entityType: 'pricing_plan',
+    entityKey: 'pricing-plans',
+    defaultPayload: { plans: defaultPricingPlans },
   },
   docs: {
     title: 'Docs Content',
     description: 'Manage public Mkety documentation categories, articles, markdown content, slugs, and publishing state.',
     items: ['Getting Started', 'Platform', 'Workspaces', 'Billing', 'Deployments', 'Security', 'Administration'],
+    area: 'docs',
+    entityType: 'docs_article',
+    entityKey: 'docs-defaults',
+    defaultPayload: { categories: defaultDocsCategories, articles: defaultDocsArticles },
   },
   settings: {
     title: 'Brand & SEO Settings',
     description: 'Manage public brand settings and metadata without changing application source code.',
     items: ['Brand name', 'Logo URL', 'Favicon URL', 'SEO title', 'SEO description', 'Social image', 'Legal links'],
+    area: 'settings',
+    entityType: 'site_settings',
+    entityKey: 'production',
+    defaultPayload: defaultPlatformSiteSettings,
   },
 };
 
@@ -54,24 +93,35 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{module.description}</p>
       </div>
 
-      <Card className="rounded-2xl border-border/70 shadow-sm">
-        <CardHeader>
-          <CardTitle>Build scope</CardTitle>
-          <CardDescription>
-            This module is part of the Mkety public CMS. Validated edit forms will call server actions that enforce
-            platform content permissions, draft/publish state, revision records, route revalidation, and audit-safe changes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-2">
-            {module.items.map((item) => (
-              <div key={item} className="rounded-xl border bg-muted/20 px-4 py-3 text-sm font-medium text-foreground">
-                {item}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <PlatformContentDraftForm
+          tenant={tenant}
+          area={module.area}
+          entityType={module.entityType}
+          entityKey={module.entityKey}
+          title={`${module.title} draft`}
+          description="Validate a Mkety CMS payload through the server-side action boundary before persistence is enabled."
+          defaultPayload={module.defaultPayload}
+        />
+
+        <Card className="rounded-2xl border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Build scope</CardTitle>
+            <CardDescription>
+              This module is part of the Mkety public CMS. Validated edit forms call server actions that enforce platform content permissions, draft/publish state, revision records, route revalidation, and audit-safe changes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3">
+              {module.items.map((item) => (
+                <div key={item} className="rounded-xl border bg-muted/20 px-4 py-3 text-sm font-medium text-foreground">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
