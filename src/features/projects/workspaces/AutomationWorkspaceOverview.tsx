@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import type { AutomationWorkspaceSnapshot } from './automation/data';
 
 type AutomationCapabilityStatus = 'available' | 'planned' | 'protected';
@@ -154,7 +156,15 @@ export function AutomationWorkspaceOverview({
                     {workflow.triggerType} trigger · version {workflow.version}
                   </p>
                 </div>
-                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{workflow.status}</span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{workflow.status}</span>
+                  <Link
+                    className="rounded-md border px-2 py-1 text-xs font-medium"
+                    href={`/t/${tenantSlug}/projects/${projectSlug}/automation/${workflow.slug}`}
+                  >
+                    Open builder shell
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
