@@ -1,5 +1,5 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
-import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
+import { SolutionHubWorkspaceOverview } from '@/features/projects/workspaces/SolutionHubWorkspaceOverview';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 
@@ -20,11 +20,7 @@ export default async function SolutionHubWorkspacePage({ params }: { params: Pro
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('solutions')}
     >
-      <WorkspaceEmptyState
-        actions={[{ href: `/t/${access.tenant.slug}/projects/${access.project.slug}/automation`, label: 'Preview Automation Workspace' }]}
-        description="SolutionHub will expose ready-made solutions, templates, blueprints, and enterprise implementation paths without making every solution a self-service product too early."
-        title="SolutionHub catalog is planned"
-      />
+      <SolutionHubWorkspaceOverview />
     </WorkspaceShell>
   );
 }
