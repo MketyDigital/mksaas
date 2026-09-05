@@ -105,6 +105,17 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       sortOrder: 50,
     },
     {
+      key: 'domains-routing',
+      label: 'Domains & Routing',
+      description:
+        'Manage the approved Mkety domain map: mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, customer apps under *.mkety.app, and custom hostname verification.',
+      href: '/admin/platform-control/domains-routing',
+      iconKey: 'route',
+      level: 3,
+      requiredPermission: 'platform:deployments',
+      sortOrder: 55,
+    },
+    {
       key: 'auth-gateway',
       label: 'Auth Gateway',
       description:
