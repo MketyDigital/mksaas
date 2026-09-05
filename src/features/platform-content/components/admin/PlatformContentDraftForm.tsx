@@ -24,6 +24,14 @@ type PlatformContentDraftFormProps = {
   defaultPayload: Record<string, unknown>;
 };
 
+type AdminAction = 'save' | 'publish';
+
+function formatActionStatus(action: AdminAction, result: { mutatedRecords: number; auditRecorded: boolean; entityType: string; entityKey: string }) {
+  const verb = action === 'save' ? 'Saved draft' : 'Published draft';
+  const audit = result.auditRecorded ? 'Audit recorded' : 'Audit not recorded';
+  return `${verb}: ${result.entityType}/${result.entityKey}. Records affected: ${result.mutatedRecords}. ${audit}.`;
+}
+
 export function PlatformContentDraftForm({
   tenant,
   area,
@@ -35,7 +43,27 @@ export function PlatformContentDraftForm({
 }: PlatformContentDraftFormProps) {
   const [payloadText, setPayloadText] = useState(() => JSON.stringify(defaultPayload, null, 2));
   const [status, setStatus] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<AdminAction | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  function runAction(action: AdminAction) {
+    setActiveAction(action);
+    startTransition(async () => {
+      try {
+        const payload = JSON.parse(payloadText) as Record<string, unknown>;
+        const result =
+          action === 'save'
+            ? await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload })
+            : await publishPlatformContent(tenant, { area, entityType, entityKey });
+
+        setStatus(formatActionStatus(action, result));
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Unable to process Mkety CMS payload.');
+      } finally {
+        setActiveAction(null);
+      }
+    });
+  }
 
   return (
     <Card className="rounded-2xl border-primary/20 shadow-sm">
@@ -45,7 +73,7 @@ export function PlatformContentDraftForm({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor={`${entityKey}-payload`}>Mkety CMS JSON payload</Label>
+          <Label htmlFor={`${entityKey}-payload`}>CMS JSON draft payload</Label>
           <Textarea
             id={`${entityKey}-payload`}
             value={payloadText}
@@ -54,47 +82,19 @@ export function PlatformContentDraftForm({
             spellCheck={false}
           />
           <p className="text-xs text-muted-foreground">
-            Save writes a draft database record where this entity is supported. Publish promotes the saved draft to the public/app experience and revalidates affected routes.
+            Save creates or updates draft records. Publish promotes supported draft records to published content, records revisions,
+            attempts an audit event, and revalidates Mkety public/docs/admin paths.
           </p>
         </div>
 
         {status && <p className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">{status}</p>}
 
         <div className="flex flex-wrap gap-3">
-          <Button
-            type="button"
-            disabled={isPending}
-            onClick={() => {
-              startTransition(async () => {
-                try {
-                  const payload = JSON.parse(payloadText) as Record<string, unknown>;
-                  const result = await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload });
-                  setStatus(`Draft saved: ${result.entityType}/${result.entityKey} (${result.mutatedRecords} record${result.mutatedRecords === 1 ? '' : 's'})`);
-                } catch (error) {
-                  setStatus(error instanceof Error ? error.message : 'Unable to save draft payload.');
-                }
-              });
-            }}
-          >
-            {isPending ? 'Saving…' : 'Save draft'}
+          <Button type="button" disabled={isPending} onClick={() => runAction('save')}>
+            {isPending && activeAction === 'save' ? 'Saving…' : 'Save draft'}
           </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => {
-              startTransition(async () => {
-                try {
-                  const result = await publishPlatformContent(tenant, { area, entityType, entityKey });
-                  setStatus(`Published: ${result.entityType}/${result.entityKey} (${result.mutatedRecords} record${result.mutatedRecords === 1 ? '' : 's'})`);
-                } catch (error) {
-                  setStatus(error instanceof Error ? error.message : 'Unable to publish draft payload.');
-                }
-              });
-            }}
-          >
-            Publish draft
+          <Button type="button" variant="outline" disabled={isPending} onClick={() => runAction('publish')}>
+            {isPending && activeAction === 'publish' ? 'Publishing…' : 'Publish draft'}
           </Button>
         </div>
       </CardContent>
