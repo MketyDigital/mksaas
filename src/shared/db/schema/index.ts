@@ -1,47 +1,20 @@
-/**
- * Database Schema - Next.js SaaS AI Template
- *
- * Central export for all database tables and types.
- */
-
-export * from './auth';
-export * from './tenants';
-export * from './persons';
+export * from './assessments';
 export * from './audit';
-export * from './assistant-conversations';
-export * from './domains';
-export * from './projects';
-export * from './agents';
-export * from './agent-runs';
-export * from './agent-knowledge';
-export * from './agent-versions';
-export * from './knowledge';
-export * from './knowledge-chunks';
+export * from './auth';
+export * from './capabilities';
+export * from './evidences';
 export * from './files';
-export * from './departments';
+export * from './interests';
+export * from './knowledge';
+export * from './learning';
+export * from './mentions';
+export * from './okrs';
+export * from './one-on-ones';
+export * from './performance';
+export * from './permissions';
+export * from './persons';
+export * from './platform-content';
+export * from './recognitions';
 export * from './roles';
-export * from './integration-sync-control';
-export * from './integration-jobs';
-export * from './embeddings';
-export * from './invitations';
-export * from './webhooks';
-export * from './workflows';
-export * from './workflow-runs';
-
-export { personStatusEnum, personRelationTypeEnum, employmentTypeEnum } from './persons';
-export { fileObjectTypeEnum } from './files';
-export { tenantRoleEnum } from './auth';
-export { embeddingEntityTypeEnum } from './embeddings';
-export { webhookDeliveryStatusEnum } from './webhooks';
-export { customDomainStatusEnum } from './domains';
-export {
-  integrationProviderEnum,
-  integrationSyncModeEnum,
-  integrationSyncRunStatusEnum,
-  integrationSyncItemStatusEnum,
-  integrationEntityLinkStateEnum,
-  integrationConflictStatusEnum,
-  integrationConflictSeverityEnum,
-  integrationFieldOwnershipEnum,
-} from './integration-sync-control';
-export { integrationTypeEnum, integrationProcessingStatusEnum } from './integration-jobs';
+export * from './schema';
+export * from './tenants';
