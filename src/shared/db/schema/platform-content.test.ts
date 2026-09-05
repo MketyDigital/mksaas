@@ -42,4 +42,8 @@ describe('platform content schema', () => {
     expect(platformDocsArticles).toBeDefined();
     expect(platformContentRevisions).toBeDefined();
   });
+
+  it('uses published content as a first-class lifecycle state', () => {
+    expect(platformContentStatusEnum.enumValues).toContain('published');
+  });
 });
