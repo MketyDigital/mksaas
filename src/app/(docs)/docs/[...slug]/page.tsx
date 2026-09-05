@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { DocsContent } from '@/features/docs/components/DocsContent';
@@ -46,9 +47,9 @@ export default async function DocsPage({ params }: DocsPageProps) {
     <div className="flex gap-8">
       <article className="min-w-0 flex-1">
         <nav className="mb-6 text-sm text-muted-foreground">
-          <a href="/docs" className="font-medium text-primary hover:underline">
+          <Link href="/docs" className="font-medium text-primary hover:underline">
             Mkety Docs
-          </a>
+          </Link>
           <span className="mx-2">/</span>
           {category && <span>{category.title}</span>}
         </nav>
