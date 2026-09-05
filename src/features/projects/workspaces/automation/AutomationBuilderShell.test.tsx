@@ -17,9 +17,33 @@ const workflow: AutomationBuilderWorkflowSummary = {
   updatedAt: new Date('2026-09-05T12:00:00Z'),
   nodeCount: 3,
   nodes: [
-    { configKeys: ['source'], id: 'trigger-1', isSupported: true, readinessLabel: 'Prepared', type: 'trigger' },
-    { configKeys: ['agentId', 'prompt'], id: 'agent-1', isSupported: true, readinessLabel: 'Prepared', type: 'agent' },
-    { configKeys: [], id: 'custom-1', isSupported: false, readinessLabel: 'Needs review', type: 'custom-provider' },
+    {
+      canConfigure: true,
+      configDraft: { label: '', notes: '' },
+      configKeys: ['source'],
+      id: 'trigger-1',
+      isSupported: true,
+      readinessLabel: 'Prepared',
+      type: 'trigger',
+    },
+    {
+      canConfigure: true,
+      configDraft: { label: '', notes: '' },
+      configKeys: ['agentId', 'prompt'],
+      id: 'agent-1',
+      isSupported: true,
+      readinessLabel: 'Prepared',
+      type: 'agent',
+    },
+    {
+      canConfigure: false,
+      configDraft: { label: '', notes: '' },
+      configKeys: [],
+      id: 'custom-1',
+      isSupported: false,
+      readinessLabel: 'Needs review',
+      type: 'custom-provider',
+    },
   ],
 };
 

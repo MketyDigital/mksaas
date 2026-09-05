@@ -2,6 +2,7 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { AutomationBuilderShell } from '@/features/projects/workspaces/automation/AutomationBuilderShell';
 import { AutomationWorkflowDraftNodeForm } from '@/features/projects/workspaces/automation/AutomationWorkflowDraftNodeForm';
 import { AutomationWorkflowMetadataForm } from '@/features/projects/workspaces/automation/AutomationWorkflowMetadataForm';
+import { AutomationWorkflowNodeConfigDraftForm } from '@/features/projects/workspaces/automation/AutomationWorkflowNodeConfigDraftForm';
 import { getAutomationBuilderSnapshot } from '@/features/projects/workspaces/automation/data';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
@@ -50,6 +51,13 @@ export default async function AutomationBuilderPage({
           />
           <AutomationWorkflowDraftNodeForm
             canManage={access.canManage}
+            projectSlug={access.project.slug}
+            tenantSlug={access.tenant.slug}
+            workflowSlug={snapshot.workflow.slug}
+          />
+          <AutomationWorkflowNodeConfigDraftForm
+            canManage={access.canManage}
+            nodes={snapshot.workflow.nodes}
             projectSlug={access.project.slug}
             tenantSlug={access.tenant.slug}
             workflowSlug={snapshot.workflow.slug}

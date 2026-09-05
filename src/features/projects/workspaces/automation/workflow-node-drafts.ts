@@ -4,45 +4,32 @@ const SUPPORTED_DRAFT_NODE_TYPES = ['trigger', 'agent', 'http', 'transform', 'co
 
 export type DraftWorkflowNodeType = (typeof SUPPORTED_DRAFT_NODE_TYPES)[number];
 
-function isSupportedDraftNodeType(value: string): value is DraftWorkflowNodeType {
+export function isSupportedDraftNodeType(value: string): value is DraftWorkflowNodeType {
   return SUPPORTED_DRAFT_NODE_TYPES.includes(value as DraftWorkflowNodeType);
 }
 
-function toNodeConfig(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function getExistingNodes(definition: unknown): WorkflowNode[] {
-  const maybeDefinition = definition as { nodes?: unknown };
+function buildDraftNodeId({
+  existingIds,
+  nodeType,
+  position,
+}: {
+  existingIds: Set<string>;
+  nodeType: DraftWorkflowNodeType;
+  position: number;
+}) {
+  let nextPosition = position;
+  let nodeId = `${nodeType}-${nextPosition}`;
 
-  if (!Array.isArray(maybeDefinition?.nodes)) {
-    return [];
+  while (existingIds.has(nodeId)) {
+    nextPosition += 1;
+    nodeId = `${nodeType}-${nextPosition}`;
   }
 
-  const nodes: WorkflowNode[] = [];
-
-  for (const node of maybeDefinition.nodes) {
-    const maybeNode = node as Partial<WorkflowNode>;
-    const config = toNodeConfig(maybeNode.config);
-
-    if (typeof maybeNode.id === 'string' && typeof maybeNode.type === 'string' && isSupportedDraftNodeType(maybeNode.type) && config) {
-      nodes.push({
-        config,
-        id: maybeNode.id,
-        type: maybeNode.type,
-      });
-    }
-  }
-
-  return nodes;
-}
-
-function buildDraftNodeId({ nodeType, position }: { nodeType: DraftWorkflowNodeType; position: number }) {
-  return `${nodeType}-${position}`;
+  return nodeId;
 }
 
 export function buildWorkflowDefinitionWithDraftNode({
@@ -56,14 +43,22 @@ export function buildWorkflowDefinitionWithDraftNode({
     throw new Error('Unsupported workflow node type.');
   }
 
-  const nodes = getExistingNodes(currentDefinition);
+  const definition = isRecord(currentDefinition) ? currentDefinition : {};
+  const nodes = Array.isArray(definition.nodes) ? definition.nodes : [];
+  const existingIds = new Set(
+    nodes
+      .filter(isRecord)
+      .map((node) => node.id)
+      .filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.length > 0),
+  );
   const draftNode: WorkflowNode = {
     config: {},
-    id: buildDraftNodeId({ nodeType, position: nodes.length + 1 }),
+    id: buildDraftNodeId({ existingIds, nodeType, position: nodes.length + 1 }),
     type: nodeType,
   };
 
   return {
+    ...definition,
     nodes: [...nodes, draftNode],
-  };
+  } as unknown as WorkflowDefinition;
 }

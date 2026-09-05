@@ -9,6 +9,7 @@ import { workflows } from '@/shared/db/schema';
 
 import { buildWorkflowDraftInput } from './workflow-drafts';
 import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
+import { buildWorkflowDefinitionWithNodeConfigDraft } from './workflow-node-config-drafts';
 import { buildWorkflowDefinitionWithDraftNode } from './workflow-node-drafts';
 
 export async function createAutomationWorkflowDraft(formData: FormData) {
@@ -116,6 +117,51 @@ export async function addAutomationWorkflowDraftNode(formData: FormData) {
   const definition = buildWorkflowDefinitionWithDraftNode({
     currentDefinition: workflow.definition,
     nodeType,
+  });
+
+  await db
+    .update(workflows)
+    .set({
+      definition,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
+
+  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+}
+
+export async function updateAutomationWorkflowNodeConfigDraft(formData: FormData) {
+  const tenantSlug = String(formData.get('tenantSlug') || '');
+  const projectSlug = String(formData.get('projectSlug') || '');
+  const workflowSlug = String(formData.get('workflowSlug') || '');
+  const nodeId = String(formData.get('nodeId') || '');
+  const access = await requireProjectAccess({ projectSlug, tenantSlug });
+
+  if (access.status !== 'ok') {
+    throw new Error(access.reason);
+  }
+
+  if (!access.canManage) {
+    throw new Error('You do not have permission to edit automation workflow node configuration.');
+  }
+
+  if (!workflowSlug) {
+    throw new Error('Workflow slug is required.');
+  }
+
+  const workflow = await db.query.workflows.findFirst({
+    where: and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.slug, workflowSlug)),
+  });
+
+  if (!workflow) {
+    throw new Error('Workflow not found.');
+  }
+
+  const definition = buildWorkflowDefinitionWithNodeConfigDraft({
+    currentDefinition: workflow.definition,
+    label: String(formData.get('label') || ''),
+    nodeId,
+    notes: String(formData.get('notes') || ''),
   });
 
   await db
