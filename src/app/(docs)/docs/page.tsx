@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { getPublishedDocsTree } from '@/features/platform-content/server/queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DocsIndexPage() {
   const tree = await getPublishedDocsTree();
 
