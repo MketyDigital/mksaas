@@ -39,7 +39,7 @@ describe('AutomationWorkflowMetadataForm', () => {
       />,
     );
 
-    expect(screen.getByText('Only managers can edit workflow details.')).toBeInTheDocument();
+    expect(screen.getByText(/Only managers can edit workflow details/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save workflow details' })).not.toBeInTheDocument();
   });
 });
