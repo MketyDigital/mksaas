@@ -1,6 +1,6 @@
-import { platformContentDraftActionSchema, platformPublishActionSchema } from './actions';
+import { platformContentDraftActionSchema, platformPublishActionSchema } from './action-schemas';
 
-describe('platform content admin actions', () => {
+describe('platform content admin action schemas', () => {
   it('validates draft save requests with a known content area', () => {
     const parsed = platformContentDraftActionSchema.parse({
       area: 'public-site',
@@ -50,6 +50,17 @@ describe('platform content admin actions', () => {
 
     expect(navigation.payload.items).toHaveLength(1);
     expect(pricing.payload.plans).toHaveLength(1);
+  });
+
+  it('rejects unsupported CMS entity types before hitting server actions', () => {
+    expect(() =>
+      platformContentDraftActionSchema.parse({
+        area: 'public-site',
+        entityType: 'billing_ledger',
+        entityKey: 'unsafe',
+        payload: {},
+      }),
+    ).toThrow();
   });
 
   it('validates publish requests without accepting arbitrary action names', () => {
