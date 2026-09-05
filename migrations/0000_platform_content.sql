@@ -228,3 +228,81 @@ DO $$ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_pages" ADD CONSTRAINT "platform_pages_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_pages" ADD CONSTRAINT "platform_pages_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_page_sections" ADD CONSTRAINT "platform_page_sections_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_page_sections" ADD CONSTRAINT "platform_page_sections_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_navigation_items" ADD CONSTRAINT "platform_navigation_items_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_navigation_items" ADD CONSTRAINT "platform_navigation_items_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_pricing_plans" ADD CONSTRAINT "platform_pricing_plans_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_pricing_plans" ADD CONSTRAINT "platform_pricing_plans_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_docs_categories" ADD CONSTRAINT "platform_docs_categories_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_docs_categories" ADD CONSTRAINT "platform_docs_categories_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_docs_articles" ADD CONSTRAINT "platform_docs_articles_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_docs_articles" ADD CONSTRAINT "platform_docs_articles_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_content_revisions" ADD CONSTRAINT "platform_content_revisions_actor_id_users_id_fk" FOREIGN KEY ("actor_id") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
