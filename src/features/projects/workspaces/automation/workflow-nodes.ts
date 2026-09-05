@@ -1,3 +1,5 @@
+import { buildWorkflowNodeTypeConfigDraft, type WorkflowNodeTypeConfigDraft } from './workflow-node-config-drafts';
+
 const SUPPORTED_WORKFLOW_NODE_TYPES = new Set(['trigger', 'agent', 'http', 'transform', 'condition']);
 
 type RawWorkflowNode = {
@@ -14,6 +16,7 @@ export type WorkflowNodeSummary = {
     label: string;
     notes: string;
   };
+  typeConfigDraft: WorkflowNodeTypeConfigDraft;
   isSupported: boolean;
   canConfigure: boolean;
   readinessLabel: 'Prepared' | 'Needs review';
@@ -27,9 +30,9 @@ export function buildWorkflowNodeSummaries(definition: unknown): WorkflowNodeSum
     const type = typeof node.type === 'string' && node.type.length > 0 ? node.type : 'unknown';
     const isSupported = SUPPORTED_WORKFLOW_NODE_TYPES.has(type);
     const hasStableId = typeof node.id === 'string' && node.id.length > 0;
-    const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config) ? node.config : {};
-    const label = 'label' in config && typeof config.label === 'string' ? config.label : '';
-    const notes = 'notes' in config && typeof config.notes === 'string' ? config.notes : '';
+    const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config) ? node.config as Record<string, unknown> : {};
+    const label = typeof config.label === 'string' ? config.label : '';
+    const notes = typeof config.notes === 'string' ? config.notes : '';
 
     return {
       canConfigure: isSupported && hasStableId,
@@ -39,6 +42,7 @@ export function buildWorkflowNodeSummaries(definition: unknown): WorkflowNodeSum
       isSupported,
       readinessLabel: isSupported ? 'Prepared' : 'Needs review',
       type,
+      typeConfigDraft: buildWorkflowNodeTypeConfigDraft(config),
     };
   });
 }
