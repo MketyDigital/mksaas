@@ -157,6 +157,7 @@ export const defaultDocsCategories: PlatformDocsCategoryInput[] = [
   { key: 'getting-started', title: 'Getting Started', description: 'Understand Mkety, the platform, and the product flow.', sortOrder: 10 },
   { key: 'platform', title: 'Platform', description: 'Organizations, projects, teams, workspaces, usage, credits, and billing.', sortOrder: 20 },
   { key: 'workspaces', title: 'Workspaces', description: 'AI, Automation, Deploy, SolutionHub, and Trading boundaries.', sortOrder: 30 },
+  { key: 'deployments-domains', title: 'Deployments and Domains', description: 'Mkety domain map, routing boundaries, deployments, previews, and customer app hostnames.', sortOrder: 35 },
   { key: 'security-operations', title: 'Security and Operations', description: 'Tenant isolation, permissions, audit, deployment, and safe operations.', sortOrder: 40 },
 ];
 
@@ -178,6 +179,15 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     bodyMarkdown:
       '# Plans, usage, and credits\n\nMkety keeps plans, pricing, usage, credits, wallet records, and entitlements separate. Public pricing can be edited by admins, but billing ledger logic remains code-controlled and audit-protected.',
     sortOrder: 20,
+  },
+  {
+    categoryKey: 'deployments-domains',
+    slug: 'domain-map',
+    title: 'Mkety domain map',
+    excerpt: 'Where each Mkety domain and subdomain belongs.',
+    bodyMarkdown:
+      '# Mkety domain map\n\nMkety uses a strict domain map so product surfaces do not get mixed together. `mkety.com` is the public website. `app.mkety.com` is the authenticated Platform. `api.mkety.com` is the API surface. `origin.mkety.com` is infrastructure-only routing behind Cloudflare and OCI. `*.mkety.app` is reserved for customer deployments, previews, portals, generated sites, applications, and production app hostnames.\n\nCustomer apps must not be placed under `mkety.com` or `app.mkety.com`, and `origin.mkety.com` must not be marketed or linked as a product route.',
+    sortOrder: 25,
   },
   {
     categoryKey: 'security-operations',
