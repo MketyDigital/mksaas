@@ -1,4 +1,5 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { AutomationWorkflowDraftForm } from '@/features/projects/workspaces/automation/AutomationWorkflowDraftForm';
 import { getAutomationWorkspaceSnapshot } from '@/features/projects/workspaces/automation/data';
 import { AutomationWorkspaceOverview } from '@/features/projects/workspaces/AutomationWorkspaceOverview';
 import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
@@ -25,6 +26,7 @@ export default async function AutomationWorkspacePage({ params }: { params: Prom
       workspace={getProjectWorkspaceByKey('automation')}
     >
       <AutomationWorkspaceOverview projectSlug={access.project.slug} snapshot={snapshot} tenantSlug={access.tenant.slug} />
+      <AutomationWorkflowDraftForm canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
       <WorkspaceEmptyState
         actions={[{ href: `/t/${access.tenant.slug}/projects/${access.project.slug}/ai`, label: 'Use AI Workspace for now' }]}
         description="Workflow builder, triggers, actions, webhooks, live execution, retries, and failure handling remain inactive until execution safety, audit, and permission rules are complete."
