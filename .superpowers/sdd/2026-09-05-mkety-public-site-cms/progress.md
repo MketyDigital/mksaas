@@ -9,6 +9,7 @@
 | Execution mode | No native subagent/worktree tool is available in this ChatGPT/GitHub connector context. | Ruling: Use the existing isolated branch `spec/mkety-public-site-cms` and commit progressively to it — cost if wrong: less local verification than a full cloned worktree, so PR verification must be treated as required before merge. |
 | Usage limit | User asked not to burn too much limit. | Ruling: Start with Task 1 foundation only, avoid broad review-agent fanout, and report actual progress — cost if wrong: slower overall delivery but safer token usage. |
 | Migration naming | Existing migrations naming/history were not fully inspected in this low-token batch. | Ruling: Add the platform-content SQL migration as an initial draft migration file, but mark migration verification required before merge — cost if wrong: filename/order may need adjustment to match Drizzle journal conventions. |
+| Completion standard | Could not run local verification in the GitHub connector session. | Ruling: Do not mark Task 1 complete; report it as partial foundation until CI/local commands run — cost if wrong: none beyond conservative status wording. |
 
 ## Progress
 
