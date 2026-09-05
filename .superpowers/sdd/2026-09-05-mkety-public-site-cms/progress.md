@@ -33,6 +33,13 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Added `Mkety Control Center` to the admin sidebar so the platform-control area is reachable from normal admin navigation.
 - Added `src/features/platform-app-experience/control-center-registry.ts` as the central registry for module key, label, route, permission, safety level, domain ownership, editable scope, protected scope, status, and implementation notes.
 - Updated control-center queries and dynamic module pages to render from the central registry, reducing duplicated module definitions and making future build batches easier to continue.
+- Updated public platform-content loaders to attempt published DB reads for site settings, navigation, pricing, docs, docs articles, and homepage sections, while falling back safely to Mkety defaults if data/tables are missing.
+- Added `src/features/platform-content/server/seed.ts` to seed Mkety public website/docs defaults into published platform-content database records without overwriting existing admin-managed content.
+- Added `docs/MKETY_PUBLIC_CONTENT_SEEDING.md` to document safe content seeding rules and rollout boundaries.
+- Added seed contract tests for platform content and platform app experience.
+- Added `src/features/platform-app-experience/server/seed.ts` to seed app.mkety.com dashboard, workspace cards, and Platform Control Center modules into published app-experience database records.
+- Updated platform app-experience loaders to attempt DB reads for dashboard, workspace cards, and control-center modules while preserving safe fallbacks.
+- Updated app-experience schemas so DB-loaded control-center modules preserve domain, status, editable scope, protected scope, and implementation notes.
 
 ## Boundary rulings
 
@@ -54,6 +61,10 @@ Ruling: Draft/publish server actions are currently validated/authorized boundari
 
 Ruling: Platform Control Center modules now have a single registry source. Future modules should update the registry instead of scattering labels, permissions, domain ownership, and protected/editable scope across pages — cost if wrong: duplicated admin-control rules would drift across the UI.
 
+Ruling: Public and app-experience loaders may attempt database reads only with safe fallbacks to code-owned Mkety defaults until migration verification is complete — cost if wrong: public pages could fail if content tables are not yet migrated or seeded.
+
+Ruling: Seed modules must be idempotent and must not overwrite existing admin-managed records — cost if wrong: admin edits could be lost during rollout.
+
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
 ## Verification status
@@ -73,5 +84,5 @@ pnpm build
 - Reconcile manual migration SQL with Drizzle-generated migration output.
 - Verify foreign key names and migration ordering against the repo's migration journal conventions.
 - Verify new route imports and UI component props with `pnpm type-check`.
-- Replace fallback-only loaders with database-backed reads once migration verification is complete.
+- Review DB-backed loaders and seed modules after migration generation to catch any Drizzle typing/import issues.
 - Replace validated draft/publish action stubs with transactional DB writes that create revision snapshots and audit events.
