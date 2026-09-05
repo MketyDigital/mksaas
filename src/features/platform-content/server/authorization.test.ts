@@ -1,4 +1,4 @@
-import { PLATFORM_CONTENT_PERMISSION, PLATFORM_APP_EXPERIENCE_PERMISSION, PLATFORM_CONTROL_PERMISSION } from './authorization';
+import { PLATFORM_APP_EXPERIENCE_PERMISSION, PLATFORM_CONTENT_PERMISSION, PLATFORM_CONTROL_PERMISSION } from './authorization';
 
 describe('platform content authorization constants', () => {
   it('keeps platform CMS and app experience permissions distinct', () => {
