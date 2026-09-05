@@ -14,4 +14,4 @@
 Task 1: partial — added `src/shared/db/schema/platform-content.ts` and `src/shared/db/schema/platform-content.test.ts` for public site/docs/pricing/navigation/revisions schema foundation.
 Task 1: partial — exported platform content schema from `src/shared/db/schema/index.ts`.
 Task 1: partial — added creator/updater/actor relations for auditable platform content entities.
-Task 1: verification pending — GitHub connector cannot run `pnpm test`, `pnpm type-check`, or `pnpm build` locally in this session; must run in CI/local before merge.
+Task 1: paused after schema foundation to preserve usage limit; verification pending because GitHub connector cannot run `pnpm test`, `pnpm type-check`, or `pnpm build` locally in this session.
