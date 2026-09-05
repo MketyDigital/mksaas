@@ -14,6 +14,14 @@ const protectedActionsByModule: Record<string, string[]> = {
   'plans-entitlements': ['Manage plan presentation', 'Review entitlement mappings', 'Control feature visibility', 'Set usage display rules'],
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
   'deployments-domains': ['Review deployment history', 'Approve domains', 'Retry failed jobs', 'Trigger safe rollback flows'],
+  'domains-routing': [
+    'Monitor mkety.com public website routing',
+    'Monitor app.mkety.com platform routing',
+    'Monitor api.mkety.com API routing',
+    'Confirm origin.mkety.com infrastructure-only routing',
+    'Review *.mkety.app customer deployment hostnames',
+    'Approve custom hostname verification flows',
+  ],
   'auth-gateway': ['View JWKS status', 'Review product audiences', 'Inspect access issuance outcomes', 'Prepare key rotation actions'],
   'security-audit': ['View audit events', 'Review role changes', 'Inspect session/security activity', 'Monitor sensitive operations'],
 };
@@ -72,6 +80,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>Admin UI can manage approved content, configuration, visibility, and operational actions.</p>
             <p>Backend logic, billing calculations, deployment engines, private keys, tenant isolation, and security rules remain code-controlled.</p>
+            <p>Domain routing must follow the approved Mkety map: mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, and *.mkety.app.</p>
           </CardContent>
         </Card>
       </div>
