@@ -11,12 +11,12 @@ describe('AutomationWorkspaceOverview', () => {
     render(<AutomationWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
     expect(screen.getByRole('heading', { name: /Design repeatable workflows safely/i })).toBeInTheDocument();
-    expect(screen.getByText('Workflows')).toBeInTheDocument();
-    expect(screen.getByText('Triggers')).toBeInTheDocument();
-    expect(screen.getByText('Actions')).toBeInTheDocument();
-    expect(screen.getByText('Webhooks')).toBeInTheDocument();
-    expect(screen.getByText('Run history')).toBeInTheDocument();
-    expect(screen.getByText('Failures & retries')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Workflows' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Triggers' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Actions' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Webhooks' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Run history' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Failures & retries' })).toBeInTheDocument();
     expect(screen.getByText('Execution disabled')).toBeInTheDocument();
     expect(screen.getByText('Run records')).toBeInTheDocument();
   });
