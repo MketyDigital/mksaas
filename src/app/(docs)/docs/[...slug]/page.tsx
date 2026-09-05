@@ -6,6 +6,8 @@ import { DocsContent } from '@/features/docs/components/DocsContent';
 import { DocsTableOfContents } from '@/features/docs/components/DocsTableOfContents';
 import { getPublishedDocsArticle, getPublishedDocsTree } from '@/features/platform-content/server/queries';
 
+export const dynamic = 'force-dynamic';
+
 interface DocsPageProps {
   params: Promise<{ slug: string[] }>;
 }
