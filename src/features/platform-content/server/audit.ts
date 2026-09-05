@@ -2,7 +2,7 @@ import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
-import type { PlatformContentDraftActionInput, PlatformPublishActionInput } from './actions';
+import type { PlatformContentDraftActionInput, PlatformPublishActionInput } from './action-schemas';
 
 type PlatformContentAuditInput = {
   tenantSlug: string;
