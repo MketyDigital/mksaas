@@ -7,8 +7,8 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { db } from '@/shared/db';
 import { workflows } from '@/shared/db/schema';
 
-import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
 import { buildWorkflowDraftInput } from './workflow-drafts';
+import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
 import { buildWorkflowDefinitionWithDraftNode } from './workflow-node-drafts';
 
 export async function createAutomationWorkflowDraft(formData: FormData) {
