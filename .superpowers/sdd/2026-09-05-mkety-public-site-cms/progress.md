@@ -50,6 +50,8 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Updated `PlatformContentDraftForm` to show mutation counts and audit status after Save draft or Publish draft.
 - Added `docs/MKETY_CMS_AUDIT_EVENTS.md` to document revision snapshots, audit event keys, actor handling, failure behavior, and future hardening.
 - Added a CMS audit writer contract test.
+- Restored the full original public CMS specification at `docs/superpowers/specs/2026-09-05-mkety-public-site-cms-design.md` from the preserved blob and appended the later app-experience/domain/auth addendum.
+- Added `docs/MKETY_CMS_MIGRATION_RECONCILIATION.md` to record the required migration/type/database verification checklist before the PR leaves draft.
 
 ## Boundary rulings
 
@@ -79,6 +81,8 @@ Ruling: CMS actions record revision snapshots transactionally and now attempt hi
 
 Ruling: Audit event failure currently does not roll back content mutation; the UI reports `auditRecorded: false`. Production hardening should decide whether publish must fail closed on audit failure — cost if wrong: a content change may exist without a high-level audit event, although revision rows still exist.
 
+Ruling: The full original public CMS spec must remain at branch tip, with app-experience/domain/auth additions appended as addenda rather than replacing the original spec — cost if wrong: future agents may lose the original scope and acceptance criteria.
+
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
 ## Verification status
@@ -94,7 +98,6 @@ pnpm build
 
 ## Required cleanup before merge
 
-- Restore/confirm the complete full design spec text if any earlier doc edit compressed it.
 - Reconcile manual migration SQL with Drizzle-generated migration output.
 - Verify foreign key names and migration ordering against the repo's migration journal conventions.
 - Verify new route imports and UI component props with `pnpm type-check`.
