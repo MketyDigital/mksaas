@@ -79,9 +79,9 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
   const { tenant, section } = await params;
   await requirePlatformContentAccess(tenant);
 
-  const module = modules[section];
+  const sectionModule = modules[section];
 
-  if (!module) notFound();
+  if (!sectionModule) notFound();
 
   return (
     <div className="space-y-8">
@@ -89,19 +89,19 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
         <Link href={`/t/${tenant}/admin/platform-control/public-site`} className="text-sm font-medium text-primary hover:underline">
           ← Public Website & Docs
         </Link>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground">{module.title}</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{module.description}</p>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground">{sectionModule.title}</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{sectionModule.description}</p>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <PlatformContentDraftForm
           tenant={tenant}
-          area={module.area}
-          entityType={module.entityType}
-          entityKey={module.entityKey}
-          title={`${module.title} draft`}
+          area={sectionModule.area}
+          entityType={sectionModule.entityType}
+          entityKey={sectionModule.entityKey}
+          title={`${sectionModule.title} draft`}
           description="Validate a Mkety CMS payload through the server-side action boundary before persistence is enabled."
-          defaultPayload={module.defaultPayload}
+          defaultPayload={sectionModule.defaultPayload}
         />
 
         <Card className="rounded-2xl border-border/70 shadow-sm">
@@ -113,7 +113,7 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
           </CardHeader>
           <CardContent>
             <div className="grid gap-3">
-              {module.items.map((item) => (
+              {sectionModule.items.map((item) => (
                 <div key={item} className="rounded-xl border bg-muted/20 px-4 py-3 text-sm font-medium text-foreground">
                   {item}
                 </div>
