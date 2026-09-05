@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { projectWorkspaces } from './registry';
 import type { ProjectWorkspaceDefinition } from './types';
 
 export function WorkspaceShell({
@@ -36,6 +37,27 @@ export function WorkspaceShell({
         </div>
         {workspace.protectedReason && <p className="mt-5 rounded-xl bg-muted/70 p-4 text-sm leading-6 text-muted-foreground">{workspace.protectedReason}</p>}
       </header>
+
+      <nav aria-label="Project workspaces" className="rounded-2xl border bg-card p-3">
+        <div className="flex flex-wrap gap-2">
+          {projectWorkspaces.map((item) => {
+            const isActive = item.key === workspace.key;
+            return (
+              <Link
+                key={item.key}
+                href={`/t/${tenantSlug}/projects/${projectSlug}/${item.hrefSegment}`}
+                aria-current={isActive ? 'page' : undefined}
+                className={[
+                  'rounded-full border px-3 py-2 text-sm font-medium transition',
+                  isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                ].join(' ')}
+              >
+                {item.shortTitle}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
 
       {children}
     </main>
