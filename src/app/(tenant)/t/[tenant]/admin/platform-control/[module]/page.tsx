@@ -1,8 +1,8 @@
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
+import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
-import { hasPermission } from '@/shared/lib/permissions';
 
 interface PlatformControlModulePageProps {
   params: Promise<{ tenant: string; module: string }>;
@@ -28,11 +28,7 @@ const protectedActionsByModule: Record<string, string[]> = {
 
 export default async function PlatformControlModulePage({ params }: PlatformControlModulePageProps) {
   const { tenant, module: moduleKey } = await params;
-  const canAccess = await hasPermission(tenant, 'admin:dashboard');
-
-  if (!canAccess) {
-    redirect(`/t/${tenant}?error=unauthorized`);
-  }
+  await requirePlatformControlAccess(tenant);
 
   const modules = await getPublishedControlCenterModules();
   const controlModule = modules.find((item) => item.href.endsWith(`/${moduleKey}`));
