@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 
-import { savePlatformContentDraft } from '@/features/platform-content/server/actions';
+import { publishPlatformContent, savePlatformContentDraft } from '@/features/platform-content/server/actions';
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Label, Textarea } from '@/shared/components/ui';
 
 type PlatformContentDraftFormProps = {
@@ -45,7 +45,7 @@ export function PlatformContentDraftForm({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor={`${entityKey}-payload`}>Validated JSON draft payload</Label>
+          <Label htmlFor={`${entityKey}-payload`}>Mkety CMS JSON payload</Label>
           <Textarea
             id={`${entityKey}-payload`}
             value={payloadText}
@@ -54,29 +54,49 @@ export function PlatformContentDraftForm({
             spellCheck={false}
           />
           <p className="text-xs text-muted-foreground">
-            This form calls the server-side Mkety content action boundary. Database persistence will be switched on after migration reconciliation.
+            Save writes a draft database record where this entity is supported. Publish promotes the saved draft to the public/app experience and revalidates affected routes.
           </p>
         </div>
 
         {status && <p className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">{status}</p>}
 
-        <Button
-          type="button"
-          disabled={isPending}
-          onClick={() => {
-            startTransition(async () => {
-              try {
-                const payload = JSON.parse(payloadText) as Record<string, unknown>;
-                const result = await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload });
-                setStatus(`Draft ${result.status}: ${result.entityType}/${result.entityKey}`);
-              } catch (error) {
-                setStatus(error instanceof Error ? error.message : 'Unable to validate draft payload.');
-              }
-            });
-          }}
-        >
-          {isPending ? 'Validating…' : 'Validate draft'}
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              startTransition(async () => {
+                try {
+                  const payload = JSON.parse(payloadText) as Record<string, unknown>;
+                  const result = await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload });
+                  setStatus(`Draft saved: ${result.entityType}/${result.entityKey} (${result.mutatedRecords} record${result.mutatedRecords === 1 ? '' : 's'})`);
+                } catch (error) {
+                  setStatus(error instanceof Error ? error.message : 'Unable to save draft payload.');
+                }
+              });
+            }}
+          >
+            {isPending ? 'Saving…' : 'Save draft'}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isPending}
+            onClick={() => {
+              startTransition(async () => {
+                try {
+                  const result = await publishPlatformContent(tenant, { area, entityType, entityKey });
+                  setStatus(`Published: ${result.entityType}/${result.entityKey} (${result.mutatedRecords} record${result.mutatedRecords === 1 ? '' : 's'})`);
+                } catch (error) {
+                  setStatus(error instanceof Error ? error.message : 'Unable to publish draft payload.');
+                }
+              });
+            }}
+          >
+            Publish draft
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
