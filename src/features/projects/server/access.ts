@@ -6,9 +6,7 @@ import { projects, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
-export type ProjectAccessResult = Awaited<ReturnType<typeof requireProjectAccess>>;
-
-export async function requireProjectAccess({ tenantSlug, projectSlug }: { tenantSlug: string; projectSlug: string }) {
+export async function requireProjectAccess({ projectSlug, tenantSlug }: { tenantSlug: string; projectSlug: string }) {
   const session = await auth();
   if (!session?.user?.id) redirect('/login');
 
