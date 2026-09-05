@@ -15,8 +15,8 @@ import {
   getPublishedDocsTree,
   getPublishedHomepageContent,
   getPublishedNavigation,
-  getPublishedPricingPlans,
   getPublishedPlatformSiteSettings,
+  getPublishedPricingPlans,
 } from '../src/features/platform-content/server/queries';
 
 function assertSmoke(condition: unknown, message: string): asserts condition {
