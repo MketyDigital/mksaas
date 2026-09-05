@@ -9,6 +9,15 @@ import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import type { PlatformJson } from '@/shared/db/schema/platform-content';
 
+import { platformContentDraftActionSchema, platformPublishActionSchema } from './action-schemas';
+import type {
+  PlatformContentArea,
+  PlatformContentDraftActionInput,
+  PlatformContentEntityType,
+  PlatformPublishActionInput,
+} from './action-schemas';
+import { recordPlatformContentAuditEvent } from './audit';
+import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
 import {
   docsArticleSchema,
   docsCategorySchema,
@@ -17,16 +26,6 @@ import {
   pricingPlanSchema,
   siteSettingsSchema,
 } from '../schemas';
-import {
-  type PlatformContentArea,
-  type PlatformContentDraftActionInput,
-  type PlatformContentEntityType,
-  type PlatformPublishActionInput,
-  platformContentDraftActionSchema,
-  platformPublishActionSchema,
-} from './action-schemas';
-import { recordPlatformContentAuditEvent } from './audit';
-import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
 
 type ContentEntityType = Exclude<PlatformContentEntityType, 'app_experience'>;
 type MutationDb = Pick<typeof db, 'insert'>;
