@@ -98,7 +98,7 @@ export const platformNavigationItems = appSchema.table(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     area: platformNavigationAreaEnum('area').notNull(),
-    parentId: uuid('parent_id').references((): ReturnType<typeof uuid> => platformNavigationItems.id, { onDelete: 'cascade' }),
+    parentId: uuid('parent_id'),
     label: varchar('label', { length: 120 }).notNull(),
     href: text('href').notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
@@ -253,13 +253,7 @@ export const platformPageSectionsRelations = relations(platformPageSections, ({ 
   }),
 }));
 
-export const platformNavigationItemsRelations = relations(platformNavigationItems, ({ one, many }) => ({
-  parent: one(platformNavigationItems, {
-    fields: [platformNavigationItems.parentId],
-    references: [platformNavigationItems.id],
-    relationName: 'navigation_children',
-  }),
-  children: many(platformNavigationItems, { relationName: 'navigation_children' }),
+export const platformNavigationItemsRelations = relations(platformNavigationItems, ({ one }) => ({
   creator: one(users, {
     fields: [platformNavigationItems.createdBy],
     references: [users.id],
