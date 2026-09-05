@@ -45,6 +45,11 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Updated `PlatformContentDraftForm` with Save draft and Publish draft controls.
 - Added `docs/MKETY_PUBLIC_CMS_DRAFT_PUBLISH_FLOW.md` to document the draft/publish lifecycle, supported entities, permission boundary, revision boundary, and safety exclusions.
 - Updated action tests to cover the persistence request shapes used by the admin CMS forms.
+- Added `src/features/platform-content/server/audit.ts` to write high-level CMS audit events into `audit_events` while preserving the existing `persons.id` actor boundary.
+- Wired draft save and publish actions to attempt audit events and return `auditRecorded` status to the admin UI.
+- Updated `PlatformContentDraftForm` to show mutation counts and audit status after Save draft or Publish draft.
+- Added `docs/MKETY_CMS_AUDIT_EVENTS.md` to document revision snapshots, audit event keys, actor handling, failure behavior, and future hardening.
+- Added a CMS audit writer contract test.
 
 ## Boundary rulings
 
@@ -70,6 +75,10 @@ Ruling: Seed modules must be idempotent and must not overwrite existing admin-ma
 
 Ruling: Draft/publish actions now perform transactional DB writes for supported CMS entities and record revisions, but must still be verified with type-check/build before merge — cost if wrong: Drizzle type issues or migration mismatches may need correction before production.
 
+Ruling: CMS actions record revision snapshots transactionally and now attempt high-level audit events after mutations. Audit events store auth user identity in metadata until the user/person mapping is verified — cost if wrong: actor IDs could be incorrectly written into a `persons.id` foreign key.
+
+Ruling: Audit event failure currently does not roll back content mutation; the UI reports `auditRecorded: false`. Production hardening should decide whether publish must fail closed on audit failure — cost if wrong: a content change may exist without a high-level audit event, although revision rows still exist.
+
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
 ## Verification status
@@ -89,5 +98,5 @@ pnpm build
 - Reconcile manual migration SQL with Drizzle-generated migration output.
 - Verify foreign key names and migration ordering against the repo's migration journal conventions.
 - Verify new route imports and UI component props with `pnpm type-check`.
-- Review DB-backed loaders, seed modules, and draft/publish persistence after migration generation to catch any Drizzle typing/import issues.
-- Add first-class audit events for each publish action using the existing Mkety audit table.
+- Review DB-backed loaders, seed modules, draft/publish persistence, and audit writer after migration generation to catch any Drizzle typing/import issues.
+- Decide whether production publish should fail closed if `audit_events` insert fails.
