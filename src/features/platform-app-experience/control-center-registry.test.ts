@@ -3,30 +3,30 @@ import { appControlCenterModuleSchema } from './schemas';
 
 describe('platform control center registry', () => {
   it('contains unique module keys and valid module definitions', () => {
-    const keys = platformControlModules.map((module) => module.key);
+    const keys = platformControlModules.map((controlModule) => controlModule.key);
 
     expect(new Set(keys).size).toBe(keys.length);
-    for (const module of platformControlModules) {
-      expect(() => appControlCenterModuleSchema.parse(module)).not.toThrow();
+    for (const controlModule of platformControlModules) {
+      expect(() => appControlCenterModuleSchema.parse(controlModule)).not.toThrow();
     }
   });
 
   it('keeps protected platform domains and routing modules explicit', () => {
-    expect(platformControlModules.map((module) => module.key)).toEqual(
+    expect(platformControlModules.map((controlModule) => controlModule.key)).toEqual(
       expect.arrayContaining(['public-site-docs', 'app-experience', 'domains-routing', 'auth-gateway', 'security-audit']),
     );
 
-    const domainsRouting = platformControlModules.find((module) => module.key === 'domains-routing');
+    const domainsRouting = platformControlModules.find((controlModule) => controlModule.key === 'domains-routing');
     expect(domainsRouting?.domain).toBe('multi-domain');
     expect(domainsRouting?.protectedScope.join(' ')).toContain('unapproved hostnames');
 
-    const authGateway = platformControlModules.find((module) => module.key === 'auth-gateway');
+    const authGateway = platformControlModules.find((controlModule) => controlModule.key === 'auth-gateway');
     expect(authGateway?.protectedScope.join(' ')).toContain('private keys');
   });
 
   it('does not model billing or security modules as ordinary public content editors', () => {
-    const billing = platformControlModules.find((module) => module.key === 'billing-ledger');
-    const security = platformControlModules.find((module) => module.key === 'security-audit');
+    const billing = platformControlModules.find((controlModule) => controlModule.key === 'billing-ledger');
+    const security = platformControlModules.find((controlModule) => controlModule.key === 'security-audit');
 
     expect(billing?.status).toBe('protected');
     expect(billing?.protectedScope.join(' ')).toContain('direct balance editing');
