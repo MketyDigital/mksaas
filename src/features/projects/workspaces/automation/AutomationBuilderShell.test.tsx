@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react';
 
-import { AutomationBuilderShell, buildAutomationBuilderReadiness } from './AutomationBuilderShell';
+import {
+  AutomationBuilderShell,
+  type AutomationBuilderWorkflowSummary,
+  buildAutomationBuilderReadiness,
+} from './AutomationBuilderShell';
 
-const workflow = {
+const workflow: AutomationBuilderWorkflowSummary = {
   id: 'workflow-1',
   name: 'Lead follow-up',
   slug: 'lead-follow-up',
@@ -11,10 +15,11 @@ const workflow = {
   triggerType: 'manual',
   version: '1',
   updatedAt: new Date('2026-09-05T12:00:00Z'),
-  nodeCount: 2,
+  nodeCount: 3,
   nodes: [
-    { id: 'trigger-1', type: 'trigger', configKeys: ['source'] },
-    { id: 'agent-1', type: 'agent', configKeys: ['agentId', 'prompt'] },
+    { configKeys: ['source'], id: 'trigger-1', isSupported: true, readinessLabel: 'Prepared', type: 'trigger' },
+    { configKeys: ['agentId', 'prompt'], id: 'agent-1', isSupported: true, readinessLabel: 'Prepared', type: 'agent' },
+    { configKeys: [], id: 'custom-1', isSupported: false, readinessLabel: 'Needs review', type: 'custom-provider' },
   ],
 };
 
@@ -31,11 +36,14 @@ describe('AutomationBuilderShell', () => {
 
     expect(screen.getByRole('heading', { name: 'Lead follow-up' })).toBeInTheDocument();
     expect(screen.getByText('Builder shell')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('nodes')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Definition nodes' })).toBeInTheDocument();
     expect(screen.getByText('trigger')).toBeInTheDocument();
     expect(screen.getByText('agent')).toBeInTheDocument();
+    expect(screen.getByText('custom-provider')).toBeInTheDocument();
+    expect(screen.getAllByText('Prepared')).toHaveLength(2);
+    expect(screen.getAllByText('Needs review')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /Run workflow/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Activate workflow/i })).not.toBeInTheDocument();
   });
