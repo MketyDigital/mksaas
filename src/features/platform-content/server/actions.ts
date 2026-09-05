@@ -1,12 +1,13 @@
 'use server';
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { appExperienceDefaultsSchema } from '@/features/platform-app-experience/schemas';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
+import type { PlatformJson } from '@/shared/db/schema/platform-content';
 
 import {
   docsArticleSchema,
@@ -51,6 +52,7 @@ export type PlatformPublishActionInput = z.infer<typeof platformPublishActionSch
 type Area = z.infer<typeof platformContentAreaSchema>;
 type EntityType = z.infer<typeof platformContentEntitySchema>;
 type ContentEntityType = Exclude<EntityType, 'app_experience'>;
+type MutationDb = Pick<typeof db, 'insert'>;
 
 type ActionResult = {
   ok: true;
@@ -78,14 +80,27 @@ function revalidatePlatformContentPaths(tenantSlug: string) {
   revalidatePath(`/t/${tenantSlug}/admin/platform-control/public-site`);
 }
 
+function toPlatformJson(value: unknown): PlatformJson | null {
+  if (value === undefined) return null;
+  return JSON.parse(JSON.stringify(value)) as PlatformJson;
+}
+
+function normalizeHomeSectionKey(entityKey: string) {
+  return entityKey.startsWith('home.') ? entityKey : `home.${entityKey}`;
+}
+
+function legacyHomeSectionKey(entityKey: string) {
+  return entityKey.startsWith('home.') ? entityKey.slice('home.'.length) : entityKey;
+}
+
 async function insertContentRevision(
-  tx: typeof db,
+  tx: MutationDb,
   input: {
     entityType: ContentEntityType;
     entityId: string;
     action: 'create' | 'update' | 'publish';
-    beforeJson?: Record<string, unknown> | null;
-    afterJson?: Record<string, unknown> | null;
+    beforeJson?: unknown;
+    afterJson?: unknown;
     actorId: string;
   },
 ) {
@@ -93,8 +108,27 @@ async function insertContentRevision(
     entityType: input.entityType,
     entityId: input.entityId,
     action: input.action,
-    beforeJson: input.beforeJson ?? null,
-    afterJson: input.afterJson ?? null,
+    beforeJson: toPlatformJson(input.beforeJson),
+    afterJson: toPlatformJson(input.afterJson),
+    actorId: input.actorId,
+  });
+}
+
+async function insertAppExperienceRevision(
+  tx: MutationDb,
+  input: {
+    entityType: 'dashboard_settings' | 'workspace_card' | 'control_center_module';
+    entityId: string;
+    beforeJson?: unknown;
+    afterJson?: unknown;
+    actorId: string;
+  },
+) {
+  await tx.insert(schema.platformAppExperienceRevisions).values({
+    entityType: input.entityType,
+    entityId: input.entityId,
+    beforeJson: toPlatformJson(input.beforeJson) as Record<string, unknown> | null,
+    afterJson: toPlatformJson(input.afterJson) as Record<string, unknown> | null,
     actorId: input.actorId,
   });
 }
@@ -127,20 +161,15 @@ async function saveSiteSettingsDraft(payload: unknown, actorId: string) {
       ? await tx.update(schema.platformSiteSettings).set(values).where(eq(schema.platformSiteSettings.id, existing.id)).returning()
       : await tx.insert(schema.platformSiteSettings).values({ ...values, createdBy: actorId }).returning();
 
-    await insertContentRevision(tx, {
-      entityType: 'site_settings',
-      entityId: row.id,
-      action: existing ? 'update' : 'create',
-      beforeJson: existing ?? null,
-      afterJson: row,
-      actorId,
-    });
+    await insertContentRevision(tx, { entityType: 'site_settings', entityId: row.id, action: existing ? 'update' : 'create', beforeJson: existing, afterJson: row, actorId });
     return 1;
   });
 }
 
 async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId: string) {
-  const sectionPayload = entityKey === 'home.hero' ? heroSectionSchema.parse(payload) : z.record(z.string(), z.unknown()).parse(payload);
+  const sectionKey = normalizeHomeSectionKey(entityKey);
+  const sectionType = legacyHomeSectionKey(sectionKey);
+  const sectionPayload = sectionKey === 'home.hero' ? heroSectionSchema.parse(payload) : z.unknown().parse(payload);
 
   return db.transaction(async (tx) => {
     const existingPage = await tx.query.platformPages.findFirst({ where: eq(schema.platformPages.slug, 'home') });
@@ -148,15 +177,17 @@ async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId
       ? await tx.update(schema.platformPages).set({ status: 'draft', enabled: true, updatedBy: actorId, updatedAt: new Date() }).where(eq(schema.platformPages.id, existingPage.id)).returning()
       : await tx.insert(schema.platformPages).values({ slug: 'home', title: 'Mkety Home', status: 'draft', enabled: true, createdBy: actorId, updatedBy: actorId }).returning();
 
-    const existingSection = await tx.query.platformPageSections.findFirst({ where: and(eq(schema.platformPageSections.pageId, page.id), eq(schema.platformPageSections.sectionKey, entityKey)) });
+    const existingSection = await tx.query.platformPageSections.findFirst({
+      where: and(eq(schema.platformPageSections.pageId, page.id), inArray(schema.platformPageSections.sectionKey, [sectionKey, sectionType])),
+    });
     const sectionValues = {
       pageId: page.id,
-      sectionKey: entityKey,
-      sectionType: entityKey.split('.').pop() ?? 'section',
-      sortOrder: entityKey === 'home.hero' ? 10 : 100,
+      sectionKey,
+      sectionType,
+      sortOrder: sectionKey === 'home.hero' ? 10 : 100,
       enabled: true,
       status: 'draft' as const,
-      contentJson: sectionPayload,
+      contentJson: toPlatformJson(sectionPayload) ?? {},
       updatedBy: actorId,
       updatedAt: new Date(),
     };
@@ -164,14 +195,7 @@ async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId
       ? await tx.update(schema.platformPageSections).set(sectionValues).where(eq(schema.platformPageSections.id, existingSection.id)).returning()
       : await tx.insert(schema.platformPageSections).values({ ...sectionValues, createdBy: actorId }).returning();
 
-    await insertContentRevision(tx, {
-      entityType: 'page_section',
-      entityId: section.id,
-      action: existingSection ? 'update' : 'create',
-      beforeJson: existingSection ?? null,
-      afterJson: section,
-      actorId,
-    });
+    await insertContentRevision(tx, { entityType: 'page_section', entityId: section.id, action: existingSection ? 'update' : 'create', beforeJson: existingSection, afterJson: section, actorId });
     return 1;
   });
 }
@@ -187,17 +211,10 @@ async function saveNavigationDraft(payload: unknown, actorId: string) {
     }
 
     for (const item of parsed.items) {
-      const [row] = await tx.insert(schema.platformNavigationItems).values({
-        area: item.area,
-        label: item.label,
-        href: item.href,
-        sortOrder: item.sortOrder,
-        enabled: item.enabled,
-        external: item.external,
-        status: 'draft',
-        createdBy: actorId,
-        updatedBy: actorId,
-      }).returning();
+      const [row] = await tx
+        .insert(schema.platformNavigationItems)
+        .values({ area: item.area, label: item.label, href: item.href, sortOrder: item.sortOrder, enabled: item.enabled, external: item.external, status: 'draft', createdBy: actorId, updatedBy: actorId })
+        .returning();
       await insertContentRevision(tx, { entityType: 'navigation_item', entityId: row.id, action: 'create', afterJson: row, actorId });
       mutatedRecords += 1;
     }
@@ -234,14 +251,7 @@ async function savePricingDraft(payload: unknown, actorId: string) {
       if (plan.features.length > 0) {
         await tx.insert(schema.platformPricingFeatures).values(plan.features.map((label, index) => ({ planId: row.id, label, sortOrder: index * 10 + 10, enabled: true })));
       }
-      await insertContentRevision(tx, {
-        entityType: 'pricing_plan',
-        entityId: row.id,
-        action: existing ? 'update' : 'create',
-        beforeJson: existing ?? null,
-        afterJson: { ...row, features: plan.features },
-        actorId,
-      });
+      await insertContentRevision(tx, { entityType: 'pricing_plan', entityId: row.id, action: existing ? 'update' : 'create', beforeJson: existing, afterJson: { ...row, features: plan.features }, actorId });
       mutatedRecords += 1;
     }
     return mutatedRecords;
@@ -261,7 +271,7 @@ async function saveDocsDraft(payload: unknown, actorId: string) {
         ? await tx.update(schema.platformDocsCategories).set(categoryValues).where(eq(schema.platformDocsCategories.id, existing.id)).returning()
         : await tx.insert(schema.platformDocsCategories).values({ ...categoryValues, createdBy: actorId }).returning();
       categoryIdByKey.set(row.key, row.id);
-      await insertContentRevision(tx, { entityType: 'docs_category', entityId: row.id, action: existing ? 'update' : 'create', beforeJson: existing ?? null, afterJson: row, actorId });
+      await insertContentRevision(tx, { entityType: 'docs_category', entityId: row.id, action: existing ? 'update' : 'create', beforeJson: existing, afterJson: row, actorId });
       mutatedRecords += 1;
     }
 
@@ -269,23 +279,11 @@ async function saveDocsDraft(payload: unknown, actorId: string) {
       const categoryId = categoryIdByKey.get(article.categoryKey);
       if (!categoryId) continue;
       const existing = await tx.query.platformDocsArticles.findFirst({ where: and(eq(schema.platformDocsArticles.categoryId, categoryId), eq(schema.platformDocsArticles.slug, article.slug)) });
-      const articleValues = {
-        categoryId,
-        slug: article.slug,
-        title: article.title,
-        excerpt: article.excerpt ?? null,
-        bodyMarkdown: article.bodyMarkdown,
-        sortOrder: article.sortOrder,
-        status: 'draft' as const,
-        seoTitle: article.seoTitle ?? null,
-        seoDescription: article.seoDescription ?? null,
-        updatedBy: actorId,
-        updatedAt: new Date(),
-      };
+      const articleValues = { categoryId, slug: article.slug, title: article.title, excerpt: article.excerpt ?? null, bodyMarkdown: article.bodyMarkdown, sortOrder: article.sortOrder, status: 'draft' as const, seoTitle: article.seoTitle ?? null, seoDescription: article.seoDescription ?? null, updatedBy: actorId, updatedAt: new Date() };
       const [row] = existing
         ? await tx.update(schema.platformDocsArticles).set(articleValues).where(eq(schema.platformDocsArticles.id, existing.id)).returning()
         : await tx.insert(schema.platformDocsArticles).values({ ...articleValues, createdBy: actorId }).returning();
-      await insertContentRevision(tx, { entityType: 'docs_article', entityId: row.id, action: existing ? 'update' : 'create', beforeJson: existing ?? null, afterJson: row, actorId });
+      await insertContentRevision(tx, { entityType: 'docs_article', entityId: row.id, action: existing ? 'update' : 'create', beforeJson: existing, afterJson: row, actorId });
       mutatedRecords += 1;
     }
     return mutatedRecords;
@@ -316,30 +314,16 @@ async function saveAppExperienceDraft(payload: unknown, actorId: string) {
     const [dashboard] = existingDashboard
       ? await tx.update(schema.platformAppDashboardSettings).set(dashboardValues).where(eq(schema.platformAppDashboardSettings.id, existingDashboard.id)).returning()
       : await tx.insert(schema.platformAppDashboardSettings).values({ ...dashboardValues, createdBy: actorId }).returning();
-    await tx.insert(schema.platformAppExperienceRevisions).values({ entityType: 'dashboard_settings', entityId: dashboard.id, beforeJson: existingDashboard ?? null, afterJson: dashboard, actorId });
+    await insertAppExperienceRevision(tx, { entityType: 'dashboard_settings', entityId: dashboard.id, beforeJson: existingDashboard, afterJson: dashboard, actorId });
     mutatedRecords += 1;
 
     for (const workspace of parsed.workspaces) {
       const existing = await tx.query.platformWorkspaceCards.findFirst({ where: and(eq(schema.platformWorkspaceCards.workspaceKey, workspace.key), isNull(schema.platformWorkspaceCards.tenantId)) });
-      const workspaceValues = {
-        tenantId: null,
-        workspaceKey: workspace.key,
-        label: workspace.label,
-        description: workspace.description,
-        href: workspace.href,
-        iconKey: workspace.iconKey ?? null,
-        badgeLabel: workspace.badgeLabel ?? null,
-        enabled: workspace.enabled,
-        requiresEntitlement: workspace.requiresEntitlement ?? null,
-        sortOrder: workspace.sortOrder,
-        status: 'draft' as const,
-        updatedBy: actorId,
-        updatedAt: new Date(),
-      };
+      const workspaceValues = { tenantId: null, workspaceKey: workspace.key, label: workspace.label, description: workspace.description, href: workspace.href, iconKey: workspace.iconKey ?? null, badgeLabel: workspace.badgeLabel ?? null, enabled: workspace.enabled, requiresEntitlement: workspace.requiresEntitlement ?? null, sortOrder: workspace.sortOrder, status: 'draft' as const, updatedBy: actorId, updatedAt: new Date() };
       const [row] = existing
         ? await tx.update(schema.platformWorkspaceCards).set(workspaceValues).where(eq(schema.platformWorkspaceCards.id, existing.id)).returning()
         : await tx.insert(schema.platformWorkspaceCards).values({ ...workspaceValues, createdBy: actorId }).returning();
-      await tx.insert(schema.platformAppExperienceRevisions).values({ entityType: 'workspace_card', entityId: row.id, beforeJson: existing ?? null, afterJson: row, actorId });
+      await insertAppExperienceRevision(tx, { entityType: 'workspace_card', entityId: row.id, beforeJson: existing, afterJson: row, actorId });
       mutatedRecords += 1;
     }
 
@@ -356,20 +340,14 @@ async function saveAppExperienceDraft(payload: unknown, actorId: string) {
         requiredPermission: module.requiredPermission,
         sortOrder: module.sortOrder,
         status: 'draft' as const,
-        metadataJson: {
-          domain: module.domain,
-          status: module.status,
-          editableScope: module.editableScope,
-          protectedScope: module.protectedScope,
-          implementationNotes: module.implementationNotes,
-        },
+        metadataJson: { domain: module.domain, status: module.status, editableScope: module.editableScope, protectedScope: module.protectedScope, implementationNotes: module.implementationNotes },
         updatedBy: actorId,
         updatedAt: new Date(),
       };
       const [row] = existing
         ? await tx.update(schema.platformAppControlCenterModules).set(moduleValues).where(eq(schema.platformAppControlCenterModules.id, existing.id)).returning()
         : await tx.insert(schema.platformAppControlCenterModules).values({ ...moduleValues, createdBy: actorId }).returning();
-      await tx.insert(schema.platformAppExperienceRevisions).values({ entityType: 'control_center_module', entityId: row.id, beforeJson: existing ?? null, afterJson: row, actorId });
+      await insertAppExperienceRevision(tx, { entityType: 'control_center_module', entityId: row.id, beforeJson: existing, afterJson: row, actorId });
       mutatedRecords += 1;
     }
     return mutatedRecords;
@@ -401,15 +379,19 @@ async function publishDraftRecord(parsed: PlatformPublishActionInput, actorId: s
   return db.transaction(async (tx) => {
     switch (parsed.entityType) {
       case 'site_settings': {
-        const rows = await tx.update(schema.platformSiteSettings).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformSiteSettings.environment, parsed.entityKey)).returning();
+        const rows = await tx.update(schema.platformSiteSettings).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformSiteSettings.environment, parsed.entityKey), eq(schema.platformSiteSettings.status, 'draft'))).returning();
         for (const row of rows) await insertContentRevision(tx, { entityType: 'site_settings', entityId: row.id, action: 'publish', afterJson: row, actorId });
         return rows.length;
       }
       case 'page_section': {
         const page = await tx.query.platformPages.findFirst({ where: eq(schema.platformPages.slug, 'home') });
         if (!page) return 0;
-        await tx.update(schema.platformPages).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformPages.id, page.id));
-        const rows = await tx.update(schema.platformPageSections).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformPageSections.pageId, page.id), eq(schema.platformPageSections.sectionKey, parsed.entityKey))).returning();
+        const sectionKey = normalizeHomeSectionKey(parsed.entityKey);
+        const legacyKey = legacyHomeSectionKey(sectionKey);
+        const rows = await tx.update(schema.platformPageSections).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformPageSections.pageId, page.id), inArray(schema.platformPageSections.sectionKey, [sectionKey, legacyKey]), eq(schema.platformPageSections.status, 'draft'))).returning();
+        if (rows.length > 0) {
+          await tx.update(schema.platformPages).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformPages.id, page.id));
+        }
         for (const row of rows) await insertContentRevision(tx, { entityType: 'page_section', entityId: row.id, action: 'publish', afterJson: row, actorId });
         return rows.length;
       }
@@ -431,12 +413,12 @@ async function publishDraftRecord(parsed: PlatformPublishActionInput, actorId: s
         return categories.length + articles.length;
       }
       case 'app_experience': {
-        const dashboard = await tx.update(schema.platformAppDashboardSettings).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformAppDashboardSettings.status, 'draft')).returning();
-        const workspaces = await tx.update(schema.platformWorkspaceCards).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformWorkspaceCards.status, 'draft')).returning();
+        const dashboard = await tx.update(schema.platformAppDashboardSettings).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformAppDashboardSettings.status, 'draft'), isNull(schema.platformAppDashboardSettings.tenantId))).returning();
+        const workspaces = await tx.update(schema.platformWorkspaceCards).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformWorkspaceCards.status, 'draft'), isNull(schema.platformWorkspaceCards.tenantId))).returning();
         const modules = await tx.update(schema.platformAppControlCenterModules).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformAppControlCenterModules.status, 'draft')).returning();
-        for (const row of dashboard) await tx.insert(schema.platformAppExperienceRevisions).values({ entityType: 'dashboard_settings', entityId: row.id, afterJson: row, actorId });
-        for (const row of workspaces) await tx.insert(schema.platformAppExperienceRevisions).values({ entityType: 'workspace_card', entityId: row.id, afterJson: row, actorId });
-        for (const row of modules) await tx.insert(schema.platformAppExperienceRevisions).values({ entityType: 'control_center_module', entityId: row.id, afterJson: row, actorId });
+        for (const row of dashboard) await insertAppExperienceRevision(tx, { entityType: 'dashboard_settings', entityId: row.id, afterJson: row, actorId });
+        for (const row of workspaces) await insertAppExperienceRevision(tx, { entityType: 'workspace_card', entityId: row.id, afterJson: row, actorId });
+        for (const row of modules) await insertAppExperienceRevision(tx, { entityType: 'control_center_module', entityId: row.id, afterJson: row, actorId });
         return dashboard.length + workspaces.length + modules.length;
       }
       default:
@@ -454,14 +436,7 @@ async function recordAuditSafely(input: {
   mutatedRecords: number;
 }) {
   try {
-    await recordPlatformContentAuditEvent({
-      tenantSlug: input.tenantSlug,
-      actorUserId: input.actorUserId,
-      actorEmail: input.actorEmail,
-      action: input.action,
-      input: input.contentInput,
-      mutatedRecords: input.mutatedRecords,
-    });
+    await recordPlatformContentAuditEvent({ tenantSlug: input.tenantSlug, actorUserId: input.actorUserId, actorEmail: input.actorEmail, action: input.action, input: input.contentInput, mutatedRecords: input.mutatedRecords });
     return true;
   } catch {
     return false;
@@ -472,17 +447,8 @@ export async function savePlatformContentDraft(tenantSlug: string, input: Platfo
   const parsed = platformContentDraftActionSchema.parse(input);
   const actor = await requireAreaAccess(tenantSlug, parsed.area);
   const mutatedRecords = await saveDraftRecord(parsed, actor.userId);
-  const auditRecorded = await recordAuditSafely({
-    tenantSlug,
-    actorUserId: actor.userId,
-    actorEmail: actor.email,
-    action: 'platform_content.draft_saved',
-    contentInput: parsed,
-    mutatedRecords,
-  });
-
+  const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.draft_saved', contentInput: parsed, mutatedRecords });
   revalidatePlatformContentPaths(tenantSlug);
-
   return { ok: true, status: 'draft_saved', actorEmail: actor.email, area: parsed.area, entityType: parsed.entityType, entityKey: parsed.entityKey, mutatedRecords, auditRecorded };
 }
 
@@ -490,16 +456,7 @@ export async function publishPlatformContent(tenantSlug: string, input: Platform
   const parsed = platformPublishActionSchema.parse(input);
   const actor = await requireAreaAccess(tenantSlug, parsed.area);
   const mutatedRecords = await publishDraftRecord(parsed, actor.userId);
-  const auditRecorded = await recordAuditSafely({
-    tenantSlug,
-    actorUserId: actor.userId,
-    actorEmail: actor.email,
-    action: 'platform_content.published',
-    contentInput: parsed,
-    mutatedRecords,
-  });
-
+  const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.published', contentInput: parsed, mutatedRecords });
   revalidatePlatformContentPaths(tenantSlug);
-
   return { ok: true, status: 'published', actorEmail: actor.email, area: parsed.area, entityType: parsed.entityType, entityKey: parsed.entityKey, mutatedRecords, auditRecorded };
 }
