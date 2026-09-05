@@ -63,6 +63,10 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Replaced `migrations/0001_platform_app_experience.sql` with an idempotent migration aligned to the Drizzle schema and corrected the wrong `saas_template.user` references to `saas_template.users`.
 - Replaced `migrations/0000_platform_content.sql` with a complete aligned migration including the missing user foreign keys for pages, sections, navigation, pricing, docs, and revisions.
 - Added the missing `route` icon mapping for the Domains & Routing Platform Control Center module.
+- Rechecked `AGENTS.md` before the CI repair batch to keep the work aligned with the full Mkety blueprint: mksaas remains the Mkety Platform/public-site repo, Mkety is not AI-only, Platform and Academy remain the two primary products, and enterprise/customer solutions stay separate.
+- Removed the stale `./assessments` schema barrel export because there is no `src/shared/db/schema/assessments.ts` on the branch.
+- Updated `LoginForm` tests to explicitly pass `enableAuth0Login` and `enableDevelopmentLogin` for configured-provider expectations, while preserving a separate no-provider fallback test.
+- Split the CI workflow into independent `test`, `type-check`, `lint`, and `build` jobs so one failure no longer hides the remaining verification signals.
 
 ## Boundary rulings
 
@@ -106,9 +110,13 @@ Ruling: The migration SQL should be idempotent and should reference the actual A
 
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
+Ruling: Every new development batch should re-check the full Mkety blueprint/AGENTS direction before changing code, especially when moving quickly — cost if wrong: fast implementation may drift from product boundaries, approved domains, or security/tenant isolation rules.
+
 ## Verification status
 
-Not verified in this connector session. Before merge, run:
+CI restarted on commit `a799d898525756d9143a63b75bc9da3565d16315` after the CI repair batch. Job results are pending and must be read before claiming verification.
+
+Before merge, the required checks remain:
 
 ```bash
 pnpm test
