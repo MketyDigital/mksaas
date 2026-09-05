@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 interface PublicSiteSectionPageProps {
@@ -37,6 +38,8 @@ const modules: Record<string, { title: string; description: string; items: strin
 
 export default async function PublicSiteSectionPage({ params }: PublicSiteSectionPageProps) {
   const { tenant, section } = await params;
+  await requirePlatformContentAccess(tenant);
+
   const module = modules[section];
 
   if (!module) notFound();
@@ -55,8 +58,8 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
         <CardHeader>
           <CardTitle>Build scope</CardTitle>
           <CardDescription>
-            This module is part of the Mkety public CMS. The next implementation phase will attach validated edit forms,
-            draft/publish actions, revision records, and route revalidation.
+            This module is part of the Mkety public CMS. Validated edit forms will call server actions that enforce
+            platform content permissions, draft/publish state, revision records, route revalidation, and audit-safe changes.
           </CardDescription>
         </CardHeader>
         <CardContent>
