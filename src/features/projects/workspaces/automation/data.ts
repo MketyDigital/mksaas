@@ -3,8 +3,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { workflowRuns, workflows } from '@/shared/db/schema';
 
-import type { AutomationBuilderNodeSummary, AutomationBuilderWorkflowSummary } from './AutomationBuilderShell';
+import type { AutomationBuilderWorkflowSummary } from './AutomationBuilderShell';
 import { type AutomationWorkspaceMetrics, buildAutomationWorkspaceMetrics } from './automation-model';
+import { buildWorkflowNodeSummaries } from './workflow-nodes';
 
 export type AutomationWorkflowSummary = {
   id: string;
@@ -35,27 +36,6 @@ export type AutomationBuilderSnapshot = {
   workflow: AutomationBuilderWorkflowSummary;
   recentRuns: AutomationRunSummary[];
 };
-
-type RawWorkflowNode = {
-  id?: unknown;
-  type?: unknown;
-  config?: unknown;
-};
-
-function toNodeSummaries(definition: unknown): AutomationBuilderNodeSummary[] {
-  const maybeDefinition = definition as { nodes?: RawWorkflowNode[] };
-  const nodes = Array.isArray(maybeDefinition.nodes) ? maybeDefinition.nodes : [];
-
-  return nodes.map((node, index) => {
-    const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config) ? node.config : {};
-
-    return {
-      configKeys: Object.keys(config),
-      id: typeof node.id === 'string' && node.id.length > 0 ? node.id : `node-${index + 1}`,
-      type: typeof node.type === 'string' && node.type.length > 0 ? node.type : 'unknown',
-    };
-  });
-}
 
 function toRunSummary(run: typeof workflowRuns.$inferSelect): AutomationRunSummary {
   return {
@@ -120,7 +100,7 @@ export async function getAutomationBuilderSnapshot({
     return null;
   }
 
-  const nodes = toNodeSummaries(workflow.definition);
+  const nodes = buildWorkflowNodeSummaries(workflow.definition);
   const recentRuns = await db.query.workflowRuns.findMany({
     where: and(eq(workflowRuns.tenantId, tenantId), eq(workflowRuns.projectId, projectId), eq(workflowRuns.workflowId, workflow.id)),
     orderBy: [desc(workflowRuns.startedAt)],
