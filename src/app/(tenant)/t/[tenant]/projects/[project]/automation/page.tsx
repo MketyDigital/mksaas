@@ -1,4 +1,5 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { getAutomationWorkspaceSnapshot } from '@/features/projects/workspaces/automation/data';
 import { AutomationWorkspaceOverview } from '@/features/projects/workspaces/AutomationWorkspaceOverview';
 import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
@@ -14,6 +15,8 @@ export default async function AutomationWorkspacePage({ params }: { params: Prom
     return <div className="p-8">{access.reason}</div>;
   }
 
+  const snapshot = await getAutomationWorkspaceSnapshot({ projectId: access.project.id, tenantId: access.tenant.id });
+
   return (
     <WorkspaceShell
       projectName={access.project.name}
@@ -21,11 +24,11 @@ export default async function AutomationWorkspacePage({ params }: { params: Prom
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('automation')}
     >
-      <AutomationWorkspaceOverview projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
+      <AutomationWorkspaceOverview projectSlug={access.project.slug} snapshot={snapshot} tenantSlug={access.tenant.slug} />
       <WorkspaceEmptyState
         actions={[{ href: `/t/${access.tenant.slug}/projects/${access.project.slug}/ai`, label: 'Use AI Workspace for now' }]}
-        description="Workflow builder, triggers, actions, webhooks, run history, retries, and failure handling will be implemented after the core workspace shell is stable."
-        title="Automation engine is not active yet"
+        description="Workflow builder, triggers, actions, webhooks, live execution, retries, and failure handling remain inactive until execution safety, audit, and permission rules are complete."
+        title="Automation execution is not active yet"
       />
     </WorkspaceShell>
   );
