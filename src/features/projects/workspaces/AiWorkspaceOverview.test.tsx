@@ -19,10 +19,10 @@ describe('AiWorkspaceOverview', () => {
   it('links only currently available AI surfaces', () => {
     render(<AiWorkspaceOverview agentCount={1} canManage projectSlug="demo" tenantSlug="acme" />);
 
-    expect(screen.getByRole('link', { name: /Agents/i })).toHaveAttribute('href', '/t/acme/projects/demo/ai');
-    expect(screen.getByRole('link', { name: /Knowledge/i })).toHaveAttribute('href', '/t/acme/projects/demo/knowledge');
-    expect(screen.queryByRole('link', { name: /Tools/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Publish/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Agents$/i })).toHaveAttribute('href', '/t/acme/projects/demo/ai');
+    expect(screen.getByRole('link', { name: /^Knowledge$/i })).toHaveAttribute('href', '/t/acme/projects/demo/knowledge');
+    expect(screen.queryByRole('link', { name: /^Tools$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Publish$/i })).not.toBeInTheDocument();
   });
 
   it('keeps publish protected while still visible in the AI roadmap', () => {
