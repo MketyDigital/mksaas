@@ -1,4 +1,4 @@
-import { BadgeCheck, Cloud, Globe2, KeyRound, LayoutDashboard, Shield, Wallet } from 'lucide-react';
+import { BadgeCheck, Cloud, Globe2, KeyRound, LayoutDashboard, Route, Shield, Wallet } from 'lucide-react';
 import Link from 'next/link';
 
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
@@ -15,6 +15,7 @@ const iconMap = {
   'badge-check': BadgeCheck,
   wallet: Wallet,
   cloud: Cloud,
+  route: Route,
   'key-round': KeyRound,
   shield: Shield,
 };
