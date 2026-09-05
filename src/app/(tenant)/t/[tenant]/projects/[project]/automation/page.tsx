@@ -1,4 +1,5 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { AutomationWorkspaceOverview } from '@/features/projects/workspaces/AutomationWorkspaceOverview';
 import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
@@ -20,10 +21,11 @@ export default async function AutomationWorkspacePage({ params }: { params: Prom
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('automation')}
     >
+      <AutomationWorkspaceOverview projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
       <WorkspaceEmptyState
         actions={[{ href: `/t/${access.tenant.slug}/projects/${access.project.slug}/ai`, label: 'Use AI Workspace for now' }]}
         description="Workflow builder, triggers, actions, webhooks, run history, retries, and failure handling will be implemented after the core workspace shell is stable."
-        title="Automation foundation is planned"
+        title="Automation engine is not active yet"
       />
     </WorkspaceShell>
   );
