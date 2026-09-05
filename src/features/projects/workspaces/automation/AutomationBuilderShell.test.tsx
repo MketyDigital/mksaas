@@ -31,7 +31,8 @@ describe('AutomationBuilderShell', () => {
 
     expect(screen.getByRole('heading', { name: 'Lead follow-up' })).toBeInTheDocument();
     expect(screen.getByText('Builder shell')).toBeInTheDocument();
-    expect(screen.getByText('2 nodes')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('nodes')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Definition nodes' })).toBeInTheDocument();
     expect(screen.getByText('trigger')).toBeInTheDocument();
     expect(screen.getByText('agent')).toBeInTheDocument();
