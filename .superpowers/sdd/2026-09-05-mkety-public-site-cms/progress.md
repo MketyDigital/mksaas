@@ -10,6 +10,7 @@
 | Usage limit | User asked not to burn too much limit. | Ruling: Start with Task 1 foundation only, avoid broad review-agent fanout, and report actual progress — cost if wrong: slower overall delivery but safer token usage. |
 | Migration naming | Existing migrations naming/history were not fully inspected in this low-token batch. | Ruling: Add the platform-content SQL migration as an initial draft migration file, but mark migration verification required before merge — cost if wrong: filename/order may need adjustment to match Drizzle journal conventions. |
 | Completion standard | Could not run local verification in the GitHub connector session. | Ruling: Do not mark Task 1 complete; report it as partial foundation until CI/local commands run — cost if wrong: none beyond conservative status wording. |
+| Migration actor FKs | Manual migration currently includes actor FKs only for site settings, while Drizzle schema references users from more tables. | Ruling: Leave remaining actor FKs to generated migration reconciliation rather than hand-writing every FK under low-token conditions — cost if wrong: migration diff will need expansion before merge. |
 
 ## Progress
 
@@ -20,8 +21,9 @@ Task 1: partial — added `migrations/0000_platform_content.sql` for the platfor
 Task 1: partial — considered nested navigation relation but simplified it back to direct parent id only until runtime code needs a relation; this avoids risky self-referential Drizzle typing without local type-check.
 Task 1: partial — added unique environment constraint and status index for singleton-like platform site settings.
 Task 1: partial — added lightweight schema tests for enum lifecycle and table presence.
+Task 1: partial — started actor foreign keys in manual migration with site settings created_by/updated_by references.
 Task 1: low-token pause — schema foundation is staged on branch; verification pending because GitHub connector cannot run `pnpm test`, `pnpm type-check`, or `pnpm build` locally in this session.
 
 ## Next resume point
 
-Continue from Task 1 verification/fix, then Task 2: Zod schemas and Mkety default public content.
+Continue from Task 1 verification/fix, complete generated migration reconciliation, then Task 2: Zod schemas and Mkety default public content.
