@@ -1,10 +1,9 @@
 import { BadgeCheck, Cloud, Globe2, KeyRound, LayoutDashboard, Shield, Wallet } from 'lucide-react';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
+import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
-import { hasPermission } from '@/shared/lib/permissions';
 
 interface PlatformControlPageProps {
   params: Promise<{ tenant: string }>;
@@ -22,11 +21,7 @@ const iconMap = {
 
 export default async function PlatformControlPage({ params }: PlatformControlPageProps) {
   const { tenant } = await params;
-  const canAccess = await hasPermission(tenant, 'admin:dashboard');
-
-  if (!canAccess) {
-    redirect(`/t/${tenant}?error=unauthorized`);
-  }
+  await requirePlatformControlAccess(tenant);
 
   const modules = await getPublishedControlCenterModules();
 
