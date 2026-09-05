@@ -14,9 +14,7 @@ type BuildAutomationWorkspaceCapabilitiesOptions = {
   tenantSlug: string;
 };
 
-export function buildAutomationWorkspaceCapabilities({ projectSlug, tenantSlug }: BuildAutomationWorkspaceCapabilitiesOptions) {
-  const projectBasePath = `/t/${tenantSlug}/projects/${projectSlug}`;
-
+export function buildAutomationWorkspaceCapabilities(_: BuildAutomationWorkspaceCapabilitiesOptions): AutomationWorkspaceCapability[] {
   return [
     {
       key: 'workflows',
@@ -60,7 +58,7 @@ export function buildAutomationWorkspaceCapabilities({ projectSlug, tenantSlug }
       status: 'planned',
       statusLabel: 'Planned',
     },
-  ] satisfies AutomationWorkspaceCapability[];
+  ];
 }
 
 export function AutomationWorkspaceOverview({ projectSlug, tenantSlug }: BuildAutomationWorkspaceCapabilitiesOptions) {
