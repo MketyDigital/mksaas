@@ -215,8 +215,27 @@ export const platformContentRevisions = appSchema.table(
   (table) => [index('platform_content_revisions_entity_idx').on(table.entityType, table.entityId), index('platform_content_revisions_actor_idx').on(table.actorId)],
 );
 
-export const platformPagesRelations = relations(platformPages, ({ many }) => ({
+export const platformSiteSettingsRelations = relations(platformSiteSettings, ({ one }) => ({
+  creator: one(users, {
+    fields: [platformSiteSettings.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [platformSiteSettings.updatedBy],
+    references: [users.id],
+  }),
+}));
+
+export const platformPagesRelations = relations(platformPages, ({ many, one }) => ({
   sections: many(platformPageSections),
+  creator: one(users, {
+    fields: [platformPages.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [platformPages.updatedBy],
+    references: [users.id],
+  }),
 }));
 
 export const platformPageSectionsRelations = relations(platformPageSections, ({ one }) => ({
@@ -224,10 +243,26 @@ export const platformPageSectionsRelations = relations(platformPageSections, ({ 
     fields: [platformPageSections.pageId],
     references: [platformPages.id],
   }),
+  creator: one(users, {
+    fields: [platformPageSections.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [platformPageSections.updatedBy],
+    references: [users.id],
+  }),
 }));
 
-export const platformPricingPlansRelations = relations(platformPricingPlans, ({ many }) => ({
+export const platformPricingPlansRelations = relations(platformPricingPlans, ({ many, one }) => ({
   features: many(platformPricingFeatures),
+  creator: one(users, {
+    fields: [platformPricingPlans.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [platformPricingPlans.updatedBy],
+    references: [users.id],
+  }),
 }));
 
 export const platformPricingFeaturesRelations = relations(platformPricingFeatures, ({ one }) => ({
@@ -237,14 +272,37 @@ export const platformPricingFeaturesRelations = relations(platformPricingFeature
   }),
 }));
 
-export const platformDocsCategoriesRelations = relations(platformDocsCategories, ({ many }) => ({
+export const platformDocsCategoriesRelations = relations(platformDocsCategories, ({ many, one }) => ({
   articles: many(platformDocsArticles),
+  creator: one(users, {
+    fields: [platformDocsCategories.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [platformDocsCategories.updatedBy],
+    references: [users.id],
+  }),
 }));
 
 export const platformDocsArticlesRelations = relations(platformDocsArticles, ({ one }) => ({
   category: one(platformDocsCategories, {
     fields: [platformDocsArticles.categoryId],
     references: [platformDocsCategories.id],
+  }),
+  creator: one(users, {
+    fields: [platformDocsArticles.createdBy],
+    references: [users.id],
+  }),
+  updater: one(users, {
+    fields: [platformDocsArticles.updatedBy],
+    references: [users.id],
+  }),
+}));
+
+export const platformContentRevisionsRelations = relations(platformContentRevisions, ({ one }) => ({
+  actor: one(users, {
+    fields: [platformContentRevisions.actorId],
+    references: [users.id],
   }),
 }));
 
