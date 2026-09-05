@@ -42,6 +42,13 @@ export const appControlCenterModuleSchema = z.object({
   enabled: z.boolean().default(true),
   requiredPermission: z.string().min(1).max(160),
   sortOrder: z.number().int().min(0).default(0),
+  domain: z
+    .enum(['mkety.com', 'app.mkety.com', 'api.mkety.com', 'origin.mkety.com', '*.mkety.app', 'multi-domain', 'internal'])
+    .default('app.mkety.com'),
+  status: z.enum(['planned', 'foundation', 'active', 'protected']).default('foundation'),
+  editableScope: z.array(z.string().min(1).max(220)).default([]),
+  protectedScope: z.array(z.string().min(1).max(220)).default([]),
+  implementationNotes: z.string().max(1000).optional(),
 });
 
 export const appExperienceDefaultsSchema = z.object({
