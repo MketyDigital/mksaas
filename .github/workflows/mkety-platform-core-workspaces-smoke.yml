@@ -37,7 +37,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run workspace tests
-        run: pnpm test -- src/features/projects/workspaces/registry.test.ts src/features/projects/workspaces/WorkspaceHub.test.tsx src/features/projects/workspaces/WorkspaceShell.test.tsx src/features/projects/workspaces/AiWorkspaceOverview.test.tsx src/features/projects/workspaces/AutomationWorkspaceOverview.test.tsx src/features/projects/workspaces/DeployWorkspaceOverview.test.tsx
+        run: pnpm test -- src/features/projects/workspaces/registry.test.ts src/features/projects/workspaces/WorkspaceHub.test.tsx src/features/projects/workspaces/WorkspaceShell.test.tsx src/features/projects/workspaces/AiWorkspaceOverview.test.tsx src/features/projects/workspaces/AutomationWorkspaceOverview.test.tsx src/features/projects/workspaces/DeployWorkspaceOverview.test.tsx src/features/projects/workspaces/SolutionHubWorkspaceOverview.test.tsx
 
       - name: Type-check
         run: pnpm type-check
