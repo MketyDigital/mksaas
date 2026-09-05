@@ -56,7 +56,7 @@ export async function createAgent(formData: FormData) {
   if (existing) throw new Error('That agent slug is already in use in this project.');
 
   await db.insert(agents).values({ tenantId: tenant.id, projectId: project.id, name, slug, instructions: instructions || null });
-  redirect(`/t/${tenant.slug}/projects/${project.slug}`);
+  redirect(`/t/${tenant.slug}/projects/${project.slug}/ai`);
 }
 
 export async function getProjectsForTenant(tenantSlug: string) {
