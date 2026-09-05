@@ -60,6 +60,9 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Normalized homepage section keys in draft and publish actions so `hero` and `home.hero` resolve to the same persisted section.
 - Tightened publish operations so site settings, homepage sections, and app-experience global content publish only matching draft rows instead of overly broad records.
 - Made the CMS audit insert null-safe by omitting nullable `entityId` instead of explicitly assigning a null UUID field.
+- Replaced `migrations/0001_platform_app_experience.sql` with an idempotent migration aligned to the Drizzle schema and corrected the wrong `saas_template.user` references to `saas_template.users`.
+- Replaced `migrations/0000_platform_content.sql` with a complete aligned migration including the missing user foreign keys for pages, sections, navigation, pricing, docs, and revisions.
+- Added the missing `route` icon mapping for the Domains & Routing Platform Control Center module.
 
 ## Boundary rulings
 
@@ -98,6 +101,8 @@ Ruling: App-experience loaders must read only published global records unless ex
 Ruling: Platform content JSON columns and revision snapshots must allow validated JSON arrays as well as objects because homepage sections like FAQ/footer can be stored as ordered arrays — cost if wrong: seeds and draft saves can fail type-checking or runtime insertion.
 
 Ruling: Revision snapshots should be JSON-serialized before insert so database row objects and Date values do not leak into JSONB writes as unverified runtime objects — cost if wrong: revision writes may fail or store inconsistent values.
+
+Ruling: The migration SQL should be idempotent and should reference the actual Auth.js `users` table from `src/shared/db/schema/auth.ts`; earlier `saas_template.user` references are invalid — cost if wrong: migrations can fail before app code loads.
 
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
