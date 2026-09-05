@@ -105,6 +105,17 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       sortOrder: 50,
     },
     {
+      key: 'auth-gateway',
+      label: 'Auth Gateway',
+      description:
+        'Monitor the central Mkety identity/access gateway, product audiences, JWKS status, key rotation metadata, and access issuance outcomes.',
+      href: '/admin/platform-control/auth-gateway',
+      iconKey: 'key-round',
+      level: 4,
+      requiredPermission: 'platform:security',
+      sortOrder: 60,
+    },
+    {
       key: 'security-audit',
       label: 'Security & Audit',
       description: 'View security events, audit logs, role changes, session actions, webhook events, and sensitive operations.',
@@ -112,7 +123,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       iconKey: 'shield',
       level: 4,
       requiredPermission: 'platform:security',
-      sortOrder: 60,
+      sortOrder: 70,
     },
   ],
 };
