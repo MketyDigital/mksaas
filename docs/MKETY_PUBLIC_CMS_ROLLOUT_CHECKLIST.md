@@ -24,7 +24,31 @@ pnpm build
 
 The GitHub `CI` workflow runs these as independent jobs so failures do not hide each other.
 
-## 2. Migration reconciliation
+## 2. Migration-path reality check
+
+The active Drizzle config is:
+
+```text
+schema: ./src/shared/db/schema/index.ts
+out: ./src/shared/db/migrations
+```
+
+The Mkety CMS bootstrap SQL currently lives in:
+
+```text
+migrations/0000_platform_content.sql
+migrations/0001_platform_app_experience.sql
+```
+
+Because those files are outside Drizzle's configured `out` folder, `pnpm db:migrate` alone will not apply the Mkety CMS bootstrap SQL. This branch therefore includes a dedicated runner:
+
+```bash
+pnpm db:migrate:mkety-content
+```
+
+This is intentional for this foundation branch while the Drizzle-generated migration output is reconciled.
+
+## 3. Migration reconciliation
 
 Before applying migrations to a shared or production-like database:
 
@@ -47,19 +71,21 @@ Confirm:
 - enums are created before dependent tables;
 - foreign keys reference existing tables;
 - index and constraint names do not collide;
-- migrations are idempotent enough for controlled rollout/retry.
+- migrations are idempotent enough for controlled rollout/retry;
+- the existing Drizzle journal state is reconciled before relying on `pnpm db:migrate` for these CMS tables.
 
-## 3. Apply migrations
+## 4. Apply migrations
 
 On a real database with the correct `DATABASE_URL`:
 
 ```bash
 pnpm db:migrate
+pnpm db:migrate:mkety-content
 ```
 
 Do not use `db:push:unsafe` for production or shared environments.
 
-## 4. Seed Mkety CMS defaults
+## 5. Seed Mkety CMS defaults
 
 After migrations:
 
@@ -84,7 +110,7 @@ Seed rules:
 - create published defaults only where keys/slugs are absent;
 - keep billing/security/deployment/Auth Gateway implementation logic out of CMS records.
 
-## 5. Smoke test seeded content
+## 6. Smoke test seeded content
 
 Run:
 
@@ -100,7 +126,7 @@ Expected result:
 ✅ Mkety platform content smoke checks passed.
 ```
 
-## 6. Manual admin smoke test
+## 7. Manual admin smoke test
 
 In a tenant admin session with the correct platform permissions:
 
@@ -114,7 +140,7 @@ In a tenant admin session with the correct platform permissions:
 8. Confirm high-level audit event attempt status is visible in the admin UI.
 9. Repeat with Docs and App Experience payloads.
 
-## 7. Protected-boundary verification
+## 8. Protected-boundary verification
 
 Confirm CMS cannot directly mutate:
 
@@ -129,7 +155,7 @@ Confirm CMS cannot directly mutate:
 
 The Platform Control Center may present protected modules and safe metadata, but those systems require separate implementation and security review.
 
-## 8. Ready-for-main-app handoff
+## 9. Ready-for-main-app handoff
 
 Only after the checks above pass should this branch be treated as ready to move from public-site/CMS foundation work into heavier `app.mkety.com` Platform development.
 
