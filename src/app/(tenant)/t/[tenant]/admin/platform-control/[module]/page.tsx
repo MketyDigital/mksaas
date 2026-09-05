@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 
+import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
+import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
@@ -38,6 +40,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   }
 
   const actions = protectedActionsByModule[controlModule.key] ?? ['Review configuration', 'Manage approved settings'];
+  const isAppExperience = controlModule.key === 'app-experience';
 
   return (
     <div className="space-y-8">
@@ -46,6 +49,18 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{controlModule.label}</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{controlModule.description}</p>
       </div>
+
+      {isAppExperience && (
+        <PlatformContentDraftForm
+          tenant={tenant}
+          area="app-experience"
+          entityType="app_experience"
+          entityKey="production"
+          title="App experience draft"
+          description="Validate dashboard, workspace, and Platform Control Center configuration through the server-side Mkety app-experience boundary."
+          defaultPayload={defaultAppExperience}
+        />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
