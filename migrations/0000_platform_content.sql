@@ -216,3 +216,15 @@ DO $$ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_site_settings" ADD CONSTRAINT "platform_site_settings_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "saas_template"."platform_site_settings" ADD CONSTRAINT "platform_site_settings_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "saas_template"."users"("id") ON DELETE set null;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
