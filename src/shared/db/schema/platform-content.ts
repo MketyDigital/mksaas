@@ -4,6 +4,8 @@ import { boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, var
 import { users } from './auth';
 import { appSchema } from './schema';
 
+export type PlatformJson = string | number | boolean | null | PlatformJson[] | { [key: string]: PlatformJson };
+
 export const platformContentStatusEnum = appSchema.enum('platform_content_status', ['draft', 'published', 'archived']);
 export const platformNavigationAreaEnum = appSchema.enum('platform_navigation_area', ['header', 'footer']);
 export const platformContentEntityEnum = appSchema.enum('platform_content_entity', [
@@ -49,10 +51,7 @@ export const platformSiteSettings = appSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex('platform_site_settings_environment_idx').on(table.environment),
-    index('platform_site_settings_status_idx').on(table.status),
-  ],
+  (table) => [uniqueIndex('platform_site_settings_environment_idx').on(table.environment), index('platform_site_settings_status_idx').on(table.status)],
 );
 
 export const platformPages = appSchema.table(
@@ -86,7 +85,7 @@ export const platformPageSections = appSchema.table(
     sortOrder: integer('sort_order').notNull().default(0),
     enabled: boolean('enabled').notNull().default(true),
     status: platformContentStatusEnum('status').notNull().default('draft'),
-    contentJson: jsonb('content_json').$type<Record<string, unknown>>().notNull().default({}),
+    contentJson: jsonb('content_json').$type<PlatformJson>().notNull().default({}),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
@@ -117,11 +116,7 @@ export const platformNavigationItems = appSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('platform_navigation_items_area_sort_idx').on(table.area, table.sortOrder),
-    index('platform_navigation_items_parent_idx').on(table.parentId),
-    index('platform_navigation_items_status_idx').on(table.status),
-  ],
+  (table) => [index('platform_navigation_items_area_sort_idx').on(table.area, table.sortOrder), index('platform_navigation_items_parent_idx').on(table.parentId), index('platform_navigation_items_status_idx').on(table.status)],
 );
 
 export const platformPricingPlans = appSchema.table(
@@ -200,11 +195,7 @@ export const platformDocsArticles = appSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex('platform_docs_articles_category_slug_idx').on(table.categoryId, table.slug),
-    index('platform_docs_articles_status_idx').on(table.status),
-    index('platform_docs_articles_sort_idx').on(table.categoryId, table.sortOrder),
-  ],
+  (table) => [uniqueIndex('platform_docs_articles_category_slug_idx').on(table.categoryId, table.slug), index('platform_docs_articles_status_idx').on(table.status), index('platform_docs_articles_sort_idx').on(table.categoryId, table.sortOrder)],
 );
 
 export const platformContentRevisions = appSchema.table(
@@ -214,8 +205,8 @@ export const platformContentRevisions = appSchema.table(
     entityType: platformContentEntityEnum('entity_type').notNull(),
     entityId: uuid('entity_id').notNull(),
     action: platformContentActionEnum('action').notNull(),
-    beforeJson: jsonb('before_json').$type<Record<string, unknown> | null>(),
-    afterJson: jsonb('after_json').$type<Record<string, unknown> | null>(),
+    beforeJson: jsonb('before_json').$type<PlatformJson | null>(),
+    afterJson: jsonb('after_json').$type<PlatformJson | null>(),
     actorId: text('actor_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -223,105 +214,51 @@ export const platformContentRevisions = appSchema.table(
 );
 
 export const platformSiteSettingsRelations = relations(platformSiteSettings, ({ one }) => ({
-  creator: one(users, {
-    fields: [platformSiteSettings.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformSiteSettings.updatedBy],
-    references: [users.id],
-  }),
+  creator: one(users, { fields: [platformSiteSettings.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformSiteSettings.updatedBy], references: [users.id] }),
 }));
 
 export const platformPagesRelations = relations(platformPages, ({ many, one }) => ({
   sections: many(platformPageSections),
-  creator: one(users, {
-    fields: [platformPages.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformPages.updatedBy],
-    references: [users.id],
-  }),
+  creator: one(users, { fields: [platformPages.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformPages.updatedBy], references: [users.id] }),
 }));
 
 export const platformPageSectionsRelations = relations(platformPageSections, ({ one }) => ({
-  page: one(platformPages, {
-    fields: [platformPageSections.pageId],
-    references: [platformPages.id],
-  }),
-  creator: one(users, {
-    fields: [platformPageSections.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformPageSections.updatedBy],
-    references: [users.id],
-  }),
+  page: one(platformPages, { fields: [platformPageSections.pageId], references: [platformPages.id] }),
+  creator: one(users, { fields: [platformPageSections.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformPageSections.updatedBy], references: [users.id] }),
 }));
 
 export const platformNavigationItemsRelations = relations(platformNavigationItems, ({ one }) => ({
-  creator: one(users, {
-    fields: [platformNavigationItems.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformNavigationItems.updatedBy],
-    references: [users.id],
-  }),
+  creator: one(users, { fields: [platformNavigationItems.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformNavigationItems.updatedBy], references: [users.id] }),
 }));
 
 export const platformPricingPlansRelations = relations(platformPricingPlans, ({ many, one }) => ({
   features: many(platformPricingFeatures),
-  creator: one(users, {
-    fields: [platformPricingPlans.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformPricingPlans.updatedBy],
-    references: [users.id],
-  }),
+  creator: one(users, { fields: [platformPricingPlans.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformPricingPlans.updatedBy], references: [users.id] }),
 }));
 
 export const platformPricingFeaturesRelations = relations(platformPricingFeatures, ({ one }) => ({
-  plan: one(platformPricingPlans, {
-    fields: [platformPricingFeatures.planId],
-    references: [platformPricingPlans.id],
-  }),
+  plan: one(platformPricingPlans, { fields: [platformPricingFeatures.planId], references: [platformPricingPlans.id] }),
 }));
 
 export const platformDocsCategoriesRelations = relations(platformDocsCategories, ({ many, one }) => ({
   articles: many(platformDocsArticles),
-  creator: one(users, {
-    fields: [platformDocsCategories.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformDocsCategories.updatedBy],
-    references: [users.id],
-  }),
+  creator: one(users, { fields: [platformDocsCategories.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformDocsCategories.updatedBy], references: [users.id] }),
 }));
 
 export const platformDocsArticlesRelations = relations(platformDocsArticles, ({ one }) => ({
-  category: one(platformDocsCategories, {
-    fields: [platformDocsArticles.categoryId],
-    references: [platformDocsCategories.id],
-  }),
-  creator: one(users, {
-    fields: [platformDocsArticles.createdBy],
-    references: [users.id],
-  }),
-  updater: one(users, {
-    fields: [platformDocsArticles.updatedBy],
-    references: [users.id],
-  }),
+  category: one(platformDocsCategories, { fields: [platformDocsArticles.categoryId], references: [platformDocsCategories.id] }),
+  creator: one(users, { fields: [platformDocsArticles.createdBy], references: [users.id] }),
+  updater: one(users, { fields: [platformDocsArticles.updatedBy], references: [users.id] }),
 }));
 
 export const platformContentRevisionsRelations = relations(platformContentRevisions, ({ one }) => ({
-  actor: one(users, {
-    fields: [platformContentRevisions.actorId],
-    references: [users.id],
-  }),
+  actor: one(users, { fields: [platformContentRevisions.actorId], references: [users.id] }),
 }));
 
 export type PlatformSiteSettings = typeof platformSiteSettings.$inferSelect;
