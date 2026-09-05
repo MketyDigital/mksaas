@@ -7,8 +7,8 @@ import {
   platformWorkspaceCards,
 } from '@/shared/db/schema/platform-app-experience';
 
+import { platformControlModules } from '../control-center-registry';
 import { defaultAppExperience } from '../defaults';
-import { platformControlCenterRegistry } from '../control-center-registry';
 
 const PUBLISHED = 'published' as const;
 
@@ -80,29 +80,29 @@ export async function seedDefaultPlatformAppExperience(): Promise<AppExperienceS
     }
   }
 
-  for (const module of platformControlCenterRegistry) {
+  for (const controlModule of platformControlModules) {
     const existing = await db.query.platformAppControlCenterModules.findFirst({
-      where: eq(platformAppControlCenterModules.moduleKey, module.key),
+      where: eq(platformAppControlCenterModules.moduleKey, controlModule.key),
     });
 
     if (!existing) {
       await db.insert(platformAppControlCenterModules).values({
-        moduleKey: module.key,
-        label: module.label,
-        description: module.description,
-        href: module.href,
-        iconKey: module.iconKey,
-        level: module.level,
-        enabled: module.enabled,
-        requiredPermission: module.requiredPermission,
-        sortOrder: module.sortOrder,
+        moduleKey: controlModule.key,
+        label: controlModule.label,
+        description: controlModule.description,
+        href: controlModule.href,
+        iconKey: controlModule.iconKey,
+        level: controlModule.level,
+        enabled: controlModule.enabled,
+        requiredPermission: controlModule.requiredPermission,
+        sortOrder: controlModule.sortOrder,
         status: PUBLISHED,
         metadataJson: {
-          domain: module.domain,
-          status: module.status,
-          editableScope: module.editableScope,
-          protectedScope: module.protectedScope,
-          implementationNotes: module.implementationNotes,
+          domain: controlModule.domain,
+          status: controlModule.status,
+          editableScope: controlModule.editableScope,
+          protectedScope: controlModule.protectedScope,
+          implementationNotes: controlModule.implementationNotes,
         },
         publishedAt: new Date(),
       });
