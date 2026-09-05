@@ -1,6 +1,7 @@
-import { getAutomationBuilderSnapshot } from '@/features/projects/workspaces/automation/data';
-import { AutomationBuilderShell } from '@/features/projects/workspaces/automation/AutomationBuilderShell';
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { AutomationBuilderShell } from '@/features/projects/workspaces/automation/AutomationBuilderShell';
+import { AutomationWorkflowMetadataForm } from '@/features/projects/workspaces/automation/AutomationWorkflowMetadataForm';
+import { getAutomationBuilderSnapshot } from '@/features/projects/workspaces/automation/data';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
@@ -33,12 +34,20 @@ export default async function AutomationBuilderPage({
       workspace={getProjectWorkspaceByKey('automation')}
     >
       {snapshot ? (
-        <AutomationBuilderShell
-          projectSlug={access.project.slug}
-          recentRuns={snapshot.recentRuns}
-          tenantSlug={access.tenant.slug}
-          workflow={snapshot.workflow}
-        />
+        <div className="space-y-6">
+          <AutomationBuilderShell
+            projectSlug={access.project.slug}
+            recentRuns={snapshot.recentRuns}
+            tenantSlug={access.tenant.slug}
+            workflow={snapshot.workflow}
+          />
+          <AutomationWorkflowMetadataForm
+            canManage={access.canManage}
+            projectSlug={access.project.slug}
+            tenantSlug={access.tenant.slug}
+            workflow={snapshot.workflow}
+          />
+        </div>
       ) : (
         <WorkspaceEmptyState
           actions={[{ href: `/t/${access.tenant.slug}/projects/${access.project.slug}/automation`, label: 'Back to Automation Workspace' }]}
