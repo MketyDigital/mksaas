@@ -5,6 +5,7 @@ import {
   Brain,
   Building2,
   ClipboardList,
+  Command,
   Database,
   LayoutDashboard,
   Link2,
@@ -44,6 +45,13 @@ export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNa
             icon={LayoutDashboard}
             iconTint="primary"
             exact
+            onClick={onItemClick}
+          />
+          <SidebarNavItem
+            href={`${adminBase}/platform-control`}
+            label="Mkety Control Center"
+            icon={Command}
+            iconTint="primary"
             onClick={onItemClick}
           />
           <SidebarNavItem

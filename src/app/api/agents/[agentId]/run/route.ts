@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { runAgent } from '@/features/ai/lib/agent-runtime';
 import { getPublishedAgentVersion } from '@/features/ai/lib/published-agent';
 import { db } from '@/shared/db';
-import { agents, agentRuns, projects, tenantMemberships, tenants } from '@/shared/db/schema';
+import { agentRuns, agents, projects, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { env } from '@/shared/lib/env';
 import { logger } from '@/shared/lib/logger';

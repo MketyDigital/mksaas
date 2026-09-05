@@ -1,47 +1,26 @@
-/**
- * Database Schema - Next.js SaaS AI Template
- *
- * Central export for all database tables and types.
- */
-
-export * from './auth';
-export * from './tenants';
-export * from './persons';
-export * from './audit';
-export * from './assistant-conversations';
-export * from './domains';
-export * from './projects';
-export * from './agents';
-export * from './agent-runs';
 export * from './agent-knowledge';
+export * from './agent-runs';
 export * from './agent-versions';
+export * from './agents';
+export * from './assistant-conversations';
+export * from './audit';
+export * from './auth';
+export * from './departments';
+export * from './domains';
+export * from './embeddings';
+export * from './files';
+export * from './integration-jobs';
+export * from './integration-sync-control';
+export * from './invitations';
 export * from './knowledge';
 export * from './knowledge-chunks';
-export * from './files';
-export * from './departments';
+export * from './persons';
+export * from './platform-app-experience';
+export * from './platform-content';
+export * from './projects';
 export * from './roles';
-export * from './integration-sync-control';
-export * from './integration-jobs';
-export * from './embeddings';
-export * from './invitations';
+export * from './schema';
+export * from './tenants';
 export * from './webhooks';
-export * from './workflows';
 export * from './workflow-runs';
-
-export { personStatusEnum, personRelationTypeEnum, employmentTypeEnum } from './persons';
-export { fileObjectTypeEnum } from './files';
-export { tenantRoleEnum } from './auth';
-export { embeddingEntityTypeEnum } from './embeddings';
-export { webhookDeliveryStatusEnum } from './webhooks';
-export { customDomainStatusEnum } from './domains';
-export {
-  integrationProviderEnum,
-  integrationSyncModeEnum,
-  integrationSyncRunStatusEnum,
-  integrationSyncItemStatusEnum,
-  integrationEntityLinkStateEnum,
-  integrationConflictStatusEnum,
-  integrationConflictSeverityEnum,
-  integrationFieldOwnershipEnum,
-} from './integration-sync-control';
-export { integrationTypeEnum, integrationProcessingStatusEnum } from './integration-jobs';
+export * from './workflows';

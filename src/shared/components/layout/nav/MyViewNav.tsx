@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, Github, Globe, LayoutDashboard, User, Boxes } from 'lucide-react';
+import { Bot, Boxes, Github, Globe, LayoutDashboard, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { SidebarNavItem } from '../SidebarNavItem';

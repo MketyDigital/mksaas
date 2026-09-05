@@ -1,8 +1,7 @@
-import { tool } from 'ai';
-import type { Tool } from 'ai';
+import { tool, type Tool } from 'ai';
 import { z } from 'zod';
 
-type AgentTool = Tool<any, any>;
+type AgentTool = Tool;
 
 export type AgentToolDefinition = {
   id: string;

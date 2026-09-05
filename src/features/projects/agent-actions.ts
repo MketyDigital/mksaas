@@ -3,7 +3,7 @@
 import { and, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { snapshotAgentVersion, publishAgentVersion } from '@/features/ai/lib/agent-versioning';
+import { publishAgentVersion, snapshotAgentVersion } from '@/features/ai/lib/agent-versioning';
 import { db } from '@/shared/db';
 import { agents, projects, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';

@@ -1,13 +1,12 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getLocale } from 'next-intl/server';
 
-import { DocsBreadcrumb } from '@/features/docs/components/DocsBreadcrumb';
 import { DocsContent } from '@/features/docs/components/DocsContent';
-import { DocsPagination } from '@/features/docs/components/DocsPagination';
 import { DocsTableOfContents } from '@/features/docs/components/DocsTableOfContents';
-import { getDocContent } from '@/features/docs/lib/docs-content';
-import { getPrevNextPages } from '@/features/docs/lib/docs-navigation';
+import { getPublishedDocsArticle, getPublishedDocsTree } from '@/features/platform-content/server/queries';
+
+export const dynamic = 'force-dynamic';
 
 interface DocsPageProps {
   params: Promise<{ slug: string[] }>;
@@ -16,17 +15,21 @@ interface DocsPageProps {
 export async function generateMetadata({ params }: DocsPageProps): Promise<Metadata> {
   const { slug: slugParts } = await params;
   const slug = slugParts.join('/');
-  const locale = await getLocale();
-  const doc = getDocContent(locale, slug);
+  const article = await getPublishedDocsArticle(slug);
 
-  if (!doc) return { title: 'Not Found | Next.js SaaS AI Template Docs' };
+  if (!article) {
+    return {
+      title: 'Not Found | Mkety Docs',
+      description: 'The requested Mkety documentation page could not be found.',
+    };
+  }
 
   return {
-    title: `${doc.frontmatter.title} | Next.js SaaS AI Template Docs`,
-    description: doc.frontmatter.description ?? `Next.js SaaS AI Template documentation — ${doc.frontmatter.title}`,
+    title: `${article.title} | Mkety Docs`,
+    description: article.seoDescription ?? article.excerpt ?? `Mkety documentation — ${article.title}`,
     openGraph: {
-      title: `${doc.frontmatter.title} | Next.js SaaS AI Template Docs`,
-      description: doc.frontmatter.description ?? `Next.js SaaS AI Template documentation — ${doc.frontmatter.title}`,
+      title: `${article.title} | Mkety Docs`,
+      description: article.seoDescription ?? article.excerpt ?? `Mkety documentation — ${article.title}`,
       type: 'article',
     },
   };
@@ -35,33 +38,35 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
 export default async function DocsPage({ params }: DocsPageProps) {
   const { slug: slugParts } = await params;
   const slug = slugParts.join('/');
-  const locale = await getLocale();
+  const article = await getPublishedDocsArticle(slug);
 
-  const doc = getDocContent(locale, slug);
-  if (!doc) notFound();
+  if (!article) notFound();
 
-  const { prev, next } = getPrevNextPages(slug);
+  const tree = await getPublishedDocsTree();
+  const category = tree.categories.find((item) => item.key === article.categoryKey);
 
   return (
     <div className="flex gap-8">
-      {/* Main content */}
       <article className="min-w-0 flex-1">
-        <DocsBreadcrumb slug={slug} />
+        <nav className="mb-6 text-sm text-muted-foreground">
+          <Link href="/docs" className="font-medium text-primary hover:underline">
+            Mkety Docs
+          </Link>
+          <span className="mx-2">/</span>
+          {category && <span>{category.title}</span>}
+        </nav>
 
         <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{doc.frontmatter.title}</h1>
-          {doc.frontmatter.description && (
-            <p className="mt-2 text-lg text-muted-foreground">{doc.frontmatter.description}</p>
-          )}
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">{category?.title ?? 'Mkety'}</p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{article.title}</h1>
+          {article.excerpt && <p className="mt-2 text-lg text-muted-foreground">{article.excerpt}</p>}
         </div>
 
-        <DocsContent content={doc.content} />
-        <DocsPagination prev={prev} next={next} />
+        <DocsContent content={article.bodyMarkdown} />
       </article>
 
-      {/* Table of contents — hidden on mobile/tablet */}
-      <aside className="hidden xl:block w-56 shrink-0">
-        <DocsTableOfContents content={doc.content} />
+      <aside className="hidden w-56 shrink-0 xl:block">
+        <DocsTableOfContents content={article.bodyMarkdown} />
       </aside>
     </div>
   );

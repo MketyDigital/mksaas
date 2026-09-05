@@ -31,12 +31,12 @@ jest.mock('@/shared/db', () => ({
   },
 }));
 
-const authMock = jest.mocked(auth);
-const getTenantBySlugMock = jest.mocked(getTenantBySlug);
-const tenantMembershipsFindFirstMock = jest.mocked(db.query.tenantMemberships.findFirst);
-const tenantMembershipRolesFindManyMock = jest.mocked(db.query.tenantMembershipRoles.findMany);
-const rolePermissionsFindManyMock = jest.mocked(db.query.rolePermissions.findMany);
-const permissionsFindManyMock = jest.mocked(db.query.permissions.findMany);
+const authMock = auth as unknown as jest.Mock;
+const getTenantBySlugMock = getTenantBySlug as unknown as jest.Mock;
+const tenantMembershipsFindFirstMock = db.query.tenantMemberships.findFirst as unknown as jest.Mock;
+const tenantMembershipRolesFindManyMock = db.query.tenantMembershipRoles.findMany as unknown as jest.Mock;
+const rolePermissionsFindManyMock = db.query.rolePermissions.findMany as unknown as jest.Mock;
+const permissionsFindManyMock = db.query.permissions.findMany as unknown as jest.Mock;
 
 describe('getCurrentUserPermissions', () => {
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe('getCurrentUserPermissions', () => {
             'current-tenant': ['*'],
           },
         },
-      })
+      }),
     );
 
     await expect(getCurrentUserPermissions('current-tenant')).resolves.toEqual([]);

@@ -1,7 +1,13 @@
 import { and, eq } from 'drizzle-orm';
+
 import { db } from '@/shared/db';
 import { projects, tenantMemberships, tenants, workflows } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
+import type { WorkflowDefinition } from '@/shared/db/schema/workflows';
+
+function isWorkflowDefinition(value: unknown): value is WorkflowDefinition {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Array.isArray((value as { nodes?: unknown }).nodes));
+}
 
 async function getOwnedWorkflow(req: Request, workflowId: string) {
   const session = await auth();
@@ -33,7 +39,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ workfl
   const result = await getOwnedWorkflow(req, workflowId);
   if ('error' in result) return result.error;
   const body = (await req.json()) as { name?: string; description?: string; status?: string; triggerType?: string; definition?: unknown; webhookSecret?: string };
-  const [updated] = await db.update(workflows).set({ name: body.name ?? result.workflow.name, description: body.description ?? result.workflow.description, status: body.status ?? result.workflow.status, triggerType: body.triggerType ?? result.workflow.triggerType, definition: body.definition && typeof body.definition === 'object' ? body.definition : result.workflow.definition, webhookSecret: body.webhookSecret ?? result.workflow.webhookSecret, version: String(Number(result.workflow.version) + 1), updatedAt: new Date() }).where(eq(workflows.id, workflowId)).returning();
+  const definition = isWorkflowDefinition(body.definition) ? body.definition : result.workflow.definition;
+  const [updated] = await db.update(workflows).set({ name: body.name ?? result.workflow.name, description: body.description ?? result.workflow.description, status: body.status ?? result.workflow.status, triggerType: body.triggerType ?? result.workflow.triggerType, definition, webhookSecret: body.webhookSecret ?? result.workflow.webhookSecret, version: String(Number(result.workflow.version) + 1), updatedAt: new Date() }).where(eq(workflows.id, workflowId)).returning();
   return Response.json(updated);
 }
 

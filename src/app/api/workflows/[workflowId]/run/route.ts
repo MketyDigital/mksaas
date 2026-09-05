@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm';
-import { db } from '@/shared/db';
-import { projects, tenantMemberships, tenants, workflows } from '@/shared/db/schema';
-import { auth } from '@/shared/lib/auth';
+
 import { executeWorkflow } from '@/features/automation/lib/workflow-runtime';
+import { db } from '@/shared/db';
+import { projects, tenantMemberships, tenants } from '@/shared/db/schema';
+import { auth } from '@/shared/lib/auth';
 
 export async function POST(req: Request, { params }: { params: Promise<{ workflowId: string }> }) {
   const session = await auth();
