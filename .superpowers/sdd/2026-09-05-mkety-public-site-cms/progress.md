@@ -21,3 +21,7 @@ Task 1: partial — considered nested navigation relation but simplified it back
 Task 1: partial — added unique environment constraint and status index for singleton-like platform site settings.
 Task 1: partial — added lightweight schema tests for enum lifecycle and table presence.
 Task 1: low-token pause — schema foundation is staged on branch; verification pending because GitHub connector cannot run `pnpm test`, `pnpm type-check`, or `pnpm build` locally in this session.
+
+## Next resume point
+
+Continue from Task 1 verification/fix, then Task 2: Zod schemas and Mkety default public content.
