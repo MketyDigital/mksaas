@@ -1,6 +1,13 @@
 import Link from 'next/link';
 
-import type { ProjectWorkspaceDefinition } from './types';
+import type { ProjectWorkspaceDefinition, WorkspaceAvailability } from './types';
+
+const readinessLabels: Record<WorkspaceAvailability, string> = {
+  available: 'Available now',
+  enterprise: 'Enterprise only',
+  planned: 'Planned next',
+  protected: 'Protected',
+};
 
 export function WorkspaceHub({
   projectDescription,
@@ -15,6 +22,14 @@ export function WorkspaceHub({
   projectDescription?: string | null;
   workspaces: ProjectWorkspaceDefinition[];
 }) {
+  const readinessCounts = workspaces.reduce(
+    (counts, workspace) => ({
+      ...counts,
+      [workspace.availability]: counts[workspace.availability] + 1,
+    }),
+    { available: 0, enterprise: 0, planned: 0, protected: 0 } satisfies Record<WorkspaceAvailability, number>,
+  );
+
   return (
     <div className="space-y-8">
       <header className="rounded-2xl border bg-card p-6 md:p-8">
@@ -25,6 +40,18 @@ export function WorkspaceHub({
           Open the right workspace for this project. AI is available now, while Automate, Deploy, SolutionHub, and enterprise Trading are staged behind clear product boundaries.
         </p>
       </header>
+
+      <section aria-labelledby="workspace-readiness-heading" className="grid gap-3 md:grid-cols-4">
+        <h2 id="workspace-readiness-heading" className="sr-only">
+          Workspace readiness
+        </h2>
+        {(Object.keys(readinessLabels) as WorkspaceAvailability[]).map((availability) => (
+          <div key={availability} className="rounded-2xl border bg-card p-4">
+            <p className="text-2xl font-semibold">{readinessCounts[availability]}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{readinessLabels[availability]}</p>
+          </div>
+        ))}
+      </section>
 
       <section aria-labelledby="project-workspaces-heading" className="space-y-4">
         <div>
