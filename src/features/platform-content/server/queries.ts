@@ -46,6 +46,14 @@ async function withFallback<T>(read: () => Promise<T | null | undefined>, fallba
   }
 }
 
+function getSectionPayload(sectionByKey: Map<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    if (sectionByKey.has(key)) return sectionByKey.get(key);
+  }
+
+  return undefined;
+}
+
 export async function getPublishedPlatformSiteSettings() {
   return withFallback(async () => {
     const row = await db.query.platformSiteSettings.findFirst({
@@ -250,12 +258,16 @@ export async function getPublishedHomepageContent() {
     if (rows.length === 0) return null;
 
     const sectionByKey = new Map(rows.map((row) => [row.sectionKey, row.contentJson]));
+    const heroPayload = getSectionPayload(sectionByKey, 'home.hero', 'hero');
+    const workspacesPayload = getSectionPayload(sectionByKey, 'home.workspaces', 'workspaces');
+    const faqPayload = getSectionPayload(sectionByKey, 'home.faq', 'faq');
+    const footerPayload = getSectionPayload(sectionByKey, 'home.footer', 'footer');
 
     return {
-      hero: sectionByKey.has('hero') ? heroSectionSchema.parse(sectionByKey.get('hero')) : defaultHeroSection,
-      workspaces: sectionByKey.has('workspaces') ? workspaceSectionSchema.parse(sectionByKey.get('workspaces')) : defaultWorkspaceSection,
-      faqItems: sectionByKey.has('faq') ? faqItemSchema.array().parse(sectionByKey.get('faq')) : defaultFaqItems,
-      footerGroups: sectionByKey.has('footer') ? footerGroupSchema.array().parse(sectionByKey.get('footer')) : defaultFooterGroups,
+      hero: heroPayload ? heroSectionSchema.parse(heroPayload) : defaultHeroSection,
+      workspaces: workspacesPayload ? workspaceSectionSchema.parse(workspacesPayload) : defaultWorkspaceSection,
+      faqItems: faqPayload ? faqItemSchema.array().parse(faqPayload) : defaultFaqItems,
+      footerGroups: footerPayload ? footerGroupSchema.array().parse(footerPayload) : defaultFooterGroups,
     };
   }, {
     hero: defaultHeroSection,
