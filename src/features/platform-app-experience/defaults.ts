@@ -1,3 +1,4 @@
+import { platformControlModules } from './control-center-registry';
 import type { AppExperienceDefaultsInput } from './schemas';
 
 export const defaultAppExperience: AppExperienceDefaultsInput = {
@@ -16,6 +17,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       description: 'Create agents, connect knowledge, manage tools and models, test runs, publish versions, and monitor usage.',
       href: '/app/ai',
       iconKey: 'sparkles',
+      enabled: true,
       sortOrder: 10,
     },
     {
@@ -24,6 +26,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       description: 'Build workflows from triggers, actions, conditions, transformations, webhooks, and agent steps.',
       href: '/app/automation',
       iconKey: 'workflow',
+      enabled: true,
       sortOrder: 20,
     },
     {
@@ -32,6 +35,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       description: 'Manage applications, environments, previews, production deployments, domains, and deployment history.',
       href: '/app/deploy',
       iconKey: 'rocket',
+      enabled: true,
       sortOrder: 30,
     },
     {
@@ -40,6 +44,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       description: 'Discover ready-made agents, workflows, applications, templates, blueprints, and business solutions.',
       href: '/app/solutions',
       iconKey: 'blocks',
+      enabled: true,
       sortOrder: 40,
     },
     {
@@ -49,92 +54,10 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       href: '/app/trading',
       iconKey: 'chart',
       badgeLabel: 'Custom / Enterprise',
+      enabled: true,
       requiresEntitlement: 'workspace.trading.enterprise',
       sortOrder: 50,
     },
   ],
-  controlCenterModules: [
-    {
-      key: 'public-site-docs',
-      label: 'Public Website & Docs',
-      description: 'Manage mkety.com pages, docs, navigation, CTAs, FAQs, metadata, and public pricing display.',
-      href: '/admin/platform-control/public-site',
-      iconKey: 'globe',
-      level: 1,
-      requiredPermission: 'platform:content',
-      sortOrder: 10,
-    },
-    {
-      key: 'app-experience',
-      label: 'App Experience',
-      description: 'Manage dashboard copy, workspace cards, onboarding text, empty states, quick links, and help links.',
-      href: '/admin/platform-control/app-experience',
-      iconKey: 'layout-dashboard',
-      level: 1,
-      requiredPermission: 'platform:app-experience',
-      sortOrder: 20,
-    },
-    {
-      key: 'plans-entitlements',
-      label: 'Plans & Entitlements',
-      description: 'Manage plan presentation, entitlement assignments, feature visibility, usage limits, and upgrade paths.',
-      href: '/admin/platform-control/plans',
-      iconKey: 'badge-check',
-      level: 2,
-      requiredPermission: 'platform:plans',
-      sortOrder: 30,
-    },
-    {
-      key: 'billing-ledger',
-      label: 'Billing & Ledger',
-      description: 'Review ledger entries and create controlled credit, refund, adjustment, and bonus transactions.',
-      href: '/admin/platform-control/billing',
-      iconKey: 'wallet',
-      level: 3,
-      requiredPermission: 'platform:billing',
-      sortOrder: 40,
-    },
-    {
-      key: 'deployments-domains',
-      label: 'Deployments & Domains',
-      description: 'Approve domains, retry jobs, review deployment history, pause deployments, and trigger safe rollbacks.',
-      href: '/admin/platform-control/deployments',
-      iconKey: 'cloud',
-      level: 3,
-      requiredPermission: 'platform:deployments',
-      sortOrder: 50,
-    },
-    {
-      key: 'domains-routing',
-      label: 'Domains & Routing',
-      description:
-        'Manage the approved Mkety domain map: mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, customer apps under *.mkety.app, and custom hostname verification.',
-      href: '/admin/platform-control/domains-routing',
-      iconKey: 'route',
-      level: 3,
-      requiredPermission: 'platform:deployments',
-      sortOrder: 55,
-    },
-    {
-      key: 'auth-gateway',
-      label: 'Auth Gateway',
-      description:
-        'Monitor the central Mkety identity/access gateway, product audiences, JWKS status, key rotation metadata, and access issuance outcomes.',
-      href: '/admin/platform-control/auth-gateway',
-      iconKey: 'key-round',
-      level: 4,
-      requiredPermission: 'platform:security',
-      sortOrder: 60,
-    },
-    {
-      key: 'security-audit',
-      label: 'Security & Audit',
-      description: 'View security events, audit logs, role changes, session actions, webhook events, and sensitive operations.',
-      href: '/admin/platform-control/security',
-      iconKey: 'shield',
-      level: 4,
-      requiredPermission: 'platform:security',
-      sortOrder: 70,
-    },
-  ],
+  controlCenterModules: platformControlModules,
 };
