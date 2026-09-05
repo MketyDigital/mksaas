@@ -11,3 +11,4 @@
 
 ## Progress
 
+Task 1: in progress — added platform content schema and schema shape tests for public site/docs/pricing/navigation/revisions.
