@@ -18,12 +18,12 @@ import {
   siteSettingsSchema,
 } from '../schemas';
 import {
-  platformContentDraftActionSchema,
-  platformPublishActionSchema,
   type PlatformContentArea,
   type PlatformContentDraftActionInput,
   type PlatformContentEntityType,
   type PlatformPublishActionInput,
+  platformContentDraftActionSchema,
+  platformPublishActionSchema,
 } from './action-schemas';
 import { recordPlatformContentAuditEvent } from './audit';
 import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
@@ -304,20 +304,20 @@ async function saveAppExperienceDraft(payload: unknown, actorId: string) {
       mutatedRecords += 1;
     }
 
-    for (const module of parsed.controlCenterModules) {
-      const existing = await tx.query.platformAppControlCenterModules.findFirst({ where: eq(schema.platformAppControlCenterModules.moduleKey, module.key) });
+    for (const controlModule of parsed.controlCenterModules) {
+      const existing = await tx.query.platformAppControlCenterModules.findFirst({ where: eq(schema.platformAppControlCenterModules.moduleKey, controlModule.key) });
       const moduleValues = {
-        moduleKey: module.key,
-        label: module.label,
-        description: module.description,
-        href: module.href,
-        iconKey: module.iconKey ?? null,
-        level: module.level,
-        enabled: module.enabled,
-        requiredPermission: module.requiredPermission,
-        sortOrder: module.sortOrder,
+        moduleKey: controlModule.key,
+        label: controlModule.label,
+        description: controlModule.description,
+        href: controlModule.href,
+        iconKey: controlModule.iconKey ?? null,
+        level: controlModule.level,
+        enabled: controlModule.enabled,
+        requiredPermission: controlModule.requiredPermission,
+        sortOrder: controlModule.sortOrder,
         status: 'draft' as const,
-        metadataJson: { domain: module.domain, status: module.status, editableScope: module.editableScope, protectedScope: module.protectedScope, implementationNotes: module.implementationNotes },
+        metadataJson: { domain: controlModule.domain, status: controlModule.status, editableScope: controlModule.editableScope, protectedScope: controlModule.protectedScope, implementationNotes: controlModule.implementationNotes },
         updatedBy: actorId,
         updatedAt: new Date(),
       };
@@ -392,11 +392,11 @@ async function publishDraftRecord(parsed: PlatformPublishActionInput, actorId: s
       case 'app_experience': {
         const dashboard = await tx.update(schema.platformAppDashboardSettings).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformAppDashboardSettings.status, 'draft'), isNull(schema.platformAppDashboardSettings.tenantId))).returning();
         const workspaces = await tx.update(schema.platformWorkspaceCards).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformWorkspaceCards.status, 'draft'), isNull(schema.platformWorkspaceCards.tenantId))).returning();
-        const modules = await tx.update(schema.platformAppControlCenterModules).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformAppControlCenterModules.status, 'draft')).returning();
+        const controlModules = await tx.update(schema.platformAppControlCenterModules).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(eq(schema.platformAppControlCenterModules.status, 'draft')).returning();
         for (const row of dashboard) await insertAppExperienceRevision(tx, { entityType: 'dashboard_settings', entityId: row.id, afterJson: row, actorId });
         for (const row of workspaces) await insertAppExperienceRevision(tx, { entityType: 'workspace_card', entityId: row.id, afterJson: row, actorId });
-        for (const row of modules) await insertAppExperienceRevision(tx, { entityType: 'control_center_module', entityId: row.id, afterJson: row, actorId });
-        return dashboard.length + workspaces.length + modules.length;
+        for (const row of controlModules) await insertAppExperienceRevision(tx, { entityType: 'control_center_module', entityId: row.id, afterJson: row, actorId });
+        return dashboard.length + workspaces.length + controlModules.length;
       }
       default:
         throw new Error(`Unsupported Mkety publish entity: ${parsed.entityType}`);
