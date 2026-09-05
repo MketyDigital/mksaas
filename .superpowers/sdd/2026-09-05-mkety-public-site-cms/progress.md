@@ -20,6 +20,10 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Converted `/docs` landing page to a Mkety documentation hub backed by platform-content defaults.
 - Converted `/docs/[...slug]` article rendering to use Mkety platform docs content instead of old template docs content.
 - Added `Public Website & Docs` control module route and nested module placeholders for pages, navigation, pricing, docs, and settings.
+- Added `docs/MKETY_DOMAIN_ARCHITECTURE.md` to lock the AGENTS.md domain/subdomain boundaries into implementation guidance.
+- Added `Domains & Routing` as a Platform Control Center module for mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, `*.mkety.app`, and custom hostnames.
+- Added a Mkety docs category/article for Deployments and Domains so public/internal docs reflect the approved domain map.
+- Updated dynamic Platform Control Center module actions to show domain-specific controls and the infrastructure-only boundary for `origin.mkety.com`.
 
 ## Boundary rulings
 
@@ -32,6 +36,8 @@ Ruling: Central Platform Control Center should be a navigable command dashboard 
 Ruling: Mkety Auth Gateway fits AGENTS.md as the reusable identity/access contract between ZITADEL and products, but this branch should document and expose it as a guarded control-center module first rather than implementing production signing/JWKS logic inside the public CMS batch — cost if wrong: gateway implementation may need a separate feature branch and security review before product integration.
 
 Ruling: Keep ZITADEL as identity provider while Mkety owns product access assertions; products must verify Mkety assertions and still enforce product-local authorization — cost if wrong: future products could become tightly coupled to raw ZITADEL claims and need migration later.
+
+Ruling: Domain routing must follow the approved Mkety map: `mkety.com` for public site/docs entry, `app.mkety.com` for the authenticated platform, `api.mkety.com` for API surface, `origin.mkety.com` for infrastructure-only routing, and `*.mkety.app` for customer deployments — cost if wrong: future routing and deployment work may mix product surfaces and need migration.
 
 ## Verification status
 
