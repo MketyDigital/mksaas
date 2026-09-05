@@ -21,7 +21,6 @@ export async function recordPlatformContentAuditEvent(input: PlatformContentAudi
     actorId: null,
     action: input.action,
     entityType: input.input.entityType,
-    entityId: null,
     changes: {
       area: input.input.area,
       entityType: input.input.entityType,
