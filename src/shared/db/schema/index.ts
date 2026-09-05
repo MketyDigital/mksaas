@@ -1,4 +1,3 @@
-export * from './assessments';
 export * from './audit';
 export * from './auth';
 export * from './capabilities';
