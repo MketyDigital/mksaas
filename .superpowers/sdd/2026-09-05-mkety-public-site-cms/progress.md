@@ -24,6 +24,9 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Added `Domains & Routing` as a Platform Control Center module for mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, `*.mkety.app`, and custom hostnames.
 - Added a Mkety docs category/article for Deployments and Domains so public/internal docs reflect the approved domain map.
 - Updated dynamic Platform Control Center module actions to show domain-specific controls and the infrastructure-only boundary for `origin.mkety.com`.
+- Added Mkety platform-content authorization guards that wrap the existing `requirePermission` system instead of creating a parallel authorization layer.
+- Added server action boundaries for draft save and publish requests with Zod validation, platform-area permission checks, and path revalidation.
+- Updated Platform Control Center, module routes, Public Website & Docs route, and nested public-site section routes to use Mkety-specific authorization guards.
 
 ## Boundary rulings
 
@@ -38,6 +41,10 @@ Ruling: Mkety Auth Gateway fits AGENTS.md as the reusable identity/access contra
 Ruling: Keep ZITADEL as identity provider while Mkety owns product access assertions; products must verify Mkety assertions and still enforce product-local authorization — cost if wrong: future products could become tightly coupled to raw ZITADEL claims and need migration later.
 
 Ruling: Domain routing must follow the approved Mkety map: `mkety.com` for public site/docs entry, `app.mkety.com` for the authenticated platform, `api.mkety.com` for API surface, `origin.mkety.com` for infrastructure-only routing, and `*.mkety.app` for customer deployments — cost if wrong: future routing and deployment work may mix product surfaces and need migration.
+
+Ruling: Platform admin routes should use Mkety-specific guard functions layered on the existing PBAC `requirePermission` system — cost if wrong: replacing PBAC would duplicate authorization logic and make revocation/audit behavior harder to reason about.
+
+Ruling: Draft/publish server actions are currently validated/authorized boundaries with revalidation but no DB mutation until migrations are reconciled and type-checked — cost if wrong: premature DB writes could lock in incorrect migration shape or unsafe revision behavior.
 
 ## Verification status
 
@@ -57,3 +64,4 @@ pnpm build
 - Verify foreign key names and migration ordering against the repo's migration journal conventions.
 - Verify new route imports and UI component props with `pnpm type-check`.
 - Replace fallback-only loaders with database-backed reads once migration verification is complete.
+- Replace validated draft/publish action stubs with transactional DB writes that create revision snapshots and audit events.
