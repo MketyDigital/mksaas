@@ -13,6 +13,7 @@ export * from './one-on-ones';
 export * from './performance';
 export * from './permissions';
 export * from './persons';
+export * from './platform-app-experience';
 export * from './platform-content';
 export * from './recognitions';
 export * from './roles';
