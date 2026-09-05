@@ -52,6 +52,9 @@ Implementation is moving forward on branch `spec/mkety-public-site-cms` as the a
 - Added a CMS audit writer contract test.
 - Restored the full original public CMS specification at `docs/superpowers/specs/2026-09-05-mkety-public-site-cms-design.md` from the preserved blob and appended the later app-experience/domain/auth addendum.
 - Added `docs/MKETY_CMS_MIGRATION_RECONCILIATION.md` to record the required migration/type/database verification checklist before the PR leaves draft.
+- Fixed public homepage loader section-key compatibility so seeded keys (`hero`, `workspaces`, `faq`, `footer`) and admin-saved keys (`home.hero`, `home.workspaces`, `home.faq`, `home.footer`) can both render.
+- Tightened app-experience published reads so global dashboard/workspace content is restricted to published rows with `tenantId` null.
+- Removed the stale public CMS spec restore-required marker now that the full spec is restored at branch tip.
 
 ## Boundary rulings
 
@@ -82,6 +85,10 @@ Ruling: CMS actions record revision snapshots transactionally and now attempt hi
 Ruling: Audit event failure currently does not roll back content mutation; the UI reports `auditRecorded: false`. Production hardening should decide whether publish must fail closed on audit failure — cost if wrong: a content change may exist without a high-level audit event, although revision rows still exist.
 
 Ruling: The full original public CMS spec must remain at branch tip, with app-experience/domain/auth additions appended as addenda rather than replacing the original spec — cost if wrong: future agents may lose the original scope and acceptance criteria.
+
+Ruling: Public homepage rendering must accept both seeded section keys and admin form section keys until the final editor model standardizes section IDs — cost if wrong: admins could save/publish a hero section that does not render.
+
+Ruling: App-experience loaders must read only published global records unless explicitly building tenant-specific app customization — cost if wrong: draft or tenant-specific workspace cards could leak into the global `app.mkety.com` experience.
 
 Ruling: Larger batches are acceptable when they move the product forward, but they still must preserve safe boundaries and avoid pretending unverified code has passed tests — cost if wrong: hidden type/import issues may need local correction later.
 
