@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS "saas_template"."platform_site_settings" (
   "created_by" text,
   "updated_by" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT "platform_site_settings_environment_idx" UNIQUE ("environment")
 );
 
 CREATE TABLE IF NOT EXISTS "saas_template"."platform_pages" (
@@ -183,6 +184,7 @@ CREATE TABLE IF NOT EXISTS "saas_template"."platform_content_revisions" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS "platform_site_settings_status_idx" ON "saas_template"."platform_site_settings" ("status");
 CREATE INDEX IF NOT EXISTS "platform_pages_status_idx" ON "saas_template"."platform_pages" ("status");
 CREATE INDEX IF NOT EXISTS "platform_page_sections_page_sort_idx" ON "saas_template"."platform_page_sections" ("page_id", "sort_order");
 CREATE INDEX IF NOT EXISTS "platform_page_sections_status_idx" ON "saas_template"."platform_page_sections" ("status");

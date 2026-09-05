@@ -25,28 +25,35 @@ export const platformContentActionEnum = appSchema.enum('platform_content_action
   'delete',
 ]);
 
-export const platformSiteSettings = appSchema.table('platform_site_settings', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  environment: varchar('environment', { length: 40 }).notNull().default('production'),
-  status: platformContentStatusEnum('status').notNull().default('draft'),
-  brandName: varchar('brand_name', { length: 120 }).notNull().default('Mkety'),
-  logoUrl: text('logo_url'),
-  faviconUrl: text('favicon_url'),
-  primaryColor: varchar('primary_color', { length: 7 }).notNull().default('#6D5DF6'),
-  secondaryColor: varchar('secondary_color', { length: 7 }).notNull().default('#A855F7'),
-  accentColor: varchar('accent_color', { length: 7 }).notNull().default('#22D3EE'),
-  defaultSeoTitle: varchar('default_seo_title', { length: 160 }).notNull().default('Mkety'),
-  defaultSeoDescription: text('default_seo_description'),
-  socialImageUrl: text('social_image_url'),
-  contactEmail: varchar('contact_email', { length: 255 }),
-  contactHref: text('contact_href'),
-  legalLinksJson: jsonb('legal_links_json').$type<Array<{ label: string; href: string }>>().notNull().default([]),
-  publishedAt: timestamp('published_at', { withTimezone: true }),
-  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
-  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const platformSiteSettings = appSchema.table(
+  'platform_site_settings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    environment: varchar('environment', { length: 40 }).notNull().default('production'),
+    status: platformContentStatusEnum('status').notNull().default('draft'),
+    brandName: varchar('brand_name', { length: 120 }).notNull().default('Mkety'),
+    logoUrl: text('logo_url'),
+    faviconUrl: text('favicon_url'),
+    primaryColor: varchar('primary_color', { length: 7 }).notNull().default('#6D5DF6'),
+    secondaryColor: varchar('secondary_color', { length: 7 }).notNull().default('#A855F7'),
+    accentColor: varchar('accent_color', { length: 7 }).notNull().default('#22D3EE'),
+    defaultSeoTitle: varchar('default_seo_title', { length: 160 }).notNull().default('Mkety'),
+    defaultSeoDescription: text('default_seo_description'),
+    socialImageUrl: text('social_image_url'),
+    contactEmail: varchar('contact_email', { length: 255 }),
+    contactHref: text('contact_href'),
+    legalLinksJson: jsonb('legal_links_json').$type<Array<{ label: string; href: string }>>().notNull().default([]),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('platform_site_settings_environment_idx').on(table.environment),
+    index('platform_site_settings_status_idx').on(table.status),
+  ],
+);
 
 export const platformPages = appSchema.table(
   'platform_pages',
