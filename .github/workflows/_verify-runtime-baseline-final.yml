@@ -36,35 +36,15 @@ jobs:
         env:
           SKIP_ENV_VALIDATION: 'true'
         run: pnpm build
-      - name: Verify generated Worker entry
-        run: |
-          node --input-type=module <<'EOF'
-          import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-          import { dirname, join, resolve } from 'node:path';
-          const configs = [];
-          const walk = (dir) => {
-            for (const name of readdirSync(dir)) {
-              const path = join(dir, name);
-              if (statSync(path).isDirectory()) walk(path);
-              else if (name === 'wrangler.json') configs.push(path);
-            }
-          };
-          walk('dist');
-          const deployment = configs.map((configPath) => {
-            const config = JSON.parse(readFileSync(configPath, 'utf8'));
-            if (!config.main) return null;
-            const workerEntry = resolve(dirname(configPath), config.main);
-            return existsSync(workerEntry) ? { configPath, workerEntry } : null;
-          }).find(Boolean);
-          if (!deployment) throw new Error(`No generated Worker entry found. Wrangler configs: ${configs.join(', ')}`);
-          console.log(`Verified ${deployment.configPath} -> ${deployment.workerEntry}`);
-          EOF
-      - name: Remove one-time verifiers
+      - name: Validate Cloudflare deployment packaging without deploying
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+        run: pnpm deploy -- --dry-run
+      - name: Remove one-time verifier
         run: |
           git config user.name "Mkety Baseline Bot"
           git config user.email "actions@users.noreply.github.com"
           git rm .github/workflows/_verify-runtime-baseline-final.yml
-          git rm -f .github/workflows/_verify-runtime-baseline.yml || true
-          git commit -m "ci: remove completed runtime baseline verifiers"
+          git commit -m "ci: remove completed runtime baseline verifier"
           git pull --rebase origin fix/cloudflare-deployment-baseline
           git push origin HEAD:fix/cloudflare-deployment-baseline
