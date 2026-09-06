@@ -1,49 +1,38 @@
 'use client';
 
-/**
- * Auth Hook - Wrapper around next-auth/react
- *
- * Provides convenient access to authentication state and actions.
- * For most use cases, prefer using next-auth/react directly.
- */
+import { useCallback, useContext } from 'react';
 
-import { signIn, signOut, useSession } from 'next-auth/react';
-import { useCallback } from 'react';
+import { AuthContext } from '@/shared/components/providers/auth-provider';
 
 export interface UseAuthReturn {
-  /** Current user if authenticated */
-  user: {
-    id?: string;
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  } | null;
-  /** Whether authentication state is loading */
+  user: NonNullable<Awaited<ReturnType<typeof import('@/shared/lib/auth').auth>>>['user'] | null;
   isLoading: boolean;
-  /** Whether user is authenticated */
   isAuthenticated: boolean;
-  /** Sign in with a provider */
-  login: (provider?: string, callbackUrl?: string) => Promise<void>;
-  /** Sign out */
+  login: (callbackUrl?: string) => Promise<void>;
   logout: (callbackUrl?: string) => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 export const useAuth = (): UseAuthReturn => {
-  const { data: session, status } = useSession();
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside AuthProvider');
 
-  const login = useCallback(async (provider = 'auth0', callbackUrl = '/') => {
-    await signIn(provider, { callbackUrl });
+  const login = useCallback(async (callbackUrl = '/select-tenant') => {
+    const target = `/api/auth/login?returnTo=${encodeURIComponent(callbackUrl)}`;
+    window.location.assign(target);
   }, []);
 
   const logout = useCallback(async (callbackUrl = '/login') => {
-    await signOut({ callbackUrl });
+    const target = `/api/auth/logout?returnTo=${encodeURIComponent(callbackUrl)}`;
+    window.location.assign(target);
   }, []);
 
   return {
-    user: session?.user ?? null,
-    isLoading: status === 'loading',
-    isAuthenticated: status === 'authenticated',
+    user: context.session?.user ?? null,
+    isLoading: context.isLoading,
+    isAuthenticated: !!context.session,
     login,
     logout,
+    refresh: context.refresh,
   };
 };
