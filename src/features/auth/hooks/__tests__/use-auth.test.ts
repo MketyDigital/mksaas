@@ -1,15 +1,10 @@
-/**
- * Tests for useAuth Hook
- */
-
 import { act, renderHook } from '@testing-library/react';
 
-// Mock next-auth/react
 const mockSignIn = jest.fn();
 const mockSignOut = jest.fn();
 const mockUseSession = jest.fn();
 
-jest.mock('next-auth/react', () => ({
+jest.mock('@/shared/lib/auth-client', () => ({
   signIn: (...args: unknown[]) => mockSignIn(...args),
   signOut: (...args: unknown[]) => mockSignOut(...args),
   useSession: () => mockUseSession(),
@@ -22,107 +17,67 @@ describe('useAuth', () => {
     jest.clearAllMocks();
   });
 
-  describe('when session is loading', () => {
-    it('should return isLoading as true', () => {
-      mockUseSession.mockReturnValue({
-        data: null,
-        status: 'loading',
-      });
+  it('reports loading without inventing a user', () => {
+    mockUseSession.mockReturnValue({ data: null, status: 'loading' });
 
-      const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth());
 
-      expect(result.current.isLoading).toBe(true);
-      expect(result.current.isAuthenticated).toBe(false);
-      expect(result.current.user).toBeNull();
-    });
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.user).toBeNull();
   });
 
-  describe('when user is authenticated', () => {
+  it('passes through a verified session when the identity adapter provides one', () => {
     const mockUser = {
       id: 'user-123',
       name: 'Test User',
       email: 'user@example.com',
       image: 'https://example.com/avatar.jpg',
+      roles: {},
+      permissions: {},
     };
+    mockUseSession.mockReturnValue({ data: { user: mockUser }, status: 'authenticated' });
 
-    beforeEach(() => {
-      mockUseSession.mockReturnValue({
-        data: { user: mockUser },
-        status: 'authenticated',
-      });
-    });
+    const { result } = renderHook(() => useAuth());
 
-    it('should return user data', () => {
-      const { result } = renderHook(() => useAuth());
-
-      expect(result.current.user).toEqual(mockUser);
-      expect(result.current.isAuthenticated).toBe(true);
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    it('should call signOut when logout is called', async () => {
-      mockSignOut.mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => useAuth());
-
-      await act(async () => {
-        await result.current.logout();
-      });
-
-      expect(mockSignOut).toHaveBeenCalledWith({ callbackUrl: '/login' });
-    });
-
-    it('should call signOut with custom callback URL', async () => {
-      mockSignOut.mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => useAuth());
-
-      await act(async () => {
-        await result.current.logout('/custom-logout');
-      });
-
-      expect(mockSignOut).toHaveBeenCalledWith({ callbackUrl: '/custom-logout' });
-    });
+    expect(result.current.user).toEqual(mockUser);
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.isLoading).toBe(false);
   });
 
-  describe('when user is not authenticated', () => {
-    beforeEach(() => {
-      mockUseSession.mockReturnValue({
-        data: null,
-        status: 'unauthenticated',
-      });
+  it('fails closed when no identity is available', () => {
+    mockUseSession.mockReturnValue({ data: null, status: 'unauthenticated' });
+
+    const { result } = renderHook(() => useAuth());
+
+    expect(result.current.user).toBeNull();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('routes login through the Mkety identity client', async () => {
+    mockUseSession.mockReturnValue({ data: null, status: 'unauthenticated' });
+    mockSignIn.mockResolvedValue({ error: 'Mkety identity is not configured yet.', url: null });
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await result.current.login(undefined, '/dashboard');
     });
 
-    it('should return null user', () => {
-      const { result } = renderHook(() => useAuth());
+    expect(mockSignIn).toHaveBeenCalledWith(undefined, { callbackUrl: '/dashboard' });
+  });
 
-      expect(result.current.user).toBeNull();
-      expect(result.current.isAuthenticated).toBe(false);
-      expect(result.current.isLoading).toBe(false);
+  it('routes logout through the Mkety identity client', async () => {
+    mockUseSession.mockReturnValue({ data: null, status: 'unauthenticated' });
+    mockSignOut.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await result.current.logout('/goodbye');
     });
 
-    it('should call signIn when login is called', async () => {
-      mockSignIn.mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => useAuth());
-
-      await act(async () => {
-        await result.current.login();
-      });
-
-      expect(mockSignIn).toHaveBeenCalledWith('auth0', { callbackUrl: '/' });
-    });
-
-    it('should call signIn with custom provider and callback URL', async () => {
-      mockSignIn.mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => useAuth());
-
-      await act(async () => {
-        await result.current.login('google', '/dashboard');
-      });
-
-      expect(mockSignIn).toHaveBeenCalledWith('google', { callbackUrl: '/dashboard' });
-    });
+    expect(mockSignOut).toHaveBeenCalledWith({ callbackUrl: '/goodbye' });
   });
 });
