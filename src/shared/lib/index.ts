@@ -14,5 +14,6 @@ export * from './a11y';
 export * from './dark-mode-utils';
 export * from './component-enhancements';
 
-// Auth exports (selective to avoid circular deps)
-export { auth, signIn, signOut } from './auth';
+// Mkety Auth export. Login/logout navigation is exposed through Mkety Auth
+// routes/hooks rather than Auth.js signIn/signOut helpers.
+export { auth } from './auth';
