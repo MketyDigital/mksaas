@@ -1,14 +1,12 @@
-import { eq } from 'drizzle-orm';
-import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import type { TenantRole } from '@/shared/db/schema/auth';
 import { db } from '@/shared/db';
 import { customDomains, tenants } from '@/shared/db/schema';
-import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
+import { eq } from 'drizzle-orm';
 
-export default async function proxy(request: NextRequest) {
-  const session = await auth();
+export default auth(async (request) => {
   const { pathname, hostname } = request.nextUrl;
   let effectivePathname = pathname;
 
@@ -34,7 +32,7 @@ export default async function proxy(request: NextRequest) {
           if (tenant) {
             effectivePathname = `/t/${tenant.slug}${pathname === '/' ? '' : pathname}`;
             const rewriteUrl = request.nextUrl.clone();
-            rewriteUrl.pathname = session?.user ? effectivePathname : `/t/${tenant.slug}/login`;
+            rewriteUrl.pathname = request.auth?.user ? effectivePathname : `/t/${tenant.slug}/login`;
             return NextResponse.rewrite(rewriteUrl);
           }
         }
@@ -44,27 +42,19 @@ export default async function proxy(request: NextRequest) {
     }
   }
 
+  const response = NextResponse.next();
+  response.headers.set('x-pathname', effectivePathname);
+
   const tenantMatch = effectivePathname.match(/^\/t\/([^/]+)/);
   if (tenantMatch) {
     const tenantSlug = tenantMatch[1];
+    response.headers.set('x-tenant-slug', tenantSlug);
 
-    if (effectivePathname === `/t/${tenantSlug}/login`) {
-      const response = NextResponse.next();
-      response.headers.set('x-pathname', effectivePathname);
-      response.headers.set('x-tenant-slug', tenantSlug);
-      return response;
-    }
+    if (effectivePathname === `/t/${tenantSlug}/login`) return response;
 
-    if (!session?.user) {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = `/t/${tenantSlug}/login`;
-      loginUrl.searchParams.set('callbackUrl', `${request.nextUrl.pathname}${request.nextUrl.search}`);
-      return NextResponse.redirect(loginUrl);
-    }
-
-    if (effectivePathname.match(/^\/t\/[^/]+\/admin(?:\/|$)/)) {
-      const userRoles = session.user.roles as Record<string, TenantRole>;
-      const userRole = userRoles[tenantSlug];
+    if (effectivePathname.match(/^\/t\/[^/]+\/admin/)) {
+      const userRoles = request.auth?.user?.roles as Record<string, TenantRole> | undefined;
+      const userRole = userRoles?.[tenantSlug];
 
       if (userRole !== 'admin') {
         const url = request.nextUrl.clone();
@@ -72,21 +62,13 @@ export default async function proxy(request: NextRequest) {
         url.searchParams.set('error', 'unauthorized');
         return NextResponse.redirect(url);
       }
+
+      response.headers.set('x-user-role', userRole);
     }
   }
 
-  const response = NextResponse.next();
-  response.headers.set('x-pathname', effectivePathname);
-
-  if (tenantMatch) {
-    const tenantSlug = tenantMatch[1];
-    response.headers.set('x-tenant-slug', tenantSlug);
-    const userRole = session?.user?.roles?.[tenantSlug];
-    if (userRole) response.headers.set('x-user-role', userRole);
-  }
-
   return response;
-}
+});
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],

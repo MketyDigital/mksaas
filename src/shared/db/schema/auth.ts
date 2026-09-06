@@ -1,25 +1,40 @@
 /**
- * Identity compatibility and tenant authorization schema.
+ * Auth Schema - Auth.js tables for authentication
  *
- * The legacy template created provider/session tables for Auth.js. Mkety no
- * longer uses Auth.js as its identity architecture, but the tables remain in
- * the schema for migration compatibility until a dedicated identity migration
- * safely retires or repurposes them. Tenant memberships and RBAC remain active
- * Mkety-owned authorization data.
+ * Using Drizzle adapter compatible schema.
+ * @see https://authjs.dev/getting-started/adapters/drizzle
  */
 
 import { relations } from 'drizzle-orm';
 import { boolean, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import type { AdapterAccountType } from 'next-auth/adapters';
 
 import { persons } from './persons';
 import { roles } from './roles';
 import { appSchema } from './schema';
 import { tenants } from './tenants';
 
-export type IdentityAccountType = 'oauth' | 'oidc' | 'email' | 'credentials' | 'webauthn' | string;
+// ============================================================================
+// ENUMS
+// ============================================================================
 
+/**
+ * Tenant role enum - defines access levels within a tenant
+ * - member: Regular user, can view own profile, use assistant
+ * - manager: Can view team reports and manage direct reports
+ * - admin: Full tenant administration access
+ */
 export const tenantRoleEnum = appSchema.enum('tenant_role', ['member', 'manager', 'admin']);
 
+// ============================================================================
+// AUTH.JS TABLES
+// ============================================================================
+
+/**
+ * Users table - Auth.js user records
+ *
+ * Links to persons table via email for Next.js SaaS AI Template-specific data
+ */
 export const users = appSchema.table('users', {
   id: text('id')
     .primaryKey()
@@ -30,13 +45,16 @@ export const users = appSchema.table('users', {
   image: text('image'),
 });
 
+/**
+ * Accounts table - OAuth provider accounts
+ */
 export const accounts = appSchema.table(
   'accounts',
   {
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    type: text('type').$type<IdentityAccountType>().notNull(),
+    type: text('type').$type<AdapterAccountType>().notNull(),
     provider: text('provider').notNull(),
     providerAccountId: text('provider_account_id').notNull(),
     refresh_token: text('refresh_token'),
@@ -54,6 +72,9 @@ export const accounts = appSchema.table(
   ],
 );
 
+/**
+ * Sessions table - Active user sessions
+ */
 export const sessions = appSchema.table('sessions', {
   sessionToken: text('session_token').primaryKey(),
   userId: text('user_id')
@@ -62,6 +83,9 @@ export const sessions = appSchema.table('sessions', {
   expires: timestamp('expires', { mode: 'date' }).notNull(),
 });
 
+/**
+ * Verification tokens - Email verification, magic links
+ */
 export const verificationTokens = appSchema.table(
   'verification_tokens',
   {
@@ -76,6 +100,9 @@ export const verificationTokens = appSchema.table(
   ],
 );
 
+/**
+ * Authenticators table - WebAuthn/Passkeys
+ */
 export const authenticators = appSchema.table(
   'authenticators',
   {
@@ -91,10 +118,23 @@ export const authenticators = appSchema.table(
     transports: text('transports'),
   },
   (authenticator) => [
-    primaryKey({ columns: [authenticator.userId, authenticator.credentialID] }),
+    primaryKey({
+      columns: [authenticator.userId, authenticator.credentialID],
+    }),
   ],
 );
 
+// ============================================================================
+// TENANT MEMBERSHIPS (RBAC)
+// ============================================================================
+
+/**
+ * Tenant memberships - Links Auth.js users to tenants with role-based access
+ *
+ * This is the core RBAC table that determines what a user can do within each tenant.
+ * A user can have different roles in different tenants.
+ * role enum is for display/backward compat; effective roles come from tenant_membership_roles.
+ */
 export const tenantMemberships = appSchema.table(
   'tenant_memberships',
   {
@@ -118,6 +158,9 @@ export const tenantMemberships = appSchema.table(
   ],
 );
 
+/**
+ * Tenant membership roles - Multiple roles per user per tenant
+ */
 export const tenantMembershipRoles = appSchema.table(
   'tenant_membership_roles',
   {
@@ -135,6 +178,10 @@ export const tenantMembershipRoles = appSchema.table(
     index('tenant_membership_roles_role_idx').on(table.roleId),
   ],
 );
+
+// ============================================================================
+// RELATIONS
+// ============================================================================
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
@@ -173,11 +220,14 @@ export const tenantMembershipRolesRelations = relations(tenantMembershipRoles, (
   }),
 }));
 
+// ============================================================================
+// TYPES
+// ============================================================================
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
-export type Account = typeof accounts.$inferSelect;
-export type SessionRecord = typeof sessions.$inferSelect;
 export type TenantMembership = typeof tenantMemberships.$inferSelect;
 export type NewTenantMembership = typeof tenantMemberships.$inferInsert;
 export type TenantMembershipRole = typeof tenantMembershipRoles.$inferSelect;
+export type NewTenantMembershipRole = typeof tenantMembershipRoles.$inferInsert;
 export type TenantRole = (typeof tenantRoleEnum.enumValues)[number];

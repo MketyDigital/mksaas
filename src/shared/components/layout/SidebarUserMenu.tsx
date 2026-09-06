@@ -2,6 +2,7 @@
 
 import { ArrowLeft, LogOut, User } from 'lucide-react';
 import Link from 'next/link';
+import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/shared/components/ui/avatar';
@@ -13,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu';
-import { signOut } from '@/shared/lib/auth-client';
 
 interface SidebarUserMenuProps {
   user: {
@@ -115,7 +115,7 @@ export function SidebarUserMenu({
           className="cursor-pointer text-destructive"
           onClick={() => {
             onItemClick?.();
-            void signOut({ callbackUrl: '/' });
+            signOut({ callbackUrl: '/' });
           }}
         >
           <LogOut className="mr-2 h-4 w-4" />

@@ -1,86 +1,184 @@
-# Mkety Identity and Authentication
+# 🔐 Authentication
 
-## Authority
+The Next.js SaaS AI Template uses **Auth.js v5** (NextAuth) with database sessions and Auth0 as the primary provider.
 
-`AGENTS.md` is the source of truth for Mkety identity architecture. It defines **ZITADEL as the intended identity foundation**. The product-facing authorization boundary is the Mkety Auth Gateway described in `docs/MKETY_AUTH_GATEWAY_ARCHITECTURE.md`.
+## Configuration
 
-The inherited mksaas Auth.js/Auth0 implementation is retired and must not be restored as Mkety's authentication architecture.
+### Environment Variables
 
-## Current implementation state
+```env
+# Required
+AUTH_SECRET="your-secret-key-min-32-chars"  # Generate: openssl rand -base64 32
+DATABASE_URL="postgresql://..."
 
-The production ZITADEL adapter is not wired yet. Until it is, identity is intentionally **fail closed**:
-
-- `src/shared/lib/auth.ts` is the server-side Mkety identity contract.
-- `src/shared/lib/auth-client.ts` is the client-side Mkety identity contract.
-- neither contract fabricates a user or local development session;
-- protected Platform routes redirect unauthenticated visitors to the appropriate sign-in surface;
-- protected APIs and server actions must continue to reject missing identity;
-- tenant membership, roles, permissions, and entitlements remain Mkety-owned authorization data and are not identity-provider claims.
-
-## Target flow
-
-```text
-ZITADEL
-  ↓ verified identity
-Mkety identity adapter / Auth Gateway
-  ↓ Mkety-owned access decision
-Mkety Platform / Academy / Enterprise products
-  ↓ product-local authorization and tenant state
-ALLOW or DENY
+# Auth0 (production)
+AUTH0_CLIENT_ID="your-client-id"
+AUTH0_CLIENT_SECRET="your-client-secret"
+AUTH0_ISSUER="https://your-tenant.auth0.com"
 ```
 
-Identity, authorization, entitlement, and workspace/project membership are separate concerns. Do not collapse them into a provider session object.
+### Auth.js Setup
 
-## Server usage
+Configuration is in `src/shared/lib/auth.ts`:
 
-Server code should depend on the Mkety boundary rather than a provider SDK:
+```typescript
+import NextAuth from 'next-auth';
+import Auth0 from 'next-auth/providers/auth0';
+import { DrizzleAdapter } from '@auth/drizzle-adapter';
 
-```ts
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  adapter: DrizzleAdapter(db, { ... }),
+  providers: [Auth0({ ... })],
+  session: { strategy: 'database' },
+  // ...
+});
+```
+
+## Usage
+
+### Server Components
+
+```typescript
 import { auth } from '@/shared/lib/auth';
 
-const session = await auth();
-if (!session?.user) {
-  // redirect, return 401/403, or otherwise fail closed
+export default async function Page() {
+  const session = await auth();
+
+  if (!session?.user) {
+    redirect('/login');
+  }
+
+  return <div>Hello {session.user.name}</div>;
 }
 ```
 
-When ZITADEL is implemented, `auth()` may resolve a verified Mkety session through the approved identity adapter. Callers should not need to import ZITADEL-specific APIs directly.
+### Client Components
 
-## Client usage
+```typescript
+'use client';
 
-Client components should use either:
+import { useSession, signIn, signOut } from 'next-auth/react';
 
-```ts
+export function UserMenu() {
+  const { data: session, status } = useSession();
+
+  if (status === 'loading') return <Spinner />;
+
+  if (!session) {
+    return <Button onClick={() => signIn('auth0')}>Sign In</Button>;
+  }
+
+  return (
+    <div>
+      <span>{session.user.name}</span>
+      <Button onClick={() => signOut()}>Sign Out</Button>
+    </div>
+  );
+}
+```
+
+### Feature Hook
+
+The auth feature provides a convenient hook:
+
+```typescript
 import { useAuth } from '@/features/auth';
+
+function MyComponent() {
+  const { user, isAuthenticated, isLoading, login, logout } = useAuth();
+
+  // ...
+}
 ```
 
-or the lower-level Mkety client boundary:
+### Server-Side Utilities
 
-```ts
-import { useSession, signIn, signOut } from '@/shared/lib/auth-client';
+```typescript
+import { getSession, getCurrentUser, isAuthenticated } from '@/features/auth';
+
+// In API routes or server actions
+export async function myServerAction() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+
+  // ...
+}
 ```
 
-Until the real provider is connected, these APIs report unauthenticated state and refuse sign-in rather than creating a fake session.
+## Protected Routes
 
-## Data model
+### Middleware Protection
 
-`src/shared/db/schema/auth.ts` still contains historical identity-account/session tables for migration compatibility. Their presence does **not** make Auth.js the Mkety identity system. Do not drop or repurpose those tables without a reviewed database migration.
+Routes are protected via `src/middleware.ts`:
 
-Active Mkety authorization data includes tenant memberships, roles, permissions, and related product-access state.
+```typescript
+export default auth((request) => {
+  // Auth.js automatically handles session validation
+  // The authorized callback in auth.ts defines which routes are protected
+});
+```
 
-## Security requirements
+### Auth Callback Configuration
 
-- Fail closed when identity cannot be verified.
-- Never trust caller-supplied user, tenant, role, entitlement, audience, or workspace claims.
-- Enforce tenant/project scope on protected operations.
-- Keep identity-provider details behind Mkety-owned abstractions.
-- Never commit provider secrets or signing keys.
-- Do not add a development bypass that creates production-like sessions.
-- Do not implement the Auth Gateway or ZITADEL integration implicitly as part of unrelated deployment work.
+In `src/shared/lib/auth.ts`:
 
-## Related architecture
+```typescript
+callbacks: {
+  async authorized({ auth, request }) {
+    const isLoggedIn = !!auth?.user;
+    const { pathname } = request.nextUrl;
 
-- `AGENTS.md`
-- `docs/MKETY_AUTH_GATEWAY_ARCHITECTURE.md`
-- `docs/CENTRAL_MKETY_AUTH_GATEWAY_RECOMMENDATION.md`
-- `docs/MKETY_DOMAIN_ARCHITECTURE.md`
+    // Public routes
+    const publicRoutes = ['/login', '/api/health', '/'];
+    if (publicRoutes.includes(pathname)) return true;
+
+    // Tenant routes require auth
+    if (pathname.startsWith('/t/')) return isLoggedIn;
+
+    return true;
+  },
+}
+```
+
+## Development Mode
+
+In development, a credentials provider is available for testing:
+
+```typescript
+// Login with any email in development
+await signIn('development', { email: 'test@example.com' });
+```
+
+This is automatically enabled when `NODE_ENV=development`.
+
+## Database Schema
+
+Auth.js tables are defined in `src/shared/db/schema/auth.ts`:
+
+- `users` - User accounts
+- `accounts` - OAuth provider connections
+- `sessions` - Active sessions
+- `verification_tokens` - Email verification
+- `authenticators` - WebAuthn credentials
+
+## Auth0 Setup
+
+1. Create an Auth0 application (Regular Web Application)
+2. Configure callback URLs:
+   - Allowed Callback URLs: `http://localhost:3000/api/auth/callback/auth0`
+   - Allowed Logout URLs: `http://localhost:3000`
+3. Copy Client ID, Client Secret, and Issuer to `.env.local`
+
+## Best Practices
+
+1. **Always check auth server-side** before rendering sensitive data
+2. **Use session strategy: database** for security (not JWT for sensitive apps)
+3. **Protect API routes** with session checks
+4. **Log auth events** for security auditing
+5. **Use HTTPS in production** (Auth.js requires it)
+
+## Related Documentation
+
+- [Auth.js v5 Docs](https://authjs.dev)
+- [Auth0 Quickstart](https://auth0.com/docs/quickstart/webapp/nextjs)
+- [Project Structure](./PROJECT_STRUCTURE.md)

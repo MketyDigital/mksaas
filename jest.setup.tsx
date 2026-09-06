@@ -1,7 +1,16 @@
 process.env.SKIP_ENV_VALIDATION = process.env.SKIP_ENV_VALIDATION ?? 'true';
 
+// jest-dom adds custom jest matchers for asserting on DOM nodes.
+// allows you to do things like:
+// expect(element).toHaveTextContent(/react/i)
+// learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
 
+// ============================================================================
+// Global Mocks
+// ============================================================================
+
+// Mock next-intl
 jest.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
   useLocale: () => 'en',
@@ -9,11 +18,13 @@ jest.mock('next-intl', () => ({
   NextIntlClientProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// Mock next-themes
 jest.mock('next-themes', () => ({
   useTheme: () => ({ theme: 'light', setTheme: jest.fn() }),
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// Mock next/navigation
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
     push: jest.fn(),
@@ -28,6 +39,7 @@ jest.mock('next/navigation', () => ({
   useParams: () => ({ tenant: 'test-tenant' }),
 }));
 
+// Mock next/link
 jest.mock('next/link', () => {
   const Link = ({ children, href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children: React.ReactNode; href: string }) => {
     return (
@@ -39,21 +51,38 @@ jest.mock('next/link', () => {
   return Link;
 });
 
+// Mock @auth/drizzle-adapter to avoid ESM issues
+jest.mock('@auth/drizzle-adapter', () => ({
+  DrizzleAdapter: jest.fn(() => ({})),
+}));
+
+// Mock next-auth to avoid ESM issues with drizzle-adapter
+jest.mock('next-auth', () => {
+  const mockAuth = jest.fn().mockResolvedValue(null);
+  return {
+    __esModule: true,
+    default: jest.fn(() => ({
+      handlers: { GET: jest.fn(), POST: jest.fn() },
+      signIn: jest.fn(),
+      signOut: jest.fn(),
+      auth: mockAuth,
+    })),
+  };
+});
+
+// Mock the shared auth module
 jest.mock('@/shared/lib/auth', () => ({
   auth: jest.fn().mockResolvedValue(null),
-  signIn: jest.fn().mockRejectedValue(new Error('Mkety identity is not configured yet.')),
-  signOut: jest.fn().mockRejectedValue(new Error('Mkety identity is not configured yet.')),
+  signIn: jest.fn(),
+  signOut: jest.fn(),
+  handlers: { GET: jest.fn(), POST: jest.fn() },
 }));
 
-jest.mock('@/shared/lib/auth-client', () => ({
-  useSession: jest.fn(() => ({ data: null, status: 'unauthenticated' })),
-  signIn: jest.fn().mockResolvedValue({ error: 'Mkety identity is not configured yet.', url: null }),
-  signOut: jest.fn().mockResolvedValue(undefined),
-}));
-
+// Suppress console errors during tests (optional - remove if you want to see them)
 const originalError = console.error;
 beforeAll(() => {
   console.error = (...args: unknown[]) => {
+    // Filter out expected React warnings
     if (
       typeof args[0] === 'string' &&
       (args[0].includes('Warning: ReactDOM.render') ||

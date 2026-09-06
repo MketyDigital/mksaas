@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -17,7 +18,10 @@ import {
   FormLabel,
   Input,
 } from '@/shared/components/ui';
-import { signIn } from '@/shared/lib/auth-client';
+
+// ============================================================================
+// Validation Schema
+// ============================================================================
 
 const tenantLoginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Please enter a valid email address'),
@@ -25,9 +29,14 @@ const tenantLoginSchema = z.object({
 
 type TenantLoginFormValues = z.infer<typeof tenantLoginSchema>;
 
+// ============================================================================
+// Component
+// ============================================================================
+
 interface TenantLoginFormProps {
   tenantSlug: string;
   tenantName: string;
+  /** Pre-fill email (e.g. from ?email= in URL) */
   initialEmail?: string;
 }
 
@@ -46,8 +55,10 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail = '' }: T
     },
   });
 
+  // Callback URL points to the tenant dashboard
   const callbackUrl = `/t/${tenantSlug}`;
 
+  // Handle development credentials login
   const onSubmit = async (data: TenantLoginFormValues) => {
     setIsLoading(true);
     setServerError(null);
@@ -59,9 +70,10 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail = '' }: T
         callbackUrl,
       });
 
-      if (result.error) {
+      if (result?.error) {
         setServerError(result.error);
-      } else if (result.url) {
+      } else if (result?.url) {
+        // Keep navigation on current origin even if Auth.js returns an absolute URL with a stale host.
         const target = new URL(result.url, window.location.origin);
         window.location.assign(`${target.pathname}${target.search}${target.hash}`);
       }
@@ -72,15 +84,13 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail = '' }: T
     }
   };
 
-  const handleIdentityLogin = async () => {
+  // Handle Auth0 login
+  const handleAuth0Login = async () => {
     setIsLoading(true);
-    setServerError(null);
     try {
-      const result = await signIn(undefined, { callbackUrl, redirect: false });
-      setServerError(result.error ?? 'Mkety identity is not configured yet.');
+      await signIn('auth0', { callbackUrl });
     } catch {
       setServerError('Failed to initiate login');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -92,21 +102,22 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail = '' }: T
     <Card className="w-full border shadow-xl bg-card">
       <CardHeader className="space-y-1 text-center">
         <CardTitle className="text-2xl">Sign in to {tenantName}</CardTitle>
-        <CardDescription>Mkety identity will use the configured identity provider when it is connected.</CardDescription>
+        <CardDescription>Choose your preferred sign in method</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <FormGlobalError visible={!!serverError} id="tenant-login-error">
           {serverError}
         </FormGlobalError>
 
+        {/* Auth0 Login Button */}
         <Button
           type="button"
           className="w-full h-12 bg-primary hover:opacity-90 shadow-md text-base font-medium"
-          onClick={handleIdentityLogin}
+          onClick={handleAuth0Login}
           disabled={isLoading}
           aria-busy={isLoading}
         >
-          {isLoading ? 'Checking identity...' : 'Continue with Mkety identity'}
+          {isLoading ? 'Signing in...' : 'Continue with Auth0'}
         </Button>
 
         <div className="relative">
@@ -114,10 +125,11 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail = '' }: T
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">Development identity unavailable</span>
+            <span className="bg-card px-2 text-muted-foreground">Or development login</span>
           </div>
         </div>
 
+        {/* Development Login Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" aria-label="Development login form" noValidate>
           <div className="space-y-2">
             <FormLabel htmlFor="tenant-email" required>
@@ -139,12 +151,12 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail = '' }: T
             </FormFieldError>
           </div>
           <Button type="submit" variant="outline" className="w-full h-11" disabled={isLoading} aria-busy={isLoading}>
-            {isLoading ? 'Checking...' : 'Check development identity'}
+            {isLoading ? 'Signing in...' : 'Dev Login'}
           </Button>
         </form>
 
         <p className="text-xs text-center text-muted-foreground mt-4">
-          Access remains closed until Mkety&apos;s identity provider is connected.
+          By signing in, you agree to access {tenantName}&apos;s workspace.
         </p>
       </CardContent>
     </Card>
