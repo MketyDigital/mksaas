@@ -49,6 +49,59 @@ jobs:
           git add package.json pnpm-lock.yaml
       - name: Verify frozen install
         run: pnpm install --frozen-lockfile
+      - name: Diagnose WebCrypto realm boundary
+        run: |
+          cat > src/shared/lib/auth/__tests__/_webcrypto-realm-diagnostic.test.ts <<'EOF'
+          import { webcrypto } from 'node:crypto';
+          import { TextEncoder as NodeTextEncoder } from 'node:util';
+
+          describe('WebCrypto realm diagnostic', () => {
+            it('reports which byte representations Node WebCrypto accepts inside Jest', async () => {
+              const keyPair = await crypto.subtle.generateKey(
+                {
+                  name: 'RSASSA-PKCS1-v1_5',
+                  modulusLength: 2048,
+                  publicExponent: new Uint8Array([1, 0, 1]),
+                  hash: 'SHA-256',
+                },
+                true,
+                ['sign', 'verify'],
+              );
+              const data = new NodeTextEncoder().encode('mkety-auth-realm-diagnostic');
+              const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keyPair.privateKey, data);
+              const realmBytes = Uint8Array.from(new Uint8Array(signature));
+              const realmBuffer = new ArrayBuffer(realmBytes.byteLength);
+              new Uint8Array(realmBuffer).set(realmBytes);
+
+              console.log(JSON.stringify({
+                cryptoIsNodeWebcrypto: crypto === webcrypto,
+                realmBytesTag: Object.prototype.toString.call(realmBytes),
+                realmBufferTag: Object.prototype.toString.call(realmBuffer),
+                realmBytesIsView: ArrayBuffer.isView(realmBytes),
+                dataIsView: ArrayBuffer.isView(data),
+                realmBytesCtorMatchesDataCtor: realmBytes.constructor === data.constructor,
+                realmBufferCtorMatchesSignatureBufferCtor: realmBuffer.constructor === signature.constructor,
+              }));
+
+              const results: Record<string, string> = {};
+              for (const [name, candidate] of [
+                ['native-signature', signature],
+                ['realm-uint8array', realmBytes],
+                ['realm-arraybuffer', realmBuffer],
+              ] as const) {
+                try {
+                  results[name] = String(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, candidate, data));
+                } catch (error) {
+                  results[name] = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+                }
+              }
+              console.log(JSON.stringify(results));
+              expect(results['native-signature']).toBe('true');
+            });
+          });
+          EOF
+          pnpm exec jest src/shared/lib/auth/__tests__/_webcrypto-realm-diagnostic.test.ts --runInBand
+          rm src/shared/lib/auth/__tests__/_webcrypto-realm-diagnostic.test.ts
       - name: Verify Auth and platform tests
         run: pnpm test
       - name: Verify types
