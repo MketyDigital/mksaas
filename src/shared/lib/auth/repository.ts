@@ -103,9 +103,10 @@ export async function getSessionByToken(token: string): Promise<MketySession | n
 
   const memberships = await db.query.tenantMemberships.findMany({
     where: eq(tenantMemberships.userId, user.id),
+    with: { tenant: { columns: { slug: true } } },
   });
 
-  const roles = Object.fromEntries(memberships.map((membership) => [membership.tenantId, membership.role]));
+  const roles = Object.fromEntries(memberships.map((membership) => [membership.tenant.slug, membership.role]));
 
   return {
     user: {
