@@ -4,7 +4,7 @@ import { workflowWebhookDeliveries } from './workflow-webhook-deliveries';
 import { workflowWebhookEndpoints } from './workflow-webhook-endpoints';
 
 describe('automation webhook persistence schema', () => {
-  it('defines scoped webhook endpoint persistence with a unique public endpoint id', () => {
+  it('defines scoped webhook endpoint persistence with encrypted secret storage and unique identities', () => {
     const config = getTableConfig(workflowWebhookEndpoints);
     const columnNames = config.columns.map((column) => column.name);
     const indexNames = config.indexes.map((index) => index.config.name);
@@ -15,13 +15,15 @@ describe('automation webhook persistence schema', () => {
       'project_id',
       'workflow_id',
       'endpoint_id',
-      'secret_hash',
+      'secret_ciphertext',
+      'secret_fingerprint',
       'status',
       'created_at',
       'updated_at',
       'rotated_at',
     ]));
-    expect(indexNames).toContain('workflow_webhook_endpoints_endpoint_id_idx');
+    expect(columnNames).not.toContain('secret_hash');
+    expect(indexNames).toEqual(expect.arrayContaining(['workflow_webhook_endpoints_endpoint_id_idx', 'workflow_webhook_endpoints_workflow_unique_idx']));
   });
 
   it('defines delivery admission persistence with atomic endpoint/event uniqueness', () => {
