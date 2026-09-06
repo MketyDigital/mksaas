@@ -2,12 +2,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Lock } from 'lucide-react';
-import { signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormFieldError, FormGlobalError, FormLabel, Input } from '@/shared/components/ui';
+import { signIn } from '@/shared/lib/auth-client';
 
 const loginSchema = z.object({ email: z.string().min(1, 'Email is required').email('Please enter a valid email address') });
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -30,8 +30,8 @@ export const LoginForm = ({ initialEmail = '', enableDevelopmentLogin = false, e
     setServerError(null);
     try {
       const result = await signIn('development', { email: data.email, redirect: false, callbackUrl });
-      if (result?.error) setServerError(result.error);
-      else if (result?.url) {
+      if (result.error) setServerError(result.error);
+      else if (result.url) {
         const target = new URL(result.url, window.location.origin);
         window.location.assign(`${target.pathname}${target.search}${target.hash}`);
       }
@@ -44,10 +44,13 @@ export const LoginForm = ({ initialEmail = '', enableDevelopmentLogin = false, e
 
   const handleAuth0Login = async () => {
     setIsLoading(true);
+    setServerError(null);
     try {
-      await signIn('auth0', { callbackUrl });
+      const result = await signIn('auth0', { callbackUrl, redirect: false });
+      setServerError(result.error ?? 'Mkety identity is not configured yet.');
     } catch {
       setServerError('Failed to initiate login');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -67,7 +70,7 @@ export const LoginForm = ({ initialEmail = '', enableDevelopmentLogin = false, e
         {enableAuth0Login && (
           <Button type="button" className="w-full h-12 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200 text-base font-semibold group" onClick={handleAuth0Login} disabled={isLoading} aria-busy={isLoading}>
             <Lock className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" />
-            {isLoading ? 'Signing in...' : 'Continue with Auth0'}
+            {isLoading ? 'Signing in...' : 'Continue with configured identity'}
           </Button>
         )}
 
@@ -82,11 +85,11 @@ export const LoginForm = ({ initialEmail = '', enableDevelopmentLogin = false, e
               </div>
               <Button type="submit" variant="outline" className="w-full h-11 shadow-sm hover:bg-muted/50 transition-colors" disabled={isLoading} aria-busy={isLoading}>{isLoading ? 'Signing in...' : 'Development Login'}</Button>
             </form>
-            <p className="text-xs text-center text-muted-foreground pt-2">Temporary test login is enabled for this deployment.</p>
+            <p className="text-xs text-center text-muted-foreground pt-2">Temporary test login is not available until the Mkety identity adapter is connected.</p>
           </>
         )}
 
-        {!enableAuth0Login && !enableDevelopmentLogin && <p className="text-sm text-center text-muted-foreground">No authentication provider is configured for this test deployment yet.</p>}
+        {!enableAuth0Login && !enableDevelopmentLogin && <p className="text-sm text-center text-muted-foreground">Mkety identity is not configured for this deployment yet.</p>}
       </CardContent>
     </Card>
   );
