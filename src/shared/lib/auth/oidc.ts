@@ -33,6 +33,7 @@ export interface OidcIdTokenClaims {
   iat: number;
   nonce?: string;
   email?: string;
+  email_verified?: boolean;
   name?: string;
   picture?: string;
   [claim: string]: unknown;
