@@ -1,7 +1,7 @@
 /**
  * Test Utilities
  *
- * Custom render function with all providers and common mock utilities.
+ * Custom render function with common providers and mock utilities.
  *
  * For type-safe mock factories, use the exports from './mock-factories':
  * - createMockSession, createMockAdminSession
@@ -16,7 +16,6 @@ import { type ReactElement, type ReactNode } from 'react';
 import { applySettingsDefaults } from '@/shared/lib/tenant-settings';
 import { type TenantContextValue, TenantProvider } from '@/shared/providers';
 
-// Re-export all type-safe mock factories
 export * from './mock-factories';
 
 // ============================================================================
@@ -31,7 +30,7 @@ export const mockTenant: TenantContextValue = {
 };
 
 /**
- * @deprecated Use createMockSession() from mock-factories for type-safe mocks
+ * @deprecated Use createMockSession() from mock-factories for type-safe mocks.
  */
 export const mockSession = {
   user: {
@@ -44,11 +43,11 @@ export const mockSession = {
     },
     permissions: {},
   },
-  expires: new Date(Date.now() + 86400000).toISOString(),
+  expiresAt: new Date(Date.now() + 86_400_000),
 };
 
 /**
- * @deprecated Use createMockAdminSession() from mock-factories for type-safe mocks
+ * @deprecated Use createMockAdminSession() from mock-factories for type-safe mocks.
  */
 export const mockAdminSession = {
   ...mockSession,
@@ -199,11 +198,10 @@ interface AllProvidersProps {
 }
 
 /**
- * Simple provider wrapper for tests
+ * Simple provider wrapper for tests.
  *
- * Note: We don't include SessionProvider, NextIntlClientProvider, or ThemeProvider here
- * because they're complex to set up in Jest and should be mocked at the module level instead.
- * This keeps tests fast and focused on component logic.
+ * Mkety Auth client state is mocked at the module/fetch boundary in focused tests;
+ * this shared wrapper intentionally does not install an authentication framework provider.
  */
 function AllProviders({ children, tenant = mockTenant }: AllProvidersProps) {
   return <TenantProvider value={tenant}>{children}</TenantProvider>;
@@ -220,12 +218,6 @@ interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   locale?: string;
 }
 
-/**
- * Custom render function that wraps components with all necessary providers
- *
- * @example
- * const { getByText } = renderWithProviders(<MyComponent />);
- */
 export function renderWithProviders(ui: ReactElement, options: CustomRenderOptions = {}) {
   const { session, tenant, messages, locale, ...renderOptions } = options;
 
@@ -239,7 +231,6 @@ export function renderWithProviders(ui: ReactElement, options: CustomRenderOptio
   });
 }
 
-// Re-export everything from testing-library
 export * from '@testing-library/react';
 export { default as userEvent } from '@testing-library/user-event';
 
@@ -247,9 +238,6 @@ export { default as userEvent } from '@testing-library/user-event';
 // Mock Utilities
 // ============================================================================
 
-/**
- * Creates a mock fetch function that returns specified responses
- */
 export function createMockFetch(responses: Record<string, unknown>) {
   return jest.fn((url: string) => {
     const urlKey = Object.keys(responses).find((key) => url.includes(key));
@@ -263,9 +251,6 @@ export function createMockFetch(responses: Record<string, unknown>) {
   });
 }
 
-/**
- * Waits for a condition to be true
- */
 export async function waitForCondition(condition: () => boolean, timeout = 5000, interval = 100): Promise<void> {
   const startTime = Date.now();
   while (!condition()) {
@@ -276,9 +261,6 @@ export async function waitForCondition(condition: () => boolean, timeout = 5000,
   }
 }
 
-/**
- * Creates a mock router object for next/navigation
- */
 export function createMockRouter(overrides: Partial<ReturnType<typeof import('next/navigation').useRouter>> = {}) {
   return {
     back: jest.fn(),
@@ -291,9 +273,6 @@ export function createMockRouter(overrides: Partial<ReturnType<typeof import('ne
   };
 }
 
-/**
- * Creates mock search params
- */
 export function createMockSearchParams(params: Record<string, string> = {}) {
   return {
     get: jest.fn((key: string) => params[key] || null),
@@ -345,9 +324,6 @@ export const mockDb = {
   delete: jest.fn().mockReturnThis(),
 };
 
-/**
- * Resets all mock functions in mockDb
- */
 export function resetDbMocks() {
   Object.values(mockDb.query).forEach((queryObj) => {
     Object.values(queryObj).forEach((fn) => {
