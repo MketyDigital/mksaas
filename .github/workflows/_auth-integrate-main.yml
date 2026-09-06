@@ -52,20 +52,7 @@ jobs:
       - name: Verify Auth and platform tests
         run: pnpm test
       - name: Verify types
-        id: types
-        continue-on-error: true
-        run: pnpm type-check > typecheck-errors.txt 2>&1
-      - name: Upload type-check diagnostic
-        if: steps.types.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: auth-typecheck-diagnostic
-          path: typecheck-errors.txt
-      - name: Stop on type-check failure
-        if: steps.types.outcome == 'failure'
-        run: |
-          cat typecheck-errors.txt
-          exit 1
+        run: pnpm type-check
       - name: Verify lint
         run: pnpm lint
       - name: Verify vinext compatibility after Auth.js removal
