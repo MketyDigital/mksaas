@@ -33,3 +33,23 @@ jobs:
 
       - name: Run vinext compatibility check
         run: pnpm dlx vinext@latest check
+
+      - name: Create disposable migration copy
+        run: |
+          mkdir -p "$RUNNER_TEMP/vinext-probe"
+          rsync -a --exclude='.git' ./ "$RUNNER_TEMP/vinext-probe/"
+
+      - name: Initialize vinext in disposable copy
+        working-directory: ${{ runner.temp }}/vinext-probe
+        run: pnpm dlx vinext@latest init --skip-check --platform=cloudflare
+
+      - name: Build disposable vinext migration
+        working-directory: ${{ runner.temp }}/vinext-probe
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+          NEXT_PUBLIC_APP_NAME: Mkety
+          NEXT_PUBLIC_APP_URL: https://preview.invalid
+          AUTH_SECRET: vinext-probe-only-not-a-production-secret
+          AUTH_URL: https://preview.invalid
+          ENABLE_AI_FEATURES: 'false'
+        run: pnpm exec vinext build
