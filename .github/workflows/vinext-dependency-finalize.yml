@@ -1,4 +1,5 @@
 # One-time dependency regeneration for the vinext migration. No build/test/deploy runs here.
+# ESM-incompatible CommonJS config/stub files must be migrated to .cjs before this workflow runs.
 name: Finalize vinext dependency graph
 
 on:
