@@ -14,7 +14,7 @@ export type AutomationWorkspaceMetrics = {
   webhookWorkflowCount: number;
   runCount: number;
   failedRunCount: number;
-  executionEnabled: false;
+  executionEnabled: true;
 };
 
 export function buildAutomationWorkspaceMetrics({
@@ -31,6 +31,6 @@ export function buildAutomationWorkspaceMetrics({
     webhookWorkflowCount: workflows.filter((workflow) => workflow.triggerType === 'webhook').length,
     runCount: runs.length,
     failedRunCount: runs.filter((run) => run.status === 'failed').length,
-    executionEnabled: false,
+    executionEnabled: true,
   };
 }
