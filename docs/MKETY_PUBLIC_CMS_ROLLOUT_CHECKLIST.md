@@ -11,6 +11,8 @@ It follows the Mkety blueprint boundaries from `AGENTS.md`:
 - Trading remains visible but is treated as Enterprise/Custom.
 - Backend logic, billing ledger calculations, security rules, tenant isolation, deployment engines, private keys, and Auth Gateway signing are not CMS-editable.
 
+The authoritative migration-order contract is `docs/MKETY_MIGRATION_BASELINE.md`.
+
 ## 1. Code verification
 
 Required before database rollout:
@@ -20,9 +22,10 @@ pnpm test
 pnpm type-check
 pnpm lint
 pnpm build
+pnpm db:check:migrations
 ```
 
-The GitHub `CI` workflow runs these as independent jobs so failures do not hide each other.
+The GitHub CI workflows run these checks so migration-order failures do not get hidden behind application tests.
 
 ## 2. Migration-path reality check
 
@@ -33,52 +36,56 @@ schema: ./src/shared/db/schema/index.ts
 out: ./src/shared/db/migrations
 ```
 
-The Mkety CMS bootstrap SQL currently lives in:
+Application migrations in `src/shared/db/migrations/` are applied by:
+
+```bash
+pnpm db:migrate
+```
+
+The Mkety CMS bootstrap SQL lives in a separate namespace:
 
 ```text
 migrations/0000_platform_content.sql
 migrations/0001_platform_app_experience.sql
 ```
 
-Because those files are outside Drizzle's configured `out` folder, `pnpm db:migrate` alone will not apply the Mkety CMS bootstrap SQL. This branch therefore includes a dedicated runner:
+Because those files are outside Drizzle's configured `out` folder, `pnpm db:migrate` does not apply the Mkety CMS bootstrap SQL. Apply that namespace with:
 
 ```bash
 pnpm db:migrate:mkety-content
 ```
 
-This is intentional for this foundation branch while the Drizzle-generated migration output is reconciled.
+Do not combine or renumber the two namespaces as though they form one numeric sequence.
 
 ## 3. Migration reconciliation
 
 Before applying migrations to a shared or production-like database:
 
 ```bash
-pnpm db:generate
-```
-
-Compare Drizzle-generated output against:
-
-```text
-migrations/0000_platform_content.sql
-migrations/0001_platform_app_experience.sql
+pnpm db:check:migrations
 ```
 
 Confirm:
 
+- the application migration namespace is unique and contiguous;
+- the Mkety content bootstrap namespace is unique and contiguous;
+- `0009_mkety_auth.sql` remains the settled Auth migration;
+- any branch adding an application migration uses the next free application prefix after rebasing;
 - schema name remains aligned with the current app schema;
-- the Auth.js user table is `users`, not `user`;
 - `persons.id` and auth user IDs are not treated as interchangeable;
 - enums are created before dependent tables;
 - foreign keys reference existing tables;
 - index and constraint names do not collide;
-- migrations are idempotent enough for controlled rollout/retry;
-- the existing Drizzle journal state is reconciled before relying on `pnpm db:migrate` for these CMS tables.
+- migrations are safe for controlled rollout/retry.
+
+The repository's legacy Drizzle journal/snapshot metadata does not fully represent the current SQL history. Do **not** accept `pnpm db:generate` output as authoritative without explicit review against `docs/MKETY_MIGRATION_BASELINE.md`, the complete active SQL history, and the current schema. Do not fabricate historical snapshots to silence metadata warnings.
 
 ## 4. Apply migrations
 
 On a real database with the correct `DATABASE_URL`:
 
 ```bash
+pnpm db:check:migrations
 pnpm db:migrate
 pnpm db:migrate:mkety-content
 ```
@@ -159,8 +166,8 @@ The Platform Control Center may present protected modules and safe metadata, but
 
 Only after the checks above pass should this branch be treated as ready to move from public-site/CMS foundation work into heavier `app.mkety.com` Platform development.
 
-Recommended next major branch after merge:
+Recommended next major shared Platform milestone after the baseline sequence completes:
 
 ```text
-Mkety Platform core app workspaces: AI, Automate, Deploy, Billing/Entitlements, and SolutionHub.
+Billing → Entitlements → Usage/Credits
 ```

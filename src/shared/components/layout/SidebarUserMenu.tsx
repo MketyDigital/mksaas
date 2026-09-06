@@ -2,9 +2,9 @@
 
 import { ArrowLeft, LogOut, User } from 'lucide-react';
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { Avatar, AvatarFallback, AvatarImage } from '@/shared/components/ui/avatar';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -16,21 +16,12 @@ import {
 } from '@/shared/components/ui/dropdown-menu';
 
 interface SidebarUserMenuProps {
-  user: {
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  } | null;
+  user: { name?: string | null; email?: string | null; image?: string | null } | null;
   tenantSlug?: string;
-  /** Show "Back to main app" link (for admin/manager views) */
   showBackLink?: boolean;
-  /** Label for back link */
   backLinkLabel?: string;
-  /** Show profile link in mobile dropdown */
   showProfileLink?: boolean;
-  /** Callback when an item is clicked (for closing mobile drawer) */
   onItemClick?: () => void;
-  /** Whether to show compact version (for collapsed sidebar) */
   isCompact?: boolean;
 }
 
@@ -43,10 +34,10 @@ export function SidebarUserMenu({
   onItemClick,
   isCompact = false,
 }: SidebarUserMenuProps) {
+  const { logout } = useAuth();
   const t = useTranslations('nav');
   const tAuth = useTranslations('auth');
   const tSettings = useTranslations('settings');
-
   const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
   const resolvedBackLabel = backLinkLabel ?? tSettings('backToUserView');
 
@@ -115,7 +106,7 @@ export function SidebarUserMenu({
           className="cursor-pointer text-destructive"
           onClick={() => {
             onItemClick?.();
-            signOut({ callbackUrl: '/' });
+            void logout('/');
           }}
         >
           <LogOut className="mr-2 h-4 w-4" />

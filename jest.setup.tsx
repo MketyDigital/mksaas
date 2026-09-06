@@ -1,16 +1,49 @@
 process.env.SKIP_ENV_VALIDATION = process.env.SKIP_ENV_VALIDATION ?? 'true';
 
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
+import { webcrypto } from 'node:crypto';
+import { TextDecoder, TextEncoder } from 'node:util';
+
 import '@testing-library/jest-dom';
+
+// Mkety Auth deliberately uses Web-standard crypto APIs so the same primitives work
+// in browsers and Cloudflare Workers. jsdom does not expose all Node 22 Web globals,
+// therefore the test harness supplies the standards-compatible Node implementations.
+Object.defineProperty(globalThis, 'TextEncoder', { configurable: true, value: TextEncoder });
+Object.defineProperty(globalThis, 'TextDecoder', { configurable: true, value: TextDecoder });
+Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
+
+if (!globalThis.fetch) {
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: jest.fn() });
+}
 
 // ============================================================================
 // Global Mocks
 // ============================================================================
 
-// Mock next-intl
+// Runtime environment validation uses an ESM-only dependency. Unit tests exercise
+// consumers, not environment parsing, so keep that boundary explicit and deterministic.
+jest.mock('@/shared/lib/env', () => ({
+  env: {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+    MKETY_AUTH_PROVIDER: 'zitadel',
+    MKETY_AUTH_ISSUER: 'https://example.zitadel.cloud',
+    MKETY_AUTH_CLIENT_ID: 'mkety-test-client',
+    MKETY_AUTH_CLIENT_SECRET: 'test-client-secret',
+    MKETY_AUTH_REDIRECT_URI: 'https://preview.example.workers.dev/api/auth/callback',
+    MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: 'https://preview.example.workers.dev/login',
+    MKETY_AUTH_SESSION_SECRET: 'test-session-secret-that-is-long-enough',
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NEXT_PUBLIC_APP_NAME: 'Mkety',
+    ENABLE_AI_FEATURES: false,
+    ENABLE_TEST_LOGIN: false,
+    MKETY_AI_PROVIDER: 'openai',
+    MKETY_AI_MODEL: 'gpt-4o-mini',
+    AWS_REGION: 'us-east-1',
+    S3_REGION: 'us-east-1',
+  },
+}));
+
 jest.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
   useLocale: () => 'en',
@@ -18,13 +51,11 @@ jest.mock('next-intl', () => ({
   NextIntlClientProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Mock next-themes
 jest.mock('next-themes', () => ({
   useTheme: () => ({ theme: 'light', setTheme: jest.fn() }),
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Mock next/navigation
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
     push: jest.fn(),
@@ -39,58 +70,29 @@ jest.mock('next/navigation', () => ({
   useParams: () => ({ tenant: 'test-tenant' }),
 }));
 
-// Mock next/link
 jest.mock('next/link', () => {
-  const Link = ({ children, href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children: React.ReactNode; href: string }) => {
-    return (
-      <a href={href} {...props}>
-        {children}
-      </a>
-    );
-  };
+  const Link = ({
+    children,
+    href,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children: React.ReactNode; href: string }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
   return Link;
 });
 
-// Mock @auth/drizzle-adapter to avoid ESM issues
-jest.mock('@auth/drizzle-adapter', () => ({
-  DrizzleAdapter: jest.fn(() => ({})),
-}));
-
-// Mock next-auth to avoid ESM issues with drizzle-adapter
-jest.mock('next-auth', () => {
-  const mockAuth = jest.fn().mockResolvedValue(null);
-  return {
-    __esModule: true,
-    default: jest.fn(() => ({
-      handlers: { GET: jest.fn(), POST: jest.fn() },
-      signIn: jest.fn(),
-      signOut: jest.fn(),
-      auth: mockAuth,
-    })),
-  };
-});
-
-// Mock the shared auth module
-jest.mock('@/shared/lib/auth', () => ({
-  auth: jest.fn().mockResolvedValue(null),
-  signIn: jest.fn(),
-  signOut: jest.fn(),
-  handlers: { GET: jest.fn(), POST: jest.fn() },
-}));
-
-// Suppress console errors during tests (optional - remove if you want to see them)
 const originalError = console.error;
 beforeAll(() => {
   console.error = (...args: unknown[]) => {
-    // Filter out expected React warnings
     if (
       typeof args[0] === 'string' &&
       (args[0].includes('Warning: ReactDOM.render') ||
         args[0].includes('Warning: An update to') ||
         args[0].includes('act(...)'))
-    ) {
+    )
       return;
-    }
     originalError.call(console, ...args);
   };
 });

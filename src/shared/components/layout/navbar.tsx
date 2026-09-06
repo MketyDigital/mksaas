@@ -4,10 +4,10 @@ import { BookOpen, LogOut, Menu, User } from 'lucide-react';
 import Link from 'next/link';
 
 import { usePathname } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LocaleSwitcher } from '@/shared/components/LocaleSwitcher';
 import { Avatar, AvatarFallback, AvatarImage } from '@/shared/components/ui/avatar';
 import { Button } from '@/shared/components/ui/button';
@@ -30,19 +30,14 @@ interface NavbarProps {
 
 export function Navbar({ tenantSlug }: NavbarProps) {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const user = session?.user;
+  const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = useTranslations('nav');
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations();
-
-  // Get feature flags
   const featureFlags = useFeatureFlags(['knowledgeBase']);
-
   const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
 
-  // Check if user has manager role for current tenant
   const isManager = useMemo(() => {
     if (!user?.roles || !tenantSlug) return false;
     const roles = user.roles as Record<string, string>;
@@ -50,44 +45,25 @@ export function Navbar({ tenantSlug }: NavbarProps) {
     return tenantRole === 'manager' || tenantRole === 'admin';
   }, [user?.roles, tenantSlug]);
 
-  // Build nav items based on feature flags
   const navItems = useMemo(() => {
     const items = [
       { href: `${basePath}`, label: t('dashboard'), exact: true },
       { href: `${basePath}/people`, label: t('directory') },
       { href: `${basePath}/team`, label: t('team') },
     ];
-
-    // Add manager link for managers
-    if (isManager) {
-      items.push({ href: `${basePath}/manager`, label: t('manager') });
-    }
-
-    // Conditionally add knowledge base
-    if (featureFlags.knowledgeBase) {
-      items.push({ href: `${basePath}/knowledge`, label: t('knowledgeBase') });
-    }
-
-    // Always show assistant
+    if (isManager) items.push({ href: `${basePath}/manager`, label: t('manager') });
+    if (featureFlags.knowledgeBase) items.push({ href: `${basePath}/knowledge`, label: t('knowledgeBase') });
     items.push({ href: `${basePath}/assistant`, label: t('assistant') });
-
     return items;
   }, [basePath, t, featureFlags.knowledgeBase, isManager]);
 
-  const isActive = (href: string, exact?: boolean) => {
-    if (exact) {
-      return pathname === href;
-    }
-    return pathname.startsWith(href);
-  };
+  const isActive = (href: string, exact?: boolean) => (exact ? pathname === href : pathname.startsWith(href));
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/80 bg-card/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-card/80">
       <div className="container flex h-14 items-center justify-between">
-        {/* Logo */}
         <AppLogo href={basePath || '/'} size="md" />
 
-        {/* Navigation */}
         {tenantSlug && (
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => (
@@ -109,11 +85,8 @@ export function Navbar({ tenantSlug }: NavbarProps) {
           </nav>
         )}
 
-        {/* Right side */}
         <div className="flex items-center gap-2">
-          {/* Locale Switcher */}
           <LocaleSwitcher />
-          {/* Theme Toggle */}
           <ThemeToggle />
 
           {user ? (
@@ -149,10 +122,7 @@ export function Navbar({ tenantSlug }: NavbarProps) {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="cursor-pointer text-destructive"
-                  onClick={() => signOut({ callbackUrl: '/' })}
-                >
+                <DropdownMenuItem className="cursor-pointer text-destructive" onClick={() => void logout('/')}>
                   <LogOut className="mr-2 h-4 w-4" />
                   {tAuth('signOut')}
                 </DropdownMenuItem>
@@ -164,7 +134,6 @@ export function Navbar({ tenantSlug }: NavbarProps) {
             </Link>
           )}
 
-          {/* Mobile menu button */}
           {tenantSlug && (
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="h-5 w-5" />
@@ -173,7 +142,6 @@ export function Navbar({ tenantSlug }: NavbarProps) {
         </div>
       </div>
 
-      {/* Mobile Navigation Drawer */}
       {tenantSlug && (
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetContent side="left" className="w-72">
@@ -182,7 +150,7 @@ export function Navbar({ tenantSlug }: NavbarProps) {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg brand-gradient">
                   <span className="text-lg font-bold text-white">S</span>
                 </div>
-                <span className="text-lg font-bold">Next.js SaaS AI Template</span>
+                <span className="text-lg font-bold">Mkety</span>
               </SheetTitle>
             </SheetHeader>
             <nav className="mt-6 flex flex-col gap-1">

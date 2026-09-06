@@ -2,10 +2,10 @@
 
 import { BookOpen, LogOut, Search, Settings, User } from 'lucide-react';
 import Link from 'next/link';
-import { signOut, useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useSyncExternalStore } from 'react';
 
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LocaleSwitcher } from '@/shared/components/LocaleSwitcher';
 import { useGlobalSearchOptional } from '@/shared/components/search/GlobalSearchProvider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/shared/components/ui/avatar';
@@ -25,23 +25,15 @@ interface TopHeaderProps {
   tenantSlug?: string;
 }
 
-/**
- * Top header component with profile access in the top-right corner.
- * Positioned as a fixed header that adjusts based on sidebar collapse state.
- * Height matches the sidebar header (h-16) for visual alignment.
- */
 export function TopHeader({ tenantSlug }: TopHeaderProps) {
-  const { data: session } = useSession();
-  const user = session?.user;
+  const { user, logout } = useAuth();
   const t = useTranslations('nav');
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations();
-
   const sidebarContext = useSidebarOptional();
   const isCollapsed = sidebarContext?.isCollapsed ?? false;
   const globalSearch = useGlobalSearchOptional();
 
-  // Detect macOS for showing ⌘ vs Ctrl (SSR-safe via useSyncExternalStore)
   const isMac = useSyncExternalStore(
     () => () => {},
     () => /mac/i.test(navigator.userAgent),
@@ -57,10 +49,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
         isCollapsed ? 'lg:left-16' : 'lg:left-64',
       )}
     >
-      {/* Gradient accent stripe — continuous with sidebar stripe */}
       <div className="absolute top-0 left-0 right-0 h-0.5 brand-gradient" aria-hidden />
-
-      {/* Left side — Search trigger */}
       <div className="flex-1">
         {tenantSlug && globalSearch && (
           <button
@@ -77,9 +66,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
         )}
       </div>
 
-      {/* Right side - Utilities + User menu */}
       <div className="flex items-center gap-1.5">
-        {/* Docs link */}
         <Link
           href="/docs"
           target="_blank"
@@ -89,14 +76,9 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
         >
           <BookOpen className="h-4 w-4" />
         </Link>
-
-        {/* Theme toggle */}
         <ThemeToggle />
-
-        {/* Locale switcher */}
         <LocaleSwitcher />
 
-        {/* User profile dropdown */}
         {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -136,10 +118,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="cursor-pointer text-destructive"
-                onClick={() => signOut({ callbackUrl: '/' })}
-              >
+              <DropdownMenuItem className="cursor-pointer text-destructive" onClick={() => void logout('/')}>
                 <LogOut className="mr-2 h-4 w-4" />
                 {tAuth('signOut')}
               </DropdownMenuItem>
