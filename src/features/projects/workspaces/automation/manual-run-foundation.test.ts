@@ -1,4 +1,4 @@
-import { assertManualRunPreflightReady, buildManualRunNoopOutput } from './manual-run-foundation';
+import { assertManualRunPreflightReady, buildManualRunInternalOutput } from './manual-run-foundation';
 
 const readyPreflight = {
   checks: [{ code: 'workflow.trigger-ready', message: 'Ready', severity: 'ready' as const }],
@@ -19,27 +19,25 @@ describe('manual run foundation', () => {
     );
   });
 
-  it('builds a deterministic inspection-only output without runtime dispatch', () => {
-    expect(
-      buildManualRunNoopOutput({
-        definition: {
-          metadata: { owner: 'automation-team' },
-          nodes: [
-            { id: 'trigger-1', type: 'trigger', config: { triggerMode: 'manual' } },
-            { id: 'agent-1', type: 'agent', config: { agentId: 'agent-a', prompt: 'Draft prompt' } },
-          ],
-        },
-        workflowVersion: '7',
-      }),
-    ).toEqual({
-      inspectedNodeCount: 2,
-      inspectedNodes: [
-        { id: 'trigger-1', type: 'trigger' },
-        { id: 'agent-1', type: 'agent' },
-      ],
-      mode: 'safe-noop',
+  it('builds internal execution output inside the existing manual run envelope', () => {
+    expect(buildManualRunInternalOutput({
+      definition: {
+        nodes: [
+          { id: 'trigger-1', type: 'trigger', config: { triggerMode: 'manual' } },
+          { id: 'transform-1', type: 'transform', config: { input: '', mapping: '{"prepared":true}' } },
+        ],
+      },
+      input: {},
+      workflowVersion: '7',
+    })).toEqual(expect.objectContaining({
+      data: { prepared: true },
+      mode: 'internal-execution',
       runtimeDispatch: false,
       workflowVersion: '7',
-    });
+      steps: [
+        expect.objectContaining({ nodeId: 'trigger-1', status: 'completed' }),
+        expect.objectContaining({ nodeId: 'transform-1', status: 'completed' }),
+      ],
+    }));
   });
 });

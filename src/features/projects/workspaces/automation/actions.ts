@@ -7,7 +7,7 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { db } from '@/shared/db';
 import { workflowRuns, workflows } from '@/shared/db/schema';
 
-import { assertManualRunPreflightReady, buildManualRunNoopOutput } from './manual-run-foundation';
+import { assertManualRunPreflightReady, buildManualRunInternalOutput } from './manual-run-foundation';
 import { buildWorkflowDraftInput } from './workflow-drafts';
 import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
 import { buildWorkflowDefinitionWithNodeConfigDraft } from './workflow-node-config-drafts';
@@ -89,9 +89,10 @@ export async function startAutomationWorkflowManualRun(formData: FormData) {
   });
   if (existingRun) throw new Error('This workflow already has a manual run in progress.');
 
+  const input: Record<string, unknown> = {};
   const [run] = await db
     .insert(workflowRuns)
-    .values({ tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, triggerType: 'manual', input: { source: 'builder-manual-inspection' }, status: 'queued' })
+    .values({ tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, triggerType: 'manual', input, status: 'queued' })
     .returning();
   if (!run) throw new Error('Manual workflow run could not be created.');
 
@@ -99,7 +100,7 @@ export async function startAutomationWorkflowManualRun(formData: FormData) {
 
   try {
     await db.update(workflowRuns).set({ status: 'running' }).where(runScope);
-    const output = buildManualRunNoopOutput({ definition: workflow.definition, workflowVersion: workflow.version });
+    const output = buildManualRunInternalOutput({ definition: workflow.definition, input, workflowVersion: workflow.version });
     await db.update(workflowRuns).set({ status: 'completed', output, completedAt: new Date() }).where(runScope);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Manual workflow run failed.';
