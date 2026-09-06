@@ -31,6 +31,6 @@
       }
     ]
   },
-  "exclude": ["tools/**/*", "**/*.stories.tsx", "**/*.stories.ts", "open-next.config.ts"],
+  "exclude": ["tools/**/*", "**/*.stories.tsx", "**/*.stories.ts"],
   "include": ["next-env.d.ts", ".next/types/**/*.ts", "**/*.ts", "**/*.tsx", ".next/dev/types/**/*.ts"]
 }
