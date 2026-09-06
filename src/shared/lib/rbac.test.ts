@@ -1,6 +1,6 @@
 import { db } from '@/shared/db';
-import type { MketySession } from '@/shared/lib/auth/types';
 import { auth } from '@/shared/lib/auth';
+import type { MketySession } from '@/shared/lib/auth/types';
 import { hasPermission } from '@/shared/lib/permissions';
 import { getAllRoles, getCurrentRole, requireRole } from '@/shared/lib/rbac';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -31,8 +31,8 @@ jest.mock('@/shared/db', () => ({
 const authMock = jest.mocked(auth);
 const hasPermissionMock = jest.mocked(hasPermission);
 const getTenantBySlugMock = jest.mocked(getTenantBySlug);
-const tenantMembershipsFindFirstMock = jest.mocked(db.query.tenantMemberships.findFirst);
-const tenantMembershipsFindManyMock = jest.mocked(db.query.tenantMemberships.findMany);
+const tenantMembershipsFindFirstMock = db.query.tenantMemberships.findFirst as unknown as jest.Mock;
+const tenantMembershipsFindManyMock = db.query.tenantMemberships.findMany as unknown as jest.Mock;
 
 function sessionWithRoles(roles: MketySession['user']['roles']): MketySession {
   return {
