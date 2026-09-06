@@ -25,6 +25,7 @@ interface TokenResponse {
 interface UserInfo {
   sub?: string;
   email?: string;
+  email_verified?: boolean;
   name?: string;
   picture?: string;
 }
@@ -123,6 +124,7 @@ export function createZitadelAdapter(config: ZitadelAdapterConfig): IdentityProv
         provider: 'zitadel',
         subject,
         email: typeof claims.email === 'string' ? claims.email : userInfo?.email ?? null,
+        emailVerified: claims.email_verified === true || userInfo?.email_verified === true,
         name: typeof claims.name === 'string' ? claims.name : userInfo?.name ?? null,
         image: typeof claims.picture === 'string' ? claims.picture : userInfo?.picture ?? null,
       };
