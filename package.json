@@ -2,7 +2,7 @@
   "name": "nextjs-saas-ai-template",
   "scripts": {
     "dev": "next dev --turbopack --hostname 0.0.0.0 --port 3000",
-    "build": "pnpm run build:next && pnpm dlx @opennextjs/cloudflare@1.20.6 build --skipNextBuild",
+    "build": "pnpm run build:next && opennextjs-cloudflare build --skipNextBuild",
     "build:next": "NODE_ENV=production next build",
     "start": "next start",
     "format": "prettier --ignore-path .gitignore --write .",
@@ -28,7 +28,9 @@
     "embeddings:generate": "tsx scripts/generate-embeddings.ts",
     "embeddings:recreate": "tsx scripts/generate-embeddings.ts --recreate",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "deploy": "opennextjs-cloudflare deploy",
+    "preview": "opennextjs-cloudflare preview"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.12",
@@ -112,6 +114,7 @@
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@next/eslint-plugin-next": "^15.5.9",
+    "@opennextjs/cloudflare": "1.20.6",
     "@storybook/nextjs": "^10.2.16",
     "@storybook/nextjs-vite": "^10.2.16",
     "@storybook/react": "^10.2.16",
@@ -154,7 +157,8 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.53.1",
-    "wcag-contrast": "^3.0.0"
+    "wcag-contrast": "^3.0.0",
+    "wrangler": "4.129.0"
   },
   "packageManager": "pnpm@10.28.1+sha512.7d7dbbca9e99447b7c3bf7a73286afaaf6be99251eb9498baefa7d406892f67b879adb3a1d7e687fc4ccc1a388c7175fbaae567a26ab44d1067b54fcb0d6a316",
   "engines": {
