@@ -29,16 +29,16 @@ export function buildWorkflowNodeSummaries(definition: unknown): WorkflowNodeSum
   return nodes.map((node, index) => {
     const type = typeof node.type === 'string' && node.type.length > 0 ? node.type : 'unknown';
     const isSupported = SUPPORTED_WORKFLOW_NODE_TYPES.has(type);
-    const hasStableId = typeof node.id === 'string' && node.id.length > 0;
+    const stableId = typeof node.id === 'string' && node.id.length > 0 ? node.id : null;
     const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config) ? node.config as Record<string, unknown> : {};
     const label = typeof config.label === 'string' ? config.label : '';
     const notes = typeof config.notes === 'string' ? config.notes : '';
 
     return {
-      canConfigure: isSupported && hasStableId,
+      canConfigure: isSupported && stableId !== null,
       configDraft: { label, notes },
       configKeys: Object.keys(config),
-      id: hasStableId ? node.id : `node-${index + 1}`,
+      id: stableId ?? `node-${index + 1}`,
       isSupported,
       readinessLabel: isSupported ? 'Prepared' : 'Needs review',
       type,

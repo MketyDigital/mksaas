@@ -7,7 +7,7 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { db } from '@/shared/db';
 import { workflowRuns, workflows } from '@/shared/db/schema';
 
-import { buildManualRunNoopOutput, assertManualRunPreflightReady } from './manual-run-foundation';
+import { assertManualRunPreflightReady, buildManualRunNoopOutput } from './manual-run-foundation';
 import { buildWorkflowDraftInput } from './workflow-drafts';
 import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
 import { buildWorkflowDefinitionWithNodeConfigDraft } from './workflow-node-config-drafts';

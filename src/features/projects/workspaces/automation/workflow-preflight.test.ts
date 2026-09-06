@@ -33,10 +33,10 @@ describe('validateAutomationWorkflowDefinition', () => {
         { type: 'http', config: { method: 'TRACE', url: 'ftp://example.com' } },
       ],
     };
-    const before = structuredClone(definition);
+    const before = JSON.stringify(definition);
     const result = validateAutomationWorkflowDefinition(definition);
 
-    expect(definition).toEqual(before);
+    expect(JSON.stringify(definition)).toBe(before);
     expect(result.readyForExecutionFoundation).toBe(false);
     expect(result.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'node.id-duplicate', severity: 'error' }),
