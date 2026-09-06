@@ -6,7 +6,7 @@ on:
       - feat/mkety-auth-zitadel-vinext
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lockfile:
@@ -22,9 +22,22 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Refresh lockfile
-        run: pnpm install --lockfile-only
-      - name: Upload lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: auth-pnpm-lockfile
-          path: pnpm-lock.yaml
+        id: refresh
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm install --lockfile-only 2>&1 | tee /tmp/lockfile.log
+          exit ${PIPESTATUS[0]}
+      - name: Commit lockfile or diagnostic
+        if: always()
+        run: |
+          cp /tmp/lockfile.log lockfile-refresh.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml lockfile-refresh.log
+          if git diff --cached --quiet; then
+            echo "No lockfile or diagnostic changes"
+            exit 0
+          fi
+          git commit -m "chore: refresh auth lockfile"
+          git push origin HEAD:feat/mkety-auth-zitadel-vinext
