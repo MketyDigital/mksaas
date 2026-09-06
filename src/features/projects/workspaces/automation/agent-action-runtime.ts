@@ -1,4 +1,4 @@
-import { runAgentForAutomation, type AgentRuntimeDefinition } from '@/features/ai/lib/agent-runtime';
+import type { AgentRuntimeDefinition } from '@/features/ai/lib/agent-runtime';
 
 import type { AutomationAgentDependency } from './agent-dependency-readiness';
 
@@ -10,6 +10,7 @@ export async function executeAutomationAgentAction({ dependency, tenantId, proje
   const agent: AgentRuntimeDefinition = { id: dependency.agentId, tenantId, projectId, name: dependency.name, instructions: dependency.instructions, provider: dependency.provider, model: dependency.model, status: 'published', config: dependency.config };
   const startedAt = Date.now();
   try {
+    const { runAgentForAutomation } = await import('@/features/ai/lib/agent-runtime');
     const result = await runAgentForAutomation(agent, [{ role: 'user', content: prompt }], { tools: 'disabled' });
     return { agentId: dependency.agentId, versionId: dependency.versionId, version: dependency.version, provider: dependency.provider, model: dependency.model, durationMs: Math.max(0, Date.now() - startedAt), text: result.text, outputPreview: result.text.slice(0, 4096), ...(result.usage ? { usage: result.usage } : {}) };
   } catch { throw new Error('Automation Agent action failed.'); }
