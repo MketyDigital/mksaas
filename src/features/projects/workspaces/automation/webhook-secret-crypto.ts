@@ -17,6 +17,13 @@ function decodeEncryptionKey(value?: string) {
   return key;
 }
 
+function decodeCanonicalBase64Url(value: string) {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('invalid ciphertext');
+  const decoded = Buffer.from(value, 'base64url');
+  if (decoded.toString('base64url') !== value) throw new Error('invalid ciphertext');
+  return decoded;
+}
+
 export function fingerprintWebhookSecret(secret: string) {
   return createHash('sha256').update(secret, 'utf8').digest('hex');
 }
@@ -35,9 +42,9 @@ export function decryptWebhookSecret(value: string, encryptionKey?: string) {
     const [version, ivPart, tagPart, ciphertextPart, extra] = value.split('.');
     if (version !== VERSION || !ivPart || !tagPart || !ciphertextPart || extra) throw new Error('invalid ciphertext');
     const key = decodeEncryptionKey(encryptionKey);
-    const iv = Buffer.from(ivPart, 'base64url');
-    const tag = Buffer.from(tagPart, 'base64url');
-    const ciphertext = Buffer.from(ciphertextPart, 'base64url');
+    const iv = decodeCanonicalBase64Url(ivPart);
+    const tag = decodeCanonicalBase64Url(tagPart);
+    const ciphertext = decodeCanonicalBase64Url(ciphertextPart);
     if (iv.length !== IV_BYTES || tag.length !== 16) throw new Error('invalid ciphertext');
     const decipher = createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
