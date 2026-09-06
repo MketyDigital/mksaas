@@ -1,3 +1,11 @@
+jest.mock('@/shared/lib/env', () => ({
+  env: {
+    MKETY_AUTH_PROVIDER: 'zitadel',
+    MKETY_AUTH_REDIRECT_URI: 'https://preview.example.workers.dev/api/auth/callback',
+    MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: 'https://preview.example.workers.dev/login',
+  },
+}));
+
 jest.mock('../providers', () => ({ getIdentityProvider: jest.fn() }));
 jest.mock('../repository', () => ({
   consumeLoginTransaction: jest.fn(),
