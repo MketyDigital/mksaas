@@ -1,58 +1,45 @@
 import { buildWorkflowNodeSummaries } from './workflow-nodes';
 
 describe('buildWorkflowNodeSummaries', () => {
-  it('normalizes supported workflow nodes without enabling editing or execution', () => {
+  it('exposes generic and whitelisted typed draft values without leaking arbitrary config', () => {
     const nodes = buildWorkflowNodeSummaries({
       nodes: [
-        { id: 'manual-trigger', type: 'trigger', config: { source: 'manual' } },
-        { id: 'agent-step', type: 'agent', config: { agentId: 'agent_123', prompt: 'Follow up' } },
+        { id: 'manual-trigger', type: 'trigger', config: { label: 'Manual start', source: 'manual', triggerMode: 'manual' } },
+        { id: 'agent-step', type: 'agent', config: { agentId: 'agent_123', notes: 'Draft note', prompt: 'Follow up', secretToken: 'hidden' } },
       ],
     });
 
-    expect(nodes).toEqual([
-      {
-        configKeys: ['source'],
-        id: 'manual-trigger',
-        isSupported: true,
-        readinessLabel: 'Prepared',
-        type: 'trigger',
-      },
-      {
-        configKeys: ['agentId', 'prompt'],
-        id: 'agent-step',
-        isSupported: true,
-        readinessLabel: 'Prepared',
-        type: 'agent',
-      },
-    ]);
-    expect(nodes[0]).not.toHaveProperty('editable');
-    expect(nodes[0]).not.toHaveProperty('executable');
+    expect(nodes[0]).toMatchObject({
+      canConfigure: true,
+      configDraft: { label: 'Manual start', notes: '' },
+      id: 'manual-trigger',
+      isSupported: true,
+      type: 'trigger',
+      typeConfigDraft: { triggerMode: 'manual' },
+    });
+    expect(nodes[1]).toMatchObject({
+      canConfigure: true,
+      configDraft: { label: '', notes: 'Draft note' },
+      id: 'agent-step',
+      isSupported: true,
+      type: 'agent',
+      typeConfigDraft: { agentId: 'agent_123', prompt: 'Follow up' },
+    });
+    expect(nodes[1]?.typeConfigDraft).not.toHaveProperty('secretToken');
+    expect(nodes[1]).not.toHaveProperty('editable');
+    expect(nodes[1]).not.toHaveProperty('executable');
   });
 
   it('marks malformed and unsupported nodes as inspection-only', () => {
     const nodes = buildWorkflowNodeSummaries({
       nodes: [
         { type: 'custom-provider', config: ['not', 'an', 'object'] },
-        { id: '', config: { value: 1 } },
+        { id: '', config: { value: 1 }, type: 'agent' },
       ],
     });
 
-    expect(nodes).toEqual([
-      {
-        configKeys: [],
-        id: 'node-1',
-        isSupported: false,
-        readinessLabel: 'Needs review',
-        type: 'custom-provider',
-      },
-      {
-        configKeys: ['value'],
-        id: 'node-2',
-        isSupported: false,
-        readinessLabel: 'Needs review',
-        type: 'unknown',
-      },
-    ]);
+    expect(nodes[0]).toMatchObject({ canConfigure: false, id: 'node-1', isSupported: false, type: 'custom-provider' });
+    expect(nodes[1]).toMatchObject({ canConfigure: false, id: 'node-2', isSupported: true, type: 'agent' });
   });
 
   it('returns an empty list for malformed definitions', () => {
