@@ -1,6 +1,16 @@
 process.env.SKIP_ENV_VALIDATION = process.env.SKIP_ENV_VALIDATION ?? 'true';
 
+import { webcrypto } from 'node:crypto';
+import { TextDecoder, TextEncoder } from 'node:util';
+
 import '@testing-library/jest-dom';
+
+// Mkety Auth deliberately uses Web-standard crypto APIs so the same primitives work
+// in browsers and Cloudflare Workers. jsdom does not expose all Node 22 Web globals,
+// therefore the test harness supplies the standards-compatible Node implementations.
+Object.defineProperty(globalThis, 'TextEncoder', { configurable: true, value: TextEncoder });
+Object.defineProperty(globalThis, 'TextDecoder', { configurable: true, value: TextDecoder });
+Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
 
 // ============================================================================
 // Global Mocks
