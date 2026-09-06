@@ -13,9 +13,10 @@ describe('ZITADEL identity provider adapter', () => {
   });
 
   it('creates a provider-neutral authorization URL', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(discovery), { status: 200, headers: { 'content-type': 'application/json' } }),
-    );
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue(discovery),
+    } as unknown as Response);
 
     const adapter = createZitadelAdapter({
       issuer: 'https://example.zitadel.cloud',
