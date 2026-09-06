@@ -31,7 +31,8 @@ jobs:
         run: |
           git config user.name "Mkety Baseline Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add package.json pnpm-lock.yaml wrangler.jsonc
+          git add package.json pnpm-lock.yaml wrangler.jsonc .gitignore
+          git add -A jest.config.js jest.config.cjs
           git add -f vite.config.ts
           if git diff --cached --quiet; then
             echo "No generated runtime changes"
