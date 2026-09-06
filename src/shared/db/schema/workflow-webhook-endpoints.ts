@@ -1,4 +1,4 @@
-import { index, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import { index, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { projects } from './projects';
 import { appSchema } from './schema';
@@ -13,7 +13,8 @@ export const workflowWebhookEndpoints = appSchema.table(
     projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
     workflowId: uuid('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
     endpointId: varchar('endpoint_id', { length: 96 }).notNull(),
-    secretHash: varchar('secret_hash', { length: 128 }).notNull(),
+    secretCiphertext: text('secret_ciphertext').notNull(),
+    secretFingerprint: varchar('secret_fingerprint', { length: 64 }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
