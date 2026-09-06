@@ -1,4 +1,4 @@
-name: Temporary vinext baseline compatibility check
+name: Temporary vinext baseline initializer
 
 on:
   push:
@@ -8,18 +8,33 @@ on:
       - '.github/workflows/_vinext-baseline-check.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  vinext-check:
+  vinext-init:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/cloudflare-deployment-baseline
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Run vinext compatibility check
+      - name: Recheck compatibility
         run: pnpx vinext check
+      - name: Initialize vinext for Cloudflare Workers
+        run: pnpx vinext init --skip-check --platform=cloudflare
+      - name: Commit generated runtime baseline
+        run: |
+          git config user.name "Mkety Baseline Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml vite.config.* wrangler.*
+          if git diff --cached --quiet; then
+            echo "No generated runtime changes"
+            exit 0
+          fi
+          git commit -m "build: initialize vinext Cloudflare runtime"
+          git push origin HEAD:fix/cloudflare-deployment-baseline
