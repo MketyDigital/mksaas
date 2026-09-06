@@ -1,6 +1,7 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
 import { AutomationBuilderShell } from '@/features/projects/workspaces/automation/AutomationBuilderShell';
 import { AutomationWorkflowDraftNodeForm } from '@/features/projects/workspaces/automation/AutomationWorkflowDraftNodeForm';
+import { AutomationWorkflowManualRunForm } from '@/features/projects/workspaces/automation/AutomationWorkflowManualRunForm';
 import { AutomationWorkflowMetadataForm } from '@/features/projects/workspaces/automation/AutomationWorkflowMetadataForm';
 import { AutomationWorkflowNodeConfigDraftForm } from '@/features/projects/workspaces/automation/AutomationWorkflowNodeConfigDraftForm';
 import { AutomationWorkflowNodeStructureDraftForm } from '@/features/projects/workspaces/automation/AutomationWorkflowNodeStructureDraftForm';
@@ -25,6 +26,7 @@ export default async function AutomationBuilderPage({ params }: { params: Promis
         <div className="space-y-6">
           <AutomationBuilderShell projectSlug={access.project.slug} recentRuns={snapshot.recentRuns} tenantSlug={access.tenant.slug} workflow={snapshot.workflow} />
           <AutomationWorkflowPreflightPanel preflight={snapshot.preflight} />
+          <AutomationWorkflowManualRunForm canManage={access.canManage} preflight={snapshot.preflight} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} workflowSlug={snapshot.workflow.slug} />
           <AutomationWorkflowMetadataForm canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} workflow={snapshot.workflow} />
           <AutomationWorkflowDraftNodeForm canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} workflowSlug={snapshot.workflow.slug} />
           <AutomationWorkflowNodeConfigDraftForm canManage={access.canManage} nodes={snapshot.workflow.nodes} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} workflowSlug={snapshot.workflow.slug} />

@@ -1,17 +1,19 @@
 'use server';
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { requireProjectAccess } from '@/features/projects/server/access';
 import { db } from '@/shared/db';
-import { workflows } from '@/shared/db/schema';
+import { workflowRuns, workflows } from '@/shared/db/schema';
 
+import { buildManualRunNoopOutput, assertManualRunPreflightReady } from './manual-run-foundation';
 import { buildWorkflowDraftInput } from './workflow-drafts';
 import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
 import { buildWorkflowDefinitionWithNodeConfigDraft } from './workflow-node-config-drafts';
 import { buildWorkflowDefinitionWithDraftNode } from './workflow-node-drafts';
 import { buildWorkflowDefinitionWithNodeStructureDraft, type WorkflowNodeStructureDraftOperation } from './workflow-node-structure-drafts';
+import { validateAutomationWorkflowDefinition } from './workflow-preflight';
 
 async function getManageableWorkflow(formData: FormData, permissionMessage: string) {
   const tenantSlug = String(formData.get('tenantSlug') || '');
@@ -58,24 +60,7 @@ export async function addAutomationWorkflowDraftNode(formData: FormData) {
 export async function updateAutomationWorkflowNodeConfigDraft(formData: FormData) {
   const nodeId = String(formData.get('nodeId') || '');
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflow node configuration.');
-  const definition = buildWorkflowDefinitionWithNodeConfigDraft({
-    currentDefinition: workflow.definition,
-    nodeId,
-    label: String(formData.get('label') || ''),
-    notes: String(formData.get('notes') || ''),
-    triggerMode: String(formData.get('triggerMode') || ''),
-    agentId: String(formData.get('agentId') || ''),
-    prompt: String(formData.get('prompt') || ''),
-    method: String(formData.get('method') || ''),
-    url: String(formData.get('url') || ''),
-    headers: String(formData.get('headers') || ''),
-    body: String(formData.get('body') || ''),
-    input: String(formData.get('input') || ''),
-    mapping: String(formData.get('mapping') || ''),
-    field: String(formData.get('field') || ''),
-    operator: String(formData.get('operator') || ''),
-    value: String(formData.get('value') || ''),
-  });
+  const definition = buildWorkflowDefinitionWithNodeConfigDraft({ currentDefinition: workflow.definition, nodeId, label: String(formData.get('label') || ''), notes: String(formData.get('notes') || ''), triggerMode: String(formData.get('triggerMode') || ''), agentId: String(formData.get('agentId') || ''), prompt: String(formData.get('prompt') || ''), method: String(formData.get('method') || ''), url: String(formData.get('url') || ''), headers: String(formData.get('headers') || ''), body: String(formData.get('body') || ''), input: String(formData.get('input') || ''), mapping: String(formData.get('mapping') || ''), field: String(formData.get('field') || ''), operator: String(formData.get('operator') || ''), value: String(formData.get('value') || '') });
   await db.update(workflows).set({ definition, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
   redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
@@ -86,5 +71,41 @@ export async function updateAutomationWorkflowNodeStructureDraft(formData: FormD
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflow structure.');
   const definition = buildWorkflowDefinitionWithNodeStructureDraft({ currentDefinition: workflow.definition, nodeId, operation });
   await db.update(workflows).set({ definition, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
+  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+}
+
+export async function startAutomationWorkflowManualRun(formData: FormData) {
+  const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to start automation workflow runs.');
+  const preflight = validateAutomationWorkflowDefinition(workflow.definition);
+  assertManualRunPreflightReady(preflight);
+
+  const existingRun = await db.query.workflowRuns.findFirst({
+    where: and(
+      eq(workflowRuns.tenantId, access.tenant.id),
+      eq(workflowRuns.projectId, access.project.id),
+      eq(workflowRuns.workflowId, workflow.id),
+      or(eq(workflowRuns.status, 'queued'), eq(workflowRuns.status, 'running')),
+    ),
+  });
+  if (existingRun) throw new Error('This workflow already has a manual run in progress.');
+
+  const [run] = await db
+    .insert(workflowRuns)
+    .values({ tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, triggerType: 'manual', input: { source: 'builder-manual-inspection' }, status: 'queued' })
+    .returning();
+  if (!run) throw new Error('Manual workflow run could not be created.');
+
+  const runScope = and(eq(workflowRuns.id, run.id), eq(workflowRuns.tenantId, access.tenant.id), eq(workflowRuns.projectId, access.project.id), eq(workflowRuns.workflowId, workflow.id));
+
+  try {
+    await db.update(workflowRuns).set({ status: 'running' }).where(runScope);
+    const output = buildManualRunNoopOutput({ definition: workflow.definition, workflowVersion: workflow.version });
+    await db.update(workflowRuns).set({ status: 'completed', output, completedAt: new Date() }).where(runScope);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Manual workflow run failed.';
+    await db.update(workflowRuns).set({ status: 'failed', error: message, completedAt: new Date() }).where(runScope);
+    throw error;
+  }
+
   redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
