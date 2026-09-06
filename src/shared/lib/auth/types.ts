@@ -18,6 +18,7 @@ export interface ExternalIdentity {
   provider: string;
   subject: string;
   email: string | null;
+  emailVerified: boolean;
   name: string | null;
   image: string | null;
 }
