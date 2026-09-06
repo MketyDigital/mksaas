@@ -20,7 +20,7 @@ const config: StorybookConfig = {
     config.resolve = config.resolve ?? {};
     config.resolve.alias = {
       ...config.resolve.alias,
-      perf_hooks: path.join(stubDir, 'perf_hooks-stub.js'),
+      perf_hooks: path.join(stubDir, 'perf_hooks-stub.cjs'),
       fs: emptyModule,
       net: emptyModule,
       tls: emptyModule,
