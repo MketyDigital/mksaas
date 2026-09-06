@@ -5,9 +5,13 @@
  * Uses the tenant_memberships table to determine access levels.
  */
 
+import { and, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import { db } from '@/shared/db';
+import * as schema from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 
 import { auth } from './auth';
 import { hasPermission } from './permissions';
@@ -21,6 +25,18 @@ function minRoleToPermission(minRole: TenantRole): string {
   if (minRole === 'admin') return 'admin:settings';
   if (minRole === 'manager') return 'manager:dashboard';
   return 'profile:read';
+}
+
+async function getCurrentMembershipRole(tenantSlug: string, userId: string): Promise<TenantRole | null> {
+  const tenant = await getTenantBySlug(tenantSlug);
+  if (!tenant) return null;
+
+  const membership = await db.query.tenantMemberships.findFirst({
+    where: and(eq(schema.tenantMemberships.tenantId, tenant.id), eq(schema.tenantMemberships.userId, userId)),
+    columns: { role: true },
+  });
+
+  return membership?.role ?? null;
 }
 
 /**
@@ -90,7 +106,8 @@ export async function requireRole(tenantSlug: string, minRole: TenantRole): Prom
   }
   const allowed = await hasPermission(tenantSlug, minRoleToPermission(minRole));
   if (!allowed) redirect(`/t/${tenantSlug}?error=unauthorized`);
-  const userRole = session.user.roles?.[tenantSlug] ?? minRole;
+  const userRole = await getCurrentMembershipRole(tenantSlug, session.user.id);
+  if (!userRole) redirect(`/t/${tenantSlug}?error=unauthorized`);
   return {
     userId: session.user.id,
     email: session.user.email,
@@ -128,7 +145,8 @@ export async function requireTenantMember(tenantSlug: string): Promise<AuthResul
  */
 export async function getCurrentRole(tenantSlug: string): Promise<TenantRole | null> {
   const session = await auth();
-  return session?.user?.roles?.[tenantSlug] ?? null;
+  if (!session?.user?.id) return null;
+  return getCurrentMembershipRole(tenantSlug, session.user.id);
 }
 
 /**
@@ -136,7 +154,15 @@ export async function getCurrentRole(tenantSlug: string): Promise<TenantRole | n
  */
 export async function getAllRoles(): Promise<Record<string, TenantRole>> {
   const session = await auth();
-  return session?.user?.roles ?? {};
+  if (!session?.user?.id) return {};
+
+  const memberships = await db.query.tenantMemberships.findMany({
+    where: eq(schema.tenantMemberships.userId, session.user.id),
+    columns: { role: true },
+    with: { tenant: { columns: { slug: true } } },
+  });
+
+  return Object.fromEntries(memberships.map((membership) => [membership.tenant.slug, membership.role]));
 }
 
 // ============================================================================
