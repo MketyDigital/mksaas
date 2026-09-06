@@ -34,9 +34,7 @@ module.exports = {
     '^.+\\.(jpg|jpeg|png|gif|webp|avif|svg|ttf|woff|woff2)$': '<rootDir>/__mocks__/fileMock.js',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  transformIgnorePatterns: [
-    '/node_modules/(?!(next-intl|use-intl|next-themes|@heroicons|lucide-react|drizzle-orm)/)',
-  ],
+  transformIgnorePatterns: ['/node_modules/(?!(next-intl|use-intl|next-themes|@heroicons|lucide-react|drizzle-orm)/)'],
   verbose: true,
   testTimeout: 30000,
 };
