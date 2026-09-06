@@ -21,8 +21,8 @@ describe('workflow webhook endpoint management', () => {
 
     expect(result.endpointId).toHaveLength(48);
     expect(result.secret.length).toBeGreaterThanOrEqual(32);
-    expect(dependencies.insertEndpoint).toHaveBeenCalledWith(expect.objectContaining({ ...scope, endpointId: result.endpointId, secretHash: expect.any(String), status: 'active' }));
-    expect(JSON.stringify(dependencies.insertEndpoint.mock.calls)).not.toContain(result.secret);
+    expect(dependencies.insertEndpoint).toHaveBeenCalledWith(expect.objectContaining({ ...scope, endpointId: result.endpointId, secretCiphertext: expect.any(String), secretFingerprint: expect.any(String), status: 'active' }));
+    expect(JSON.stringify(dependencies.insertEndpoint.mock.calls)).not.toContain(`\"secret\":\"${result.secret}\"`);
   });
 
   it('rejects missing or non-webhook workflows', async () => {
@@ -33,18 +33,19 @@ describe('workflow webhook endpoint management', () => {
     await expect(createWorkflowWebhookEndpoint(scope, dependencies)).rejects.toThrow('Workflow must use the webhook trigger before creating an endpoint.');
   });
 
-  it('rotates and disables only an existing same-scope endpoint without exposing hashes from reads', async () => {
+  it('rotates and disables only an existing same-scope endpoint without exposing secret storage fields from reads', async () => {
     const dependencies = makeDependencies();
-    dependencies.findEndpoint.mockResolvedValue({ id: 'endpoint-row', endpointId: 'public-endpoint', status: 'active', secretHash: 'hidden' });
+    dependencies.findEndpoint.mockResolvedValue({ id: 'endpoint-row', endpointId: 'public-endpoint', status: 'active', secretCiphertext: 'hidden', secretFingerprint: 'hidden' });
     dependencies.updateEndpoint.mockResolvedValue(undefined);
 
     const metadata = await getWorkflowWebhookEndpoint(scope, dependencies);
     expect(metadata).toEqual({ endpointId: 'public-endpoint', status: 'active' });
-    expect(metadata).not.toHaveProperty('secretHash');
+    expect(metadata).not.toHaveProperty('secretCiphertext');
+    expect(metadata).not.toHaveProperty('secretFingerprint');
 
     const rotated = await rotateWorkflowWebhookSecret({ ...scope, endpointId: 'public-endpoint' }, dependencies);
     expect(rotated.secret.length).toBeGreaterThanOrEqual(32);
-    expect(dependencies.updateEndpoint).toHaveBeenCalledWith('endpoint-row', expect.objectContaining({ secretHash: expect.any(String), rotatedAt: expect.any(Date), updatedAt: expect.any(Date) }));
+    expect(dependencies.updateEndpoint).toHaveBeenCalledWith('endpoint-row', expect.objectContaining({ secretCiphertext: expect.any(String), secretFingerprint: expect.any(String), rotatedAt: expect.any(Date), updatedAt: expect.any(Date) }));
 
     await disableWorkflowWebhookEndpoint({ ...scope, endpointId: 'public-endpoint' }, dependencies);
     expect(dependencies.updateEndpoint).toHaveBeenCalledWith('endpoint-row', expect.objectContaining({ status: 'disabled', updatedAt: expect.any(Date) }));
