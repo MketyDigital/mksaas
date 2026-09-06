@@ -77,3 +77,15 @@ The deployment migration remains paused until one of these is explicitly approve
 3. perform a narrowly scoped proof-of-compatibility against Mkety's exact Auth.js flows only if upstream vinext gains/claims compatible next-auth support.
 
 No application source, authentication behavior, database schema, or tenant-routing behavior was changed by this compatibility probe.
+
+## Architecture correction evidence
+
+A later dependency-preparation experiment attempted to remove `next-auth` and `@auth/drizzle-adapter` while preparing vinext dependencies. Git/Husky correctly blocked the generated dependency commit when TypeScript still found an Auth.js import in `src/__tests__/mock-factories.ts`. That failure exposed that the experiment had crossed the migration's explicit authentication boundary rather than revealing an application defect.
+
+The out-of-scope authentication replacement and all half-migrated runtime/deployment configuration were then restored to the exact `main` state. The corrective commits include:
+
+- `d220393199bc409cb37277ccd3fe562687ef09e6` — restore Auth.js boundary from `main` and remove the replacement auth client;
+- `257d691d7d2de77e88216dbef8787d1f8b00cf67` — restore the working Next.js/OpenNext/runtime configuration while leaving the migration blocked;
+- temporary dependency-preparation/finalization workflows were removed so they cannot strip Auth.js again.
+
+Post-correction comparison against `main` showed only this migration's design, implementation plan, and compatibility evidence files remaining. There are no application-source, authentication, dependency, database-schema, tenant-routing, or deployment-runtime differences left on the branch.
