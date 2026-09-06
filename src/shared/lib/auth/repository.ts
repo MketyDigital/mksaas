@@ -1,10 +1,11 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
-import { users, tenantMemberships } from '@/shared/db/schema/auth';
+import { tenantMemberships, users } from '@/shared/db/schema/auth';
 import { authLoginTransactions, authSessions, externalIdentities } from '@/shared/db/schema/mkety-auth';
-import type { MketySession } from './types';
+
 import { generateOpaqueToken, hashToken } from './crypto';
+import type { MketySession } from './types';
 
 export interface CreateExternalIdentityInput {
   provider: string;
