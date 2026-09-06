@@ -12,9 +12,37 @@ Object.defineProperty(globalThis, 'TextEncoder', { configurable: true, value: Te
 Object.defineProperty(globalThis, 'TextDecoder', { configurable: true, value: TextDecoder });
 Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
 
+if (!globalThis.fetch) {
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: jest.fn() });
+}
+
 // ============================================================================
 // Global Mocks
 // ============================================================================
+
+// Runtime environment validation uses an ESM-only dependency. Unit tests exercise
+// consumers, not environment parsing, so keep that boundary explicit and deterministic.
+jest.mock('@/shared/lib/env', () => ({
+  env: {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+    MKETY_AUTH_PROVIDER: 'zitadel',
+    MKETY_AUTH_ISSUER: 'https://example.zitadel.cloud',
+    MKETY_AUTH_CLIENT_ID: 'mkety-test-client',
+    MKETY_AUTH_CLIENT_SECRET: 'test-client-secret',
+    MKETY_AUTH_REDIRECT_URI: 'https://preview.example.workers.dev/api/auth/callback',
+    MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: 'https://preview.example.workers.dev/login',
+    MKETY_AUTH_SESSION_SECRET: 'test-session-secret-that-is-long-enough',
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NEXT_PUBLIC_APP_NAME: 'Mkety',
+    ENABLE_AI_FEATURES: false,
+    ENABLE_TEST_LOGIN: false,
+    MKETY_AI_PROVIDER: 'openai',
+    MKETY_AI_MODEL: 'gpt-4o-mini',
+    AWS_REGION: 'us-east-1',
+    S3_REGION: 'us-east-1',
+  },
+}));
 
 jest.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
