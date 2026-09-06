@@ -1,0 +1,44 @@
+name: Mkety Migration Baseline
+
+on:
+  pull_request:
+    paths:
+      - 'src/shared/db/migrations/**'
+      - 'migrations/**'
+      - 'scripts/check-migration-baseline.ts'
+      - 'src/shared/db/__tests__/migration-baseline.test.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mkety-migration-baseline.yml'
+  push:
+    branches:
+      - main
+      - feat/mkety-auth-zitadel-vinext
+    paths:
+      - 'src/shared/db/migrations/**'
+      - 'migrations/**'
+      - 'scripts/check-migration-baseline.ts'
+      - 'src/shared/db/__tests__/migration-baseline.test.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mkety-migration-baseline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify migration regression tests
+        run: pnpm test -- src/shared/db/__tests__/migration-baseline.test.ts
+      - name: Verify active migration namespaces
+        run: pnpm db:check:migrations
