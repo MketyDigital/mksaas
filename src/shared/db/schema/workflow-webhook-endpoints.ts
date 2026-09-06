@@ -22,9 +22,9 @@ export const workflowWebhookEndpoints = appSchema.table(
   },
   (table) => [
     uniqueIndex('workflow_webhook_endpoints_endpoint_id_idx').on(table.endpointId),
+    uniqueIndex('workflow_webhook_endpoints_workflow_unique_idx').on(table.workflowId),
     index('workflow_webhook_endpoints_tenant_idx').on(table.tenantId),
     index('workflow_webhook_endpoints_project_idx').on(table.projectId),
-    index('workflow_webhook_endpoints_workflow_idx').on(table.workflowId),
   ],
 );
 
