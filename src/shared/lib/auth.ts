@@ -6,7 +6,7 @@ import type { MketySession, MketySessionUser } from './auth/types';
 
 function getCookieValue(header: string | null, name: string): string | null {
   if (!header) return null;
-  const match = header.match(new RegExp(`(?:^|;\\s*)${name.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}=([^;]*)`));
+  const match = header.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
   return match ? decodeURIComponent(match[1]) : null;
 }
 
