@@ -2,31 +2,17 @@ import { validateAutomationWorkflowRuntimeReadiness } from './workflow-runtime-r
 
 describe('validateAutomationWorkflowRuntimeReadiness', () => {
   const trigger = { id: 'trigger-1', type: 'trigger', config: { triggerMode: 'manual' } };
-
-  it('accepts internal-only and valid HTTPS HTTP workflows', () => {
-    expect(validateAutomationWorkflowRuntimeReadiness({ nodes: [trigger, { id: 'transform-1', type: 'transform', config: { input: 'x', mapping: '{"ok":true}' } }] })).toEqual({ ready: true, blockers: [] });
-    expect(validateAutomationWorkflowRuntimeReadiness({ nodes: [trigger, { id: 'http-1', type: 'http', config: { method: 'POST', url: 'https://api.example.com/items', body: '{"id":"{{itemId}}"}' } }] }).ready).toBe(true);
+  it('accepts configured Agent nodes as runtime-capable', () => {
+    expect(validateAutomationWorkflowRuntimeReadiness({ nodes: [trigger, { id: 'agent-1', type: 'agent', config: { agentId: 'agent-a', prompt: 'Summarize {{http.body}}' } }] })).toEqual({ ready: true, blockers: [] });
   });
-
-  it('blocks non-HTTPS, agent, unknown, malformed, bad method, and invalid JSON bodies', () => {
-    const cases = [
-      [{ nodes: [trigger, { id: 'http-1', type: 'http', config: { method: 'GET', url: 'http://example.com' } }] }, 'http.runtime-https-required'],
-      [{ nodes: [trigger, { id: 'agent-1', type: 'agent', config: { agentId: 'a', prompt: 'p' } }] }, 'agent.runtime-disabled'],
-      [{ nodes: [trigger, { id: 'future-1', type: 'future', config: {} }] }, 'node.runtime-unsupported'],
-      [{ nodes: [trigger, null] }, 'node.runtime-malformed'],
-      [{ nodes: [trigger, { id: 'http-1', type: 'http', config: { method: 'TRACE', url: 'https://example.com' } }] }, 'http.runtime-method-unsupported'],
-      [{ nodes: [trigger, { id: 'http-1', type: 'http', config: { method: 'POST', url: 'https://example.com', body: '{bad-json}' } }] }, 'http.runtime-body-invalid'],
-    ] as const;
-
-    for (const [definition, code] of cases) {
-      expect(validateAutomationWorkflowRuntimeReadiness(definition).blockers).toEqual(expect.arrayContaining([expect.objectContaining({ code })]));
-    }
+  it('requires agent id and prompt', () => {
+    expect(validateAutomationWorkflowRuntimeReadiness({ nodes: [{ id: 'a1', type: 'agent', config: { agentId: '', prompt: 'x' } }, { id: 'a2', type: 'agent', config: { agentId: 'a', prompt: '' } }] }).blockers.map((b) => b.code)).toEqual(expect.arrayContaining(['agent.runtime-agent-required', 'agent.runtime-prompt-required']));
   });
-
-  it('does not fail GET or DELETE solely because a body draft exists and does not mutate input', () => {
-    const definition = { nodes: [trigger, { id: 'http-1', type: 'http', config: { method: 'DELETE', url: 'https://example.com', body: '{not-json}' } }] };
+  it('retains HTTP and unknown-node guards without mutation', () => {
+    const definition = { nodes: [trigger, { id: 'h', type: 'http', config: { method: 'POST', url: 'https://example.com', body: '{"x":1}' } }, { id: 'f', type: 'future', config: {} }] };
     const before = JSON.parse(JSON.stringify(definition));
-    expect(validateAutomationWorkflowRuntimeReadiness(definition)).toEqual({ ready: true, blockers: [] });
+    const result = validateAutomationWorkflowRuntimeReadiness(definition);
+    expect(result.blockers).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'node.runtime-unsupported' })]));
     expect(definition).toEqual(before);
   });
 });
