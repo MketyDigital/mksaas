@@ -13,8 +13,14 @@ export interface AuthorizationUrlInput {
   scope?: string;
 }
 
+export interface OidcJsonWebKey extends JsonWebKey {
+  kid?: string;
+  alg?: string;
+  use?: string;
+}
+
 export interface JsonWebKeySet {
-  keys: JsonWebKey[];
+  keys: OidcJsonWebKey[];
 }
 
 export interface VerifyIdTokenOptions {
@@ -51,6 +57,12 @@ function fromBase64Url(value: string): Uint8Array {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
   const binary = atob(normalized);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 function decodeJson<T>(value: string): T {
@@ -115,7 +127,7 @@ export async function verifyIdToken(token: string, options: VerifyIdTokenOptions
   const signatureValid = await crypto.subtle.verify(
     'RSASSA-PKCS1-v1_5',
     publicKey,
-    fromBase64Url(parts[2]),
+    toArrayBuffer(fromBase64Url(parts[2])),
     textEncoder.encode(signingInput),
   );
   if (!signatureValid) throw new Error('Invalid ID token signature');
