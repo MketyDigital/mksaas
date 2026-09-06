@@ -23,4 +23,6 @@ export * from './schema';
 export * from './tenants';
 export * from './webhooks';
 export * from './workflow-runs';
+export * from './workflow-webhook-deliveries';
+export * from './workflow-webhook-endpoints';
 export * from './workflows';
