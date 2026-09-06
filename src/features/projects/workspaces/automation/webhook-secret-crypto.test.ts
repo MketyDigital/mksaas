@@ -2,6 +2,14 @@ import { decryptWebhookSecret, encryptWebhookSecret, fingerprintWebhookSecret } 
 
 const key = Buffer.alloc(32, 7).toString('base64url');
 
+function mutateEncodedBytes(value: string, segmentIndex: number) {
+  const parts = value.split('.');
+  const bytes = Buffer.from(parts[segmentIndex]!, 'base64url');
+  bytes[0] ^= 0x01;
+  parts[segmentIndex] = bytes.toString('base64url');
+  return parts.join('.');
+}
+
 describe('webhook secret encryption', () => {
   it('encrypts authenticated ciphertext and decrypts only with the configured key', () => {
     const secret = 'mkety_webhook_secret_example';
@@ -13,7 +21,7 @@ describe('webhook secret encryption', () => {
     expect(() => decryptWebhookSecret(ciphertext, Buffer.alloc(32, 8).toString('base64url'))).toThrow('Webhook secret could not be decrypted.');
   });
 
-  it('detects ciphertext tampering and produces a non-secret fingerprint', () => {
+  it('rejects non-canonical ciphertext text and produces a non-secret fingerprint', () => {
     const secret = 'mkety_webhook_secret_example';
     const ciphertext = encryptWebhookSecret(secret, key);
     const parts = ciphertext.split('.');
@@ -22,6 +30,22 @@ describe('webhook secret encryption', () => {
     expect(() => decryptWebhookSecret(parts.join('.'), key)).toThrow('Webhook secret could not be decrypted.');
     expect(fingerprintWebhookSecret(secret)).toHaveLength(64);
     expect(fingerprintWebhookSecret(secret)).not.toContain(secret);
+  });
+
+  it.each([
+    ['IV', 1],
+    ['authentication tag', 2],
+    ['ciphertext', 3],
+  ])('rejects byte-level %s tampering', (_label, segmentIndex) => {
+    const ciphertext = encryptWebhookSecret('mkety_webhook_secret_example', key);
+    expect(() => decryptWebhookSecret(mutateEncodedBytes(ciphertext, segmentIndex), key)).toThrow('Webhook secret could not be decrypted.');
+  });
+
+  it('rejects malformed ciphertext encoding', () => {
+    const ciphertext = encryptWebhookSecret('mkety_webhook_secret_example', key);
+    const parts = ciphertext.split('.');
+    parts[3] = `${parts[3]}=`;
+    expect(() => decryptWebhookSecret(parts.join('.'), key)).toThrow('Webhook secret could not be decrypted.');
   });
 
   it('rejects missing or malformed encryption keys', () => {
