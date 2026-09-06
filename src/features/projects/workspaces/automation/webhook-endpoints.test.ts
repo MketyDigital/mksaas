@@ -6,6 +6,7 @@ function makeDependencies() {
     findEndpoint: jest.fn(),
     insertEndpoint: jest.fn(),
     updateEndpoint: jest.fn(),
+    protectSecret: jest.fn((secret: string) => ({ secretCiphertext: `encrypted:${secret.length}`, secretFingerprint: 'f'.repeat(64) })),
   };
 }
 
@@ -21,8 +22,9 @@ describe('workflow webhook endpoint management', () => {
 
     expect(result.endpointId).toHaveLength(48);
     expect(result.secret.length).toBeGreaterThanOrEqual(32);
-    expect(dependencies.insertEndpoint).toHaveBeenCalledWith(expect.objectContaining({ ...scope, endpointId: result.endpointId, secretCiphertext: expect.any(String), secretFingerprint: expect.any(String), status: 'active' }));
-    expect(JSON.stringify(dependencies.insertEndpoint.mock.calls)).not.toContain(`\"secret\":\"${result.secret}\"`);
+    expect(dependencies.protectSecret).toHaveBeenCalledWith(result.secret);
+    expect(dependencies.insertEndpoint).toHaveBeenCalledWith(expect.objectContaining({ ...scope, endpointId: result.endpointId, secretCiphertext: expect.stringMatching(/^encrypted:/), secretFingerprint: 'f'.repeat(64), status: 'active' }));
+    expect(JSON.stringify(dependencies.insertEndpoint.mock.calls)).not.toContain(result.secret);
   });
 
   it('rejects missing or non-webhook workflows', async () => {
@@ -45,7 +47,8 @@ describe('workflow webhook endpoint management', () => {
 
     const rotated = await rotateWorkflowWebhookSecret({ ...scope, endpointId: 'public-endpoint' }, dependencies);
     expect(rotated.secret.length).toBeGreaterThanOrEqual(32);
-    expect(dependencies.updateEndpoint).toHaveBeenCalledWith('endpoint-row', expect.objectContaining({ secretCiphertext: expect.any(String), secretFingerprint: expect.any(String), rotatedAt: expect.any(Date), updatedAt: expect.any(Date) }));
+    expect(dependencies.protectSecret).toHaveBeenCalledWith(rotated.secret);
+    expect(dependencies.updateEndpoint).toHaveBeenCalledWith('endpoint-row', expect.objectContaining({ secretCiphertext: expect.stringMatching(/^encrypted:/), secretFingerprint: 'f'.repeat(64), rotatedAt: expect.any(Date), updatedAt: expect.any(Date) }));
 
     await disableWorkflowWebhookEndpoint({ ...scope, endpointId: 'public-endpoint' }, dependencies);
     expect(dependencies.updateEndpoint).toHaveBeenCalledWith('endpoint-row', expect.objectContaining({ status: 'disabled', updatedAt: expect.any(Date) }));
