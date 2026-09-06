@@ -1,0 +1,37 @@
+name: Webhook + Auth baseline merge diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-automation-webhook-trigger
+    paths:
+      - '.github/workflows/_webhook-auth-merge-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mkety-automation-webhook-trigger
+          fetch-depth: 0
+      - name: Diagnose merge from current Auth baseline
+        shell: bash
+        run: |
+          git config user.name "Mkety Webhook Integration Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin feat/mkety-auth-zitadel-vinext
+          set +e
+          git merge --no-commit --no-ff origin/feat/mkety-auth-zitadel-vinext
+          status=$?
+          set -e
+          echo "merge_status=$status"
+          echo "Conflicts:"
+          git diff --name-only --diff-filter=U
+          echo "Changed/staged paths:"
+          git status --short
+          git merge --abort || true
+          exit "$status"
