@@ -56,7 +56,7 @@ jobs:
           import { TextEncoder as NodeTextEncoder } from 'node:util';
 
           describe('WebCrypto realm diagnostic', () => {
-            it('reports which byte representations Node WebCrypto accepts inside Jest', async () => {
+            it('proves jsdom byte containers are rejected by Node subtle.verify', async () => {
               const keyPair = await crypto.subtle.generateKey(
                 {
                   name: 'RSASSA-PKCS1-v1_5',
@@ -73,30 +73,19 @@ jobs:
               const realmBuffer = new ArrayBuffer(realmBytes.byteLength);
               new Uint8Array(realmBuffer).set(realmBytes);
 
-              console.log(JSON.stringify({
-                cryptoIsNodeWebcrypto: crypto === webcrypto,
-                realmBytesTag: Object.prototype.toString.call(realmBytes),
-                realmBufferTag: Object.prototype.toString.call(realmBuffer),
-                realmBytesIsView: ArrayBuffer.isView(realmBytes),
-                dataIsView: ArrayBuffer.isView(data),
-                realmBytesCtorMatchesDataCtor: realmBytes.constructor === data.constructor,
-                realmBufferCtorMatchesSignatureBufferCtor: realmBuffer.constructor === signature.constructor,
-              }));
+              expect(crypto).toBe(webcrypto);
+              expect(realmBytes.constructor).not.toBe(data.constructor);
+              expect(realmBuffer.constructor).not.toBe(signature.constructor);
 
-              const results: Record<string, string> = {};
-              for (const [name, candidate] of [
-                ['native-signature', signature],
-                ['realm-uint8array', realmBytes],
-                ['realm-arraybuffer', realmBuffer],
-              ] as const) {
-                try {
-                  results[name] = String(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, candidate, data));
-                } catch (error) {
-                  results[name] = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-                }
-              }
-              console.log(JSON.stringify(results));
-              expect(results['native-signature']).toBe('true');
+              await expect(
+                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, realmBytes, data),
+              ).rejects.toThrow(/3rd argument is not instance of ArrayBuffer, Buffer, TypedArray, or DataView/);
+              await expect(
+                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, realmBuffer, data),
+              ).rejects.toThrow(/3rd argument is not instance of ArrayBuffer, Buffer, TypedArray, or DataView/);
+              await expect(
+                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, signature, data),
+              ).resolves.toBe(true);
             });
           });
           EOF
