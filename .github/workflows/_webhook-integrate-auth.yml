@@ -1,0 +1,83 @@
+name: Integrate Auth baseline into Automation Webhooks
+
+on:
+  push:
+    branches:
+      - feat/mkety-automation-webhook-trigger
+    paths:
+      - '.github/workflows/_webhook-integrate-auth.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: webhook-integrate-auth
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mkety-automation-webhook-trigger
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Merge verified Auth baseline
+        shell: bash
+        run: |
+          git config user.name "Mkety Webhook Integration Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin feat/mkety-auth-zitadel-vinext
+          auth_sha="$(git rev-parse origin/feat/mkety-auth-zitadel-vinext)"
+          if [ "$auth_sha" != "7ccd16da99b5b02201f4a9bf2c9b8da127e71807" ]; then
+            echo "::error::Auth baseline moved from verified SHA 7ccd16da99b5b02201f4a9bf2c9b8da127e71807 to $auth_sha; re-verify before integrating."
+            exit 1
+          fi
+          git merge --no-commit --no-ff "$auth_sha"
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$conflicts" ]; then
+            echo "::error::Unexpected integration conflicts"
+            echo "$conflicts"
+            exit 1
+          fi
+      - name: Assign Webhook migration after settled Auth migration
+        run: |
+          test -f src/shared/db/migrations/0009_mkety_auth.sql
+          test -f src/shared/db/migrations/0009_automation_webhook_trigger.sql
+          test ! -e src/shared/db/migrations/0010_automation_webhook_trigger.sql
+          git mv src/shared/db/migrations/0009_automation_webhook_trigger.sql src/shared/db/migrations/0010_automation_webhook_trigger.sql
+      - name: Verify frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify migration execution baseline
+        run: pnpm db:check:migrations
+      - name: Verify webhook authenticated-encryption regressions
+        run: pnpm test -- src/features/projects/workspaces/automation/webhook-secret-crypto.test.ts
+      - name: Verify full test suite
+        run: pnpm test
+      - name: Verify types
+        run: pnpm type-check
+      - name: Verify lint
+        run: pnpm lint
+      - name: Verify vinext compatibility
+        run: pnpx vinext check
+      - name: Build integrated Platform
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+        run: pnpm build
+      - name: Validate isolated Cloudflare preview packaging
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+        run: pnpm run deploy --env preview --dry-run
+      - name: Commit verified integration and remove temporary helpers
+        run: |
+          git rm -f .github/workflows/_webhook-auth-merge-diagnostic.yml || true
+          git rm -f .github/workflows/_webhook-crypto-green.yml || true
+          git rm -f .github/workflows/_webhook-integrate-auth.yml || true
+          git add -A
+          git commit -m "build: integrate Auth baseline into automation webhooks"
+          git push origin HEAD:feat/mkety-automation-webhook-trigger
