@@ -20,6 +20,8 @@ jobs:
           fetch-depth: 0
       - name: Attempt merge without committing
         run: |
+          git config user.name "Mkety Auth Integration Bot"
+          git config user.email "actions@users.noreply.github.com"
           git fetch origin main
           set +e
           git merge --no-commit --no-ff origin/main
