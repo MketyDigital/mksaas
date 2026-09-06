@@ -64,8 +64,8 @@ export async function createAutomationWorkflowDraft(formData: FormData) {
 
 export async function updateAutomationWorkflowMetadata(formData: FormData) {
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflows.');
-  const update = buildWorkflowMetadataUpdateInput({ description: String(formData.get('description') || ''), name: String(formData.get('name') || '') });
-  await db.update(workflows).set({ description: update.description, name: update.name, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
+  const update = buildWorkflowMetadataUpdateInput({ description: String(formData.get('description') || ''), name: String(formData.get('name') || ''), triggerType: String(formData.get('triggerType') || '') });
+  await db.update(workflows).set({ description: update.description, name: update.name, triggerType: update.triggerType, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
   redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
 
