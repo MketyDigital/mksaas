@@ -1,7 +1,6 @@
 'use client';
 
-import type { Session } from 'next-auth';
-import { SessionProvider } from 'next-auth/react';
+import type { Session } from '@/shared/lib/auth';
 
 interface AuthProviderProps {
   children: React.ReactNode;
@@ -9,11 +8,12 @@ interface AuthProviderProps {
 }
 
 /**
- * Auth Provider wrapper for client-side session access
+ * Mkety client identity provider boundary.
  *
- * Wraps the application with NextAuth's SessionProvider to enable
- * useSession() hook in client components.
+ * ZITADEL is the intended identity provider but is not wired yet. No client
+ * session is manufactured during this migration, so this wrapper is
+ * intentionally transparent until the real provider is connected.
  */
-export function AuthProvider({ children, session }: AuthProviderProps) {
-  return <SessionProvider session={session}>{children}</SessionProvider>;
+export function AuthProvider({ children }: AuthProviderProps) {
+  return <>{children}</>;
 }
