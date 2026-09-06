@@ -25,6 +25,7 @@ export interface ExternalIdentity {
 export interface AuthorizationRequest {
   state: string;
   codeChallenge: string;
+  nonce: string;
   redirectUri: string;
   returnTo: string;
 }
@@ -32,6 +33,7 @@ export interface AuthorizationRequest {
 export interface AuthorizationCodeExchange {
   code: string;
   verifier: string;
+  nonce: string;
   redirectUri: string;
 }
 
