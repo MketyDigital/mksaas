@@ -42,7 +42,7 @@ jobs:
         env:
           SKIP_ENV_VALIDATION: 'true'
         run: pnpm build:vinext
-      - name: Verify generated Worker deployment config
+      - name: Verify generated Worker deployment output
         run: |
-          test -f dist/server/wrangler.json
-          test -f .wrangler/deploy/config.json
+          test -f dist/mksaas/wrangler.json
+          test -f dist/mksaas/index.js
