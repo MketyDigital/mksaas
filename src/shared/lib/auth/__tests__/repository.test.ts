@@ -38,7 +38,8 @@ describe('Mkety Auth repository', () => {
 
   it('persists an external identity through the provider-neutral mapping', async () => {
     const returning = jest.fn().mockResolvedValue([{ id: 'identity-1', provider: 'zitadel', subject: 'subject-1' }]);
-    mockDb.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ returning }) });
+    const onConflictDoNothing = jest.fn().mockReturnValue({ returning });
+    mockDb.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ onConflictDoNothing }) });
 
     const result = await createExternalIdentity({
       provider: 'zitadel',
@@ -50,12 +51,13 @@ describe('Mkety Auth repository', () => {
     });
 
     expect(result.id).toBe('identity-1');
+    expect(onConflictDoNothing).toHaveBeenCalled();
     expect(mockDb.insert).toHaveBeenCalled();
   });
 
   it('creates and consumes a login transaction once', async () => {
-    const returning = jest.fn().mockResolvedValue([{ state: 'state-1' }]);
-    mockDb.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ returning }) });
+    const values = jest.fn().mockResolvedValue(undefined);
+    mockDb.insert.mockReturnValue({ values });
     await createLoginTransaction({
       state: 'state-1',
       provider: 'zitadel',
@@ -66,11 +68,13 @@ describe('Mkety Auth repository', () => {
     });
 
     const transaction = { state: 'state-1', provider: 'zitadel', verifier: 'verifier', nonce: 'nonce', returnTo: '/select-tenant' };
-    mockDb.query.authLoginTransactions.findFirst.mockResolvedValue(transaction);
-    mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+    const returning = jest.fn().mockResolvedValue([transaction]);
+    const where = jest.fn().mockReturnValue({ returning });
+    mockDb.delete.mockReturnValue({ where });
 
     await expect(consumeLoginTransaction('state-1')).resolves.toEqual(transaction);
     expect(mockDb.delete).toHaveBeenCalled();
+    expect(returning).toHaveBeenCalled();
   });
 
   it('stores only a hash of a newly generated session token', async () => {
