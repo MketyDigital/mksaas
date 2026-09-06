@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { disableAutomationWorkflowWebhook } from './actions';
-import { createAutomationWorkflowWebhookState, rotateAutomationWorkflowWebhookSecretState, type AutomationWebhookActionState } from './webhook-actions';
+import { type AutomationWebhookActionState, createAutomationWorkflowWebhookState, rotateAutomationWorkflowWebhookSecretState } from './webhook-actions';
 
 const initialState: AutomationWebhookActionState = { ok: false };
 
