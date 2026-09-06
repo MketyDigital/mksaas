@@ -1,0 +1,67 @@
+name: One-time vinext runtime promotion
+
+on:
+  push:
+    branches:
+      - fix/cloudflare-deployment-baseline
+    paths:
+      - '.github/workflows/_promote-vinext-runtime.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-vinext-runtime
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/cloudflare-deployment-baseline
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Remove superseded OpenNext runtime
+        run: pnpm remove -D @opennextjs/cloudflare
+      - name: Promote vinext scripts
+        run: |
+          node --input-type=module <<'EOF'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          const file = 'package.json';
+          const pkg = JSON.parse(readFileSync(file, 'utf8'));
+          pkg.name = 'mkety-platform';
+          pkg.scripts.dev = 'vinext dev --port 3000';
+          pkg.scripts['dev:next'] = 'next dev --turbopack --hostname 0.0.0.0 --port 3000';
+          pkg.scripts.build = 'vinext build';
+          pkg.scripts.start = 'vinext start';
+          pkg.scripts.preview = 'vinext start';
+          pkg.scripts.deploy = 'vinext-cloudflare deploy';
+          delete pkg.scripts['dev:vinext'];
+          delete pkg.scripts['build:vinext'];
+          delete pkg.scripts['start:vinext'];
+          delete pkg.scripts['deploy:vinext'];
+          writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+          EOF
+          pnpm install --lockfile-only
+      - name: Verify promoted runtime
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+        run: |
+          pnpm type-check
+          pnpm build
+      - name: Commit promotion and self-clean
+        run: |
+          git config user.name "Mkety Baseline Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/_promote-vinext-runtime.yml
+          git add package.json pnpm-lock.yaml
+          git commit -m "build: make vinext the authoritative Cloudflare runtime"
+          git pull --rebase origin fix/cloudflare-deployment-baseline
+          git push origin HEAD:fix/cloudflare-deployment-baseline
