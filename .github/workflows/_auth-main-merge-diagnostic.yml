@@ -1,0 +1,37 @@
+name: Auth main merge diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+    paths:
+      - '.github/workflows/_auth-main-merge-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mkety-auth-zitadel-vinext
+          fetch-depth: 0
+      - name: Attempt merge without committing
+        run: |
+          git fetch origin main
+          set +e
+          git merge --no-commit --no-ff origin/main
+          status=$?
+          set -e
+          echo "merge_status=$status"
+          echo "--- unmerged files ---"
+          git diff --name-only --diff-filter=U
+          echo "--- status ---"
+          git status --short
+          if [ "$status" -eq 0 ]; then
+            git merge --abort || true
+            exit 0
+          fi
+          exit 1
