@@ -6,6 +6,7 @@ import { workflowRuns, workflows } from '@/shared/db/schema';
 import type { AutomationBuilderWorkflowSummary } from './AutomationBuilderShell';
 import { type AutomationWorkspaceMetrics, buildAutomationWorkspaceMetrics } from './automation-model';
 import { buildWorkflowNodeSummaries } from './workflow-nodes';
+import { type AutomationWorkflowPreflightResult, validateAutomationWorkflowDefinition } from './workflow-preflight';
 
 export type AutomationWorkflowSummary = {
   id: string;
@@ -35,6 +36,7 @@ export type AutomationWorkspaceSnapshot = {
 export type AutomationBuilderSnapshot = {
   workflow: AutomationBuilderWorkflowSummary;
   recentRuns: AutomationRunSummary[];
+  preflight: AutomationWorkflowPreflightResult;
 };
 
 function toRunSummary(run: typeof workflowRuns.$inferSelect): AutomationRunSummary {
@@ -48,66 +50,29 @@ function toRunSummary(run: typeof workflowRuns.$inferSelect): AutomationRunSumma
   };
 }
 
-export async function getAutomationWorkspaceSnapshot({
-  projectId,
-  tenantId,
-}: {
-  tenantId: string;
-  projectId: string;
-}): Promise<AutomationWorkspaceSnapshot> {
+export async function getAutomationWorkspaceSnapshot({ projectId, tenantId }: { tenantId: string; projectId: string }): Promise<AutomationWorkspaceSnapshot> {
   const [projectWorkflows, projectRuns] = await Promise.all([
-    db.query.workflows.findMany({
-      where: and(eq(workflows.tenantId, tenantId), eq(workflows.projectId, projectId)),
-      orderBy: [desc(workflows.updatedAt)],
-      limit: 6,
-    }),
-    db.query.workflowRuns.findMany({
-      where: and(eq(workflowRuns.tenantId, tenantId), eq(workflowRuns.projectId, projectId)),
-      orderBy: [desc(workflowRuns.startedAt)],
-      limit: 6,
-    }),
+    db.query.workflows.findMany({ where: and(eq(workflows.tenantId, tenantId), eq(workflows.projectId, projectId)), orderBy: [desc(workflows.updatedAt)], limit: 6 }),
+    db.query.workflowRuns.findMany({ where: and(eq(workflowRuns.tenantId, tenantId), eq(workflowRuns.projectId, projectId)), orderBy: [desc(workflowRuns.startedAt)], limit: 6 }),
   ]);
 
   return {
     metrics: buildAutomationWorkspaceMetrics({ workflows: projectWorkflows, runs: projectRuns }),
-    recentWorkflows: projectWorkflows.map((workflow) => ({
-      id: workflow.id,
-      name: workflow.name,
-      slug: workflow.slug,
-      status: workflow.status,
-      triggerType: workflow.triggerType,
-      version: workflow.version,
-      updatedAt: workflow.updatedAt,
-    })),
+    recentWorkflows: projectWorkflows.map((workflow) => ({ id: workflow.id, name: workflow.name, slug: workflow.slug, status: workflow.status, triggerType: workflow.triggerType, version: workflow.version, updatedAt: workflow.updatedAt })),
     recentRuns: projectRuns.map(toRunSummary),
   };
 }
 
-export async function getAutomationBuilderSnapshot({
-  projectId,
-  tenantId,
-  workflowSlug,
-}: {
-  tenantId: string;
-  projectId: string;
-  workflowSlug: string;
-}): Promise<AutomationBuilderSnapshot | null> {
-  const workflow = await db.query.workflows.findFirst({
-    where: and(eq(workflows.tenantId, tenantId), eq(workflows.projectId, projectId), eq(workflows.slug, workflowSlug)),
-  });
-
-  if (!workflow) {
-    return null;
-  }
+export async function getAutomationBuilderSnapshot({ projectId, tenantId, workflowSlug }: { tenantId: string; projectId: string; workflowSlug: string }): Promise<AutomationBuilderSnapshot | null> {
+  const workflow = await db.query.workflows.findFirst({ where: and(eq(workflows.tenantId, tenantId), eq(workflows.projectId, projectId), eq(workflows.slug, workflowSlug)) });
+  if (!workflow) return null;
 
   const nodes = buildWorkflowNodeSummaries(workflow.definition);
-  const recentRuns = await db.query.workflowRuns.findMany({
-    where: and(eq(workflowRuns.tenantId, tenantId), eq(workflowRuns.projectId, projectId), eq(workflowRuns.workflowId, workflow.id)),
-    orderBy: [desc(workflowRuns.startedAt)],
-    limit: 6,
-  });
+  const preflight = validateAutomationWorkflowDefinition(workflow.definition);
+  const recentRuns = await db.query.workflowRuns.findMany({ where: and(eq(workflowRuns.tenantId, tenantId), eq(workflowRuns.projectId, projectId), eq(workflowRuns.workflowId, workflow.id)), orderBy: [desc(workflowRuns.startedAt)], limit: 6 });
 
   return {
+    preflight,
     recentRuns: recentRuns.map(toRunSummary),
     workflow: {
       description: workflow.description,
