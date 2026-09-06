@@ -9,7 +9,8 @@ Add a secure public webhook ingress for Mkety Automation that authenticates inbo
 - Automation retains one execution system. Webhooks are a new trigger ingress, not a second runtime.
 - Workflow-level `triggerType` is authoritative for admission. Trigger-node `config.triggerMode` must agree with it during preflight.
 - Public routing identity is distinct from authentication secret.
-- Raw webhook secrets are never stored after provisioning/rotation; only hashes are persisted.
+- Raw webhook secrets are never stored in plaintext after provisioning/rotation.
+- HMAC signing secrets are stored encrypted at rest because HMAC verification requires access to the original signing key; a one-way hash alone is insufficient.
 - Authentication happens before JSON parsing or workflow run creation.
 - Duplicate deliveries must not silently execute more than once.
 - Webhook ingress is tenant/project/workflow scoped internally even though the public endpoint uses a non-secret opaque endpoint ID.
@@ -38,7 +39,7 @@ Signature contract:
 - Comparison is constant-time.
 - Signature is verified before JSON parsing.
 
-Recommended signature wire format:
+Wire format:
 
 `X-Mkety-Signature: sha256=<lowercase hex digest>`
 
@@ -48,41 +49,54 @@ Malformed or missing signatures are authentication failures.
 
 Introduce a dedicated webhook endpoint table rather than overloading the workflow row.
 
-Suggested fields:
+Required fields:
 
 - `id` UUID primary key
 - `tenantId`
 - `projectId`
 - `workflowId`
 - `endpointId` high-entropy opaque public identifier, unique
-- `secretHash`
+- `secretCiphertext` authenticated ciphertext of the signing secret
+- `secretFingerprint` non-secret SHA-256 fingerprint for operational identification
 - `status` (`active` / `disabled`)
 - `createdAt`
 - `updatedAt`
 - `rotatedAt` nullable
 
-Foreign keys must cascade with tenant/project/workflow deletion as appropriate.
+A workflow has at most one webhook endpoint record in this foundation. `workflowId` is therefore unique in the webhook endpoint table.
 
-The existing `workflows.webhookSecret` field becomes legacy/non-authoritative. This phase should stop reading or writing raw webhook secrets there. Removing the column can be a later cleanup migration if needed to avoid combining unrelated schema cleanup with runtime work.
+Foreign keys cascade with tenant/project/workflow deletion as appropriate.
 
-## Secret Generation and Storage
+The existing `workflows.webhookSecret` field is legacy/non-authoritative. This phase does not read or write webhook secrets there. Removing that column is a later cleanup migration.
 
-Provisioning generates:
+## Secret Generation, Encryption and Rotation
 
-- a public endpoint ID using a cryptographically secure random source;
-- a separate high-entropy webhook secret.
+Provisioning generates two unrelated cryptographically random values:
 
-Only a one-way hash of the secret is persisted. Recommended storage is an HMAC/password-style server-side digest that is safe for high-entropy tokens; exact implementation may use SHA-256 because the secret itself is uniformly random and sufficiently long.
+- a public endpoint ID;
+- a high-entropy HMAC signing secret.
 
-The raw secret is returned to an authorized manager only at creation or rotation. Existing secret cannot be retrieved later.
+The raw signing secret is returned to an authorized manager only at creation or rotation. It is not persisted in plaintext and cannot be retrieved later from the management surface.
 
-Rotating a secret invalidates the previous secret immediately in this foundation. Grace-period dual-secret support is deferred.
+Because inbound HMAC verification must recompute the expected digest using the original signing secret, storing only a one-way hash is not sufficient. The signing secret is therefore encrypted at rest using authenticated encryption:
+
+- algorithm: AES-256-GCM;
+- encryption key: server-managed `WEBHOOK_SECRET_ENCRYPTION_KEY`;
+- key material must decode to exactly 32 bytes;
+- accepted configuration representation may be base64url or 64-character hexadecimal;
+- ciphertext stores version, nonce/IV, authentication tag, and encrypted bytes;
+- decryption fails closed on malformed ciphertext, tampering, or wrong key;
+- no generated/default production encryption key is permitted.
+
+A SHA-256 fingerprint of the raw secret may be stored separately for safe operational comparison/identification. The fingerprint is not used to verify webhook HMAC signatures and cannot replace the encrypted signing key.
+
+Rotating a secret generates a new secret, replaces the encrypted ciphertext and fingerprint, and invalidates the previous secret immediately. Grace-period dual-secret support is deferred.
 
 ## Trigger Source of Truth
 
 `workflows.triggerType` is authoritative for whether the workflow accepts manual or webhook admission.
 
-Preflight must ensure any trigger node agrees:
+Preflight ensures any trigger node agrees:
 
 - workflow `triggerType = manual` -> trigger node `triggerMode = manual`
 - workflow `triggerType = webhook` -> trigger node `triggerMode = webhook`
@@ -92,13 +106,13 @@ A mismatch is a preflight error, not a warning.
 
 Webhook admission additionally requires workflow status to be `active`.
 
-Manual execution retains its current manager-gated path and must not be implicitly enabled/disabled by webhook endpoint provisioning.
+Manual execution retains its manager-gated path and is not implicitly enabled or disabled by webhook endpoint provisioning.
 
 ## Webhook Delivery / Admission Persistence
 
 Introduce a dedicated delivery/admission table so inbound requests are auditable independently of workflow runs.
 
-Suggested fields:
+Required fields:
 
 - `id` UUID primary key
 - `tenantId`
@@ -108,66 +122,83 @@ Suggested fields:
 - `eventId` string
 - `eventIdSource` (`external` / `derived`)
 - `payloadHash` SHA-256
-- `status` (`received`, `admitted`, `duplicate`, `rejected`, `failed` as needed)
+- `status` (`received`, `admitted`, `busy`, `failed` as needed)
 - `workflowRunId` nullable FK
 - `receivedAt`
 - `admittedAt` nullable
-- optional bounded `errorCode` / safe diagnostic text
+- bounded `errorCode`
 
-Uniqueness must prevent two admitted deliveries with the same endpoint/event identity from creating two workflow runs.
+Uniqueness on `(webhookEndpointId, eventId)` prevents two deliveries with the same endpoint/event identity from creating two workflow runs.
 
 ## Event Identity and Replay Protection
 
 Preferred event identity:
 
 1. If `X-Mkety-Event-Id` is present and valid, use it as the external event identity.
-2. Otherwise derive a deterministic SHA-256 fingerprint from the endpoint identity plus raw body bytes.
+2. Otherwise derive a deterministic SHA-256 fingerprint from the endpoint identity plus exact raw body bytes.
 
-The external event ID must be bounded in length and reject control characters.
+The external event ID is bounded to 256 characters and rejects control characters.
 
-For the first implementation, uniqueness may apply without expiry. This is conservative and makes webhook retries idempotent. A bounded replay window can be introduced later if the product needs intentional re-use of identical bodies without external event IDs.
+For the first implementation, uniqueness applies without expiry. This is conservative and makes webhook retries idempotent. A bounded replay window can be introduced later if the product needs intentional reuse of identical bodies without external event IDs.
 
-The insert/admission operation must be concurrency-safe at the database level using a unique constraint and conflict handling. An application-level “check then insert” is insufficient.
+The insert/admission operation is concurrency-safe at the database level using a unique constraint and conflict-safe insertion. Application-level check-then-insert is not sufficient.
 
 ## Request Limits
 
-Ingress should fail before execution when request constraints are violated.
+Ingress fails before execution when request constraints are violated.
 
-Recommended initial limits:
+Initial limits:
 
 - Content-Type must be JSON.
 - Maximum raw body size: 256 KiB.
-- Empty JSON body is rejected unless it parses to a valid JSON value that matches the workflow input contract; recommended first version requires a JSON object.
-- Top-level payload should be a JSON object so existing workflow interpolation semantics remain predictable.
+- Request body is read with a streaming size bound rather than trusting `Content-Length` alone.
+- Malformed JSON is rejected.
+- Top-level payload must be a JSON object so workflow interpolation semantics remain predictable.
+- No arbitrary inbound headers are copied into workflow data.
 
-The input persisted to `workflowRuns.input` is the parsed top-level JSON object.
-
-No arbitrary inbound headers are copied into workflow data in this phase.
+The parsed top-level JSON object becomes `workflowRuns.input`.
 
 ## Admission and Execution Data Flow
 
 1. Receive `POST /api/automation/webhooks/[endpointId]`.
-2. Resolve active webhook endpoint by `endpointId`.
-3. Read bounded raw body bytes.
-4. Validate content type and request size.
-5. Verify HMAC signature over raw bytes.
-6. Parse JSON object.
-7. Resolve authoritative workflow scoped by the endpoint's tenant/project/workflow IDs.
+2. Resolve active webhook endpoint by public `endpointId`.
+3. Validate JSON content type and read bounded raw body bytes.
+4. Decrypt the endpoint signing secret using the server-managed encryption key.
+5. Verify HMAC-SHA256 over the exact raw bytes.
+6. Parse the JSON object only after successful authentication.
+7. Resolve authoritative workflow using the endpoint's tenant/project/workflow IDs.
 8. Require workflow `status = active` and `triggerType = webhook`.
-9. Run static workflow preflight.
+9. Run static workflow preflight with workflow-level trigger context.
 10. Run runtime capability readiness.
-11. Resolve scoped Agent dependencies.
+11. Resolve scoped published Agent dependencies.
 12. Compute external or derived event identity and payload hash.
-13. Perform database-level webhook delivery admission/deduplication.
+13. Perform database-level delivery admission/deduplication.
 14. If duplicate, do not create a workflow run.
-15. Create a `workflowRuns` record with `triggerType = webhook`, scoped tenant/project/workflow IDs, and webhook JSON as input.
-16. Associate the webhook delivery with the run.
-17. Mark run `running` using the existing scoped lifecycle semantics.
-18. Execute through `executeAutomationWorkflowDefinition` using the same HTTP and Agent adapters.
-19. Persist completed/failed run output/error through the existing lifecycle.
-20. Update the webhook delivery with final admission/run association metadata as needed.
+15. If the workflow already has a queued/running run under current concurrency policy, retain the delivery as `busy` and do not create another run.
+16. Create `workflowRuns` with `triggerType = webhook` and webhook JSON input.
+17. Associate the admitted delivery with the new run as soon as the run ID exists.
+18. Mark the run `running` using the shared lifecycle service.
+19. Execute through `executeAutomationWorkflowDefinition` using the same Transform, Condition, HTTP and Agent adapters as manual execution.
+20. Persist completed/failed run output/error through the shared lifecycle.
+21. Record a safe delivery failure code if execution fails.
 
-There must be no webhook-specific fork of transform, condition, HTTP, or Agent execution logic.
+There is no webhook-specific fork of workflow action execution logic.
+
+## Shared Execution Service
+
+Manual and webhook triggers use one server-side workflow-run lifecycle service after their different admission steps.
+
+The shared service owns:
+
+- queued run creation;
+- scoped run updates;
+- running transition;
+- existing execution kernel invocation;
+- workflow version attachment;
+- completed output persistence;
+- bounded failed error persistence.
+
+Webhook HMAC, endpoint lookup and delivery deduplication are not responsibilities of the shared execution service.
 
 ## Synchronous Foundation vs Durable Worker
 
@@ -178,23 +209,22 @@ For this foundation:
 - authenticate and admit synchronously;
 - create the auditable run synchronously;
 - execute the workflow in the same request process;
-- maintain an API response contract that does not expose internal workflow output.
+- return only after execution completes;
+- do not expose internal workflow output through the public webhook response.
 
-Because execution remains same-request, the endpoint should return after execution completes in the actual implementation unless the framework provides a durable post-response mechanism. Do not falsely return `202 Accepted` before execution and then rely on best-effort in-process background work.
+Do not return `202 Accepted` and rely on best-effort post-response execution. `202` is reserved for a future durable execution handoff.
 
-Recommended first-version responses:
+Response policy:
 
-- `200 OK` for a successfully admitted and completed workflow execution;
-- `202 Accepted` only if implementation actually hands the run to a durable/guaranteed execution mechanism (not part of this phase);
+- `200 OK` after successful workflow completion;
 - `401 Unauthorized` for invalid/missing signature;
-- `404 Not Found` for unknown/disabled endpoint (avoid unnecessary disclosure);
-- `409 Conflict` for duplicate event;
+- `404 Not Found` for unknown/disabled endpoint;
+- `409 Conflict` for duplicate event or current workflow-busy admission;
 - `415 Unsupported Media Type` for non-JSON content type;
 - `413 Payload Too Large` for body limit violations;
-- `422 Unprocessable Entity` for authenticated requests whose known workflow is inactive, wrong-trigger, or not execution-ready;
-- `500` for unexpected internal execution failures after an admitted run, while persisting the failed run and a sanitized error.
-
-This corrects a key ambiguity from the conversational design: `202` must not be used unless execution is actually durably detached.
+- `400 Bad Request` for malformed/non-object JSON or invalid event ID;
+- `422 Unprocessable Entity` for authenticated requests whose workflow is inactive, wrong-trigger, or not execution-ready;
+- `500` for service configuration/decryption or execution failures, with generic public text and persisted safe diagnostics where applicable.
 
 ## Error and Information-Disclosure Policy
 
@@ -203,48 +233,44 @@ Public responses remain small and generic.
 Do not expose:
 
 - tenant/project IDs;
-- raw secret values or hashes;
+- raw webhook secret, encrypted ciphertext, fingerprint or encryption key;
 - provider/model diagnostic objects;
 - HTTP action internal security diagnostics;
-- Agent prompts/system instructions unless explicitly part of workflow output (they are not in this phase);
+- Agent prompts/system instructions;
 - stack traces;
-- database identifiers beyond a safe run identifier if product wants to expose one later.
+- unrestricted internal database identifiers.
 
-Log/audit records may hold safe internal error codes, but never credentials or raw authorization material.
+Audit/delivery/run records may hold safe internal error codes but never credentials or raw authorization material.
 
 ## Management Surface
 
-Authorized workflow managers need server-side actions/UI to:
+Authorized workflow managers can:
 
-- create/enable a webhook endpoint for a webhook-trigger workflow;
+- create a webhook endpoint for a webhook-trigger workflow;
 - view the public webhook URL / endpoint ID;
-- copy the one-time secret immediately after creation or rotation;
+- receive and copy the one-time secret immediately after creation or rotation;
 - rotate the secret;
 - disable the endpoint.
 
-No public endpoint-management API is introduced.
+Normal builder reads expose only endpoint ID and status. They never return secret ciphertext, fingerprint, encryption key, or recoverable secret material.
 
-For this phase, a minimal builder panel is sufficient. It should explain:
+The builder panel explains:
 
 - endpoint URL;
-- required signature header format;
-- event-ID header behavior;
-- that the secret is only shown once;
-- workflow must be active and webhook-triggered.
+- required `X-Mkety-Signature` format;
+- optional `X-Mkety-Event-Id` behavior;
+- that the secret is shown only once;
+- workflow must use the webhook trigger and be active before public execution can succeed.
+
+No public endpoint-management API is introduced.
 
 ## Concurrency
 
 The webhook delivery unique constraint is the primary protection against duplicate external delivery execution.
 
-Existing same-workflow queued/running concurrency admission remains relevant. The webhook path must reuse or strengthen the same admission helper rather than creating a separate rule.
+Existing same-workflow queued/running concurrency policy remains in force. The webhook ingress records a valid unique delivery but returns conflict/busy without creating a second run when another run is already active.
 
-If a valid, unique webhook arrives while the workflow already has a queued/running run and current policy allows only one such run, the webhook delivery should be recorded but not silently lost. Recommended foundation behavior:
-
-- reject admission with a conflict/busy outcome;
-- do not create a second run;
-- leave room for future queueing semantics.
-
-Atomic workflow concurrency is still preferable before high-volume webhook use. If the current check is application-level only, the implementation plan should either strengthen it transactionally or explicitly limit this foundation while preventing obvious duplicate admissions.
+Duplicate delivery admission is database-atomic. Same-workflow concurrency remains application-level in this foundation and should be strengthened transactionally before high-volume webhook use or queue semantics.
 
 ## Security Boundaries Retained
 
@@ -267,61 +293,70 @@ This phase does not add:
 
 ## Components
 
-Suggested focused modules:
+Focused modules:
 
-- `webhook-auth.ts`: signature parsing, hashing, constant-time verification.
-- `webhook-ingress.ts`: request-independent ingress/admission orchestration.
-- `webhook-delivery.ts`: event identity and DB admission/deduplication.
-- shared workflow-run execution helper extracted from manual action only if needed, so manual and webhook both call one lifecycle service.
-- Next.js route handler for HTTP transport concerns only.
+- `webhook-security.ts`: credential generation, HMAC validation, payload/event normalization and hashing;
+- `webhook-secret-crypto.ts`: authenticated encryption/decryption and non-secret fingerprinting;
+- `webhook-endpoints.ts`: scoped endpoint lifecycle;
+- `webhook-delivery-admission.ts`: dedupe and busy admission policy;
+- `webhook-ingress.ts`: request-independent public ingress orchestration;
+- `workflow-execution-service.ts`: shared manual/webhook run lifecycle;
+- DB dependency adapters kept separate from pure services;
+- thin Next.js route handler for HTTP transport;
 - builder webhook settings panel/actions for manager provisioning/rotation/disable.
 
-Avoid putting cryptography, DB admission, workflow execution, and route parsing in one route file.
+Cryptography, DB admission, workflow execution and route transport are not combined into one route file.
 
 ## Testing Strategy
 
 ### Pure/unit tests
 
-- signature generation/verification;
+- credential uniqueness/entropy;
+- valid and invalid HMAC signatures;
 - malformed signature handling;
-- constant-length digest parsing;
+- authenticated encryption round trip;
+- wrong-key and tamper failure;
+- encryption-key length validation;
+- non-secret fingerprinting;
 - event ID normalization;
 - derived fingerprint stability;
 - triggerType / trigger-node mismatch preflight;
-- request input validation helpers.
+- JSON/content-type/body validation.
 
-### DB-mocked/service tests
+### Service tests
 
-- endpoint resolution;
-- same-scope workflow resolution;
-- active/webhook requirement;
+- endpoint scope and webhook-trigger requirement;
+- encrypted secret persistence with no plaintext persistence;
+- no secret storage fields exposed through reads;
+- rotation replacing encrypted material;
 - unique delivery admission;
 - duplicate conflict path does not create run;
-- failed readiness does not create run;
-- Agent dependencies resolve before run execution;
+- busy workflow path does not create run;
 - webhook JSON becomes workflow input;
 - run trigger type is webhook;
-- completed and failed execution lifecycle;
+- completed and failed shared execution lifecycle;
+- run association callback;
 - no side effect before authentication/admission.
 
-### Route tests
+### Route/ingress tests
 
 - POST success;
-- GET/unsupported method behavior as provided by route;
-- 401 missing/invalid signature;
-- 404 unknown endpoint;
-- 413 oversized body;
-- 415 wrong content type;
-- 409 duplicate;
-- 422 inactive/wrong-trigger/not-ready;
-- sanitized 500 failure.
+- unknown/disabled endpoint;
+- invalid signature;
+- oversized body;
+- wrong content type;
+- malformed/non-object JSON;
+- inactive/wrong-trigger/not-ready workflow;
+- duplicate and busy delivery;
+- sanitized execution failure;
+- thin route preserves ingress status/body.
 
 ### Regression
 
-- manual execution remains green;
+- manual execution remains green through the shared lifecycle;
 - HTTP action security tests remain green;
 - Agent dependency/tool-disabled tests remain green;
-- Automation workspace smoke updated to include webhook foundation tests;
+- Automation workspace smoke includes webhook foundation tests;
 - full test, lint, type-check, build.
 
 ## Success Criteria
@@ -332,7 +367,8 @@ The phase is successful when:
 2. A valid signed JSON webhook can create exactly one audited webhook-triggered workflow run.
 3. Duplicate deliveries cannot execute the workflow twice.
 4. Invalid signatures, unknown endpoints, invalid payloads, inactive/wrong-trigger workflows, and readiness failures cannot create runs or external side effects.
-5. Webhook execution uses the same Automation kernel and HTTP/Agent adapters as manual execution.
+5. Webhook execution uses the same Automation kernel and run lifecycle service as manual execution.
 6. Trigger source-of-truth ambiguity is eliminated by preflight consistency enforcement.
-7. Raw webhook secrets are not persisted.
-8. Existing manual, HTTP, Agent, and workspace behaviors remain verified.
+7. Raw webhook secrets are never persisted in plaintext; recoverable signing material is authenticated-encrypted at rest with a server-managed key.
+8. Stored fingerprints cannot be used as HMAC verification keys and are never treated as authorization material.
+9. Existing manual, HTTP, Agent, and workspace behaviors remain verified.
