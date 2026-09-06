@@ -7,7 +7,8 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { db } from '@/shared/db';
 import { workflowRuns, workflows } from '@/shared/db/schema';
 
-import { assertManualRunPreflightReady, assertManualRunRuntimeReady, buildManualRunExecutionOutput } from './manual-run-foundation';
+import { resolveAutomationWorkflowDependencies } from './agent-dependency-readiness';
+import { assertManualRunDependencyReady, assertManualRunPreflightReady, assertManualRunRuntimeReady, buildManualRunExecutionOutput } from './manual-run-foundation';
 import { buildWorkflowDraftInput } from './workflow-drafts';
 import { buildWorkflowMetadataUpdateInput } from './workflow-edit-drafts';
 import { buildWorkflowDefinitionWithNodeConfigDraft } from './workflow-node-config-drafts';
@@ -16,11 +17,7 @@ import { buildWorkflowDefinitionWithNodeStructureDraft, type WorkflowNodeStructu
 import { validateAutomationWorkflowDefinition } from './workflow-preflight';
 import { validateAutomationWorkflowRuntimeReadiness } from './workflow-runtime-readiness';
 
-async function getManageableWorkflow(formData: FormData, permissionMessage: string) {
-  const tenantSlug = String(formData.get('tenantSlug') || ''); const projectSlug = String(formData.get('projectSlug') || ''); const workflowSlug = String(formData.get('workflowSlug') || '');
-  const access = await requireProjectAccess({ projectSlug, tenantSlug }); if (access.status !== 'ok') throw new Error(access.reason); if (!access.canManage) throw new Error(permissionMessage); if (!workflowSlug) throw new Error('Workflow slug is required.');
-  const workflow = await db.query.workflows.findFirst({ where: and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.slug, workflowSlug)) }); if (!workflow) throw new Error('Workflow not found.'); return { access, workflow };
-}
+async function getManageableWorkflow(formData: FormData, permissionMessage: string) { const tenantSlug = String(formData.get('tenantSlug') || ''); const projectSlug = String(formData.get('projectSlug') || ''); const workflowSlug = String(formData.get('workflowSlug') || ''); const access = await requireProjectAccess({ projectSlug, tenantSlug }); if (access.status !== 'ok') throw new Error(access.reason); if (!access.canManage) throw new Error(permissionMessage); if (!workflowSlug) throw new Error('Workflow slug is required.'); const workflow = await db.query.workflows.findFirst({ where: and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.slug, workflowSlug)) }); if (!workflow) throw new Error('Workflow not found.'); return { access, workflow }; }
 
 export async function createAutomationWorkflowDraft(formData: FormData) { const tenantSlug = String(formData.get('tenantSlug') || ''); const projectSlug = String(formData.get('projectSlug') || ''); const access = await requireProjectAccess({ projectSlug, tenantSlug }); if (access.status !== 'ok') throw new Error(access.reason); if (!access.canManage) throw new Error('You do not have permission to create automation workflows.'); const draft = buildWorkflowDraftInput({ description: String(formData.get('description') || ''), name: String(formData.get('name') || ''), projectId: access.project.id, tenantId: access.tenant.id }); const existing = await db.query.workflows.findFirst({ where: and(eq(workflows.projectId, access.project.id), eq(workflows.slug, draft.slug)) }); if (existing) throw new Error('That workflow slug is already in use in this project.'); await db.insert(workflows).values(draft); redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${draft.slug}`); }
 export async function updateAutomationWorkflowMetadata(formData: FormData) { const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflows.'); const update = buildWorkflowMetadataUpdateInput({ description: String(formData.get('description') || ''), name: String(formData.get('name') || '') }); await db.update(workflows).set({ description: update.description, name: update.name, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id))); redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`); }
@@ -32,20 +29,15 @@ export async function startAutomationWorkflowManualRun(formData: FormData) {
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to start automation workflow runs.');
   assertManualRunPreflightReady(validateAutomationWorkflowDefinition(workflow.definition));
   assertManualRunRuntimeReady(validateAutomationWorkflowRuntimeReadiness(workflow.definition));
+  const dependencyReadiness = await resolveAutomationWorkflowDependencies({ context: { tenantId: access.tenant.id, projectId: access.project.id }, definition: workflow.definition });
+  assertManualRunDependencyReady(dependencyReadiness);
   const existingRun = await db.query.workflowRuns.findFirst({ where: and(eq(workflowRuns.tenantId, access.tenant.id), eq(workflowRuns.projectId, access.project.id), eq(workflowRuns.workflowId, workflow.id), or(eq(workflowRuns.status, 'queued'), eq(workflowRuns.status, 'running'))) });
   if (existingRun) throw new Error('This workflow already has a manual run in progress.');
   const input: Record<string, unknown> = {};
   const [run] = await db.insert(workflowRuns).values({ tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, triggerType: 'manual', input, status: 'queued' }).returning();
   if (!run) throw new Error('Manual workflow run could not be created.');
   const runScope = and(eq(workflowRuns.id, run.id), eq(workflowRuns.tenantId, access.tenant.id), eq(workflowRuns.projectId, access.project.id), eq(workflowRuns.workflowId, workflow.id));
-  try {
-    await db.update(workflowRuns).set({ status: 'running' }).where(runScope);
-    const output = await buildManualRunExecutionOutput({ context: { tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, triggerType: 'manual' }, definition: workflow.definition, input, workflowVersion: workflow.version });
-    await db.update(workflowRuns).set({ status: 'completed', output, completedAt: new Date() }).where(runScope);
-  } catch (error) {
-    const message = error instanceof Error ? error.message.slice(0, 4096) : 'Manual workflow run failed.';
-    await db.update(workflowRuns).set({ status: 'failed', error: message, completedAt: new Date() }).where(runScope);
-    throw error;
-  }
+  try { await db.update(workflowRuns).set({ status: 'running' }).where(runScope); const output = await buildManualRunExecutionOutput({ context: { tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, triggerType: 'manual' }, definition: workflow.definition, dependencies: dependencyReadiness, input, workflowVersion: workflow.version }); await db.update(workflowRuns).set({ status: 'completed', output, completedAt: new Date() }).where(runScope); }
+  catch (error) { const message = error instanceof Error ? error.message.slice(0, 4096) : 'Manual workflow run failed.'; await db.update(workflowRuns).set({ status: 'failed', error: message, completedAt: new Date() }).where(runScope); throw error; }
   redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
