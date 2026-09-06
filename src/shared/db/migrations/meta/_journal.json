@@ -9,6 +9,8 @@
     { "idx": 4, "version": "7", "when": 1787764800000, "tag": "0004_agent_runs", "breakpoints": true },
     { "idx": 5, "version": "7", "when": 1787768400000, "tag": "0005_agent_knowledge", "breakpoints": true },
     { "idx": 6, "version": "7", "when": 1787772000000, "tag": "0006_agent_knowledge_assignments", "breakpoints": true },
-    { "idx": 7, "version": "7", "when": 1787775600000, "tag": "0007_agent_versions", "breakpoints": true }
+    { "idx": 7, "version": "7", "when": 1787775600000, "tag": "0007_agent_versions", "breakpoints": true },
+    { "idx": 8, "version": "7", "when": 1788688800000, "tag": "0008_workflows", "breakpoints": true },
+    { "idx": 9, "version": "7", "when": 1788692400000, "tag": "0009_automation_webhook_trigger", "breakpoints": true }
   ]
 }
