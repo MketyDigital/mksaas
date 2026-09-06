@@ -23,21 +23,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Run workspace tests
-        run: pnpm test -- src/features/projects/workspaces/registry.test.ts src/features/projects/workspaces/WorkspaceHub.test.tsx src/features/projects/workspaces/WorkspaceShell.test.tsx src/features/projects/workspaces/AiWorkspaceOverview.test.tsx src/features/projects/workspaces/AutomationWorkspaceOverview.test.tsx src/features/projects/workspaces/DeployWorkspaceOverview.test.tsx src/features/projects/workspaces/SolutionHubWorkspaceOverview.test.tsx src/features/projects/workspaces/TradingWorkspaceOverview.test.tsx src/features/projects/workspaces/automation/automation-model.test.ts src/features/projects/workspaces/automation/AutomationBuilderShell.test.tsx src/features/projects/workspaces/automation/workflow-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowDraftForm.test.tsx src/features/projects/workspaces/automation/workflow-edit-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowMetadataForm.test.tsx src/features/projects/workspaces/automation/workflow-nodes.test.ts src/features/projects/workspaces/automation/workflow-node-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowDraftNodeForm.test.tsx src/features/projects/workspaces/automation/workflow-node-config-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowNodeConfigDraftForm.test.tsx src/features/projects/workspaces/automation/workflow-node-structure-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowNodeStructureDraftForm.test.tsx src/features/projects/workspaces/automation/workflow-preflight.test.ts src/features/projects/workspaces/automation/AutomationWorkflowPreflightPanel.test.tsx src/features/projects/workspaces/automation/internal-execution-kernel.test.ts src/features/projects/workspaces/automation/manual-run-foundation.test.ts src/features/projects/workspaces/automation/AutomationWorkflowManualRunForm.test.tsx
-
+        run: pnpm test -- src/features/projects/workspaces/registry.test.ts src/features/projects/workspaces/WorkspaceHub.test.tsx src/features/projects/workspaces/WorkspaceShell.test.tsx src/features/projects/workspaces/AiWorkspaceOverview.test.tsx src/features/projects/workspaces/AutomationWorkspaceOverview.test.tsx src/features/projects/workspaces/DeployWorkspaceOverview.test.tsx src/features/projects/workspaces/SolutionHubWorkspaceOverview.test.tsx src/features/projects/workspaces/TradingWorkspaceOverview.test.tsx src/features/projects/workspaces/automation/automation-model.test.ts src/features/projects/workspaces/automation/AutomationBuilderShell.test.tsx src/features/projects/workspaces/automation/workflow-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowDraftForm.test.tsx src/features/projects/workspaces/automation/workflow-edit-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowMetadataForm.test.tsx src/features/projects/workspaces/automation/workflow-nodes.test.ts src/features/projects/workspaces/automation/workflow-node-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowDraftNodeForm.test.tsx src/features/projects/workspaces/automation/workflow-node-config-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowNodeConfigDraftForm.test.tsx src/features/projects/workspaces/automation/workflow-node-structure-drafts.test.ts src/features/projects/workspaces/automation/AutomationWorkflowNodeStructureDraftForm.test.tsx src/features/projects/workspaces/automation/workflow-preflight.test.ts src/features/projects/workspaces/automation/AutomationWorkflowPreflightPanel.test.tsx src/features/projects/workspaces/automation/workflow-runtime-readiness.test.ts src/features/projects/workspaces/automation/http-action-runtime.test.ts src/features/projects/workspaces/automation/internal-execution-kernel.test.ts src/features/projects/workspaces/automation/manual-run-foundation.test.ts src/features/projects/workspaces/automation/AutomationWorkflowManualRunForm.test.tsx
       - name: Type-check
         run: pnpm type-check
