@@ -16,6 +16,7 @@ type ExecutionInput = {
   triggerType: TriggerType;
   input: Record<string, unknown>;
   dependencyReadiness: AutomationWorkflowDependencyReadiness;
+  onRunCreated?: (runId: string) => Promise<void>;
 };
 
 export type AutomationWorkflowExecutionDependencies = {
@@ -40,6 +41,7 @@ export async function executeAutomationWorkflowRun(input: ExecutionInput, depend
   if (!run) throw new Error('Workflow run could not be created.');
 
   try {
+    if (input.onRunCreated) await input.onRunCreated(run.id);
     await dependencies.updateRun(run.id, { status: 'running' }, workflow);
     const execution = await dependencies.executeDefinition({
       context: { tenantId: workflow.tenantId, projectId: workflow.projectId, workflowId: workflow.id, triggerType },
