@@ -3,9 +3,10 @@
 import { useCallback, useContext } from 'react';
 
 import { AuthContext } from '@/shared/components/providers/auth-provider';
+import type { MketySessionUser } from '@/shared/lib/auth';
 
 export interface UseAuthReturn {
-  user: NonNullable<Awaited<ReturnType<typeof import('@/shared/lib/auth').auth>>>['user'] | null;
+  user: MketySessionUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (callbackUrl?: string) => Promise<void>;
@@ -18,13 +19,11 @@ export const useAuth = (): UseAuthReturn => {
   if (!context) throw new Error('useAuth must be used inside AuthProvider');
 
   const login = useCallback(async (callbackUrl = '/select-tenant') => {
-    const target = `/api/auth/login?returnTo=${encodeURIComponent(callbackUrl)}`;
-    window.location.assign(target);
+    window.location.assign(`/api/auth/login?returnTo=${encodeURIComponent(callbackUrl)}`);
   }, []);
 
   const logout = useCallback(async (callbackUrl = '/login') => {
-    const target = `/api/auth/logout?returnTo=${encodeURIComponent(callbackUrl)}`;
-    window.location.assign(target);
+    window.location.assign(`/api/auth/logout?returnTo=${encodeURIComponent(callbackUrl)}`);
   }, []);
 
   return {
