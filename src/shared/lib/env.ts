@@ -5,11 +5,15 @@ export const env = createEnv({
   server: {
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     DATABASE_URL: z.url().describe('PostgreSQL connection string'),
-    AUTH_SECRET: z.string().min(32).describe('Secret for signing tokens (min 32 chars)'),
-    AUTH_URL: z.url().optional().describe('Canonical URL of the app'),
-    AUTH0_CLIENT_ID: z.string().optional(),
-    AUTH0_CLIENT_SECRET: z.string().optional(),
-    AUTH0_ISSUER: z.url().optional(),
+
+    // Mkety Auth owns the application auth boundary. ZITADEL is the initial adapter.
+    MKETY_AUTH_PROVIDER: z.literal('zitadel').default('zitadel'),
+    MKETY_AUTH_ISSUER: z.url(),
+    MKETY_AUTH_CLIENT_ID: z.string().min(1),
+    MKETY_AUTH_CLIENT_SECRET: z.string().optional(),
+    MKETY_AUTH_REDIRECT_URI: z.url(),
+    MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: z.url(),
+    MKETY_AUTH_SESSION_SECRET: z.string().min(32),
 
     // Mkety AI Core. Disabled by default; provider credentials are optional.
     OPENAI_API_KEY: z.string().optional(),
@@ -35,7 +39,6 @@ export const env = createEnv({
     S3_REGION: z.string().optional().default('us-east-1'),
     SENTRY_DSN: z.url().optional(),
     ENABLE_AI_FEATURES: z.string().default('false').transform((val) => val === 'true'),
-    // Explicit opt-in test authentication for staging/testing only.
     ENABLE_TEST_LOGIN: z.string().default('false').transform((val) => val === 'true'),
     GITHUB_INTEGRATION_CLIENT_ID: z.string().optional(),
     GITHUB_INTEGRATION_CLIENT_SECRET: z.string().optional(),
@@ -50,11 +53,13 @@ export const env = createEnv({
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
-    AUTH_SECRET: process.env.AUTH_SECRET,
-    AUTH_URL: process.env.AUTH_URL,
-    AUTH0_CLIENT_ID: process.env.AUTH0_CLIENT_ID,
-    AUTH0_CLIENT_SECRET: process.env.AUTH0_CLIENT_SECRET,
-    AUTH0_ISSUER: process.env.AUTH0_ISSUER,
+    MKETY_AUTH_PROVIDER: process.env.MKETY_AUTH_PROVIDER,
+    MKETY_AUTH_ISSUER: process.env.MKETY_AUTH_ISSUER,
+    MKETY_AUTH_CLIENT_ID: process.env.MKETY_AUTH_CLIENT_ID,
+    MKETY_AUTH_CLIENT_SECRET: process.env.MKETY_AUTH_CLIENT_SECRET,
+    MKETY_AUTH_REDIRECT_URI: process.env.MKETY_AUTH_REDIRECT_URI,
+    MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: process.env.MKETY_AUTH_POST_LOGOUT_REDIRECT_URI,
+    MKETY_AUTH_SESSION_SECRET: process.env.MKETY_AUTH_SESSION_SECRET,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     MKETY_AI_PROVIDER: process.env.MKETY_AI_PROVIDER,
