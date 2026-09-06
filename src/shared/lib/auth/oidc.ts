@@ -59,12 +59,6 @@ function fromBase64Url(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
-}
-
 function decodeJson<T>(value: string): T {
   return JSON.parse(new TextDecoder().decode(fromBase64Url(value))) as T;
 }
@@ -127,7 +121,7 @@ export async function verifyIdToken(token: string, options: VerifyIdTokenOptions
   const signatureValid = await crypto.subtle.verify(
     'RSASSA-PKCS1-v1_5',
     publicKey,
-    toArrayBuffer(fromBase64Url(parts[2])),
+    fromBase64Url(parts[2]),
     textEncoder.encode(signingInput),
   );
   if (!signatureValid) throw new Error('Invalid ID token signature');
