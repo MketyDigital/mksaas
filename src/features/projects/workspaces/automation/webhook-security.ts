@@ -11,14 +11,11 @@ function ensureBodyLimit(rawBody: Uint8Array) {
   }
 }
 
-export function hashWebhookSecret(secret: string) {
-  return createHash('sha256').update(secret, 'utf8').digest('hex');
-}
-
 export function generateWebhookCredentials() {
-  const endpointId = randomBytes(24).toString('hex');
-  const secret = randomBytes(32).toString('base64url');
-  return { endpointId, secret, secretHash: hashWebhookSecret(secret) };
+  return {
+    endpointId: randomBytes(24).toString('hex'),
+    secret: randomBytes(32).toString('base64url'),
+  };
 }
 
 export function verifyWebhookSignature({ secret, rawBody, signatureHeader }: { secret: string; rawBody: Uint8Array; signatureHeader: string | null }) {
