@@ -20,6 +20,10 @@ export type AutomationWorkflowPreflightResult = {
   readyForExecutionFoundation: boolean;
 };
 
+export type AutomationWorkflowPreflightOptions = {
+  triggerType?: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -38,9 +42,10 @@ function isHttpUrl(value: string) {
   }
 }
 
-export function validateAutomationWorkflowDefinition(definition: unknown): AutomationWorkflowPreflightResult {
+export function validateAutomationWorkflowDefinition(definition: unknown, options: AutomationWorkflowPreflightOptions = {}): AutomationWorkflowPreflightResult {
   const checks: AutomationWorkflowPreflightCheck[] = [];
   const nodes = isRecord(definition) && Array.isArray(definition.nodes) ? definition.nodes : [];
+  const authoritativeTriggerType = options.triggerType?.trim();
 
   const add = (severity: AutomationWorkflowPreflightSeverity, code: string, message: string, nodeId?: string) => {
     checks.push({ code, message, severity, ...(nodeId ? { nodeId } : {}) });
@@ -83,6 +88,9 @@ export function validateAutomationWorkflowDefinition(definition: unknown): Autom
       const mode = readString(config, 'triggerMode');
       if (TRIGGER_MODES.has(mode)) add('ready', 'trigger.configured', `Trigger mode ${mode} is structurally prepared.`, displayId);
       else add('error', 'trigger.mode-missing', 'Trigger requires a supported draft mode.', displayId);
+      if (authoritativeTriggerType && TRIGGER_MODES.has(mode) && mode !== authoritativeTriggerType) {
+        add('error', 'trigger.mode-mismatch', `Trigger node mode ${mode} must match workflow trigger type ${authoritativeTriggerType}.`, displayId);
+      }
     }
 
     if (nodeType === 'agent') {
