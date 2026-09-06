@@ -18,6 +18,7 @@ import 'dotenv/config';
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import postgres from 'postgres';
 
@@ -27,7 +28,9 @@ if (!DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is not set');
 }
 
-const rootDir = path.resolve(import.meta.dirname, '..');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
 
 const MIGRATION_FILES = [
   'migrations/0000_platform_content.sql',

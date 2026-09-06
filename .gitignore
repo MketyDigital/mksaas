@@ -13,10 +13,6 @@
 /.next/
 /out/
 
-# vinext / Vite production output
-/dist/
-/.vite/
-
 # production
 /build
 
@@ -41,7 +37,7 @@ yarn-error.log*
 # vercel
 .vercel
 
-# SST / historical OpenNext output
+# SST
 .sst/
 .open-next/
 sst-env.d.ts

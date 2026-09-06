@@ -1,9 +1,0 @@
-packages: []
-
-# Native build scripts required by the current vinext + Cloudflare Workers toolchain.
-# Keep this list explicit and minimal; do not broadly approve dependency scripts.
-allowBuilds:
-  esbuild: true
-  sharp: true
-  unrs-resolver: true
-  workerd: true
