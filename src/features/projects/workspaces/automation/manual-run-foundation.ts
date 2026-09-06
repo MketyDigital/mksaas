@@ -1,4 +1,4 @@
-import { executeAutomationWorkflowDefinition, type AutomationExecutionContext } from './internal-execution-kernel';
+import { type AutomationExecutionContext, executeAutomationWorkflowDefinition } from './internal-execution-kernel';
 import type { AutomationWorkflowPreflightResult } from './workflow-preflight';
 import type { AutomationWorkflowRuntimeReadiness } from './workflow-runtime-readiness';
 
