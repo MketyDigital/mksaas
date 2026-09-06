@@ -51,6 +51,16 @@ jobs:
           test -f src/shared/db/migrations/0009_automation_webhook_trigger.sql
           test ! -e src/shared/db/migrations/0010_automation_webhook_trigger.sql
           git mv src/shared/db/migrations/0009_automation_webhook_trigger.sql src/shared/db/migrations/0010_automation_webhook_trigger.sql
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/shared/db/migrations/meta/_journal.json')
+          text = p.read_text()
+          old = '"tag": "0009_automation_webhook_trigger"'
+          new = '"tag": "0010_automation_webhook_trigger"'
+          if old not in text:
+              raise SystemExit('Expected branch-local webhook journal tag was not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
       - name: Verify frozen dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify migration execution baseline
