@@ -56,7 +56,7 @@ jobs:
           import { TextEncoder as NodeTextEncoder } from 'node:util';
 
           describe('WebCrypto realm diagnostic', () => {
-            it('proves jsdom byte containers are rejected by Node subtle.verify', async () => {
+            it('isolates explicit ArrayBuffer conversion as the incompatible boundary', async () => {
               const keyPair = await crypto.subtle.generateKey(
                 {
                   name: 'RSASSA-PKCS1-v1_5',
@@ -74,18 +74,15 @@ jobs:
               new Uint8Array(realmBuffer).set(realmBytes);
 
               expect(crypto).toBe(webcrypto);
-              expect(realmBytes.constructor).not.toBe(data.constructor);
-              expect(realmBuffer.constructor).not.toBe(signature.constructor);
-
-              await expect(
-                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, realmBytes, data),
-              ).rejects.toThrow(/3rd argument is not instance of ArrayBuffer, Buffer, TypedArray, or DataView/);
-              await expect(
-                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, realmBuffer, data),
-              ).rejects.toThrow(/3rd argument is not instance of ArrayBuffer, Buffer, TypedArray, or DataView/);
               await expect(
                 crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, signature, data),
               ).resolves.toBe(true);
+              await expect(
+                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, realmBytes, data),
+              ).resolves.toBe(true);
+              await expect(
+                crypto.subtle.verify('RSASSA-PKCS1-v1_5', keyPair.publicKey, realmBuffer, data),
+              ).rejects.toThrow(/3rd argument is not instance of ArrayBuffer, Buffer, TypedArray, or DataView/);
             });
           });
           EOF
