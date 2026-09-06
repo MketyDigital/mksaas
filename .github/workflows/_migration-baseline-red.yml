@@ -1,0 +1,25 @@
+name: Migration baseline RED diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+    paths:
+      - '.github/workflows/_migration-baseline-red.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify migration baseline regression is RED
+        run: pnpm test -- src/shared/db/__tests__/migration-baseline.test.ts
