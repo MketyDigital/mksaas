@@ -1,37 +1,33 @@
 'use client';
 
 /**
- * Auth Hook - Wrapper around next-auth/react
+ * Mkety auth hook.
  *
- * Provides convenient access to authentication state and actions.
- * For most use cases, prefer using next-auth/react directly.
+ * ZITADEL is the intended identity provider, but it is not wired yet. The
+ * client boundary therefore reports unauthenticated and refuses sign-in rather
+ * than manufacturing a local session.
  */
 
-import { signIn, signOut, useSession } from 'next-auth/react';
+import { signIn, signOut, useSession } from '@/shared/lib/auth-client';
 import { useCallback } from 'react';
 
 export interface UseAuthReturn {
-  /** Current user if authenticated */
   user: {
     id?: string;
     name?: string | null;
     email?: string | null;
     image?: string | null;
   } | null;
-  /** Whether authentication state is loading */
   isLoading: boolean;
-  /** Whether user is authenticated */
   isAuthenticated: boolean;
-  /** Sign in with a provider */
   login: (provider?: string, callbackUrl?: string) => Promise<void>;
-  /** Sign out */
   logout: (callbackUrl?: string) => Promise<void>;
 }
 
 export const useAuth = (): UseAuthReturn => {
   const { data: session, status } = useSession();
 
-  const login = useCallback(async (provider = 'auth0', callbackUrl = '/') => {
+  const login = useCallback(async (provider?: string, callbackUrl = '/login') => {
     await signIn(provider, { callbackUrl });
   }, []);
 
