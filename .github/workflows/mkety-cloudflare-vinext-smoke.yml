@@ -44,5 +44,30 @@ jobs:
         run: pnpm build:vinext
       - name: Verify generated Worker deployment output
         run: |
-          test -f dist/mksaas/wrangler.json
-          test -f dist/mksaas/index.js
+          node --input-type=module <<'EOF'
+          import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+          import { dirname, join, resolve } from 'node:path';
+
+          const configs = [];
+          const walk = (dir) => {
+            for (const name of readdirSync(dir)) {
+              const path = join(dir, name);
+              if (statSync(path).isDirectory()) walk(path);
+              else if (name === 'wrangler.json') configs.push(path);
+            }
+          };
+
+          walk('dist');
+          if (configs.length === 0) throw new Error('vinext did not emit a Wrangler deployment config');
+
+          const configPath = configs[0];
+          const config = JSON.parse(readFileSync(configPath, 'utf8'));
+          if (!config.main) throw new Error(`Generated Wrangler config has no main entry: ${configPath}`);
+
+          const workerEntry = resolve(dirname(configPath), config.main);
+          if (!existsSync(workerEntry)) {
+            throw new Error(`Generated Worker entry does not exist: ${workerEntry}`);
+          }
+
+          console.log(`Verified ${configPath} -> ${workerEntry}`);
+          EOF
