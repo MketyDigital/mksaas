@@ -6,9 +6,32 @@ const secret = 'mkety_test_signing_secret';
 const endpoint = { id: 'endpoint-row', endpointId: 'public-endpoint', tenantId: 'tenant-1', projectId: 'project-1', workflowId: 'workflow-1', status: 'active', secretCiphertext: 'ciphertext' };
 const workflow = { id: 'workflow-1', tenantId: 'tenant-1', projectId: 'project-1', status: 'active', triggerType: 'webhook', version: '7', definition: { nodes: [{ id: 'trigger-1', type: 'trigger', config: { triggerMode: 'webhook' } }] } };
 
+function requestDouble(body: string, headers: Record<string, string>) {
+  const values = new Map(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+  let consumed = false;
+  return {
+    headers: {
+      get(name: string) { return values.get(name.toLowerCase()) ?? null; },
+      set(name: string, value: string) { values.set(name.toLowerCase(), value); },
+    },
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (consumed) return { done: true as const, value: undefined };
+            consumed = true;
+            return { done: false as const, value: Buffer.from(body) };
+          },
+          async cancel() { return undefined; },
+        };
+      },
+    },
+  } as unknown as Request;
+}
+
 function signedRequest(body = '{"customer":{"id":1}}', eventId = 'evt-1') {
   const digest = createHmac('sha256', secret).update(Buffer.from(body)).digest('hex');
-  return new Request('https://mkety.test/api/automation/webhooks/public-endpoint', { method: 'POST', headers: { 'content-type': 'application/json', 'x-mkety-signature': `sha256=${digest}`, 'x-mkety-event-id': eventId }, body });
+  return requestDouble(body, { 'content-type': 'application/json', 'x-mkety-signature': `sha256=${digest}`, 'x-mkety-event-id': eventId });
 }
 
 function makeDependencies() {
@@ -49,7 +72,7 @@ describe('handleAutomationWebhookIngress', () => {
     expect(invalid.admitDelivery).not.toHaveBeenCalled();
   });
 
-  it('rejects invalid media, oversized/invalid JSON, inactive workflows and non-ready definitions without a run', async () => {
+  it('rejects invalid media, invalid JSON, inactive workflows and non-ready definitions without a run', async () => {
     const media = makeDependencies();
     const mediaRequest = signedRequest();
     mediaRequest.headers.set('content-type', 'text/plain');
@@ -58,7 +81,7 @@ describe('handleAutomationWebhookIngress', () => {
     const invalidJson = makeDependencies();
     const badBody = '{bad';
     const digest = createHmac('sha256', secret).update(Buffer.from(badBody)).digest('hex');
-    const badRequest = new Request('https://mkety.test', { method: 'POST', headers: { 'content-type': 'application/json', 'x-mkety-signature': `sha256=${digest}` }, body: badBody });
+    const badRequest = requestDouble(badBody, { 'content-type': 'application/json', 'x-mkety-signature': `sha256=${digest}` });
     expect((await handleAutomationWebhookIngress({ endpointId: 'public-endpoint', request: badRequest }, invalidJson)).status).toBe(400);
 
     const inactive = makeDependencies();
@@ -70,6 +93,15 @@ describe('handleAutomationWebhookIngress', () => {
     mismatch.findWorkflow.mockResolvedValue({ ...workflow, definition: { nodes: [{ id: 'trigger-1', type: 'trigger', config: { triggerMode: 'manual' } }] } });
     expect((await handleAutomationWebhookIngress({ endpointId: 'public-endpoint', request: signedRequest() }, mismatch)).status).toBe(422);
     expect(mismatch.admitDelivery).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized bodies before authentication or workflow lookup', async () => {
+    const dependencies = makeDependencies();
+    const request = requestDouble('x', { 'content-type': 'application/json', 'content-length': String(256 * 1024 + 1) });
+    const result = await handleAutomationWebhookIngress({ endpointId: 'public-endpoint', request }, dependencies);
+    expect(result).toEqual({ status: 413, body: { error: 'Webhook payload is too large.' } });
+    expect(dependencies.decryptSecret).not.toHaveBeenCalled();
+    expect(dependencies.findWorkflow).not.toHaveBeenCalled();
   });
 
   it('returns conflict for duplicate or busy deliveries and sanitizes execution failures', async () => {
