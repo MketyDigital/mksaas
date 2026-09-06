@@ -5,7 +5,6 @@ import {
   deriveWebhookEventId,
   generateWebhookCredentials,
   hashWebhookPayload,
-  hashWebhookSecret,
   normalizeWebhookEventId,
   parseWebhookJsonObject,
   validateWebhookContentType,
@@ -13,7 +12,7 @@ import {
 } from './webhook-security';
 
 describe('webhook security policy', () => {
-  it('generates separate high-entropy endpoint and secret credentials and stores only a hash', () => {
+  it('generates separate high-entropy endpoint and raw secret credentials', () => {
     const first = generateWebhookCredentials();
     const second = generateWebhookCredentials();
 
@@ -22,8 +21,7 @@ describe('webhook security policy', () => {
     expect(first.secret).not.toBe(second.secret);
     expect(first.endpointId.length).toBeGreaterThanOrEqual(32);
     expect(first.secret.length).toBeGreaterThanOrEqual(32);
-    expect(first.secretHash).toBe(hashWebhookSecret(first.secret));
-    expect(first.secretHash).not.toContain(first.secret);
+    expect(first).toEqual({ endpointId: expect.any(String), secret: expect.any(String) });
   });
 
   it('verifies only the exact lowercase sha256 HMAC over raw bytes', () => {
