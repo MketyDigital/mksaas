@@ -49,7 +49,7 @@ jobs:
         run: pnpm exec jest --runInBand --runTestsByPath 'src/app/api/tenants/[tenant]/billing/summary/route.test.ts'
 
       - name: Run full test suite
-        run: pnpm test -- --runInBand
+        run: pnpm test
 
       - name: Type check
         run: pnpm type-check
