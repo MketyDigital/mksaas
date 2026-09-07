@@ -24,10 +24,11 @@ jobs:
           import subprocess
 
           files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
-          brand_exclusions = ('docs/superpowers/',)
+          excluded_prefixes = ('docs/superpowers/',)
+          excluded_files = {'.github/workflows/_auth-reference-audit.yml'}
 
           for name in files:
-              if name.startswith(brand_exclusions):
+              if name in excluded_files or name.startswith(excluded_prefixes):
                   continue
               path = Path(name)
               try:
@@ -94,6 +95,7 @@ jobs:
           git config user.name 'Mkety Cleanup Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
+          git restore --staged --worktree .github/workflows/_auth-reference-audit.yml
           git diff --cached --quiet && exit 0
           git commit --no-verify -m 'chore: cleanse template and legacy auth references'
           git push origin HEAD:feat/mkety-auth-zitadel-vinext
