@@ -25,7 +25,6 @@ describe('TeamEntryPage', () => {
 
   it('routes from current DB-backed memberships instead of stale session roles', async () => {
     mockedAuth.mockResolvedValue({
-      sessionId: 'session-1',
       expiresAt: new Date(Date.now() + 60_000),
       user: {
         id: 'user-1',
