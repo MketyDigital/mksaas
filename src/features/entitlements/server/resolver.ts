@@ -1,4 +1,4 @@
-import { ENTITLEMENT_KEYS, isEntitlementKey, type EntitlementKey } from '../entitlement-keys';
+import { ENTITLEMENT_KEYS, type EntitlementKey, isEntitlementKey } from '../entitlement-keys';
 import type { EffectiveEntitlement, EntitlementCheckInput, EntitlementOverrideEffect } from '../types';
 
 export interface EntitlementSource {
