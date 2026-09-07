@@ -4,7 +4,7 @@ import { appSchema } from './schema';
 /**
  * Tenants table - Multi-tenancy support
  *
- * Each tenant represents an organization using Next.js SaaS AI Template.
+ * Each tenant represents an organization using Mkety Platform.
  * All data is scoped to a tenant for isolation.
  *
  * Note: settings is stored as JSON text. Use parseTenantSettings() from

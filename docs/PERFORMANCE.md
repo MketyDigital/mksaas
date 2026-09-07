@@ -1,6 +1,6 @@
 # 🚄 Performance
 
-Next.js SaaS AI Template is optimized for performance using Next.js 15, React Server Components, and Tailwind CSS v4.
+Mkety Platform is optimized for performance using Next.js 15, React Server Components, and Tailwind CSS v4.
 
 ## Server Components First
 
@@ -49,7 +49,7 @@ const [state, setState] = useState(() => myExpensiveFn());
 
 - If you develop an application that requires the state to track many elements at once, you might consider state management libraries with atomic updates such as [recoil](https://recoiljs.org/) or [jotai](https://jotai.pmnd.rs/).
 
-- If your application is expected to have frequent updates that might affect performance, use zero-runtime styling solutions. **Next.js SaaS AI Template uses Tailwind CSS v4** which generates styles at build time with no runtime overhead.
+- If your application is expected to have frequent updates that might affect performance, use zero-runtime styling solutions. **Mkety Platform uses Tailwind CSS v4** which generates styles at build time with no runtime overhead.
 
 ## Database Performance
 

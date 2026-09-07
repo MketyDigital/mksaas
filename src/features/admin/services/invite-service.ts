@@ -69,8 +69,8 @@ function generateToken(): string {
  * Build the invite URL
  */
 function buildInviteUrl(tenantSlug: string, token: string): string {
-  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-  return `${baseUrl}/t/${tenantSlug}/invite/${token}`;
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  return `${baseUrl.replace(/\/$/, '')}/t/${tenantSlug}/invite/${token}`;
 }
 
 // ============================================================================

@@ -1,6 +1,6 @@
-# Glossary of Terms - Next.js SaaS AI Template
+# Glossary of Terms - Mkety Platform
 
-This document defines key terms used in Next.js SaaS AI Template to avoid ambiguities and facilitate understanding of the domain. Each term includes its definition, references to standards when applicable, and its relationship with other concepts.
+This document defines key terms used in Mkety Platform to avoid ambiguities and facilitate understanding of the domain. Each term includes its definition, references to standards when applicable, and its relationship with other concepts.
 
 ---
 
@@ -9,7 +9,7 @@ This document defines key terms used in Next.js SaaS AI Template to avoid ambigu
 ### User
 
 **Definition:**
-A **User** is an authentication entity managed by Auth.js (NextAuth). It represents a system access account with credentials (email, OAuth providers, etc.). A user can belong to multiple tenants and have different roles in each one.
+A **User** is Mkety’s internal application identity. External identities are mapped through the provider-neutral Mkety Auth boundary, while tenant membership, roles, and permissions remain authoritative in Mkety data.
 
 **Characteristics:**
 

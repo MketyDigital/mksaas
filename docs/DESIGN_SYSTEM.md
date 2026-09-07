@@ -1,4 +1,4 @@
-# Next.js SaaS AI Template Design System
+# Mkety Platform Design System
 
 > **Philosophy: "Intentional Craft"** — Every visual choice has a documented reason. When someone asks _"why does it look like this?"_, there is an answer grounded in UX research and design principles.
 
@@ -23,13 +23,13 @@
 
 ## 1. Design Principles
 
-These five principles guide every design decision in Next.js SaaS AI Template. They follow the documentation pattern established by Lattice, Atlassian, and Intercom — serving as shared vocabulary that short-circuits debate and focuses creative energy.
+These five principles guide every design decision in Mkety Platform. They follow the documentation pattern established by Lattice, Atlassian, and Intercom — serving as shared vocabulary that short-circuits debate and focuses creative energy.
 
 ### 1.1 Clarity Builds Confidence
 
 **Origin:** Lattice's "Build Confidence with Clarity" + Nielsen's Heuristic #1 (Visibility of System Status).
 
-**Why it matters:** Users in Next.js SaaS AI Template make high-visibility decisions about their teams — requesting assessments, assigning learning paths, setting OKRs. If they are unsure about what data they are seeing or what happens when they click, they will not act.
+**Why it matters:** Users in Mkety Platform make high-visibility decisions about their teams — requesting assessments, assigning learning paths, setting OKRs. If they are unsure about what data they are seeing or what happens when they click, they will not act.
 
 **Tactics:**
 
@@ -45,7 +45,7 @@ These five principles guide every design decision in Next.js SaaS AI Template. T
 
 **Origin:** Atlassian's color role system + Material Design 3's color roles.
 
-**Why it matters:** Color is not decoration — it is a language. Each domain in Next.js SaaS AI Template (skills, OKRs, learning, performance, projects, recognition, 1:1s) has a dedicated color that users learn to recognize. This reduces cognitive load: users can scan a page and immediately identify what domain each card or section belongs to.
+**Why it matters:** Color is not decoration — it is a language. Each domain in Mkety Platform (skills, OKRs, learning, performance, projects, recognition, 1:1s) has a dedicated color that users learn to recognize. This reduces cognitive load: users can scan a page and immediately identify what domain each card or section belongs to.
 
 **Tactics:**
 
@@ -92,7 +92,7 @@ These five principles guide every design decision in Next.js SaaS AI Template. T
 
 **Origin:** Lattice's "Celebrate Moments that Matter" + the aesthetic-usability effect (attractive interfaces are perceived as more usable).
 
-**Why it matters:** Next.js SaaS AI Template's mission is to help make work meaningful. Micro-celebrations at meaningful moments make the platform feel alive without being noisy. They remind users of progress and reinforce positive behaviors.
+**Why it matters:** Mkety Platform's mission is to help make work meaningful. Micro-celebrations at meaningful moments make the platform feel alive without being noisy. They remind users of progress and reinforce positive behaviors.
 
 **Tactics:**
 
@@ -116,7 +116,7 @@ Every design decision in this system maps to an established standard:
 | Design token naming       | Atlassian Design Tokens             | Semantic naming: Foundation + Property + Modifier                              |
 | Color scale methodology   | Radix Colors 12-step system         | 12-step palette with guaranteed contrast ratios                                |
 | Color space               | OKLCH (perceptually uniform)        | All colors defined in OKLCH for consistent palette generation                  |
-| Product design principles | Lattice Design Principles           | Adapted for Next.js SaaS AI Template's specific domain                         |
+| Product design principles | Lattice Design Principles           | Adapted for Mkety Platform's specific domain                         |
 | Visual refinement         | Linear UI Approach                  | "Reduce visual noise while increasing hierarchy density"                       |
 | HR platform UX            | HR Portal UX Research               | Task-centered interfaces, role-based dashboards, 80/20 feature prominence      |
 | Typography                | Major Third type scale (1.25 ratio) | Proven ratio for information-dense interfaces                                  |
@@ -279,7 +279,7 @@ Tenant-configurable via the `--radius` CSS variable. The default (10px / `0.625r
 
 ## 6. Elevation and Depth
 
-Depth in Next.js SaaS AI Template comes from **layered shadows** (elevation), not from gradient backgrounds. This is a key differentiator from AI-generated UIs.
+Depth in Mkety Platform comes from **layered shadows** (elevation), not from gradient backgrounds. This is a key differentiator from AI-generated UIs.
 
 ### 6.1 Shadow Scale
 
@@ -349,11 +349,11 @@ Interactive cards transition from `shadow-sm` to `shadow-md` on hover. This repl
 
 ## 8. Visual Signature
 
-These five elements define Next.js SaaS AI Template's visual identity. They replace the previous "gradients everywhere" approach.
+These five elements define Mkety Platform's visual identity. They replace the previous "gradients everywhere" approach.
 
 ### 8.1 The Domain Accent Bar
 
-A consistent 3px left border on cards that communicates domain at a glance. This is the PRIMARY visual signature of Next.js SaaS AI Template.
+A consistent 3px left border on cards that communicates domain at a glance. This is the PRIMARY visual signature of Mkety Platform.
 
 ```
 Skills card       → 3px violet left border
@@ -377,7 +377,7 @@ Primary buttons are solid `bg-primary` with no gradient. They are the ONLY stron
 
 ONE gradient exists in the entire application: the brand gradient (primary -> secondary). It appears ONLY on:
 
-- The Next.js SaaS AI Template logo mark
+- The Mkety Platform logo mark
 - The hero banner at the top of the dashboard
 - The landing page hero section
 
@@ -470,7 +470,7 @@ Pre-configured theme combinations available in the admin UI:
 
 ## 11. Anti-Patterns
 
-These patterns are explicitly prohibited in Next.js SaaS AI Template. They are documented here so that contributors (human or AI) know what to avoid.
+These patterns are explicitly prohibited in Mkety Platform. They are documented here so that contributors (human or AI) know what to avoid.
 
 ### 11.1 Gradient Abuse
 
@@ -529,4 +529,4 @@ These patterns are explicitly prohibited in Next.js SaaS AI Template. They are d
 
 ---
 
-_This document is the source of truth for Next.js SaaS AI Template's design system. For component-level implementation details, see [COMPONENTS_AND_STYLING.md](./COMPONENTS_AND_STYLING.md) and [SHADCN_AND_COMPONENTS.md](./SHADCN_AND_COMPONENTS.md). For brand assets and logo usage, see [BRAND_GUIDELINES.md](./BRAND_GUIDELINES.md)._
+_This document is the source of truth for Mkety Platform's design system. For component-level implementation details, see [COMPONENTS_AND_STYLING.md](./COMPONENTS_AND_STYLING.md) and [SHADCN_AND_COMPONENTS.md](./SHADCN_AND_COMPONENTS.md). For brand assets and logo usage, see [BRAND_GUIDELINES.md](./BRAND_GUIDELINES.md)._

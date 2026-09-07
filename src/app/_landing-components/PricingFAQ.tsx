@@ -4,7 +4,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 
 const FAQ_ITEMS = [
   {
-    q: 'Is Next.js SaaS AI Template free to try?',
+    q: 'Is Mkety Platform free to try?',
     a: 'Yes! The demo environment is fully functional with no payment required. Explore every feature with sample data.',
   },
   {

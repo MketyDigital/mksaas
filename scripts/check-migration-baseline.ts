@@ -41,34 +41,46 @@ function validateNamespace(label: string, relativeDir: string): NamespaceResult 
   return { label, files };
 }
 
-function inspectLegacyDrizzleMetadata(sqlFiles: string[]): void {
+function validateDrizzleMetadata(sqlFiles: string[]): void {
   const journalPath = path.join(root, 'src/shared/db/migrations/meta/_journal.json');
-  if (!fs.existsSync(journalPath)) return;
+  if (!fs.existsSync(journalPath)) {
+    throw new Error('Drizzle journal is missing: src/shared/db/migrations/meta/_journal.json');
+  }
 
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as {
     entries?: Array<{ tag?: string }>;
   };
-  const tags = new Set((journal.entries ?? []).map((entry) => entry.tag).filter(Boolean) as string[]);
+  const tags = (journal.entries ?? []).map((entry) => entry.tag).filter(Boolean) as string[];
+  const tagSet = new Set(tags);
   const sqlTags = sqlFiles.map((name) => name.replace(/\.sql$/, ''));
-  const journalWithoutSql = [...tags].filter((tag) => !sqlTags.includes(tag));
-  const sqlWithoutJournal = sqlTags.filter((tag) => !tags.has(tag));
+  const journalWithoutSql = tags.filter((tag) => !sqlTags.includes(tag));
+  const sqlWithoutJournal = sqlTags.filter((tag) => !tagSet.has(tag));
 
   if (journalWithoutSql.length > 0) {
     throw new Error(`Drizzle journal references missing SQL migrations: ${journalWithoutSql.join(', ')}`);
   }
 
   if (sqlWithoutJournal.length > 0) {
-    console.warn(
-      `[migration-baseline] legacy Drizzle generation metadata is incomplete for: ${sqlWithoutJournal.join(', ')}. ` +
-        'Runtime migration execution remains SQL-file based; do not treat meta/_journal.json as execution order.',
+    throw new Error(`Drizzle journal is missing SQL migrations: ${sqlWithoutJournal.join(', ')}`);
+  }
+
+  if (tags.length !== sqlTags.length || tags.some((tag, index) => tag !== sqlTags[index])) {
+    throw new Error(
+      `Drizzle journal order must exactly match SQL migration order. SQL: ${sqlTags.join(', ')}; journal: ${tags.join(', ')}`,
     );
+  }
+
+  const latestIndex = String(sqlTags.length - 1).padStart(4, '0');
+  const latestSnapshotPath = path.join(root, `src/shared/db/migrations/meta/${latestIndex}_snapshot.json`);
+  if (!fs.existsSync(latestSnapshotPath)) {
+    throw new Error(`Drizzle latest snapshot is missing: src/shared/db/migrations/meta/${latestIndex}_snapshot.json`);
   }
 }
 
 const drizzle = validateNamespace('Drizzle SQL', 'src/shared/db/migrations');
 const content = validateNamespace('Mkety content bootstrap', 'migrations');
-inspectLegacyDrizzleMetadata(drizzle.files);
+validateDrizzleMetadata(drizzle.files);
 
 console.log(`[migration-baseline] ${drizzle.label}: ${drizzle.files.join(' -> ')}`);
 console.log(`[migration-baseline] ${content.label}: ${content.files.join(' -> ')}`);
-console.log('[migration-baseline] OK: active SQL migration namespaces are unique and contiguous.');
+console.log('[migration-baseline] OK: SQL order, Drizzle journal, and latest snapshot are aligned.');

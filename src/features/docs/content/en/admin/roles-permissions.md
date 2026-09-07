@@ -7,7 +7,7 @@ order: 7
 
 # Roles & Permissions
 
-Next.js SaaS AI Template uses a **permission-based** model (PBAC): access is determined by **permissions**, not by job title. **Roles** are bundles of permissions; a person can have **multiple roles** per tenant, and their effective permissions are the **union** of all those roles' permissions.
+Mkety Platform uses a **permission-based** model (PBAC): access is determined by **permissions**, not by job title. **Roles** are bundles of permissions; a person can have **multiple roles** per tenant, and their effective permissions are the **union** of all those roles' permissions.
 
 ## System Roles
 

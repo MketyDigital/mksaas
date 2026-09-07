@@ -78,7 +78,7 @@ export function LandingFooter() {
         {/* Bottom bar */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-border/60">
           <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Next.js SaaS AI Template. Built with Next.js, Tailwind CSS, and Drizzle ORM.
+            © {new Date().getFullYear()} Mkety Platform. Built with Next.js, Tailwind CSS, and Drizzle ORM.
           </p>
           <div className="flex items-center gap-4">
             {/* Social placeholders */}

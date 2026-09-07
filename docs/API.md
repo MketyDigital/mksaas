@@ -1,12 +1,12 @@
 # 🔌 API Reference
 
-The Next.js SaaS AI Template provides a REST API for managing tenant resources, profiles, and operations. All API routes are tenant-scoped and require authentication.
+The Mkety Platform provides a REST API for managing tenant resources, profiles, and operations. All API routes are tenant-scoped and require authentication.
 
 ## Authentication
 
 All API routes require a valid session. Authentication is handled by Auth.js v5 with support for:
 
-- **Auth0** - Production SSO provider
+- **Mkety Auth** - provider-neutral application auth/session boundary with ZITADEL as the initial OIDC adapter
 - **Development Provider** - Email-based login for development
 
 ## Base URL

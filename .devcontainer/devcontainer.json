@@ -1,7 +1,7 @@
-// DevContainer configuration for Next.js SaaS AI Template
+// DevContainer configuration for Mkety Platform
 // Docs: https://containers.dev/implementors/json_reference/
 {
-  "name": "Next.js SaaS AI Template Dev",
+  "name": "Mkety Platform Dev",
   "dockerComposeFile": "compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",

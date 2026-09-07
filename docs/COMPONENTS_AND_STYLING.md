@@ -45,7 +45,7 @@ For larger projects, it is a good idea to build abstractions around all the shar
 
 It is a good idea to wrap 3rd party components as well in order to adapt them to the application's needs. It might be easier to make the underlying changes in the future without affecting the application's functionality.
 
-## Next.js SaaS AI Template UI Stack
+## Mkety Platform UI Stack
 
 This project uses **shadcn/ui** with **Tailwind CSS v4** and **Radix UI** primitives.
 
@@ -88,7 +88,7 @@ export function MyComponent() {
 
 ### Custom Variants
 
-Next.js SaaS AI Template extends shadcn with custom button variants:
+Mkety Platform extends shadcn with custom button variants:
 
 - `skill` - Purple theme for skill-related actions
 - `interest` - Amber theme for interest-related actions
@@ -127,7 +127,7 @@ Tailwind v4 uses a **CSS-first** architecture. Theme and design tokens live in `
 ```tsx
 // Brand gradient — ONLY for logo mark and hero sections
 <div className="brand-gradient">Logo background</div>
-<h1 className="brand-gradient-text">Next.js SaaS AI Template</h1>
+<h1 className="brand-gradient-text">Mkety Platform</h1>
 
 // Glass effect — for special surfaces
 <div className="glass">Frosted glass background</div>

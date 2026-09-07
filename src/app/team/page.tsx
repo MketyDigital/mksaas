@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { auth } from '@/shared/lib/auth';
+import { getAllRoles } from '@/shared/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,7 @@ export default async function TeamEntryPage() {
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  const roles = session.user.roles ?? {};
+  const roles = await getAllRoles();
   const tenantSlugs = Object.keys(roles);
   if (tenantSlugs.length === 0) redirect('/create-workspace');
   if (tenantSlugs.length > 1) redirect('/select-tenant');

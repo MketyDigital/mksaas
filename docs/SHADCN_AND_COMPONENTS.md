@@ -1,16 +1,16 @@
 # shadcn/ui Components Guide
 
-This document describes how Next.js SaaS AI Template uses [shadcn/ui](https://ui.shadcn.com) — a collection of reusable, accessible components built on [Radix UI](https://www.radix-ui.com/) primitives and styled with [Tailwind CSS](https://tailwindcss.com/).
+This document describes how Mkety Platform uses [shadcn/ui](https://ui.shadcn.com) — a collection of reusable, accessible components built on [Radix UI](https://www.radix-ui.com/) primitives and styled with [Tailwind CSS](https://tailwindcss.com/).
 
 ---
 
 ## How We Use shadcn/ui
 
-Next.js SaaS AI Template follows the **copy/paste** model of shadcn/ui. Components are **not** installed as a dependency; they live directly in the codebase under `src/shared/components/ui/`. This gives us full control to customize, extend, and compose components to fit our domain.
+Mkety Platform follows the **copy/paste** model of shadcn/ui. Components are **not** installed as a dependency; they live directly in the codebase under `src/shared/components/ui/`. This gives us full control to customize, extend, and compose components to fit our domain.
 
 ### Key Differences from a Standard shadcn Setup
 
-| Aspect        | Standard shadcn                | Next.js SaaS AI Template                               |
+| Aspect        | Standard shadcn                | Mkety Platform                               |
 | ------------- | ------------------------------ | ------------------------------------------------------ |
 | Installation  | `npx shadcn@latest add button` | Manual copy + adapt                                    |
 | Location      | `components/ui/`               | `src/shared/components/ui/`                            |
@@ -136,7 +136,7 @@ toast({ title: 'Error', description: 'Failed', variant: 'destructive' });
 
 ### Domain-Specific Components
 
-Built on top of shadcn primitives for Next.js SaaS AI Template-specific UI patterns:
+Built on top of shadcn primitives for Mkety Platform-specific UI patterns:
 
 | Component                   | Purpose                           | File                             |
 | --------------------------- | --------------------------------- | -------------------------------- |
@@ -265,7 +265,7 @@ These are used in forms that handle server errors outside of Zod validation.
 
 ## Custom Button Variants
 
-Next.js SaaS AI Template extends the standard shadcn Button with domain-specific variants using `class-variance-authority` (CVA):
+Mkety Platform extends the standard shadcn Button with domain-specific variants using `class-variance-authority` (CVA):
 
 | Variant       | Color            | Usage                    |
 | ------------- | ---------------- | ------------------------ |

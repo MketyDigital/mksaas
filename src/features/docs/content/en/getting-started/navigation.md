@@ -7,7 +7,7 @@ order: 3
 
 # Navigation & Views
 
-Next.js SaaS AI Template organizes the product into **views** and a **sidebar**. This page explains how to move around the app, use global search, and adjust theme and language.
+Mkety Platform organizes the product into **views** and a **sidebar**. This page explains how to move around the app, use global search, and adjust theme and language.
 
 ---
 
@@ -50,7 +50,7 @@ Click a sidebar item to go to that page. The current page is usually highlighted
 
 ## Global Search (Cmd+K / Ctrl+K)
 
-Next.js SaaS AI Template provides **global search** so you can jump to people, docs, or actions without clicking through menus.
+Mkety Platform provides **global search** so you can jump to people, docs, or actions without clicking through menus.
 
 1. Press **Cmd+K** (Mac) or **Ctrl+K** (Windows/Linux), or use the search trigger in the header.
 2. Type your query (e.g. a person’s name, a doc title, or an action like “Create OKR”).
@@ -73,7 +73,7 @@ Where the toggle lives can vary by layout; check the top bar or the **Profile / 
 
 ## Locale Switcher (English / Spanish)
 
-Next.js SaaS AI Template can be used in multiple languages (e.g. **English** and **Spanish**).
+Mkety Platform can be used in multiple languages (e.g. **English** and **Spanish**).
 
 - Use the **locale switcher** in the header or account menu (often a globe or “EN” / “ES” control).
 - Select your preferred language. The UI and, where available, documentation will switch to that locale.

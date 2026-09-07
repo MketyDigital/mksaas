@@ -1,91 +1,106 @@
-# Deployment
+# Mkety Platform Deployment
 
-Next.js SaaS AI Template is a standard Next.js application with a PostgreSQL + pgvector database. It can be deployed to any platform that supports Node.js and PostgreSQL.
+Mkety Platform targets **Cloudflare Workers** through the repository's vinext runtime baseline. The old generic Node/Vercel/Docker deployment guidance is no longer authoritative for this repository.
 
-## Recommended Deployment Options
+## Runtime baseline
 
-| Platform                 | Notes                                                  |
-| ------------------------ | ------------------------------------------------------ |
-| **Vercel**               | Zero-config Next.js deployment; add a Neon/Supabase DB |
-| **Railway**              | Full-stack (app + PostgreSQL) with minimal config      |
-| **Render**               | Similar to Railway; supports Docker deploys            |
-| **Docker / Self-hosted** | Use the included `Dockerfile` or `compose.yml`         |
-| **AWS (custom)**         | Deploy to ECS/Lambda@Edge with your own infra tooling  |
+- Application runtime: vinext on Cloudflare Workers.
+- Database: PostgreSQL with the extensions required by the current schema (including pgvector where AI knowledge features use it).
+- Package manager: pnpm.
+- Node version: `.node-version`.
+- Worker configuration: `wrangler.jsonc`.
+- Base Worker name: `mkety-platform`.
+- Isolated preview Worker: `mkety-platform-preview` through the `preview` Wrangler environment.
 
-## Prerequisites
+Do not reintroduce OpenNext, container deployment, or a second production runtime without an explicit architecture decision.
 
-- Node.js (see `.node-version`) and pnpm
-- PostgreSQL 15+ with the **pgvector** extension enabled
-- Environment variables (see `.env.example` for the full list)
+## Required application configuration
 
-## Environment Variables
-
-Copy `.env.example` to `.env` (or configure in your platform's dashboard) and set:
+Use `.env.example` as the configuration contract. Core values include:
 
 ```env
-# Required
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
-AUTH_SECRET=<min-32-char-secret>   # openssl rand -base64 32
+DATABASE_URL=postgresql://user:password@host:5432/database
+NEXT_PUBLIC_APP_URL=https://your-app-origin.example
+NEXT_PUBLIC_APP_NAME=Mkety
 
-# Optional (AI features)
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-ENABLE_AI_FEATURES=true
-
-# Optional (SSO via Auth0)
-AUTH0_CLIENT_ID=...
-AUTH0_CLIENT_SECRET=...
-AUTH0_ISSUER=https://your-tenant.auth0.com
-
-# Optional (file uploads via S3)
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=my-bucket
+MKETY_AUTH_PROVIDER=zitadel
+MKETY_AUTH_ISSUER=https://<instance>.zitadel.cloud
+MKETY_AUTH_CLIENT_ID=...
+MKETY_AUTH_CLIENT_SECRET=...
+MKETY_AUTH_REDIRECT_URI=https://your-app-origin.example/api/auth/callback
+MKETY_AUTH_POST_LOGOUT_REDIRECT_URI=https://your-app-origin.example/login
+MKETY_AUTH_SESSION_SECRET=<random-secret-at-least-32-characters>
 ```
 
-## Build & Start
+`MKETY_AUTH_*` is the Mkety-owned authentication contract. Do not restore `AUTH0_*`, `NEXTAUTH_*`, Auth.js, or provider-specific application session configuration.
+
+For Cloudflare automation, keep credentials in GitHub/Cloudflare secret storage rather than committed files:
+
+```text
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
+```
+
+## Database baseline
+
+Application migrations live in `src/shared/db/migrations` and execute in SQL filename order. Before deployment, validate the baseline:
 
 ```bash
-pnpm install
-pnpm db:migrate        # run pending migrations
+pnpm db:check:migrations
+pnpm db:migrate
+```
+
+Mkety public-content/bootstrap SQL under the root `migrations/` directory is an independent namespace and uses its dedicated migration command:
+
+```bash
+pnpm db:migrate:mkety-content
+```
+
+Do not infer runtime migration order from incomplete legacy Drizzle snapshot/journal metadata. The durable migration baseline check protects active SQL prefix uniqueness and contiguity.
+
+## Verify a deployment candidate
+
+A candidate is not ready merely because it compiles. Run the same gates used by CI:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm db:check:migrations
+pnpm test
+pnpm type-check
+pnpm lint
+pnpx vinext check
 pnpm build
-pnpm start             # or: node .next/standalone/server.js
+pnpm run deploy --env preview --dry-run
 ```
 
-## Database Setup
+`pnpm build` is the production vinext build. The preview dry-run validates isolated Cloudflare packaging without deploying anything.
 
-1. Provision a PostgreSQL 15+ instance with pgvector:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   CREATE SCHEMA IF NOT EXISTS saas_template;
-   ```
-2. Set `DATABASE_URL` and run migrations:
-   ```bash
-   pnpm db:migrate
-   ```
-3. (Optional) seed demo data:
-   ```bash
-   pnpm db:seed
-   ```
+## Preview deployment
 
-## Docker (self-hosted)
+The durable workflow `.github/workflows/mkety-cloudflare-preview.yml` verifies the candidate before attempting the isolated `mkety-platform-preview` workers.dev deployment.
 
-A `compose.yml` is included for local development (app + postgres + minio). For production, build the image and configure environment variables through your container orchestration tool.
+The preview environment is intentionally separate from production. The workflow must:
 
-```bash
-docker build -t nextjs-saas-ai-template .
-docker run -p 3000:3000 --env-file .env nextjs-saas-ai-template
-```
+1. pass the full verification gates;
+2. require Cloudflare preview credentials;
+3. create/update only the isolated preview Worker;
+4. capture the exact workers.dev origin;
+5. rebuild configuration for that exact origin;
+6. bind the staging database and Mkety Auth secrets;
+7. smoke public and unauthenticated session boundaries;
+8. leave production untouched.
 
-## CI / CD
+For Auth promotion, a successful Worker deployment is not enough. Register the exact preview callback and logout URIs with the configured ZITADEL project, then complete real browser smoke for login → callback → Mkety session → protected tenant authorization → logout.
 
-The repository includes GitHub Actions workflows for:
+## Production promotion
 
-- `build.yml` — builds and type-checks on every push
-- `lint.yml` — runs ESLint
-- `tests.yml` — runs the test suite
-- `type-check.yml` — runs TypeScript checks
-- `pr-review.yml` — automated PR review
+Production deployment is an explicit promotion action. Do not point preview workflows at the base `mkety-platform` Worker and do not deploy production merely because a PR is green.
 
-Add a deployment step to your own workflow by calling your chosen platform's deploy action (Vercel, Railway, etc.) after the build succeeds.
+Before production promotion:
+
+- reconcile the migration sequence;
+- confirm the intended commit SHA;
+- pass all durable CI/runtime gates;
+- confirm required Cloudflare/database/Auth configuration;
+- complete the required external identity-provider smoke tests;
+- obtain the explicit promotion decision for that release.
