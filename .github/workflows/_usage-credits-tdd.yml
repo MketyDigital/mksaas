@@ -28,4 +28,4 @@ jobs:
       - name: Run Usage/Credits targeted tests
         run: pnpm test -- src/features/usage-credits src/shared/db/schema/usage-credits.test.ts
 
-# tdd: task4-record-usage-red
+# tdd: task4-record-usage-green
