@@ -1,18 +1,23 @@
-# Mkety Entitlements — Development Handoff / Progress
+# Mkety Entitlements — Verified Development Handoff
 
 **Date:** 2026-09-07  
 **Branch:** `feat/mkety-entitlements-core`  
 **Base:** `feat/mkety-billing-core-foundation` (`4525104661208d669719e00766b15bc7b187f1d7`)  
 **PR:** #22 — draft, stacked directly on Billing #21
 
+## Status
+
+Entitlements Core implementation is complete and immutably verified.
+
+**Immutable verified Entitlements SHA:** `6b98e65016c6bf66d60c6210e9852bdee712b579`  
+**Final verification run:** `34155879992`
+
+The branch moved after the verified SHA only for verification-workflow cleanup and this handoff documentation. No Entitlements application behavior changed after the verified SHA.
+
 ## Approved architecture
 
-The approved design is documented at:
-
-- `docs/superpowers/specs/2026-09-07-mkety-entitlements-core-design.md`
-- `docs/superpowers/plans/2026-09-07-mkety-entitlements-core.md`
-
-Entitlements resolve through:
+Design: `docs/superpowers/specs/2026-09-07-mkety-entitlements-core-design.md`  
+Implementation plan: `docs/superpowers/plans/2026-09-07-mkety-entitlements-core.md`
 
 ```text
 Billing Plan Version
@@ -23,41 +28,39 @@ Billing Plan Version
   -> Workspace / Project / Feature access
 ```
 
-Resolution precedence is:
+Resolution precedence:
 
 1. active tenant deny
 2. active tenant grant
 3. enabled current plan-version entitlement
 4. deny by default
 
-Unknown entitlement keys fail closed. Usage/Credits remains explicitly out of scope and is the next architecture phase only after Entitlements verification.
+Unknown entitlement keys fail closed.
 
-## Implementation completed so far
+## Implemented
 
 ### Stable entitlement vocabulary
-
-Added:
 
 - `src/features/entitlements/entitlement-keys.ts`
 - `src/features/entitlements/types.ts`
 - `src/features/entitlements/entitlement-keys.test.ts`
 
-Current canonical keys include the existing `workspace.trading.enterprise` seam plus initial workspace and AI-provider capabilities. Runtime unknown keys are rejected.
+Initial canonical capabilities include workspace keys, `workspace.trading.enterprise`, and initial AI provider capabilities. Runtime unknown keys are rejected.
 
-### Persistence schema
-
-Added:
+### Persistence
 
 - `src/shared/db/schema/billing-plan-version-entitlements.ts`
 - `src/shared/db/schema/tenant-entitlement-overrides.ts`
 - `src/shared/db/schema/entitlements.test.ts`
-- schema exports in `src/shared/db/schema/index.ts`
+- exports in `src/shared/db/schema/index.ts`
+- generated migration `src/shared/db/migrations/0012_nebulous_expediter.sql`
+- generated `0012_snapshot.json` and aligned Drizzle journal
 
-Plan entitlements attach to immutable Billing plan-version IDs. Tenant overrides are isolated from Billing commercial/provider state and carry effect, reason, source, optional expiry and optional actor user.
+Plan grants attach to immutable Billing plan-version IDs. Tenant overrides are independent of provider/commercial Billing state and support grant/deny, reason, source, optional expiry and actor attribution.
+
+The migration was produced by real `drizzle-kit generate`; the large snapshot was not hand-authored. Temporary migration-generation workflow was removed after generation.
 
 ### Effective resolver
-
-Added:
 
 - `src/features/entitlements/server/resolver.ts`
 - `src/features/entitlements/server/drizzle-source.ts`
@@ -66,74 +69,76 @@ Added:
 The resolver:
 
 - uses the tenant's latest qualifying Billing subscription
-- reads only that subscription's `planVersionId`
-- loads tenant overrides by explicit tenant ID
+- resolves only its `planVersionId`
+- keeps all override reads tenant-scoped
 - applies `deny > grant > plan > default deny`
 - ignores expired overrides
-- permits an explicit active tenant grant even when there is no qualifying subscription
-- fails closed for unknown entitlement keys before storage access
-- keeps tenant reads tenant-scoped
+- allows an explicit active grant without a qualifying subscription
+- rejects unknown entitlement keys before storage access
 
-Qualifying subscription statuses intentionally match Billing's existing current-state query semantics: `trialing`, `active`, `past_due`, `paused`, `cancel_at_period_end`.
+Qualifying subscription statuses intentionally match Billing's established current-state semantics: `trialing`, `active`, `past_due`, `paused`, `cancel_at_period_end`.
 
-### Backend enforcement helper
-
-Added:
+### Backend enforcement
 
 - `src/features/entitlements/server/authorization.ts`
 - `src/features/entitlements/server/authorization.test.ts`
 
-`requireEntitlement` delegates to the authoritative resolver and throws the stable `EntitlementDeniedError` when access is denied.
+`requireEntitlement` uses the authoritative resolver and throws stable `EntitlementDeniedError` on denial.
 
 ### Existing workspace seam
-
-Added:
 
 - `src/features/entitlements/server/workspace-access.ts`
 - `src/features/entitlements/server/workspace-access.test.ts`
 - `getPublishedWorkspaceCardsForTenant(tenantId)` in `src/features/platform-app-experience/server/queries.ts`
 
-This integrates the existing `requiresEntitlement` field with backend resolution. The global published workspace query remains unchanged. Navigation filtering is UX only and does not replace operation-level `requireEntitlement` enforcement.
+The existing `requiresEntitlement` metadata can now be resolved for a server-derived tenant. Global workspace content behavior remains intact. UI filtering remains UX only and does not replace operation-level backend enforcement.
 
-## TDD / verification state
+## Verification evidence
 
-Tests were authored before their corresponding implementation files for the entitlement vocabulary, persistence contract, resolver, authorization helper and workspace filtering.
+Final immutable run `34155879992` at SHA `6b98e65016c6bf66d60c6210e9852bdee712b579` completed successfully:
 
-A normal checkout is not available in the current tool runtime, so local Jest/TypeScript execution is unavailable. Standard repository PR workflows also do not execute for this stacked draft PR because they target `main` and/or non-draft PRs. Therefore no test or build result is being claimed without GitHub Actions evidence.
+- targeted Entitlements suites — PASS
+- Platform workspace entitlement seam suites — PASS
+- full Jest suite — PASS (`108` suites, `591` tests)
+- TypeScript type-check — PASS
+- lint — PASS with no errors
+- migration baseline — PASS
+- `drizzle-kit check` — PASS
+- forward `drizzle-kit generate` no-op proof — PASS
+- vinext compatibility check — PASS
+- production build — PASS
+- Cloudflare preview dry-run — PASS
+- final immutable SHA/worktree check — PASS
 
-## Migration generation
+An earlier verifier run `34155582613` correctly stopped at five new `sort-imports` errors after targeted tests, full tests and type-check had passed. The five failures were limited to Entitlements import-member ordering; only those import orders were changed. The complete verifier was then rerun from a new immutable SHA and passed.
 
-The repository's migration baseline requires all three Drizzle outputs to stay aligned:
+## Stack / promotion rules
 
-- SQL migration
-- `meta/_journal.json`
-- latest generated snapshot
+Do not bypass the existing promotion sequence:
 
-The snapshot is large and MUST NOT be hand-authored. A temporary branch-only workflow has been added:
+1. finish real Auth preview and promote Auth #16
+2. refresh/reverify and promote Webhooks #15
+3. refresh/reverify and promote Billing #21
+4. refresh/reverify Entitlements #22 against the promoted Billing base before promotion
 
-- `.github/workflows/_entitlements-generate-migration.yml`
+PR #22 should remain draft until its upstream stack gates are satisfied.
 
-It runs real `pnpm db:generate` from the Entitlements schema and uploads the generated `0012` SQL, snapshot and journal as an artifact. Once captured into the branch, the temporary generator workflow should be removed before immutable final verification.
+## Do-not-do constraints
 
-Generation run started as GitHub Actions run `34155312274` from commit `a8b3c9d60eb2d11f944a5aa8d5772d4d9fe59aca`.
-
-## Do-not-do constraints still active
-
-- Do not modify verified Billing provider behavior.
-- Do not alter Auth -> Webhooks -> Billing promotion order.
+- Do not modify verified Billing provider behavior as part of Entitlements.
 - Do not couple Entitlements to Selar or NOWPayments.
-- Do not branch application behavior on Billing plan names/slugs.
-- Do not make frontend visibility the security boundary.
-- Do not add Usage/Credits, Wallet or quota accounting in PR #22.
-- Do not hand-author Drizzle snapshot state.
-- Keep PR #22 draft until generated migration and full immutable verification are clean.
+- Do not branch feature access on commercial plan names/slugs.
+- Do not trust frontend visibility as authorization.
+- Do not add Usage/Credits, Wallet or quota accounting into PR #22.
+- Do not hand-author Drizzle snapshots.
 
-## Exact next steps
+## Next Platform development boundary
 
-1. Collect the generated Drizzle migration artifact from run `34155312274` and commit exact generated SQL/snapshot/journal.
-2. Remove the temporary migration-generation workflow.
-3. Run targeted Entitlements tests and fix only evidence-backed failures.
-4. Run full tests, type-check, lint, migration baseline, `drizzle-kit check`, forward-generation no-op, vinext check, production build and Cloudflare dry-run.
-5. Record the immutable verified Entitlements SHA and verification run in this document.
-6. Keep PR #22 draft/stacked until Auth -> Webhooks -> Billing promotion gates are satisfied.
-7. After Entitlements is verified, begin Usage/Credits architecture — not implementation before design approval.
+The next architecture phase is **Usage/Credits**.
+
+Do not begin Usage/Credits implementation before its architecture is designed and approved. It must remain separate from Entitlements:
+
+- Entitlements answer whether a tenant may use a capability.
+- Usage/Credits answer how much is consumed/remaining and whether a metered operation may proceed or be charged.
+
+Keep the isolated frontend preview available while Platform development continues.
