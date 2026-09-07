@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   generate:
-    if: "${{ !contains(github.event.head_commit.message, 'db: generate billing core migration') }}"
+    if: "${{ !contains(github.event.head_commit.message, 'chore: generate billing core migration') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -101,5 +101,5 @@ jobs:
             printf '%s\n' "$staged" >&2
             exit 1
           }
-          git commit -m 'db: generate billing core migration'
+          HUSKY=0 git commit -m 'chore: generate billing core migration'
           git push origin HEAD:feat/mkety-billing-core-foundation
