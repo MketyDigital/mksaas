@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Database } from '@/shared/db';
 import { billingLedgerEntries, billingManualAdjustments } from '@/shared/db/schema';
 
+import { applyManualAdjustmentConsequences } from './manual-adjustment-consequences';
 import type {
   ManualAdjustmentCommand,
   ManualAdjustmentDependencies,
@@ -71,6 +72,8 @@ export function createManualAdjustmentDependencies(
           reversalOfEntryId: null,
           reference: command.reference ?? `manual-adjustment:${inserted.id}`,
         });
+
+        await applyManualAdjustmentConsequences(tx, command);
 
         return { adjustmentId: inserted.id, applied: true };
       });
