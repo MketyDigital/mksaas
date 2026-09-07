@@ -12,7 +12,7 @@ export const billingPeriods = appSchema.table(
     subscriptionId: uuid('subscription_id').notNull().references(() => billingSubscriptions.id, { onDelete: 'cascade' }),
     periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
     periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
-    amountDueMinor: bigint('amount_due_minor', { mode: 'number' }).notNull(),
+    amountDueMinor: bigint('amount_due_minor', { mode: 'bigint' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     collectionStatus: varchar('collection_status', { length: 24 }).notNull().default('open'),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
