@@ -1,9 +1,9 @@
 name: Migration generate baseline probe
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/mkety-auth-zitadel-vinext
+      - main
     paths:
       - '.github/workflows/_migration-generate-probe.yml'
 
