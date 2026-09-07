@@ -1,0 +1,23 @@
+name: Audit stale Auth and template references
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan tracked source, config and docs
+        shell: bash
+        run: |
+          echo '=== AUTH_OR_TEMPLATE_REFERENCES ==='
+          git grep -n -I -E '(auth0|next-auth|nextauth|@auth/|AUTH0_|NEXTAUTH_|Next\.js SaaS AI Template|next-saas-ai-starter)' -- ':!pnpm-lock.yaml' || true
+          echo '=== LOCKFILE_REFERENCES ==='
+          git grep -n -I -E '(next-auth|@auth/|auth0)' -- pnpm-lock.yaml || true
+          echo '=== END_AUDIT ==='
