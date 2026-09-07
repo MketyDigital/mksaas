@@ -1,12 +1,12 @@
 import type { ConsumeCreditsInput, CreditBalance, GrantCreditsInput } from '../types';
 import { USAGE_CREDIT_ERROR_CODES } from '../types';
+import { createUsageCreditService } from './service';
 import type {
   CreditLedgerRecord,
   StoredUsageRecord,
   UsageCreditSource,
   UsageCreditTransaction,
 } from './source';
-import { createUsageCreditService } from './service';
 
 class FakeUsageCreditSource implements UsageCreditSource {
   private accounts = new Map<string, CreditBalance>();
@@ -148,7 +148,7 @@ describe('usage credit service', () => {
     const replay = await service.consumeCredits(consume());
 
     expect(replay).toEqual(first);
-    expect(first.usage).toMatchObject({ meterKey: 'automation.run', quantity: 1n, creditsCharged: 80n });
+    expect(first.usage).toMatchObject({ meter: 'automation.run', quantity: 1n, creditsCharged: 80n });
     await expect(service.getCreditBalance('tenant-a')).resolves.toMatchObject({
       availableCredits: 20n,
       lifetimeConsumed: 80n,
