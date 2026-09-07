@@ -38,19 +38,39 @@ jobs:
               if updated != text:
                   path.write_text(updated)
 
-          project_config = Path('docs/PROJECT_CONFIGURATION.md')
-          if project_config.exists():
-              text = project_config.read_text()
-              text = text.replace('`AUTH0_*`', '`MKETY_AUTH_*`')
-              text = text.replace('Auth0 configuration', 'Mkety Auth OIDC configuration')
-              text = text.replace('Optional (for SSO)', 'Required for provider-backed sign-in')
-              project_config.write_text(text)
+          targeted_replacements = {
+              'docs/PROJECT_CONFIGURATION.md': [
+                  ('`AUTH0_*`', '`MKETY_AUTH_*`'),
+                  ('Auth0 configuration', 'Mkety Auth OIDC configuration'),
+                  ('Optional (for SSO)', 'Required for provider-backed sign-in'),
+              ],
+              'docs/PROJECT_STRUCTURE.md': [
+                  ('auth/[...nextauth]/    # Auth.js handlers', 'auth/                 # Mkety login/callback/logout/session routes'),
+              ],
+              'README.md': [
+                  ('- 🔐 **Auth.js v5 + Auth0** — SSO, database sessions, development credentials provider', '- 🔐 **Mkety Auth + ZITADEL adapter** — provider-neutral OIDC, Mkety-owned hashed sessions, DB-backed authorization'),
+                  ('| Framework    | Next.js 15 (App Router, RSC, Turbopack)               |', '| Framework    | Next.js 16 App Router + vinext on Cloudflare Workers     |'),
+                  ('| Auth         | Auth.js v5 + Auth0 (SSO) + database sessions          |', '| Auth         | Mkety Auth + replaceable ZITADEL OIDC adapter            |'),
+              ],
+              'docs/API.md': [
+                  ('- **Auth0** - Production SSO provider', '- **Mkety Auth** - provider-neutral application auth/session boundary with ZITADEL as the initial OIDC adapter'),
+              ],
+              'docs/GLOSSARY.md': [
+                  ('A **User** is an authentication entity managed by Auth.js (NextAuth). It represents a system access account with credentials (email, OAuth providers, etc.). A user can belong to multiple tenants and have different roles in each one.', 'A **User** is Mkety’s internal application identity. External identities are mapped through the provider-neutral Mkety Auth boundary, while tenant membership, roles, and permissions remain authoritative in Mkety data.'),
+              ],
+              'src/app/landing-data.ts': [
+                  ("'SSO (Auth0)'", "'Enterprise SSO'"),
+              ],
+          }
 
-          project_structure = Path('docs/PROJECT_STRUCTURE.md')
-          if project_structure.exists():
-              text = project_structure.read_text()
-              text = text.replace('auth/[...nextauth]/    # Auth.js handlers', 'auth/                 # Mkety login/callback/logout/session routes')
-              project_structure.write_text(text)
+          for name, replacements in targeted_replacements.items():
+              path = Path(name)
+              if not path.exists():
+                  continue
+              text = path.read_text()
+              for old, new in replacements:
+                  text = text.replace(old, new)
+              path.write_text(text)
           PY
 
       - name: Reject active legacy Auth or template references
@@ -59,7 +79,7 @@ jobs:
           set -o pipefail
           echo '=== ACTIVE_FORBIDDEN_REFERENCES ==='
           git grep -n -I -E '(auth0|Auth0|AUTH0_|next-auth|NextAuth|nextauth|@auth/|NEXTAUTH_|Next\.js SaaS AI Template|next-saas-ai-starter)' -- ':!pnpm-lock.yaml' \
-            | grep -v -E '^(docs/superpowers/|docs/AUTHENTICATION\.md:|docs/MKETY_AUTH_SOURCE_OF_TRUTH\.md:|\.envrc\.example:|src/features/auth/components/__tests__/LoginForm\.test\.tsx:|\.github/workflows/_auth-reference-audit\.yml:)' \
+            | grep -v -E '^(docs/superpowers/|docs/AUTHENTICATION\.md:|docs/MKETY_AUTH_SOURCE_OF_TRUTH\.md:|docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE\.md:|docs/DEPLOYMENT\.md:|\.envrc\.example:|src/features/auth/components/__tests__/LoginForm\.test\.tsx:|\.github/workflows/_auth-reference-audit\.yml:)' \
             | tee /tmp/active-forbidden.txt || true
           test ! -s /tmp/active-forbidden.txt
 
