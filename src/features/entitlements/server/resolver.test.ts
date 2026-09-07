@@ -1,4 +1,4 @@
-import { hasEntitlement, type EntitlementSource } from './resolver';
+import { type EntitlementSource, hasEntitlement } from './resolver';
 
 function source(overrides: Partial<EntitlementSource> = {}): EntitlementSource {
   return {
