@@ -13,7 +13,6 @@ import type { BillingRepository } from './repository';
 import {
   applySettlementInsideTransaction,
   type BillingSettlementTransaction,
-  type BillingSettlementTransactionContext,
 } from './settlement-transaction';
 
 type DrizzleBillingDatabase = Pick<Database, 'transaction'>;
