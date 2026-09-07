@@ -8,7 +8,6 @@ import { Toaster } from '@/shared/components/ui/sonner';
 
 /**
  * DM Sans — geometric, friendly, modern sans-serif.
- * Chosen over Inter (overused in AI-generated UIs) and Open Sans (less distinctive).
  * Same font for body and headings; differentiation via weight and letter-spacing.
  * See docs/DESIGN_SYSTEM.md Section 4: Typography.
  */
@@ -20,8 +19,8 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Mkety Platform | AI-Native Skills Management',
-  description: 'Production-ready Next.js SaaS boilerplate with multi-tenancy, AI assistant, and integrations',
+  title: 'Mkety Platform | Build, Automate, Deploy',
+  description: 'Build, automate, deploy, and manage digital products with Mkety Platform.',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
