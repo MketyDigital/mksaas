@@ -39,16 +39,19 @@ export interface GrantCreditsInput {
   actorUserId?: string | null;
 }
 
-export interface ConsumeCreditsInput {
+export interface RecordUsageInput {
   tenantId: string;
   meter: UsageMeterKey;
   quantity: bigint;
-  credits: bigint;
   idempotencyKey: string;
   source: string;
   projectId?: string | null;
   workspaceKey?: string | null;
   occurredAt?: Date;
+}
+
+export interface ConsumeCreditsInput extends RecordUsageInput {
+  credits: bigint;
 }
 
 export interface UsageRecord {
