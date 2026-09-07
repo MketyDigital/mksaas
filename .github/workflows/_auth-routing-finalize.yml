@@ -1,0 +1,53 @@
+name: Finalize DB-backed Auth routing
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mkety-auth-zitadel-vinext
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify migration baseline
+        run: pnpm db:check:migrations
+      - name: Verify DB-backed tenant routing regressions
+        run: pnpm exec jest --runInBand --detectOpenHandles --runTestsByPath 'src/app/team/page.test.ts' 'src/app/(auth)/select-tenant/page.test.ts'
+      - name: Verify full test suite
+        run: pnpm test
+      - name: Verify types
+        run: pnpm type-check
+      - name: Verify lint
+        run: pnpm lint
+      - name: Verify vinext compatibility
+        run: pnpx vinext check
+      - name: Verify production build
+        run: pnpm build
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+      - name: Verify isolated preview packaging
+        run: pnpm run deploy --env preview --dry-run
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+      - name: Remove temporary routing verification workflows
+        run: |
+          git config user.name 'Mkety Auth Cleanup Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm -f .github/workflows/_auth-routing-red.yml
+          git rm -f .github/workflows/_auth-routing-finalize.yml
+          git commit --no-verify -m 'chore: remove temporary auth routing verifiers'
+          git push origin HEAD:feat/mkety-auth-zitadel-vinext
