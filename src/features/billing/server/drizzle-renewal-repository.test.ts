@@ -13,7 +13,9 @@ function chain(result: unknown[] = []) {
 describe('createDrizzleRenewalRepository', () => {
   it('records a prepared renewal attempt inside a database transaction', async () => {
     const tx = { insert: jest.fn(() => chain([{ id: 'attempt-1' }])) };
-    const database = { transaction: jest.fn(async (callback: any) => callback(tx)) };
+    const database = {
+      transaction: jest.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    };
     const repository = createDrizzleRenewalRepository(database as never);
 
     await expect(repository.recordPreparedAttempt({
@@ -39,7 +41,9 @@ describe('createDrizzleRenewalRepository', () => {
       },
       update: jest.fn(() => updateChain),
     };
-    const database = { transaction: jest.fn(async (callback: any) => callback(tx)) };
+    const database = {
+      transaction: jest.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    };
     const repository = createDrizzleRenewalRepository(database as never);
 
     await repository.markPastDue({
@@ -67,7 +71,9 @@ describe('createDrizzleRenewalRepository', () => {
       },
       update: jest.fn(),
     };
-    const database = { transaction: jest.fn(async (callback: any) => callback(tx)) };
+    const database = {
+      transaction: jest.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    };
     const repository = createDrizzleRenewalRepository(database as never);
 
     await expect(repository.markPastDue({
