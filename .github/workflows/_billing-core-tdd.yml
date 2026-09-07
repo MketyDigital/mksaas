@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  billing-domain:
-    name: Billing domain TDD
+  billing-core:
+    name: Billing core TDD
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -34,5 +34,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Billing domain tests
-        run: pnpm test -- src/features/billing/domain/subscription-lifecycle.test.ts src/features/billing/domain/renewal-policy.test.ts --runInBand
+      - name: Run Billing core tests
+        run: pnpm test -- src/features/billing/domain/subscription-lifecycle.test.ts src/features/billing/domain/renewal-policy.test.ts src/shared/db/schema/billing.test.ts --runInBand
