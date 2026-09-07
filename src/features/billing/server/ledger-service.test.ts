@@ -1,9 +1,5 @@
-import {
-  type BillingLedgerRepository,
-  type LedgerEntry,
-  appendLedgerEntry,
-  reverseLedgerEntry,
-} from './ledger-service';
+import { appendLedgerEntry, reverseLedgerEntry } from './ledger-service';
+import type { BillingLedgerRepository, LedgerEntry } from './ledger-service';
 
 const payment: LedgerEntry = {
   id: 'ledger-1',
