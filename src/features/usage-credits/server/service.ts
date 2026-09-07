@@ -5,6 +5,8 @@ import {
   type ConsumeCreditsInput,
   type CreditMutationResult,
   type GrantCreditsInput,
+  type RecordUsageInput,
+  type UsageRecord,
 } from '../types';
 import { assertPositiveAmount, resolveIdempotency } from './engine';
 import type {
@@ -36,9 +38,9 @@ function storedGrantFingerprint(entry: CreditLedgerRecord): string {
   });
 }
 
-function consumeFingerprint(input: ConsumeCreditsInput): string {
+function usageFingerprint(input: RecordUsageInput, creditsCharged: bigint): string {
   return JSON.stringify({
-    credits: input.credits.toString(),
+    credits: creditsCharged.toString(),
     meterKey: input.meter,
     projectId: input.projectId ?? null,
     quantity: input.quantity.toString(),
@@ -47,7 +49,7 @@ function consumeFingerprint(input: ConsumeCreditsInput): string {
   });
 }
 
-function storedConsumeFingerprint(event: StoredUsageRecord): string {
+function storedUsageFingerprint(event: StoredUsageRecord): string {
   return JSON.stringify({
     credits: event.creditsCharged.toString(),
     meterKey: event.meterKey,
@@ -58,11 +60,30 @@ function storedConsumeFingerprint(event: StoredUsageRecord): string {
   });
 }
 
+function toUsageRecord(event: StoredUsageRecord): UsageRecord {
+  return {
+    id: event.id,
+    tenantId: event.tenantId,
+    meter: event.meterKey,
+    quantity: event.quantity,
+    creditsCharged: event.creditsCharged,
+    idempotencyKey: event.idempotencyKey,
+    occurredAt: event.occurredAt,
+  };
+}
+
 function requireBalance(balance: Awaited<ReturnType<UsageCreditTransaction['getCreditBalance']>>) {
   if (!balance) {
     throw new UsageCreditError(USAGE_CREDIT_ERROR_CODES.missingAccount, 'Credit account is not available.');
   }
   return balance;
+}
+
+function assertMeterAndQuantity(input: RecordUsageInput): void {
+  if (!isUsageMeterKey(input.meter)) {
+    throw new UsageCreditError(USAGE_CREDIT_ERROR_CODES.unknownMeter, 'Unknown usage meter.');
+  }
+  assertPositiveAmount(input.quantity);
 }
 
 export function createUsageCreditService(source: UsageCreditSource) {
@@ -116,13 +137,52 @@ export function createUsageCreditService(source: UsageCreditSource) {
       });
     },
 
+    async recordUsage(input: RecordUsageInput): Promise<UsageRecord> {
+      assertMeterAndQuantity(input);
+      const fingerprint = usageFingerprint(input, 0n);
+
+      return source.transaction(async (tx) => {
+        const existingUsage = await tx.findUsageByIdempotency(input.tenantId, input.idempotencyKey);
+        const existingLedger = await tx.findLedgerByIdempotency(input.tenantId, input.idempotencyKey);
+
+        if (existingLedger) {
+          throw new UsageCreditError(
+            USAGE_CREDIT_ERROR_CODES.idempotencyConflict,
+            'Idempotency key was already used for a credit mutation.',
+          );
+        }
+
+        if (existingUsage) {
+          resolveIdempotency({
+            existing: {
+              fingerprint: storedUsageFingerprint(existingUsage),
+              resultId: existingUsage.id,
+            },
+            fingerprint,
+          });
+          return toUsageRecord(existingUsage);
+        }
+
+        const usage = await tx.insertUsage({
+          tenantId: input.tenantId,
+          meterKey: input.meter,
+          quantity: input.quantity,
+          creditsCharged: 0n,
+          idempotencyKey: input.idempotencyKey,
+          projectId: input.projectId ?? null,
+          workspaceKey: input.workspaceKey ?? null,
+          source: input.source,
+          occurredAt: input.occurredAt ?? new Date(),
+        });
+
+        return toUsageRecord(usage);
+      });
+    },
+
     async consumeCredits(input: ConsumeCreditsInput): Promise<CreditMutationResult> {
-      if (!isUsageMeterKey(input.meter)) {
-        throw new UsageCreditError(USAGE_CREDIT_ERROR_CODES.unknownMeter, 'Unknown usage meter.');
-      }
-      assertPositiveAmount(input.quantity);
+      assertMeterAndQuantity(input);
       assertPositiveAmount(input.credits);
-      const fingerprint = consumeFingerprint(input);
+      const fingerprint = usageFingerprint(input, input.credits);
 
       return source.transaction(async (tx) => {
         const existingUsage = await tx.findUsageByIdempotency(input.tenantId, input.idempotencyKey);
@@ -138,7 +198,7 @@ export function createUsageCreditService(source: UsageCreditSource) {
 
           resolveIdempotency({
             existing: {
-              fingerprint: storedConsumeFingerprint(existingUsage),
+              fingerprint: storedUsageFingerprint(existingUsage),
               resultId: existingLedger.id,
             },
             fingerprint,
@@ -147,15 +207,7 @@ export function createUsageCreditService(source: UsageCreditSource) {
           return {
             balance: requireBalance(await tx.getCreditBalance(input.tenantId)),
             ledgerEntryId: existingLedger.id,
-            usage: {
-              id: existingUsage.id,
-              tenantId: existingUsage.tenantId,
-              meter: existingUsage.meterKey,
-              quantity: existingUsage.quantity,
-              creditsCharged: existingUsage.creditsCharged,
-              idempotencyKey: existingUsage.idempotencyKey,
-              occurredAt: existingUsage.occurredAt,
-            },
+            usage: toUsageRecord(existingUsage),
           };
         }
 
@@ -175,7 +227,6 @@ export function createUsageCreditService(source: UsageCreditSource) {
           );
         }
 
-        const occurredAt = input.occurredAt ?? new Date();
         const usage = await tx.insertUsage({
           tenantId: input.tenantId,
           meterKey: input.meter,
@@ -185,7 +236,7 @@ export function createUsageCreditService(source: UsageCreditSource) {
           projectId: input.projectId ?? null,
           workspaceKey: input.workspaceKey ?? null,
           source: input.source,
-          occurredAt,
+          occurredAt: input.occurredAt ?? new Date(),
         });
         const ledger = await tx.insertLedger({
           tenantId: input.tenantId,
@@ -202,15 +253,7 @@ export function createUsageCreditService(source: UsageCreditSource) {
         return {
           balance,
           ledgerEntryId: ledger.id,
-          usage: {
-            id: usage.id,
-            tenantId: usage.tenantId,
-            meter: usage.meterKey,
-            quantity: usage.quantity,
-            creditsCharged: usage.creditsCharged,
-            idempotencyKey: usage.idempotencyKey,
-            occurredAt: usage.occurredAt,
-          },
+          usage: toUsageRecord(usage),
         };
       });
     },
