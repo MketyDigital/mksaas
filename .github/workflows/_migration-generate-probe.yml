@@ -1,0 +1,47 @@
+name: Migration generate baseline probe
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+    paths:
+      - '.github/workflows/_migration-generate-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+      DATABASE_URL: postgresql://probe:probe@localhost:5432/probe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Snapshot migration tree before generate
+        run: |
+          find src/shared/db/migrations -maxdepth 2 -type f -print | sort > /tmp/migrations-before.txt
+          git status --short
+      - name: Probe Drizzle generation
+        run: pnpm db:generate --name=baseline_probe
+      - name: Show generated drift
+        if: always()
+        run: |
+          echo '=== git status ==='
+          git status --short
+          echo '=== migration files after ==='
+          find src/shared/db/migrations -maxdepth 2 -type f -print | sort
+          echo '=== changed file summary ==='
+          git diff --stat || true
+          echo '=== generated SQL files ==='
+          git status --porcelain | awk '{print $2}' | grep '^src/shared/db/migrations/.*\.sql$' || true
