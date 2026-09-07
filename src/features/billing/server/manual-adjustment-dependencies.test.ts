@@ -22,6 +22,8 @@ function chain(result: unknown[] = []) {
   api.values = jest.fn(next);
   api.onConflictDoNothing = jest.fn(next);
   api.returning = jest.fn(async () => result);
+  api.set = jest.fn(next);
+  api.where = jest.fn(async () => []);
   return api;
 }
 
@@ -36,11 +38,33 @@ function makeDatabase(duplicate = false) {
           return { id: 'adjustment-existing' };
         }),
       },
+      billingPeriods: {
+        findFirst: jest.fn(async () => {
+          calls.push('load-period');
+          return {
+            id: 'period-1',
+            tenantId: 'tenant-1',
+            subscriptionId: 'subscription-1',
+            amountDueMinor: 1999n,
+            currency: 'USD',
+          };
+        }),
+      },
+      billingSubscriptions: {
+        findFirst: jest.fn(async () => {
+          calls.push('load-subscription');
+          return { id: 'subscription-1', tenantId: 'tenant-1', status: 'active' };
+        }),
+      },
     },
     insert: jest.fn(() => {
       insertCount += 1;
       calls.push(insertCount === 1 ? 'insert-adjustment' : 'insert-ledger');
       return chain(insertCount === 1 && !duplicate ? [{ id: 'adjustment-new' }] : []);
+    }),
+    update: jest.fn(() => {
+      calls.push('update-period');
+      return chain();
     }),
   };
   const database = {
@@ -64,15 +88,23 @@ describe('createManualAdjustmentDependencies', () => {
     expect(permissionResolver).toHaveBeenCalledWith('acme', 'billing.manage', 'user-1');
   });
 
-  it('persists adjustment and append-only ledger effect inside one transaction', async () => {
+  it('persists adjustment, ledger and period consequence inside one transaction', async () => {
     const { database, calls } = makeDatabase();
     const dependencies = createManualAdjustmentDependencies(database as never, async () => true);
 
     await expect(dependencies.applyAtomically(command)).resolves.toEqual({ adjustmentId: 'adjustment-new', applied: true });
-    expect(calls).toEqual(['transaction-start', 'insert-adjustment', 'insert-ledger', 'transaction-end']);
+    expect(calls).toEqual([
+      'transaction-start',
+      'insert-adjustment',
+      'insert-ledger',
+      'load-period',
+      'update-period',
+      'load-subscription',
+      'transaction-end',
+    ]);
   });
 
-  it('returns an existing idempotent adjustment without appending a second ledger entry', async () => {
+  it('returns an existing idempotent adjustment without appending a second financial effect', async () => {
     const { database, calls } = makeDatabase(true);
     const dependencies = createManualAdjustmentDependencies(database as never, async () => true);
 
