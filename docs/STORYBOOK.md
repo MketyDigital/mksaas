@@ -1,6 +1,6 @@
 # Storybook
 
-Next.js SaaS AI Template uses [Storybook](https://storybook.js.org/) for developing, documenting, and visually testing UI components in isolation.
+Mkety Platform uses [Storybook](https://storybook.js.org/) for developing, documenting, and visually testing UI components in isolation.
 
 ---
 

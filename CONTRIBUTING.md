@@ -1,4 +1,4 @@
-# Contributing to Next.js SaaS AI Template
+# Contributing to Mkety Platform
 
 Thank you for contributing! This document guides human developers after reading the README.
 

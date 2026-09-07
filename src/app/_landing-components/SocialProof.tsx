@@ -30,7 +30,7 @@ const testimonials: Testimonial[] = [
     role: 'VP of Engineering',
     company: 'TechCorp',
     image: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-    text: 'Next.js SaaS AI Template transformed how we build and automate our workflows. Everything is now transparent and data-driven.',
+    text: 'Mkety Platform transformed how we build and automate our workflows. Everything is now transparent and data-driven.',
     rating: 5,
   },
   {
@@ -70,7 +70,7 @@ export function SocialProof() {
       <div>
         <h2 className="text-3xl font-bold text-center mb-4">Trusted by teams worldwide</h2>
         <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto">
-          See how organizations are using Next.js SaaS AI Template to automate and scale their workflows.
+          See how organizations are using Mkety Platform to automate and scale their workflows.
         </p>
 
         <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
@@ -131,7 +131,7 @@ export function SocialProof() {
           ))}
         </div>
         <p className="text-center text-sm text-muted-foreground mt-8">
-          Interested in sponsoring Next.js SaaS AI Template?{' '}
+          Interested in sponsoring Mkety Platform?{' '}
           <a href="mailto:sponsors@example.com" className="text-primary hover:underline font-medium">
             Get in touch
           </a>

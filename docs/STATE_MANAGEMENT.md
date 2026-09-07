@@ -1,6 +1,6 @@
 # 🗃️ State Management
 
-Next.js SaaS AI Template uses a combination of React Server Components, React Context, and local state. There is no need for a single centralized store.
+Mkety Platform uses a combination of React Server Components, React Context, and local state. There is no need for a single centralized store.
 
 ## Server State (Recommended)
 

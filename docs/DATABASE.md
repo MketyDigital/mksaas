@@ -1,6 +1,6 @@
 # 🗄️ Database
 
-The Next.js SaaS AI Template uses **Drizzle ORM** with **PostgreSQL** and **pgvector** for AI embeddings.
+The Mkety Platform uses **Drizzle ORM** with **PostgreSQL** and **pgvector** for AI embeddings.
 
 ## Setup
 

@@ -171,7 +171,7 @@ export const LANDING_PRICING_PLANS: PricingPlan[] = [
     name: 'Enterprise',
     price: 'Demo',
     description: 'For organizations with advanced needs.',
-    features: ['Everything in Pro', 'SSO (Auth0)', 'Custom integrations', 'SLA guarantee', 'Dedicated support'],
+    features: ['Everything in Pro', 'Enterprise SSO', 'Custom integrations', 'SLA guarantee', 'Dedicated support'],
     cta: 'Contact us',
   },
 ];

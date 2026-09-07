@@ -7,7 +7,7 @@ order: 9
 
 # Integrations
 
-Next.js SaaS AI Template can connect to external systems so you can sync people, skills, or activity and enrich profiles. Admins configure **integrations** (OAuth, API keys, webhooks) and **data mapping** so the right data flows in and out.
+Mkety Platform can connect to external systems so you can sync people, skills, or activity and enrich profiles. Admins configure **integrations** (OAuth, API keys, webhooks) and **data mapping** so the right data flows in and out.
 
 ## Supported Integrations (Overview)
 
@@ -31,22 +31,22 @@ GitHub is the primary active integration. Once configured:
 3. In **Admin** → **Integrations** → **GitHub**, enter credentials and save.
 4. Members can connect their GitHub account from their profile settings.
 
-On each sync, Next.js SaaS AI Template **automatically creates an evidence record** on the person's profile showing repos scanned, languages found, skills inferred, and contributions.
+On each sync, Mkety Platform **automatically creates an evidence record** on the person's profile showing repos scanned, languages found, skills inferred, and contributions.
 
 ## Webhooks (Active — Outbound)
 
-**Webhooks** send events from Next.js SaaS AI Template to your system (e.g. "person created", "assessment submitted"):
+**Webhooks** send events from Mkety Platform to your system (e.g. "person created", "assessment submitted"):
 
 1. **Admin** → **Integrations** → **Webhooks**.
 2. **Add webhook** — URL, optional secret for signing payloads, and **event types** to subscribe to.
-3. Save. Next.js SaaS AI Template will POST a JSON payload to your URL on each selected event. Implement idempotency and verify the signature.
+3. Save. Mkety Platform will POST a JSON payload to your URL on each selected event. Implement idempotency and verify the signature.
 
 ## OAuth Setup (for coming soon integrations)
 
 For integrations that use **OAuth** (LinkedIn, Slack, Google Workspace, GitLab):
 
 1. **Create an app** in the provider's developer portal. Get **Client ID** and **Client Secret**.
-2. **Set redirect URI** — use the URL Next.js SaaS AI Template provides. Must match exactly.
+2. **Set redirect URI** — use the URL Mkety Platform provides. Must match exactly.
 3. In **Admin** → **Integrations**, select the integration and enter credentials.
 4. Members authorize via the provider's consent screen.
 

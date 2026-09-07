@@ -1,6 +1,6 @@
 # ⚙️ Project Configuration
 
-Next.js SaaS AI Template is configured with modern tooling for type safety, code quality, and developer experience.
+Mkety Platform is configured with modern tooling for type safety, code quality, and developer experience.
 
 ## Tech Stack
 
@@ -83,7 +83,7 @@ const appName = env.NEXT_PUBLIC_APP_NAME; // Client safe
 | -------------- | ----------------------------- | ------------------------------- |
 | `DATABASE_URL` | PostgreSQL connection string  | `postgresql://...@localhost`    |
 | `AUTH_SECRET`  | Auth.js secret (min 32 chars) | Dev default (override in prod!) |
-| `AUTH0_*`      | Auth0 configuration           | Optional (for SSO)              |
+| `MKETY_AUTH_*`      | Mkety Auth OIDC configuration           | Required for provider-backed sign-in              |
 
 See `.env.example` for the complete list of available variables.
 

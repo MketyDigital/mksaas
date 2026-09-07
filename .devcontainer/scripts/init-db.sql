@@ -1,5 +1,5 @@
 -- =============================================================================
--- PostgreSQL initialization script for Next.js SaaS AI Template
+-- PostgreSQL initialization script for Mkety Platform
 -- This script runs when the database container is first created
 -- =============================================================================
 
@@ -25,5 +25,5 @@ GRANT ALL PRIVILEGES ON DATABASE saas_template_dev TO saas_app;
 -- Log initialization
 DO $$
 BEGIN
-    RAISE NOTICE 'Next.js SaaS AI Template database initialized with extensions: vector, uuid-ossp, pg_trgm';
+    RAISE NOTICE 'Mkety Platform database initialized with extensions: vector, uuid-ossp, pg_trgm';
 END $$;

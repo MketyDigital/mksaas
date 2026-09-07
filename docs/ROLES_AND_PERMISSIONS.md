@@ -1,6 +1,6 @@
 # Roles and Permissions (PBAC)
 
-The Next.js SaaS AI Template uses a **permission-based** model (PBAC). Authorization is always resolved from the database: `tenant_membership_roles` → `role_permissions` → `permissions`. **A person can have multiple roles per tenant**; their effective permissions are the **union** of all their roles' permissions. Roles are named bundles of permissions; the decision "can this user do X?" is always `hasPermission(tenantSlug, permissionKey)` against the DB.
+The Mkety Platform uses a **permission-based** model (PBAC). Authorization is always resolved from the database: `tenant_membership_roles` → `role_permissions` → `permissions`. **A person can have multiple roles per tenant**; their effective permissions are the **union** of all their roles' permissions. Roles are named bundles of permissions; the decision "can this user do X?" is always `hasPermission(tenantSlug, permissionKey)` against the DB.
 
 ## Feature flag: allowCustomRoles
 
