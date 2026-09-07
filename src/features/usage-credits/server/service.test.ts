@@ -157,6 +157,26 @@ describe('usage credit service', () => {
     await expect(service.getCreditLedger('tenant-a')).resolves.toHaveLength(2);
   });
 
+  it('records zero-cost usage idempotently without touching the credit ledger', async () => {
+    const source = new FakeUsageCreditSource();
+    const service = createUsageCreditService(source);
+    const input = {
+      tenantId: 'tenant-a',
+      meter: 'webhook.delivery' as const,
+      quantity: 2n,
+      idempotencyKey: 'usage-only-1',
+      source: 'test',
+    };
+
+    const first = await service.recordUsage(input);
+    const replay = await service.recordUsage(input);
+
+    expect(replay).toEqual(first);
+    expect(first).toMatchObject({ meter: 'webhook.delivery', quantity: 2n, creditsCharged: 0n });
+    await expect(service.getTenantUsage('tenant-a')).resolves.toHaveLength(1);
+    await expect(service.getCreditLedger('tenant-a')).resolves.toHaveLength(0);
+  });
+
   it('rejects insufficient credits without leaving partial usage or ledger writes', async () => {
     const source = new FakeUsageCreditSource();
     const service = createUsageCreditService(source);
