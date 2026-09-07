@@ -1,4 +1,4 @@
-name: Migration generate baseline probe
+name: Migration metadata repair probe
 
 on:
   pull_request:
@@ -27,20 +27,55 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Snapshot migration tree before generate
+      - name: Preserve manual SQL bodies
         run: |
-          find src/shared/db/migrations -maxdepth 2 -type f -print | sort > /tmp/migrations-before.txt
-          git status --short
-      - name: Probe Drizzle generation
-        run: pnpm db:generate --name=baseline_probe
-      - name: Show generated drift
+          cp src/shared/db/migrations/0008_workflows.sql /tmp/0008_workflows.sql
+          cp src/shared/db/migrations/0009_mkety_auth.sql /tmp/0009_mkety_auth.sql
+          rm src/shared/db/migrations/0008_workflows.sql
+          rm src/shared/db/migrations/0009_mkety_auth.sql
+      - name: Let Drizzle regenerate missing metadata as custom migrations
+        run: |
+          pnpm db:generate --custom --name=workflows
+          pnpm db:generate --custom --name=mkety_auth
+      - name: Restore authoritative manual SQL bodies
+        run: |
+          cp /tmp/0008_workflows.sql src/shared/db/migrations/0008_workflows.sql
+          cp /tmp/0009_mkety_auth.sql src/shared/db/migrations/0009_mkety_auth.sql
+      - name: Verify repaired metadata shape
+        run: |
+          test -f src/shared/db/migrations/meta/0008_snapshot.json
+          test -f src/shared/db/migrations/meta/0009_snapshot.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const journal = JSON.parse(fs.readFileSync('src/shared/db/migrations/meta/_journal.json', 'utf8'));
+          const tags = journal.entries.map((entry) => entry.tag);
+          if (tags.at(-2) !== '0008_workflows' || tags.at(-1) !== '0009_mkety_auth') {
+            throw new Error(`Unexpected journal tail: ${tags.slice(-3).join(', ')}`);
+          }
+          NODE
+          cmp /tmp/0008_workflows.sql src/shared/db/migrations/0008_workflows.sql
+          cmp /tmp/0009_mkety_auth.sql src/shared/db/migrations/0009_mkety_auth.sql
+      - name: Prove forward generation is clean
+        run: |
+          pnpm db:generate --name=forward_probe
+          if find src/shared/db/migrations -maxdepth 1 -type f -name '0010_*.sql' | grep -q .; then
+            echo 'Forward generation still produced a new migration:' >&2
+            find src/shared/db/migrations -maxdepth 1 -type f -name '0010_*.sql' -print >&2
+            exit 1
+          fi
+      - name: Validate migration baseline
+        run: |
+          pnpm db:check:migrations
+          pnpm exec drizzle-kit check
+      - name: Show repair-only drift
         if: always()
         run: |
           echo '=== git status ==='
           git status --short
-          echo '=== migration files after ==='
-          find src/shared/db/migrations -maxdepth 2 -type f -print | sort
-          echo '=== changed file summary ==='
+          echo '=== changed summary ==='
           git diff --stat || true
-          echo '=== generated SQL files ==='
-          git status --porcelain | awk '{print $2}' | grep '^src/shared/db/migrations/.*\.sql$' || true
+          echo '=== journal diff ==='
+          git diff -- src/shared/db/migrations/meta/_journal.json || true
+          echo '=== SQL body hashes (must match backups) ==='
+          sha256sum /tmp/0008_workflows.sql src/shared/db/migrations/0008_workflows.sql || true
+          sha256sum /tmp/0009_mkety_auth.sql src/shared/db/migrations/0009_mkety_auth.sql || true
