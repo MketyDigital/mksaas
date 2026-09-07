@@ -1,4 +1,4 @@
-name: Webhook Auth refresh diagnostic
+name: Integrate verified Auth baseline into Webhooks
 
 on:
   pull_request:
@@ -8,33 +8,123 @@ on:
       - '.github/workflows/_webhook-auth-refresh-diagnostic.yml'
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  CI: 'true'
+  SKIP_ENV_VALIDATION: 'true'
+  DATABASE_URL: postgresql://probe:probe@localhost:5432/probe
+  WEBHOOK_BRANCH: feat/mkety-automation-webhook-trigger
+  AUTH_BRANCH: feat/mkety-auth-zitadel-vinext
+  EXPECTED_AUTH_SHA: 42d10cdbbd0ae51c9158539f0df2982e62c34bf1
 
 jobs:
-  diagnose:
+  integrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: feat/mkety-automation-webhook-trigger
           fetch-depth: 0
-      - name: Fetch verified Auth branch
-        run: git fetch origin feat/mkety-auth-zitadel-vinext
-      - name: Diagnose Auth merge conflicts
+          persist-credentials: true
+      - name: Fetch and pin verified Auth head
+        run: |
+          git fetch origin "$AUTH_BRANCH"
+          actual="$(git rev-parse "origin/$AUTH_BRANCH")"
+          echo "Auth head: $actual"
+          test "$actual" = "$EXPECTED_AUTH_SHA"
+      - name: Merge Auth and accept only the diagnosed journal conflict
         run: |
           git config user.name 'Mkety Webhook Integration Bot'
           git config user.email 'actions@users.noreply.github.com'
           set +e
-          git merge --no-commit --no-ff origin/feat/mkety-auth-zitadel-vinext
+          git merge --no-commit --no-ff "origin/$AUTH_BRANCH"
           status=$?
           set -e
-          echo "merge_status=$status"
-          echo '=== unmerged files ==='
-          git diff --name-only --diff-filter=U | sort
-          echo '=== staged merge summary ==='
-          git diff --cached --stat || true
-          if [ "$status" -ne 0 ]; then
-            test -n "$(git diff --name-only --diff-filter=U)"
-            exit 1
-          fi
-          git merge --abort
+          test "$status" -ne 0
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U | sort)
+          printf '%s\n' "${conflicts[@]}"
+          test "${#conflicts[@]}" -eq 1
+          test "${conflicts[0]}" = 'src/shared/db/migrations/meta/_journal.json'
+          git checkout --theirs src/shared/db/migrations/meta/_journal.json
+          git add src/shared/db/migrations/meta/_journal.json
+          test -z "$(git diff --name-only --diff-filter=U)"
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Preserve authoritative Webhook SQL
+        run: |
+          cp src/shared/db/migrations/0010_automation_webhook_trigger.sql /tmp/0010_automation_webhook_trigger.sql
+          sha256sum /tmp/0010_automation_webhook_trigger.sql
+          rm src/shared/db/migrations/0010_automation_webhook_trigger.sql
+      - name: Let Drizzle generate Webhook 0010 metadata
+        run: |
+          pnpm db:generate --custom --name=automation_webhook_trigger
+          test -f src/shared/db/migrations/0010_automation_webhook_trigger.sql
+          test -f src/shared/db/migrations/meta/0010_snapshot.json
+          cp src/shared/db/migrations/meta/_journal.json /tmp/journal-through-0010.json
+      - name: Restore authoritative Webhook SQL byte-for-byte
+        run: |
+          cp /tmp/0010_automation_webhook_trigger.sql src/shared/db/migrations/0010_automation_webhook_trigger.sql
+          cmp /tmp/0010_automation_webhook_trigger.sql src/shared/db/migrations/0010_automation_webhook_trigger.sql
+      - name: Capture merged Webhook schema as post-0010 snapshot
+        run: |
+          pnpm db:generate --name=current_webhook_schema_capture
+          test -f src/shared/db/migrations/0011_current_webhook_schema_capture.sql
+          test -f src/shared/db/migrations/meta/0011_snapshot.json
+          cp src/shared/db/migrations/meta/0011_snapshot.json src/shared/db/migrations/meta/0010_snapshot.json
+          cp /tmp/journal-through-0010.json src/shared/db/migrations/meta/_journal.json
+          rm src/shared/db/migrations/0011_current_webhook_schema_capture.sql
+          rm src/shared/db/migrations/meta/0011_snapshot.json
+      - name: Prove forward generation is clean
+        run: |
+          before="$(find src/shared/db/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | sha256sum | cut -d' ' -f1)"
+          pnpm db:generate --name=forward_probe
+          after="$(find src/shared/db/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | sha256sum | cut -d' ' -f1)"
+          test "$before" = "$after"
+          test ! -e src/shared/db/migrations/0011_forward_probe.sql
+          cmp /tmp/0010_automation_webhook_trigger.sql src/shared/db/migrations/0010_automation_webhook_trigger.sql
+      - name: Verify migration baseline
+        run: |
+          pnpm db:check:migrations
+          pnpm exec drizzle-kit check
+          node - <<'NODE'
+          const fs = require('fs');
+          const j = JSON.parse(fs.readFileSync('src/shared/db/migrations/meta/_journal.json', 'utf8'));
+          const tail = j.entries.slice(-2).map((entry) => entry.tag);
+          if (tail[0] !== '0009_mkety_auth' || tail[1] !== '0010_automation_webhook_trigger') {
+            throw new Error(`Unexpected journal tail: ${tail.join(', ')}`);
+          }
+          if (!fs.existsSync('src/shared/db/migrations/meta/0010_snapshot.json')) {
+            throw new Error('Missing Webhook 0010 snapshot');
+          }
+          NODE
+      - name: Run full tests
+        run: pnpm test
+      - name: Run type-check
+        run: pnpm type-check
+      - name: Run lint
+        run: pnpm lint
+      - name: Check vinext compatibility
+        run: pnpx vinext check
+      - name: Build production artifact
+        run: pnpm build
+      - name: Validate isolated preview packaging
+        run: pnpm run deploy --env preview --dry-run
+      - name: Commit verified Auth/Webhook integration
+        run: |
+          cmp /tmp/0010_automation_webhook_trigger.sql src/shared/db/migrations/0010_automation_webhook_trigger.sql
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git add -A
+          test -z "$(git diff --cached --name-only | grep '^src/shared/db/migrations/0011_' || true)"
+          git status --short
+          HUSKY=0 git commit -m 'merge: refresh Webhooks onto verified Auth baseline'
+          test -z "$(git status --porcelain)"
+          git push origin "HEAD:$WEBHOOK_BRANCH"
