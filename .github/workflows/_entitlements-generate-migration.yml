@@ -1,0 +1,54 @@
+name: Entitlements Migration Generation
+
+on:
+  push:
+    branches:
+      - feat/mkety-entitlements-core
+
+permissions:
+  contents: read
+
+concurrency:
+  group: entitlements-migration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Generate Entitlements Drizzle migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SKIP_ENV_VALIDATION: 'true'
+      DATABASE_URL: postgresql://localhost/placeholder
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Drizzle migration
+        run: pnpm db:generate
+
+      - name: Show generated migration diff
+        run: git status --short
+
+      - name: Upload generated migration state
+        uses: actions/upload-artifact@v4
+        with:
+          name: entitlements-drizzle-migration
+          path: |
+            src/shared/db/migrations/0012_*.sql
+            src/shared/db/migrations/meta/0012_snapshot.json
+            src/shared/db/migrations/meta/_journal.json
+          if-no-files-found: error
