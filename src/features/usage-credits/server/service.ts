@@ -259,3 +259,38 @@ export function createUsageCreditService(source: UsageCreditSource) {
     },
   };
 }
+
+type UsageCreditService = ReturnType<typeof createUsageCreditService>;
+
+let defaultServicePromise: Promise<UsageCreditService> | null = null;
+
+function getDefaultService(): Promise<UsageCreditService> {
+  defaultServicePromise ??= import('./drizzle-source').then(({ drizzleUsageCreditSource }) =>
+    createUsageCreditService(drizzleUsageCreditSource),
+  );
+  return defaultServicePromise;
+}
+
+export async function getCreditBalance(tenantId: string) {
+  return (await getDefaultService()).getCreditBalance(tenantId);
+}
+
+export async function getTenantUsage(tenantId: string) {
+  return (await getDefaultService()).getTenantUsage(tenantId);
+}
+
+export async function getCreditLedger(tenantId: string) {
+  return (await getDefaultService()).getCreditLedger(tenantId);
+}
+
+export async function grantCredits(input: GrantCreditsInput) {
+  return (await getDefaultService()).grantCredits(input);
+}
+
+export async function recordUsage(input: RecordUsageInput) {
+  return (await getDefaultService()).recordUsage(input);
+}
+
+export async function consumeCredits(input: ConsumeCreditsInput) {
+  return (await getDefaultService()).consumeCredits(input);
+}
