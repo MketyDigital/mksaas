@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { createBillingSummaryHandler, type BillingSummaryRouteDependencies } from './route';
+import { type BillingSummaryRouteDependencies, createBillingSummaryHandler } from './route';
 
 const summary = {
   plan: { key: 'pro', name: 'Pro', version: 3 },
