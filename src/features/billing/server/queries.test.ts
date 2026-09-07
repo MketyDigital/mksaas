@@ -1,4 +1,4 @@
-import { getTenantBillingSummary, type BillingSummarySource } from './queries';
+import { type BillingSummarySource, getTenantBillingSummary } from './queries';
 
 const source: BillingSummarySource = {
   async getCurrentBillingState(tenantId) {
