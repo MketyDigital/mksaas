@@ -6,9 +6,9 @@
  * Server actions for managing tenant invitations.
  */
 
-import { randomBytes } from 'crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { randomBytes } from 'crypto';
 
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
@@ -66,7 +66,7 @@ function generateToken(): string {
 }
 
 /**
- * Build the invite URL from the Mkety application origin.
+ * Build the invite URL
  */
 function buildInviteUrl(tenantSlug: string, token: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -125,176 +125,67 @@ export async function createInvite(
       });
 
       if (existingMembership) {
-        return { success: false, error: 'This user is already a member of this organization' };
+        return { success: false, error: 'This email is already a member of this tenant' };
       }
     }
 
-    // Resolve initial role ID: provided roleId, or tenant's "member" role
-    let initialRoleId = input.roleId;
-    if (!initialRoleId) {
-      const memberRole = await db.query.roles.findFirst({
-        where: and(eq(schema.roles.tenantId, tenant.id), eq(schema.roles.name, 'member')),
-        columns: { id: true },
-      });
-      initialRoleId = memberRole?.id;
-    }
-
+    // Generate token and calculate expiration
     const token = generateToken();
     const expiresInDays = input.expiresInDays ?? 7;
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresInDays);
 
+    // Check if the current user exists in users table (for FK constraint)
+    const inviter = await db.query.users.findFirst({
+      where: eq(schema.users.id, session.userId),
+    });
+
+    let role: TenantRole = input.role ?? 'member';
+    let roleId: string | null = null;
+    let roleName: string | null = null;
+
+    if (input.roleId) {
+      const roleRow = await db.query.roles.findFirst({
+        where: and(eq(schema.roles.id, input.roleId), eq(schema.roles.tenantId, tenant.id)),
+      });
+      if (roleRow) {
+        roleId = roleRow.id;
+        roleName = roleRow.name;
+        if (roleRow.slug === 'member' || roleRow.slug === 'manager' || roleRow.slug === 'admin') {
+          role = roleRow.slug as TenantRole;
+        }
+      }
+    } else {
+      // Default to tenant "member" role so invite always has a roleId for acceptInvite
+      const memberRole = await db.query.roles.findFirst({
+        where: and(eq(schema.roles.tenantId, tenant.id), eq(schema.roles.slug, 'member')),
+        columns: { id: true, name: true },
+      });
+      if (memberRole) {
+        roleId = memberRole.id;
+        roleName = memberRole.name;
+        role = 'member';
+      }
+    }
+
+    // Create invitation
     const [invite] = await db
       .insert(schema.tenantInvitations)
       .values({
         tenantId: tenant.id,
         email: input.email.toLowerCase(),
         token,
-        role: input.role ?? 'member',
-        roleId: initialRoleId,
+        role,
+        roleId,
         firstName: input.firstName,
         lastName: input.lastName,
         message: input.message,
-        invitedById: session.userId,
         expiresAt,
+        invitedByUserId: inviter ? session.userId : null,
       })
       .returning();
 
-    // Get inviter details
-    const inviter = await db.query.users.findFirst({
-      where: eq(schema.users.id, session.userId),
-      columns: { id: true, name: true, email: true },
-    });
-
-    const inviteWithDetails: InviteWithDetails = {
-      ...invite,
-      roleId: invite.roleId ?? null,
-      roleName: null,
-      invitedBy: inviter ?? null,
-      inviteUrl: buildInviteUrl(tenantSlug, token),
-    };
-
-    logger.info({ tenantSlug, inviteId: invite.id, email: input.email }, 'Tenant invite created');
-
-    revalidatePath(`/t/${tenantSlug}/admin/invites`);
-
-    return { success: true, data: inviteWithDetails };
-  } catch (error) {
-    logger.error({ tenantSlug, error }, 'Failed to create tenant invite');
-    return { success: false, error: 'Failed to create invitation' };
-  }
-}
-
-/**
- * List invitations for a tenant
- */
-export async function listInvites(
-  tenantSlug: string,
-  page = 1,
-  pageSize = 20,
-): Promise<AdminActionResult<PaginatedResult<InviteWithDetails>>> {
-  const session = await requireTenantAdmin(tenantSlug);
-  if (!session) {
-    return { success: false, error: 'Unauthorized' };
-  }
-
-  try {
-    const tenant = await db.query.tenants.findFirst({
-      where: eq(schema.tenants.slug, tenantSlug),
-    });
-
-    if (!tenant) {
-      return { success: false, error: 'Tenant not found' };
-    }
-
-    const offset = (page - 1) * pageSize;
-
-    const [invites, countResult] = await Promise.all([
-      db.query.tenantInvitations.findMany({
-        where: eq(schema.tenantInvitations.tenantId, tenant.id),
-        orderBy: [desc(schema.tenantInvitations.createdAt)],
-        limit: pageSize,
-        offset,
-        with: {
-          invitedBy: {
-            columns: { id: true, name: true, email: true },
-          },
-          roleRef: {
-            columns: { id: true, name: true },
-          },
-        },
-      }),
-      db.$count(schema.tenantInvitations, eq(schema.tenantInvitations.tenantId, tenant.id)),
-    ]);
-
-    const data: InviteWithDetails[] = invites.map((invite) => ({
-      id: invite.id,
-      email: invite.email,
-      token: invite.token,
-      role: invite.role,
-      roleId: invite.roleId ?? null,
-      roleName: invite.roleRef?.name ?? null,
-      status: invite.status,
-      firstName: invite.firstName,
-      lastName: invite.lastName,
-      message: invite.message,
-      expiresAt: invite.expiresAt,
-      createdAt: invite.createdAt,
-      invitedBy: invite.invitedBy,
-      inviteUrl: buildInviteUrl(tenantSlug, invite.token),
-    }));
-
-    return {
-      success: true,
-      data: {
-        items: data,
-        pagination: {
-          page,
-          pageSize,
-          total: countResult,
-          totalPages: Math.ceil(countResult / pageSize),
-        },
-      },
-    };
-  } catch (error) {
-    logger.error({ tenantSlug, error }, 'Failed to list tenant invites');
-    return { success: false, error: 'Failed to list invitations' };
-  }
-}
-
-/**
- * Get a single invitation
- */
-export async function getInvite(tenantSlug: string, inviteId: string): Promise<AdminActionResult<InviteWithDetails>> {
-  const session = await requireTenantAdmin(tenantSlug);
-  if (!session) {
-    return { success: false, error: 'Unauthorized' };
-  }
-
-  try {
-    const tenant = await db.query.tenants.findFirst({
-      where: eq(schema.tenants.slug, tenantSlug),
-    });
-
-    if (!tenant) {
-      return { success: false, error: 'Tenant not found' };
-    }
-
-    const invite = await db.query.tenantInvitations.findFirst({
-      where: and(eq(schema.tenantInvitations.id, inviteId), eq(schema.tenantInvitations.tenantId, tenant.id)),
-      with: {
-        invitedBy: {
-          columns: { id: true, name: true, email: true },
-        },
-        roleRef: {
-          columns: { id: true, name: true },
-        },
-      },
-    });
-
-    if (!invite) {
-      return { success: false, error: 'Invitation not found' };
-    }
+    revalidatePath(`/t/${tenantSlug}/admin/members`);
 
     return {
       success: true,
@@ -302,22 +193,112 @@ export async function getInvite(tenantSlug: string, inviteId: string): Promise<A
         id: invite.id,
         email: invite.email,
         token: invite.token,
-        role: invite.role,
-        roleId: invite.roleId ?? null,
-        roleName: invite.roleRef?.name ?? null,
-        status: invite.status,
+        role: invite.role as TenantRole,
+        roleId: invite.roleId ?? undefined,
+        roleName: roleName ?? undefined,
+        status: invite.status as 'pending' | 'accepted' | 'expired' | 'revoked',
         firstName: invite.firstName,
         lastName: invite.lastName,
         message: invite.message,
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt,
-        invitedBy: invite.invitedBy,
+        invitedBy: inviter
+          ? {
+              id: inviter.id,
+              name: inviter.name,
+              email: inviter.email,
+            }
+          : null,
         inviteUrl: buildInviteUrl(tenantSlug, invite.token),
       },
     };
   } catch (error) {
-    logger.error({ tenantSlug, inviteId, error }, 'Failed to get invitation');
-    return { success: false, error: 'Failed to get invitation' };
+    logger.error({ error }, 'Failed to create invite');
+    return { success: false, error: 'Failed to create invite' };
+  }
+}
+
+/**
+ * List all invitations for a tenant
+ */
+export async function listInvites(
+  tenantSlug: string,
+  params: { page?: number; pageSize?: number; status?: 'pending' | 'all' } = {},
+): Promise<AdminActionResult<PaginatedResult<InviteWithDetails>>> {
+  const session = await requireTenantAdmin(tenantSlug);
+  if (!session) {
+    return { success: false, error: 'Unauthorized' };
+  }
+
+  const { page = 1, pageSize = 20, status = 'all' } = params;
+
+  try {
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(schema.tenants.slug, tenantSlug),
+    });
+
+    if (!tenant) {
+      return { success: false, error: 'Tenant not found' };
+    }
+
+    // Build where clause
+    const whereConditions = [eq(schema.tenantInvitations.tenantId, tenant.id)];
+    if (status === 'pending') {
+      whereConditions.push(eq(schema.tenantInvitations.status, 'pending'));
+    }
+
+    const invites = await db.query.tenantInvitations.findMany({
+      where: and(...whereConditions),
+      with: {
+        invitedBy: true,
+        roleRef: true,
+      },
+      orderBy: [desc(schema.tenantInvitations.createdAt)],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+    // Mark expired invites
+    const now = new Date();
+    const items: InviteWithDetails[] = invites.map((invite) => {
+      const isExpired = invite.status === 'pending' && invite.expiresAt < now;
+      return {
+        id: invite.id,
+        email: invite.email,
+        token: invite.token,
+        role: invite.role as TenantRole,
+        roleId: invite.roleId ?? undefined,
+        roleName: invite.roleRef?.name ?? undefined,
+        status: isExpired ? 'expired' : (invite.status as 'pending' | 'accepted' | 'expired' | 'revoked'),
+        firstName: invite.firstName,
+        lastName: invite.lastName,
+        message: invite.message,
+        expiresAt: invite.expiresAt,
+        createdAt: invite.createdAt,
+        invitedBy: invite.invitedBy
+          ? {
+              id: invite.invitedBy.id,
+              name: invite.invitedBy.name,
+              email: invite.invitedBy.email,
+            }
+          : null,
+        inviteUrl: buildInviteUrl(tenantSlug, invite.token),
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        items,
+        total: items.length,
+        page,
+        pageSize,
+        totalPages: 1,
+      },
+    };
+  } catch (error) {
+    logger.error({ error }, 'Failed to list invites');
+    return { success: false, error: 'Failed to list invites' };
   }
 }
 
@@ -339,28 +320,39 @@ export async function revokeInvite(tenantSlug: string, inviteId: string): Promis
       return { success: false, error: 'Tenant not found' };
     }
 
-    const result = await db
-      .update(schema.tenantInvitations)
-      .set({ status: 'revoked' })
-      .where(and(eq(schema.tenantInvitations.id, inviteId), eq(schema.tenantInvitations.tenantId, tenant.id)))
-      .returning({ id: schema.tenantInvitations.id });
+    const invite = await db.query.tenantInvitations.findFirst({
+      where: and(eq(schema.tenantInvitations.id, inviteId), eq(schema.tenantInvitations.tenantId, tenant.id)),
+    });
 
-    if (result.length === 0) {
-      return { success: false, error: 'Invitation not found' };
+    if (!invite) {
+      return { success: false, error: 'Invite not found' };
     }
 
-    revalidatePath(`/t/${tenantSlug}/admin/invites`);
+    if (invite.status !== 'pending') {
+      return { success: false, error: 'Only pending invites can be revoked' };
+    }
+
+    await db
+      .update(schema.tenantInvitations)
+      .set({ status: 'revoked', updatedAt: new Date() })
+      .where(eq(schema.tenantInvitations.id, inviteId));
+
+    revalidatePath(`/t/${tenantSlug}/admin/members`);
+
     return { success: true };
   } catch (error) {
-    logger.error({ tenantSlug, inviteId, error }, 'Failed to revoke invitation');
-    return { success: false, error: 'Failed to revoke invitation' };
+    logger.error({ error }, 'Failed to revoke invite');
+    return { success: false, error: 'Failed to revoke invite' };
   }
 }
 
 /**
- * Resend an invitation (generates new token and extends expiry)
+ * Resend an invitation (creates new token)
  */
-export async function resendInvite(tenantSlug: string, inviteId: string): Promise<AdminActionResult<InviteWithDetails>> {
+export async function resendInvite(
+  tenantSlug: string,
+  inviteId: string,
+): Promise<AdminActionResult<InviteWithDetails>> {
   const session = await requireTenantAdmin(tenantSlug);
   if (!session) {
     return { success: false, error: 'Unauthorized' };
@@ -375,81 +367,99 @@ export async function resendInvite(tenantSlug: string, inviteId: string): Promis
       return { success: false, error: 'Tenant not found' };
     }
 
-    const existingInvite = await db.query.tenantInvitations.findFirst({
+    const invite = await db.query.tenantInvitations.findFirst({
       where: and(eq(schema.tenantInvitations.id, inviteId), eq(schema.tenantInvitations.tenantId, tenant.id)),
+      with: { invitedBy: true, roleRef: true },
     });
 
-    if (!existingInvite) {
-      return { success: false, error: 'Invitation not found' };
+    if (!invite) {
+      return { success: false, error: 'Invite not found' };
     }
 
-    if (existingInvite.status !== 'pending') {
-      return { success: false, error: 'Only pending invitations can be resent' };
-    }
-
-    const token = generateToken();
+    // Generate new token and extend expiration
+    const newToken = generateToken();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const [updatedInvite] = await db
+    const [updated] = await db
       .update(schema.tenantInvitations)
-      .set({ token, expiresAt })
-      .where(and(eq(schema.tenantInvitations.id, inviteId), eq(schema.tenantInvitations.tenantId, tenant.id)))
+      .set({
+        token: newToken,
+        expiresAt,
+        status: 'pending',
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.tenantInvitations.id, inviteId))
       .returning();
 
-    const inviter = await db.query.users.findFirst({
-      where: eq(schema.users.id, updatedInvite.invitedById!),
-      columns: { id: true, name: true, email: true },
-    });
-
-    revalidatePath(`/t/${tenantSlug}/admin/invites`);
+    revalidatePath(`/t/${tenantSlug}/admin/members`);
 
     return {
       success: true,
       data: {
-        ...updatedInvite,
-        roleId: updatedInvite.roleId ?? null,
-        roleName: null,
-        invitedBy: inviter ?? null,
-        inviteUrl: buildInviteUrl(tenantSlug, token),
+        id: updated.id,
+        email: updated.email,
+        token: updated.token,
+        role: updated.role as TenantRole,
+        roleId: updated.roleId ?? undefined,
+        roleName: invite.roleRef?.name ?? undefined,
+        status: 'pending',
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        message: updated.message,
+        expiresAt: updated.expiresAt,
+        createdAt: updated.createdAt,
+        invitedBy: invite.invitedBy
+          ? {
+              id: invite.invitedBy.id,
+              name: invite.invitedBy.name,
+              email: invite.invitedBy.email,
+            }
+          : null,
+        inviteUrl: buildInviteUrl(tenantSlug, updated.token),
       },
     };
   } catch (error) {
-    logger.error({ tenantSlug, inviteId, error }, 'Failed to resend invitation');
-    return { success: false, error: 'Failed to resend invitation' };
+    logger.error({ error }, 'Failed to resend invite');
+    return { success: false, error: 'Failed to resend invite' };
   }
 }
 
 /**
- * Validate an invitation token (public - no auth required)
+ * Validate an invite token (for the accept flow)
  */
-export async function validateInviteToken(token: string): Promise<
+export async function validateInviteToken(
+  tenantSlug: string,
+  token: string,
+): Promise<
   AdminActionResult<{
-    tenantSlug: string;
-    tenantName: string;
     email: string;
     firstName: string | null;
     lastName: string | null;
-    message: string | null;
     role: TenantRole;
+    tenantName: string;
+    message: string | null;
   }>
 > {
   try {
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(schema.tenants.slug, tenantSlug),
+    });
+
+    if (!tenant) {
+      return { success: false, error: 'Tenant not found' };
+    }
+
     const invite = await db.query.tenantInvitations.findFirst({
-      where: eq(schema.tenantInvitations.token, token),
-      with: {
-        tenant: {
-          columns: { slug: true, name: true },
-        },
-      },
+      where: and(eq(schema.tenantInvitations.token, token), eq(schema.tenantInvitations.tenantId, tenant.id)),
     });
 
     if (!invite) {
-      return { success: false, error: 'Invalid invitation' };
+      return { success: false, error: 'Invalid invitation link' };
     }
 
     if (invite.status !== 'pending') {
-      return { success: false, error: 'This invitation is no longer valid' };
+      return { success: false, error: `This invitation has already been ${invite.status}` };
     }
 
     if (invite.expiresAt < new Date()) {
@@ -459,118 +469,134 @@ export async function validateInviteToken(token: string): Promise<
     return {
       success: true,
       data: {
-        tenantSlug: invite.tenant.slug,
-        tenantName: invite.tenant.name,
         email: invite.email,
         firstName: invite.firstName,
         lastName: invite.lastName,
+        role: invite.role as TenantRole,
+        tenantName: tenant.name,
         message: invite.message,
-        role: invite.role,
       },
     };
   } catch (error) {
-    logger.error({ error }, 'Failed to validate invite token');
+    logger.error({ error }, 'Failed to validate invite');
     return { success: false, error: 'Failed to validate invitation' };
   }
 }
 
 /**
- * Accept an invitation
+ * Accept an invite (called after user signs in)
  */
-export async function acceptInvite(token: string): Promise<AdminActionResult<{ tenantSlug: string }>> {
-  // Get current user
-  const session = await (await import('@/shared/lib/auth')).auth();
-  if (!session?.user?.id || !session?.user?.email) {
-    return { success: false, error: 'You must be logged in to accept this invitation' };
-  }
-
+export async function acceptInvite(tenantSlug: string, token: string, userId: string): Promise<AdminActionResult> {
   try {
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(schema.tenants.slug, tenantSlug),
+    });
+
+    if (!tenant) {
+      return { success: false, error: 'Tenant not found' };
+    }
+
     const invite = await db.query.tenantInvitations.findFirst({
-      where: eq(schema.tenantInvitations.token, token),
-      with: {
-        tenant: {
-          columns: { slug: true, name: true },
-        },
-      },
+      where: and(
+        eq(schema.tenantInvitations.token, token),
+        eq(schema.tenantInvitations.tenantId, tenant.id),
+        eq(schema.tenantInvitations.status, 'pending'),
+      ),
     });
 
     if (!invite) {
-      return { success: false, error: 'Invalid invitation' };
-    }
-
-    if (invite.status !== 'pending') {
-      return { success: false, error: 'This invitation is no longer valid' };
+      return { success: false, error: 'Invalid or expired invitation' };
     }
 
     if (invite.expiresAt < new Date()) {
-      await db
-        .update(schema.tenantInvitations)
-        .set({ status: 'expired' })
-        .where(eq(schema.tenantInvitations.id, invite.id));
       return { success: false, error: 'This invitation has expired' };
     }
 
+    // Get the user
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+
+    if (!user) {
+      return { success: false, error: 'User not found' };
+    }
+
     // Verify email matches
-    if (session.user.email.toLowerCase() !== invite.email.toLowerCase()) {
-      return {
-        success: false,
-        error: `This invitation was sent to ${invite.email}. Please sign in with that email address.`,
-      };
+    if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
+      return { success: false, error: 'This invitation was sent to a different email address' };
     }
 
     // Check if already a member
     const existingMembership = await db.query.tenantMemberships.findFirst({
-      where: and(
-        eq(schema.tenantMemberships.tenantId, invite.tenantId),
-        eq(schema.tenantMemberships.userId, session.user.id),
-      ),
+      where: and(eq(schema.tenantMemberships.tenantId, tenant.id), eq(schema.tenantMemberships.userId, userId)),
     });
 
     if (existingMembership) {
-      // Mark invite as accepted anyway
+      // Update invite status anyway
       await db
         .update(schema.tenantInvitations)
-        .set({ status: 'accepted', acceptedAt: new Date() })
+        .set({
+          status: 'accepted',
+          acceptedAt: new Date(),
+          acceptedByUserId: userId,
+          updatedAt: new Date(),
+        })
         .where(eq(schema.tenantInvitations.id, invite.id));
-      return { success: true, data: { tenantSlug: invite.tenant.slug } };
+
+      return { success: true }; // Already a member, just accept the invite
     }
 
-    // Create membership and assign initial role (prefer roleId; fallback to role name for backward compatibility)
-    await db.transaction(async (tx) => {
-      const [membership] = await tx
-        .insert(schema.tenantMemberships)
-        .values({
-          tenantId: invite.tenantId,
-          userId: session.user.id,
-          role: invite.role,
-        })
-        .returning({ id: schema.tenantMemberships.id });
+    // Resolve roleId for tenant_membership_roles: use invite.roleId or default to tenant "member" role
+    let roleIdForMembership = invite.roleId;
+    if (!roleIdForMembership) {
+      const memberRole = await db.query.roles.findFirst({
+        where: and(eq(schema.roles.tenantId, tenant.id), eq(schema.roles.slug, 'member')),
+        columns: { id: true },
+      });
+      roleIdForMembership = memberRole?.id ?? null;
+    }
 
-      let roleId = invite.roleId ?? null;
-      if (!roleId) {
-        const role = await tx.query.roles.findFirst({
-          where: and(eq(schema.roles.tenantId, invite.tenantId), eq(schema.roles.name, invite.role)),
-          columns: { id: true },
-        });
-        roleId = role?.id ?? null;
-      }
-      if (roleId) {
-        await tx.insert(schema.tenantMembershipRoles).values({ membershipId: membership.id, roleId }).onConflictDoNothing();
-      }
+    const [membership] = await db
+      .insert(schema.tenantMemberships)
+      .values({
+        tenantId: tenant.id,
+        userId,
+        role: invite.role as TenantRole,
+        primaryRoleId: roleIdForMembership ?? undefined,
+      })
+      .returning();
 
-      await tx
-        .update(schema.tenantInvitations)
-        .set({ status: 'accepted', acceptedAt: new Date() })
-        .where(eq(schema.tenantInvitations.id, invite.id));
+    if (membership && roleIdForMembership) {
+      await db.insert(schema.tenantMembershipRoles).values({
+        membershipId: membership.id,
+        roleId: roleIdForMembership,
+      });
+    }
+
+    // Create person record
+    await db.insert(schema.persons).values({
+      tenantId: tenant.id,
+      email: invite.email,
+      firstName: invite.firstName || user.name?.split(' ')[0] || 'New',
+      lastName: invite.lastName || user.name?.split(' ').slice(1).join(' ') || 'Member',
+      status: 'onboarding',
+      profileInitialized: false,
     });
 
-    logger.info({ tenantSlug: invite.tenant.slug, userId: session.user.id }, 'Tenant invite accepted');
+    // Update invite status
+    await db
+      .update(schema.tenantInvitations)
+      .set({
+        status: 'accepted',
+        acceptedAt: new Date(),
+        acceptedByUserId: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.tenantInvitations.id, invite.id));
 
-    revalidatePath(`/t/${invite.tenant.slug}`);
-
-    return { success: true, data: { tenantSlug: invite.tenant.slug } };
+    return { success: true };
   } catch (error) {
-    logger.error({ error }, 'Failed to accept invitation');
+    logger.error({ error }, 'Failed to accept invite');
     return { success: false, error: 'Failed to accept invitation' };
   }
 }
