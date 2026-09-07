@@ -1,0 +1,36 @@
+name: Auth routing RED
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prove DB-backed routing tests fail before implementation
+        run: |
+          set +e
+          pnpm test -- 'src/app/team/page.test.ts' 'src/app/(auth)/select-tenant/page.test.ts' > /tmp/auth-routing-red.log 2>&1
+          status=$?
+          cat /tmp/auth-routing-red.log
+          if [ "$status" -eq 0 ]; then
+            echo '::error::Expected routing regressions to fail before implementation.'
+            exit 1
+          fi
+          grep -q 'REDIRECT:/t/stale_workspace' /tmp/auth-routing-red.log || {
+            echo '::error::Tests failed, but not because stale session roles were used.'
+            exit 1
+          }
+          echo 'RED confirmed: current pages route from stale session roles.'
