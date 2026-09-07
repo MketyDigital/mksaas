@@ -1,6 +1,9 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
+import { billingPeriods } from '@/shared/db/schema/billing-periods';
+import { billingPlanVersionCreditAllowances } from '@/shared/db/schema/billing-plan-version-credit-allowances';
+import { billingSubscriptions } from '@/shared/db/schema/billing-subscriptions';
 import {
   creditLedgerEntries,
   type CreditLedgerEntry,
@@ -17,12 +20,21 @@ import {
   UsageCreditError,
   type CreditBalance,
 } from '../types';
+import type { BillingCreditAllowanceSource } from './period-grants';
 import type {
   CreditLedgerRecord,
   StoredUsageRecord,
   UsageCreditSource,
   UsageCreditTransaction,
 } from './source';
+
+const QUALIFYING_SUBSCRIPTION_STATUSES = [
+  'trialing',
+  'active',
+  'past_due',
+  'paused',
+  'cancel_at_period_end',
+] as const;
 
 function mapBalance(row: TenantCreditAccount): CreditBalance {
   return {
@@ -69,6 +81,64 @@ function mapUsage(row: UsageEvent): StoredUsageRecord {
     occurredAt: row.occurredAt,
   };
 }
+
+export const drizzleBillingCreditAllowanceSource: BillingCreditAllowanceSource = {
+  async getCurrentBillingCreditAllowance(tenantId) {
+    const [subscription] = await db
+      .select({
+        id: billingSubscriptions.id,
+        planVersionId: billingSubscriptions.planVersionId,
+      })
+      .from(billingSubscriptions)
+      .where(
+        and(
+          eq(billingSubscriptions.tenantId, tenantId),
+          inArray(billingSubscriptions.status, [...QUALIFYING_SUBSCRIPTION_STATUSES]),
+        ),
+      )
+      .orderBy(desc(billingSubscriptions.updatedAt))
+      .limit(1);
+
+    if (!subscription) return null;
+
+    const [period] = await db
+      .select({ id: billingPeriods.id })
+      .from(billingPeriods)
+      .where(
+        and(
+          eq(billingPeriods.tenantId, tenantId),
+          eq(billingPeriods.subscriptionId, subscription.id),
+        ),
+      )
+      .orderBy(desc(billingPeriods.periodStart))
+      .limit(1);
+
+    if (!period) return null;
+
+    const [allowance] = await db
+      .select({
+        id: billingPlanVersionCreditAllowances.id,
+        creditAmount: billingPlanVersionCreditAllowances.creditAmount,
+      })
+      .from(billingPlanVersionCreditAllowances)
+      .where(
+        and(
+          eq(billingPlanVersionCreditAllowances.planVersionId, subscription.planVersionId),
+          eq(billingPlanVersionCreditAllowances.grantInterval, 'billing_period'),
+        ),
+      )
+      .limit(1);
+
+    if (!allowance) return null;
+
+    return {
+      billingPeriodId: period.id,
+      planVersionId: subscription.planVersionId,
+      allowanceId: allowance.id,
+      credits: allowance.creditAmount,
+    };
+  },
+};
 
 export const drizzleUsageCreditSource: UsageCreditSource = {
   transaction<T>(work: (tx: UsageCreditTransaction) => Promise<T>): Promise<T> {
@@ -154,19 +224,13 @@ export const drizzleUsageCreditSource: UsageCreditSource = {
         },
 
         async insertUsage(input) {
-          const [row] = await databaseTx
-            .insert(usageEvents)
-            .values(input)
-            .returning();
+          const [row] = await databaseTx.insert(usageEvents).values(input).returning();
           if (!row) throw new Error('Usage insert did not return a row.');
           return mapUsage(row);
         },
 
         async insertLedger(input) {
-          const [row] = await databaseTx
-            .insert(creditLedgerEntries)
-            .values(input)
-            .returning();
+          const [row] = await databaseTx.insert(creditLedgerEntries).values(input).returning();
           if (!row) throw new Error('Credit ledger insert did not return a row.');
           return mapLedger(row);
         },
