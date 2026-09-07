@@ -10,6 +10,7 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
+import type { RenewalMode, SubscriptionStatus } from '../domain/types';
 import type { BillingSummarySource } from './queries';
 
 const CURRENT_SUBSCRIPTION_STATUSES = [
@@ -76,8 +77,8 @@ export const drizzleBillingSummarySource: BillingSummarySource = {
       planVersion: subscription.planVersion,
       amountDueMinor: period.amountDueMinor,
       currency: period.currency,
-      subscriptionStatus: subscription.subscriptionStatus as Awaited<ReturnType<BillingSummarySource['getCurrentBillingState']>> extends infer T ? T extends { subscriptionStatus: infer S } ? S : never : never,
-      renewalMode: subscription.renewalMode as Awaited<ReturnType<BillingSummarySource['getCurrentBillingState']>> extends infer T ? T extends { renewalMode: infer R } ? R : never : never,
+      subscriptionStatus: subscription.subscriptionStatus as SubscriptionStatus,
+      renewalMode: subscription.renewalMode as RenewalMode,
       autoRenew: subscription.autoRenew,
       currentPeriodStart: subscription.currentPeriodStart ?? period.periodStart,
       currentPeriodEnd: subscription.currentPeriodEnd ?? period.periodEnd,
