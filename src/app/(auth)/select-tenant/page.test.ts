@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-
 import { auth } from '@/shared/lib/auth';
 import { getAllRoles } from '@/shared/lib/rbac';
 
@@ -22,7 +20,14 @@ describe('SelectTenantPage', () => {
     mockedAuth.mockResolvedValue({
       sessionId: 'session-1',
       expiresAt: new Date(Date.now() + 60_000),
-      user: { id: 'user-1', email: 'user@example.com', name: 'User', roles: { stale_workspace: 'admin' } },
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+        name: 'User',
+        image: null,
+        roles: { stale_workspace: 'admin' },
+        permissions: {},
+      },
     });
     mockedGetAllRoles.mockResolvedValue({ current_workspace: 'member' });
 
