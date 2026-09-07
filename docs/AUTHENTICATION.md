@@ -73,16 +73,16 @@ For a local application, use a callback such as:
 http://localhost:3000/api/auth/callback
 ```
 
-For a Cloudflare `workers.dev` preview, use the exact generated preview origin:
+For the isolated Cloudflare preview Worker, use the exact deployed `mkety-platform-preview` workers.dev origin:
 
 ```text
-https://<worker-name>.<account-subdomain>.workers.dev/api/auth/callback
+https://<preview-origin>/api/auth/callback
 ```
 
 The post-logout redirect must use the corresponding application origin:
 
 ```text
-https://<worker-name>.<account-subdomain>.workers.dev/login
+https://<preview-origin>/login
 ```
 
 Do not add a redirect URI that is broader than necessary.
@@ -129,9 +129,7 @@ Use the stable Mkety Auth facade:
 import { auth, requireAuth, getCurrentUser } from '@/shared/lib/auth';
 
 const session = await auth();
-
 const requiredSession = await requireAuth();
-
 const user = await getCurrentUser();
 ```
 
@@ -204,23 +202,16 @@ MKETY_AUTH_CLIENT_ID
 MKETY_AUTH_REDIRECT_URI
 MKETY_AUTH_POST_LOGOUT_REDIRECT_URI
 CLOUDFLARE_ACCOUNT_ID
-CLOUDFLARE_WORKER_NAME
 CLOUDFLARE_BUILD_TOKEN_UUID   # only when Workers Builds API automation is used
 ```
+
+Worker identity is configuration-owned in `wrangler.jsonc`: base `mkety-platform`, named preview `mkety-platform-preview`. Do not add a duplicate worker-name environment variable.
 
 The development GitHub integration cannot read plaintext GitHub secrets. Do not paste secrets into commits, documentation, or `.env.example`.
 
 ## Migration rule
 
-The authentication migration is complete only when all application references to Auth.js/NextAuth/Auth0 are gone, including:
-
-- dependencies
-- imports
-- session types
-- mocks
-- route handlers
-- environment names
-- documentation
+The authentication migration is complete only when all application references to Auth.js/NextAuth/Auth0 are gone from active application dependencies, imports, session types, mocks, route handlers, and environment configuration.
 
 The generic integration `accounts` table must not be removed until its non-authentication callers have been independently migrated.
 
@@ -237,8 +228,9 @@ Before promotion to `main`, verify:
 7. logout revokes the Mkety session
 8. protected routes deny access after logout
 9. no secrets or bearer tokens are logged
-10. `next-auth`, `@auth/*`, Auth.js, Auth0, and `NEXTAUTH_*` references are absent from application source/configuration
-11. `vinext check`, type-check, lint, tests, and feature-branch production build pass
+10. `next-auth`, `@auth/*`, Auth.js, Auth0, and `NEXTAUTH_*` are absent from active application source/configuration
+11. migration baseline, tests, type-check, lint, `vinext check`, production build, and isolated Cloudflare preview packaging pass
+12. real workers.dev browser smoke passes before Auth promotion
 
 ## Related architecture
 
