@@ -1,11 +1,7 @@
 import { ENTITLEMENT_KEYS } from '@/features/entitlements/entitlement-keys';
 
-import {
-  USAGE_CREDIT_ERROR_CODES,
-  UsageCreditError,
-  isUsageMeterKey,
-  type UsageMeterKey,
-} from './meter-keys';
+import { isUsageMeterKey, type UsageMeterKey } from './meter-keys';
+import { USAGE_CREDIT_ERROR_CODES, UsageCreditError } from './types';
 
 describe('usage credit meter vocabulary', () => {
   const expectedKeys = [
