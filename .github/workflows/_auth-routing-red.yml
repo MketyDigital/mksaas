@@ -1,4 +1,4 @@
-name: Auth routing RED
+name: Auth routing GREEN
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  red:
+  green:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,18 +19,5 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Prove DB-backed routing tests fail before implementation
-        run: |
-          set +e
-          pnpm test -- 'src/app/team/page.test.ts' 'src/app/(auth)/select-tenant/page.test.ts' > /tmp/auth-routing-red.log 2>&1
-          status=$?
-          cat /tmp/auth-routing-red.log
-          if [ "$status" -eq 0 ]; then
-            echo '::error::Expected routing regressions to fail before implementation.'
-            exit 1
-          fi
-          grep -q 'REDIRECT:/t/stale_workspace' /tmp/auth-routing-red.log || {
-            echo '::error::Tests failed, but not because stale session roles were used.'
-            exit 1
-          }
-          echo 'RED confirmed: current pages route from stale session roles.'
+      - name: Verify both DB-backed tenant routing regressions
+        run: pnpm exec jest --runInBand --detectOpenHandles --runTestsByPath 'src/app/team/page.test.ts' 'src/app/(auth)/select-tenant/page.test.ts'
