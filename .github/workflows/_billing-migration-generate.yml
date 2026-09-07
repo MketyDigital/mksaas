@@ -80,9 +80,9 @@ jobs:
 
       - name: Prove forward generation is a no-op
         run: |
-          before="$(git status --porcelain src/shared/db/migrations)"
+          before="$(git status --porcelain --untracked-files=all src/shared/db/migrations)"
           pnpm db:generate --name=forward_probe
-          after="$(git status --porcelain src/shared/db/migrations)"
+          after="$(git status --porcelain --untracked-files=all src/shared/db/migrations)"
           test "$before" = "$after"
           test ! -e src/shared/db/migrations/0012_forward_probe.sql
 
@@ -90,7 +90,16 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/shared/db/migrations/0011_billing_core_foundation.sql src/shared/db/migrations/meta/_journal.json src/shared/db/migrations/meta/0011_snapshot.json
-          git diff --cached --exit-code && { echo 'No generated migration changes to commit.' >&2; exit 1; } || true
+          git add -f src/shared/db/migrations/0011_billing_core_foundation.sql src/shared/db/migrations/meta/_journal.json src/shared/db/migrations/meta/0011_snapshot.json
+          staged="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            'src/shared/db/migrations/0011_billing_core_foundation.sql' \
+            'src/shared/db/migrations/meta/0011_snapshot.json' \
+            'src/shared/db/migrations/meta/_journal.json' | sort)"
+          test "$staged" = "$expected" || {
+            echo 'Unexpected staged Billing migration file set:' >&2
+            printf '%s\n' "$staged" >&2
+            exit 1
+          }
           git commit -m 'db: generate billing core migration'
           git push origin HEAD:feat/mkety-billing-core-foundation
