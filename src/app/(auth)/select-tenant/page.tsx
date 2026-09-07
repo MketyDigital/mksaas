@@ -3,11 +3,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
-import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
+import { getAllRoles } from '@/shared/lib/rbac';
 
 export const metadata = {
-  title: 'Select Organization | Next.js SaaS AI Template',
+  title: 'Select Organization | Mkety',
   description: 'Choose an organization to access',
 };
 
@@ -18,8 +18,8 @@ export default async function SelectTenantPage() {
 
   if (!session?.user) redirect('/login');
 
-  const userRoles = session.user.roles as Record<string, TenantRole> | undefined;
-  const tenantSlugs = userRoles ? Object.keys(userRoles) : [];
+  const userRoles = await getAllRoles();
+  const tenantSlugs = Object.keys(userRoles);
 
   if (tenantSlugs.length === 0) {
     return (
@@ -61,7 +61,7 @@ export default async function SelectTenantPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {tenantSlugs.map((slug) => {
-              const role = userRoles![slug];
+              const role = userRoles[slug];
               return (
                 <Link key={slug} href={`/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
                   <div className="flex items-center gap-3">
