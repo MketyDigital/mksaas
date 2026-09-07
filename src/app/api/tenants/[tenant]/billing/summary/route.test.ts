@@ -54,7 +54,7 @@ describe('tenant billing summary route', () => {
     const response = await createBillingSummaryHandler(dependencies)(new Request('https://mkety.test'), {
       params: Promise.resolve({ tenant: 'acme' }),
     });
-    const body = await response.json();
+    const body = (await response.json()) as { currentPeriod: { amountDueMinor: string } };
 
     expect(response.status).toBe(200);
     expect(body.currentPeriod.amountDueMinor).toBe('1999');
