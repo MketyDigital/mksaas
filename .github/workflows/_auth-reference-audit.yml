@@ -45,7 +45,7 @@ jobs:
         run: |
           set -o pipefail
           git grep -n -I -E '(auth0|Auth0|AUTH0_|next-auth|NextAuth|nextauth|@auth/|NEXTAUTH_|Next\.js SaaS AI Template|next-saas-ai-starter)' -- ':!pnpm-lock.yaml' \
-            | grep -v -E '^(docs/superpowers/|docs/AUTHENTICATION\.md:|docs/MKETY_AUTH_SOURCE_OF_TRUTH\.md:|docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE\.md:|docs/DEPLOYMENT\.md:|\.envrc\.example:|src/features/auth/components/__tests__/LoginForm\.test\.tsx:|\.github/workflows/_auth-reference-audit\.yml:)' \
+            | grep -v -E '^(docs/superpowers/|docs/AUTHENTICATION\.md:|docs/MKETY_AUTH_SOURCE_OF_TRUTH\.md:|docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE\.md:|docs/DEPLOYMENT\.md:|\.envrc\.example:|src/features/auth/components/__tests__/LoginForm\.test\.tsx:|\.github/workflows/_auth-reference-audit\.yml:|\.github/workflows/_auth-cleanup-final-verify\.yml:)' \
             | tee /tmp/active-forbidden.txt || true
           test ! -s /tmp/active-forbidden.txt
       - name: Commit only repaired invite service
