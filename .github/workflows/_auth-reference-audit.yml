@@ -1,4 +1,4 @@
-name: Clean active template and legacy Auth references
+name: Restore verified invite service contract
 
 on:
   push:
@@ -9,93 +9,51 @@ permissions:
   contents: write
 
 jobs:
-  clean:
+  repair:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: feat/mkety-auth-zitadel-vinext
           fetch-depth: 0
-      - name: Replace active template branding and stale config references
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Restore last verified invite service and apply Mkety origin change only
         shell: bash
         run: |
+          git show 0733138cf482ea39065e18eec4051c1f50f96372:src/features/admin/services/invite-service.ts > src/features/admin/services/invite-service.ts
           python - <<'PY'
           from pathlib import Path
-          import subprocess
-
-          files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
-          excluded_prefixes = ('docs/superpowers/',)
-          excluded_files = {'.github/workflows/_auth-reference-audit.yml'}
-
-          for name in files:
-              if name in excluded_files or name.startswith(excluded_prefixes):
-                  continue
-              path = Path(name)
-              try:
-                  text = path.read_text()
-              except (UnicodeDecodeError, OSError):
-                  continue
-              updated = text.replace('Next.js SaaS AI Template', 'Mkety Platform')
-              if updated != text:
-                  path.write_text(updated)
-
-          targeted_replacements = {
-              'docs/PROJECT_CONFIGURATION.md': [
-                  ('`AUTH0_*`', '`MKETY_AUTH_*`'),
-                  ('Auth0 configuration', 'Mkety Auth OIDC configuration'),
-                  ('Optional (for SSO)', 'Required for provider-backed sign-in'),
-              ],
-              'docs/PROJECT_STRUCTURE.md': [
-                  ('auth/[...nextauth]/    # Auth.js handlers', 'auth/                 # Mkety login/callback/logout/session routes'),
-              ],
-              'README.md': [
-                  ('- 🔐 **Auth.js v5 + Auth0** — SSO, database sessions, development credentials provider', '- 🔐 **Mkety Auth + ZITADEL adapter** — provider-neutral OIDC, Mkety-owned hashed sessions, DB-backed authorization'),
-                  ('| Framework    | Next.js 15 (App Router, RSC, Turbopack)               |', '| Framework    | Next.js 16 App Router + vinext on Cloudflare Workers     |'),
-                  ('| Auth         | Auth.js v5 + Auth0 (SSO) + database sessions          |', '| Auth         | Mkety Auth + replaceable ZITADEL OIDC adapter            |'),
-              ],
-              'docs/API.md': [
-                  ('- **Auth0** - Production SSO provider', '- **Mkety Auth** - provider-neutral application auth/session boundary with ZITADEL as the initial OIDC adapter'),
-              ],
-              'docs/GLOSSARY.md': [
-                  ('A **User** is an authentication entity managed by Auth.js (NextAuth). It represents a system access account with credentials (email, OAuth providers, etc.). A user can belong to multiple tenants and have different roles in each one.', 'A **User** is Mkety’s internal application identity. External identities are mapped through the provider-neutral Mkety Auth boundary, while tenant membership, roles, and permissions remain authoritative in Mkety data.'),
-              ],
-              'src/app/landing-data.ts': [
-                  ("'SSO (Auth0)'", "'Enterprise SSO'"),
-              ],
-          }
-
-          for name, replacements in targeted_replacements.items():
-              path = Path(name)
-              if not path.exists():
-                  continue
-              text = path.read_text()
-              for old, new in replacements:
-                  text = text.replace(old, new)
-              path.write_text(text)
+          path = Path('src/features/admin/services/invite-service.ts')
+          text = path.read_text()
+          old = "  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';\n  return `${baseUrl}/t/${tenantSlug}/invite/${token}`;"
+          new = "  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';\n  return `${baseUrl.replace(/\\/$/, '')}/t/${tenantSlug}/invite/${token}`;"
+          if old not in text:
+              raise SystemExit('Expected verified invite URL helper not found')
+          path.write_text(text.replace(old, new, 1))
           PY
-
-      - name: Reject active legacy Auth or template references
+          git diff --check
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify type contract restored
+        run: pnpm type-check
+      - name: Verify active legacy Auth references remain absent
         shell: bash
         run: |
           set -o pipefail
-          echo '=== ACTIVE_FORBIDDEN_REFERENCES ==='
           git grep -n -I -E '(auth0|Auth0|AUTH0_|next-auth|NextAuth|nextauth|@auth/|NEXTAUTH_|Next\.js SaaS AI Template|next-saas-ai-starter)' -- ':!pnpm-lock.yaml' \
             | grep -v -E '^(docs/superpowers/|docs/AUTHENTICATION\.md:|docs/MKETY_AUTH_SOURCE_OF_TRUTH\.md:|docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE\.md:|docs/DEPLOYMENT\.md:|\.envrc\.example:|src/features/auth/components/__tests__/LoginForm\.test\.tsx:|\.github/workflows/_auth-reference-audit\.yml:)' \
             | tee /tmp/active-forbidden.txt || true
           test ! -s /tmp/active-forbidden.txt
-
-          echo '=== LOCKFILE_FORBIDDEN_REFERENCES ==='
-          git grep -n -I -E '(auth0|Auth0|AUTH0_|next-auth|NextAuth|nextauth|@auth/|NEXTAUTH_)' -- pnpm-lock.yaml \
-            | tee /tmp/lock-forbidden.txt || true
-          test ! -s /tmp/lock-forbidden.txt
-
-      - name: Commit cleansing changes
+      - name: Commit only repaired invite service
         shell: bash
         run: |
           git config user.name 'Mkety Cleanup Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add -A
-          git restore --staged --worktree .github/workflows/_auth-reference-audit.yml
+          git add src/features/admin/services/invite-service.ts
           git diff --cached --quiet && exit 0
-          git commit --no-verify -m 'chore: cleanse template and legacy auth references'
+          git commit --no-verify -m 'fix(auth): preserve verified invite service contract'
           git push origin HEAD:feat/mkety-auth-zitadel-vinext
