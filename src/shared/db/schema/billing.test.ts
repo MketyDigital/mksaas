@@ -143,4 +143,21 @@ describe('Mkety billing persistence schema', () => {
     );
     expect(indexes(billingManualAdjustments)).toContain('billing_manual_adjustments_idempotency_idx');
   });
+
+  it('maps all persisted minor-unit money values to JavaScript bigint without precision loss', () => {
+    const beyondSafeInteger = '9007199254740993';
+    const moneyColumns = [
+      billingPlanVersions.amountMinor,
+      billingPeriods.amountDueMinor,
+      billingCheckouts.amountExpectedMinor,
+      billingSettlements.amountExpectedMinor,
+      billingSettlements.amountPaidMinor,
+      billingLedgerEntries.amountMinor,
+      billingManualAdjustments.amountMinor,
+    ];
+
+    for (const column of moneyColumns) {
+      expect(column.mapFromDriverValue(beyondSafeInteger)).toBe(9007199254740993n);
+    }
+  });
 });
