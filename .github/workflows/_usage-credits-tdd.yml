@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feat/mkety-usage-credits-core
+    paths:
+      - .github/workflows/_usage-credits-tdd.yml
 
 permissions:
   contents: read
@@ -24,4 +26,4 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Run Usage/Credits targeted tests
-        run: pnpm test -- src/features/usage-credits/meter-keys.test.ts src/shared/db/schema/usage-credits.test.ts
+        run: pnpm test -- src/features/usage-credits src/shared/db/schema/usage-credits.test.ts
