@@ -31,7 +31,9 @@ describe('TeamEntryPage', () => {
         id: 'user-1',
         email: 'user@example.com',
         name: 'User',
+        image: null,
         roles: { stale_workspace: 'admin' },
+        permissions: {},
       },
     });
     mockedGetAllRoles.mockResolvedValue({ current_workspace: 'member' });
