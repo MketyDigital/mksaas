@@ -1,5 +1,5 @@
 import { billingPlanVersionEntitlements } from './billing-plan-version-entitlements';
-import { tenantEntitlementOverrides, tenantEntitlementOverrideEffectEnum } from './tenant-entitlement-overrides';
+import { tenantEntitlementOverrideEffectEnum, tenantEntitlementOverrides } from './tenant-entitlement-overrides';
 
 describe('entitlement persistence schema', () => {
   it('exposes plan-version entitlement assignments', () => {
