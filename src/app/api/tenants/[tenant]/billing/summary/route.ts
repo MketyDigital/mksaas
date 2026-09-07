@@ -1,4 +1,16 @@
-import type { TenantBillingSummary } from '@/features/billing/server/queries';
+import { and, eq } from 'drizzle-orm';
+
+import { drizzleBillingSummarySource } from '@/features/billing/server/drizzle-queries';
+import {
+  getTenantBillingSummary as buildTenantBillingSummary,
+  type TenantBillingSummary,
+} from '@/features/billing/server/queries';
+import { db } from '@/shared/db';
+import { tenantMemberships } from '@/shared/db/schema';
+import { auth } from '@/shared/lib/auth';
+import { getTenantBySlug } from '@/shared/lib/tenant';
+
+export const dynamic = 'force-dynamic';
 
 export interface BillingSummaryRouteDependencies {
   getCurrentUserId(): Promise<string | null>;
@@ -53,4 +65,37 @@ export function createBillingSummaryHandler(dependencies: BillingSummaryRouteDep
 
     return jsonResponse(jsonSafe(summary));
   };
+}
+
+const runtimeHandler = createBillingSummaryHandler({
+  async getCurrentUserId() {
+    return (await auth())?.user?.id ?? null;
+  },
+
+  async findCurrentMembership(tenantSlug, userId) {
+    const tenant = await getTenantBySlug(tenantSlug);
+    if (!tenant) return null;
+
+    const membership = await db.query.tenantMemberships.findFirst({
+      columns: { tenantId: true },
+      where: and(eq(tenantMemberships.tenantId, tenant.id), eq(tenantMemberships.userId, userId)),
+    });
+    return membership ? { tenantId: membership.tenantId } : null;
+  },
+
+  getTenantBillingSummary(tenantId) {
+    return buildTenantBillingSummary(drizzleBillingSummarySource, tenantId);
+  },
+});
+
+export async function GET(request: Request, context: BillingSummaryRouteContext): Promise<Response> {
+  const result = await runtimeHandler(request, context);
+  const body = await result.json();
+  return new Response(JSON.stringify(body), {
+    status: result.status,
+    headers: {
+      'Cache-Control': 'private, no-store',
+      'Content-Type': 'application/json',
+    },
+  });
 }
