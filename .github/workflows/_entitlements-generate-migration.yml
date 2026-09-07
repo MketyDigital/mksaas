@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - feat/mkety-entitlements-core
+    paths:
+      - 'src/shared/db/schema/**'
+      - '.github/workflows/_entitlements-generate-migration.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: entitlements-migration-${{ github.ref }}
@@ -40,15 +43,12 @@ jobs:
       - name: Generate Drizzle migration
         run: pnpm db:generate
 
-      - name: Show generated migration diff
-        run: git status --short
-
-      - name: Upload generated migration state
-        uses: actions/upload-artifact@v4
-        with:
-          name: entitlements-drizzle-migration
-          path: |
-            src/shared/db/migrations/0012_*.sql
-            src/shared/db/migrations/meta/0012_snapshot.json
-            src/shared/db/migrations/meta/_journal.json
-          if-no-files-found: error
+      - name: Commit exact generated migration state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/shared/db/migrations/0012_*.sql src/shared/db/migrations/meta/0012_snapshot.json src/shared/db/migrations/meta/_journal.json
+          git diff --cached --stat
+          git diff --cached --quiet && { echo "No generated migration changes found"; exit 1; }
+          git commit -m "feat: generate Entitlements migration"
+          git push
