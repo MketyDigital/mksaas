@@ -16,7 +16,7 @@ export const billingManualAdjustments = appSchema.table(
     actorUserId: text('actor_user_id').notNull().references(() => users.id),
     idempotencyKey: varchar('idempotency_key', { length: 128 }).notNull(),
     adjustmentType: varchar('adjustment_type', { length: 32 }).notNull(),
-    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     reason: text('reason').notNull(),
     reference: text('reference'),
