@@ -14,7 +14,7 @@ export const billingCheckouts = appSchema.table(
     billingPeriodId: uuid('billing_period_id').notNull().references(() => billingPeriods.id, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 48 }).notNull(),
     providerCheckoutId: text('provider_checkout_id'),
-    amountExpectedMinor: bigint('amount_expected_minor', { mode: 'number' }).notNull(),
+    amountExpectedMinor: bigint('amount_expected_minor', { mode: 'bigint' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     status: varchar('status', { length: 24 }).notNull().default('created'),
     checkoutUrl: text('checkout_url'),
