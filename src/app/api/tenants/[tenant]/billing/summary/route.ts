@@ -2,8 +2,8 @@ import type { TenantBillingSummary } from '@/features/billing/server/queries';
 
 export interface BillingSummaryRouteDependencies {
   getCurrentUserId(): Promise<string | null>;
-  isCurrentTenantMember(userId: string, tenantId: string): Promise<boolean>;
-  getSummary(tenantId: string): Promise<TenantBillingSummary>;
+  findCurrentMembership(tenantSlug: string, userId: string): Promise<{ tenantId: string } | null>;
+  getTenantBillingSummary(tenantId: string): Promise<TenantBillingSummary | null>;
 }
 
 interface BillingSummaryRouteContext {
@@ -12,17 +12,12 @@ interface BillingSummaryRouteContext {
 
 interface JsonResponseLike {
   readonly status: number;
-  readonly headers: Headers;
-  json(): Promise<unknown>;
+  json(): Promise<any>;
 }
 
 function jsonResponse(body: unknown, status = 200): JsonResponseLike {
   return {
     status,
-    headers: new Headers({
-      'Cache-Control': 'private, no-store',
-      'Content-Type': 'application/json',
-    }),
     async json() {
       return body;
     },
@@ -49,11 +44,13 @@ export function createBillingSummaryHandler(dependencies: BillingSummaryRouteDep
     const userId = await dependencies.getCurrentUserId();
     if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401);
 
-    const { tenant } = await context.params;
-    if (!(await dependencies.isCurrentTenantMember(userId, tenant))) {
-      return jsonResponse({ error: 'Forbidden' }, 403);
-    }
+    const { tenant: tenantSlug } = await context.params;
+    const membership = await dependencies.findCurrentMembership(tenantSlug, userId);
+    if (!membership) return jsonResponse({ error: 'Forbidden' }, 403);
 
-    return jsonResponse(jsonSafe(await dependencies.getSummary(tenant)));
+    const summary = await dependencies.getTenantBillingSummary(membership.tenantId);
+    if (!summary) return jsonResponse({ error: 'Billing state not found' }, 404);
+
+    return jsonResponse(jsonSafe(summary));
   };
 }
