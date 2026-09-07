@@ -1,4 +1,4 @@
-name: Legacy cleanup audit
+name: Legacy cleanup verification
 
 on:
   pull_request:
