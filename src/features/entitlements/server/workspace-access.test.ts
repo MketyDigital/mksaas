@@ -1,4 +1,4 @@
-import type { WorkspaceCard } from '@/features/platform-app-experience/schemas';
+import type { WorkspaceCardInput } from '@/features/platform-app-experience/schemas';
 
 import type { EntitlementSource } from './resolver';
 import { filterWorkspaceCardsByEntitlement } from './workspace-access';
@@ -21,7 +21,7 @@ const cards = [
     requiresEntitlement: 'workspace.trading.enterprise',
     sortOrder: 20,
   },
-] as WorkspaceCard[];
+] as WorkspaceCardInput[];
 
 function source(allowTrading: boolean): EntitlementSource {
   return {
