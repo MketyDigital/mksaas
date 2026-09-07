@@ -15,7 +15,7 @@ export const billingLedgerEntries = appSchema.table(
     billingPeriodId: uuid('billing_period_id').references(() => billingPeriods.id, { onDelete: 'set null' }),
     settlementId: uuid('settlement_id').references(() => billingSettlements.id, { onDelete: 'set null' }),
     entryType: varchar('entry_type', { length: 32 }).notNull(),
-    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     reversalOfEntryId: uuid('reversal_of_entry_id'),
     reference: text('reference'),
