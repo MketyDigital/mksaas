@@ -1,4 +1,4 @@
-name: Audit stale Auth and template references
+name: Clean active template and legacy Auth references
 
 on:
   push:
@@ -6,18 +6,74 @@ on:
       - feat/mkety-auth-zitadel-vinext
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  clean:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Scan tracked source, config and docs
+        with:
+          ref: feat/mkety-auth-zitadel-vinext
+          fetch-depth: 0
+      - name: Replace active template branding and stale config references
         shell: bash
         run: |
-          echo '=== AUTH_OR_TEMPLATE_REFERENCES ==='
-          git grep -n -I -E '(auth0|next-auth|nextauth|@auth/|AUTH0_|NEXTAUTH_|Next\.js SaaS AI Template|next-saas-ai-starter)' -- ':!pnpm-lock.yaml' || true
-          echo '=== LOCKFILE_REFERENCES ==='
-          git grep -n -I -E '(next-auth|@auth/|auth0)' -- pnpm-lock.yaml || true
-          echo '=== END_AUDIT ==='
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+          brand_exclusions = ('docs/superpowers/',)
+
+          for name in files:
+              if name.startswith(brand_exclusions):
+                  continue
+              path = Path(name)
+              try:
+                  text = path.read_text()
+              except (UnicodeDecodeError, OSError):
+                  continue
+              updated = text.replace('Next.js SaaS AI Template', 'Mkety Platform')
+              if updated != text:
+                  path.write_text(updated)
+
+          project_config = Path('docs/PROJECT_CONFIGURATION.md')
+          if project_config.exists():
+              text = project_config.read_text()
+              text = text.replace('`AUTH0_*`', '`MKETY_AUTH_*`')
+              text = text.replace('Auth0 configuration', 'Mkety Auth OIDC configuration')
+              text = text.replace('Optional (for SSO)', 'Required for provider-backed sign-in')
+              project_config.write_text(text)
+
+          project_structure = Path('docs/PROJECT_STRUCTURE.md')
+          if project_structure.exists():
+              text = project_structure.read_text()
+              text = text.replace('auth/[...nextauth]/    # Auth.js handlers', 'auth/                 # Mkety login/callback/logout/session routes')
+              project_structure.write_text(text)
+          PY
+
+      - name: Reject active legacy Auth or template references
+        shell: bash
+        run: |
+          set -o pipefail
+          echo '=== ACTIVE_FORBIDDEN_REFERENCES ==='
+          git grep -n -I -E '(auth0|Auth0|AUTH0_|next-auth|NextAuth|nextauth|@auth/|NEXTAUTH_|Next\.js SaaS AI Template|next-saas-ai-starter)' -- ':!pnpm-lock.yaml' \
+            | grep -v -E '^(docs/superpowers/|docs/AUTHENTICATION\.md:|docs/MKETY_AUTH_SOURCE_OF_TRUTH\.md:|\.envrc\.example:|src/features/auth/components/__tests__/LoginForm\.test\.tsx:|\.github/workflows/_auth-reference-audit\.yml:)' \
+            | tee /tmp/active-forbidden.txt || true
+          test ! -s /tmp/active-forbidden.txt
+
+          echo '=== LOCKFILE_FORBIDDEN_REFERENCES ==='
+          git grep -n -I -E '(auth0|Auth0|AUTH0_|next-auth|NextAuth|nextauth|@auth/|NEXTAUTH_)' -- pnpm-lock.yaml \
+            | tee /tmp/lock-forbidden.txt || true
+          test ! -s /tmp/lock-forbidden.txt
+
+      - name: Commit cleansing changes
+        shell: bash
+        run: |
+          git config user.name 'Mkety Cleanup Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit --no-verify -m 'chore: cleanse template and legacy auth references'
+          git push origin HEAD:feat/mkety-auth-zitadel-vinext
