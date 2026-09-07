@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import type { TenantBillingSummary } from '@/features/billing/server/queries';
 
 export interface BillingSummaryRouteDependencies {
@@ -10,6 +8,25 @@ export interface BillingSummaryRouteDependencies {
 
 interface BillingSummaryRouteContext {
   params: Promise<{ tenant: string }>;
+}
+
+interface JsonResponseLike {
+  readonly status: number;
+  readonly headers: Headers;
+  json(): Promise<unknown>;
+}
+
+function jsonResponse(body: unknown, status = 200): JsonResponseLike {
+  return {
+    status,
+    headers: new Headers({
+      'Cache-Control': 'private, no-store',
+      'Content-Type': 'application/json',
+    }),
+    async json() {
+      return body;
+    },
+  };
 }
 
 function jsonSafe(value: unknown): unknown {
@@ -26,22 +43,17 @@ function jsonSafe(value: unknown): unknown {
 
 export function createBillingSummaryHandler(dependencies: BillingSummaryRouteDependencies) {
   return async function billingSummaryHandler(
-    _request: Request,
+    _request: unknown,
     context: BillingSummaryRouteContext,
-  ): Promise<Response> {
+  ): Promise<JsonResponseLike> {
     const userId = await dependencies.getCurrentUserId();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401);
 
     const { tenant } = await context.params;
     if (!(await dependencies.isCurrentTenantMember(userId, tenant))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return jsonResponse({ error: 'Forbidden' }, 403);
     }
 
-    const summary = await dependencies.getSummary(tenant);
-    return NextResponse.json(jsonSafe(summary), {
-      headers: { 'Cache-Control': 'private, no-store' },
-    });
+    return jsonResponse(jsonSafe(await dependencies.getSummary(tenant)));
   };
 }
