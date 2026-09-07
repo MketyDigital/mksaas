@@ -1,4 +1,5 @@
-import type { CreditBalance, UsageMeterKey } from '../types';
+import type { UsageMeterKey } from '../meter-keys';
+import type { CreditBalance } from '../types';
 
 export type CreditLedgerEntryType =
   | 'period_grant'
