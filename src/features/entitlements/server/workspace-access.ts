@@ -1,6 +1,6 @@
 import type { WorkspaceCardInput } from '@/features/platform-app-experience/schemas';
 
-import { hasEntitlement, type EntitlementSource } from './resolver';
+import { type EntitlementSource, hasEntitlement } from './resolver';
 
 export async function filterWorkspaceCardsByEntitlement(
   workspaces: WorkspaceCardInput[],
