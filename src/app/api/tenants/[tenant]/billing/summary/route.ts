@@ -1,14 +1,4 @@
-import { and, eq } from 'drizzle-orm';
-
-import { drizzleBillingSummarySource } from '@/features/billing/server/drizzle-queries';
-import {
-  getTenantBillingSummary as buildTenantBillingSummary,
-  type TenantBillingSummary,
-} from '@/features/billing/server/queries';
-import { db } from '@/shared/db';
-import { tenantMemberships } from '@/shared/db/schema';
-import { auth } from '@/shared/lib/auth';
-import { getTenantBySlug } from '@/shared/lib/tenant';
+import type { TenantBillingSummary } from '@/features/billing/server/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +14,7 @@ interface BillingSummaryRouteContext {
 
 interface JsonResponseLike {
   readonly status: number;
-  json(): Promise<any>;
+  json(): Promise<unknown>;
 }
 
 function jsonResponse(body: unknown, status = 200): JsonResponseLike {
@@ -67,31 +57,48 @@ export function createBillingSummaryHandler(dependencies: BillingSummaryRouteDep
   };
 }
 
-const runtimeHandler = createBillingSummaryHandler({
-  async getCurrentUserId() {
-    return (await auth())?.user?.id ?? null;
-  },
-
-  async findCurrentMembership(tenantSlug, userId) {
-    const tenant = await getTenantBySlug(tenantSlug);
-    if (!tenant) return null;
-
-    const membership = await db.query.tenantMemberships.findFirst({
-      columns: { tenantId: true },
-      where: and(eq(tenantMemberships.tenantId, tenant.id), eq(tenantMemberships.userId, userId)),
-    });
-    return membership ? { tenantId: membership.tenantId } : null;
-  },
-
-  getTenantBillingSummary(tenantId) {
-    return buildTenantBillingSummary(drizzleBillingSummarySource, tenantId);
-  },
-});
-
 export async function GET(request: Request, context: BillingSummaryRouteContext): Promise<Response> {
+  const [
+    { and, eq },
+    { drizzleBillingSummarySource },
+    { getTenantBillingSummary: buildTenantBillingSummary },
+    { db },
+    { tenantMemberships },
+    { auth },
+    { getTenantBySlug },
+  ] = await Promise.all([
+    import('drizzle-orm'),
+    import('@/features/billing/server/drizzle-queries'),
+    import('@/features/billing/server/queries'),
+    import('@/shared/db'),
+    import('@/shared/db/schema'),
+    import('@/shared/lib/auth'),
+    import('@/shared/lib/tenant'),
+  ]);
+
+  const runtimeHandler = createBillingSummaryHandler({
+    async getCurrentUserId() {
+      return (await auth(request))?.user?.id ?? null;
+    },
+
+    async findCurrentMembership(tenantSlug, userId) {
+      const tenant = await getTenantBySlug(tenantSlug);
+      if (!tenant) return null;
+
+      const membership = await db.query.tenantMemberships.findFirst({
+        columns: { tenantId: true },
+        where: and(eq(tenantMemberships.tenantId, tenant.id), eq(tenantMemberships.userId, userId)),
+      });
+      return membership ? { tenantId: membership.tenantId } : null;
+    },
+
+    getTenantBillingSummary(tenantId) {
+      return buildTenantBillingSummary(drizzleBillingSummarySource, tenantId);
+    },
+  });
+
   const result = await runtimeHandler(request, context);
-  const body = await result.json();
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify(await result.json()), {
     status: result.status,
     headers: {
       'Cache-Control': 'private, no-store',
