@@ -30,4 +30,4 @@ jobs:
       - name: Type-check Usage/Credits adapter integration
         run: pnpm type-check
 
-# tdd: task4-adapter-green
+# tdd: task5-period-grants-red
