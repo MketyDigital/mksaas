@@ -1,4 +1,4 @@
-name: Promote Drizzle forward baseline
+name: Migration baseline strictness RED
 
 on:
   pull_request:
@@ -8,23 +8,13 @@ on:
       - '.github/workflows/_migration-generate-probe.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  promote:
+  red:
     runs-on: ubuntu-latest
-    env:
-      CI: 'true'
-      DATABASE_URL: postgresql://probe:probe@localhost:5432/probe
-      AUTH_BRANCH: feat/mkety-auth-zitadel-vinext
-      EXPECTED_0008_SHA256: c8443d5ae15288acb4a0b27876da7fcb8621170aa9a139445b03ef03175457f5
-      EXPECTED_0009_SHA256: 2f2df7c32ad4c1aee7002b2fbed81077742f486d7576a70a78b941ebcb1f2c64
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feat/mkety-auth-zitadel-vinext
-          fetch-depth: 0
-          persist-credentials: true
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -34,71 +24,23 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Assert authoritative SQL hashes before repair
+      - name: Remove latest journal entry to simulate drift
         run: |
-          echo "$EXPECTED_0008_SHA256  src/shared/db/migrations/0008_workflows.sql" | sha256sum -c -
-          echo "$EXPECTED_0009_SHA256  src/shared/db/migrations/0009_mkety_auth.sql" | sha256sum -c -
-      - name: Preserve authoritative manual SQL bodies
+          node - <<'NODE'
+          const fs = require('fs');
+          const p = 'src/shared/db/migrations/meta/_journal.json';
+          const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+          const removed = j.entries.pop();
+          if (removed?.tag !== '0009_mkety_auth') {
+            throw new Error(`Expected to remove 0009_mkety_auth, got ${removed?.tag}`);
+          }
+          fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          NODE
+      - name: RED - baseline check must reject SQL missing from journal
         run: |
-          cp src/shared/db/migrations/0008_workflows.sql /tmp/0008_workflows.sql
-          cp src/shared/db/migrations/0009_mkety_auth.sql /tmp/0009_mkety_auth.sql
-          rm src/shared/db/migrations/0008_workflows.sql
-          rm src/shared/db/migrations/0009_mkety_auth.sql
-      - name: Let Drizzle regenerate missing journal entries
-        run: |
-          pnpm db:generate --custom --name=workflows
-          pnpm db:generate --custom --name=mkety_auth
-          cp src/shared/db/migrations/meta/_journal.json /tmp/journal-through-0009.json
-      - name: Restore authoritative SQL bodies
-        run: |
-          cp /tmp/0008_workflows.sql src/shared/db/migrations/0008_workflows.sql
-          cp /tmp/0009_mkety_auth.sql src/shared/db/migrations/0009_mkety_auth.sql
-          echo "$EXPECTED_0008_SHA256  src/shared/db/migrations/0008_workflows.sql" | sha256sum -c -
-          echo "$EXPECTED_0009_SHA256  src/shared/db/migrations/0009_mkety_auth.sql" | sha256sum -c -
-      - name: Capture current schema as post-0009 snapshot
-        run: |
-          pnpm db:generate --name=current_schema_capture
-          test -f src/shared/db/migrations/0010_current_schema_capture.sql
-          test -f src/shared/db/migrations/meta/0010_snapshot.json
-          cp src/shared/db/migrations/meta/0010_snapshot.json src/shared/db/migrations/meta/0009_snapshot.json
-          cp /tmp/journal-through-0009.json src/shared/db/migrations/meta/_journal.json
-          rm src/shared/db/migrations/0010_current_schema_capture.sql
-          rm src/shared/db/migrations/meta/0010_snapshot.json
-      - name: Prove forward generation is a no-op
-        run: |
-          before="$(find src/shared/db/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | sha256sum | cut -d' ' -f1)"
-          pnpm db:generate --name=forward_probe
-          after="$(find src/shared/db/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | sha256sum | cut -d' ' -f1)"
-          test "$before" = "$after"
-          test ! -e src/shared/db/migrations/0010_forward_probe.sql
-      - name: Verify migration consistency
-        run: |
-          pnpm db:check:migrations
-          pnpm exec drizzle-kit check
-      - name: Assert repair changes only three metadata files
-        run: |
-          mapfile -t changed < <(git status --porcelain | awk '{print $2}' | sort)
-          printf '%s\n' "${changed[@]}"
-          expected=(
-            src/shared/db/migrations/meta/0008_snapshot.json
-            src/shared/db/migrations/meta/0009_snapshot.json
-            src/shared/db/migrations/meta/_journal.json
-          )
-          test "${#changed[@]}" -eq "${#expected[@]}"
-          for i in "${!expected[@]}"; do
-            test "${changed[$i]}" = "${expected[$i]}"
-          done
-          echo "$EXPECTED_0008_SHA256  src/shared/db/migrations/0008_workflows.sql" | sha256sum -c -
-          echo "$EXPECTED_0009_SHA256  src/shared/db/migrations/0009_mkety_auth.sql" | sha256sum -c -
-      - name: Commit verified metadata repair
-        run: |
-          git config user.name 'Mkety Migration Baseline Bot'
-          git config user.email 'actions@users.noreply.github.com'
-          git add \
-            src/shared/db/migrations/meta/_journal.json \
-            src/shared/db/migrations/meta/0008_snapshot.json \
-            src/shared/db/migrations/meta/0009_snapshot.json
-          git diff --cached --name-only
-          test "$(git diff --cached --name-only | wc -l)" -eq 3
-          git commit -m 'fix(db): establish post-auth Drizzle forward baseline'
-          git push origin "HEAD:${AUTH_BRANCH}"
+          if pnpm db:check:migrations; then
+            echo 'RED CONFIRMED: current guard incorrectly accepts SQL that is missing from the Drizzle journal.' >&2
+            exit 1
+          fi
+          echo 'Guard already rejects the drift; RED expectation was not reproduced.' >&2
+          exit 2
