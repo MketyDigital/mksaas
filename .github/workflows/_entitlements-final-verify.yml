@@ -1,0 +1,91 @@
+name: Entitlements Final Verification
+
+on:
+  push:
+    branches:
+      - feat/mkety-entitlements-core
+
+permissions:
+  contents: read
+
+concurrency:
+  group: entitlements-final-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Entitlements final immutable verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SKIP_ENV_VALIDATION: 'true'
+      DATABASE_URL: postgresql://localhost/placeholder
+
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+
+      - name: Record immutable SHA
+        run: |
+          echo "VERIFY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          git status --short
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Entitlements targeted suites
+        run: pnpm test -- src/features/entitlements src/shared/db/schema/entitlements.test.ts --runInBand
+
+      - name: Run Platform workspace entitlement seam tests
+        run: pnpm test -- src/features/platform-app-experience src/features/entitlements/server/workspace-access.test.ts --runInBand
+
+      - name: Run full test suite
+        run: pnpm test
+
+      - name: Type check
+        run: pnpm type-check
+
+      - name: Lint without errors
+        run: pnpm lint
+
+      - name: Verify migration baseline
+        run: |
+          pnpm db:check:migrations
+          pnpm exec drizzle-kit check
+
+      - name: Prove forward Drizzle generation is a no-op
+        run: |
+          before=$(git status --porcelain)
+          test -z "$before"
+          pnpm db:generate
+          after=$(git status --porcelain)
+          if [ -n "$after" ]; then
+            echo "Forward generation changed the repository:"
+            git status --short
+            git diff -- src/shared/db/migrations src/shared/db/migrations/meta
+            exit 1
+          fi
+
+      - name: Verify vinext compatibility
+        run: pnpm vinext check
+
+      - name: Build production bundle
+        run: pnpm build
+
+      - name: Verify Cloudflare preview packaging only
+        run: pnpm run deploy --env preview --dry-run
+
+      - name: Verify repository stayed immutable
+        run: |
+          test "$(git rev-parse HEAD)" = "$VERIFY_SHA"
+          test -z "$(git status --porcelain)"
+          echo "Verified immutable Entitlements SHA: $VERIFY_SHA"
