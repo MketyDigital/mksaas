@@ -1,9 +1,22 @@
-import { ArrowRight, BookOpen, Bot, CheckCircle2, Cloud, GraduationCap, Layers3, LockKeyhole, Rocket, Shield, Workflow } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, CheckCircle2, Cloud, Layers3, Rocket, Shield, Workflow } from 'lucide-react';
 import Link from 'next/link';
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
-import type { PlatformFaqItemInput, PlatformFooterGroupInput, PlatformHeroSectionInput, PlatformNavigationItemInput, PlatformPricingPlanInput, PlatformSiteSettingsInput, PlatformWorkspaceSectionInput } from '../../schemas';
+import type {
+  PlatformAcademySectionInput,
+  PlatformEnterpriseSectionInput,
+  PlatformFaqItemInput,
+  PlatformFooterGroupInput,
+  PlatformHeroSectionInput,
+  PlatformNavigationItemInput,
+  PlatformOverviewSectionInput,
+  PlatformPricingPlanInput,
+  PlatformSiteSettingsInput,
+  PlatformSolutionHubSectionInput,
+  PlatformTrustSectionInput,
+  PlatformWorkspaceSectionInput,
+} from '../../schemas';
 import { MketyPublicShell } from './MketyPublicShell';
 
 interface MketyHomePageProps {
@@ -11,7 +24,12 @@ interface MketyHomePageProps {
     settings: PlatformSiteSettingsInput;
     navigation: PlatformNavigationItemInput[];
     hero: PlatformHeroSectionInput;
+    platformOverview: PlatformOverviewSectionInput;
     workspaces: PlatformWorkspaceSectionInput;
+    solutionHub: PlatformSolutionHubSectionInput;
+    academy: PlatformAcademySectionInput;
+    enterprise: PlatformEnterpriseSectionInput;
+    trust: PlatformTrustSectionInput;
     pricingPlans: PlatformPricingPlanInput[];
     faqItems: PlatformFaqItemInput[];
     footerGroups: PlatformFooterGroupInput[];
@@ -20,8 +38,64 @@ interface MketyHomePageProps {
 
 const workspaceIcons = [Bot, Workflow, Rocket, Layers3];
 
+type ContentSection = PlatformOverviewSectionInput | PlatformSolutionHubSectionInput | PlatformAcademySectionInput | PlatformEnterpriseSectionInput | PlatformTrustSectionInput;
+
+function PublicContentSection({ section, muted = false }: { section: ContentSection; muted?: boolean }) {
+  return (
+    <section className={muted ? 'bg-muted/30 px-4 py-20' : 'px-4 py-20'}>
+      <div className="container mx-auto">
+        <div className="max-w-3xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">{section.eyebrow}</p>
+          <h2 className="mt-3 text-3xl font-bold md:text-4xl">{section.title}</h2>
+          <p className="mt-4 leading-7 text-muted-foreground">{section.description}</p>
+          {section.cta && (
+            <Button asChild variant="outline" className="mt-6 rounded-xl">
+              <Link href={section.cta.href}>{section.cta.label}</Link>
+            </Button>
+          )}
+        </div>
+        {section.items.length > 0 && (
+          <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {section.items.map((item) => (
+              <Card key={item.key} className="rounded-2xl">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-3">
+                    <CardTitle>{item.title}</CardTitle>
+                    {item.badge && <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">{item.badge}</span>}
+                  </div>
+                  <CardDescription>{item.description}</CardDescription>
+                </CardHeader>
+                {item.href && (
+                  <CardContent>
+                    <Link href={item.href} className="text-sm font-medium text-primary hover:underline">
+                      Learn more →
+                    </Link>
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function MketyHomePage({ content }: MketyHomePageProps) {
-  const { settings, hero, navigation, workspaces, pricingPlans, faqItems, footerGroups } = content;
+  const {
+    settings,
+    hero,
+    navigation,
+    platformOverview,
+    workspaces,
+    solutionHub,
+    academy,
+    enterprise,
+    trust,
+    pricingPlans,
+    faqItems,
+    footerGroups,
+  } = content;
 
   return (
     <MketyPublicShell settings={settings} navigation={navigation} footerGroups={footerGroups}>
@@ -70,15 +144,9 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
         </div>
       </section>
 
-      <section id="platform" className="container mx-auto px-4 py-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Platform</p>
-          <h2 className="mt-3 text-3xl font-bold md:text-4xl">Build, automate, deploy, integrate, and operate.</h2>
-          <p className="mt-4 text-muted-foreground">
-            Mkety connects projects, teams, AI, automation, deployments, domains, SolutionHub, usage, credits, billing, and administration without turning the product into an AI-only tool.
-          </p>
-        </div>
-      </section>
+      <div id="platform">
+        <PublicContentSection section={platformOverview} />
+      </div>
 
       <section id="workspaces" className="bg-muted/30 px-4 py-20">
         <div className="container mx-auto">
@@ -116,43 +184,16 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
         </div>
       </section>
 
-      <section id="solutions" className="container mx-auto grid gap-8 px-4 py-20 lg:grid-cols-3">
-        <Card className="rounded-2xl lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-3xl">SolutionHub</CardTitle>
-            <CardDescription>
-              Ready-made solutions, workflows, agents, applications, deployment templates, business automations, and industry blueprints that can be launched into Mkety workspaces.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card id="academy" className="rounded-2xl">
-          <CardHeader>
-            <GraduationCap className="mb-4 h-8 w-8 text-primary" />
-            <CardTitle>Mkety Academy</CardTitle>
-            <CardDescription>Practical technology training, AI workshops, business implementation courses, certifications, and enterprise enablement.</CardDescription>
-          </CardHeader>
-        </Card>
-      </section>
-
-      <section id="enterprise" className="bg-muted/30 px-4 py-20">
-        <div className="container mx-auto grid gap-6 lg:grid-cols-3">
-          <Card className="rounded-2xl lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-3xl">Enterprise and customer solutions</CardTitle>
-              <CardDescription>
-                Mkety can deliver custom systems, specialized implementations, Trading infrastructure, mklms-style customer projects, integrations, and managed platform support while keeping these solutions separated from normal self-service workspaces.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card className="rounded-2xl border-primary/30">
-            <CardHeader>
-              <LockKeyhole className="mb-4 h-8 w-8 text-primary" />
-              <CardTitle>Controlled access</CardTitle>
-              <CardDescription>Identity, authorization, entitlements, billing, deployment, and security remain code-controlled and audit-protected.</CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
-      </section>
+      <div id="solutions">
+        <PublicContentSection section={solutionHub} />
+      </div>
+      <div id="academy">
+        <PublicContentSection section={academy} muted />
+      </div>
+      <div id="enterprise">
+        <PublicContentSection section={enterprise} />
+      </div>
+      <PublicContentSection section={trust} muted />
 
       <section id="pricing" className="container mx-auto px-4 py-20">
         <div className="mx-auto max-w-3xl text-center">
