@@ -1,10 +1,8 @@
 import { readProviderJson } from './http';
 import type { PublicAIProviderAdapter } from './types';
 
-const encoder = new TextEncoder();
-
 function bytes(value: string | Uint8Array): Uint8Array<ArrayBuffer> {
-  return typeof value === 'string' ? encoder.encode(value) : new Uint8Array(value);
+  return typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
 }
 
 async function sha256(value: string): Promise<Uint8Array<ArrayBuffer>> {
