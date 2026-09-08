@@ -62,7 +62,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: pnpm test -- --runInBand
+        run: pnpm test
 
       - name: Run type-check
         run: pnpm type-check
@@ -99,18 +99,49 @@ jobs:
       - name: Validate Cloudflare package
         run: pnpm run deploy --dry-run
 
-      - name: Find generated Worker config
+      - name: Find generated server Worker config
         id: worker-config
         shell: bash
         run: |
           set -euo pipefail
-          CONFIG_PATH="$(find dist -type f -name wrangler.json | head -n 1)"
+          CONFIG_PATH="$(node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          function walk(directory) {
+            const entries = fs.readdirSync(directory, { withFileTypes: true });
+            const results = [];
+            for (const entry of entries) {
+              const fullPath = path.join(directory, entry.name);
+              if (entry.isDirectory()) results.push(...walk(fullPath));
+              else if (entry.name === 'wrangler.json') results.push(fullPath);
+            }
+            return results;
+          }
+
+          const configs = walk('dist').flatMap((configPath) => {
+            try {
+              return [{ path: configPath, config: JSON.parse(fs.readFileSync(configPath, 'utf8')) }];
+            } catch {
+              return [];
+            }
+          });
+
+          const selected =
+            configs.find(({ config }) => config.main && config.name === process.env.CANDIDATE_WORKER_NAME) ??
+            configs.find(({ config, path: configPath }) => config.main && !configPath.includes(`${path.sep}client${path.sep}`));
+
+          if (!selected) process.exit(2);
+          process.stdout.write(selected.path);
+          NODE
+          )"
           if [ -z "$CONFIG_PATH" ]; then
-            echo 'No generated Cloudflare wrangler.json was found under dist/.'
+            echo 'No generated server Worker wrangler.json with a main entry was found under dist/.'
+            find dist -type f -name wrangler.json -print || true
             exit 1
           fi
           echo "path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
-          echo "Using generated candidate Worker config: $CONFIG_PATH"
+          echo "Using generated server Worker config: $CONFIG_PATH"
 
       - name: Deploy isolated candidate Worker
         id: deploy
