@@ -1,7 +1,7 @@
 'use client';
 
 import { Bot, History, MessageCircle, Plus, Send, Trash2, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 interface PublicConversationSummary {
   id: string;
