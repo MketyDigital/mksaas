@@ -20,7 +20,7 @@ interface PublicAIProviderModelDefinition {
 
 export const PUBLIC_AI_MODEL_REGISTRY: Record<PublicAIProviderId, PublicAIProviderModelDefinition> = {
   openai: {
-    defaultModel: 'gpt-5.6-terra',
+    defaultModel: 'gpt-5.6-luna',
     models: [
       { id: 'gpt-6-astra', status: 'current-limited' },
       { id: 'gpt-5.6-sol', status: 'current-stable' },
