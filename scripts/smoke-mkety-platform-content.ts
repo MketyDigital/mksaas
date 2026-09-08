@@ -1,7 +1,7 @@
 /**
  * Mkety Platform Content Smoke Script
  *
- * Verifies that the CMS migrations, public-assistant migrations, seeders, and read loaders work together against a real database.
+ * Verifies that the CMS migrations, public-assistant migrations, enterprise-checkout migration, seeders, and read loaders work together against a real database.
  */
 
 import { getPublishedAppExperience } from '../src/features/platform-app-experience/server/queries';
@@ -16,6 +16,7 @@ import {
 } from '../src/features/platform-content/server/queries';
 import { db } from '../src/shared/db';
 import {
+  platformEnterpriseOrders,
   publicAIConversations,
   publicAIMemoryFacts,
   publicAIMessages,
@@ -37,6 +38,10 @@ async function assertPublicAIMemoryTables() {
     db.select({ id: publicAIMemoryFacts.id }).from(publicAIMemoryFacts).limit(1),
     db.select({ id: publicAIToolRuns.id }).from(publicAIToolRuns).limit(1),
   ]);
+}
+
+async function assertEnterpriseCheckoutTables() {
+  await db.select({ id: platformEnterpriseOrders.id }).from(platformEnterpriseOrders).limit(1);
 }
 
 async function main() {
@@ -85,6 +90,7 @@ async function main() {
   assertSmoke(article?.title, 'docs article should be readable by category/slug');
 
   await assertPublicAIMemoryTables();
+  await assertEnterpriseCheckoutTables();
 
   const appExperience = await getPublishedAppExperience();
   assertSmoke(appExperience.dashboard.headline.includes('Mkety'), 'app experience dashboard should load Mkety headline');
