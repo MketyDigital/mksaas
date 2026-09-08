@@ -1,9 +1,9 @@
-import type { GrantCreditsInput } from '../types';
 import {
-  createPeriodGrantService,
-  type BillingCreditAllowanceState,
   type BillingCreditAllowanceSource,
+  type BillingCreditAllowanceState,
+  createPeriodGrantService,
 } from './period-grants';
+import type { GrantCreditsInput } from '../types';
 
 class FakeAllowanceSource implements BillingCreditAllowanceSource {
   constructor(private readonly states: Map<string, BillingCreditAllowanceState | null>) {}
