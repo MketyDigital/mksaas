@@ -3,7 +3,6 @@ import type { PublicAIProviderAdapter } from './providers/types';
 
 describe('Public Mkety AI gateway', () => {
   const request = {
-    model: 'gpt-5.6-terra',
     messages: [{ role: 'user' as const, content: 'What is Mkety?' }],
     system: 'Public Mkety support only.',
   };
@@ -15,11 +14,16 @@ describe('Public Mkety AI gateway', () => {
     };
 
     await expect(
-      runPublicAIGateway({ request, primary, fallbacks: [] }),
+      runPublicAIGateway({
+        request,
+        primary: { adapter: primary, model: 'gpt-5.6-terra' },
+        fallbacks: [],
+      }),
     ).resolves.toMatchObject({ text: 'Mkety is a technology platform.', fallbackCount: 0 });
   });
 
-  it('uses the ordered fallback only for retryable provider failures', async () => {
+  it('uses the ordered fallback with that provider own current model', async () => {
+    let fallbackModel = '';
     const primary: PublicAIProviderAdapter = {
       id: 'openai',
       generate: async () => {
@@ -28,12 +32,20 @@ describe('Public Mkety AI gateway', () => {
     };
     const fallback: PublicAIProviderAdapter = {
       id: 'gemini',
-      generate: async () => ({ text: 'Fallback answer.' }),
+      generate: async (providerRequest) => {
+        fallbackModel = providerRequest.model;
+        return { text: 'Fallback answer.' };
+      },
     };
 
     await expect(
-      runPublicAIGateway({ request, primary, fallbacks: [fallback] }),
+      runPublicAIGateway({
+        request,
+        primary: { adapter: primary, model: 'gpt-5.6-terra' },
+        fallbacks: [{ adapter: fallback, model: 'gemini-3.8-flash' }],
+      }),
     ).resolves.toMatchObject({ text: 'Fallback answer.', fallbackCount: 1 });
+    expect(fallbackModel).toBe('gemini-3.8-flash');
   });
 
   it('does not fail over a non-retryable validation/provider error', async () => {
@@ -52,9 +64,13 @@ describe('Public Mkety AI gateway', () => {
       },
     };
 
-    await expect(runPublicAIGateway({ request, primary, fallbacks: [fallback] })).rejects.toThrow(
-      /bad request/,
-    );
+    await expect(
+      runPublicAIGateway({
+        request,
+        primary: { adapter: primary, model: 'gpt-5.6-terra' },
+        fallbacks: [{ adapter: fallback, model: 'gemini-3.8-flash' }],
+      }),
+    ).rejects.toThrow(/bad request/);
     expect(fallbackCalled).toBe(false);
   });
 });
