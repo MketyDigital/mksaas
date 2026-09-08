@@ -1,7 +1,7 @@
 /**
  * Mkety Platform Content Smoke Script
  *
- * Verifies that the CMS migrations, seeders, and read loaders work together against a real database.
+ * Verifies that the CMS migrations, public-assistant migrations, seeders, and read loaders work together against a real database.
  */
 
 import { getPublishedAppExperience } from '../src/features/platform-app-experience/server/queries';
@@ -14,11 +14,29 @@ import {
   getPublishedPlatformSiteSettings,
   getPublishedPricingPlans,
 } from '../src/features/platform-content/server/queries';
+import { db } from '../src/shared/db';
+import {
+  publicAIConversations,
+  publicAIMemoryFacts,
+  publicAIMessages,
+  publicAIToolRuns,
+  publicAIVisitors,
+} from '../src/shared/db/schema';
 
 function assertSmoke(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(`Smoke check failed: ${message}`);
   }
+}
+
+async function assertPublicAIMemoryTables() {
+  await Promise.all([
+    db.select({ id: publicAIVisitors.id }).from(publicAIVisitors).limit(1),
+    db.select({ id: publicAIConversations.id }).from(publicAIConversations).limit(1),
+    db.select({ id: publicAIMessages.id }).from(publicAIMessages).limit(1),
+    db.select({ id: publicAIMemoryFacts.id }).from(publicAIMemoryFacts).limit(1),
+    db.select({ id: publicAIToolRuns.id }).from(publicAIToolRuns).limit(1),
+  ]);
 }
 
 async function main() {
@@ -65,6 +83,8 @@ async function main() {
   assertSmoke(firstArticle, 'docs tree should return at least one article');
   const article = await getPublishedDocsArticle(`${firstArticle.categoryKey}/${firstArticle.slug}`);
   assertSmoke(article?.title, 'docs article should be readable by category/slug');
+
+  await assertPublicAIMemoryTables();
 
   const appExperience = await getPublishedAppExperience();
   assertSmoke(appExperience.dashboard.headline.includes('Mkety'), 'app experience dashboard should load Mkety headline');
