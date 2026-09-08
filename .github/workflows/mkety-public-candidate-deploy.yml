@@ -148,57 +148,30 @@ jobs:
       - name: Validate Cloudflare package
         run: pnpm run deploy --dry-run
 
-      - name: Find generated server Worker config
-        id: worker-config
+      - name: Verify isolated candidate Worker config
         shell: bash
         run: |
-          set -euo pipefail
-          CONFIG_PATH="$(node <<'NODE'
+          node <<'NODE'
           const fs = require('node:fs');
-          const path = require('node:path');
-
-          function walk(directory) {
-            const entries = fs.readdirSync(directory, { withFileTypes: true });
-            const results = [];
-            for (const entry of entries) {
-              const fullPath = path.join(directory, entry.name);
-              if (entry.isDirectory()) results.push(...walk(fullPath));
-              else if (entry.name === 'wrangler.json') results.push(fullPath);
-            }
-            return results;
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          if (config.name !== process.env.CANDIDATE_WORKER_NAME) {
+            throw new Error(`Unexpected candidate Worker name: ${config.name}`);
           }
-
-          const configs = walk('dist').flatMap((configPath) => {
-            try {
-              return [{ path: configPath, config: JSON.parse(fs.readFileSync(configPath, 'utf8')) }];
-            } catch {
-              return [];
-            }
-          });
-
-          const selected =
-            configs.find(({ config }) => config.main && config.name === process.env.CANDIDATE_WORKER_NAME) ??
-            configs.find(({ config, path: configPath }) => config.main && !configPath.includes(`${path.sep}client${path.sep}`));
-
-          if (!selected) process.exit(2);
-          process.stdout.write(selected.path);
+          if ('route' in config || 'routes' in config) {
+            throw new Error('Candidate Worker must not contain a custom-domain route binding.');
+          }
+          if (config.preview_urls !== true) {
+            throw new Error('Candidate Worker must keep workers.dev preview URLs enabled.');
+          }
+          console.log('Candidate Worker config is isolated from mkety.com custom-domain routes.');
           NODE
-          )"
-          if [ -z "$CONFIG_PATH" ]; then
-            echo 'No generated server Worker wrangler.json with a main entry was found under dist/.'
-            find dist -type f -name wrangler.json -print || true
-            exit 1
-          fi
-          echo "path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
-          echo "Using generated server Worker config: $CONFIG_PATH"
 
       - name: Deploy isolated candidate Worker
         id: deploy
         shell: bash
         run: |
           set -euo pipefail
-          CONFIG_PATH='${{ steps.worker-config.outputs.path }}'
-          pnpm exec wrangler deploy --config "$CONFIG_PATH" 2>&1 | tee /tmp/mkety-candidate-deploy.log
+          pnpm run deploy 2>&1 | tee /tmp/mkety-candidate-deploy.log
           CANDIDATE_URL="$(grep -Eo 'https://[^[:space:]]+workers\.dev' /tmp/mkety-candidate-deploy.log | tail -n 1 || true)"
           if [ -z "$CANDIDATE_URL" ]; then
             echo 'Cloudflare deployment completed without a discoverable workers.dev URL.'
