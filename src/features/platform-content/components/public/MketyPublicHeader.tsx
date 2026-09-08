@@ -42,39 +42,30 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
           ))}
         </nav>
 
-        <div className="hidden items-center gap-2 sm:flex">
-          <Button asChild variant="ghost">
+        <div className="flex items-center gap-2">
+          <Button asChild variant="ghost" className="hidden sm:inline-flex">
             <Link href="/login">Sign In</Link>
           </Button>
-          <Button asChild className="rounded-xl">
+          <Button asChild className="hidden rounded-xl md:inline-flex">
             <Link href="/create-workspace">Get Started</Link>
           </Button>
-        </div>
-
-        <details className="relative lg:hidden">
-          <summary className="cursor-pointer list-none rounded-lg border px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Menu
-          </summary>
-          <div className="absolute right-0 mt-2 w-72 rounded-2xl border bg-background p-3 shadow-xl">
-            <nav aria-label="Mobile navigation" className="grid gap-1">
-              {headerItems.map((item) => (
-                <PublicNavLink
-                  key={`mobile-${item.label}-${item.href}`}
-                  item={item}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                />
-              ))}
-            </nav>
-            <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3">
-              <Button asChild variant="outline" size="sm">
-                <Link href="/login">Sign In</Link>
-              </Button>
-              <Button asChild size="sm">
-                <Link href="/create-workspace">Get Started</Link>
-              </Button>
+          <details className="relative lg:hidden">
+            <summary className="cursor-pointer list-none rounded-lg border px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Menu
+            </summary>
+            <div className="absolute right-0 mt-2 w-72 rounded-2xl border bg-background p-3 shadow-xl">
+              <nav aria-label="Mobile navigation" className="grid gap-1">
+                {headerItems.map((item) => (
+                  <PublicNavLink
+                    key={`mobile-${item.label}-${item.href}`}
+                    item={item}
+                    className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                  />
+                ))}
+              </nav>
             </div>
-          </div>
-        </details>
+          </details>
+        </div>
       </div>
     </header>
   );
