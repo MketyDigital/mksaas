@@ -30,7 +30,7 @@
     "embeddings:recreate": "tsx scripts/generate-embeddings.ts --recreate",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "deploy": "vinext-cloudflare deploy",
+    "deploy": "bash scripts/deploy-vinext-cloudflare.sh",
     "preview": "vinext start",
     "dev:next": "next dev --turbopack --hostname 0.0.0.0 --port 3000"
   },
