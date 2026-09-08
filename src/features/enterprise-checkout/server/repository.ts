@@ -13,6 +13,13 @@ export interface EnterpriseOrderRepository {
     providerCheckoutReference?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void>;
+  applyPaymentState(input: {
+    orderId: string;
+    paymentStatus: 'pending' | 'confirmed' | 'failed';
+    checkoutStatus: 'awaiting_confirmation' | 'completed' | 'failed';
+    providerPaymentReference?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<PlatformEnterpriseOrder>;
   findById(orderId: string): Promise<PlatformEnterpriseOrder | null>;
 }
 
@@ -42,6 +49,29 @@ export const enterpriseOrderRepository: EnterpriseOrderRepository = {
         updatedAt: new Date(),
       })
       .where(eq(platformEnterpriseOrders.id, input.orderId));
+  },
+
+  async applyPaymentState(input) {
+    const existing = await this.findById(input.orderId);
+    if (!existing) throw new Error('Enterprise order not found.');
+
+    if (existing.paymentStatus === 'confirmed') return existing;
+
+    const [updated] = await db
+      .update(platformEnterpriseOrders)
+      .set({
+        paymentStatus: input.paymentStatus,
+        checkoutStatus: input.checkoutStatus,
+        providerPaymentReference: input.providerPaymentReference ?? existing.providerPaymentReference,
+        metadata: { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) },
+        confirmedAt: input.paymentStatus === 'confirmed' ? new Date() : existing.confirmedAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(platformEnterpriseOrders.id, input.orderId))
+      .returning();
+
+    if (!updated) throw new Error('Enterprise payment update failed.');
+    return updated;
   },
 
   async findById(orderId) {
