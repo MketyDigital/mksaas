@@ -1,10 +1,36 @@
 process.env.SKIP_ENV_VALIDATION = process.env.SKIP_ENV_VALIDATION ?? 'true';
 
+import { webcrypto } from 'node:crypto';
+import { TextDecoder, TextEncoder } from 'node:util';
+
 // jest-dom adds custom jest matchers for asserting on DOM nodes.
 // allows you to do things like:
 // expect(element).toHaveTextContent(/react/i)
 // learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
+
+// jsdom does not expose the complete modern Web Crypto / Encoding globals that
+// Cloudflare Workers and current Node runtimes provide. Public Mkety AI crypto
+// tests exercise the real implementation, so provide the Node equivalents here
+// instead of weakening production HMAC/SigV4 code for the test environment.
+if (!globalThis.crypto?.subtle) {
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: webcrypto,
+  });
+}
+if (!globalThis.TextEncoder) {
+  Object.defineProperty(globalThis, 'TextEncoder', {
+    configurable: true,
+    value: TextEncoder,
+  });
+}
+if (!globalThis.TextDecoder) {
+  Object.defineProperty(globalThis, 'TextDecoder', {
+    configurable: true,
+    value: TextDecoder,
+  });
+}
 
 // ============================================================================
 // Global Mocks
