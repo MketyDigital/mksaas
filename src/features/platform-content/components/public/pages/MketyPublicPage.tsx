@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
@@ -11,9 +12,10 @@ interface MketyPublicPageProps {
   settings: PlatformSiteSettingsInput;
   navigation: PlatformNavigationItemInput[];
   footerGroups: PlatformFooterGroupInput[];
+  featuredContent?: ReactNode;
 }
 
-export function MketyPublicPage({ page, settings, navigation, footerGroups }: MketyPublicPageProps) {
+export function MketyPublicPage({ page, settings, navigation, footerGroups, featuredContent }: MketyPublicPageProps) {
   return (
     <MketyPublicShell settings={settings} navigation={navigation} footerGroups={footerGroups}>
       <section className="border-b bg-gradient-to-b from-primary/10 via-background to-background px-4 py-20 lg:py-28">
@@ -23,6 +25,8 @@ export function MketyPublicPage({ page, settings, navigation, footerGroups }: Mk
           <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">{page.intro}</p>
         </div>
       </section>
+
+      {featuredContent}
 
       {page.sections.map((section, index) => (
         <section key={`${page.slug}-${section.eyebrow}-${index}`} className={index % 2 === 1 ? 'bg-muted/30 px-4 py-20' : 'px-4 py-20'}>
