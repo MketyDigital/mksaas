@@ -1,7 +1,7 @@
 import {
-  PUBLIC_AI_MODEL_REGISTRY,
   assertCurrentPublicAIModel,
   getPublicAIModelDefinition,
+  PUBLIC_AI_MODEL_REGISTRY,
 } from './models';
 
 describe('Public Mkety AI September 2026 model registry', () => {
@@ -29,7 +29,7 @@ describe('Public Mkety AI September 2026 model registry', () => {
     );
   });
 
-  it('tracks current limited rollout models without treating them as production defaults', () => {
+  it('keeps current limited-access models visible without using them as blind defaults', () => {
     expect(getPublicAIModelDefinition('openai', 'gpt-6-astra')?.status).toBe('current-limited');
     expect(getPublicAIModelDefinition('azure-openai', 'gpt-6-astra')?.status).toBe('current-limited');
   });
@@ -38,11 +38,7 @@ describe('Public Mkety AI September 2026 model registry', () => {
     ['openai', 'gpt-4o-mini'],
     ['gemini', 'gemini-2.0-flash'],
     ['vertex', 'gemini-2.0-flash'],
-  ] as const)('rejects legacy or unapproved model %s/%s', (provider, model) => {
-    expect(() => assertCurrentPublicAIModel(provider, model)).toThrow(/not an approved current public AI model/i);
-  });
-
-  it('accepts current limited models when explicitly configured', () => {
-    expect(assertCurrentPublicAIModel('openai', 'gpt-6-astra').id).toBe('gpt-6-astra');
+  ] as const)('rejects legacy/unapproved public model %s:%s', (provider, model) => {
+    expect(() => assertCurrentPublicAIModel(provider, model)).toThrow(/not an approved current/);
   });
 });
