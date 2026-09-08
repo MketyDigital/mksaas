@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { parseEnterpriseCheckoutInput } from '../domain';
 import type { EnterpriseCheckoutResult, EnterprisePaymentProvider } from '../domain';
 import { getEnterprisePaymentProvider } from '../providers/registry';
@@ -43,7 +41,7 @@ function replayResult(order: Awaited<ReturnType<EnterpriseOrderRepository['findB
 export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckoutServiceDependencies = {}) {
   const repository = dependencies.repository ?? enterpriseOrderRepository;
   const getProvider = dependencies.getProvider ?? getEnterprisePaymentProvider;
-  const createOrderId = dependencies.createOrderId ?? (() => `MKETY-ENT-${randomUUID()}`);
+  const createOrderId = dependencies.createOrderId ?? (() => `MKETY-ENT-${crypto.randomUUID()}`);
 
   return {
     async createEnterpriseCheckout(rawInput: unknown, context: EnterpriseCheckoutRequestContext): Promise<EnterpriseCheckoutResult> {
