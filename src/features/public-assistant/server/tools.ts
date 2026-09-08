@@ -20,8 +20,8 @@ export const PUBLIC_SUPPORT_TOOL_NAMES = [
 export type PublicSupportToolName = (typeof PUBLIC_SUPPORT_TOOL_NAMES)[number];
 
 const searchInputSchema = z.object({ query: z.string().trim().min(2).max(300) });
-const routeInputSchema = z.object({ destination: z.string().trim().min(1).max(120) });
-const productInputSchema = z.object({ product: z.string().trim().min(1).max(120) });
+const routeInputSchema = z.object({ destination: z.string().trim().min(1).max(300) });
+const productInputSchema = z.object({ product: z.string().trim().min(1).max(300) });
 const emptyInputSchema = z.object({}).strict();
 
 function normalize(value: string) {
@@ -29,34 +29,36 @@ function normalize(value: string) {
 }
 
 const ROUTE_ALIASES: Record<string, string> = {
-  ai: '/platform',
   'agent builder': '/platform',
-  agents: '/platform',
-  automate: '/workspaces',
-  automation: '/workspaces',
-  deployment: '/workspaces',
-  deploy: '/workspaces',
-  docs: '/docs',
   documentation: '/docs',
   solutionhub: '/solutions',
   'solution hub': '/solutions',
-  solutions: '/solutions',
+  automation: '/workspaces',
+  deployment: '/workspaces',
   trading: '/enterprise',
-  custom: '/enterprise',
   support: '/contact',
+  agents: '/platform',
+  automate: '/workspaces',
+  deploy: '/workspaces',
+  docs: '/docs',
+  solutions: '/solutions',
+  custom: '/enterprise',
+  ai: '/platform',
 };
 
 export function resolvePublicRoute(destination: string): { label: string; path: string } | null {
   const normalized = normalize(destination);
-  const aliasPath = ROUTE_ALIASES[normalized];
+  const alias = Object.entries(ROUTE_ALIASES)
+    .sort(([a], [b]) => b.length - a.length)
+    .find(([key]) => normalized === key || normalized.includes(key));
+  const aliasPath = alias?.[1];
   const route = aliasPath
     ? MKETY_PUBLIC_ROUTES.find((candidate) => candidate.path === aliasPath)
-    : MKETY_PUBLIC_ROUTES.find(
-        (candidate) =>
-          normalize(candidate.key) === normalized ||
-          normalize(candidate.label) === normalized ||
-          normalize(candidate.path) === normalized,
-      );
+    : MKETY_PUBLIC_ROUTES.find((candidate) => {
+        const key = normalize(candidate.key);
+        const label = normalize(candidate.label);
+        return normalized === key || normalized === label || normalized.includes(label);
+      });
 
   return route ? { label: route.label, path: route.path } : null;
 }
