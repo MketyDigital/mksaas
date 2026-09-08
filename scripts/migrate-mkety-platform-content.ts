@@ -2,7 +2,7 @@
  * Mkety Platform Content Migration Runner
  *
  * The repository's Drizzle config writes generated migrations to src/shared/db/migrations.
- * The Mkety public CMS and public-assistant bootstrap SQL is intentionally kept in root migrations/
+ * The Mkety public CMS, public-assistant, and enterprise-checkout bootstrap SQL is intentionally kept in root migrations/
  * while the schema settles, so this runner applies those SQL files explicitly against a
  * real PostgreSQL database.
  *
@@ -36,6 +36,7 @@ const MIGRATION_FILES = [
   'migrations/0000_platform_content.sql',
   'migrations/0001_platform_app_experience.sql',
   'migrations/0002_public_ai_memory.sql',
+  'migrations/0003_platform_enterprise_orders.sql',
 ] as const;
 
 const queryClient = postgres(DATABASE_URL, {
