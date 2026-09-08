@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import {
@@ -13,14 +13,19 @@ import {
 } from '@/shared/db/schema/platform-content';
 
 import {
+  defaultAcademySection,
   defaultDocsArticles,
   defaultDocsCategories,
+  defaultEnterpriseSection,
   defaultFaqItems,
   defaultFooterGroups,
   defaultHeroSection,
   defaultPlatformNavigation,
+  defaultPlatformOverviewSection,
   defaultPlatformSiteSettings,
   defaultPricingPlans,
+  defaultSolutionHubSection,
+  defaultTrustSection,
   defaultWorkspaceSection,
 } from '../defaults';
 
@@ -29,6 +34,7 @@ const PUBLISHED = 'published' as const;
 type SeedResult = {
   siteSettings: 'created' | 'exists';
   homepage: 'created' | 'exists';
+  homepageSections: number;
   navigationItems: number;
   pricingPlans: number;
   pricingFeatures: number;
@@ -36,18 +42,27 @@ type SeedResult = {
   docsArticles: number;
 };
 
+const homepageSectionDefaults = [
+  { sectionKey: 'hero', sectionType: 'hero', sortOrder: 10, contentJson: defaultHeroSection },
+  { sectionKey: 'platform', sectionType: 'platform_overview', sortOrder: 20, contentJson: defaultPlatformOverviewSection },
+  { sectionKey: 'workspaces', sectionType: 'workspaces', sortOrder: 30, contentJson: defaultWorkspaceSection },
+  { sectionKey: 'solutions', sectionType: 'solution_hub', sortOrder: 40, contentJson: defaultSolutionHubSection },
+  { sectionKey: 'academy', sectionType: 'academy', sortOrder: 50, contentJson: defaultAcademySection },
+  { sectionKey: 'enterprise', sectionType: 'enterprise', sortOrder: 60, contentJson: defaultEnterpriseSection },
+  { sectionKey: 'trust', sectionType: 'trust', sortOrder: 70, contentJson: defaultTrustSection },
+  { sectionKey: 'faq', sectionType: 'faq', sortOrder: 80, contentJson: defaultFaqItems },
+  { sectionKey: 'footer', sectionType: 'footer_cta', sortOrder: 90, contentJson: defaultFooterGroups },
+] as const;
+
 /**
- * Seeds the initial Mkety public website/docs records from the code-owned defaults.
- *
- * This is intentionally idempotent and conservative:
- * - it does not overwrite existing admin-managed content;
- * - it creates published defaults only when a key/slug is absent;
- * - it keeps real billing/security/deployment logic outside editable content.
+ * Seeds initial Mkety public website/docs records from code-owned defaults.
+ * Existing admin-managed content is never overwritten.
  */
 export async function seedDefaultPlatformContent(): Promise<SeedResult> {
   const result: SeedResult = {
     siteSettings: 'exists',
     homepage: 'exists',
+    homepageSections: 0,
     navigationItems: 0,
     pricingPlans: 0,
     pricingFeatures: 0,
@@ -80,11 +95,11 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
     result.siteSettings = 'created';
   }
 
-  const existingHome = await db.query.platformPages.findFirst({
+  let home = await db.query.platformPages.findFirst({
     where: eq(platformPages.slug, 'home'),
   });
 
-  if (!existingHome) {
+  if (!home) {
     const inserted = await db
       .insert(platformPages)
       .values({
@@ -96,56 +111,32 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
         enabled: true,
         publishedAt: new Date(),
       })
-      .returning({ id: platformPages.id });
+      .returning();
 
-    const pageId = inserted[0]?.id;
-
-    if (pageId) {
-      await db.insert(platformPageSections).values([
-        {
-          pageId,
-          sectionKey: 'hero',
-          sectionType: 'hero',
-          sortOrder: 10,
-          enabled: true,
-          status: PUBLISHED,
-          contentJson: defaultHeroSection,
-          publishedAt: new Date(),
-        },
-        {
-          pageId,
-          sectionKey: 'workspaces',
-          sectionType: 'workspaces',
-          sortOrder: 20,
-          enabled: true,
-          status: PUBLISHED,
-          contentJson: defaultWorkspaceSection,
-          publishedAt: new Date(),
-        },
-        {
-          pageId,
-          sectionKey: 'faq',
-          sectionType: 'faq',
-          sortOrder: 80,
-          enabled: true,
-          status: PUBLISHED,
-          contentJson: defaultFaqItems,
-          publishedAt: new Date(),
-        },
-        {
-          pageId,
-          sectionKey: 'footer',
-          sectionType: 'footer_cta',
-          sortOrder: 90,
-          enabled: true,
-          status: PUBLISHED,
-          contentJson: defaultFooterGroups,
-          publishedAt: new Date(),
-        },
-      ]);
-    }
-
+    home = inserted[0];
     result.homepage = 'created';
+  }
+
+  if (home) {
+    for (const section of homepageSectionDefaults) {
+      const existing = await db.query.platformPageSections.findFirst({
+        where: and(eq(platformPageSections.pageId, home.id), eq(platformPageSections.sectionKey, section.sectionKey)),
+      });
+
+      if (!existing) {
+        await db.insert(platformPageSections).values({
+          pageId: home.id,
+          sectionKey: section.sectionKey,
+          sectionType: section.sectionType,
+          sortOrder: section.sortOrder,
+          enabled: true,
+          status: PUBLISHED,
+          contentJson: section.contentJson,
+          publishedAt: new Date(),
+        });
+        result.homepageSections += 1;
+      }
+    }
   }
 
   for (const item of defaultPlatformNavigation) {
