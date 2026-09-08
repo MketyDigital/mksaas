@@ -2,9 +2,9 @@ import { parseEnterpriseCheckoutInput, parseUsdAmountToMinorUnits } from './doma
 
 describe('enterprise checkout domain', () => {
   it('converts USD decimal strings to integer minor units', () => {
-    expect(parseUsdAmountToMinorUnits('199')).toBe(19900n);
-    expect(parseUsdAmountToMinorUnits('199.99')).toBe(19999n);
-    expect(parseUsdAmountToMinorUnits('10.00')).toBe(1000n);
+    expect(parseUsdAmountToMinorUnits('199')).toBe(BigInt(19900));
+    expect(parseUsdAmountToMinorUnits('199.99')).toBe(BigInt(19999));
+    expect(parseUsdAmountToMinorUnits('10.00')).toBe(BigInt(1000));
   });
 
   it('rejects amounts outside launch bounds', () => {
@@ -25,7 +25,7 @@ describe('enterprise checkout domain', () => {
       provider: 'nowpayments',
     });
 
-    expect(parsed.amountMinor).toBe(19999n);
+    expect(parsed.amountMinor).toBe(BigInt(19999));
     expect(parsed.currency).toBe('USD');
     expect(parsed.provider).toBe('nowpayments');
   });
