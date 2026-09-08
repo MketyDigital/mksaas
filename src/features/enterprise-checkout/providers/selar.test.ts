@@ -9,7 +9,7 @@ const input = {
     phone: '+2348000000000',
   },
   project: { name: 'Enterprise AI rollout' },
-  amountMinor: 19999n,
+  amountMinor: BigInt(19999),
   currency: 'USD' as const,
   provider: 'selar' as const,
 };
