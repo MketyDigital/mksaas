@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getCanonicalMketyPublicUrl } from '@/features/platform-content/public-host-routing';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { db } from '@/shared/db';
 import { customDomains, tenants } from '@/shared/db/schema';
@@ -9,6 +10,11 @@ import { eq } from 'drizzle-orm';
 export default auth(async (request) => {
   const { pathname, hostname } = request.nextUrl;
   let effectivePathname = pathname;
+
+  const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
+  if (canonicalPublicUrl) {
+    return NextResponse.redirect(canonicalPublicUrl, 308);
+  }
 
   if (!pathname.startsWith('/t/') && hostname) {
     const appHost = (() => {
