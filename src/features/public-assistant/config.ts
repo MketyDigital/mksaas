@@ -11,6 +11,7 @@ export type PublicAssistantLaunchState =
   | { enabled: true; reason: 'ready'; provider: PublicAssistantProvider; model: string };
 
 export interface PublicAssistantEnvironment {
+  [key: string]: string | undefined;
   MKETY_PUBLIC_AI_ENABLED?: string;
   MKETY_PUBLIC_AI_PRIMARY_PROVIDER?: string;
   MKETY_PUBLIC_AI_PROVIDER?: string;
