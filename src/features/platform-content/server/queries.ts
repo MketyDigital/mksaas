@@ -11,6 +11,7 @@ import {
   platformPricingPlans,
   platformSiteSettings,
 } from '@/shared/db/schema/platform-content';
+import { createLogger } from '@/shared/lib/logger';
 
 import {
   defaultAcademySection,
@@ -46,12 +47,21 @@ import {
 } from '../schemas';
 
 const PUBLISHED = 'published' as const;
+const cmsLogger = createLogger({ module: 'platform-content' });
 
-async function withFallback<T>(read: () => Promise<T | null | undefined>, fallback: T): Promise<T> {
+async function withFallback<T>(
+  read: () => Promise<T | null | undefined>,
+  fallback: T,
+  operation = 'cms-read',
+): Promise<T> {
   try {
     const value = await read();
     return value ?? fallback;
-  } catch {
+  } catch (error) {
+    cmsLogger.warn(
+      { operation, errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'Mkety CMS read failed; serving safe fallback content',
+    );
     return fallback;
   }
 }
@@ -87,7 +97,7 @@ export async function getPublishedPlatformSiteSettings() {
       contactHref: row.contactHref ?? undefined,
       legalLinks: row.legalLinksJson ?? [],
     });
-  }, defaultPlatformSiteSettings);
+  }, defaultPlatformSiteSettings, 'site-settings');
 }
 
 export async function getPublishedNavigation(area?: 'header' | 'footer') {
@@ -115,7 +125,7 @@ export async function getPublishedNavigation(area?: 'header' | 'footer') {
         external: row.external,
       }),
     );
-  }, fallback);
+  }, fallback, `navigation:${area ?? 'all'}`);
 }
 
 export async function getPublishedPricingPlans() {
@@ -147,7 +157,7 @@ export async function getPublishedPricingPlans() {
         features: planFeatures.length > 0 ? planFeatures : ['Configured plan details are being prepared.'],
       });
     });
-  }, defaultPricingPlans);
+  }, defaultPricingPlans, 'pricing-plans');
 }
 
 export async function getPublishedDocsTree() {
@@ -200,7 +210,7 @@ export async function getPublishedDocsTree() {
   }, {
     categories: defaultDocsCategories,
     articles: defaultDocsArticles,
-  });
+  }, 'docs-tree');
 }
 
 export async function getPublishedDocsArticle(slug: string) {
@@ -243,7 +253,7 @@ export async function getPublishedDocsArticle(slug: string) {
       seoDescription: row.seoDescription ?? undefined,
       sortOrder: row.sortOrder,
     });
-  }, fallback);
+  }, fallback, 'docs-article');
 }
 
 export async function getPublishedHomepageContent() {
@@ -299,7 +309,7 @@ export async function getPublishedHomepageContent() {
     trust: defaultTrustSection,
     faqItems: defaultFaqItems,
     footerGroups: defaultFooterGroups,
-  });
+  }, 'homepage-sections');
 
   return {
     settings,
