@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 
 import { MketyHomePage } from '@/features/platform-content/components/public/MketyHomePage';
 import { buildMketyMetadata } from '@/features/platform-content/metadata';
-import { getPublishedPlatformSiteSettings, getPublishedHomepageContent } from '@/features/platform-content/server/queries';
 import { getPublishedPublicPageSeo } from '@/features/platform-content/server/public-page-query';
+import { getPublishedHomepageContent, getPublishedPlatformSiteSettings } from '@/features/platform-content/server/queries';
 
 export const dynamic = 'force-dynamic';
 
