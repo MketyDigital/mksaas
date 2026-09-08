@@ -135,7 +135,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           { key: 'customer-projects', title: 'Customer projects', description: 'Dedicated implementations such as mklms-style systems remain customer projects rather than core product workspaces.' },
           { key: 'support', title: 'Managed support', description: 'Implementation and operational support tailored to enterprise requirements.' },
         ],
-        cta: { label: 'Talk to Mkety', href: '/contact' },
+        cta: { label: 'Start Enterprise Project', href: '/enterprise/checkout' },
       },
     ],
   },
