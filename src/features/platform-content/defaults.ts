@@ -18,7 +18,7 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoTitle: 'Mkety | Build, automate, deploy, and operate',
   defaultSeoDescription:
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, cloud infrastructure, business solutions, and education.',
-  contactHref: '/docs',
+  contactHref: '/contact',
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
     { label: 'Terms', href: '/terms' },
@@ -26,12 +26,12 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
 };
 
 export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
-  { label: 'Platform', href: '#platform', area: 'header', enabled: true, external: false, sortOrder: 10 },
-  { label: 'Workspaces', href: '#workspaces', area: 'header', enabled: true, external: false, sortOrder: 20 },
-  { label: 'SolutionHub', href: '#solutions', area: 'header', enabled: true, external: false, sortOrder: 30 },
-  { label: 'Academy', href: '#academy', area: 'header', enabled: true, external: false, sortOrder: 40 },
-  { label: 'Pricing', href: '#pricing', area: 'header', enabled: true, external: false, sortOrder: 50 },
-  { label: 'Enterprise', href: '#enterprise', area: 'header', enabled: true, external: false, sortOrder: 60 },
+  { label: 'Platform', href: '/platform', area: 'header', enabled: true, external: false, sortOrder: 10 },
+  { label: 'Workspaces', href: '/workspaces', area: 'header', enabled: true, external: false, sortOrder: 20 },
+  { label: 'SolutionHub', href: '/solutions', area: 'header', enabled: true, external: false, sortOrder: 30 },
+  { label: 'Academy', href: '/academy', area: 'header', enabled: true, external: false, sortOrder: 40 },
+  { label: 'Pricing', href: '/pricing', area: 'header', enabled: true, external: false, sortOrder: 50 },
+  { label: 'Enterprise', href: '/enterprise', area: 'header', enabled: true, external: false, sortOrder: 60 },
   { label: 'Docs', href: '/docs', area: 'header', enabled: true, external: false, sortOrder: 70 },
 ];
 
@@ -77,7 +77,7 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       key: 'trading',
       title: 'Trading Workspace',
       description: 'Custom and enterprise trading infrastructure presented as a specialized solution, not a self-service plan.',
-      href: '#enterprise',
+      href: '/enterprise',
       badge: 'Custom / Enterprise',
     },
   ],
@@ -140,16 +140,19 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
   {
     title: 'Platform',
     links: [
-      { label: 'Workspaces', href: '#workspaces' },
-      { label: 'SolutionHub', href: '#solutions' },
-      { label: 'Pricing', href: '#pricing' },
+      { label: 'Platform', href: '/platform' },
+      { label: 'Workspaces', href: '/workspaces' },
+      { label: 'SolutionHub', href: '/solutions' },
+      { label: 'Pricing', href: '/pricing' },
     ],
   },
   {
     title: 'Company',
     links: [
-      { label: 'Academy', href: '#academy' },
-      { label: 'Enterprise', href: '#enterprise' },
+      { label: 'Academy', href: '/academy' },
+      { label: 'Enterprise', href: '/enterprise' },
+      { label: 'About', href: '/about' },
+      { label: 'Contact', href: '/contact' },
       { label: 'Docs', href: '/docs' },
     ],
   },
