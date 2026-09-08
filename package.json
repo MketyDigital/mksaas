@@ -1,5 +1,6 @@
 {
   "name": "mkety-platform",
+  "version": "0.1.0",
   "scripts": {
     "dev": "vinext dev --port 3000",
     "build": "vinext build",
