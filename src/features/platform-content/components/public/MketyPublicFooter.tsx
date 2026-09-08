@@ -12,9 +12,7 @@ export function MketyPublicFooter({ settings, footerGroups }: MketyPublicFooterP
     <footer className="border-t bg-background px-4 py-10">
       <div className="container mx-auto grid gap-8 md:grid-cols-[1fr_2fr]">
         <div>
-          <Link href="/" className="font-bold tracking-tight">
-            {settings.brandName}
-          </Link>
+          <p className="font-bold tracking-tight">{settings.brandName}</p>
           <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
             Technology platform for building, automating, deploying, integrating, and operating modern business systems.
           </p>
