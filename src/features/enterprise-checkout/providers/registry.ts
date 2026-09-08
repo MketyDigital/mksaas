@@ -4,6 +4,7 @@ import { createSelarAdapter } from './selar';
 import type { EnterpriseCheckoutProviderAdapter } from './types';
 
 interface EnterpriseProviderEnvironment {
+  [key: string]: string | undefined;
   NOWPAYMENTS_API_KEY?: string;
   SELAR_ENTERPRISE_CHECKOUT_URL?: string;
 }
