@@ -38,7 +38,14 @@ async function main() {
 
   const homepage = await getPublishedHomepageContent();
   assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
+  assertSmoke(homepage.platformOverview.title.length > 0, 'homepage Platform overview should load');
   assertSmoke(homepage.workspaces.items.some((item) => item.key === 'trading'), 'homepage workspaces should keep Trading visible');
+  assertSmoke(homepage.solutionHub.title.length > 0, 'homepage SolutionHub section should load');
+  assertSmoke(homepage.academy.title.length > 0, 'homepage Academy section should load');
+  assertSmoke(homepage.enterprise.title.length > 0, 'homepage Enterprise section should load');
+  assertSmoke(homepage.trust.items.length > 0, 'homepage trust/readiness section should load');
+  assertSmoke(homepage.faqItems.length > 0, 'homepage FAQ should load');
+  assertSmoke(homepage.footerGroups.length > 0, 'homepage footer groups should load');
 
   const pricing = await getPublishedPricingPlans();
   assertSmoke(pricing.some((plan) => plan.key === 'enterprise'), 'pricing should include Enterprise plan');
