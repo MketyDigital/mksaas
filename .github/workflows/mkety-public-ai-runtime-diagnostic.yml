@@ -1,0 +1,70 @@
+name: Mkety Public AI Runtime Diagnostic
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-ai-runtime-diagnostic.yml'
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_WORKER_NAME: mkety-public-candidate
+  CANDIDATE_URL: https://mkety-public-candidate.dry-glitter-7e16.workers.dev
+
+jobs:
+  diagnose:
+    name: Capture Public AI Worker exception
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Tail failing Public AI request
+        shell: bash
+        run: |
+          set -uo pipefail
+          : > /tmp/mkety-tail.log
+          pnpm exec wrangler tail "$CANDIDATE_WORKER_NAME" --format pretty --status error --sampling-rate 1 > /tmp/mkety-tail.log 2>&1 &
+          tail_pid=$!
+          cleanup() { kill "$tail_pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          sleep 4
+
+          code="$(curl -sS -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies -o /tmp/mkety-public-ai-response -w '%{http_code}' "$CANDIDATE_URL/api/public/assistant" || true)"
+          echo "Public AI GET status: $code"
+          echo '--- response body ---'
+          cat /tmp/mkety-public-ai-response || true
+          echo
+          sleep 5
+          cleanup
+          sleep 1
+          echo '--- Worker exception tail ---'
+          cat /tmp/mkety-tail.log || true
+
+          if [ "$code" = '200' ]; then
+            echo 'Diagnostic request unexpectedly succeeded; investigate candidate drift.'
+            exit 0
+          fi
+          exit 1
