@@ -2,15 +2,10 @@
  * Mkety Platform Content Smoke Script
  *
  * Verifies that the CMS migrations, seeders, and read loaders work together against a real database.
- * Run after migrations and seeds:
- *
- *   pnpm db:migrate
- *   pnpm db:migrate:mkety-content
- *   pnpm db:seed:mkety-content
- *   pnpm db:smoke:mkety-content
  */
 
 import { getPublishedAppExperience } from '../src/features/platform-app-experience/server/queries';
+import { getPublishedPublicPageContent } from '../src/features/platform-content/server/public-page';
 import {
   getPublishedDocsArticle,
   getPublishedDocsTree,
@@ -47,16 +42,27 @@ async function main() {
   assertSmoke(homepage.faqItems.length > 0, 'homepage FAQ should load');
   assertSmoke(homepage.footerGroups.length > 0, 'homepage footer groups should load');
 
+  for (const slug of ['platform', 'workspaces', 'solutions', 'academy', 'pricing', 'enterprise', 'about', 'contact', 'privacy', 'terms']) {
+    const page = await getPublishedPublicPageContent(slug);
+    assertSmoke(page?.slug === slug, `public page ${slug} should resolve through CMS or safe default`);
+    assertSmoke(page.headline.length > 0, `public page ${slug} should have launch content`);
+  }
+
   const pricing = await getPublishedPricingPlans();
   assertSmoke(pricing.some((plan) => plan.key === 'enterprise'), 'pricing should include Enterprise plan');
+  assertSmoke(
+    pricing.map((plan) => plan.key).join(',') === 'starter,growth,enterprise',
+    'pricing should use deterministic Starter, Growth, Enterprise ordering',
+  );
 
   const docsTree = await getPublishedDocsTree();
-  assertSmoke(docsTree.categories.length > 0, 'docs tree should include categories');
-  assertSmoke(docsTree.articles.length > 0, 'docs tree should include articles');
+  assertSmoke(docsTree.categories.length >= 8, 'docs tree should include the Mkety launch categories');
+  for (const slug of ['what-is-mkety', 'projects-and-workspaces', 'ai-workspace', 'automation-workspace', 'deploy-workspace', 'solutionhub', 'academy', 'enterprise-and-trading', 'tenant-isolation']) {
+    assertSmoke(docsTree.articles.some((article) => article.slug === slug), `docs launch set should include ${slug}`);
+  }
 
   const firstArticle = docsTree.articles[0];
   assertSmoke(firstArticle, 'docs tree should return at least one article');
-
   const article = await getPublishedDocsArticle(`${firstArticle.categoryKey}/${firstArticle.slug}`);
   assertSmoke(article?.title, 'docs article should be readable by category/slug');
 
@@ -74,6 +80,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error(error);
+    console.error(error instanceof Error ? error.message : 'Mkety content smoke failed');
     process.exit(1);
   });
