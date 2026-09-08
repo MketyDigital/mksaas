@@ -1,4 +1,4 @@
-import { MKETY_PUBLIC_ROUTES, isMketyPublicSitemapPath } from './public-routes';
+import { isMketyPublicSitemapPath, MKETY_PUBLIC_ROUTES } from './public-routes';
 
 describe('Mkety public route contract', () => {
   it('contains the required public mkety.com routes', () => {
