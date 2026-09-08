@@ -29,6 +29,13 @@ describe('Public Mkety AI September 2026 model registry', () => {
     );
   });
 
+  it('defaults OpenAI public support to an approved model accessible to the staging project', () => {
+    expect(PUBLIC_AI_MODEL_REGISTRY.openai.defaultModel).toBe('gpt-5.6-luna');
+    expect(getPublicAIModelDefinition('openai', PUBLIC_AI_MODEL_REGISTRY.openai.defaultModel)?.status).toBe(
+      'current-stable',
+    );
+  });
+
   it('keeps current limited-access models visible without using them as blind defaults', () => {
     expect(getPublicAIModelDefinition('openai', 'gpt-6-astra')?.status).toBe('current-limited');
     expect(getPublicAIModelDefinition('azure-openai', 'gpt-6-astra')?.status).toBe('current-limited');
