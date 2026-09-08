@@ -46,6 +46,11 @@ export const env = createEnv({
     MKETY_PUBLIC_BEDROCK_SESSION_TOKEN: z.string().optional(),
     MKETY_PUBLIC_BEDROCK_REGION: z.string().default('us-east-1'),
 
+    // Public enterprise checkout compatibility bridge. Server-only legacy-compatible names.
+    NOWPAYMENTS_API_KEY: z.string().optional(),
+    NOWPAYMENTS_IPN_SECRET: z.string().optional(),
+    SELAR_ENTERPRISE_CHECKOUT_URL: z.url().optional(),
+
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_REGION: z.string().optional().default('us-east-1'),
@@ -107,6 +112,9 @@ export const env = createEnv({
     MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY: process.env.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY,
     MKETY_PUBLIC_BEDROCK_SESSION_TOKEN: process.env.MKETY_PUBLIC_BEDROCK_SESSION_TOKEN,
     MKETY_PUBLIC_BEDROCK_REGION: process.env.MKETY_PUBLIC_BEDROCK_REGION,
+    NOWPAYMENTS_API_KEY: process.env.NOWPAYMENTS_API_KEY,
+    NOWPAYMENTS_IPN_SECRET: process.env.NOWPAYMENTS_IPN_SECRET,
+    SELAR_ENTERPRISE_CHECKOUT_URL: process.env.SELAR_ENTERPRISE_CHECKOUT_URL,
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
     AWS_REGION: process.env.AWS_REGION,
