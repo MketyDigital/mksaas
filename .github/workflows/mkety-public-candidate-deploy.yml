@@ -33,6 +33,20 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_PUBLIC_GEMINI_API_KEY: ${{ secrets.MKETY_PUBLIC_GEMINI_API_KEY }}
+      MKETY_PUBLIC_VERTEX_PROJECT_ID: ${{ secrets.MKETY_PUBLIC_VERTEX_PROJECT_ID }}
+      MKETY_PUBLIC_VERTEX_LOCATION: ${{ secrets.MKETY_PUBLIC_VERTEX_LOCATION }}
+      MKETY_PUBLIC_VERTEX_ACCESS_TOKEN: ${{ secrets.MKETY_PUBLIC_VERTEX_ACCESS_TOKEN }}
+      MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN: ${{ secrets.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID: ${{ secrets.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID }}
+      MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY: ${{ secrets.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY }}
+      MKETY_PUBLIC_BEDROCK_SESSION_TOKEN: ${{ secrets.MKETY_PUBLIC_BEDROCK_SESSION_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_REGION: ${{ secrets.MKETY_PUBLIC_BEDROCK_REGION }}
       SKIP_ENV_VALIDATION: 'true'
     steps:
       - name: Checkout
@@ -42,12 +56,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL; do
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL MKETY_PUBLIC_AI_VISITOR_SECRET; do
             if [ -z "${!variable:-}" ]; then
               echo "$variable is not configured for the staging environment."
               exit 1
             fi
           done
+          if [ "${#MKETY_PUBLIC_AI_VISITOR_SECRET}" -lt 32 ]; then
+            echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
+            exit 1
+          fi
+
+      - name: Select configured Public Mkety AI providers
+        id: public-ai
+        shell: bash
+        run: |
+          set -euo pipefail
+          providers=()
+
+          if [ -n "${MKETY_PUBLIC_OPENAI_API_KEY:-}" ]; then providers+=(openai); fi
+          if [ -n "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}" ]; then providers+=(azure-openai); fi
+          if [ -n "${MKETY_PUBLIC_GEMINI_API_KEY:-}" ]; then providers+=(gemini); fi
+          if [ -n "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_LOCATION:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}" ]; then providers+=(vertex); fi
+          if [ -n "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}" ]; then providers+=(cloudflare-ai); fi
+          if [ -n "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}" ] && [ -n "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}" ]; then providers+=(bedrock); fi
+
+          if [ "${#providers[@]}" -eq 0 ]; then
+            echo 'No dedicated Public Mkety AI provider is configured in the staging environment.'
+            echo 'Configure at least one MKETY_PUBLIC_* provider credential before candidate promotion.'
+            exit 1
+          fi
+
+          primary="${providers[0]}"
+          fallback=''
+          if [ "${#providers[@]}" -gt 1 ]; then
+            fallback="$(IFS=,; echo "${providers[*]:1}")"
+          fi
+          echo "primary=$primary" >> "$GITHUB_OUTPUT"
+          echo "fallback=$fallback" >> "$GITHUB_OUTPUT"
+          echo "Configured Public Mkety AI provider count: ${#providers[@]}"
+          echo "Candidate primary provider: $primary"
+          if [ -n "$fallback" ]; then echo "Candidate fallback providers configured: yes"; fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -158,11 +207,41 @@ jobs:
           echo "url=$CANDIDATE_URL" >> "$GITHUB_OUTPUT"
           echo "Candidate URL: $CANDIDATE_URL"
 
-      - name: Attach staging database secret to candidate Worker
+      - name: Attach candidate runtime secrets
         shell: bash
+        env:
+          PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+          PUBLIC_AI_FALLBACK: ${{ steps.public-ai.outputs.fallback }}
         run: |
           set -euo pipefail
-          printf '%s' "$STAGING_DATABASE_URL" | pnpm exec wrangler secret put DATABASE_URL --name "$CANDIDATE_WORKER_NAME"
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$CANDIDATE_WORKER_NAME" >/dev/null
+              echo "Attached runtime secret: $name"
+            fi
+          }
+
+          put_secret DATABASE_URL "$STAGING_DATABASE_URL"
+          put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
+          put_secret MKETY_PUBLIC_AI_ENABLED 'true'
+          put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
+          put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS "$PUBLIC_AI_FALLBACK"
+          put_secret MKETY_PUBLIC_OPENAI_API_KEY "${MKETY_PUBLIC_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}"
+          put_secret MKETY_PUBLIC_GEMINI_API_KEY "${MKETY_PUBLIC_GEMINI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_VERTEX_PROJECT_ID "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}"
+          put_secret MKETY_PUBLIC_VERTEX_LOCATION "${MKETY_PUBLIC_VERTEX_LOCATION:-}"
+          put_secret MKETY_PUBLIC_VERTEX_ACCESS_TOKEN "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SESSION_TOKEN "${MKETY_PUBLIC_BEDROCK_SESSION_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_REGION "${MKETY_PUBLIC_BEDROCK_REGION:-}"
 
       - name: Smoke candidate public routes
         shell: bash
@@ -208,11 +287,54 @@ jobs:
             echo "OK $route"
           done
 
-      - name: Publish candidate evidence
+      - name: Smoke Public Mkety AI memory and support tools
         shell: bash
         env:
           CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
         run: |
+          set -euo pipefail
+          cookie_jar=/tmp/mkety-public-ai-cookies
+          origin="$CANDIDATE_URL"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-history.json
+          node -e "const x=require('/tmp/mkety-ai-history.json'); if(!Array.isArray(x.conversations)||!Array.isArray(x.messages)) process.exit(1)"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
+            -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
+            "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-first.json
+          conversation_id="$(node -e "const x=require('/tmp/mkety-ai-first.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
+            -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" \
+            "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-second.json
+          node -e "const x=require('/tmp/mkety-ai-second.json'); if(!x.answer||x.conversationId!=='$conversation_id') process.exit(1)"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
+            "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id" > /tmp/mkety-ai-restored.json
+          node -e "const x=require('/tmp/mkety-ai-restored.json'); if(x.activeConversationId!=='$conversation_id'||!Array.isArray(x.messages)||x.messages.length<4) process.exit(1)"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
+            -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data '{"message":"Tell me about Mkety Academy."}' \
+            "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-new.json
+          new_conversation_id="$(node -e "const x=require('/tmp/mkety-ai-new.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
+          if [ "$new_conversation_id" = "$conversation_id" ]; then
+            echo 'Public Mkety AI New chat isolation failed.'
+            exit 1
+          fi
+
+          echo 'Public Mkety AI candidate smoke passed: real provider response, same-browser memory, restored history, support grounding and new-chat isolation.'
+
+      - name: Publish candidate evidence
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+          PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+        run: |
           echo "Mkety public candidate SHA: $GITHUB_SHA"
           echo "Mkety public candidate URL: $CANDIDATE_URL"
+          echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
+          echo 'No provider/model selector is exposed to visitors.'
           echo 'No mkety.com route or custom-domain binding was configured by this workflow.'
