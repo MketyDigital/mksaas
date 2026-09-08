@@ -12,91 +12,54 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE_WORKER_NAME: mkety-public-candidate
   CANDIDATE_URL: https://mkety-public-candidate.dry-glitter-7e16.workers.dev
 
 jobs:
   diagnose:
-    name: Capture Public AI candidate flow
+    name: Isolate Public AI provider failure
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: staging
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Trace Public AI requests
+      - name: Probe OpenAI credential and model directly
         shell: bash
         run: |
           set -uo pipefail
-          cookie_jar=/tmp/mkety-public-ai-cookies
-          : > /tmp/mkety-tail.log
-          pnpm exec wrangler tail "$CANDIDATE_WORKER_NAME" --format pretty --sampling-rate 0.99 > /tmp/mkety-tail.log 2>&1 &
-          tail_pid=$!
-          cleanup() { kill "$tail_pid" 2>/dev/null || true; }
-          trap cleanup EXIT
-          sleep 4
-
-          request() {
-            local label="$1"
-            local output="$2"
-            shift 2
-            local code
-            code="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -o "$output" -w '%{http_code}' "$@" || true)"
-            echo "$label status: $code"
-            echo "--- $label response ---"
-            cat "$output" || true
-            echo
-            if [ "$code" != '200' ]; then
-              return 1
-            fi
+          code="$(curl -sS -o /tmp/openai-probe.json -w '%{http_code}' \
+            https://api.openai.com/v1/responses \
+            -H "Authorization: Bearer $MKETY_PUBLIC_OPENAI_API_KEY" \
+            -H 'Content-Type: application/json' \
+            --data '{"model":"gpt-5.6-terra","input":"Reply with OK only.","max_output_tokens":128}' || true)"
+          echo "OpenAI direct probe status: $code"
+          if [ "$code" != '200' ]; then
+            node <<'NODE'
+          const fs = require('node:fs');
+          try {
+            const payload = JSON.parse(fs.readFileSync('/tmp/openai-probe.json', 'utf8'));
+            const error = payload?.error ?? {};
+            console.log(JSON.stringify({
+              type: error.type ?? null,
+              code: error.code ?? null,
+              message: error.message ?? 'No provider error message returned.'
+            }));
+          } catch {
+            console.log('OpenAI returned a non-JSON error response.');
           }
-
-          request history /tmp/mkety-ai-history.json "$CANDIDATE_URL/api/public/assistant" || failed=1
-
-          request first /tmp/mkety-ai-first.json \
-            -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
-            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
-            "$CANDIDATE_URL/api/public/assistant" || failed=1
-
-          conversation_id="$(node -e "try{const x=require('/tmp/mkety-ai-first.json');process.stdout.write(x.conversationId||'')}catch{}")"
-          if [ -n "$conversation_id" ]; then
-            request second /tmp/mkety-ai-second.json \
-              -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
-              --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" \
-              "$CANDIDATE_URL/api/public/assistant" || failed=1
-
-            request restored /tmp/mkety-ai-restored.json \
-              "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id" || failed=1
-          else
-            echo 'No conversationId returned from first assistant response.'
-            failed=1
+          NODE
           fi
 
-          request new-chat /tmp/mkety-ai-new.json \
+          candidate_code="$(curl -sS -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
+            -o /tmp/mkety-ai-response.json -w '%{http_code}' \
             -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
-            --data '{"message":"Tell me about Mkety Academy."}' \
-            "$CANDIDATE_URL/api/public/assistant" || failed=1
+            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
+            "$CANDIDATE_URL/api/public/assistant" || true)"
+          echo "Candidate Public AI POST status: $candidate_code"
+          cat /tmp/mkety-ai-response.json || true
+          echo
 
-          sleep 4
-          cleanup
-          sleep 1
-          echo '--- Worker tail ---'
-          cat /tmp/mkety-tail.log || true
-          exit "${failed:-0}"
+          if [ "$code" != '200' ] || [ "$candidate_code" != '200' ]; then
+            exit 1
+          fi
