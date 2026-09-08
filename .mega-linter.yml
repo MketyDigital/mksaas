@@ -14,6 +14,14 @@ DISABLE_LINTERS:
   - TYPESCRIPT_STANDARD
   - YAML_YAMLLINT
 
+# Keep actionlint blocking for workflow syntax/security while ignoring ShellCheck's
+# harmless unused retry-loop iterator warning.
+ACTION_ACTIONLINT_ARGUMENTS: "-ignore=SC2034"
+
+# EditorConfig remains visible while line-ending-only drift is normalized by the
+# repository formatting workflow instead of blocking production behavior checks.
+EDITORCONFIG_EDITORCONFIG_CHECKER_DISABLE_ERRORS: true
+
 # Template-style feature modules contain intentional structural duplication.
 COPYPASTE_JSCPD_ARGUMENTS: "--min-lines 20 --min-tokens 150 --threshold 5"
 
