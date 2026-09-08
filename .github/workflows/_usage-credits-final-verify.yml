@@ -1,0 +1,63 @@
+name: Usage Credits Final Verify
+
+on:
+  push:
+    branches:
+      - feat/mkety-usage-credits-core
+    paths:
+      - .github/workflows/_usage-credits-final-verify.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable application SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 73529dc976a876a13bb608e242a683073038d280
+          fetch-depth: 0
+      - name: Prove immutable SHA
+        run: |
+          test "$(git rev-parse HEAD)" = "73529dc976a876a13bb608e242a683073038d280"
+          git status --short
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Targeted Usage/Credits and workflow seam tests
+        run: pnpm test -- src/features/usage-credits src/shared/db/schema/usage-credits.test.ts src/features/projects/workspaces/automation/workflow-execution-service.test.ts
+      - name: Full Jest suite
+        run: pnpm test
+      - name: Type-check
+        run: pnpm type-check
+      - name: Lint
+        run: pnpm lint
+      - name: Migration baseline integrity
+        run: pnpm db:check:migrations
+      - name: Drizzle migration consistency
+        run: pnpm exec drizzle-kit check
+      - name: Forward migration generation must be a no-op
+        run: |
+          before="$(git status --porcelain)"
+          pnpm db:generate
+          after="$(git status --porcelain)"
+          printf 'before=%s\nafter=%s\n' "$before" "$after"
+          test "$before" = "$after"
+      - name: Vinext compatibility check
+        run: pnpm vinext check
+      - name: Production build
+        run: pnpm build
+      - name: Cloudflare preview dry-run
+        run: pnpm run deploy --env preview --dry-run
+      - name: Final immutable proof
+        run: |
+          test "$(git rev-parse HEAD)" = "73529dc976a876a13bb608e242a683073038d280"
+          git diff --exit-code
