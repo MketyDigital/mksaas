@@ -11,55 +11,32 @@ on:
 permissions:
   contents: read
 
-env:
-  CANDIDATE_URL: https://mkety-public-candidate.dry-glitter-7e16.workers.dev
-
 jobs:
   diagnose:
-    name: Isolate Public AI provider failure
+    name: Detect accessible Public AI OpenAI model
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment: staging
     env:
       MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
     steps:
-      - name: Probe OpenAI credential and model directly
+      - name: Probe approved OpenAI models
         shell: bash
         run: |
-          set -uo pipefail
-          code="$(curl -sS -o /tmp/openai-probe.json -w '%{http_code}' \
-            https://api.openai.com/v1/responses \
-            -H "Authorization: Bearer $MKETY_PUBLIC_OPENAI_API_KEY" \
-            -H 'Content-Type: application/json' \
-            --data '{"model":"gpt-5.6-terra","input":"Reply with OK only.","max_output_tokens":128}' || true)"
-          echo "OpenAI direct probe status: $code"
-          if [ "$code" != '200' ]; then
-            node <<'NODE'
-          const fs = require('node:fs');
-          try {
-            const payload = JSON.parse(fs.readFileSync('/tmp/openai-probe.json', 'utf8'));
-            const error = payload?.error ?? {};
-            console.log(JSON.stringify({
-              type: error.type ?? null,
-              code: error.code ?? null,
-              message: error.message ?? 'No provider error message returned.'
-            }));
-          } catch {
-            console.log('OpenAI returned a non-JSON error response.');
-          }
-          NODE
-          fi
-
-          candidate_code="$(curl -sS -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
-            -o /tmp/mkety-ai-response.json -w '%{http_code}' \
-            -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
-            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
-            "$CANDIDATE_URL/api/public/assistant" || true)"
-          echo "Candidate Public AI POST status: $candidate_code"
-          cat /tmp/mkety-ai-response.json || true
-          echo
-
-          if [ "$code" != '200' ] || [ "$candidate_code" != '200' ]; then
+          set -euo pipefail
+          found=''
+          for model in gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol gpt-5.6; do
+            code="$(curl -sS -o /tmp/model.json -w '%{http_code}' \
+              -H "Authorization: Bearer $MKETY_PUBLIC_OPENAI_API_KEY" \
+              "https://api.openai.com/v1/models/$model" || true)"
+            echo "$model access status: $code"
+            if [ "$code" = '200' ] && [ -z "$found" ]; then
+              found="$model"
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo 'No currently approved GPT-5.6 Public AI model is accessible to this OpenAI project.'
             exit 1
           fi
+          echo "First accessible approved model: $found"
