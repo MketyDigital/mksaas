@@ -1,4 +1,4 @@
-import { MKETY_PUBLIC_PAGE_DEFAULTS, getDefaultPublicPage } from './public-page-defaults';
+import { getDefaultPublicPage, MKETY_PUBLIC_PAGE_DEFAULTS } from './public-page-defaults';
 
 describe('Mkety dedicated public page defaults', () => {
   it.each(['platform', 'workspaces', 'solutions', 'academy', 'pricing', 'enterprise', 'about', 'contact'])(
