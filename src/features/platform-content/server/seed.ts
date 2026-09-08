@@ -28,6 +28,7 @@ import {
   defaultTrustSection,
   defaultWorkspaceSection,
 } from '../defaults';
+import { MKETY_PUBLIC_PAGE_DEFAULTS } from '../public-page-defaults';
 
 const PUBLISHED = 'published' as const;
 
@@ -35,6 +36,8 @@ type SeedResult = {
   siteSettings: 'created' | 'exists';
   homepage: 'created' | 'exists';
   homepageSections: number;
+  publicPages: number;
+  publicPageSections: number;
   navigationItems: number;
   pricingPlans: number;
   pricingFeatures: number;
@@ -63,6 +66,8 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
     siteSettings: 'exists',
     homepage: 'exists',
     homepageSections: 0,
+    publicPages: 0,
+    publicPageSections: 0,
     navigationItems: 0,
     pricingPlans: 0,
     pricingFeatures: 0,
@@ -135,6 +140,75 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
           publishedAt: new Date(),
         });
         result.homepageSections += 1;
+      }
+    }
+  }
+
+  for (const publicPage of MKETY_PUBLIC_PAGE_DEFAULTS) {
+    let page = await db.query.platformPages.findFirst({
+      where: eq(platformPages.slug, publicPage.slug),
+    });
+
+    if (!page) {
+      const inserted = await db
+        .insert(platformPages)
+        .values({
+          slug: publicPage.slug,
+          title: publicPage.title,
+          status: PUBLISHED,
+          seoTitle: publicPage.seoTitle,
+          seoDescription: publicPage.seoDescription,
+          enabled: true,
+          publishedAt: new Date(),
+        })
+        .returning();
+
+      page = inserted[0];
+      result.publicPages += 1;
+    }
+
+    if (!page) continue;
+
+    const pageSections = [
+      {
+        sectionKey: 'intro',
+        sectionType: 'public_content',
+        sortOrder: 10,
+        contentJson: {
+          eyebrow: publicPage.eyebrow,
+          title: publicPage.headline,
+          description: publicPage.intro,
+          items: [],
+        },
+      },
+      ...publicPage.sections.map((section, index) => ({
+        sectionKey: `section-${(index + 1) * 10}`,
+        sectionType: 'public_content',
+        sortOrder: (index + 2) * 10,
+        contentJson: section,
+      })),
+    ];
+
+    for (const section of pageSections) {
+      const existingSection = await db.query.platformPageSections.findFirst({
+        where: and(
+          eq(platformPageSections.pageId, page.id),
+          eq(platformPageSections.sectionKey, section.sectionKey),
+        ),
+      });
+
+      if (!existingSection) {
+        await db.insert(platformPageSections).values({
+          pageId: page.id,
+          sectionKey: section.sectionKey,
+          sectionType: section.sectionType,
+          sortOrder: section.sortOrder,
+          enabled: true,
+          status: PUBLISHED,
+          contentJson: section.contentJson,
+          publishedAt: new Date(),
+        });
+        result.publicPageSections += 1;
       }
     }
   }
