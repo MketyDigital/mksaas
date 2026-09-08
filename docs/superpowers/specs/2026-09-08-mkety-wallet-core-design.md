@@ -144,19 +144,27 @@ Implementation must use a tested normalization/effect function rather than scatt
 
 `Account Balance` is the tenant's net commercial position for a specific currency derived from the authoritative Billing ledger.
 
+A positive value means the tenant has a commercial credit with Mkety. A negative value means the tenant has a net amount owed to Mkety. Zero means the tenant is commercially settled for that currency.
+
 It answers:
 
 > After authoritative charges, payments, credits, debits, waivers and reversals, what is this tenant's current commercial position with Mkety in this currency?
 
 ### 6.3 Credit Balance
 
-`Credit Balance` is the positive amount of tenant commercial credit that can offset future Mkety charges.
+`Credit Balance` is the positive portion of `Account Balance`:
+
+```text
+Credit Balance = max(Account Balance, 0)
+```
+
+It represents tenant commercial credit that can offset future Mkety charges.
 
 It is not withdrawable customer cash.
 
-A tenant who pays exactly a $100 charge has a net commercial position of $0, not a $100 cash wallet.
+A tenant who pays exactly a $100 charge has an Account Balance of $0 and a Credit Balance of $0, not a $100 cash wallet.
 
-An overpayment or explicit commercial credit may produce a positive credit position, but Wallet v1 must not describe that balance as withdrawable money.
+An overpayment or explicit commercial credit may produce a positive Account Balance and therefore a positive Credit Balance, but Wallet v1 must not describe that amount as withdrawable money.
 
 ### 6.4 Currency separation
 
@@ -353,6 +361,7 @@ Required coverage:
 - mixed entry sequence produces deterministic result;
 - multiple currencies remain independent;
 - very large bigint values preserve exact precision;
+- credit balance equals the positive portion of account balance;
 - wallet credit balance does not imply withdrawable cash.
 
 ### Service/source
