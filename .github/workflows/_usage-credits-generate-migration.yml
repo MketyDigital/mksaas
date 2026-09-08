@@ -41,4 +41,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/shared/db/migrations src/shared/db/migrations/meta
           git commit -m "chore: generate usage credits migration"
+          git pull --rebase origin feat/mkety-usage-credits-core
           git push origin HEAD:feat/mkety-usage-credits-core
