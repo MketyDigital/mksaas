@@ -17,11 +17,11 @@ jobs:
       - name: Checkout immutable application SHA
         uses: actions/checkout@v4
         with:
-          ref: 7d32650ab2cbb85ed33a62096eef6a75ed1a80af
+          ref: 7c3b074dfead6d3eb5af6caaccf612782c8c3431
           fetch-depth: 0
       - name: Prove immutable SHA
         run: |
-          test "$(git rev-parse HEAD)" = "7d32650ab2cbb85ed33a62096eef6a75ed1a80af"
+          test "$(git rev-parse HEAD)" = "7c3b074dfead6d3eb5af6caaccf612782c8c3431"
           git status --short
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -59,5 +59,5 @@ jobs:
         run: pnpm run deploy --env preview --dry-run
       - name: Final immutable proof
         run: |
-          test "$(git rev-parse HEAD)" = "7d32650ab2cbb85ed33a62096eef6a75ed1a80af"
+          test "$(git rev-parse HEAD)" = "7c3b074dfead6d3eb5af6caaccf612782c8c3431"
           git diff --exit-code
