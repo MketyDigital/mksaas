@@ -3,6 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
 
+import { getDefaultLegalPage } from '../legal-page-defaults';
 import { getDefaultPublicPage, type MketyPublicPageDefault } from '../public-page-defaults';
 import { platformOverviewSectionSchema } from '../schemas';
 
@@ -11,7 +12,7 @@ const PUBLISHED = 'published' as const;
 export type MketyPublishedPublicPage = MketyPublicPageDefault;
 
 export async function getPublishedPublicPageContent(slug: string): Promise<MketyPublishedPublicPage | null> {
-  const fallback = getDefaultPublicPage(slug);
+  const fallback = getDefaultPublicPage(slug) ?? getDefaultLegalPage(slug);
   if (!fallback) return null;
 
   try {
