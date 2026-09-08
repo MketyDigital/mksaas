@@ -4,7 +4,7 @@ const input = {
   orderId: 'MKETY-ENT-123',
   customer: { fullName: 'Ada Lovelace', companyName: 'Analytical Engines', email: 'ada@example.com' },
   project: { name: 'Enterprise AI rollout' },
-  amountMinor: 19999n,
+  amountMinor: BigInt(19999),
   currency: 'USD' as const,
   provider: 'nowpayments' as const,
 };
