@@ -20,7 +20,7 @@ export function MketyPricingPlans({ plans }: { plans: PlatformPricingPlanInput[]
           {plans.map((plan) => (
             <Card key={plan.key} className={plan.highlighted ? 'rounded-2xl border-primary shadow-lg' : 'rounded-2xl'}>
               <CardHeader>
-                <CardTitle>{plan.name}</CardTitle>
+                <CardTitle><h3>{plan.name}</h3></CardTitle>
                 <p className="text-2xl font-bold">{plan.priceLabel}</p>
                 {plan.billingLabel ? <CardDescription>{plan.billingLabel}</CardDescription> : null}
                 <CardDescription>{plan.description}</CardDescription>
