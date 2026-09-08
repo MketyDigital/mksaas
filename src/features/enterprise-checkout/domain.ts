@@ -25,8 +25,9 @@ export interface EnterpriseCheckoutResult {
   status: 'checkout_created' | 'awaiting_confirmation';
 }
 
-const MIN_AMOUNT_MINOR = 1000n;
-const MAX_AMOUNT_MINOR = 100000000n;
+const MIN_AMOUNT_MINOR = BigInt(1000);
+const MAX_AMOUNT_MINOR = BigInt(100000000);
+const HUNDRED = BigInt(100);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function requiredString(value: unknown, field: string, maxLength: number): string {
@@ -57,7 +58,7 @@ export function parseUsdAmountToMinorUnits(value: unknown): bigint {
 
   const dollars = BigInt(match[1]);
   const cents = BigInt((match[2] ?? '').padEnd(2, '0'));
-  const amountMinor = dollars * 100n + cents;
+  const amountMinor = dollars * HUNDRED + cents;
 
   if (amountMinor < MIN_AMOUNT_MINOR || amountMinor > MAX_AMOUNT_MINOR) {
     throw new Error('Amount must be between $10.00 and $1,000,000.00.');
@@ -100,7 +101,7 @@ export function parseEnterpriseCheckoutInput(input: unknown): EnterpriseCheckout
 }
 
 export function formatUsdMinorUnits(amountMinor: bigint): string {
-  const dollars = amountMinor / 100n;
-  const cents = amountMinor % 100n;
+  const dollars = amountMinor / HUNDRED;
+  const cents = amountMinor % HUNDRED;
   return `${dollars}.${cents.toString().padStart(2, '0')}`;
 }
