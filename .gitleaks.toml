@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known non-secret Mkety test/diagnostic values already present in branch history"
+commits = [
+  "4430d9a307213d6dbd5228fe294f005b303d0959",
+  "dfa50b15f6af33175aee3610498ba2cd388d1cff",
+  "3ad3fc8eff297b89cfa08f0a8bd776d09addff52",
+]
