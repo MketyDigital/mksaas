@@ -1,12 +1,17 @@
 import type {
+  PlatformAcademySectionInput,
   PlatformDocsArticleInput,
   PlatformDocsCategoryInput,
+  PlatformEnterpriseSectionInput,
   PlatformFaqItemInput,
   PlatformFooterGroupInput,
   PlatformHeroSectionInput,
   PlatformNavigationItemInput,
+  PlatformOverviewSectionInput,
   PlatformPricingPlanInput,
   PlatformSiteSettingsInput,
+  PlatformSolutionHubSectionInput,
+  PlatformTrustSectionInput,
   PlatformWorkspaceSectionInput,
 } from './schemas';
 
@@ -50,6 +55,18 @@ export const defaultHeroSection: PlatformHeroSectionInput = {
   ],
 };
 
+export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
+  eyebrow: 'Platform',
+  title: 'Build, automate, deploy, integrate, and operate.',
+  description:
+    'Mkety connects projects, teams, AI, automation, deployments, domains, SolutionHub, usage, credits, billing, and administration without turning the product into an AI-only tool.',
+  items: [
+    { key: 'build', title: 'Build', description: 'Create applications, AI experiences, workflows, portals, and connected business systems.' },
+    { key: 'operate', title: 'Operate', description: 'Keep projects, teams, usage, credits, billing visibility, domains, and operations connected.' },
+  ],
+  cta: { label: 'Explore Platform', href: '/platform' },
+};
+
 export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
   eyebrow: 'Workspaces',
   title: 'One platform, multiple operating spaces',
@@ -83,6 +100,54 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
   ],
 };
 
+export const defaultSolutionHubSection: PlatformSolutionHubSectionInput = {
+  eyebrow: 'SolutionHub',
+  title: 'Launch from ready-made solutions instead of always starting from zero.',
+  description:
+    'SolutionHub packages useful agents, workflows, applications, deployment templates, business automations, and industry blueprints that can be launched into Mkety workspaces.',
+  items: [
+    { key: 'shared', title: 'Shared-platform solutions', description: 'Reusable solutions that run inside standard Mkety workspace and platform boundaries.' },
+    { key: 'enterprise', title: 'Enterprise solutions', description: 'Custom implementations where runtime, security, integrations, or operational needs exceed self-service boundaries.' },
+  ],
+  cta: { label: 'Explore SolutionHub', href: '/solutions' },
+};
+
+export const defaultAcademySection: PlatformAcademySectionInput = {
+  eyebrow: 'Mkety Academy',
+  title: 'Learn the systems you want to build and operate.',
+  description:
+    'Mkety Academy provides practical technology training, AI workshops, business implementation courses, webinars, certifications, and enterprise enablement.',
+  items: [
+    { key: 'training', title: 'Practical learning', description: 'Courses, workshops and guided implementation focused on real technology and business use cases.' },
+  ],
+  cta: { label: 'Explore Academy', href: '/academy' },
+};
+
+export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
+  eyebrow: 'Enterprise',
+  title: 'Custom systems when standard self-service is not enough.',
+  description:
+    'Mkety can deliver specialized implementations, trading infrastructure, customer projects, integrations, managed deployment and enterprise support while keeping custom solutions separate from ordinary self-service plans.',
+  items: [
+    { key: 'trading', title: 'Trading infrastructure', description: 'Specialized trading systems remain Custom / Enterprise rather than normal self-service workspace entitlements.', badge: 'Custom / Enterprise' },
+    { key: 'customer-projects', title: 'Customer projects', description: 'Dedicated systems such as mklms-style implementations are delivered as customer or enterprise projects, not core Mkety products.' },
+  ],
+  cta: { label: 'Talk to Mkety', href: '/contact' },
+};
+
+export const defaultTrustSection: PlatformTrustSectionInput = {
+  eyebrow: 'Trust & readiness',
+  title: 'Controlled by architecture, not marketing claims.',
+  description:
+    'Mkety separates public content from protected application logic. Tenant isolation, authorization, billing rules, deployment controls, secrets and audit-sensitive operations remain code-controlled and are verified before production promotion.',
+  items: [
+    { key: 'tenant-isolation', title: 'Tenant isolation', description: 'Tenant boundaries and membership checks are enforced server-side rather than trusted from browser input.' },
+    { key: 'protected-logic', title: 'Protected logic', description: 'Security, billing ledger behavior, entitlements and deployment engines are not editable as public CMS content.' },
+    { key: 'cloud-runtime', title: 'Cloudflare runtime', description: 'The current public production target uses the verified vinext Cloudflare runtime baseline.' },
+  ],
+  cta: { label: 'Read the docs', href: '/docs' },
+};
+
 export const defaultPricingPlans: PlatformPricingPlanInput[] = [
   {
     key: 'starter',
@@ -113,7 +178,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety',
-    ctaHref: 'mailto:hello@mkety.com',
+    ctaHref: '/contact',
     features: ['Custom implementation', 'Enterprise support', 'Trading infrastructure options', 'Security and operations review'],
   },
 ];
