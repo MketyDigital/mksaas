@@ -3,7 +3,7 @@ import {
   type PublicAssistantEnvironment,
 } from '../config';
 import { getDefaultPublicAIModel } from '../models';
-import { runPublicAIGateway, type PublicAIProviderTarget } from './gateway';
+import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
 import {
   appendPublicAIMessage,
   createPublicAIConversation,
@@ -24,139 +24,155 @@ export class PublicAssistantRuntimeError extends Error {
   }
 }
 
-function toolInput(name: PublicSupportToolName, message: string) {
-  switch (name) {
-    case 'search_public_docs':
-    case 'search_public_site':
-      return { query: message };
-    case 'get_public_pricing':
-      return {};
-    case 'resolve_public_route':
-      return { destination: message };
-    case 'get_public_product_summary':
-      return { product: message };
-  }
+function toProviderMessages(
+  messages: Array<{ role: string; content: string }>,
+): Array<{ role: 'user' | 'assistant' | 'system'; content: string }> {
+  return messages
+    .filter((message) => ['user', 'assistant', 'system'].includes(message.role))
+    .map((message) => ({
+      role: message.role as 'user' | 'assistant' | 'system',
+      content: message.content,
+    }));
 }
 
-async function buildPublicContext(input: {
+async function buildGroundedContext(input: {
+  visitorId: string;
   conversationId: string;
   message: string;
-  visitorId: string;
 }) {
-  const plannedTools = planPublicSupportTools(input.message);
-  const context: Array<{ name: PublicSupportToolName; result: unknown }> = [];
+  const plans = planPublicSupportTools(input.message);
+  const contextParts: string[] = [];
 
-  for (const name of plannedTools) {
+  for (const plan of plans) {
+    const startedAt = Date.now();
     try {
-      const result = await executePublicSupportTool(name, toolInput(name, input.message));
-      context.push({ name, result });
+      const result = await executePublicSupportTool(plan.name, plan.input);
       await recordPublicAIToolRun({
         visitorId: input.visitorId,
         conversationId: input.conversationId,
-        toolName: name,
+        toolName: plan.name,
+        input: plan.input,
+        output: result,
         status: 'success',
+        latencyMs: Date.now() - startedAt,
       });
+      contextParts.push(`${plan.name}: ${JSON.stringify(result)}`);
     } catch (error) {
       await recordPublicAIToolRun({
         visitorId: input.visitorId,
         conversationId: input.conversationId,
-        toolName: name,
-        status: 'failure',
-        metadata: { errorName: error instanceof Error ? error.name : 'UnknownError' },
-      }).catch(() => undefined);
+        toolName: plan.name,
+        input: plan.input,
+        status: 'error',
+        latencyMs: Date.now() - startedAt,
+        errorCode: error instanceof Error ? error.name : 'UnknownError',
+      });
     }
   }
 
-  return JSON.stringify(context).slice(0, 12_000);
+  return contextParts.join('\n\n');
 }
 
-function resolveProviderTargets(
-  environment: PublicAssistantEnvironment,
-): { primary: PublicAIProviderTarget; fallbacks: PublicAIProviderTarget[] } {
+function resolveProviderTargets(environment: PublicAssistantEnvironment): PublicAIProviderTarget[] {
   const config = parsePublicAIProviderConfig(environment);
-  if (!config.enabled) throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
+  const requestedProviders = [config.primaryProvider, ...config.fallbackProviders];
+  const adapters = createPublicAIProviderAdapters(requestedProviders, environment);
+  const targetByProvider = new Map(adapters.map((adapter) => [adapter.id, adapter]));
 
-  const providerIds = [config.primaryProvider, ...config.fallbackProviders];
-  const adapters = createPublicAIProviderAdapters(providerIds, environment);
-  const adapterById = new Map(adapters.map((adapter) => [adapter.id, adapter]));
-  const primaryAdapter = adapterById.get(config.primaryProvider);
-  if (!primaryAdapter) {
-    throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
-  }
-
-  const primary: PublicAIProviderTarget = {
-    adapter: primaryAdapter,
-    model: config.model,
-  };
-  const fallbacks = config.fallbackProviders.flatMap((providerId) => {
-    const adapter = adapterById.get(providerId);
-    return adapter ? [{ adapter, model: getDefaultPublicAIModel(providerId) }] : [];
+  return requestedProviders.flatMap((provider) => {
+    const adapter = targetByProvider.get(provider);
+    if (!adapter) return [];
+    const model = provider === config.primaryProvider
+      ? config.model
+      : getDefaultPublicAIModel(provider);
+    return [{ adapter, model }];
   });
-
-  return { primary, fallbacks };
 }
 
 export async function runMketyPublicAssistant(input: {
-  conversationId?: string;
-  environment: PublicAssistantEnvironment;
-  message: string;
   visitorId: string;
+  conversationId?: string;
+  message: string;
+  environment: PublicAssistantEnvironment;
 }) {
-  let conversation;
-  if (input.conversationId) {
-    const existing = await getPublicAIConversation(input.visitorId, input.conversationId);
-    if (!existing) throw new PublicAssistantRuntimeError('Conversation not found.', 404);
-    conversation = existing.conversation;
+  const config = parsePublicAIProviderConfig(input.environment);
+  if (!config.enabled) {
+    throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
+  }
+
+  let conversationId = input.conversationId;
+  if (conversationId) {
+    const existing = await getPublicAIConversation(input.visitorId, conversationId);
+    if (!existing) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
   } else {
-    conversation = await createPublicAIConversation(input.visitorId, input.message);
+    const conversation = await createPublicAIConversation(input.visitorId, input.message);
+    if (!conversation) throw new PublicAssistantRuntimeError('Could not start Mkety AI conversation.', 503);
+    conversationId = conversation.id;
   }
 
   await appendPublicAIMessage({
     visitorId: input.visitorId,
-    conversationId: conversation.id,
+    conversationId,
     role: 'user',
     content: input.message,
   });
 
-  const history = await getPublicAIConversation(input.visitorId, conversation.id);
-  if (!history) throw new PublicAssistantRuntimeError('Conversation not found.', 404);
+  const conversation = await getPublicAIConversation(input.visitorId, conversationId);
+  if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
 
-  const publicContext = await buildPublicContext({
-    conversationId: conversation.id,
-    message: input.message,
+  const groundedContext = await buildGroundedContext({
     visitorId: input.visitorId,
+    conversationId,
+    message: input.message,
   });
   const targets = resolveProviderTargets(input.environment);
-  const result = await runPublicAIGateway({
-    primary: targets.primary,
-    fallbacks: targets.fallbacks,
-    request: {
-      system: buildPublicSystemPrompt(publicContext),
-      messages: history.messages
-        .filter((message) => message.role === 'user' || message.role === 'assistant')
-        .map((message) => ({
-          role: message.role as 'user' | 'assistant',
-          content: message.content,
-        })),
-      maxOutputTokens: 900,
-    },
-  });
+  const primary = targets[0];
+  if (!primary) {
+    throw new PublicAssistantRuntimeError('Mkety AI provider is not configured.', 503);
+  }
 
-  const answer = result.text.trim() || 'I could not produce a useful response just now. Please try again.';
-  await appendPublicAIMessage({
-    visitorId: input.visitorId,
-    conversationId: conversation.id,
-    role: 'assistant',
-    content: answer,
-    metadata: {
-      providerId: result.providerId,
-      fallbackCount: result.fallbackCount,
-      usage: result.usage,
-    },
-  });
+  const providerMessages = toProviderMessages(conversation.messages);
+  if (groundedContext) {
+    providerMessages.push({
+      role: 'system',
+      content: `Relevant current public Mkety information:\n${groundedContext}`,
+    });
+  }
 
-  return {
-    answer,
-    conversationId: conversation.id,
-  };
+  try {
+    const response = await runPublicAIGateway({
+      request: {
+        messages: providerMessages,
+        system: buildPublicSystemPrompt(),
+        maxOutputTokens: 900,
+      },
+      primary,
+      fallbacks: targets.slice(1),
+    });
+
+    const answer = response.text.trim();
+    if (!answer) {
+      throw new PublicAssistantRuntimeError('Mkety AI did not return a usable answer.', 503);
+    }
+
+    await appendPublicAIMessage({
+      visitorId: input.visitorId,
+      conversationId,
+      role: 'assistant',
+      content: answer,
+      metadata: {
+        provider: response.providerId,
+        fallbackCount: response.fallbackCount,
+        usage: response.usage,
+      },
+    });
+
+    return {
+      answer,
+      conversationId,
+    };
+  } catch (error) {
+    if (error instanceof PublicAssistantRuntimeError) throw error;
+    throw new PublicAssistantRuntimeError('Mkety AI is temporarily unavailable. Please try again.', 503);
+  }
 }
