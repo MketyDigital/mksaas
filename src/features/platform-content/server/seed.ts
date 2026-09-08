@@ -28,6 +28,7 @@ import {
   defaultTrustSection,
   defaultWorkspaceSection,
 } from '../defaults';
+import { getPricingPlanSortOrder } from '../pricing';
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '../public-page-defaults';
 
 const PUBLISHED = 'published' as const;
@@ -41,6 +42,7 @@ type SeedResult = {
   navigationItems: number;
   pricingPlans: number;
   pricingFeatures: number;
+  pricingPlanOrderingUpdated: number;
   docsCategories: number;
   docsArticles: number;
 };
@@ -59,7 +61,8 @@ const homepageSectionDefaults = [
 
 /**
  * Seeds initial Mkety public website/docs records from code-owned defaults.
- * Existing admin-managed content is never overwritten.
+ * Existing admin-managed content is never overwritten, except deterministic
+ * sort_order repair for the three known Mkety public pricing plan keys.
  */
 export async function seedDefaultPlatformContent(): Promise<SeedResult> {
   const result: SeedResult = {
@@ -71,6 +74,7 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
     navigationItems: 0,
     pricingPlans: 0,
     pricingFeatures: 0,
+    pricingPlanOrderingUpdated: 0,
     docsCategories: 0,
     docsArticles: 0,
   };
@@ -191,10 +195,7 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
 
     for (const section of pageSections) {
       const existingSection = await db.query.platformPageSections.findFirst({
-        where: and(
-          eq(platformPageSections.pageId, page.id),
-          eq(platformPageSections.sectionKey, section.sectionKey),
-        ),
+        where: and(eq(platformPageSections.pageId, page.id), eq(platformPageSections.sectionKey, section.sectionKey)),
       });
 
       if (!existingSection) {
@@ -235,12 +236,20 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
   const planIdsByKey = new Map<string, string>();
 
   for (const plan of defaultPricingPlans) {
+    const expectedSortOrder = getPricingPlanSortOrder(plan.key);
     const existing = await db.query.platformPricingPlans.findFirst({
       where: eq(platformPricingPlans.key, plan.key),
     });
 
     if (existing) {
       planIdsByKey.set(plan.key, existing.id);
+      if (existing.sortOrder !== expectedSortOrder) {
+        await db
+          .update(platformPricingPlans)
+          .set({ sortOrder: expectedSortOrder })
+          .where(and(eq(platformPricingPlans.id, existing.id), eq(platformPricingPlans.key, plan.key)));
+        result.pricingPlanOrderingUpdated += 1;
+      }
       continue;
     }
 
@@ -255,6 +264,7 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
         highlighted: plan.highlighted,
         ctaLabel: plan.ctaLabel,
         ctaHref: plan.ctaHref,
+        sortOrder: expectedSortOrder,
         status: PUBLISHED,
       })
       .returning({ id: platformPricingPlans.id });
