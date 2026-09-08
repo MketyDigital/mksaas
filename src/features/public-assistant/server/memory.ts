@@ -1,9 +1,10 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, gte } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import {
   publicAIConversations,
   publicAIMessages,
+  publicAIToolRuns,
   publicAIVisitors,
 } from '@/shared/db/schema';
 
@@ -109,9 +110,48 @@ export async function appendPublicAIMessage(input: {
   return message;
 }
 
-export async function getPublicAIConversationMessages(visitorId: string, conversationId: string) {
-  const result = await getPublicAIConversation(visitorId, conversationId);
-  return result?.messages ?? [];
+export async function recordPublicAIToolRun(input: {
+  visitorId: string;
+  conversationId: string;
+  toolName: string;
+  status: 'success' | 'failure';
+  metadata?: Record<string, unknown>;
+}) {
+  const conversation = await db.query.publicAIConversations.findFirst({
+    where: and(
+      eq(publicAIConversations.id, input.conversationId),
+      eq(publicAIConversations.visitorId, input.visitorId),
+    ),
+  });
+  if (!conversation) return null;
+
+  const [toolRun] = await db
+    .insert(publicAIToolRuns)
+    .values({
+      conversationId: input.conversationId,
+      toolName: input.toolName,
+      status: input.status,
+      metadata: input.metadata ?? {},
+    })
+    .returning();
+
+  return toolRun;
+}
+
+export async function getPublicAIRecentUserMessageCount(visitorId: string, since: Date) {
+  const [row] = await db
+    .select({ value: count() })
+    .from(publicAIMessages)
+    .innerJoin(publicAIConversations, eq(publicAIMessages.conversationId, publicAIConversations.id))
+    .where(
+      and(
+        eq(publicAIConversations.visitorId, visitorId),
+        eq(publicAIMessages.role, 'user'),
+        gte(publicAIMessages.createdAt, since),
+      ),
+    );
+
+  return Number(row?.value ?? 0);
 }
 
 export async function deletePublicAIConversation(visitorId: string, conversationId: string) {
@@ -131,14 +171,4 @@ export async function deletePublicAIConversation(visitorId: string, conversation
 export async function clearPublicAIHistory(visitorId: string) {
   await db.delete(publicAIConversations).where(eq(publicAIConversations.visitorId, visitorId));
   await db.delete(publicAIVisitors).where(eq(publicAIVisitors.id, visitorId));
-}
-
-export async function listPublicAIConversationMessages(visitorId: string, conversationId: string) {
-  const result = await getPublicAIConversation(visitorId, conversationId);
-  if (!result) return [];
-
-  return db.query.publicAIMessages.findMany({
-    where: eq(publicAIMessages.conversationId, conversationId),
-    orderBy: [asc(publicAIMessages.createdAt)],
-  });
 }
