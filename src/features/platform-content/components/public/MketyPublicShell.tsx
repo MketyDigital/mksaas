@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { MketyPublicAssistant } from '@/features/public-assistant/components/MketyPublicAssistant';
+
 import type { PlatformFooterGroupInput, PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../schemas';
 import { MketyPublicFooter } from './MketyPublicFooter';
 import { MketyPublicHeader } from './MketyPublicHeader';
@@ -17,6 +19,7 @@ export function MketyPublicShell({ settings, navigation, footerGroups, children 
       <MketyPublicHeader settings={settings} navigation={navigation} />
       <main>{children}</main>
       <MketyPublicFooter settings={settings} footerGroups={footerGroups} />
+      <MketyPublicAssistant />
     </div>
   );
 }
