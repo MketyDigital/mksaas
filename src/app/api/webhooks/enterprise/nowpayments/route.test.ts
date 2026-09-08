@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 const mockVerifyNowPaymentsWebhook = jest.fn();
 const mockFindById = jest.fn();
 const mockApplyPaymentState = jest.fn();
