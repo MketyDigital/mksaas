@@ -28,10 +28,12 @@ import {
   defaultTrustSection,
   defaultWorkspaceSection,
 } from '../defaults';
+import { MKETY_LEGAL_PAGE_DEFAULTS } from '../legal-page-defaults';
 import { getPricingPlanSortOrder } from '../pricing';
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '../public-page-defaults';
 
 const PUBLISHED = 'published' as const;
+const publicPageDefaults = [...MKETY_PUBLIC_PAGE_DEFAULTS, ...MKETY_LEGAL_PAGE_DEFAULTS];
 
 type SeedResult = {
   siteSettings: 'created' | 'exists';
@@ -148,7 +150,7 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
     }
   }
 
-  for (const publicPage of MKETY_PUBLIC_PAGE_DEFAULTS) {
+  for (const publicPage of publicPageDefaults) {
     let page = await db.query.platformPages.findFirst({
       where: eq(platformPages.slug, publicPage.slug),
     });
