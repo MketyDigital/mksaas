@@ -58,10 +58,11 @@ export async function parsePublicVisitorToken(
   if (!signature) return null;
 
   const key = await importSigningKey(secret);
+  const signatureBuffer = new Uint8Array(signature).buffer;
   const valid = await crypto.subtle.verify(
     'HMAC',
     key,
-    signature,
+    signatureBuffer,
     new TextEncoder().encode(visitorId),
   );
 
