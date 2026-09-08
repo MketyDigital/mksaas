@@ -17,7 +17,7 @@ env:
 
 jobs:
   diagnose:
-    name: Capture Public AI Worker exception
+    name: Capture Public AI candidate flow
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -41,30 +41,62 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Tail failing Public AI request
+      - name: Trace Public AI requests
         shell: bash
         run: |
           set -uo pipefail
+          cookie_jar=/tmp/mkety-public-ai-cookies
           : > /tmp/mkety-tail.log
-          pnpm exec wrangler tail "$CANDIDATE_WORKER_NAME" --format pretty --status error --sampling-rate 1 > /tmp/mkety-tail.log 2>&1 &
+          pnpm exec wrangler tail "$CANDIDATE_WORKER_NAME" --format pretty --sampling-rate 0.99 > /tmp/mkety-tail.log 2>&1 &
           tail_pid=$!
           cleanup() { kill "$tail_pid" 2>/dev/null || true; }
           trap cleanup EXIT
           sleep 4
 
-          code="$(curl -sS -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies -o /tmp/mkety-public-ai-response -w '%{http_code}' "$CANDIDATE_URL/api/public/assistant" || true)"
-          echo "Public AI GET status: $code"
-          echo '--- response body ---'
-          cat /tmp/mkety-public-ai-response || true
-          echo
-          sleep 5
+          request() {
+            local label="$1"
+            local output="$2"
+            shift 2
+            local code
+            code="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -o "$output" -w '%{http_code}' "$@" || true)"
+            echo "$label status: $code"
+            echo "--- $label response ---"
+            cat "$output" || true
+            echo
+            if [ "$code" != '200' ]; then
+              return 1
+            fi
+          }
+
+          request history /tmp/mkety-ai-history.json "$CANDIDATE_URL/api/public/assistant" || failed=1
+
+          request first /tmp/mkety-ai-first.json \
+            -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
+            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
+            "$CANDIDATE_URL/api/public/assistant" || failed=1
+
+          conversation_id="$(node -e "try{const x=require('/tmp/mkety-ai-first.json');process.stdout.write(x.conversationId||'')}catch{}")"
+          if [ -n "$conversation_id" ]; then
+            request second /tmp/mkety-ai-second.json \
+              -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
+              --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" \
+              "$CANDIDATE_URL/api/public/assistant" || failed=1
+
+            request restored /tmp/mkety-ai-restored.json \
+              "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id" || failed=1
+          else
+            echo 'No conversationId returned from first assistant response.'
+            failed=1
+          fi
+
+          request new-chat /tmp/mkety-ai-new.json \
+            -H 'Content-Type: application/json' -H "Origin: $CANDIDATE_URL" \
+            --data '{"message":"Tell me about Mkety Academy."}' \
+            "$CANDIDATE_URL/api/public/assistant" || failed=1
+
+          sleep 4
           cleanup
           sleep 1
-          echo '--- Worker exception tail ---'
+          echo '--- Worker tail ---'
           cat /tmp/mkety-tail.log || true
-
-          if [ "$code" = '200' ]; then
-            echo 'Diagnostic request unexpectedly succeeded; investigate candidate drift.'
-            exit 0
-          fi
-          exit 1
+          exit "${failed:-0}"
