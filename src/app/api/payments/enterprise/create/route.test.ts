@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 const createEnterpriseCheckout = jest.fn();
 
 jest.mock('@/features/enterprise-checkout/server/service', () => ({
