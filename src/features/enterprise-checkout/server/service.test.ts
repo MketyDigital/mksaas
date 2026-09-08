@@ -36,7 +36,7 @@ describe('enterprise checkout service', () => {
       async findByIdempotencyKey() {
         return {
           id: 'MKETY-ENT-1', customerName: 'Jane Doe', companyName: 'Acme Ltd', email: 'jane@acme.test', phone: null, country: null,
-          scopeId: null, projectName: 'AI Support Deployment', projectDescription: 'Enterprise support assistant', amountMinor: 19999n,
+          scopeId: null, projectName: 'AI Support Deployment', projectDescription: 'Enterprise support assistant', amountMinor: BigInt(19999),
           currency: 'USD', paymentProvider: 'nowpayments', checkoutStatus: 'redirected', paymentStatus: 'pending', providerCheckoutReference: 'inv-1',
           providerPaymentReference: null, idempotencyKey: 'idem-1', metadata: { requestFingerprint: expect.any(String), redirectUrl: 'https://invoice.example/1' },
           createdAt: new Date(), updatedAt: new Date(), confirmedAt: null,
