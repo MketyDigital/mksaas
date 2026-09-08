@@ -30,4 +30,4 @@ jobs:
       - name: Type-check Usage/Credits integration
         run: pnpm type-check
 
-# tdd: task6-workflow-enforcement-red
+# tdd: task6-workflow-enforcement-green
