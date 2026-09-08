@@ -18,6 +18,7 @@ export * from './persons';
 export * from './platform-app-experience';
 export * from './platform-content';
 export * from './projects';
+export * from './public-assistant-memory';
 export * from './roles';
 export * from './schema';
 export * from './tenants';
