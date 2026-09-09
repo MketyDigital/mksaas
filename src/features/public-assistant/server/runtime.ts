@@ -1,3 +1,5 @@
+import type { Database } from '@/shared/db';
+
 import {
   parsePublicAIProviderConfig,
   type PublicAssistantEnvironment,
@@ -66,6 +68,7 @@ function buildToolInput(name: PublicSupportToolName, message: string): Record<st
 }
 
 async function buildGroundedContext(input: {
+  database: Database;
   visitorId: string;
   conversationId: string;
   message: string;
@@ -79,7 +82,7 @@ async function buildGroundedContext(input: {
     try {
       const result = await executePublicSupportTool(toolName, toolInput);
       const latencyMs = Date.now() - startedAt;
-      await recordPublicAIToolRun({
+      await recordPublicAIToolRun(input.database, {
         visitorId: input.visitorId,
         conversationId: input.conversationId,
         toolName,
@@ -88,7 +91,7 @@ async function buildGroundedContext(input: {
       });
       contextParts.push(`${toolName}: ${JSON.stringify(result)}`);
     } catch (error) {
-      await recordPublicAIToolRun({
+      await recordPublicAIToolRun(input.database, {
         visitorId: input.visitorId,
         conversationId: input.conversationId,
         toolName,
@@ -122,6 +125,7 @@ function resolveProviderTargets(environment: PublicAssistantEnvironment): Public
 }
 
 export async function runMketyPublicAssistant(input: {
+  database: Database;
   visitorId: string;
   conversationId?: string;
   message: string;
@@ -134,25 +138,34 @@ export async function runMketyPublicAssistant(input: {
 
   let conversationId = input.conversationId;
   if (conversationId) {
-    const existing = await getPublicAIConversation(input.visitorId, conversationId);
+    const existing = await getPublicAIConversation(input.database, input.visitorId, conversationId);
     if (!existing) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
   } else {
-    const conversation = await createPublicAIConversation(input.visitorId, input.message);
+    const conversation = await createPublicAIConversation(
+      input.database,
+      input.visitorId,
+      input.message,
+    );
     if (!conversation) throw new PublicAssistantRuntimeError('Could not start Mkety AI conversation.', 503);
     conversationId = conversation.id;
   }
 
-  await appendPublicAIMessage({
+  await appendPublicAIMessage(input.database, {
     visitorId: input.visitorId,
     conversationId,
     role: 'user',
     content: input.message,
   });
 
-  const conversation = await getPublicAIConversation(input.visitorId, conversationId);
+  const conversation = await getPublicAIConversation(
+    input.database,
+    input.visitorId,
+    conversationId,
+  );
   if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
 
   const groundedContext = await buildGroundedContext({
+    database: input.database,
     visitorId: input.visitorId,
     conversationId,
     message: input.message,
@@ -181,7 +194,7 @@ export async function runMketyPublicAssistant(input: {
       throw new PublicAssistantRuntimeError('Mkety AI did not return a usable answer.', 503);
     }
 
-    await appendPublicAIMessage({
+    await appendPublicAIMessage(input.database, {
       visitorId: input.visitorId,
       conversationId,
       role: 'assistant',
