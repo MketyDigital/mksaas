@@ -64,6 +64,8 @@ jobs:
               console.error('cleanup failed', error instanceof Error ? error.stack : error);
             });
           }
+          console.log('diagnostic complete');
+          process.exit(0);
           TS
           cp /tmp/mkety-rate-count-diagnostic.ts ./mkety-rate-count-diagnostic.ts
           pnpm exec tsx ./mkety-rate-count-diagnostic.ts
