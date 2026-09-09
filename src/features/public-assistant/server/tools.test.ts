@@ -11,10 +11,12 @@ describe('Public Mkety AI support tools', () => {
     ]);
   });
 
-  it('resolves known destinations to canonical mkety.com public routes', () => {
+  it('resolves known Mkety destinations to canonical customer routes', () => {
     expect(resolvePublicRoute('pricing')).toEqual({ label: 'Pricing', path: '/pricing' });
     expect(resolvePublicRoute('solutionhub')).toEqual({ label: 'SolutionHub', path: '/solutions' });
     expect(resolvePublicRoute('agent builder')).toEqual({ label: 'Platform', path: '/platform' });
+    expect(resolvePublicRoute('academy')).toEqual({ label: 'Mkety Academy', path: 'https://academy.mkety.com' });
+    expect(resolvePublicRoute('trading')).toEqual({ label: 'Trading Workspace', path: 'https://trade.mkety.com' });
   });
 
   it('does not invent a private/internal route for an unknown destination', () => {
