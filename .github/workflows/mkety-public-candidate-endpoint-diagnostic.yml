@@ -1,0 +1,45 @@
+name: Mkety Public Candidate Endpoint Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-public-site-production
+    paths:
+      - '.github/workflows/mkety-public-candidate-endpoint-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CANDIDATE_URL: https://mkety-public-candidate.dry-glitter-7e16.workers.dev
+    steps:
+      - name: Diagnose Public Mkety AI endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie_jar=/tmp/mkety-public-ai-cookies
+          origin="$CANDIDATE_URL"
+
+          history_code="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -o /tmp/mkety-ai-history.json -w '%{http_code}' "$CANDIDATE_URL/api/public/assistant")"
+          echo "History HTTP: $history_code"
+          cat /tmp/mkety-ai-history.json
+          echo
+
+          first_metrics="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" \
+            -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
+            -o /tmp/mkety-ai-first.json \
+            -w 'HTTP=%{http_code} TOTAL=%{time_total}' \
+            "$CANDIDATE_URL/api/public/assistant")"
+          echo "First POST $first_metrics"
+          cat /tmp/mkety-ai-first.json
+          echo
+
+          first_code="$(printf '%s' "$first_metrics" | sed -n 's/.*HTTP=\([0-9][0-9][0-9]\).*/\1/p')"
+          if [ "$history_code" != '200' ] || [ "$first_code" != '200' ]; then
+            exit 1
+          fi
