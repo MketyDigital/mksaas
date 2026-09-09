@@ -33,6 +33,9 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
+      NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
+      SELAR_ENTERPRISE_CHECKOUT_URL: ${{ secrets.SELAR_ENTERPRISE_CHECKOUT_URL || vars.SELAR_ENTERPRISE_CHECKOUT_URL }}
       MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
       MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
       MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
@@ -56,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL MKETY_PUBLIC_AI_VISITOR_SECRET; do
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL MKETY_PUBLIC_AI_VISITOR_SECRET NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET SELAR_ENTERPRISE_CHECKOUT_URL; do
             if [ -z "${!variable:-}" ]; then
               echo "$variable is not configured for the staging environment."
               exit 1
@@ -66,6 +69,13 @@ jobs:
             echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
             exit 1
           fi
+          case "$SELAR_ENTERPRISE_CHECKOUT_URL" in
+            https://*) ;;
+            *)
+              echo 'SELAR_ENTERPRISE_CHECKOUT_URL must be an https URL.'
+              exit 1
+              ;;
+          esac
 
       - name: Select configured Public Mkety AI providers
         id: public-ai
@@ -197,6 +207,9 @@ jobs:
           }
 
           put_secret DATABASE_URL "$STAGING_DATABASE_URL"
+          put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
+          put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
+          put_secret SELAR_ENTERPRISE_CHECKOUT_URL "$SELAR_ENTERPRISE_CHECKOUT_URL"
           put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
           put_secret MKETY_PUBLIC_AI_ENABLED 'true'
           put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
@@ -259,6 +272,25 @@ jobs:
             fi
             echo "OK $route"
           done
+
+      - name: Smoke Enterprise payment webhook fail-closed behavior
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          webhook_code="$(curl -sS -o /tmp/mkety-enterprise-webhook.json -w '%{http_code}' \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            -H 'x-nowpayments-sig: mkety-candidate-intentionally-invalid-signature' \
+            --data '{"order_id":"candidate-smoke-no-order","payment_status":"finished","payment_id":"candidate-smoke-no-payment"}' \
+            "$CANDIDATE_URL/api/webhooks/enterprise/nowpayments" || true)"
+          if [ "$webhook_code" != '400' ]; then
+            echo "Enterprise webhook fail-closed smoke expected HTTP 400 for an invalid signature; received $webhook_code."
+            exit 1
+          fi
+          node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
+          echo 'Enterprise payment webhook rejected an invalid signature before order mutation; no invoice or charge was created.'
 
       - name: Smoke Public Mkety AI memory and support tools
         shell: bash
@@ -367,5 +399,6 @@ jobs:
           echo "Mkety public candidate SHA: $GITHUB_SHA"
           echo "Mkety public candidate URL: $CANDIDATE_URL"
           echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
+          echo 'Enterprise payment runtime secrets attached and invalid-signature fail-closed behavior verified.'
           echo 'No provider/model selector is exposed to visitors.'
           echo 'No mkety.com route or custom-domain binding was configured by this workflow.'
