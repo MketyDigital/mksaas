@@ -21,6 +21,19 @@ function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
   return difference === 0;
 }
 
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!value || typeof value !== 'object') return value;
+
+  const object = value as Record<string, unknown>;
+  return Object.keys(object)
+    .sort()
+    .reduce<Record<string, unknown>>((result, key) => {
+      result[key] = sortJsonValue(object[key]);
+      return result;
+    }, {});
+}
+
 export async function verifyNowPaymentsWebhook(
   rawBody: string,
   signature: string | null,
@@ -29,6 +42,8 @@ export async function verifyNowPaymentsWebhook(
   if (!secret) throw new Error('NOWPayments webhook secret is not configured.');
   if (!signature) throw new Error('NOWPayments signature is required.');
 
+  const payload = JSON.parse(rawBody) as Record<string, unknown>;
+  const canonicalBody = JSON.stringify(sortJsonValue(payload));
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
@@ -37,12 +52,11 @@ export async function verifyNowPaymentsWebhook(
     false,
     ['sign'],
   );
-  const expectedBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(rawBody));
+  const expectedBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(canonicalBody));
   const expected = new Uint8Array(expectedBuffer);
   const received = hexToBytes(signature);
   if (!received || !timingSafeEqual(expected, received)) throw new Error('Invalid NOWPayments signature.');
 
-  const payload = JSON.parse(rawBody) as Record<string, unknown>;
   const orderId = typeof payload.order_id === 'string' ? payload.order_id : '';
   const paymentStatus = typeof payload.payment_status === 'string' ? payload.payment_status : '';
   if (!orderId || !paymentStatus) throw new Error('NOWPayments event is missing required fields.');
