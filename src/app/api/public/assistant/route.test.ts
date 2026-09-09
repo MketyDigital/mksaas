@@ -7,6 +7,10 @@ jest.mock('@/shared/lib/logger', () => ({
   createLogger: () => ({ error: mockLoggerError }),
 }));
 
+jest.mock('@/features/public-assistant/server/request-database', () => ({
+  withPublicAIRequestDatabase: (work: (database: unknown) => unknown) => work({}),
+}));
+
 jest.mock('@/features/public-assistant/server/memory', () => ({
   clearPublicAIHistory: jest.fn(),
   deletePublicAIConversation: jest.fn(),
