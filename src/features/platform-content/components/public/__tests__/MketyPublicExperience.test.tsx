@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { MketyAcademyHubSection, MketyProductShowcase } from '../MketyPublicExperience';
+import { MketyAcademyHubSection, MketyProductShowcase, type MketyShowcaseGroup } from '../MketyPublicExperience';
 
-const showcaseGroups = [
+const showcaseGroups: MketyShowcaseGroup[] = [
   {
     id: 'platform',
     label: 'Platform',
@@ -25,12 +25,12 @@ const showcaseGroups = [
     href: '/academy',
     items: [{ key: 'automation', title: 'Automation Lab', description: 'Learn automation.', href: '/academy#automation' }],
   },
-] as const;
+];
 
 describe('Mkety public app experience', () => {
   it('exposes an accessible tabbed product showcase and switches the visible panel', async () => {
     const user = userEvent.setup();
-    render(<MketyProductShowcase groups={[...showcaseGroups]} />);
+    render(<MketyProductShowcase groups={showcaseGroups} />);
 
     expect(screen.getByRole('tablist', { name: /explore mkety/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Platform' })).toHaveAttribute('aria-selected', 'true');
