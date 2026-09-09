@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import {
@@ -10,6 +10,7 @@ import {
 
 export const PUBLIC_AI_HISTORY_LIMIT = 20;
 export const PUBLIC_AI_MESSAGE_CONTEXT_LIMIT = 30;
+export const PUBLIC_AI_RATE_LIMIT_PER_MINUTE = 12;
 
 export type PublicAIMessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
@@ -139,8 +140,8 @@ export async function recordPublicAIToolRun(input: {
 }
 
 export async function getPublicAIRecentUserMessageCount(visitorId: string, since: Date) {
-  const [row] = await db
-    .select({ value: count() })
+  const rows = await db
+    .select({ id: publicAIMessages.id })
     .from(publicAIMessages)
     .innerJoin(publicAIConversations, eq(publicAIMessages.conversationId, publicAIConversations.id))
     .where(
@@ -149,9 +150,10 @@ export async function getPublicAIRecentUserMessageCount(visitorId: string, since
         eq(publicAIMessages.role, 'user'),
         gte(publicAIMessages.createdAt, since),
       ),
-    );
+    )
+    .limit(PUBLIC_AI_RATE_LIMIT_PER_MINUTE);
 
-  return Number(row?.value ?? 0);
+  return rows.length;
 }
 
 export async function deletePublicAIConversation(visitorId: string, conversationId: string) {
