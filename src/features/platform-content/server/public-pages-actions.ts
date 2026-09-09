@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
-import { publicPagesAdminPayloadSchema, type PublicPagesAdminPayload } from '@/features/platform-content/public-pages-admin';
+import { type PublicPagesAdminPayload, publicPagesAdminPayloadSchema } from '@/features/platform-content/public-pages-admin';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import type { PlatformJson } from '@/shared/db/schema/platform-content';
