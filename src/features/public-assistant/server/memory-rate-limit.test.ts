@@ -4,12 +4,6 @@ const mockInnerJoin = jest.fn(() => ({ where: mockWhere }));
 const mockFrom = jest.fn(() => ({ innerJoin: mockInnerJoin }));
 const mockSelect = jest.fn(() => ({ from: mockFrom }));
 
-jest.mock('@/shared/db', () => ({
-  db: {
-    select: mockSelect,
-  },
-}));
-
 import { getPublicAIRecentUserMessageCount, PUBLIC_AI_RATE_LIMIT_PER_MINUTE } from './memory';
 
 describe('Public Mkety AI rate-limit lookup', () => {
@@ -19,7 +13,15 @@ describe('Public Mkety AI rate-limit lookup', () => {
   });
 
   it('uses a bounded recent-message lookup instead of an aggregate query', async () => {
-    const count = await getPublicAIRecentUserMessageCount('8bcfb6d6-5246-4a55-87d8-a53f7bbcc6df', new Date());
+    const database = {
+      select: mockSelect,
+    } as Parameters<typeof getPublicAIRecentUserMessageCount>[0];
+
+    const count = await getPublicAIRecentUserMessageCount(
+      database,
+      '8bcfb6d6-5246-4a55-87d8-a53f7bbcc6df',
+      new Date(),
+    );
 
     expect(mockLimit).toHaveBeenCalledWith(PUBLIC_AI_RATE_LIMIT_PER_MINUTE);
     expect(count).toBe(PUBLIC_AI_RATE_LIMIT_PER_MINUTE);
