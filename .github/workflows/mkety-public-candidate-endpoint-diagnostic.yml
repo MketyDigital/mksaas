@@ -83,7 +83,7 @@ jobs:
           name: mkety-public-ai-endpoint-diagnostic
           path: /tmp/mkety-public-ai-diagnostic.txt
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 2
 
       - name: Enforce diagnostic result
         if: always()
