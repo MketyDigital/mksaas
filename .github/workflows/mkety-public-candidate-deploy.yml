@@ -207,7 +207,7 @@ jobs:
           put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}"
           put_secret MKETY_PUBLIC_GEMINI_API_KEY "${MKETY_PUBLIC_GEMINI_API_KEY:-}"
           put_secret MKETY_PUBLIC_VERTEX_PROJECT_ID "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}"
-          put_secret MKETY_PUBLIC_VERTEX_LOCATION "${MKETY_PUBLIC_VERTEX_LOCATION:-}"
+          put_secret MKETY_PUBLIC_VERTEX_LOCATION "$MKETY_PUBLIC_VERTEX_LOCATION"
           put_secret MKETY_PUBLIC_VERTEX_ACCESS_TOKEN "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}"
           put_secret MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
           put_secret MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}"
@@ -323,6 +323,18 @@ jobs:
           fi
 
           conversation_id="$(node -e "const x=require('/tmp/mkety-ai-first.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
+          node <<'NODE'
+          const x = require('/tmp/mkety-ai-first.json');
+          const answer = typeof x.answer === 'string' ? x.answer : '';
+          const hasSolutionHub = /solutionhub/i.test(answer);
+          const hasDocsReference = /\b(docs?|documentation)\b/i.test(answer);
+          const hasCanonicalRoute = /\/(docs|solutions)(?:\b|[/?#])/i.test(answer);
+          if (!hasSolutionHub || !hasDocsReference || !hasCanonicalRoute) {
+            console.error(`Public Mkety AI support grounding failed: solutionHub=${hasSolutionHub} docs=${hasDocsReference} canonicalRoute=${hasCanonicalRoute}`);
+            process.exit(1);
+          }
+          console.log('Public Mkety AI support grounding verified against Docs and SolutionHub canonical public knowledge.');
+          NODE
 
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
             -H 'Content-Type: application/json' -H "Origin: $origin" \
