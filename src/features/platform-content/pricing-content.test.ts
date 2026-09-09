@@ -19,7 +19,11 @@ describe('Mkety public pricing contract', () => {
 
   it('keeps deterministic commercial ordering', () => {
     expect(getPricingPlanSortOrder('starter')).toBe(10);
-    expect(getPricingPlanSortOrder('growth')).toBe(20);
-    expect(getPricingPlanSortOrder('enterprise')).toBe(30);
+    expect(getPricingPlanSortOrder('ai-workspace')).toBe(20);
+    expect(getPricingPlanSortOrder('automation-workspace')).toBe(30);
+    expect(getPricingPlanSortOrder('deploy-workspace')).toBe(40);
+    expect(getPricingPlanSortOrder('mkety-one')).toBe(50);
+    expect(getPricingPlanSortOrder('enterprise')).toBe(60);
+    expect(getPricingPlanSortOrder('growth')).toBe(1000);
   });
 });
