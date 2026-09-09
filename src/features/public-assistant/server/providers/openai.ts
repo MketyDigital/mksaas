@@ -15,6 +15,7 @@ export function createOpenAIPublicAdapter(apiKey: string): PublicAIProviderAdapt
           model: request.model,
           instructions: request.system,
           input: request.messages.map((message) => ({ role: message.role, content: message.content })),
+          reasoning: { effort: 'none' },
           max_output_tokens: request.maxOutputTokens ?? 900,
         }),
         signal: request.signal,
