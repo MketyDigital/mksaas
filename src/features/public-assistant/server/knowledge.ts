@@ -105,12 +105,27 @@ export async function getPublicPricingKnowledge() {
 
 export async function getPublicProductKnowledge(product: string) {
   const normalized = normalize(product);
+
+  if (normalized.includes('trading')) {
+    const homepage = await getPublishedHomepageContent();
+    const trading = homepage.workspaces.items.find((item) => item.key === 'trading');
+    return {
+      key: 'trading',
+      title: trading?.title ?? 'Trading Workspace',
+      summary:
+        trading?.description ??
+        'Trading is a specialized Mkety Custom / Enterprise product.',
+      path: 'https://trade.mkety.com',
+      commercialModel: 'Custom / Enterprise',
+    };
+  }
+
   const aliases: Array<[string[], string]> = [
     [['platform', 'mkety platform', 'ai', 'agent builder'], 'platform'],
-    [['workspace', 'workspaces', 'automation', 'automate', 'deploy'], 'workspaces'],
+    [['workspace', 'workspaces', 'automation', 'automate', 'deploy', 'mkety one'], 'workspaces'],
     [['solutionhub', 'solution hub', 'solutions', 'templates'], 'solutions'],
     [['academy', 'training', 'education'], 'academy'],
-    [['enterprise', 'custom', 'trading'], 'enterprise'],
+    [['enterprise', 'custom'], 'enterprise'],
   ];
   const slug = aliases.find(([names]) => names.some((name) => normalized.includes(name)))?.[1];
   if (!slug) return null;
@@ -118,24 +133,10 @@ export async function getPublicProductKnowledge(product: string) {
   const page = await getPublishedPublicPageContent(slug);
   if (!page) return null;
 
-  if (normalized.includes('trading')) {
-    const homepage = await getPublishedHomepageContent();
-    const trading = homepage.workspaces.items.find((item) => item.key === 'trading');
-    return {
-      key: 'trading',
-      title: trading?.title ?? 'Trading',
-      summary:
-        trading?.description ??
-        'Trading is a specialized Mkety business solution available through Custom or Enterprise engagement.',
-      path: '/enterprise',
-      commercialModel: 'Custom / Enterprise',
-    };
-  }
-
   return {
     key: slug,
     title: page.title,
     summary: bounded(`${page.headline}. ${page.intro}`),
-    path: `/${slug}`,
+    path: slug === 'academy' ? 'https://academy.mkety.com' : `/${slug}`,
   };
 }
