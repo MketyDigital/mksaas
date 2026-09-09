@@ -14,6 +14,7 @@ import {
   listPublicAIConversations,
   PUBLIC_AI_RATE_LIMIT_PER_MINUTE,
 } from '@/features/public-assistant/server/memory';
+import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
 import {
   PublicAssistantRuntimeError,
   runMketyPublicAssistant,
@@ -23,6 +24,7 @@ import {
   parsePublicVisitorToken,
   PUBLIC_AI_VISITOR_COOKIE,
 } from '@/features/public-assistant/server/visitor';
+import type { Database } from '@/shared/db';
 import { createLogger } from '@/shared/lib/logger';
 
 export const maxDuration = 30;
@@ -59,12 +61,12 @@ function sameOriginAllowed(request: Request) {
   }
 }
 
-async function resolveVisitor(request: Request) {
+async function resolveVisitor(request: Request, database: Database) {
   const secret = publicVisitorSecret();
   const existingToken = getCookie(request, PUBLIC_AI_VISITOR_COOKIE);
   const existingVisitorId = await parsePublicVisitorToken(existingToken, secret);
   const visitorId = existingVisitorId ?? crypto.randomUUID();
-  await ensurePublicAIVisitor(visitorId);
+  await ensurePublicAIVisitor(database, visitorId);
   return {
     visitorId,
     setCookie: existingVisitorId ? undefined : await createPublicVisitorToken(visitorId, secret),
@@ -117,36 +119,38 @@ function safeError(error: unknown) {
 
 export async function GET(request: Request) {
   try {
-    const visitor = await resolveVisitor(request);
-    const url = new URL(request.url);
-    const requestedConversationId = conversationQuerySchema.parse(
-      url.searchParams.get('conversationId') ?? undefined,
-    );
-    const conversations = await listPublicAIConversations(visitor.visitorId);
-    const selectedConversationId = requestedConversationId ?? conversations[0]?.id;
-    const selected = selectedConversationId
-      ? await getPublicAIConversation(visitor.visitorId, selectedConversationId)
-      : null;
+    return await withPublicAIRequestDatabase(async (database) => {
+      const visitor = await resolveVisitor(request, database);
+      const url = new URL(request.url);
+      const requestedConversationId = conversationQuerySchema.parse(
+        url.searchParams.get('conversationId') ?? undefined,
+      );
+      const conversations = await listPublicAIConversations(database, visitor.visitorId);
+      const selectedConversationId = requestedConversationId ?? conversations[0]?.id;
+      const selected = selectedConversationId
+        ? await getPublicAIConversation(database, visitor.visitorId, selectedConversationId)
+        : null;
 
-    return withVisitorCookie(
-      json({
-        conversations: conversations.map((conversation) => ({
-          id: conversation.id,
-          title: conversation.title,
-          updatedAt: conversation.updatedAt,
-        })),
-        activeConversationId: selected?.conversation.id ?? null,
-        messages:
-          selected?.messages.map((message) => ({
-            id: message.id,
-            role: message.role,
-            content: message.content,
-            createdAt: message.createdAt,
-          })) ?? [],
-      }),
-      visitor.setCookie,
-      request,
-    );
+      return withVisitorCookie(
+        json({
+          conversations: conversations.map((conversation) => ({
+            id: conversation.id,
+            title: conversation.title,
+            updatedAt: conversation.updatedAt,
+          })),
+          activeConversationId: selected?.conversation.id ?? null,
+          messages:
+            selected?.messages.map((message) => ({
+              id: message.id,
+              role: message.role,
+              content: message.content,
+              createdAt: message.createdAt,
+            })) ?? [],
+        }),
+        visitor.setCookie,
+        request,
+      );
+    });
   } catch (error) {
     return safeError(error);
   }
@@ -154,29 +158,33 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
-    const visitor = await resolveVisitor(request);
-    const recentCount = await getPublicAIRecentUserMessageCount(
-      visitor.visitorId,
-      new Date(Date.now() - 60_000),
-    );
-    if (recentCount >= PUBLIC_AI_RATE_LIMIT_PER_MINUTE) {
-      return withVisitorCookie(
-        json({ error: 'Too many requests. Please try again shortly.' }, 429),
-        visitor.setCookie,
-        request,
+    return await withPublicAIRequestDatabase(async (database) => {
+      if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
+      const visitor = await resolveVisitor(request, database);
+      const recentCount = await getPublicAIRecentUserMessageCount(
+        database,
+        visitor.visitorId,
+        new Date(Date.now() - 60_000),
       );
-    }
+      if (recentCount >= PUBLIC_AI_RATE_LIMIT_PER_MINUTE) {
+        return withVisitorCookie(
+          json({ error: 'Too many requests. Please try again shortly.' }, 429),
+          visitor.setCookie,
+          request,
+        );
+      }
 
-    const input = publicAssistantMessageSchema.parse(await request.json());
-    const result = await runMketyPublicAssistant({
-      visitorId: visitor.visitorId,
-      message: input.message,
-      conversationId: input.conversationId,
-      environment: process.env,
+      const input = publicAssistantMessageSchema.parse(await request.json());
+      const result = await runMketyPublicAssistant({
+        database,
+        visitorId: visitor.visitorId,
+        message: input.message,
+        conversationId: input.conversationId,
+        environment: process.env,
+      });
+
+      return withVisitorCookie(json(result), visitor.setCookie, request);
     });
-
-    return withVisitorCookie(json(result), visitor.setCookie, request);
   } catch (error) {
     return safeError(error);
   }
@@ -184,24 +192,30 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
-    const visitor = await resolveVisitor(request);
-    const input = publicAssistantDeleteSchema.parse(await request.json());
+    return await withPublicAIRequestDatabase(async (database) => {
+      if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
+      const visitor = await resolveVisitor(request, database);
+      const input = publicAssistantDeleteSchema.parse(await request.json());
 
-    if (input.scope === 'all') {
-      await clearPublicAIHistory(visitor.visitorId);
-      const response = json({ cleared: true });
-      response.headers.append(
-        'Set-Cookie',
-        `${PUBLIC_AI_VISITOR_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${
-          new URL(request.url).protocol === 'https:' ? '; Secure' : ''
-        }`,
+      if (input.scope === 'all') {
+        await clearPublicAIHistory(database, visitor.visitorId);
+        const response = json({ cleared: true });
+        response.headers.append(
+          'Set-Cookie',
+          `${PUBLIC_AI_VISITOR_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${
+            new URL(request.url).protocol === 'https:' ? '; Secure' : ''
+          }`,
+        );
+        return response;
+      }
+
+      const deleted = await deletePublicAIConversation(
+        database,
+        visitor.visitorId,
+        input.conversationId,
       );
-      return response;
-    }
-
-    const deleted = await deletePublicAIConversation(visitor.visitorId, input.conversationId);
-    return withVisitorCookie(json({ deleted }), visitor.setCookie, request);
+      return withVisitorCookie(json({ deleted }), visitor.setCookie, request);
+    });
   } catch (error) {
     return safeError(error);
   }
