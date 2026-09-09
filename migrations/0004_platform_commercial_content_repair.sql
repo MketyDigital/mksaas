@@ -71,24 +71,22 @@ JOIN (VALUES
   ('enterprise', 'Managed integrations and delivery', 30)
 ) AS f("key", "label", "sort_order") ON p."key" = f."key";
 
--- Repair the known legacy homepage workspace section. This updates only the public
--- product presentation and keeps Trading on its canonical product domain.
-UPDATE "saas_template"."platform_page_sections" s
-SET "content_json" = jsonb_build_object(
-      'eyebrow', 'Workspaces',
-      'title', 'One platform, multiple operating spaces',
-      'description', 'Choose the workspace that fits what you want to build, or use Mkety One for the complete self-service workspace bundle.',
-      'items', jsonb_build_array(
-        jsonb_build_object('key','ai','title','AI Workspace','description','Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.','href','/app/ai'),
-        jsonb_build_object('key','automation','title','Automation Workspace','description','Create workflows from triggers, actions, conditions, webhooks, transformations, and agent steps.','href','/app/automation'),
-        jsonb_build_object('key','deploy','title','Deploy Workspace','description','Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.','href','/app/deploy'),
-        jsonb_build_object('key','trading','title','Trading Workspace','description','Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.','href','https://trade.mkety.com','badge','Custom / Enterprise')
-      )
-    ),
-    "status" = 'published',
-    "updated_at" = now()
-FROM "saas_template"."platform_pages" p
+-- Untouched seed records have no actor identity. Refresh only those records so launch
+-- copy and docs are rebuilt from the current production-safe defaults by the seeder.
+-- Any admin-managed record (created_by or updated_by populated) is preserved.
+DELETE FROM "saas_template"."platform_page_sections" s
+USING "saas_template"."platform_pages" p
 WHERE s."page_id" = p."id"
-  AND p."slug" = 'home'
-  AND s."section_key" IN ('workspaces','home.workspaces')
-  AND s."status" = 'published';
+  AND p."slug" IN ('home','platform','workspaces','solutions','academy','pricing','enterprise','about','contact')
+  AND s."created_by" IS NULL
+  AND s."updated_by" IS NULL;
+
+DELETE FROM "saas_template"."platform_docs_articles"
+WHERE "created_by" IS NULL AND "updated_by" IS NULL;
+
+DELETE FROM "saas_template"."platform_docs_categories" c
+WHERE c."created_by" IS NULL
+  AND c."updated_by" IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "saas_template"."platform_docs_articles" a WHERE a."category_id" = c."id"
+  );
