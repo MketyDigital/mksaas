@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { buildMketyMetadata } from '../../../metadata';
 import { getPublishedPublicChrome } from '../../../server/public-chrome';
 import { getPublishedPublicPageContent } from '../../../server/public-page';
+import { MketyAcademyHubSection } from '../MketyPublicExperience';
 import { MketyPublicPage } from './MketyPublicPage';
 
 export async function buildPublicRouteMetadata(slug: string): Promise<Metadata> {
@@ -38,6 +39,7 @@ export async function MketyPublicRoutePage({ slug }: { slug: string }) {
       settings={chrome.settings}
       navigation={chrome.navigation}
       footerGroups={chrome.footerGroups}
+      featuredContent={slug === 'academy' ? <MketyAcademyHubSection /> : undefined}
     />
   );
 }
