@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 const mockLoggerError = jest.fn();
 const mockEnsurePublicAIVisitor = jest.fn();
 
