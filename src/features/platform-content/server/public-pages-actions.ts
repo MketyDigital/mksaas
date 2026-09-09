@@ -3,6 +3,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
+import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
 import { publicPagesAdminPayloadSchema, type PublicPagesAdminPayload } from '@/features/platform-content/public-pages-admin';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
@@ -12,12 +13,13 @@ import { recordPlatformContentAuditEvent } from './audit';
 import { requirePlatformContentAccess } from './authorization';
 
 const ENTITY_KEY = 'public-pages';
+const MANAGED_PUBLIC_PAGE_SLUGS = MKETY_PUBLIC_PAGE_DEFAULTS.map((page) => page.slug);
 
 function toPlatformJson(value: unknown): PlatformJson {
   return JSON.parse(JSON.stringify(value)) as PlatformJson;
 }
 
-function revalidatePublicPages(tenantSlug: string, slugs: string[]) {
+function revalidatePublicPages(tenantSlug: string, slugs: readonly string[]) {
   for (const slug of slugs) revalidatePath(`/${slug}`);
   revalidatePath('/');
   revalidatePath('/docs');
@@ -172,15 +174,12 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
 
 export async function publishPublicPages(tenantSlug: string) {
   const actor = await requirePlatformContentAccess(tenantSlug);
-  const managedSlugs = publicPagesAdminPayloadSchema.shape.pages.element.shape.slug
-    ? ['platform', 'workspaces', 'solutions', 'academy', 'pricing', 'enterprise', 'about', 'contact']
-    : [];
   const now = new Date();
 
   const mutatedRecords = await db.transaction(async (tx) => {
     const pages = await tx.update(schema.platformPages)
       .set({ status: 'published', publishedAt: now, updatedBy: actor.userId, updatedAt: now })
-      .where(and(inArray(schema.platformPages.slug, managedSlugs), eq(schema.platformPages.status, 'draft')))
+      .where(and(inArray(schema.platformPages.slug, [...MANAGED_PUBLIC_PAGE_SLUGS]), eq(schema.platformPages.status, 'draft')))
       .returning();
 
     let count = pages.length;
@@ -218,7 +217,7 @@ export async function publishPublicPages(tenantSlug: string) {
     action: 'platform_content.published',
     mutatedRecords,
   });
-  revalidatePublicPages(tenantSlug, managedSlugs);
+  revalidatePublicPages(tenantSlug, MANAGED_PUBLIC_PAGE_SLUGS);
 
   return {
     ok: true as const,
