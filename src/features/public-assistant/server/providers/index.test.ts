@@ -23,12 +23,16 @@ describe('Public Mkety AI provider adapter factory', () => {
 
   it('uses no reasoning effort for low-latency public support responses', async () => {
     const originalFetch = global.fetch;
-    const fetchMock = jest.fn(async () => ({
-      ok: true,
-      status: 200,
-      headers: { get: () => null },
-      json: async () => ({ output_text: 'Mkety support answer.' }),
-    }) as unknown as Response);
+    let capturedInit: RequestInit | undefined;
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ output_text: 'Mkety support answer.' }),
+      } as unknown as Response;
+    });
     global.fetch = fetchMock as typeof fetch;
 
     try {
@@ -40,8 +44,7 @@ describe('Public Mkety AI provider adapter factory', () => {
         maxOutputTokens: 900,
       });
 
-      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
-      const body = JSON.parse(String(init?.body ?? '{}')) as { reasoning?: { effort?: string } };
+      const body = JSON.parse(String(capturedInit?.body ?? '{}')) as { reasoning?: { effort?: string } };
       expect(body.reasoning).toEqual({ effort: 'none' });
     } finally {
       global.fetch = originalFetch;
