@@ -1,0 +1,70 @@
+name: Mkety Public AI Rate Count Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-public-site-production
+    paths:
+      - '.github/workflows/mkety-public-ai-rate-count-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Reproduce recent-message count against staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/mkety-rate-count-diagnostic.ts <<'TS'
+          import { randomUUID } from 'node:crypto';
+          import {
+            appendPublicAIMessage,
+            clearPublicAIHistory,
+            createPublicAIConversation,
+            ensurePublicAIVisitor,
+            getPublicAIRecentUserMessageCount,
+          } from './src/features/public-assistant/server/memory';
+
+          const visitorId = randomUUID();
+          console.log('visitor created');
+          try {
+            await ensurePublicAIVisitor(visitorId);
+            console.log('visitor ensured');
+            const before = await getPublicAIRecentUserMessageCount(visitorId, new Date(Date.now() - 60_000));
+            console.log(`count before message=${before}`);
+            const conversation = await createPublicAIConversation(visitorId, 'diagnostic');
+            if (!conversation) throw new Error('conversation create returned empty');
+            await appendPublicAIMessage({
+              visitorId,
+              conversationId: conversation.id,
+              role: 'user',
+              content: 'diagnostic message',
+            });
+            console.log('user message appended');
+            const after = await getPublicAIRecentUserMessageCount(visitorId, new Date(Date.now() - 60_000));
+            console.log(`count after message=${after}`);
+            if (after !== 1) throw new Error(`expected rate count 1, got ${after}`);
+          } finally {
+            await clearPublicAIHistory(visitorId).catch((error) => {
+              console.error('cleanup failed', error instanceof Error ? error.stack : error);
+            });
+          }
+          TS
+          cp /tmp/mkety-rate-count-diagnostic.ts ./mkety-rate-count-diagnostic.ts
+          pnpm exec tsx ./mkety-rate-count-diagnostic.ts
+          rm ./mkety-rate-count-diagnostic.ts
