@@ -5,6 +5,7 @@
  */
 
 import { getPublishedAppExperience } from '../src/features/platform-app-experience/server/queries';
+import { defaultPricingPlans, defaultWorkspaceSection } from '../src/features/platform-content/defaults';
 import { getPublishedPublicPageContent } from '../src/features/platform-content/server/public-page';
 import {
   getPublishedDocsArticle,
@@ -28,6 +29,30 @@ function assertSmoke(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(`Smoke check failed: ${message}`);
   }
+}
+
+function publicPlanContract(plan: (typeof defaultPricingPlans)[number]) {
+  return {
+    key: plan.key,
+    name: plan.name,
+    priceLabel: plan.priceLabel,
+    billingLabel: plan.billingLabel ?? null,
+    description: plan.description,
+    highlighted: plan.highlighted,
+    ctaLabel: plan.ctaLabel,
+    ctaHref: plan.ctaHref,
+    features: plan.features,
+  };
+}
+
+function publicWorkspaceContract(workspace: (typeof defaultWorkspaceSection.items)[number]) {
+  return {
+    key: workspace.key,
+    title: workspace.title,
+    description: workspace.description,
+    href: workspace.href ?? null,
+    badge: workspace.badge ?? null,
+  };
 }
 
 async function assertPublicAIMemoryTables() {
@@ -58,6 +83,11 @@ async function main() {
   assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
   assertSmoke(homepage.platformOverview.title.length > 0, 'homepage Platform overview should load');
   assertSmoke(homepage.workspaces.items.some((item) => item.key === 'trading'), 'homepage workspaces should keep Trading visible');
+  assertSmoke(
+    JSON.stringify(homepage.workspaces.items.map(publicWorkspaceContract)) ===
+      JSON.stringify(defaultWorkspaceSection.items.map(publicWorkspaceContract)),
+    'published workspace names, descriptions, links and Trading boundary should match the documented public contract',
+  );
   assertSmoke(homepage.solutionHub.title.length > 0, 'homepage SolutionHub section should load');
   assertSmoke(homepage.academy.title.length > 0, 'homepage Academy section should load');
   assertSmoke(homepage.enterprise.title.length > 0, 'homepage Enterprise section should load');
@@ -76,6 +106,10 @@ async function main() {
   assertSmoke(
     pricing.map((plan) => plan.key).join(',') === 'starter,growth,enterprise',
     'pricing should use deterministic Starter, Growth, Enterprise ordering',
+  );
+  assertSmoke(
+    JSON.stringify(pricing.map(publicPlanContract)) === JSON.stringify(defaultPricingPlans.map(publicPlanContract)),
+    'published plan names, pricing labels, descriptions, features and CTAs should match the documented public contract',
   );
 
   const docsTree = await getPublishedDocsTree();
