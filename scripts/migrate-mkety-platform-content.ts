@@ -38,6 +38,7 @@ const MIGRATION_FILES = [
   'migrations/0002_public_ai_memory.sql',
   'migrations/0003_platform_enterprise_orders.sql',
   'migrations/0004_public_commercial_contract.sql',
+  'migrations/0005_public_trading_production_handoff.sql',
 ] as const;
 
 const queryClient = postgres(DATABASE_URL, {
