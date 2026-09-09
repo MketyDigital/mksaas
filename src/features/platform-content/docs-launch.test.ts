@@ -11,13 +11,20 @@ describe('Mkety public docs launch set', () => {
     expect(publicDocsText).not.toContain('opennext');
   });
 
-  it('covers every launch-critical product boundary', () => {
+  it('covers every launch-critical customer-facing product boundary', () => {
     const categories = new Set(defaultDocsCategories.map((category) => category.key));
-    expect(categories).toEqual(
-      expect.objectContaining({
-        has: expect.any(Function),
-      }),
-    );
+    for (const category of [
+      'getting-started',
+      'platform',
+      'workspaces',
+      'solutions',
+      'academy',
+      'enterprise',
+      'domains',
+      'trust',
+    ]) {
+      expect(categories.has(category)).toBe(true);
+    }
 
     const articleSlugs = new Set(defaultDocsArticles.map((article) => article.slug));
     for (const slug of [
@@ -30,7 +37,9 @@ describe('Mkety public docs launch set', () => {
       'plans-usage-credits',
       'academy',
       'enterprise-and-trading',
-      'tenant-isolation',
+      'domain-map',
+      'account-security',
+      'privacy-and-access',
     ]) {
       expect(articleSlugs.has(slug)).toBe(true);
     }
