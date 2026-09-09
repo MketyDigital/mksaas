@@ -13,10 +13,16 @@ describe('Mkety public support-agent behavior', () => {
     );
   });
 
-  it('hard-bounds the agent to public informational support', () => {
+  it('hard-bounds the agent to production-safe public informational support', () => {
     const prompt = buildPublicSystemPrompt('PUBLIC CONTEXT');
     expect(prompt).toMatch(/public-facing Mkety support assistant/i);
     expect(prompt).toMatch(/never claim access to a visitor.*private/i);
+    expect(prompt).toMatch(/do not disclose.*repositories.*github/i);
+    expect(prompt).toMatch(/growth.*pro.*business.*not.*current/i);
+    expect(prompt).toMatch(/academy\.mkety\.com/i);
+    expect(prompt).toMatch(/trade\.mkety\.com/i);
+    expect(prompt).toMatch(/academy.*pricing.*academy/i);
+    expect(prompt).toMatch(/trading.*commercial.*trading.*enterprise/i);
     expect(prompt).toContain('PUBLIC CONTEXT');
   });
 });
