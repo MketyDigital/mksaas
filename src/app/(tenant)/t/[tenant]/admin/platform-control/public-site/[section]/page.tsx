@@ -5,11 +5,11 @@ import { PlatformContentDraftForm } from '@/features/platform-content/components
 import {
   defaultDocsArticles,
   defaultDocsCategories,
-  defaultHeroSection,
   defaultPlatformNavigation,
   defaultPlatformSiteSettings,
   defaultPricingPlans,
 } from '@/features/platform-content/defaults';
+import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
 import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
@@ -22,7 +22,7 @@ type PublicSiteModule = {
   description: string;
   items: string[];
   area: 'public-site' | 'docs' | 'pricing' | 'navigation' | 'settings';
-  entityType: 'site_settings' | 'page_section' | 'navigation_item' | 'pricing_plan' | 'docs_article';
+  entityType: 'site_settings' | 'page' | 'page_section' | 'navigation_item' | 'pricing_plan' | 'docs_article';
   entityKey: string;
   defaultPayload: Record<string, unknown>;
 };
@@ -30,12 +30,12 @@ type PublicSiteModule = {
 const modules: Record<string, PublicSiteModule> = {
   pages: {
     title: 'Pages & Sections',
-    description: 'Manage Mkety public pages, page sections, ordering, CTAs, FAQ content, and metadata.',
-    items: ['Homepage hero', 'Platform overview', 'Workspace cards', 'SolutionHub', 'Academy', 'Enterprise', 'FAQ'],
+    description: 'Manage Mkety public pages, page sections, ordering, CTAs, metadata, and the customer-facing copy used by Public Mkety AI.',
+    items: ['Platform', 'Workspaces', 'SolutionHub', 'Academy', 'Pricing', 'Enterprise', 'About', 'Contact'],
     area: 'public-site',
-    entityType: 'page_section',
-    entityKey: 'home.hero',
-    defaultPayload: defaultHeroSection,
+    entityType: 'page',
+    entityKey: 'public-pages',
+    defaultPayload: { pages: MKETY_PUBLIC_PAGE_DEFAULTS },
   },
   navigation: {
     title: 'Navigation',
@@ -49,7 +49,7 @@ const modules: Record<string, PublicSiteModule> = {
   pricing: {
     title: 'Pricing Display',
     description: 'Manage the public commercial presentation while keeping real entitlements code-controlled.',
-    items: ['Plan cards', 'Feature bullets', 'Usage labels', 'Credits wording', 'Lite Offer', 'Enterprise CTA'],
+    items: ['Plan cards', 'Feature bullets', 'Usage labels', 'Credits wording', 'Starter', 'Workspaces', 'Mkety One', 'Enterprise CTA'],
     area: 'pricing',
     entityType: 'pricing_plan',
     entityKey: 'pricing-plans',
@@ -58,7 +58,7 @@ const modules: Record<string, PublicSiteModule> = {
   docs: {
     title: 'Docs Content',
     description: 'Manage public Mkety documentation categories, articles, markdown content, slugs, and publishing state.',
-    items: ['Getting Started', 'Platform', 'Workspaces', 'Billing', 'Deployments', 'Security', 'Administration'],
+    items: ['Getting Started', 'Platform', 'Workspaces', 'SolutionHub', 'Academy', 'Enterprise', 'Products & Domains', 'Security & Trust'],
     area: 'docs',
     entityType: 'docs_article',
     entityKey: 'docs-defaults',
@@ -100,7 +100,7 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
           entityType={sectionModule.entityType}
           entityKey={sectionModule.entityKey}
           title={`${sectionModule.title} draft`}
-          description="Validate a Mkety CMS payload through the server-side action boundary before persistence is enabled."
+          description="Edit the CMS payload, save it as a draft, then publish when it is ready for the public site and Public Mkety AI grounding."
           defaultPayload={sectionModule.defaultPayload}
         />
 
