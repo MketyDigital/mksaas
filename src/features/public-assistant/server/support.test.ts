@@ -18,6 +18,8 @@ describe('Mkety public support-agent behavior', () => {
     expect(prompt).toMatch(/public-facing Mkety support assistant/i);
     expect(prompt).toMatch(/never claim access to a visitor.*private/i);
     expect(prompt).toMatch(/do not disclose.*repositories.*github/i);
+    expect(prompt).toMatch(/do not repeat or name.*source-control/i);
+    expect(prompt).toMatch(/public Mkety information/i);
     expect(prompt).toMatch(/growth.*pro.*business.*not.*current/i);
     expect(prompt).toMatch(/academy\.mkety\.com/i);
     expect(prompt).toMatch(/trade\.mkety\.com/i);
