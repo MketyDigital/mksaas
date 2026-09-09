@@ -28,6 +28,19 @@ function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+const EXTERNAL_PRODUCT_ROUTES: Array<{ aliases: string[]; label: string; path: string }> = [
+  {
+    aliases: ['academy', 'training', 'education', 'mkety academy'],
+    label: 'Mkety Academy',
+    path: 'https://academy.mkety.com',
+  },
+  {
+    aliases: ['trading', 'trading workspace'],
+    label: 'Trading Workspace',
+    path: 'https://trade.mkety.com',
+  },
+];
+
 const ROUTE_ALIASES: Record<string, string> = {
   'agent builder': '/platform',
   documentation: '/docs',
@@ -35,7 +48,6 @@ const ROUTE_ALIASES: Record<string, string> = {
   'solution hub': '/solutions',
   automation: '/workspaces',
   deployment: '/workspaces',
-  trading: '/enterprise',
   support: '/contact',
   agents: '/platform',
   automate: '/workspaces',
@@ -43,11 +55,17 @@ const ROUTE_ALIASES: Record<string, string> = {
   docs: '/docs',
   solutions: '/solutions',
   custom: '/enterprise',
+  enterprise: '/enterprise',
   ai: '/platform',
 };
 
 export function resolvePublicRoute(destination: string): { label: string; path: string } | null {
   const normalized = normalize(destination);
+  const external = EXTERNAL_PRODUCT_ROUTES.find(({ aliases }) =>
+    aliases.some((alias) => normalized === alias || normalized.includes(alias)),
+  );
+  if (external) return { label: external.label, path: external.path };
+
   const alias = Object.entries(ROUTE_ALIASES)
     .sort(([a], [b]) => b.length - a.length)
     .find(([key]) => normalized === key || normalized.includes(key));
