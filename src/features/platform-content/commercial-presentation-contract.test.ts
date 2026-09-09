@@ -5,56 +5,61 @@ const pricingByKey = new Map(defaultPricingPlans.map((plan) => [plan.key, plan])
 const workspaceByKey = new Map(defaultWorkspaceSection.items.map((workspace) => [workspace.key, workspace]));
 
 describe('Mkety documented public commercial presentation', () => {
-  it('keeps the documented Starter, Growth and Enterprise commercial boundary', () => {
-    expect(defaultPricingPlans.map((plan) => plan.key)).toEqual(['starter', 'growth', 'enterprise']);
+  it('keeps the canonical Starter, Workspace, Mkety One and Enterprise commercial model', () => {
+    expect(defaultPricingPlans.map((plan) => plan.key)).toEqual([
+      'starter',
+      'ai-workspace',
+      'automation-workspace',
+      'deploy-workspace',
+      'mkety-one',
+      'enterprise',
+    ]);
 
     expect(pricingByKey.get('starter')).toMatchObject({
       name: 'Starter',
-      priceLabel: 'Start free',
-      billingLabel: 'Usage-based limits apply',
+      priceLabel: '$5.99',
+      billingLabel: '/ month',
       highlighted: false,
     });
-    expect(pricingByKey.get('starter')?.features).toEqual([
-      'Project workspace',
-      'AI workspace entry',
-      'SolutionHub discovery',
-      'Usage and credits visibility',
-    ]);
-
-    expect(pricingByKey.get('growth')).toMatchObject({
-      name: 'Growth',
-      priceLabel: 'Team plan',
-      billingLabel: 'Plan, credits, and usage controls',
+    expect(pricingByKey.get('ai-workspace')).toMatchObject({
+      name: 'AI Workspace',
+      priceLabel: '$16.99',
+      billingLabel: '/ month',
+    });
+    expect(pricingByKey.get('automation-workspace')).toMatchObject({
+      name: 'Automation Workspace',
+      priceLabel: '$16.99',
+      billingLabel: '/ month',
+    });
+    expect(pricingByKey.get('deploy-workspace')).toMatchObject({
+      name: 'Deploy Workspace',
+      priceLabel: '$9.99',
+      billingLabel: '/ month',
+    });
+    expect(pricingByKey.get('mkety-one')).toMatchObject({
+      name: 'Mkety One',
+      priceLabel: '$49',
+      billingLabel: '/ month',
       highlighted: true,
     });
-    expect(pricingByKey.get('growth')?.features).toEqual([
-      'Team workspaces',
-      'Automation workspace',
-      'Deploy workspace',
-      'Integrations',
-      'Usage controls',
-    ]);
-
     expect(pricingByKey.get('enterprise')).toMatchObject({
       name: 'Enterprise',
       priceLabel: 'Custom',
       highlighted: false,
     });
-    expect(pricingByKey.get('enterprise')?.features).toEqual([
-      'Custom implementation',
-      'Enterprise support',
-      'Trading infrastructure options',
-      'Security and operations review',
-    ]);
+
+    const publicPricing = JSON.stringify(defaultPricingPlans);
+    expect(publicPricing).not.toMatch(/\b(growth|pro|business)\b/i);
   });
 
-  it('keeps public pricing free of ordinary infrastructure-slice marketing', () => {
+  it('keeps public pricing free of infrastructure-slice and stale Academy/Trading pricing', () => {
     const presentation = JSON.stringify(defaultPricingPlans);
     expect(presentation).not.toMatch(/\b(cpu|ram|vps)\b/i);
     expect(presentation).not.toMatch(/African edition/i);
+    expect(presentation).not.toMatch(/academy.*\$|trading.*\$/i);
   });
 
-  it('keeps the documented workspace capabilities and Trading boundary', () => {
+  it('keeps the documented workspace capabilities and production product handoffs', () => {
     expect(workspaceByKey.get('ai')).toMatchObject({
       title: 'AI Workspace',
       description: 'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
@@ -65,22 +70,34 @@ describe('Mkety documented public commercial presentation', () => {
     });
     expect(workspaceByKey.get('deploy')).toMatchObject({
       title: 'Deploy Workspace',
-      description: 'Publish websites, lightweight applications, APIs, portals, and services with domains and environments.',
+      description: 'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
     });
     expect(workspaceByKey.get('trading')).toMatchObject({
       title: 'Trading Workspace',
+      description: 'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: 'https://trade.mkety.com',
     });
   });
 
-  it('keeps workspace packages separate from product workspaces in public positioning', () => {
+  it('keeps public Academy and Trading pages pointed at their production products', () => {
     const workspacesPage = getDefaultPublicPage('workspaces');
-    expect(workspacesPage?.headline).toBe('Focused tools that share one platform context.');
-    expect(workspacesPage?.sections[0]?.items.map((item) => item.key)).toEqual(['ai', 'automation', 'deploy', 'trading']);
     expect(workspacesPage?.sections[0]?.items.find((item) => item.key === 'trading')).toMatchObject({
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: 'https://trade.mkety.com',
+    });
+
+    const academyPage = getDefaultPublicPage('academy');
+    expect(academyPage?.sections[0]?.items.map((item) => item.title)).toEqual([
+      'Web & App Engineering',
+      'Trading Masterclass',
+      'Digital Funnel & Marketing',
+      'AI & Automation Lab',
+      'Certified Digital Skills',
+    ]);
+    expect(academyPage?.sections[0]?.cta).toMatchObject({
+      label: 'Explore Mkety Academy',
+      href: 'https://academy.mkety.com',
     });
   });
 });
