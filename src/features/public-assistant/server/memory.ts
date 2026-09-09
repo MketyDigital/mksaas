@@ -1,6 +1,6 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 
-import { db } from '@/shared/db';
+import type { Database } from '@/shared/db';
 import {
   publicAIConversations,
   publicAIMessages,
@@ -19,9 +19,9 @@ export function derivePublicConversationTitle(message: string): string {
   return normalized ? normalized.slice(0, 60) : 'Mkety AI';
 }
 
-export async function ensurePublicAIVisitor(visitorId: string) {
+export async function ensurePublicAIVisitor(database: Database, visitorId: string) {
   const now = new Date();
-  const [visitor] = await db
+  const [visitor] = await database
     .insert(publicAIVisitors)
     .values({ id: visitorId, lastSeenAt: now })
     .onConflictDoUpdate({
@@ -33,9 +33,13 @@ export async function ensurePublicAIVisitor(visitorId: string) {
   return visitor;
 }
 
-export async function createPublicAIConversation(visitorId: string, firstMessage?: string) {
-  await ensurePublicAIVisitor(visitorId);
-  const [conversation] = await db
+export async function createPublicAIConversation(
+  database: Database,
+  visitorId: string,
+  firstMessage?: string,
+) {
+  await ensurePublicAIVisitor(database, visitorId);
+  const [conversation] = await database
     .insert(publicAIConversations)
     .values({
       visitorId,
@@ -46,16 +50,20 @@ export async function createPublicAIConversation(visitorId: string, firstMessage
   return conversation;
 }
 
-export async function listPublicAIConversations(visitorId: string) {
-  return db.query.publicAIConversations.findMany({
+export async function listPublicAIConversations(database: Database, visitorId: string) {
+  return database.query.publicAIConversations.findMany({
     where: eq(publicAIConversations.visitorId, visitorId),
     orderBy: [desc(publicAIConversations.updatedAt)],
     limit: PUBLIC_AI_HISTORY_LIMIT,
   });
 }
 
-export async function getPublicAIConversation(visitorId: string, conversationId: string) {
-  const conversation = await db.query.publicAIConversations.findFirst({
+export async function getPublicAIConversation(
+  database: Database,
+  visitorId: string,
+  conversationId: string,
+) {
+  const conversation = await database.query.publicAIConversations.findFirst({
     where: and(
       eq(publicAIConversations.id, conversationId),
       eq(publicAIConversations.visitorId, visitorId),
@@ -64,7 +72,7 @@ export async function getPublicAIConversation(visitorId: string, conversationId:
 
   if (!conversation) return null;
 
-  const messages = await db.query.publicAIMessages.findMany({
+  const messages = await database.query.publicAIMessages.findMany({
     where: eq(publicAIMessages.conversationId, conversation.id),
     orderBy: [desc(publicAIMessages.createdAt)],
     limit: PUBLIC_AI_MESSAGE_CONTEXT_LIMIT,
@@ -73,14 +81,17 @@ export async function getPublicAIConversation(visitorId: string, conversationId:
   return { conversation, messages: messages.reverse() };
 }
 
-export async function appendPublicAIMessage(input: {
-  visitorId: string;
-  conversationId: string;
-  role: PublicAIMessageRole;
-  content: string;
-  metadata?: Record<string, unknown>;
-}) {
-  const conversation = await db.query.publicAIConversations.findFirst({
+export async function appendPublicAIMessage(
+  database: Database,
+  input: {
+    visitorId: string;
+    conversationId: string;
+    role: PublicAIMessageRole;
+    content: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const conversation = await database.query.publicAIConversations.findFirst({
     where: and(
       eq(publicAIConversations.id, input.conversationId),
       eq(publicAIConversations.visitorId, input.visitorId),
@@ -88,7 +99,7 @@ export async function appendPublicAIMessage(input: {
   });
   if (!conversation) return null;
 
-  const [message] = await db
+  const [message] = await database
     .insert(publicAIMessages)
     .values({
       conversationId: conversation.id,
@@ -98,7 +109,7 @@ export async function appendPublicAIMessage(input: {
     })
     .returning();
 
-  await db
+  await database
     .update(publicAIConversations)
     .set({ updatedAt: new Date() })
     .where(
@@ -111,14 +122,17 @@ export async function appendPublicAIMessage(input: {
   return message;
 }
 
-export async function recordPublicAIToolRun(input: {
-  visitorId: string;
-  conversationId: string;
-  toolName: string;
-  status: 'success' | 'failure';
-  metadata?: Record<string, unknown>;
-}) {
-  const conversation = await db.query.publicAIConversations.findFirst({
+export async function recordPublicAIToolRun(
+  database: Database,
+  input: {
+    visitorId: string;
+    conversationId: string;
+    toolName: string;
+    status: 'success' | 'failure';
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const conversation = await database.query.publicAIConversations.findFirst({
     where: and(
       eq(publicAIConversations.id, input.conversationId),
       eq(publicAIConversations.visitorId, input.visitorId),
@@ -126,7 +140,7 @@ export async function recordPublicAIToolRun(input: {
   });
   if (!conversation) return null;
 
-  const [toolRun] = await db
+  const [toolRun] = await database
     .insert(publicAIToolRuns)
     .values({
       conversationId: input.conversationId,
@@ -139,8 +153,12 @@ export async function recordPublicAIToolRun(input: {
   return toolRun;
 }
 
-export async function getPublicAIRecentUserMessageCount(visitorId: string, since: Date) {
-  const rows = await db
+export async function getPublicAIRecentUserMessageCount(
+  database: Database,
+  visitorId: string,
+  since: Date,
+) {
+  const rows = await database
     .select({ id: publicAIMessages.id })
     .from(publicAIMessages)
     .innerJoin(publicAIConversations, eq(publicAIMessages.conversationId, publicAIConversations.id))
@@ -156,8 +174,12 @@ export async function getPublicAIRecentUserMessageCount(visitorId: string, since
   return rows.length;
 }
 
-export async function deletePublicAIConversation(visitorId: string, conversationId: string) {
-  const deleted = await db
+export async function deletePublicAIConversation(
+  database: Database,
+  visitorId: string,
+  conversationId: string,
+) {
+  const deleted = await database
     .delete(publicAIConversations)
     .where(
       and(
@@ -170,7 +192,7 @@ export async function deletePublicAIConversation(visitorId: string, conversation
   return deleted.length > 0;
 }
 
-export async function clearPublicAIHistory(visitorId: string) {
-  await db.delete(publicAIConversations).where(eq(publicAIConversations.visitorId, visitorId));
-  await db.delete(publicAIVisitors).where(eq(publicAIVisitors.id, visitorId));
+export async function clearPublicAIHistory(database: Database, visitorId: string) {
+  await database.delete(publicAIConversations).where(eq(publicAIConversations.visitorId, visitorId));
+  await database.delete(publicAIVisitors).where(eq(publicAIVisitors.id, visitorId));
 }
