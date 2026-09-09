@@ -1,0 +1,462 @@
+name: Mkety Public Production Cutover
+
+on:
+  workflow_dispatch:
+    inputs:
+      verified_sha:
+        description: Exact fully verified Mkety public candidate SHA
+        required: true
+        type: string
+      confirmation:
+        description: Type CUTOVER MKETY PUBLIC to authorize production routing
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PRODUCTION_WORKER_NAME: mkety-platform
+
+jobs:
+  cutover:
+    name: Verify exact candidate and cut over mkety.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
+      NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
+      SELAR_ENTERPRISE_CHECKOUT_URL: ${{ secrets.SELAR_ENTERPRISE_CHECKOUT_URL }}
+      MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_PUBLIC_GEMINI_API_KEY: ${{ secrets.MKETY_PUBLIC_GEMINI_API_KEY }}
+      MKETY_PUBLIC_VERTEX_PROJECT_ID: ${{ secrets.MKETY_PUBLIC_VERTEX_PROJECT_ID }}
+      MKETY_PUBLIC_VERTEX_LOCATION: ${{ secrets.MKETY_PUBLIC_VERTEX_LOCATION }}
+      MKETY_PUBLIC_VERTEX_ACCESS_TOKEN: ${{ secrets.MKETY_PUBLIC_VERTEX_ACCESS_TOKEN }}
+      MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN: ${{ secrets.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID: ${{ secrets.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID }}
+      MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY: ${{ secrets.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY }}
+      MKETY_PUBLIC_BEDROCK_SESSION_TOKEN: ${{ secrets.MKETY_PUBLIC_BEDROCK_SESSION_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_REGION: ${{ secrets.MKETY_PUBLIC_BEDROCK_REGION }}
+      SKIP_ENV_VALIDATION: 'true'
+
+    steps:
+      - name: Validate manual authorization and production secrets
+        shell: bash
+        env:
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'verified_sha must be an exact 40-character Git commit SHA.'
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != 'CUTOVER MKETY PUBLIC' ]; then
+            echo 'Production cutover confirmation did not match the required phrase.'
+            exit 1
+          fi
+          for variable in \
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID PRODUCTION_DATABASE_URL \
+            NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET SELAR_ENTERPRISE_CHECKOUT_URL \
+            MKETY_PUBLIC_AI_VISITOR_SECRET; do
+            if [ -z "${!variable:-}" ]; then
+              echo "$variable is required in the production environment."
+              exit 1
+            fi
+          done
+          if [ "${#MKETY_PUBLIC_AI_VISITOR_SECRET}" -lt 32 ]; then
+            echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
+            exit 1
+          fi
+          case "$SELAR_ENTERPRISE_CHECKOUT_URL" in
+            https://*) ;;
+            *) echo 'SELAR_ENTERPRISE_CHECKOUT_URL must use HTTPS.'; exit 1 ;;
+          esac
+
+      - name: Verify exact-SHA candidate and routing preflight evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          verify_workflow_success() {
+            local workflow="$1"
+            local label="$2"
+            local response
+            response="$(curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+            RESPONSE="$response" LABEL="$label" node <<'NODE'
+          const payload = JSON.parse(process.env.RESPONSE || '{}');
+          if (!Array.isArray(payload.workflow_runs) || payload.workflow_runs.length === 0) {
+            throw new Error(`No successful ${process.env.LABEL} run exists for the exact verified SHA.`);
+          }
+          console.log(`Verified successful ${process.env.LABEL} evidence for exact SHA.`);
+          NODE
+          }
+          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+          verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
+
+      - name: Checkout exact verified SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.verified_sha }}
+          fetch-depth: 1
+
+      - name: Assert exact checkout
+        shell: bash
+        env:
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$VERIFIED_SHA" ]; then
+            echo "Exact-SHA checkout mismatch: expected $VERIFIED_SHA, got $actual"
+            exit 1
+          fi
+
+      - name: Select configured Public Mkety AI providers
+        id: public-ai
+        shell: bash
+        run: |
+          set -euo pipefail
+          providers=()
+          if [ -n "${MKETY_PUBLIC_OPENAI_API_KEY:-}" ]; then providers+=(openai); fi
+          if [ -n "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}" ]; then providers+=(azure-openai); fi
+          if [ -n "${MKETY_PUBLIC_GEMINI_API_KEY:-}" ]; then providers+=(gemini); fi
+          if [ -n "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_LOCATION:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}" ]; then providers+=(vertex); fi
+          if [ -n "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}" ]; then providers+=(cloudflare-ai); fi
+          if [ -n "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}" ] && [ -n "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}" ]; then providers+=(bedrock); fi
+          if [ "${#providers[@]}" -eq 0 ]; then
+            echo 'At least one dedicated Public Mkety AI provider must be configured for production.'
+            exit 1
+          fi
+          primary="${providers[0]}"
+          fallback=''
+          if [ "${#providers[@]}" -gt 1 ]; then fallback="$(IFS=,; echo "${providers[*]:1}")"; fi
+          echo "primary=$primary" >> "$GITHUB_OUTPUT"
+          echo "fallback=$fallback" >> "$GITHUB_OUTPUT"
+          echo "Production Public Mkety AI provider count: ${#providers[@]}"
+
+      - name: Validate NOWPayments API key without creating a payment
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/nowpayments-currencies.json -w '%{http_code}' \
+            -H "x-api-key: $NOWPAYMENTS_API_KEY" \
+            'https://api.nowpayments.io/v1/currencies' || true)"
+          if [ "$code" != '200' ]; then
+            echo "NOWPayments read-only credential check failed with HTTP $code."
+            exit 1
+          fi
+          node <<'NODE'
+          const payload = require('/tmp/nowpayments-currencies.json');
+          const currencies = Array.isArray(payload) ? payload : payload.currencies;
+          if (!Array.isArray(currencies) || currencies.length === 0) {
+            throw new Error('NOWPayments currencies response was not usable.');
+          }
+          console.log(`NOWPayments API key accepted; ${currencies.length} payment currencies reported.`);
+          NODE
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Re-run exact-SHA quality gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm test
+          pnpm type-check
+          pnpm lint
+          pnpx vinext check
+
+      - name: Migrate, seed, and smoke production content database
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate
+          pnpm db:migrate:mkety-content
+          pnpm db:seed:mkety-content
+          pnpm db:smoke:mkety-content
+
+      - name: Snapshot Cloudflare routing and enforce isolation
+        id: cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zones="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=mkety.com&status=active")"
+          ZONES="$zones" node <<'NODE' > /tmp/zone-id
+          const payload = JSON.parse(process.env.ZONES || '{}');
+          if (!payload.success || !Array.isArray(payload.result) || payload.result.length !== 1) {
+            throw new Error('Expected exactly one active mkety.com Cloudflare zone.');
+          }
+          process.stdout.write(payload.result[0].id);
+          NODE
+          zone_id="$(cat /tmp/zone-id)"
+          echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+          routes="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          printf '%s' "$routes" > /tmp/mkety-routes-before.json
+          ROUTES="$routes" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
+          const payload = JSON.parse(process.env.ROUTES || '{}');
+          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Could not read Cloudflare Worker routes.');
+          const exactPatterns = new Set(['mkety.com/*', 'www.mkety.com/*']);
+          const workerRoutes = payload.result.filter((route) => route.script === process.env.WORKER);
+          if (workerRoutes.length > 0) {
+            throw new Error(`Production Worker ${process.env.WORKER} is already bound to live route(s); refusing an initial cutover that could bypass preview verification.`);
+          }
+          const protectedRoutes = payload.result.filter((route) => !exactPatterns.has(route.pattern));
+          console.log(`Preserving ${protectedRoutes.length} unrelated Worker route(s).`);
+          for (const pattern of exactPatterns) {
+            const existing = payload.result.find((route) => route.pattern === pattern);
+            console.log(`${pattern}: ${existing ? `currently ${existing.script || 'route-only'}` : 'no existing Worker route'}`);
+          }
+          NODE
+
+      - name: Configure and build isolated production Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'wrangler.jsonc';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.name = process.env.PRODUCTION_WORKER_NAME;
+          config.preview_urls = true;
+          config.vars = { ...(config.vars || {}), SKIP_ENV_VALIDATION: 'true' };
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+          pnpm build
+          pnpm run deploy --dry-run
+
+      - name: Deploy production Worker without domain routes
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run deploy 2>&1 | tee /tmp/mkety-production-deploy.log
+          url="$(grep -Eo 'https://[^[:space:]]+workers\.dev' /tmp/mkety-production-deploy.log | tail -n 1 || true)"
+          if [ -z "$url" ]; then
+            echo 'Production Worker deployed without a discoverable workers.dev preview URL.'
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Production preview URL discovered."
+
+      - name: Attach production runtime secrets
+        shell: bash
+        env:
+          PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+          PUBLIC_AI_FALLBACK: ${{ steps.public-ai.outputs.fallback }}
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$PRODUCTION_WORKER_NAME" >/dev/null
+              echo "Attached production runtime secret: $name"
+            fi
+          }
+          put_secret DATABASE_URL "$PRODUCTION_DATABASE_URL"
+          put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
+          put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
+          put_secret SELAR_ENTERPRISE_CHECKOUT_URL "$SELAR_ENTERPRISE_CHECKOUT_URL"
+          put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
+          put_secret MKETY_PUBLIC_AI_ENABLED 'true'
+          put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
+          put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS "$PUBLIC_AI_FALLBACK"
+          put_secret MKETY_PUBLIC_OPENAI_API_KEY "${MKETY_PUBLIC_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}"
+          put_secret MKETY_PUBLIC_GEMINI_API_KEY "${MKETY_PUBLIC_GEMINI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_VERTEX_PROJECT_ID "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}"
+          put_secret MKETY_PUBLIC_VERTEX_LOCATION "${MKETY_PUBLIC_VERTEX_LOCATION:-}"
+          put_secret MKETY_PUBLIC_VERTEX_ACCESS_TOKEN "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SESSION_TOKEN "${MKETY_PUBLIC_BEDROCK_SESSION_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_REGION "${MKETY_PUBLIC_BEDROCK_REGION:-}"
+
+      - name: Smoke production Worker preview before routing
+        shell: bash
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for route in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact /sitemap.xml /robots.txt; do
+            code="$(curl -L -sS -o /tmp/mkety-preview -w '%{http_code}' "$PREVIEW_URL$route" || true)"
+            if [ "$code" != '200' ]; then
+              echo "Production preview failed: $route returned HTTP $code."
+              exit 1
+            fi
+            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' /tmp/mkety-preview; then
+              echo "Production preview exposed quarantined/internal wording on $route."
+              exit 1
+            fi
+          done
+
+      - name: Bind only apex and www Worker routes with rollback snapshot
+        id: route-bind
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/mkety-routes-before.json', 'utf8'));
+          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid route snapshot.');
+          const patterns = ['mkety.com/*', 'www.mkety.com/*'];
+          const snapshot = patterns.map((pattern) => {
+            const route = payload.result.find((item) => item.pattern === pattern);
+            return route ? { pattern, existed: true, id: route.id, script: route.script ?? null } : { pattern, existed: false };
+          });
+          fs.writeFileSync('/tmp/mkety-cutover-rollback.json', JSON.stringify(snapshot, null, 2));
+          NODE
+
+          bind_pattern() {
+            local pattern="$1"
+            local route_id
+            route_id="$(PATTERN="$pattern" node -e "const x=require('/tmp/mkety-routes-before.json'); const r=x.result.find(v=>v.pattern===process.env.PATTERN); if(r?.id) process.stdout.write(r.id)")"
+            body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]}))" "$pattern" "$PRODUCTION_WORKER_NAME")"
+            if [ -n "$route_id" ]; then
+              response="$(curl -fsS -X PUT "${auth[@]}" --data "$body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$route_id")"
+            else
+              response="$(curl -fsS -X POST "${auth[@]}" --data "$body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes")"
+              new_id="$(RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); if(!x.success||!x.result?.id) process.exit(1); process.stdout.write(x.result.id)")"
+              PATTERN="$pattern" NEW_ID="$new_id" node <<'NODE'
+          const fs = require('node:fs');
+          const path = '/tmp/mkety-cutover-rollback.json';
+          const snapshot = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const row = snapshot.find((item) => item.pattern === process.env.PATTERN);
+          row.newId = process.env.NEW_ID;
+          fs.writeFileSync(path, JSON.stringify(snapshot, null, 2));
+          NODE
+            fi
+            RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); if(!x.success) process.exit(1)"
+            echo "Bound $pattern to verified production Worker."
+          }
+
+          bind_pattern 'mkety.com/*'
+          bind_pattern 'www.mkety.com/*'
+          echo 'bound=true' >> "$GITHUB_OUTPUT"
+
+      - name: Run production acceptance and rollback on failure
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          rollback_routes() {
+            echo 'Production acceptance failed; restoring exact pre-cutover apex/www Worker routes.'
+            auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+            node -e "const fs=require('fs'); const x=require('/tmp/mkety-cutover-rollback.json'); for(const r of x) console.log(JSON.stringify(r));" | while IFS= read -r row; do
+              pattern="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).pattern)")"
+              existed="$(ROW="$row" node -e "process.stdout.write(String(JSON.parse(process.env.ROW).existed))")"
+              if [ "$existed" = 'true' ]; then
+                route_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).id)")"
+                script="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).script||'')")"
+                body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]||null}))" "$pattern" "$script")"
+                curl -fsS -X PUT "${auth[@]}" --data "$body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$route_id" >/dev/null
+              else
+                new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
+                if [ -n "$new_id" ]; then
+                  curl -fsS -X DELETE "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$new_id" >/dev/null
+                fi
+              fi
+            done
+          }
+          trap 'rollback_routes' ERR
+
+          for route in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact /sitemap.xml /robots.txt; do
+            code="$(curl -L -sS -o /tmp/mkety-production -w '%{http_code}' "https://mkety.com$route")"
+            [ "$code" = '200' ] || { echo "Production route failed: $route HTTP $code"; false; }
+            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' /tmp/mkety-production; then
+              echo "Production route exposed quarantined/internal wording: $route"
+              false
+            fi
+          done
+
+          www_code="$(curl -sS -o /dev/null -w '%{http_code}' 'https://www.mkety.com/')"
+          [ "$www_code" = '308' ] || { echo "www canonical redirect expected 308, got $www_code"; false; }
+
+          webhook_code="$(curl -sS -o /tmp/mkety-production-webhook.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            -H 'x-nowpayments-sig: mkety-production-intentionally-invalid-signature' \
+            --data '{"order_id":"production-smoke-no-order","payment_status":"finished","payment_id":"production-smoke-no-payment"}' \
+            'https://mkety.com/api/webhooks/enterprise/nowpayments')"
+          [ "$webhook_code" = '400' ] || { echo "NOWPayments production webhook expected invalid-signature HTTP 400, got $webhook_code"; false; }
+
+          selar_host="$(node -e "process.stdout.write(new URL(process.env.SELAR_ENTERPRISE_CHECKOUT_URL).host)")"
+          idempotency="mkety-prod-selar-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          selar_code="$(curl -sS -o /tmp/mkety-production-selar.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
+            -H "Idempotency-Key: $idempotency" \
+            --data '{"fullName":"Mkety Production Smoke","companyName":"Mkety","email":"production-smoke@mkety.com","projectName":"Production gateway verification","amount":"10.00","currency":"USD","provider":"selar"}' \
+            'https://mkety.com/api/payments/enterprise/create')"
+          [ "$selar_code" = '201' ] || { echo "Selar production checkout expected 201, got $selar_code"; false; }
+          SELAR_HOST="$selar_host" node <<'NODE'
+          const x = require('/tmp/mkety-production-selar.json');
+          if (!x.success || x.provider !== 'selar' || x.status !== 'awaiting_confirmation' || !x.orderId) process.exit(1);
+          if (new URL(x.redirectUrl).host !== process.env.SELAR_HOST) process.exit(1);
+          NODE
+
+          cookie_jar=/tmp/mkety-production-ai-cookies
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" 'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai-history.json
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
+            -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
+            --data '{"message":"What are the current Mkety plans, and where do I access Academy and Trading?"}' \
+            'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai.json
+          node <<'NODE'
+          const x = require('/tmp/mkety-production-ai.json');
+          const a = String(x.answer || '');
+          const required = [/Starter/i, /\$5\.99/, /AI Workspace/i, /\$16\.99/, /Automation Workspace/i, /Deploy Workspace/i, /\$9\.99/, /Mkety One/i, /\$49/, /Enterprise/i, /academy\.mkety\.com/i, /trade\.mkety\.com/i];
+          if (!x.conversationId || required.some((pattern) => !pattern.test(a))) process.exit(1);
+          if (/\b(Growth|Pro|Business)\b/i.test(a)) process.exit(1);
+          if (/github|repository|branch|pull request|commit|mksaas|mklms|origin\.mkety\.com/i.test(a)) process.exit(1);
+          NODE
+
+          trap - ERR
+          echo 'Production acceptance passed. Apex/www routing retained on the exact verified Worker.'
+
+      - name: Publish cutover evidence
+        env:
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+          PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+        run: |
+          echo "Mkety public production SHA: $VERIFIED_SHA"
+          echo "Verified Worker preview: $PREVIEW_URL"
+          echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
+          echo 'Enterprise gateways verified: NOWPayments read-only API key + fail-closed IPN; Selar pending hosted checkout.'
+          echo 'Production routes changed only for mkety.com/* and www.mkety.com/*; unrelated Worker routes were preserved.'
