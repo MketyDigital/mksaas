@@ -55,6 +55,17 @@ function publicWorkspaceContract(workspace: (typeof defaultWorkspaceSection.item
   };
 }
 
+function assertContractMatch(actual: unknown, expected: unknown, message: string) {
+  const actualJson = JSON.stringify(actual);
+  const expectedJson = JSON.stringify(expected);
+  if (actualJson !== expectedJson) {
+    console.error(`Commercial CMS drift (${message})`);
+    console.error(`Actual: ${JSON.stringify(actual, null, 2)}`);
+    console.error(`Expected: ${JSON.stringify(expected, null, 2)}`);
+    throw new Error(`Smoke check failed: ${message}`);
+  }
+}
+
 async function assertPublicAIMemoryTables() {
   await Promise.all([
     db.select({ id: publicAIVisitors.id }).from(publicAIVisitors).limit(1),
@@ -83,9 +94,9 @@ async function main() {
   assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
   assertSmoke(homepage.platformOverview.title.length > 0, 'homepage Platform overview should load');
   assertSmoke(homepage.workspaces.items.some((item) => item.key === 'trading'), 'homepage workspaces should keep Trading visible');
-  assertSmoke(
-    JSON.stringify(homepage.workspaces.items.map(publicWorkspaceContract)) ===
-      JSON.stringify(defaultWorkspaceSection.items.map(publicWorkspaceContract)),
+  assertContractMatch(
+    homepage.workspaces.items.map(publicWorkspaceContract),
+    defaultWorkspaceSection.items.map(publicWorkspaceContract),
     'published workspace names, descriptions, links and Trading boundary should match the documented public contract',
   );
   assertSmoke(homepage.solutionHub.title.length > 0, 'homepage SolutionHub section should load');
@@ -107,8 +118,9 @@ async function main() {
     pricing.map((plan) => plan.key).join(',') === 'starter,growth,enterprise',
     'pricing should use deterministic Starter, Growth, Enterprise ordering',
   );
-  assertSmoke(
-    JSON.stringify(pricing.map(publicPlanContract)) === JSON.stringify(defaultPricingPlans.map(publicPlanContract)),
+  assertContractMatch(
+    pricing.map(publicPlanContract),
+    defaultPricingPlans.map(publicPlanContract),
     'published plan names, pricing labels, descriptions, features and CTAs should match the documented public contract',
   );
 
