@@ -272,16 +272,24 @@ jobs:
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-history.json
           node -e "const x=require('/tmp/mkety-ai-history.json'); if(!Array.isArray(x.conversations)||!Array.isArray(x.messages)) process.exit(1)"
 
-          read -r first_code first_time < <(curl -sS -c "$cookie_jar" -b "$cookie_jar" \
-            -H 'Content-Type: application/json' -H "Origin: $origin" \
-            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
-            -o /tmp/mkety-ai-first.json -w '%{http_code} %{time_total}\n' \
-            "$CANDIDATE_URL/api/public/assistant")
-          if [ "$first_code" != '200' ]; then
-            echo "Public Mkety AI first POST failed: HTTP $first_code after ${first_time}s"
+          first_code='000'
+          first_time='0'
+          for attempt in 1 2 3; do
+            read -r first_code first_time < <(curl -sS -c "$cookie_jar" -b "$cookie_jar" \
+              -H 'Content-Type: application/json' -H "Origin: $origin" \
+              --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
+              -o /tmp/mkety-ai-first.json -w '%{http_code} %{time_total}\n' \
+              "$CANDIDATE_URL/api/public/assistant" || printf '000 0\n')
+
+            if [ "$first_code" = '200' ]; then
+              echo "Public Mkety AI became ready on attempt $attempt after ${first_time}s."
+              break
+            fi
+
+            echo "Public Mkety AI readiness attempt $attempt failed: HTTP $first_code after ${first_time}s"
             node <<'NODE'
           const fs = require('node:fs');
-          const body = fs.readFileSync('/tmp/mkety-ai-first.json', 'utf8');
+          const body = fs.existsSync('/tmp/mkety-ai-first.json') ? fs.readFileSync('/tmp/mkety-ai-first.json', 'utf8') : '';
           try {
             const parsed = JSON.parse(body);
             const diagnostic = {
@@ -294,8 +302,26 @@ jobs:
             console.log(`Sanitized Public Mkety AI error: non-JSON response (${body.length} bytes)`);
           }
           NODE
+
+            case "$first_code" in
+              000|5??)
+                if [ "$attempt" -lt 3 ]; then
+                  sleep 8
+                  continue
+                fi
+                ;;
+              *)
+                echo 'Public Mkety AI returned a non-transient status; refusing to retry.'
+                exit 1
+                ;;
+            esac
+          done
+
+          if [ "$first_code" != '200' ]; then
+            echo "Public Mkety AI did not become ready after 3 bounded attempts (last HTTP $first_code)."
             exit 1
           fi
+
           conversation_id="$(node -e "const x=require('/tmp/mkety-ai-first.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
 
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
