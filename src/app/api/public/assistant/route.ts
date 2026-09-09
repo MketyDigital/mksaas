@@ -4,6 +4,7 @@ import {
   publicAssistantDeleteSchema,
   publicAssistantMessageSchema,
 } from '@/features/public-assistant/contracts';
+import { summarizeErrorChain } from '@/features/public-assistant/server/error-diagnostics';
 import {
   clearPublicAIHistory,
   deletePublicAIConversation,
@@ -98,10 +99,16 @@ function safeError(error: unknown) {
     return json({ error: 'Invalid Mkety AI request.' }, 400);
   }
 
+  const errorChain = summarizeErrorChain(error);
+  const root = errorChain[0];
+  const cause = errorChain[1];
   publicAILogger.error(
     {
-      errorName: error instanceof Error ? error.name : 'UnknownError',
-      errorMessage: error instanceof Error ? error.message : undefined,
+      errorName: root?.name ?? 'UnknownError',
+      errorMessage: root?.message,
+      errorCauseName: cause?.name,
+      errorCauseMessage: cause?.message,
+      errorCauseCode: cause?.code,
     },
     'Mkety public AI request failed',
   );
