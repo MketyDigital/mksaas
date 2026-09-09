@@ -99,7 +99,10 @@ function safeError(error: unknown) {
   }
 
   publicAILogger.error(
-    { errorName: error instanceof Error ? error.name : 'UnknownError' },
+    {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorMessage: error instanceof Error ? error.message : undefined,
+    },
     'Mkety public AI request failed',
   );
   return json({ error: 'Mkety AI is temporarily unavailable. Please try again.' }, 503);
