@@ -15,7 +15,7 @@ describe('Public Mkety AI rate-limit lookup', () => {
   it('uses a bounded recent-message lookup instead of an aggregate query', async () => {
     const database = {
       select: mockSelect,
-    } as Parameters<typeof getPublicAIRecentUserMessageCount>[0];
+    } as unknown as Parameters<typeof getPublicAIRecentUserMessageCount>[0];
 
     const count = await getPublicAIRecentUserMessageCount(
       database,
