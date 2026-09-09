@@ -1,6 +1,7 @@
 import { createPublicAIProviderAdapters } from './index';
 import { createOpenAIPublicAdapter } from './openai';
 
+// Candidate verification marker: exercises the unchanged Public AI provider contract in CI.
 describe('Public Mkety AI provider adapter factory', () => {
   it('builds only configured public-specific providers in requested order', () => {
     const adapters = createPublicAIProviderAdapters(
