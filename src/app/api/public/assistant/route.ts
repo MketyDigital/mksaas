@@ -11,6 +11,7 @@ import {
   getPublicAIConversation,
   getPublicAIRecentUserMessageCount,
   listPublicAIConversations,
+  PUBLIC_AI_RATE_LIMIT_PER_MINUTE,
 } from '@/features/public-assistant/server/memory';
 import {
   PublicAssistantRuntimeError,
@@ -26,7 +27,6 @@ import { createLogger } from '@/shared/lib/logger';
 export const maxDuration = 30;
 
 const publicAILogger = createLogger({ module: 'public-assistant' });
-const PUBLIC_AI_RATE_LIMIT_PER_MINUTE = 12;
 const PUBLIC_AI_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90;
 const conversationQuerySchema = z.uuid().optional();
 
@@ -151,7 +151,11 @@ export async function POST(request: Request) {
       new Date(Date.now() - 60_000),
     );
     if (recentCount >= PUBLIC_AI_RATE_LIMIT_PER_MINUTE) {
-      return withVisitorCookie(json({ error: 'Too many requests. Please try again shortly.' }, 429), visitor.setCookie, request);
+      return withVisitorCookie(
+        json({ error: 'Too many requests. Please try again shortly.' }, 429),
+        visitor.setCookie,
+        request,
+      );
     }
 
     const input = publicAssistantMessageSchema.parse(await request.json());
@@ -179,7 +183,9 @@ export async function DELETE(request: Request) {
       const response = json({ cleared: true });
       response.headers.append(
         'Set-Cookie',
-        `${PUBLIC_AI_VISITOR_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`,
+        `${PUBLIC_AI_VISITOR_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${
+          new URL(request.url).protocol === 'https:' ? '; Secure' : ''
+        }`,
       );
       return response;
     }
