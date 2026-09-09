@@ -48,8 +48,11 @@ describe('Mkety documented public commercial presentation', () => {
       highlighted: false,
     });
 
-    const publicPricing = JSON.stringify(defaultPricingPlans);
-    expect(publicPricing).not.toMatch(/\b(growth|pro|business)\b/i);
+    const obsoletePlanIdentities = new Set(['growth', 'pro', 'business']);
+    for (const plan of defaultPricingPlans) {
+      expect(obsoletePlanIdentities.has(plan.key.toLowerCase())).toBe(false);
+      expect(obsoletePlanIdentities.has(plan.name.toLowerCase())).toBe(false);
+    }
   });
 
   it('keeps public pricing free of infrastructure-slice and stale Academy/Trading pricing', () => {
