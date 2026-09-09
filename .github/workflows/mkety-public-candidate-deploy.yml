@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL MKETY_PUBLIC_AI_VISITOR_SECRET NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET SELAR_ENTERPRISE_CHECKOUT_URL; do
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL MKETY_PUBLIC_AI_VISITOR_SECRET; do
             if [ -z "${!variable:-}" ]; then
               echo "$variable is not configured for the staging environment."
               exit 1
@@ -69,13 +69,6 @@ jobs:
             echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
             exit 1
           fi
-          case "$SELAR_ENTERPRISE_CHECKOUT_URL" in
-            https://*) ;;
-            *)
-              echo 'SELAR_ENTERPRISE_CHECKOUT_URL must be an https URL.'
-              exit 1
-              ;;
-          esac
 
       - name: Select configured Public Mkety AI providers
         id: public-ai
@@ -136,6 +129,40 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: pnpm db:smoke:mkety-content
+
+      - name: Validate Enterprise payment readiness
+        id: enterprise-payment
+        shell: bash
+        run: |
+          set -euo pipefail
+          nowpayments_ready=false
+          selar_ready=false
+
+          if [ -n "${NOWPAYMENTS_API_KEY:-}" ] && [ -n "${NOWPAYMENTS_IPN_SECRET:-}" ]; then
+            nowpayments_ready=true
+          elif [ -n "${NOWPAYMENTS_API_KEY:-}" ] || [ -n "${NOWPAYMENTS_IPN_SECRET:-}" ]; then
+            echo 'NOWPayments is partially configured and will not be treated as a usable candidate provider.'
+          fi
+
+          if [ -n "${SELAR_ENTERPRISE_CHECKOUT_URL:-}" ]; then
+            case "$SELAR_ENTERPRISE_CHECKOUT_URL" in
+              https://*) selar_ready=true ;;
+              *)
+                echo 'SELAR_ENTERPRISE_CHECKOUT_URL is configured but is not an https URL.'
+                exit 1
+                ;;
+            esac
+          fi
+
+          if [ "$nowpayments_ready" != 'true' ] && [ "$selar_ready" != 'true' ]; then
+            echo 'No usable Enterprise payment provider is configured in the staging environment.'
+            echo 'Configure NOWPAYMENTS_API_KEY + NOWPAYMENTS_IPN_SECRET or SELAR_ENTERPRISE_CHECKOUT_URL before public promotion.'
+            exit 1
+          fi
+
+          echo "nowpayments_ready=$nowpayments_ready" >> "$GITHUB_OUTPUT"
+          echo "selar_ready=$selar_ready" >> "$GITHUB_OUTPUT"
+          echo "Enterprise payment provider readiness: nowpayments=$nowpayments_ready selar=$selar_ready"
 
       - name: Configure isolated candidate Worker
         shell: bash
@@ -207,9 +234,9 @@ jobs:
           }
 
           put_secret DATABASE_URL "$STAGING_DATABASE_URL"
-          put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
-          put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
-          put_secret SELAR_ENTERPRISE_CHECKOUT_URL "$SELAR_ENTERPRISE_CHECKOUT_URL"
+          put_secret NOWPAYMENTS_API_KEY "${NOWPAYMENTS_API_KEY:-}"
+          put_secret NOWPAYMENTS_IPN_SECRET "${NOWPAYMENTS_IPN_SECRET:-}"
+          put_secret SELAR_ENTERPRISE_CHECKOUT_URL "${SELAR_ENTERPRISE_CHECKOUT_URL:-}"
           put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
           put_secret MKETY_PUBLIC_AI_ENABLED 'true'
           put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
@@ -273,24 +300,60 @@ jobs:
             echo "OK $route"
           done
 
-      - name: Smoke Enterprise payment webhook fail-closed behavior
+      - name: Smoke Enterprise checkout safety and webhook fail-closed behavior
         shell: bash
         env:
           CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+          NOWPAYMENTS_READY: ${{ steps.enterprise-payment.outputs.nowpayments_ready }}
         run: |
           set -euo pipefail
+          origin="$CANDIDATE_URL"
+
+          checkout_page_code="$(curl -L -sS -o /tmp/mkety-enterprise-checkout.html -w '%{http_code}' "$CANDIDATE_URL/enterprise/checkout" || true)"
+          if [ "$checkout_page_code" != '200' ]; then
+            echo "Enterprise checkout page smoke expected HTTP 200; received $checkout_page_code."
+            exit 1
+          fi
+
+          invalid_checkout_code="$(curl -sS -o /tmp/mkety-enterprise-invalid-checkout.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' -H "Origin: $origin" --data '{}' \
+            "$CANDIDATE_URL/api/payments/enterprise/create" || true)"
+          case "$invalid_checkout_code" in
+            400|422) ;;
+            *)
+              echo "Enterprise invalid-checkout smoke expected a validation 4xx; received $invalid_checkout_code."
+              exit 1
+              ;;
+          esac
+
+          missing_status_code="$(curl -sS -o /tmp/mkety-enterprise-missing-status.json -w '%{http_code}' \
+            "$CANDIDATE_URL/api/payments/enterprise/status?orderId=candidate-smoke-no-order" || true)"
+          if [ "$missing_status_code" != '404' ]; then
+            echo "Enterprise nonexistent-order status smoke expected HTTP 404; received $missing_status_code."
+            exit 1
+          fi
+
           webhook_code="$(curl -sS -o /tmp/mkety-enterprise-webhook.json -w '%{http_code}' \
             -X POST \
             -H 'Content-Type: application/json' \
             -H 'x-nowpayments-sig: mkety-candidate-intentionally-invalid-signature' \
             --data '{"order_id":"candidate-smoke-no-order","payment_status":"finished","payment_id":"candidate-smoke-no-payment"}' \
             "$CANDIDATE_URL/api/webhooks/enterprise/nowpayments" || true)"
-          if [ "$webhook_code" != '400' ]; then
-            echo "Enterprise webhook fail-closed smoke expected HTTP 400 for an invalid signature; received $webhook_code."
-            exit 1
+
+          if [ "$NOWPAYMENTS_READY" = 'true' ]; then
+            if [ "$webhook_code" != '400' ]; then
+              echo "Configured NOWPayments webhook expected HTTP 400 for an invalid signature; received $webhook_code."
+              exit 1
+            fi
+            node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
+          else
+            if [ "$webhook_code" != '503' ]; then
+              echo "Unconfigured NOWPayments webhook expected fail-closed HTTP 503; received $webhook_code."
+              exit 1
+            fi
           fi
-          node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
-          echo 'Enterprise payment webhook rejected an invalid signature before order mutation; no invoice or charge was created.'
+
+          echo 'Enterprise checkout safety smoke passed without creating a provider invoice, charge, entitlement, credit or wallet grant.'
 
       - name: Smoke Public Mkety AI memory and support tools
         shell: bash
@@ -395,10 +458,12 @@ jobs:
         env:
           CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
           PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+          NOWPAYMENTS_READY: ${{ steps.enterprise-payment.outputs.nowpayments_ready }}
+          SELAR_READY: ${{ steps.enterprise-payment.outputs.selar_ready }}
         run: |
           echo "Mkety public candidate SHA: $GITHUB_SHA"
           echo "Mkety public candidate URL: $CANDIDATE_URL"
           echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
-          echo 'Enterprise payment runtime secrets attached and invalid-signature fail-closed behavior verified.'
+          echo "Enterprise payment provider readiness: nowpayments=$NOWPAYMENTS_READY selar=$SELAR_READY"
           echo 'No provider/model selector is exposed to visitors.'
           echo 'No mkety.com route or custom-domain binding was configured by this workflow.'
