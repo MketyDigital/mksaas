@@ -32,7 +32,7 @@ describe('Public Mkety AI launch boundary', () => {
         MKETY_PUBLIC_AI_ENABLED: 'true',
         MKETY_PUBLIC_AI_PRIMARY_PROVIDER: 'openai',
       }).model,
-    ).toBe('gpt-5.6-terra');
+    ).toBe('gpt-5.6-luna');
 
     expect(
       parsePublicAIProviderConfig({
