@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import {
@@ -47,6 +47,7 @@ type SeedResult = {
   pricingPlanOrderingUpdated: number;
   docsCategories: number;
   docsArticles: number;
+  seedOwnedRecordsUpdated: number;
 };
 
 const homepageSectionDefaults = [
@@ -63,8 +64,9 @@ const homepageSectionDefaults = [
 
 /**
  * Seeds initial Mkety public website/docs records from code-owned defaults.
- * Existing admin-managed content is never overwritten, except deterministic
- * sort_order repair for the three known Mkety public pricing plan keys.
+ * Existing admin-managed content is never overwritten. Rows that still have
+ * updated_by = NULL are seed-owned and may be refreshed to the current safe
+ * defaults; once an admin edits/publishes a record, the seeder leaves it alone.
  */
 export async function seedDefaultPlatformContent(): Promise<SeedResult> {
   const result: SeedResult = {
@@ -79,6 +81,7 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
     pricingPlanOrderingUpdated: 0,
     docsCategories: 0,
     docsArticles: 0,
+    seedOwnedRecordsUpdated: 0,
   };
 
   const existingSettings = await db.query.platformSiteSettings.findFirst({
@@ -104,6 +107,29 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
       publishedAt: new Date(),
     });
     result.siteSettings = 'created';
+  } else if (existingSettings.updatedBy == null) {
+    const refreshed = await db
+      .update(platformSiteSettings)
+      .set({
+        status: PUBLISHED,
+        brandName: defaultPlatformSiteSettings.brandName,
+        logoUrl: defaultPlatformSiteSettings.logoUrl,
+        faviconUrl: defaultPlatformSiteSettings.faviconUrl,
+        primaryColor: defaultPlatformSiteSettings.primaryColor,
+        secondaryColor: defaultPlatformSiteSettings.secondaryColor,
+        accentColor: defaultPlatformSiteSettings.accentColor,
+        defaultSeoTitle: defaultPlatformSiteSettings.defaultSeoTitle,
+        defaultSeoDescription: defaultPlatformSiteSettings.defaultSeoDescription,
+        socialImageUrl: defaultPlatformSiteSettings.socialImageUrl,
+        contactEmail: defaultPlatformSiteSettings.contactEmail,
+        contactHref: defaultPlatformSiteSettings.contactHref,
+        legalLinksJson: defaultPlatformSiteSettings.legalLinks,
+        publishedAt: existingSettings.publishedAt ?? new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(platformSiteSettings.id, existingSettings.id), isNull(platformSiteSettings.updatedBy)))
+      .returning({ id: platformSiteSettings.id });
+    result.seedOwnedRecordsUpdated += refreshed.length;
   }
 
   let home = await db.query.platformPages.findFirst({
@@ -126,6 +152,24 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
 
     home = inserted[0];
     result.homepage = 'created';
+  } else if (home.updatedBy == null) {
+    const refreshed = await db
+      .update(platformPages)
+      .set({
+        title: 'Mkety Home',
+        status: PUBLISHED,
+        seoTitle: defaultPlatformSiteSettings.defaultSeoTitle,
+        seoDescription: defaultPlatformSiteSettings.defaultSeoDescription,
+        enabled: true,
+        publishedAt: home.publishedAt ?? new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(platformPages.id, home.id), isNull(platformPages.updatedBy)))
+      .returning();
+    if (refreshed[0]) {
+      home = refreshed[0];
+      result.seedOwnedRecordsUpdated += 1;
+    }
   }
 
   if (home) {
@@ -146,6 +190,21 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
           publishedAt: new Date(),
         });
         result.homepageSections += 1;
+      } else if (existing.updatedBy == null) {
+        const refreshed = await db
+          .update(platformPageSections)
+          .set({
+            sectionType: section.sectionType,
+            sortOrder: section.sortOrder,
+            enabled: true,
+            status: PUBLISHED,
+            contentJson: section.contentJson,
+            publishedAt: existing.publishedAt ?? new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(platformPageSections.id, existing.id), isNull(platformPageSections.updatedBy)))
+          .returning({ id: platformPageSections.id });
+        result.seedOwnedRecordsUpdated += refreshed.length;
       }
     }
   }
@@ -171,6 +230,24 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
 
       page = inserted[0];
       result.publicPages += 1;
+    } else if (page.updatedBy == null) {
+      const refreshed = await db
+        .update(platformPages)
+        .set({
+          title: publicPage.title,
+          status: PUBLISHED,
+          seoTitle: publicPage.seoTitle,
+          seoDescription: publicPage.seoDescription,
+          enabled: true,
+          publishedAt: page.publishedAt ?? new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(platformPages.id, page.id), isNull(platformPages.updatedBy)))
+        .returning();
+      if (refreshed[0]) {
+        page = refreshed[0];
+        result.seedOwnedRecordsUpdated += 1;
+      }
     }
 
     if (!page) continue;
@@ -212,13 +289,28 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
           publishedAt: new Date(),
         });
         result.publicPageSections += 1;
+      } else if (existingSection.updatedBy == null) {
+        const refreshed = await db
+          .update(platformPageSections)
+          .set({
+            sectionType: section.sectionType,
+            sortOrder: section.sortOrder,
+            enabled: true,
+            status: PUBLISHED,
+            contentJson: section.contentJson,
+            publishedAt: existingSection.publishedAt ?? new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(platformPageSections.id, existingSection.id), isNull(platformPageSections.updatedBy)))
+          .returning({ id: platformPageSections.id });
+        result.seedOwnedRecordsUpdated += refreshed.length;
       }
     }
   }
 
   for (const item of defaultPlatformNavigation) {
     const existing = await db.query.platformNavigationItems.findFirst({
-      where: eq(platformNavigationItems.href, item.href),
+      where: eq(platformNavigationItems.label, item.label),
     });
 
     if (!existing) {
@@ -232,6 +324,21 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
         status: PUBLISHED,
       });
       result.navigationItems += 1;
+    } else if (existing.updatedBy == null) {
+      const refreshed = await db
+        .update(platformNavigationItems)
+        .set({
+          area: item.area,
+          href: item.href,
+          sortOrder: item.sortOrder,
+          enabled: item.enabled,
+          external: item.external,
+          status: PUBLISHED,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(platformNavigationItems.id, existing.id), isNull(platformNavigationItems.updatedBy)))
+        .returning({ id: platformNavigationItems.id });
+      result.seedOwnedRecordsUpdated += refreshed.length;
     }
   }
 
@@ -245,7 +352,38 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
 
     if (existing) {
       planIdsByKey.set(plan.key, existing.id);
-      if (existing.sortOrder !== expectedSortOrder) {
+      if (existing.updatedBy == null) {
+        const refreshed = await db
+          .update(platformPricingPlans)
+          .set({
+            name: plan.name,
+            priceLabel: plan.priceLabel,
+            billingLabel: plan.billingLabel,
+            description: plan.description,
+            highlighted: plan.highlighted,
+            ctaLabel: plan.ctaLabel,
+            ctaHref: plan.ctaHref,
+            sortOrder: expectedSortOrder,
+            status: PUBLISHED,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(platformPricingPlans.id, existing.id), isNull(platformPricingPlans.updatedBy)))
+          .returning({ id: platformPricingPlans.id });
+
+        if (refreshed.length > 0) {
+          await db.delete(platformPricingFeatures).where(eq(platformPricingFeatures.planId, existing.id));
+          await db.insert(platformPricingFeatures).values(
+            plan.features.map((feature, index) => ({
+              planId: existing.id,
+              label: feature,
+              sortOrder: index * 10,
+              enabled: true,
+            })),
+          );
+          result.seedOwnedRecordsUpdated += 1;
+          result.pricingFeatures += plan.features.length;
+        }
+      } else if (existing.sortOrder !== expectedSortOrder) {
         await db
           .update(platformPricingPlans)
           .set({ sortOrder: expectedSortOrder })
@@ -296,6 +434,20 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
 
     if (existing) {
       categoryIdsByKey.set(category.key, existing.id);
+      if (existing.updatedBy == null) {
+        const refreshed = await db
+          .update(platformDocsCategories)
+          .set({
+            title: category.title,
+            description: category.description,
+            sortOrder: category.sortOrder,
+            status: PUBLISHED,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(platformDocsCategories.id, existing.id), isNull(platformDocsCategories.updatedBy)))
+          .returning({ id: platformDocsCategories.id });
+        result.seedOwnedRecordsUpdated += refreshed.length;
+      }
       continue;
     }
 
@@ -338,6 +490,24 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
         publishedAt: new Date(),
       });
       result.docsArticles += 1;
+    } else if (existing.updatedBy == null) {
+      const refreshed = await db
+        .update(platformDocsArticles)
+        .set({
+          categoryId,
+          title: article.title,
+          excerpt: article.excerpt,
+          bodyMarkdown: article.bodyMarkdown,
+          sortOrder: article.sortOrder,
+          status: PUBLISHED,
+          seoTitle: article.seoTitle,
+          seoDescription: article.seoDescription,
+          publishedAt: existing.publishedAt ?? new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(platformDocsArticles.id, existing.id), isNull(platformDocsArticles.updatedBy)))
+        .returning({ id: platformDocsArticles.id });
+      result.seedOwnedRecordsUpdated += refreshed.length;
     }
   }
 
