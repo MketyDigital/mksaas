@@ -23,10 +23,12 @@ describe('Public Mkety AI provider adapter factory', () => {
 
   it('uses no reasoning effort for low-latency public support responses', async () => {
     const originalFetch = global.fetch;
-    const fetchMock = jest.fn(async () => new Response(JSON.stringify({ output_text: 'Mkety support answer.' }), {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
+      headers: { get: () => null },
+      json: async () => ({ output_text: 'Mkety support answer.' }),
+    }) as unknown as Response);
     global.fetch = fetchMock as typeof fetch;
 
     try {
