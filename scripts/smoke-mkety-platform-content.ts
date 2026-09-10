@@ -6,6 +6,7 @@
  */
 
 import { getPublishedAppExperience } from '../src/features/platform-app-experience/server/queries';
+import { normalizeWorkspaceSalesLinks } from '../src/features/platform-content/commercial-routing';
 import { defaultPricingPlans, defaultWorkspaceSection } from '../src/features/platform-content/defaults';
 import { getPublishedPublicPageContent } from '../src/features/platform-content/server/public-page';
 import {
@@ -117,12 +118,14 @@ async function main() {
   assertPublicCopySafe(navigation, 'navigation');
 
   const homepage = await getPublishedHomepageContent();
+  const expectedWorkspaces = normalizeWorkspaceSalesLinks(defaultWorkspaceSection);
   assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
   assertSmoke(homepage.platformOverview.title.length > 0, 'homepage Platform overview should load');
   assertSmoke(homepage.workspaces.items.some((item) => item.key === 'trading'), 'homepage workspaces should keep Trading visible');
+  assertSmoke(homepage.workspaces.items.find((item) => item.key === 'trading')?.href === '/enterprise', 'public Trading sales should route through Enterprise');
   assertContractMatch(
     homepage.workspaces.items.map(publicWorkspaceContract),
-    defaultWorkspaceSection.items.map(publicWorkspaceContract),
+    expectedWorkspaces.items.map(publicWorkspaceContract),
     'published workspace names, descriptions, links and Trading boundary should match the documented public contract',
   );
   assertSmoke(homepage.solutionHub.title.length > 0, 'homepage SolutionHub section should load');
