@@ -22,9 +22,9 @@ describe('Mkety public support-agent behavior', () => {
     expect(prompt).toMatch(/public Mkety information/i);
     expect(prompt).toMatch(/growth.*pro.*business.*not.*current/i);
     expect(prompt).toMatch(/academy\.mkety\.com/i);
-    expect(prompt).toMatch(/trade\.mkety\.com/i);
+    expect(prompt).toMatch(/trading.*sales.*pricing.*quotes.*access requests.*enterprise/i);
+    expect(prompt).toMatch(/do not send a new buyer there to purchase/i);
     expect(prompt).toMatch(/academy.*pricing.*academy/i);
-    expect(prompt).toMatch(/trading.*commercial.*trading.*enterprise/i);
     expect(prompt).toContain('PUBLIC CONTEXT');
   });
 });
