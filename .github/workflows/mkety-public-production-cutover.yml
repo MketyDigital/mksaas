@@ -32,7 +32,6 @@ jobs:
       PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
       NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
       NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
-      SELAR_ENTERPRISE_CHECKOUT_URL: ${{ secrets.SELAR_ENTERPRISE_CHECKOUT_URL }}
       MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
       MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
       MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
@@ -67,8 +66,7 @@ jobs:
           fi
           for variable in \
             CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID PRODUCTION_DATABASE_URL \
-            NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET SELAR_ENTERPRISE_CHECKOUT_URL \
-            MKETY_PUBLIC_AI_VISITOR_SECRET; do
+            NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET MKETY_PUBLIC_AI_VISITOR_SECRET; do
             if [ -z "${!variable:-}" ]; then
               echo "$variable is required in the production environment."
               exit 1
@@ -78,10 +76,7 @@ jobs:
             echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
             exit 1
           fi
-          case "$SELAR_ENTERPRISE_CHECKOUT_URL" in
-            https://*) ;;
-            *) echo 'SELAR_ENTERPRISE_CHECKOUT_URL must use HTTPS.'; exit 1 ;;
-          esac
+          echo 'Hosted checkout providers such as Selar are optional and must be configured through the admin/payment-provider catalog, not as a cutover prerequisite.'
 
       - name: Verify SHA is current release-branch head and all blocking gates are green
         shell: bash
@@ -295,7 +290,7 @@ jobs:
           - If a target route did not exist before cutover, DELETE the route created for that target pattern.
           - Do not alter any other Worker route or DNS record.
 
-          The cutover workflow performs this rollback automatically if live acceptance fails after route binding.
+          The cutover workflow performs this rollback automatically if either target route binding fails or live acceptance fails after route binding.
           EOF
 
       - name: Persist pre-mutation rollback evidence
@@ -359,7 +354,6 @@ jobs:
           put_secret DATABASE_URL "$PRODUCTION_DATABASE_URL"
           put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
           put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
-          put_secret SELAR_ENTERPRISE_CHECKOUT_URL "$SELAR_ENTERPRISE_CHECKOUT_URL"
           put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
           put_secret MKETY_PUBLIC_AI_ENABLED 'true'
           put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
@@ -420,9 +414,33 @@ jobs:
         run: |
           set -euo pipefail
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          rollback_route_bind() {
+            local original_status="${1:-1}"
+            set +e
+            echo 'A target route binding failed; restoring exact pre-cutover apex/www Worker routes.'
+            node -e "const x=require('/tmp/mkety-cutover-rollback.json'); for(const r of x) console.log(JSON.stringify(r));" | while IFS= read -r row; do
+              pattern="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).pattern)")"
+              existed="$(ROW="$row" node -e "process.stdout.write(String(JSON.parse(process.env.ROW).existed))")"
+              if [ "$existed" = 'true' ]; then
+                route_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).id)")"
+                script="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).script||'')")"
+                restore_body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]||null}))" "$pattern" "$script")"
+                curl -fsS -X PUT "${auth[@]}" --data "$restore_body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$route_id" >/dev/null || echo "Rollback warning: could not restore $pattern automatically."
+              else
+                new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
+                if [ -n "$new_id" ]; then
+                  curl -fsS -X DELETE "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$new_id" >/dev/null || echo "Rollback warning: could not delete newly created $pattern automatically."
+                fi
+              fi
+            done
+            exit "$original_status"
+          }
+          trap 'status=$?; rollback_route_bind "$status"' ERR
+
           bind_pattern() {
             local pattern="$1"
-            local route_id
+            local route_id response body new_id
             route_id="$(PATTERN="$pattern" node -e "const x=require('/tmp/mkety-routes-before.json'); const r=x.result.find(v=>v.pattern===process.env.PATTERN); if(r?.id) process.stdout.write(r.id)")"
             body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]}))" "$pattern" "$PRODUCTION_WORKER_NAME")"
             if [ -n "$route_id" ]; then
@@ -435,6 +453,7 @@ jobs:
           const path = '/tmp/mkety-cutover-rollback.json';
           const snapshot = JSON.parse(fs.readFileSync(path, 'utf8'));
           const row = snapshot.find((item) => item.pattern === process.env.PATTERN);
+          if (!row) throw new Error(`Rollback snapshot missing ${process.env.PATTERN}.`);
           row.newId = process.env.NEW_ID;
           fs.writeFileSync(path, JSON.stringify(snapshot, null, 2));
           NODE
@@ -442,8 +461,10 @@ jobs:
             RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); if(!x.success) process.exit(1)"
             echo "Bound $pattern to verified production Worker."
           }
+
           bind_pattern 'mkety.com/*'
           bind_pattern 'www.mkety.com/*'
+          trap - ERR
           echo 'bound=true' >> "$GITHUB_OUTPUT"
 
       - name: Persist route-bind rollback evidence
@@ -519,20 +540,6 @@ jobs:
             'https://mkety.com/api/webhooks/enterprise/nowpayments')"
           [ "$webhook_code" = '400' ] || { echo "NOWPayments production webhook expected invalid-signature HTTP 400, got $webhook_code"; false; }
 
-          selar_host="$(node -e "process.stdout.write(new URL(process.env.SELAR_ENTERPRISE_CHECKOUT_URL).host)")"
-          idempotency="mkety-prod-selar-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          selar_code="$(curl -sS -o /tmp/mkety-production-selar.json -w '%{http_code}' \
-            -X POST -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
-            -H "Idempotency-Key: $idempotency" \
-            --data '{"fullName":"Mkety Production Smoke","companyName":"Mkety","email":"production-smoke@mkety.com","projectName":"Production gateway verification","amount":"10.00","currency":"USD","provider":"selar"}' \
-            'https://mkety.com/api/payments/enterprise/create')"
-          [ "$selar_code" = '201' ] || { echo "Selar production checkout expected 201, got $selar_code"; false; }
-          SELAR_HOST="$selar_host" node <<'NODE'
-          const x = require('/tmp/mkety-production-selar.json');
-          if (!x.success || x.provider !== 'selar' || x.status !== 'awaiting_confirmation' || !x.orderId) process.exit(1);
-          if (new URL(x.redirectUrl).host !== process.env.SELAR_HOST) process.exit(1);
-          NODE
-
           cookie_jar=/tmp/mkety-production-ai-cookies
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" 'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai-history.json
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
@@ -564,9 +571,9 @@ jobs:
             echo "- Verified Worker preview: \`$PREVIEW_URL\`"
             echo "- Public Mkety AI primary provider family: \`$PUBLIC_AI_PRIMARY\`"
             echo '- Required exact-SHA workflows: green before cutover.'
-            echo '- Enterprise gateways: NOWPayments read-only credential + invalid-signature fail-closed smoke; Selar pending hosted checkout only.'
+            echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; hosted checkout providers are optional/admin-configured.'
             echo '- Production database: PRODUCTION_DATABASE_URL only; staging database is not mapped.'
-            echo '- Live route mutation: only mkety.com/* and www.mkety.com/*.'
+            echo '- Live route mutation: only mkety.com/* and www.mkety.com/*, with automatic rollback on partial binding failure.'
             echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'
             echo '- Unrelated Worker routes and DNS records were not modified.'
             echo
