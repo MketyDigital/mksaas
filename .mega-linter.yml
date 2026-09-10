@@ -43,6 +43,7 @@ SPELL_LYCHEE_ARGUMENTS: >-
   --exclude 'api\.cloudflare\.com/client/v4'
   --exclude 'api\.github\.com/repos/\$GITHUB_REPOSITORY'
   --exclude 'api\.openai\.com/v1'
+  --exclude 'api\.nowpayments\.io/v1/currencies'
   --exclude 'mkety(?:\.local)?(?:/|$)'
   --exclude 'mkety\.com/(?:api/|sitemap\.xml$)'
 
