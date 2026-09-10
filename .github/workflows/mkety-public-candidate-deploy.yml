@@ -38,7 +38,6 @@ jobs:
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
       NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
-      SELAR_ENTERPRISE_CHECKOUT_URL: ${{ secrets.SELAR_ENTERPRISE_CHECKOUT_URL || vars.SELAR_ENTERPRISE_CHECKOUT_URL }}
       MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
       MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
       MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
@@ -128,24 +127,19 @@ jobs:
           pnpm db:seed:mkety-content
           pnpm db:smoke:mkety-content
 
-      - name: Require both Enterprise payment gateways
+      - name: Require operational Enterprise payment gateway
         id: enterprise-payment
         shell: bash
         run: |
           set -euo pipefail
-          for variable in NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET SELAR_ENTERPRISE_CHECKOUT_URL; do
+          for variable in NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET; do
             if [ -z "${!variable:-}" ]; then
-              echo "$variable is required because public production requires both NOWPayments and Selar."
+              echo "$variable is required for the operational NOWPayments Enterprise gateway."
               exit 1
             fi
           done
-          case "$SELAR_ENTERPRISE_CHECKOUT_URL" in
-            https://*) ;;
-            *) echo 'SELAR_ENTERPRISE_CHECKOUT_URL must be an https URL.'; exit 1 ;;
-          esac
           echo 'nowpayments_ready=true' >> "$GITHUB_OUTPUT"
-          echo 'selar_ready=true' >> "$GITHUB_OUTPUT"
-          echo 'Both Enterprise payment gateways are configured for candidate verification.'
+          echo 'NOWPayments is configured for candidate verification. Hosted checkout providers such as Selar are optional and admin-configured.'
 
       - name: Verify NOWPayments API key without creating a payment
         shell: bash
@@ -223,7 +217,6 @@ jobs:
           put_secret DATABASE_URL "$STAGING_DATABASE_URL"
           put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
           put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
-          put_secret SELAR_ENTERPRISE_CHECKOUT_URL "$SELAR_ENTERPRISE_CHECKOUT_URL"
           put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
           put_secret MKETY_PUBLIC_AI_ENABLED 'true'
           put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
@@ -253,16 +246,25 @@ jobs:
             '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise'
             '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt'
           )
+          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|GitHub|MketyDigital|mksaas|mklms|origin\.mkety\.com'
           for route in "${routes[@]}"; do
             ok=false
+            code='000'
             for attempt in 1 2 3 4 5; do
               code="$(curl -L -sS -o /tmp/mkety-response -w '%{http_code}' "$CANDIDATE_URL$route" || true)"
+              echo "Candidate smoke $route attempt $attempt: HTTP $code"
               if [ "$code" = '200' ]; then ok=true; break; fi
               sleep 2
             done
-            if [ "$ok" != 'true' ]; then echo "Candidate route failed: $route (last HTTP $code)"; exit 1; fi
-            if grep -Eqi 'Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|GitHub|MketyDigital|mksaas|mklms|origin\.mkety\.com' /tmp/mkety-response; then
-              echo "Candidate route contains non-production or internal wording: $route"
+            if [ "$ok" != 'true' ]; then
+              echo "Candidate route failed: $route (last HTTP $code)"
+              head -c 400 /tmp/mkety-response 2>/dev/null || true
+              echo
+              exit 1
+            fi
+            match="$(grep -Eio "$quarantine" /tmp/mkety-response | head -n 1 || true)"
+            if [ -n "$match" ]; then
+              echo "Candidate route contains non-production or internal wording: $route (matched: $match)"
               exit 1
             fi
             echo "OK $route"
@@ -293,8 +295,7 @@ jobs:
           if [ "$webhook_code" != '400' ]; then echo "Configured NOWPayments webhook expected HTTP 400 for invalid signature; received $webhook_code."; exit 1; fi
           node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
 
-          node -e "const u=new URL(process.env.SELAR_ENTERPRISE_CHECKOUT_URL); if(u.protocol!=='https:') process.exit(1)"
-          echo 'Enterprise payment safety passed: customer-set amounts are blocked, NOWPayments API/IPN credentials are active, Selar is configured, and payment confirmation remains separate from entitlement grants.'
+          echo 'Enterprise payment safety passed: customer-set amounts are blocked, NOWPayments API/IPN credentials are active, hosted checkout providers are optional/admin-configured, and payment confirmation remains separate from entitlement grants.'
 
       - name: Smoke Public Mkety AI memory support and privacy boundary
         shell: bash
@@ -355,6 +356,6 @@ jobs:
           echo "Mkety public candidate SHA: $GITHUB_SHA"
           echo "Mkety public candidate URL: $CANDIDATE_URL"
           echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
-          echo 'Enterprise payment readiness: NOWPayments=true Selar=true admin-issued-links=true'
+          echo 'Enterprise payment readiness: NOWPayments=true hosted-checkout=admin-configured-optional admin-issued-links=true'
           echo 'No provider/model selector is exposed to visitors.'
           echo 'No mkety.com route or custom-domain binding was configured by this workflow.'
