@@ -19,7 +19,6 @@ When an older document conflicts with `AGENTS.md` or the latest dated handoff, t
 | [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
 | [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Current PR #24 release gate and operational blockers |
 | [`MKETY_PUBLIC_CUTOVER_RUNBOOK.md`](./MKETY_PUBLIC_CUTOVER_RUNBOOK.md) | Production `mkety.com` cutover and rollback procedure |
-| [`MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`](./MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md) | Current public commercial/product contract |
 | [`HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`](./HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md) | Auth #16 external preview/ZITADEL promotion gate |
 | [`HANDOFF_MKETY_PLATFORM_2026-09-07.md`](./HANDOFF_MKETY_PLATFORM_2026-09-07.md) | Platform stack handoff for Billing and downstream domains |
 | [`MKETY_BILLING_ARCHITECTURE.md`](./MKETY_BILLING_ARCHITECTURE.md) | Billing provider-neutral architecture |
@@ -31,7 +30,6 @@ Active public-site work is rooted in:
 
 - `docs/superpowers/plans/2026-09-08-mkety-public-site-production.md`
 - `docs/superpowers/plans/2026-09-10-mkety-release-gate-finish.md`
-- `docs/superpowers/specs/2026-09-08-mkety-public-ai-design.md`
 - `docs/superpowers/specs/2026-09-09-mkety-public-app-visual-contract.md`
 
 The Platform promotion stack remains ordered:
