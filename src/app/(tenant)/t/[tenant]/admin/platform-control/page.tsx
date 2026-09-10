@@ -37,6 +37,21 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Link href={`/t/${tenant}/admin/platform-control/enterprise-payments`}>
+          <Card className="h-full rounded-2xl border-primary/25 bg-primary/[0.03] transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg">
+            <CardHeader>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Wallet className="h-5 w-5" />
+                </span>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">Enterprise</span>
+              </div>
+              <CardTitle>Enterprise Payments</CardTitle>
+              <CardDescription>Create exact-amount NOWPayments or Selar links for agreed quotes, deposits, milestones, and balances.</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
         {modules.map((module) => {
           const Icon = iconMap[module.iconKey as keyof typeof iconMap] ?? Shield;
           return (
