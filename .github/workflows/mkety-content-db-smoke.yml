@@ -68,4 +68,16 @@ jobs:
         run: pnpm db:seed:mkety-content
 
       - name: Smoke-test Mkety CMS content
-        run: pnpm db:smoke:mkety-content
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm db:smoke:mkety-content 2>&1 | tee /tmp/mkety-content-db-smoke.log
+
+      - name: Upload content DB smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-content-db-smoke-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: /tmp/mkety-content-db-smoke.log
