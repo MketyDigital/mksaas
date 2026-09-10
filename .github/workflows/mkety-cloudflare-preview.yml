@@ -51,7 +51,7 @@ jobs:
     environment: preview
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       MKETY_AUTH_ISSUER: ${{ vars.MKETY_AUTH_ISSUER }}
       MKETY_AUTH_CLIENT_ID: ${{ vars.MKETY_AUTH_CLIENT_ID }}
@@ -78,7 +78,7 @@ jobs:
             missing=1
           fi
           if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "::error::Missing preview variable CLOUDFLARE_ACCOUNT_ID"
+            echo "::error::Missing preview secret CLOUDFLARE_ACCOUNT_ID"
             missing=1
           fi
           if [ "$missing" -ne 0 ]; then
