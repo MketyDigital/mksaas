@@ -37,13 +37,14 @@ SPELL_CSPELL_CONFIG_FILE: cspell.json
 
 # Lychee should validate authored documentation links, not execute runtime URLs
 # embedded in shell commands, API examples, local diagnostics, or pre-cutover
-# production endpoint probes.
+# production endpoint probes. Domain-only patterns avoid Lychee treating an
+# exclusion expression itself as a URL to check.
 SPELL_LYCHEE_ARGUMENTS: >-
-  --exclude '^https://api\.cloudflare\.com/client/v4'
-  --exclude '^https://api\.github\.com/repos/\$GITHUB_REPOSITORY'
-  --exclude '^https://api\.openai\.com/v1'
-  --exclude '^https://mkety(?:\.local)?(?:/|$)'
-  --exclude '^https://mkety\.com/(?:api/|sitemap\.xml$)'
+  --exclude 'api\.cloudflare\.com/client/v4'
+  --exclude 'api\.github\.com/repos/\$GITHUB_REPOSITORY'
+  --exclude 'api\.openai\.com/v1'
+  --exclude 'mkety(?:\.local)?(?:/|$)'
+  --exclude 'mkety\.com/(?:api/|sitemap\.xml$)'
 
 # Dependency scanners remain visible while existing repo-wide advisories are
 # tracked separately from this public-site release gate.
