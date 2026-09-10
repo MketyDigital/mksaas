@@ -2,8 +2,14 @@ import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server
 
 export async function GET(request: Request) {
   const orderId = new URL(request.url).searchParams.get('orderId')?.trim();
-  if (!orderId || !orderId.startsWith('MKETY-ENT-')) {
+  if (!orderId) {
     return Response.json({ success: false, message: 'Invalid order.' }, { status: 400 });
+  }
+
+  // Treat malformed/non-Mkety identifiers the same as unknown orders. This avoids
+  // leaking identifier-format details while preserving 400 for a missing input.
+  if (!orderId.startsWith('MKETY-ENT-')) {
+    return Response.json({ success: false, message: 'Order not found.' }, { status: 404 });
   }
 
   const order = await enterpriseOrderRepository.findById(orderId);
