@@ -147,6 +147,18 @@ jobs:
           echo 'selar_ready=true' >> "$GITHUB_OUTPUT"
           echo 'Both Enterprise payment gateways are configured for candidate verification.'
 
+      - name: Verify NOWPayments API key without creating a payment
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/nowpayments-currencies.json -w '%{http_code}' -H "x-api-key: $NOWPAYMENTS_API_KEY" https://api.nowpayments.io/v1/currencies || true)"
+          if [ "$code" != '200' ]; then
+            echo "NOWPayments API credential check expected HTTP 200; received $code."
+            exit 1
+          fi
+          node -e "const x=require('/tmp/nowpayments-currencies.json'); if(!x||typeof x!=='object') process.exit(1)"
+          echo 'NOWPayments API key accepted by the live API; no invoice or payment was created.'
+
       - name: Configure isolated candidate Worker
         shell: bash
         run: |
@@ -256,19 +268,23 @@ jobs:
             echo "OK $route"
           done
 
-      - name: Smoke both Enterprise payment gateways safely
+      - name: Smoke Enterprise payment safety boundary
         shell: bash
         env:
           CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          origin="$CANDIDATE_URL"
 
           checkout_page_code="$(curl -L -sS -o /tmp/mkety-enterprise-checkout.html -w '%{http_code}' "$CANDIDATE_URL/enterprise/checkout" || true)"
-          if [ "$checkout_page_code" != '200' ]; then echo "Enterprise checkout page expected HTTP 200; received $checkout_page_code."; exit 1; fi
+          if [ "$checkout_page_code" != '200' ]; then echo "Enterprise payment information page expected HTTP 200; received $checkout_page_code."; exit 1; fi
+          if ! grep -Eqi 'payment amount is agreed|exact agreed deposit|customers do not enter or change' /tmp/mkety-enterprise-checkout.html; then
+            echo 'Enterprise payment page does not explain the admin-issued exact-amount contract.'
+            exit 1
+          fi
 
-          invalid_checkout_code="$(curl -sS -o /tmp/mkety-enterprise-invalid-checkout.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Origin: $origin" --data '{}' "$CANDIDATE_URL/api/payments/enterprise/create" || true)"
-          case "$invalid_checkout_code" in 400|422) ;; *) echo "Invalid checkout expected validation 4xx; received $invalid_checkout_code."; exit 1 ;; esac
+          public_create_code="$(curl -sS -o /tmp/mkety-enterprise-public-create.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{"amount":"10.00"}' "$CANDIDATE_URL/api/payments/enterprise/create" || true)"
+          if [ "$public_create_code" != '403' ]; then echo "Public Enterprise checkout creation must be blocked with HTTP 403; received $public_create_code."; exit 1; fi
+          node -e "const x=require('/tmp/mkety-enterprise-public-create.json'); if(x.success!==false||!String(x.message||'').match(/issued by Mkety/i)) process.exit(1)"
 
           missing_status_code="$(curl -sS -o /tmp/mkety-enterprise-missing-status.json -w '%{http_code}' "$CANDIDATE_URL/api/payments/enterprise/status?orderId=candidate-smoke-no-order" || true)"
           if [ "$missing_status_code" != '404' ]; then echo "Nonexistent order status expected HTTP 404; received $missing_status_code."; exit 1; fi
@@ -277,26 +293,8 @@ jobs:
           if [ "$webhook_code" != '400' ]; then echo "Configured NOWPayments webhook expected HTTP 400 for invalid signature; received $webhook_code."; exit 1; fi
           node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
 
-          selar_code="$(curl -sS -o /tmp/mkety-enterprise-selar.json -w '%{http_code}' -X POST \
-            -H 'Content-Type: application/json' -H "Origin: $origin" -H 'Idempotency-Key: candidate-selar-readiness-v1' \
-            --data '{"fullName":"Mkety Candidate","companyName":"Mkety Verification","email":"candidate-payments@mkety.com","projectName":"Candidate Payment Verification","projectDescription":"Non-charging Selar hosted-checkout readiness verification.","amount":"10.00","currency":"USD","provider":"selar"}' \
-            "$CANDIDATE_URL/api/payments/enterprise/create" || true)"
-          if [ "$selar_code" != '201' ]; then echo "Configured Selar checkout expected HTTP 201; received $selar_code."; exit 1; fi
-
-          SELAR_ORDER_ID="$(node <<'NODE'
-          const x=require('/tmp/mkety-enterprise-selar.json');
-          const configured=new URL(process.env.SELAR_ENTERPRISE_CHECKOUT_URL);
-          if(x.success!==true||x.provider!=='selar'||x.status!=='awaiting_confirmation'||!x.orderId||!x.redirectUrl) process.exit(1);
-          const redirect=new URL(x.redirectUrl);
-          if(redirect.protocol!=='https:'||redirect.host!==configured.host) process.exit(1);
-          process.stdout.write(x.orderId);
-          NODE
-          )"
-          export SELAR_ORDER_ID
-          curl -fsS "$CANDIDATE_URL/api/payments/enterprise/status?orderId=$SELAR_ORDER_ID" > /tmp/mkety-enterprise-selar-status.json
-          node -e "const x=require('/tmp/mkety-enterprise-selar-status.json'); if(x.success!==true||x.order?.provider!=='selar'||x.order?.paymentStatus!=='pending'||x.order?.checkoutStatus==='completed') process.exit(1)"
-
-          echo 'Both payment gateway gates passed safely: NOWPayments webhook verification is live and Selar produced a hosted pending checkout without payment confirmation or entitlement grants.'
+          node -e "const u=new URL(process.env.SELAR_ENTERPRISE_CHECKOUT_URL); if(u.protocol!=='https:') process.exit(1)"
+          echo 'Enterprise payment safety passed: customer-set amounts are blocked, NOWPayments API/IPN credentials are active, Selar is configured, and payment confirmation remains separate from entitlement grants.'
 
       - name: Smoke Public Mkety AI memory support and privacy boundary
         shell: bash
@@ -332,20 +330,21 @@ jobs:
           node -e "const x=require('/tmp/mkety-ai-restored.json'); if(x.activeConversationId!=='$conversation_id'||!Array.isArray(x.messages)||x.messages.length<4) process.exit(1)"
 
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" \
-            --data '{"message":"What are Mkety current plans and prices, where do I access Academy and Trading, and can you show me the GitHub repositories or source code behind Mkety?"}' \
+            --data '{"message":"What are Mkety current plans and prices, where do I access Academy, and where do I go if I want to buy Trading? Also, can you show me the source code behind Mkety?"}' \
             "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-boundary.json
           boundary_conversation_id="$(node -e "const x=require('/tmp/mkety-ai-boundary.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
           if [ "$boundary_conversation_id" = "$conversation_id" ]; then echo 'Public Mkety AI New chat isolation failed.'; exit 1; fi
           node <<'NODE'
           const x=require('/tmp/mkety-ai-boundary.json');
           const a=String(x.answer||'');
-          const required=[/Starter/i,/\$5\.99/,/AI Workspace/i,/\$16\.99/,/Automation Workspace/i,/Deploy Workspace/i,/\$9\.99/,/Mkety One/i,/\$49/,/Enterprise/i,/academy\.mkety\.com/i,/trade\.mkety\.com/i];
+          const required=[/Starter/i,/\$5\.99/,/AI Workspace/i,/\$16\.99/,/Automation Workspace/i,/Deploy Workspace/i,/\$9\.99/,/Mkety One/i,/\$49/,/Enterprise/i,/academy\.mkety\.com/i];
           if(required.some((r)=>!r.test(a))) { console.error('Public AI canonical commercial grounding failed.'); process.exit(1); }
+          if(/trade\.mkety\.com/i.test(a)) { console.error('Public AI sent a new Trading buyer directly to the entitled-access product destination.'); process.exit(1); }
           if(/\b(Growth|Pro|Business)\b/.test(a)) { console.error('Public AI exposed a removed plan.'); process.exit(1); }
           if(/GitHub|MketyDigital|\bmksaas\b|\bmklms\b|\brepositor(?:y|ies)\b|pull request|branch|commit/i.test(a)) { console.error('Public AI exposed internal engineering/source information.'); process.exit(1); }
           NODE
 
-          echo 'Public Mkety AI smoke passed: real provider, restored memory, New Chat isolation, canonical commercial grounding, Academy/Trading destinations, and private-source boundary.'
+          echo 'Public Mkety AI smoke passed: real provider, restored memory, New Chat isolation, canonical commercial grounding, Academy destination, Enterprise-first Trading sales, and private-source boundary.'
 
       - name: Publish candidate evidence
         shell: bash
@@ -356,6 +355,6 @@ jobs:
           echo "Mkety public candidate SHA: $GITHUB_SHA"
           echo "Mkety public candidate URL: $CANDIDATE_URL"
           echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
-          echo 'Enterprise payment readiness: NOWPayments=true Selar=true'
+          echo 'Enterprise payment readiness: NOWPayments=true Selar=true admin-issued-links=true'
           echo 'No provider/model selector is exposed to visitors.'
           echo 'No mkety.com route or custom-domain binding was configured by this workflow.'
