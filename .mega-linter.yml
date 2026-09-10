@@ -18,6 +18,12 @@ DISABLE_LINTERS:
 # harmless unused retry-loop iterator warning.
 ACTION_ACTIONLINT_ARGUMENTS: "-ignore=SC2034"
 
+# The production cutover intentionally uses two manual dispatch inputs: an exact
+# verified SHA and a typed confirmation phrase. CKV_GHA_7 rejects all dispatch
+# inputs categorically, so skip only that rule while retaining every other
+# Checkov GitHub Actions security check.
+REPOSITORY_CHECKOV_ARGUMENTS: "--skip-check CKV_GHA_7"
+
 # EditorConfig remains visible while line-ending-only drift is normalized by the
 # repository formatting workflow instead of blocking production behavior checks.
 EDITORCONFIG_EDITORCONFIG_CHECKER_DISABLE_ERRORS: true
@@ -29,9 +35,16 @@ CSS_STYLELINT_CONFIG_FILE: .stylelintrc.json
 DOCKERFILE_HADOLINT_CONFIG_FILE: .hadolint.yaml
 SPELL_CSPELL_CONFIG_FILE: cspell.json
 
-# Cloudflare's API root intentionally returns 404 without a resource path; it is
-# an API base used by the production-routing preflight rather than a hyperlink.
-SPELL_LYCHEE_ARGUMENTS: "--exclude '^https://api\\.cloudflare\\.com/client/v4$'"
+# Lychee should validate authored documentation links, not execute runtime URLs
+# embedded in shell commands, API examples, local diagnostics, or pre-cutover
+# production endpoint probes.
+SPELL_LYCHEE_ARGUMENTS: >-
+  --exclude '^https://api\.cloudflare\.com/client/v4'
+  --exclude '^https://api\.github\.com/repos/\$GITHUB_REPOSITORY'
+  --exclude '^https://api\.openai\.com/v1'
+  --exclude '^https://mkety(?:\.local)?(?:/|$)'
+  --exclude '^https://mkety\.com/(?:api/|sitemap\.xml$)'
+  --exclude '^https://api/$'
 
 # Dependency scanners remain visible while existing repo-wide advisories are
 # tracked separately from this public-site release gate.
