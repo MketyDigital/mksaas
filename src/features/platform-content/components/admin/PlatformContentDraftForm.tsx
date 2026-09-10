@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 
 import { publishPlatformContent, savePlatformContentDraft } from '@/features/platform-content/server/actions';
+import { publishPublicPages, savePublicPagesDraft } from '@/features/platform-content/server/public-pages-actions';
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Label, Textarea } from '@/shared/components/ui';
 
 type PlatformContentDraftFormProps = {
@@ -51,8 +52,11 @@ export function PlatformContentDraftForm({
     startTransition(async () => {
       try {
         const payload = JSON.parse(payloadText) as Record<string, unknown>;
-        const result =
-          action === 'save'
+        const result = entityType === 'page'
+          ? action === 'save'
+            ? await savePublicPagesDraft(tenant, payload as { pages: never[] })
+            : await publishPublicPages(tenant)
+          : action === 'save'
             ? await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload })
             : await publishPlatformContent(tenant, { area, entityType, entityKey });
 

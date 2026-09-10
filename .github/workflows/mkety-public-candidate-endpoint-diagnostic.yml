@@ -1,0 +1,94 @@
+name: Mkety Public Candidate Endpoint Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-public-site-production
+    paths:
+      - '.github/workflows/mkety-public-candidate-endpoint-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CANDIDATE_URL: https://mkety-public-candidate.dry-glitter-7e16.workers.dev
+    steps:
+      - name: Diagnose Public Mkety AI endpoint
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          cookie_jar=/tmp/mkety-public-ai-cookies
+          origin="$CANDIDATE_URL"
+          report=/tmp/mkety-public-ai-diagnostic.txt
+          : > "$report"
+          failed=false
+
+          request() {
+            local label="$1"
+            local outfile="$2"
+            shift 2
+            local metrics
+            metrics="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -o "$outfile" -w 'HTTP=%{http_code} TOTAL=%{time_total}' "$@" || true)"
+            {
+              echo "=== $label ==="
+              echo "$metrics"
+              cat "$outfile" 2>/dev/null || true
+              echo
+            } >> "$report"
+            local code
+            code="$(printf '%s' "$metrics" | sed -n 's/.*HTTP=\([0-9][0-9][0-9]\).*/\1/p')"
+            if [ "$code" != '200' ]; then failed=true; fi
+          }
+
+          request 'history' /tmp/mkety-ai-history.json "$CANDIDATE_URL/api/public/assistant"
+          request 'first-post' /tmp/mkety-ai-first.json \
+            -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' \
+            "$CANDIDATE_URL/api/public/assistant"
+
+          conversation_id="$(node -e "try{const x=require('/tmp/mkety-ai-first.json'); if(x.answer&&x.conversationId) process.stdout.write(x.conversationId)}catch{}" 2>/dev/null || true)"
+          if [ -n "$conversation_id" ]; then
+            request 'second-post' /tmp/mkety-ai-second.json \
+              -H 'Content-Type: application/json' -H "Origin: $origin" \
+              --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" \
+              "$CANDIDATE_URL/api/public/assistant"
+            request 'restored-history' /tmp/mkety-ai-restored.json \
+              "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id"
+          else
+            failed=true
+            echo 'No conversationId returned by first POST.' >> "$report"
+          fi
+
+          request 'new-chat-post' /tmp/mkety-ai-new.json \
+            -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data '{"message":"Tell me about Mkety Academy."}' \
+            "$CANDIDATE_URL/api/public/assistant"
+
+          cat "$report"
+          if [ "$failed" = 'true' ]; then
+            echo 'failed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'failed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-public-ai-endpoint-diagnostic
+          path: /tmp/mkety-public-ai-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: Enforce diagnostic result
+        if: always()
+        shell: bash
+        run: |
+          if [ '${{ steps.probe.outputs.failed }}' = 'true' ]; then
+            exit 1
+          fi

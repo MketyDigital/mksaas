@@ -3,6 +3,8 @@ import type { Metadata } from 'next';
 import { DM_Sans } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
+import { defaultPlatformSiteSettings } from '@/features/platform-content/defaults';
+import { buildMketyMetadata } from '@/features/platform-content/metadata';
 import { AuthProvider, ThemeProvider } from '@/shared/components/providers';
 import { Toaster } from '@/shared/components/ui/sonner';
 
@@ -19,10 +21,10 @@ const dmSans = DM_Sans({
   variable: '--font-sans',
 });
 
-export const metadata: Metadata = {
-  title: 'Next.js SaaS AI Template | AI-Native Skills Management',
-  description: 'Production-ready Next.js SaaS boilerplate with multi-tenancy, AI assistant, and integrations',
-};
+export const metadata: Metadata = buildMketyMetadata({
+  settings: defaultPlatformSiteSettings,
+  path: '/',
+});
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   let locale = 'en';

@@ -1,35 +1,45 @@
-import { Home } from 'lucide-react';
+import { ArrowLeft, Home } from 'lucide-react';
 import Link from 'next/link';
 
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent } from '@/shared/components/ui/card';
 
-// Force dynamic rendering to avoid static generation issues with next-intl
 export const dynamic = 'force-dynamic';
 
 export default function NotFound() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-muted">
-      <Card className="max-w-md border-0 shadow-xl">
-        <CardContent className="flex flex-col items-center py-12 px-8 text-center">
-          <div className="relative">
-            <div className="text-8xl mb-6 opacity-80">404</div>
-            <div className="absolute -top-2 -right-2 text-4xl">🔍</div>
-          </div>
-          <h2 className="text-2xl font-bold mb-2">Page Not Found</h2>
-          <p className="text-muted-foreground mb-8">
-            The page you&apos;re looking for doesn&apos;t exist or has been moved.
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
+      <Card className="w-full max-w-lg rounded-3xl border-border/70 shadow-xl">
+        <CardContent className="flex flex-col items-center px-8 py-14 text-center">
+          <Link href="/" className="mb-8 flex items-center gap-2 font-bold tracking-tight" aria-label="Mkety home">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground" aria-hidden="true">
+              M
+            </span>
+            <span>Mkety</span>
+          </Link>
+
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">404</p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight">This page is not available.</h1>
+          <p className="mt-4 max-w-md leading-7 text-muted-foreground">
+            The address may have changed, or the page may not be part of the current Mkety public site.
           </p>
-          <div className="flex gap-3">
-            <Link href="/">
-              <Button>
+
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Button asChild>
+              <Link href="/">
                 <Home className="mr-2 h-4 w-4" />
-                Home
-              </Button>
-            </Link>
+                Mkety Home
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/docs">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Explore Docs
+              </Link>
+            </Button>
           </div>
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }

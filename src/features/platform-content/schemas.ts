@@ -69,6 +69,30 @@ export const workspaceSectionSchema = z.object({
   items: z.array(contentCardSchema).min(1),
 });
 
+const publicSectionCardSchema = z
+  .object({
+    key: z.string().min(1).max(80),
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(420),
+    href: safeHrefSchema.optional(),
+    badge: z.string().max(80).optional(),
+  })
+  .strict();
+
+const publicContentSectionShape = {
+  eyebrow: z.string().min(1).max(80),
+  title: z.string().min(1).max(180),
+  description: z.string().min(1).max(700),
+  items: z.array(publicSectionCardSchema).default([]),
+  cta: ctaSchema.optional(),
+};
+
+export const platformOverviewSectionSchema = z.object(publicContentSectionShape).strict();
+export const solutionHubSectionSchema = z.object(publicContentSectionShape).strict();
+export const academySectionSchema = z.object(publicContentSectionShape).strict();
+export const enterpriseSectionSchema = z.object(publicContentSectionShape).strict();
+export const trustSectionSchema = z.object(publicContentSectionShape).strict();
+
 export const pricingPlanSchema = z.object({
   key: z.string().min(1).max(80),
   name: z.string().min(1).max(120),
@@ -115,6 +139,11 @@ export type PlatformNavigationItemInput = z.infer<typeof navigationItemSchema>;
 export type PlatformHeroSectionInput = z.infer<typeof heroSectionSchema>;
 export type PlatformContentCardInput = z.infer<typeof contentCardSchema>;
 export type PlatformWorkspaceSectionInput = z.infer<typeof workspaceSectionSchema>;
+export type PlatformOverviewSectionInput = z.infer<typeof platformOverviewSectionSchema>;
+export type PlatformSolutionHubSectionInput = z.infer<typeof solutionHubSectionSchema>;
+export type PlatformAcademySectionInput = z.infer<typeof academySectionSchema>;
+export type PlatformEnterpriseSectionInput = z.infer<typeof enterpriseSectionSchema>;
+export type PlatformTrustSectionInput = z.infer<typeof trustSectionSchema>;
 export type PlatformPricingPlanInput = z.infer<typeof pricingPlanSchema>;
 export type PlatformFaqItemInput = z.infer<typeof faqItemSchema>;
 export type PlatformFooterGroupInput = z.infer<typeof footerGroupSchema>;

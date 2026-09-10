@@ -11,37 +11,57 @@ import {
   platformPricingPlans,
   platformSiteSettings,
 } from '@/shared/db/schema/platform-content';
+import { createLogger } from '@/shared/lib/logger';
 
 import {
+  defaultAcademySection,
   defaultDocsArticles,
   defaultDocsCategories,
+  defaultEnterpriseSection,
   defaultFaqItems,
   defaultFooterGroups,
   defaultHeroSection,
   defaultPlatformNavigation,
+  defaultPlatformOverviewSection,
   defaultPlatformSiteSettings,
   defaultPricingPlans,
+  defaultSolutionHubSection,
+  defaultTrustSection,
   defaultWorkspaceSection,
 } from '../defaults';
 import {
+  academySectionSchema,
   docsArticleSchema,
   docsCategorySchema,
+  enterpriseSectionSchema,
   faqItemSchema,
   footerGroupSchema,
   heroSectionSchema,
   navigationItemSchema,
+  platformOverviewSectionSchema,
   pricingPlanSchema,
   siteSettingsSchema,
+  solutionHubSectionSchema,
+  trustSectionSchema,
   workspaceSectionSchema,
 } from '../schemas';
 
 const PUBLISHED = 'published' as const;
+const cmsLogger = createLogger({ module: 'platform-content' });
 
-async function withFallback<T>(read: () => Promise<T | null | undefined>, fallback: T): Promise<T> {
+async function withFallback<T>(
+  read: () => Promise<T | null | undefined>,
+  fallback: T,
+  operation = 'cms-read',
+): Promise<T> {
   try {
     const value = await read();
     return value ?? fallback;
-  } catch {
+  } catch (error) {
+    cmsLogger.warn(
+      { operation, errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'Mkety CMS read failed; serving safe fallback content',
+    );
     return fallback;
   }
 }
@@ -77,7 +97,7 @@ export async function getPublishedPlatformSiteSettings() {
       contactHref: row.contactHref ?? undefined,
       legalLinks: row.legalLinksJson ?? [],
     });
-  }, defaultPlatformSiteSettings);
+  }, defaultPlatformSiteSettings, 'site-settings');
 }
 
 export async function getPublishedNavigation(area?: 'header' | 'footer') {
@@ -105,7 +125,7 @@ export async function getPublishedNavigation(area?: 'header' | 'footer') {
         external: row.external,
       }),
     );
-  }, fallback);
+  }, fallback, `navigation:${area ?? 'all'}`);
 }
 
 export async function getPublishedPricingPlans() {
@@ -137,7 +157,7 @@ export async function getPublishedPricingPlans() {
         features: planFeatures.length > 0 ? planFeatures : ['Configured plan details are being prepared.'],
       });
     });
-  }, defaultPricingPlans);
+  }, defaultPricingPlans, 'pricing-plans');
 }
 
 export async function getPublishedDocsTree() {
@@ -190,7 +210,7 @@ export async function getPublishedDocsTree() {
   }, {
     categories: defaultDocsCategories,
     articles: defaultDocsArticles,
-  });
+  }, 'docs-tree');
 }
 
 export async function getPublishedDocsArticle(slug: string) {
@@ -233,7 +253,7 @@ export async function getPublishedDocsArticle(slug: string) {
       seoDescription: row.seoDescription ?? undefined,
       sortOrder: row.sortOrder,
     });
-  }, fallback);
+  }, fallback, 'docs-article');
 }
 
 export async function getPublishedHomepageContent() {
@@ -259,28 +279,48 @@ export async function getPublishedHomepageContent() {
 
     const sectionByKey = new Map(rows.map((row) => [row.sectionKey, row.contentJson]));
     const heroPayload = getSectionPayload(sectionByKey, 'home.hero', 'hero');
+    const platformPayload = getSectionPayload(sectionByKey, 'home.platform', 'platform');
     const workspacesPayload = getSectionPayload(sectionByKey, 'home.workspaces', 'workspaces');
+    const solutionsPayload = getSectionPayload(sectionByKey, 'home.solutions', 'solutions');
+    const academyPayload = getSectionPayload(sectionByKey, 'home.academy', 'academy');
+    const enterprisePayload = getSectionPayload(sectionByKey, 'home.enterprise', 'enterprise');
+    const trustPayload = getSectionPayload(sectionByKey, 'home.trust', 'trust');
     const faqPayload = getSectionPayload(sectionByKey, 'home.faq', 'faq');
     const footerPayload = getSectionPayload(sectionByKey, 'home.footer', 'footer');
 
     return {
       hero: heroPayload ? heroSectionSchema.parse(heroPayload) : defaultHeroSection,
+      platformOverview: platformPayload ? platformOverviewSectionSchema.parse(platformPayload) : defaultPlatformOverviewSection,
       workspaces: workspacesPayload ? workspaceSectionSchema.parse(workspacesPayload) : defaultWorkspaceSection,
+      solutionHub: solutionsPayload ? solutionHubSectionSchema.parse(solutionsPayload) : defaultSolutionHubSection,
+      academy: academyPayload ? academySectionSchema.parse(academyPayload) : defaultAcademySection,
+      enterprise: enterprisePayload ? enterpriseSectionSchema.parse(enterprisePayload) : defaultEnterpriseSection,
+      trust: trustPayload ? trustSectionSchema.parse(trustPayload) : defaultTrustSection,
       faqItems: faqPayload ? faqItemSchema.array().parse(faqPayload) : defaultFaqItems,
       footerGroups: footerPayload ? footerGroupSchema.array().parse(footerPayload) : defaultFooterGroups,
     };
   }, {
     hero: defaultHeroSection,
+    platformOverview: defaultPlatformOverviewSection,
     workspaces: defaultWorkspaceSection,
+    solutionHub: defaultSolutionHubSection,
+    academy: defaultAcademySection,
+    enterprise: defaultEnterpriseSection,
+    trust: defaultTrustSection,
     faqItems: defaultFaqItems,
     footerGroups: defaultFooterGroups,
-  });
+  }, 'homepage-sections');
 
   return {
     settings,
     navigation,
     hero: sections.hero,
+    platformOverview: sections.platformOverview,
     workspaces: sections.workspaces,
+    solutionHub: sections.solutionHub,
+    academy: sections.academy,
+    enterprise: sections.enterprise,
+    trust: sections.trust,
     pricingPlans,
     faqItems: sections.faqItems,
     footerGroups: sections.footerGroups,
