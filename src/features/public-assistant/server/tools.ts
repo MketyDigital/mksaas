@@ -34,11 +34,6 @@ const EXTERNAL_PRODUCT_ROUTES: Array<{ aliases: string[]; label: string; path: s
     label: 'Mkety Academy',
     path: 'https://academy.mkety.com',
   },
-  {
-    aliases: ['trading', 'trading workspace'],
-    label: 'Trading Workspace',
-    path: 'https://trade.mkety.com',
-  },
 ];
 
 const ROUTE_ALIASES: Record<string, string> = {
@@ -56,6 +51,8 @@ const ROUTE_ALIASES: Record<string, string> = {
   solutions: '/solutions',
   custom: '/enterprise',
   enterprise: '/enterprise',
+  trading: '/enterprise',
+  'trading workspace': '/enterprise',
   ai: '/platform',
 };
 
