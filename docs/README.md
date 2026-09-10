@@ -19,10 +19,9 @@ When an older document conflicts with `AGENTS.md` or the latest dated handoff, t
 | [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
 | [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Current PR #24 release gate and operational blockers |
 | [`MKETY_PUBLIC_CUTOVER_RUNBOOK.md`](./MKETY_PUBLIC_CUTOVER_RUNBOOK.md) | Production `mkety.com` cutover and rollback procedure |
-| [`HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`](./HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md) | Auth #16 external preview/ZITADEL promotion gate |
-| [`HANDOFF_MKETY_PLATFORM_2026-09-07.md`](./HANDOFF_MKETY_PLATFORM_2026-09-07.md) | Platform stack handoff for Billing and downstream domains |
-| [`MKETY_BILLING_ARCHITECTURE.md`](./MKETY_BILLING_ARCHITECTURE.md) | Billing provider-neutral architecture |
-| [`MKETY_BRANCH_RETIREMENT.md`](./MKETY_BRANCH_RETIREMENT.md) | Active/retired branch boundaries |
+| [`MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`](./MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md) | Current commercial/product presentation contract |
+
+Stack-specific handoffs that exist only on downstream feature branches are not linked here as if they were present on this branch. For Auth, Billing, and later stack work, use the relevant pull request together with `AGENTS.md`, the latest dated handoff, and the active branch plan/spec.
 
 ## Current implementation plans and specs
 
