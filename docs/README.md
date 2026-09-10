@@ -1,37 +1,59 @@
-# Next.js SaaS AI Template — Documentation
+# Mkety Engineering Documentation
 
-> [!IMPORTANT]
-> This repo is a **showcase** of
-> [`create-awesome-node-app`](https://www.npmjs.com/package/create-awesome-node-app).
-> For new projects, scaffold with the CLI (`--template nextjs-saas-ai-starter`)
-> instead of cloning this repository — the live template bank stays current;
-> this snapshot may not.
+This repository is the Mkety product codebase. It is no longer governed as the upstream Next.js SaaS AI starter/template that originally seeded parts of the project.
 
-This folder is the **single source of truth** for the Next.js SaaS AI Template. AI agents should use [AGENTS.md](../AGENTS.md) as an index; humans and agents read these docs for authoritative content.
+## Source-of-truth order
 
-## Template Consumption
+1. [`../AGENTS.md`](../AGENTS.md) — current Mkety architecture, product boundaries, naming, security, runtime, and infrastructure rules.
+2. [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) — operational milestone order and long-running continuation roadmap.
+3. [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) — latest public-site release-gate evidence, fixes, and remaining external gates.
+4. The approved spec/plan for the active feature branch.
+5. Current branch code, migrations, tests, and immutable CI/deployment evidence.
 
-This repository is part of the [Create-Node-App](https://github.com/Create-Node-App) ecosystem. New projects should consume this template through [`create-awesome-node-app`](https://www.npmjs.com/package/create-awesome-node-app) using the `nextjs-saas-ai-starter` template, while canonical template definitions live in [Create-Node-App/cna-templates](https://github.com/Create-Node-App/cna-templates).
+When an older document conflicts with `AGENTS.md` or the latest dated handoff, treat the older statement as historical and update it before using it as an implementation source.
 
-## Core Documentation
+## Active product/release documents
 
-| Document                                            | Description                                                |
-| --------------------------------------------------- | ---------------------------------------------------------- |
-| [Project Structure](./PROJECT_STRUCTURE.md)         | Architecture, folder organization, and feature modules     |
-| [Design System](./DESIGN_SYSTEM.md)                 | Design philosophy, principles, tokens, and visual identity |
-| [Brand Guidelines](./BRAND_GUIDELINES.md)           | Logo, color palette, typography, do's and don'ts           |
-| [Components & Styling](./COMPONENTS_AND_STYLING.md) | shadcn/ui components and Tailwind CSS v4 patterns          |
-| [shadcn/ui Components](./SHADCN_AND_COMPONENTS.md)  | Component inventory, forms, theming, and adding new ones   |
-| [Storybook](./STORYBOOK.md)                         | Storybook setup, writing stories, and troubleshooting      |
-| [Database](./DATABASE.md)                           | Drizzle ORM schema and pgvector setup                      |
-| [Authentication](./AUTHENTICATION.md)               | Auth.js v5 configuration and patterns                      |
-| [Roles and Permissions](./ROLES_AND_PERMISSIONS.md) | PBAC model, roles, permissions, and API                    |
-| [State Management](./STATE_MANAGEMENT.md)           | State handling approaches                                  |
-| [Performance](./PERFORMANCE.md)                     | Optimization guidelines                                    |
-| [Project Configuration](./PROJECT_CONFIGURATION.md) | Build tools and configuration                              |
-| [Testing Guide](./TESTING_GUIDE.md)                 | Jest and React Testing Library patterns                    |
-| [API Reference](./API.md)                           | REST API routes and contracts                              |
-| [Integrations](./INTEGRATIONS.md)                   | Third-party OAuth2/API integrations (e.g. GitHub)          |
-| [Deployment](./DEPLOYMENT.md)                       | Deployment and infrastructure                              |
-| [GitHub Setup Guide](./GITHUB_SETUP_GUIDE.md)       | CI/CD and GitHub workflows                                 |
-| [Glossary](./GLOSSARY.md)                           | Terms, concepts, and domain vocabulary                     |
+| Document | Purpose |
+| --- | --- |
+| [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
+| [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Current PR #24 release gate and operational blockers |
+| [`MKETY_PUBLIC_CUTOVER_RUNBOOK.md`](./MKETY_PUBLIC_CUTOVER_RUNBOOK.md) | Production `mkety.com` cutover and rollback procedure |
+| [`MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`](./MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md) | Current public commercial/product contract |
+| [`HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`](./HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md) | Auth #16 external preview/ZITADEL promotion gate |
+| [`HANDOFF_MKETY_PLATFORM_2026-09-07.md`](./HANDOFF_MKETY_PLATFORM_2026-09-07.md) | Platform stack handoff for Billing and downstream domains |
+| [`MKETY_BILLING_ARCHITECTURE.md`](./MKETY_BILLING_ARCHITECTURE.md) | Billing provider-neutral architecture |
+| [`MKETY_BRANCH_RETIREMENT.md`](./MKETY_BRANCH_RETIREMENT.md) | Active/retired branch boundaries |
+
+## Current implementation plans and specs
+
+Active public-site work is rooted in:
+
+- `docs/superpowers/plans/2026-09-08-mkety-public-site-production.md`
+- `docs/superpowers/plans/2026-09-10-mkety-release-gate-finish.md`
+- `docs/superpowers/specs/2026-09-08-mkety-public-ai-design.md`
+- `docs/superpowers/specs/2026-09-09-mkety-public-app-visual-contract.md`
+
+The Platform promotion stack remains ordered:
+
+```text
+Auth #16
+  ↓
+Automation Webhooks #15
+  ↓
+Billing #21
+  ↓
+Entitlements #22
+  ↓
+Usage/Credits #23
+```
+
+Do not merge or flatten those branches out of order.
+
+## Legacy/reference documents
+
+Files such as `AUTHENTICATION.md`, `DEPLOYMENT.md`, `PROJECT_STRUCTURE.md`, `BRAND_GUIDELINES.md`, and other starter-era documents may still contain useful implementation history, but some retain template-era assumptions. They are **reference material, not higher-priority architecture authority**. In particular, do not reintroduce Auth.js/Auth0, OpenNext, Vercel, starter-template branding, or other superseded choices when current Mkety sources specify Mkety-owned auth, ZITADEL adapters, vinext, and Cloudflare.
+
+## Verification rule
+
+Do not declare a milestone production-ready from code inspection alone. Use fresh evidence for the exact candidate SHA: tests, type-check, lint, build, database smoke, vinext/Cloudflare checks, runtime diagnostics, candidate deployment, and any required real external integration/browser smoke. Production cutover additionally requires the explicit authorization phrase enforced by the cutover workflow.
