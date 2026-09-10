@@ -44,7 +44,6 @@ SPELL_LYCHEE_ARGUMENTS: >-
   --exclude '^https://api\.openai\.com/v1'
   --exclude '^https://mkety(?:\.local)?(?:/|$)'
   --exclude '^https://mkety\.com/(?:api/|sitemap\.xml$)'
-  --exclude '^https://api/$'
 
 # Dependency scanners remain visible while existing repo-wide advisories are
 # tracked separately from this public-site release gate.
