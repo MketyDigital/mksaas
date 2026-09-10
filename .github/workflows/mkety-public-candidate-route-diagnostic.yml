@@ -74,10 +74,11 @@ jobs:
               printf '\n' | tee -a "$diagnostic"
               exit 1
             fi
-            match="$(grep -Eio "$quarantine" /tmp/mkety-response | head -n 1 || true)"
+            python3 -c "import re; p='/tmp/mkety-response'; b=open(p,'r',encoding='utf-8',errors='replace').read(); b=re.sub(r'<script\\b[^>]*>.*?</script>', '', b, flags=re.I|re.S); b=re.sub(r'<style\\b[^>]*>.*?</style>', '', b, flags=re.I|re.S); open('/tmp/mkety-visible-response','w',encoding='utf-8').write(b)"
+            match="$(grep -Eio "$quarantine" /tmp/mkety-visible-response | head -n 1 || true)"
             if [ -n "$match" ]; then
               report "Candidate route contains non-production or internal wording: $route (matched: $match)"
-              MATCH="$match" python3 -c "import os,re; body=open('/tmp/mkety-response','r',encoding='utf-8',errors='replace').read(); needle=os.environ['MATCH']; m=re.search(re.escape(needle),body,re.I); print('Context:',re.sub(r'\\s+',' ',body[max(0,m.start()-160):min(len(body),m.end()+160)])) if m else None" | tee -a "$diagnostic"
+              MATCH="$match" python3 -c "import os,re; body=open('/tmp/mkety-visible-response','r',encoding='utf-8',errors='replace').read(); needle=os.environ['MATCH']; m=re.search(re.escape(needle),body,re.I); print('Context:',re.sub(r'\\s+',' ',body[max(0,m.start()-160):min(len(body),m.end()+160)])) if m else None" | tee -a "$diagnostic"
               exit 1
             fi
             report "OK $route"
