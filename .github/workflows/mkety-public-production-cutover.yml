@@ -18,6 +18,7 @@ permissions:
 
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
+  RELEASE_BRANCH: feat/mkety-public-site-production
 
 jobs:
   cutover:
@@ -82,13 +83,29 @@ jobs:
             *) echo 'SELAR_ENTERPRISE_CHECKOUT_URL must use HTTPS.'; exit 1 ;;
           esac
 
-      - name: Verify exact-SHA candidate and routing preflight evidence
+      - name: Verify SHA is current release-branch head and all blocking gates are green
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           VERIFIED_SHA: ${{ inputs.verified_sha }}
         run: |
           set -euo pipefail
+          encoded_branch="$(node -e "process.stdout.write(encodeURIComponent(process.env.RELEASE_BRANCH))")"
+          branch_response="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$encoded_branch")"
+          BRANCH_RESPONSE="$branch_response" VERIFIED_SHA="$VERIFIED_SHA" node <<'NODE'
+          const payload = JSON.parse(process.env.BRANCH_RESPONSE || '{}');
+          const head = payload?.commit?.sha;
+          if (!head) throw new Error('Could not resolve current release branch head.');
+          if (head !== process.env.VERIFIED_SHA) {
+            throw new Error(`verified_sha is stale: release branch head is ${head}, requested ${process.env.VERIFIED_SHA}.`);
+          }
+          console.log(`Verified exact current release head: ${head}`);
+          NODE
+
           verify_workflow_success() {
             local workflow="$1"
             local label="$2"
@@ -106,8 +123,17 @@ jobs:
           console.log(`Verified successful ${process.env.LABEL} evidence for exact SHA.`);
           NODE
           }
-          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+
+          verify_workflow_success 'tests.yml' 'tests'
+          verify_workflow_success 'type-check.yml' 'typecheck'
+          verify_workflow_success 'lint.yml' 'lint'
+          verify_workflow_success 'build.yml' 'build'
+          verify_workflow_success 'ci.yml' 'CI'
+          verify_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'
+          verify_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
+          verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
           verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
+          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
 
       - name: Checkout exact verified SHA
         uses: actions/checkout@v4
@@ -236,6 +262,53 @@ jobs:
           }
           NODE
 
+      - name: Prepare rollback snapshot before any route mutation
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/mkety-routes-before.json', 'utf8'));
+          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid route snapshot.');
+          const patterns = ['mkety.com/*', 'www.mkety.com/*'];
+          const snapshot = patterns.map((pattern) => {
+            const route = payload.result.find((item) => item.pattern === pattern);
+            return route ? { pattern, existed: true, id: route.id, script: route.script ?? null } : { pattern, existed: false };
+          });
+          fs.writeFileSync('/tmp/mkety-cutover-rollback.json', JSON.stringify(snapshot, null, 2));
+          NODE
+          cat > /tmp/ROLLBACK.md <<EOF
+          # Mkety public cutover rollback
+
+          Verified SHA: $VERIFIED_SHA
+          Cloudflare zone ID: $ZONE_ID
+          Production Worker: $PRODUCTION_WORKER_NAME
+
+          The attached mkety-routes-before.json is the complete pre-cutover Worker-route snapshot.
+          The attached mkety-cutover-rollback.json records the exact prior state of only mkety.com/* and www.mkety.com/*.
+
+          Rollback rule:
+          - If a target route existed before cutover, PUT that route ID back to its recorded prior script (or null route-only state).
+          - If a target route did not exist before cutover, DELETE the route created for that target pattern.
+          - Do not alter any other Worker route or DNS record.
+
+          The cutover workflow performs this rollback automatically if live acceptance fails after route binding.
+          EOF
+
+      - name: Persist pre-mutation rollback evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-public-cutover-pre-mutation-${{ inputs.verified_sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/mkety-routes-before.json
+            /tmp/mkety-cutover-rollback.json
+            /tmp/ROLLBACK.md
+
       - name: Configure and build isolated production Worker
         shell: bash
         run: |
@@ -266,7 +339,7 @@ jobs:
             exit 1
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "Production preview URL discovered."
+          echo 'Production preview URL discovered.'
 
       - name: Attach production runtime secrets
         shell: bash
@@ -312,19 +385,34 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          for route in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact /sitemap.xml /robots.txt; do
-            code="$(curl -L -sS -o /tmp/mkety-preview -w '%{http_code}' "$PREVIEW_URL$route" || true)"
-            if [ "$code" != '200' ]; then
-              echo "Production preview failed: $route returned HTTP $code."
-              exit 1
-            fi
-            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' /tmp/mkety-preview; then
+          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
+          for route in "${html_routes[@]}"; do
+            body=/tmp/mkety-preview.html
+            code="$(curl -L -sS -o "$body" -w '%{http_code}' "$PREVIEW_URL$route" || true)"
+            [ "$code" = '200' ] || { echo "Production preview failed: $route HTTP $code"; exit 1; }
+            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
               echo "Production preview exposed quarantined/internal wording on $route."
               exit 1
             fi
+            grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body" || {
+              echo "Production preview missing mkety.com canonical link on $route."
+              exit 1
+            }
           done
 
-      - name: Bind only apex and www Worker routes with rollback snapshot
+          curl -fsS "$PREVIEW_URL/sitemap.xml" -o /tmp/mkety-preview-sitemap.xml
+          for path in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact; do
+            expected="https://mkety.com${path}"
+            grep -Fq "<loc>$expected</loc>" /tmp/mkety-preview-sitemap.xml || {
+              echo "Production preview sitemap missing $expected"
+              exit 1
+            }
+          done
+          curl -fsS "$PREVIEW_URL/robots.txt" -o /tmp/mkety-preview-robots.txt
+          grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' /tmp/mkety-preview-robots.txt || { echo 'Preview robots.txt missing production sitemap declaration.'; exit 1; }
+          grep -Fq 'Host: https://mkety.com' /tmp/mkety-preview-robots.txt || { echo 'Preview robots.txt missing production host declaration.'; exit 1; }
+
+      - name: Bind only apex and www Worker routes
         id: route-bind
         shell: bash
         env:
@@ -332,18 +420,6 @@ jobs:
         run: |
           set -euo pipefail
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-          node <<'NODE'
-          const fs = require('node:fs');
-          const payload = JSON.parse(fs.readFileSync('/tmp/mkety-routes-before.json', 'utf8'));
-          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid route snapshot.');
-          const patterns = ['mkety.com/*', 'www.mkety.com/*'];
-          const snapshot = patterns.map((pattern) => {
-            const route = payload.result.find((item) => item.pattern === pattern);
-            return route ? { pattern, existed: true, id: route.id, script: route.script ?? null } : { pattern, existed: false };
-          });
-          fs.writeFileSync('/tmp/mkety-cutover-rollback.json', JSON.stringify(snapshot, null, 2));
-          NODE
-
           bind_pattern() {
             local pattern="$1"
             local route_id
@@ -366,10 +442,19 @@ jobs:
             RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); if(!x.success) process.exit(1)"
             echo "Bound $pattern to verified production Worker."
           }
-
           bind_pattern 'mkety.com/*'
           bind_pattern 'www.mkety.com/*'
           echo 'bound=true' >> "$GITHUB_OUTPUT"
+
+      - name: Persist route-bind rollback evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-public-cutover-route-bind-${{ inputs.verified_sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/mkety-cutover-rollback.json
+            /tmp/ROLLBACK.md
 
       - name: Run production acceptance and rollback on failure
         shell: bash
@@ -380,7 +465,7 @@ jobs:
           rollback_routes() {
             echo 'Production acceptance failed; restoring exact pre-cutover apex/www Worker routes.'
             auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-            node -e "const fs=require('fs'); const x=require('/tmp/mkety-cutover-rollback.json'); for(const r of x) console.log(JSON.stringify(r));" | while IFS= read -r row; do
+            node -e "const x=require('/tmp/mkety-cutover-rollback.json'); for(const r of x) console.log(JSON.stringify(r));" | while IFS= read -r row; do
               pattern="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).pattern)")"
               existed="$(ROW="$row" node -e "process.stdout.write(String(JSON.parse(process.env.ROW).existed))")"
               if [ "$existed" = 'true' ]; then
@@ -398,17 +483,34 @@ jobs:
           }
           trap 'rollback_routes' ERR
 
-          for route in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact /sitemap.xml /robots.txt; do
-            code="$(curl -L -sS -o /tmp/mkety-production -w '%{http_code}' "https://mkety.com$route")"
+          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
+          for route in "${html_routes[@]}"; do
+            body=/tmp/mkety-production.html
+            code="$(curl -L -sS -o "$body" -w '%{http_code}' "https://mkety.com$route")"
             [ "$code" = '200' ] || { echo "Production route failed: $route HTTP $code"; false; }
-            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' /tmp/mkety-production; then
+            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
               echo "Production route exposed quarantined/internal wording: $route"
               false
             fi
+            grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body" || {
+              echo "Production route missing mkety.com canonical link: $route"
+              false
+            }
           done
 
-          www_code="$(curl -sS -o /dev/null -w '%{http_code}' 'https://www.mkety.com/')"
+          curl -fsS 'https://mkety.com/sitemap.xml' -o /tmp/mkety-production-sitemap.xml
+          for path in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact; do
+            expected="https://mkety.com${path}"
+            grep -Fq "<loc>$expected</loc>" /tmp/mkety-production-sitemap.xml || { echo "Production sitemap missing $expected"; false; }
+          done
+          curl -fsS 'https://mkety.com/robots.txt' -o /tmp/mkety-production-robots.txt
+          grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' /tmp/mkety-production-robots.txt || { echo 'Production robots.txt missing sitemap declaration.'; false; }
+          grep -Fq 'Host: https://mkety.com' /tmp/mkety-production-robots.txt || { echo 'Production robots.txt missing host declaration.'; false; }
+
+          headers="$(mktemp)"
+          www_code="$(curl -sS -D "$headers" -o /dev/null -w '%{http_code}' 'https://www.mkety.com/')"
           [ "$www_code" = '308' ] || { echo "www canonical redirect expected 308, got $www_code"; false; }
+          grep -Eqi '^location: https://mkety\.com/?\r?$' "$headers" || { echo 'www 308 Location is not canonical apex.'; false; }
 
           webhook_code="$(curl -sS -o /tmp/mkety-production-webhook.json -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' \
@@ -449,14 +551,27 @@ jobs:
           trap - ERR
           echo 'Production acceptance passed. Apex/www routing retained on the exact verified Worker.'
 
-      - name: Publish cutover evidence
+      - name: Publish cutover evidence and rollback instructions
         env:
           VERIFIED_SHA: ${{ inputs.verified_sha }}
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
           PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
         run: |
+          {
+            echo '## Mkety public production cutover evidence'
+            echo
+            echo "- Exact production SHA: \`$VERIFIED_SHA\`"
+            echo "- Verified Worker preview: \`$PREVIEW_URL\`"
+            echo "- Public Mkety AI primary provider family: \`$PUBLIC_AI_PRIMARY\`"
+            echo '- Required exact-SHA workflows: green before cutover.'
+            echo '- Enterprise gateways: NOWPayments read-only credential + invalid-signature fail-closed smoke; Selar pending hosted checkout only.'
+            echo '- Production database: PRODUCTION_DATABASE_URL only; staging database is not mapped.'
+            echo '- Live route mutation: only mkety.com/* and www.mkety.com/*.'
+            echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'
+            echo '- Unrelated Worker routes and DNS records were not modified.'
+            echo
+            echo '### Rollback'
+            echo 'Download the pre-mutation rollback artifact from this run. Restore the recorded prior script for any target route that existed; delete only a target route created by this cutover if it did not exist before. Do not alter any unrelated Worker route or DNS record.'
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "Mkety public production SHA: $VERIFIED_SHA"
-          echo "Verified Worker preview: $PREVIEW_URL"
-          echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
-          echo 'Enterprise gateways verified: NOWPayments read-only API key + fail-closed IPN; Selar pending hosted checkout.'
-          echo 'Production routes changed only for mkety.com/* and www.mkety.com/*; unrelated Worker routes were preserved.'
+          echo 'Production cutover acceptance complete with rollback evidence persisted.'
