@@ -94,7 +94,7 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       key: 'trading',
       title: 'Trading Workspace',
       description: 'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
-      href: 'https://trade.mkety.com',
+      href: '/enterprise',
       badge: 'Custom / Enterprise',
     },
   ],
@@ -136,7 +136,7 @@ export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
     { key: 'trading', title: 'Trading infrastructure', description: 'Specialized trading systems are delivered under Custom / Enterprise terms.', badge: 'Custom / Enterprise' },
     { key: 'customer-projects', title: 'Custom projects', description: 'Dedicated systems and integrations can be delivered around your organization’s requirements.' },
   ],
-  cta: { label: 'Start Enterprise Project', href: '/enterprise/checkout' },
+  cta: { label: 'Start Enterprise Project', href: '/enterprise' },
 };
 
 export const defaultTrustSection: PlatformTrustSectionInput = {
@@ -215,7 +215,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
     ctaLabel: 'Start Enterprise Project',
-    ctaHref: '/enterprise/checkout',
+    ctaHref: '/enterprise',
     features: ['Custom implementation', 'Enterprise support', 'Trading infrastructure options', 'Managed integrations and delivery'],
   },
 ];
@@ -234,7 +234,7 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Where do I access Mkety Academy and Trading?',
     answer:
-      'Mkety Academy is available at academy.mkety.com. The specialized Trading product is available at trade.mkety.com and is offered under Custom / Enterprise terms.',
+      'Mkety Academy is available at academy.mkety.com. New Trading sales, custom pricing, and access requests start through Mkety Enterprise; customers with an approved commercial arrangement receive the appropriate Trading access separately.',
   },
 ];
 
@@ -350,7 +350,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Enterprise and Trading',
     excerpt: 'Custom Mkety delivery and the specialized Trading product.',
     bodyMarkdown:
-      '# Enterprise and Trading\n\nEnterprise supports custom systems, integrations, managed delivery, and specialized requirements. Trading is a specialized Custom / Enterprise product for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments. Access the Trading product at https://trade.mkety.com. Current Trading commercial terms should be confirmed through the Trading or Enterprise experience rather than older Mkety pricing references.',
+      '# Enterprise and Trading\n\nEnterprise supports custom systems, integrations, managed delivery, and specialized requirements. Trading is a specialized Custom / Enterprise product for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments. New Trading sales, pricing, quotes, and access requests start through Mkety Enterprise. After the commercial arrangement and access are approved, Mkety provides the appropriate Trading product access. Older Trading prices should not be used.',
     sortOrder: 10,
   },
   {
@@ -359,7 +359,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Official Mkety web addresses',
     excerpt: 'The main customer-facing Mkety product addresses.',
     bodyMarkdown:
-      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website, `app.mkety.com` for the Mkety Platform application, `academy.mkety.com` for Mkety Academy, and `trade.mkety.com` for the specialized Trading product. Customer deployments may use approved `*.mkety.app` addresses.',
+      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website, `app.mkety.com` for the Mkety Platform application, `academy.mkety.com` for Mkety Academy, and `trade.mkety.com` for approved access to the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
     sortOrder: 10,
   },
   {
