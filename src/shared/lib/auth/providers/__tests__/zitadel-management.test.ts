@@ -166,7 +166,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
     );
   });
 
-  it('creates the first Mkety Platform application with the exact production-grade OIDC shape', async () => {
+  it('creates the first Mkety Platform application as a public Authorization Code + PKCE client', async () => {
     const fetchMock = jest
       .spyOn(global, 'fetch')
       .mockResolvedValueOnce({
@@ -180,7 +180,6 @@ describe('ZITADEL OIDC application bootstrap', () => {
           creationDate: '2026-09-12T00:00:00Z',
           oidcConfiguration: {
             clientId: 'client-created',
-            clientSecret: 'secret-created',
           },
         }),
       } as unknown as Response);
@@ -200,7 +199,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
       applicationId: 'app-created',
       projectId: 'project-1',
       clientId: 'client-created',
-      clientSecret: 'secret-created',
+      clientSecret: null,
       redirectUris: [preview.redirectUri],
       postLogoutRedirectUris: [preview.postLogoutRedirectUri],
     });
@@ -214,7 +213,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
         responseTypes: ['OIDC_RESPONSE_TYPE_CODE'],
         grantTypes: ['OIDC_GRANT_TYPE_AUTHORIZATION_CODE'],
         applicationType: 'OIDC_APP_TYPE_WEB',
-        authMethodType: 'OIDC_AUTH_METHOD_TYPE_BASIC',
+        authMethodType: 'OIDC_AUTH_METHOD_TYPE_NONE',
         postLogoutRedirectUris: [preview.postLogoutRedirectUri],
         version: 'OIDC_VERSION_1_0',
         developmentMode: false,
