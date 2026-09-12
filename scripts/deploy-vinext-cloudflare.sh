@@ -49,5 +49,51 @@ if [ -z "$server_config" ]; then
   exit 1
 fi
 
+deploy_env=''
+forward_args=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --env|-e)
+      if [ "$#" -lt 2 ]; then
+        echo "$1 requires an environment name." >&2
+        exit 1
+      fi
+      deploy_env="$2"
+      shift 2
+      ;;
+    --env=*)
+      deploy_env="${1#--env=}"
+      shift
+      ;;
+    *)
+      forward_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Framework-generated Wrangler configs are concrete deployment configs: named
+# environments have already been flattened out. Re-applying `--env preview` to
+# the generated config makes Wrangler append the preview suffix but cannot read
+# env.preview settings such as workers_dev, which uploads a version with no
+# workers.dev deployment target. Materialize the preview identity and target at
+# the generated config's top level instead, then deploy the concrete artifact.
+if [ "$deploy_env" = 'preview' ]; then
+  node - "$server_config" "$expected_worker_name" <<'NODE'
+const fs = require('node:fs');
+const [configPath, baseWorkerName] = process.argv.slice(2);
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const previewWorkerName = `${baseWorkerName}-preview`;
+config.name = previewWorkerName;
+config.workers_dev = true;
+config.preview_urls = true;
+fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+console.log(`Materialized generated preview Worker config for ${previewWorkerName} with workers.dev enabled.`);
+NODE
+elif [ -n "$deploy_env" ]; then
+  echo "Generated Worker config does not contain named environments; refusing to re-apply --env $deploy_env." >&2
+  exit 1
+fi
+
 echo "Deploying generated server Worker config: $server_config"
-exec pnpm exec wrangler deploy --config "$server_config" "$@"
+exec pnpm exec wrangler deploy --config "$server_config" "${forward_args[@]}"
