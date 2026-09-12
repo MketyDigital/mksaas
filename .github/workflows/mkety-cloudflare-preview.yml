@@ -86,7 +86,6 @@ jobs:
           PROJECT_MKETY_SECRET: ${{ secrets.MKETY_ZITADEL_PROJECT_ID }}
           APPLICATION_VAR: ${{ vars.ZITADEL_APPLICATION_ID }}
           APPLICATION_SECRET: ${{ secrets.ZITADEL_APPLICATION_ID }}
-          EXISTING_CLIENT_SECRET: ${{ secrets.MKETY_AUTH_CLIENT_SECRET }}
           EXISTING_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
         run: |
           set -euo pipefail
@@ -145,10 +144,6 @@ jobs:
           if [ -n "$application_id" ]; then
             echo "ZITADEL_APPLICATION_ID=$application_id" >> "$GITHUB_ENV"
           fi
-          if [ -n "${EXISTING_CLIENT_SECRET:-}" ]; then
-            echo "::add-mask::$EXISTING_CLIENT_SECRET"
-            echo "CONFIGURED_MKETY_AUTH_CLIENT_SECRET=$EXISTING_CLIENT_SECRET" >> "$GITHUB_ENV"
-          fi
           if [ -n "${EXISTING_SESSION_SECRET:-}" ]; then
             echo "::add-mask::$EXISTING_SESSION_SECRET"
             echo "CONFIGURED_MKETY_AUTH_SESSION_SECRET=$EXISTING_SESSION_SECRET" >> "$GITHUB_ENV"
@@ -160,7 +155,7 @@ jobs:
           if [ -n "$application_id" ]; then
             echo "Existing ZITADEL application id is configured; create-or-reuse will validate it."
           else
-            echo "No ZITADEL application id is configured; create-or-reuse will discover or create Mkety Platform."
+            echo "No ZITADEL application id is configured; create-or-reuse will discover or create Mkety Platform Preview."
           fi
 
       - name: Require Cloudflare preview credentials and database
@@ -224,50 +219,36 @@ jobs:
           echo "- URL: $url" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: \`${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create or reconcile Mkety Platform in ZITADEL
+      - name: Create or reconcile Mkety Platform Preview in ZITADEL
         id: zitadel
         shell: bash
         env:
           MKETY_AUTH_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/api/auth/callback
           MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/login
-          ZITADEL_APPLICATION_NAME: Mkety Platform
+          ZITADEL_APPLICATION_NAME: Mkety Platform Preview
         run: |
           set -euo pipefail
           pnpm exec tsx scripts/provision-zitadel-redirects.ts
-          echo "- ZITADEL Mkety Platform application: create-or-reuse complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ZITADEL Mkety Platform Preview application: create-or-reuse complete" >> "$GITHUB_STEP_SUMMARY"
           echo "- ZITADEL application id: \`${{ steps.zitadel.outputs.application_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- ZITADEL client id: \`${{ steps.zitadel.outputs.client_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- ZITADEL application created in this run: \`${{ steps.zitadel.outputs.created }}\`" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Prepare durable preview Auth secrets
+      - name: Prepare durable preview Auth runtime
         id: auth-runtime
         shell: bash
         env:
-          CREATED: ${{ steps.zitadel.outputs.created }}
-          CREATED_CLIENT_SECRET: ${{ steps.zitadel.outputs.client_secret }}
           ZITADEL_CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
         run: |
           set -euo pipefail
 
-          client_secret="${CONFIGURED_MKETY_AUTH_CLIENT_SECRET:-${CREATED_CLIENT_SECRET:-}}"
           session_secret="${CONFIGURED_MKETY_AUTH_SESSION_SECRET:-}"
-
-          if [ "$CREATED" = "true" ] && [ -z "$client_secret" ]; then
-            echo "::error::New ZITADEL confidential application did not yield a client secret."
-            exit 1
-          fi
-          if [ "$CREATED" = "true" ] && [ -z "$session_secret" ]; then
+          if [ -z "$session_secret" ]; then
             session_secret="$(openssl rand -hex 32)"
           fi
+          echo "::add-mask::$session_secret"
+          echo "EFFECTIVE_MKETY_AUTH_SESSION_SECRET=$session_secret" >> "$GITHUB_ENV"
 
-          if [ -n "$client_secret" ]; then
-            echo "::add-mask::$client_secret"
-            echo "EFFECTIVE_MKETY_AUTH_CLIENT_SECRET=$client_secret" >> "$GITHUB_ENV"
-          fi
-          if [ -n "$session_secret" ]; then
-            echo "::add-mask::$session_secret"
-            echo "EFFECTIVE_MKETY_AUTH_SESSION_SECRET=$session_secret" >> "$GITHUB_ENV"
-          fi
           if [ -z "$ZITADEL_CLIENT_ID" ]; then
             echo "::error::ZITADEL provisioning did not return a client id."
             exit 1
@@ -293,13 +274,8 @@ jobs:
             MKETY_AUTH_CLIENT_ID: process.env.MKETY_AUTH_CLIENT_ID,
             MKETY_AUTH_REDIRECT_URI: process.env.MKETY_AUTH_REDIRECT_URI,
             MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: process.env.MKETY_AUTH_POST_LOGOUT_REDIRECT_URI,
+            MKETY_AUTH_SESSION_SECRET: process.env.EFFECTIVE_MKETY_AUTH_SESSION_SECRET,
           };
-          if (process.env.EFFECTIVE_MKETY_AUTH_CLIENT_SECRET) {
-            values.MKETY_AUTH_CLIENT_SECRET = process.env.EFFECTIVE_MKETY_AUTH_CLIENT_SECRET;
-          }
-          if (process.env.EFFECTIVE_MKETY_AUTH_SESSION_SECRET) {
-            values.MKETY_AUTH_SESSION_SECRET = process.env.EFFECTIVE_MKETY_AUTH_SESSION_SECRET;
-          }
           for (const [key, value] of Object.entries(values)) {
             if (!value) throw new Error(`Missing required preview runtime value: ${key}`);
           }
@@ -321,7 +297,6 @@ jobs:
             'MKETY_AUTH_PROVIDER',
             'MKETY_AUTH_ISSUER',
             'MKETY_AUTH_CLIENT_ID',
-            'MKETY_AUTH_CLIENT_SECRET',
             'MKETY_AUTH_REDIRECT_URI',
             'MKETY_AUTH_POST_LOGOUT_REDIRECT_URI',
             'MKETY_AUTH_SESSION_SECRET',
