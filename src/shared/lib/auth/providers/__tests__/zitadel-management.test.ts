@@ -250,8 +250,9 @@ describe('ZITADEL OIDC application bootstrap', () => {
     );
 
     expect(result.applicationId).toBe('app-explicit');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/GetApplication');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every((call) => String(call[0]).includes('/GetApplication'))).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/ListApplications'))).toBe(false);
   });
 
   it('refuses an ambiguous duplicate Mkety Platform application name in one project', async () => {
