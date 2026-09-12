@@ -16,6 +16,7 @@ concurrency:
 
 env:
   EXPECTED_MAIN_SHA: 0693b00fba639549d92c4dd82a2fcef618d0bd47
+  EXPECTED_CONTENT_REPAIR_BLOB: 8b8be8e68785dec4bbdf39d3d680cfc9ad808fc2
   SKIP_ENV_VALIDATION: 'true'
 
 jobs:
@@ -112,6 +113,39 @@ jobs:
           else
             echo "- Reviewed conflicts: none after pre-reconciliation" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Repair known public-content migration prefix collision
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_path="migrations/0004_platform_commercial_content_repair.sql"
+          target_path="migrations/0009_platform_commercial_content_repair.sql"
+          source_blob="$(git rev-parse "origin/main:$source_path")"
+          if [ "$source_blob" != "$EXPECTED_CONTENT_REPAIR_BLOB" ]; then
+            echo "::error::Unexpected commercial-content repair blob: $source_blob"
+            exit 1
+          fi
+          if [ ! -f "$source_path" ] || [ -e "$target_path" ]; then
+            echo "::error::Unexpected content migration namespace state before repair"
+            ls -1 migrations
+            exit 1
+          fi
+
+          git mv "$source_path" "$target_path"
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/migrate-mkety-platform-content.ts')
+          text = path.read_text()
+          needle = "  'migrations/0008_harden_rls_auto_enable.sql',\n"
+          addition = needle + "  'migrations/0009_platform_commercial_content_repair.sql',\n"
+          if text.count(needle) != 1:
+              raise SystemExit('expected exactly one 0008 content-runner entry')
+          if '0009_platform_commercial_content_repair.sql' in text:
+              raise SystemExit('0009 content repair is unexpectedly already present')
+          path.write_text(text.replace(needle, addition))
+          PY
+          git add "$target_path" scripts/migrate-mkety-platform-content.ts
+          echo "- Repaired pre-existing content migration collision: later commercial repair moved from \`0004\` to \`0009\` and added to the explicit runner." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
