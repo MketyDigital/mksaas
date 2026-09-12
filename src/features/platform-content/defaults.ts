@@ -61,8 +61,16 @@ export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
   description:
     'Mkety connects projects, teams, AI, automation, deployments, SolutionHub, usage, credits, billing, and administration in one product ecosystem.',
   items: [
-    { key: 'build', title: 'Build', description: 'Create applications, AI experiences, workflows, portals, and connected business systems.' },
-    { key: 'operate', title: 'Operate', description: 'Keep projects, teams, usage, billing visibility, domains, and operations connected.' },
+    {
+      key: 'build',
+      title: 'Build',
+      description: 'Create applications, AI experiences, workflows, portals, and connected business systems.',
+    },
+    {
+      key: 'operate',
+      title: 'Operate',
+      description: 'Keep projects, teams, usage, billing visibility, domains, and operations connected.',
+    },
   ],
   cta: { label: 'Explore Platform', href: '/platform' },
 };
@@ -70,12 +78,14 @@ export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
 export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
   eyebrow: 'Workspaces',
   title: 'One platform, multiple operating spaces',
-  description: 'Choose the workspace that fits what you want to build, or use Mkety One for the complete self-service workspace bundle.',
+  description:
+    'Choose the workspace that fits what you want to build, or use Mkety One for the complete self-service workspace bundle.',
   items: [
     {
       key: 'ai',
       title: 'AI Workspace',
-      description: 'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
+      description:
+        'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
       href: '/app/ai',
     },
     {
@@ -87,13 +97,15 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
     {
       key: 'deploy',
       title: 'Deploy Workspace',
-      description: 'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
+      description:
+        'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
       href: '/app/deploy',
     },
     {
       key: 'trading',
       title: 'Trading Workspace',
-      description: 'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
+      description:
+        'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
       href: '/enterprise',
       badge: 'Custom / Enterprise',
     },
@@ -106,8 +118,17 @@ export const defaultSolutionHubSection: PlatformSolutionHubSectionInput = {
   description:
     'SolutionHub packages useful agents, workflows, applications, deployment templates, business automations, and industry blueprints that can be launched into Mkety workspaces.',
   items: [
-    { key: 'shared', title: 'Ready-made solutions', description: 'Reusable solutions designed to launch quickly inside Mkety workspaces.' },
-    { key: 'enterprise', title: 'Enterprise solutions', description: 'Custom implementations for more specialized business, integration, security, or operational requirements.' },
+    {
+      key: 'shared',
+      title: 'Ready-made solutions',
+      description: 'Reusable solutions designed to launch quickly inside Mkety workspaces.',
+    },
+    {
+      key: 'enterprise',
+      title: 'Enterprise solutions',
+      description:
+        'Custom implementations for more specialized business, integration, security, or operational requirements.',
+    },
   ],
   cta: { label: 'Explore SolutionHub', href: '/solutions' },
 };
@@ -118,11 +139,31 @@ export const defaultAcademySection: PlatformAcademySectionInput = {
   description:
     'Mkety Academy offers structured learning across software engineering, trading, digital marketing, AI, automation, and certified digital skills.',
   items: [
-    { key: 'web-app', title: 'Web & App Engineering', description: 'Learn to design, build, ship, and improve modern web and application products.' },
-    { key: 'trading', title: 'Trading Masterclass', description: 'Structured trading education focused on market skills, risk, process, and execution.' },
-    { key: 'marketing', title: 'Digital Funnel & Marketing', description: 'Build practical customer acquisition, conversion, content, and digital sales systems.' },
-    { key: 'ai-automation', title: 'AI & Automation Lab', description: 'Build useful AI agents, automations, and connected workflows for real use cases.' },
-    { key: 'certified-skills', title: 'Certified Digital Skills', description: 'Follow practical learning paths designed to build demonstrable digital capability.' },
+    {
+      key: 'web-app',
+      title: 'Web & App Engineering',
+      description: 'Learn to design, build, ship, and improve modern web and application products.',
+    },
+    {
+      key: 'trading',
+      title: 'Trading Masterclass',
+      description: 'Structured trading education focused on market skills, risk, process, and execution.',
+    },
+    {
+      key: 'marketing',
+      title: 'Digital Funnel & Marketing',
+      description: 'Build practical customer acquisition, conversion, content, and digital sales systems.',
+    },
+    {
+      key: 'ai-automation',
+      title: 'AI & Automation Lab',
+      description: 'Build useful AI agents, automations, and connected workflows for real use cases.',
+    },
+    {
+      key: 'certified-skills',
+      title: 'Certified Digital Skills',
+      description: 'Follow practical learning paths designed to build demonstrable digital capability.',
+    },
   ],
   cta: { label: 'Explore Mkety Academy', href: 'https://academy.mkety.com' },
 };
@@ -133,8 +174,17 @@ export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
   description:
     'Mkety delivers specialized implementations, integrations, managed deployment, trading infrastructure, customer projects, and enterprise support under custom commercial terms.',
   items: [
-    { key: 'trading', title: 'Trading infrastructure', description: 'Specialized trading systems are delivered under Custom / Enterprise terms.', badge: 'Custom / Enterprise' },
-    { key: 'customer-projects', title: 'Custom projects', description: 'Dedicated systems and integrations can be delivered around your organization’s requirements.' },
+    {
+      key: 'trading',
+      title: 'Trading infrastructure',
+      description: 'Specialized trading systems are delivered under Custom / Enterprise terms.',
+      badge: 'Custom / Enterprise',
+    },
+    {
+      key: 'customer-projects',
+      title: 'Custom projects',
+      description: 'Dedicated systems and integrations can be delivered around your organization’s requirements.',
+    },
   ],
   cta: { label: 'Start Enterprise Project', href: '/enterprise' },
 };
@@ -145,9 +195,22 @@ export const defaultTrustSection: PlatformTrustSectionInput = {
   description:
     'Mkety is designed around secure access, clear account boundaries, dependable operations, and transparent product controls.',
   items: [
-    { key: 'access', title: 'Secure access', description: 'Account and workspace access is protected with server-side authorization controls.' },
-    { key: 'privacy', title: 'Privacy-conscious', description: 'Private account and workspace information is kept separate from public Mkety content.' },
-    { key: 'operations', title: 'Operational clarity', description: 'Usage, billing, deployments, and product access are presented through clear customer-facing controls.' },
+    {
+      key: 'access',
+      title: 'Secure access',
+      description: 'Account and workspace access is protected with server-side authorization controls.',
+    },
+    {
+      key: 'privacy',
+      title: 'Privacy-conscious',
+      description: 'Private account and workspace information is kept separate from public Mkety content.',
+    },
+    {
+      key: 'operations',
+      title: 'Operational clarity',
+      description:
+        'Usage, billing, deployments, and product access are presented through clear customer-facing controls.',
+    },
   ],
   cta: { label: 'Read the docs', href: '/docs' },
 };
@@ -195,7 +258,13 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     highlighted: false,
     ctaLabel: 'Choose Deploy Workspace',
     ctaHref: '/create-workspace',
-    features: ['Website and app deploys', 'API and portal deploys', 'Preview and production environments', 'Domains', 'Deployment history'],
+    features: [
+      'Website and app deploys',
+      'API and portal deploys',
+      'Preview and production environments',
+      'Domains',
+      'Deployment history',
+    ],
   },
   {
     key: 'mkety-one',
@@ -206,17 +275,29 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     highlighted: true,
     ctaLabel: 'Choose Mkety One',
     ctaHref: '/create-workspace',
-    features: ['Starter included', 'AI Workspace included', 'Automation Workspace included', 'Deploy Workspace included', 'Unified Mkety workspace access'],
+    features: [
+      'Starter included',
+      'AI Workspace included',
+      'Automation Workspace included',
+      'Deploy Workspace included',
+      'Unified Mkety workspace access',
+    ],
   },
   {
     key: 'enterprise',
     name: 'Enterprise',
     priceLabel: 'Custom',
-    description: 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
+    description:
+      'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
     ctaLabel: 'Start Enterprise Project',
     ctaHref: '/enterprise',
-    features: ['Custom implementation', 'Enterprise support', 'Trading infrastructure options', 'Managed integrations and delivery'],
+    features: [
+      'Custom implementation',
+      'Enterprise support',
+      'Trading infrastructure options',
+      'Managed integrations and delivery',
+    ],
   },
 ];
 
@@ -261,13 +342,48 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
 ];
 
 export const defaultDocsCategories: PlatformDocsCategoryInput[] = [
-  { key: 'getting-started', title: 'Getting Started', description: 'Understand Mkety and choose the right place to begin.', sortOrder: 10 },
-  { key: 'platform', title: 'Platform', description: 'Projects, workspaces, plans, usage, credits, and account concepts.', sortOrder: 20 },
-  { key: 'workspaces', title: 'Workspaces', description: 'AI, Automation, Deploy, and the specialized Trading product.', sortOrder: 30 },
-  { key: 'solutions', title: 'SolutionHub', description: 'Ready-made solutions, reusable blueprints, and custom solution options.', sortOrder: 35 },
-  { key: 'academy', title: 'Academy', description: 'Practical Mkety learning paths and digital skills programs.', sortOrder: 40 },
-  { key: 'enterprise', title: 'Enterprise', description: 'Custom implementations and specialized requirements.', sortOrder: 45 },
-  { key: 'domains', title: 'Mkety Products & Domains', description: 'The official web addresses for Mkety products and customer experiences.', sortOrder: 50 },
+  {
+    key: 'getting-started',
+    title: 'Getting Started',
+    description: 'Understand Mkety and choose the right place to begin.',
+    sortOrder: 10,
+  },
+  {
+    key: 'platform',
+    title: 'Platform',
+    description: 'Projects, workspaces, plans, usage, credits, and account concepts.',
+    sortOrder: 20,
+  },
+  {
+    key: 'workspaces',
+    title: 'Workspaces',
+    description: 'AI, Automation, Deploy, and the specialized Trading product.',
+    sortOrder: 30,
+  },
+  {
+    key: 'solutions',
+    title: 'SolutionHub',
+    description: 'Ready-made solutions, reusable blueprints, and custom solution options.',
+    sortOrder: 35,
+  },
+  {
+    key: 'academy',
+    title: 'Academy',
+    description: 'Practical Mkety learning paths and digital skills programs.',
+    sortOrder: 40,
+  },
+  {
+    key: 'enterprise',
+    title: 'Enterprise',
+    description: 'Custom implementations and specialized requirements.',
+    sortOrder: 45,
+  },
+  {
+    key: 'domains',
+    title: 'Mkety Products & Domains',
+    description: 'The official web addresses for Mkety products and customer experiences.',
+    sortOrder: 50,
+  },
   { key: 'trust', title: 'Security & Trust', description: 'High-level guidance for safe use of Mkety.', sortOrder: 60 },
 ];
 

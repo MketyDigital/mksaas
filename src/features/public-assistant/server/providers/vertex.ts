@@ -10,7 +10,8 @@ export function createVertexPublicAdapter(input: {
   return {
     id: 'vertex',
     async generate(request) {
-      const host = input.location === 'global' ? 'aiplatform.googleapis.com' : `${input.location}-aiplatform.googleapis.com`;
+      const host =
+        input.location === 'global' ? 'aiplatform.googleapis.com' : `${input.location}-aiplatform.googleapis.com`;
       const url = `https://${host}/v1/projects/${encodeURIComponent(input.projectId)}/locations/${encodeURIComponent(input.location)}/publishers/google/models/${encodeURIComponent(request.model)}:generateContent`;
       const response = await fetch(url, {
         method: 'POST',

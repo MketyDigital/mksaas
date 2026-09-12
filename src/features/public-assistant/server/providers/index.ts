@@ -1,5 +1,3 @@
-import type { PublicAssistantEnvironment } from '../../config';
-import type { PublicAIProviderId } from '../../models';
 import { createAzureOpenAIPublicAdapter } from './azure-openai';
 import { createBedrockPublicAdapter } from './bedrock';
 import { createCloudflareAIPublicAdapter } from './cloudflare-ai';
@@ -7,6 +5,8 @@ import { createGeminiPublicAdapter } from './gemini';
 import { createOpenAIPublicAdapter } from './openai';
 import type { PublicAIProviderAdapter } from './types';
 import { createVertexPublicAdapter } from './vertex';
+import type { PublicAssistantEnvironment } from '../../config';
+import type { PublicAIProviderId } from '../../models';
 
 export function createPublicAIProviderAdapters(
   providerIds: PublicAIProviderId[],
@@ -57,10 +57,7 @@ export function createPublicAIProviderAdapters(
         }
         break;
       case 'cloudflare-ai':
-        if (
-          environment.MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID &&
-          environment.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN
-        ) {
+        if (environment.MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID && environment.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN) {
           adapters.push(
             createCloudflareAIPublicAdapter({
               accountId: environment.MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID,
@@ -70,10 +67,7 @@ export function createPublicAIProviderAdapters(
         }
         break;
       case 'bedrock':
-        if (
-          environment.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID &&
-          environment.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY
-        ) {
+        if (environment.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID && environment.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY) {
           adapters.push(
             createBedrockPublicAdapter({
               accessKeyId: environment.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID,

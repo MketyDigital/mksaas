@@ -1,9 +1,9 @@
+import { enterpriseOrderRepository } from './repository';
+import type { EnterpriseOrderRepository } from './repository';
 import { parseEnterpriseCheckoutInput } from '../domain';
 import type { EnterpriseCheckoutResult, EnterprisePaymentProvider } from '../domain';
 import { getEnterprisePaymentProvider } from '../providers/registry';
 import type { EnterpriseCheckoutProviderAdapter } from '../providers/types';
-import { enterpriseOrderRepository } from './repository';
-import type { EnterpriseOrderRepository } from './repository';
 
 interface EnterpriseCheckoutRequestContext {
   idempotencyKey: string;
@@ -25,7 +25,9 @@ function createRequestFingerprint(input: ReturnType<typeof parseEnterpriseChecko
   });
 }
 
-function replayResult(order: Awaited<ReturnType<EnterpriseOrderRepository['findByIdempotencyKey']>>): EnterpriseCheckoutResult {
+function replayResult(
+  order: Awaited<ReturnType<EnterpriseOrderRepository['findByIdempotencyKey']>>,
+): EnterpriseCheckoutResult {
   if (!order) throw new Error('Enterprise order not found.');
   const redirectUrl = typeof order.metadata?.redirectUrl === 'string' ? order.metadata.redirectUrl : null;
   if (!redirectUrl) throw new Error('Existing enterprise checkout cannot be resumed safely.');
@@ -44,7 +46,10 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
   const createOrderId = dependencies.createOrderId ?? (() => `MKETY-ENT-${crypto.randomUUID()}`);
 
   return {
-    async createEnterpriseCheckout(rawInput: unknown, context: EnterpriseCheckoutRequestContext): Promise<EnterpriseCheckoutResult> {
+    async createEnterpriseCheckout(
+      rawInput: unknown,
+      context: EnterpriseCheckoutRequestContext,
+    ): Promise<EnterpriseCheckoutResult> {
       if (!context.idempotencyKey || context.idempotencyKey.length < 8 || context.idempotencyKey.length > 200) {
         throw new Error('A valid idempotency key is required.');
       }
@@ -98,11 +103,13 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
           status: providerResult.status,
         };
       } catch {
-        await repository.updateCheckout({
-          orderId,
-          checkoutStatus: 'failed',
-          metadata: { providerInitiationFailed: true },
-        }).catch(() => undefined);
+        await repository
+          .updateCheckout({
+            orderId,
+            checkoutStatus: 'failed',
+            metadata: { providerInitiationFailed: true },
+          })
+          .catch(() => undefined);
         throw new Error('Enterprise checkout is temporarily unavailable.');
       }
     },

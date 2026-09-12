@@ -31,14 +31,12 @@ export function getGitHubCredentials(tenantCredentials?: {
   clientId?: string;
   clientSecret?: string;
 }): GitHubCredentials | null {
-  // Try tenant settings first
   if (tenantCredentials?.clientId && tenantCredentials?.clientSecret) {
     return {
       clientId: tenantCredentials.clientId,
       clientSecret: tenantCredentials.clientSecret,
     };
   }
-  // Fall back to env vars
   if (env.GITHUB_INTEGRATION_CLIENT_ID && env.GITHUB_INTEGRATION_CLIENT_SECRET) {
     return {
       clientId: env.GITHUB_INTEGRATION_CLIENT_ID,
@@ -48,9 +46,6 @@ export function getGitHubCredentials(tenantCredentials?: {
   return null;
 }
 
-/**
- * Check if GitHub OAuth is configured.
- */
 export function isGitHubConfigured(tenantCredentials?: { clientId?: string; clientSecret?: string }): boolean {
   return getGitHubCredentials(tenantCredentials) !== null;
 }
@@ -61,10 +56,14 @@ export function isGitHubConfigured(tenantCredentials?: { clientId?: string; clie
 
 /**
  * Build the app origin used for OAuth redirect_uri.
+ *
+ * NEXT_PUBLIC_APP_URL is Mkety's canonical application URL. Forwarded request
+ * headers remain a fallback for deployments where the canonical value is not
+ * available at runtime.
  */
 export function getGitHubCallbackBaseUrl(request: Request): string {
-  if (env.AUTH_URL) {
-    return env.AUTH_URL.replace(/\/$/, '');
+  if (env.NEXT_PUBLIC_APP_URL) {
+    return env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
   }
   const headers = request.headers;
   const proto = headers.get('x-forwarded-proto');
@@ -76,18 +75,14 @@ export function getGitHubCallbackBaseUrl(request: Request): string {
     const url = new URL(request.url);
     return `${url.protocol}//${url.host}`;
   } catch {
-    return env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+    return 'http://localhost:3000';
   }
 }
 
-/** Full redirect_uri for GitHub OAuth. */
 export function getGitHubRedirectUri(request: Request): string {
   return `${getGitHubCallbackBaseUrl(request)}${GITHUB_CALLBACK_PATH}`;
 }
 
-/**
- * Build the GitHub authorization URL for OAuth flow.
- */
 export function buildGitHubAuthorizationUrl(
   redirectUri: string,
   state: string,
@@ -108,10 +103,6 @@ export function buildGitHubAuthorizationUrl(
 // Token Exchange
 // ============================================================================
 
-/**
- * Exchange authorization code for an access token.
- * GitHub OAuth tokens do not expire (no refresh token needed).
- */
 export async function exchangeGitHubCodeForToken(
   code: string,
   redirectUri: string,

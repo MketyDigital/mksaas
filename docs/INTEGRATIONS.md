@@ -1,88 +1,95 @@
 # Integrations
 
-Third-party API integrations using OAuth2 or other auth. The Next.js SaaS AI Template uses Auth.js for **sign-in** (Auth0, development credentials). Integrations below are for **API access** (e.g., syncing data, calling external APIs on behalf of the user or tenant).
+Third-party integrations use OAuth2, API keys, signed webhooks, or other provider-specific credentials for **external API access**. They are separate from Mkety application sign-in.
 
-The template ships with **GitHub** as the included integration example. Additional integrations can be added by following the same pattern, leveraging the `integration_sync_control` table for sync state management.
+Mkety owns the application authentication/session/authorization boundary. ZITADEL is the initial replaceable OIDC sign-in adapter. Integration OAuth tokens must not be treated as Mkety application sessions or identity-provider configuration.
+
+The Platform currently includes **GitHub** as the reference OAuth integration. Additional integrations can follow the same scoped pattern and use `integration_sync_control` when synchronization state is required.
 
 ---
 
 ## GitHub (OAuth2)
 
-[GitHub](https://github.com) is the included integration example. It allows users to connect their GitHub account so the application can call the GitHub API on their behalf.
+GitHub connection lets an authenticated Mkety user authorize the Platform to call the GitHub API on that user's behalf.
 
 ### Configuration
 
-1. **Register an OAuth App** at [GitHub Developer Settings](https://github.com/settings/developers).
-2. **Add the exact redirect URI** your app will use (must match character-for-character):
+1. Register an OAuth App at GitHub Developer Settings.
+2. Add the exact redirect URI used by the environment:
    - Local: `http://localhost:3000/api/integrations/github/callback`
-   - Production: `https://your-domain.com/api/integrations/github/callback`
-3. **Environment variables** (optional; if missing, the integration is disabled):
+   - Deployed environment: `<app-origin>/api/integrations/github/callback`
+3. Configure the optional integration credentials:
 
 ```env
 GITHUB_CLIENT_ID="your-client-id"
 GITHUB_CLIENT_SECRET="your-client-secret"
 ```
 
-### OAuth2 Flow
+If those values are absent, the GitHub integration should remain disabled; they are not required for Mkety sign-in.
 
-- **Authorization URL:** `GET https://github.com/login/oauth/authorize`
-- **Token URL:** `POST https://github.com/login/oauth/access_token`
-- **Flow:** Authorization code.
+### OAuth2 flow
 
-### App Routes
+- Authorization URL: `GET https://github.com/login/oauth/authorize`
+- Token URL: `POST https://github.com/login/oauth/access_token`
+- Flow: authorization code.
+
+### App routes
 
 | Route                                   | Method | Description                                                                                                            |
 | --------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `/api/integrations/github/connect`      | GET    | Requires auth. Redirects user to GitHub to authorize. Query: `returnUrl` (optional).                                   |
-| `/api/integrations/github/callback`     | GET    | OAuth callback. Exchanges `code` for tokens, stores in `accounts` table (provider `github`), redirects to `returnUrl`. |
+| `/api/integrations/github/connect`      | GET    | Requires a Mkety session. Redirects the user to GitHub; supports a bounded optional `returnUrl`.                       |
+| `/api/integrations/github/callback`     | GET    | Exchanges the GitHub code, persists the external integration account, then redirects to the approved return location. |
 | `/api/integrations/github/user-connect` | GET    | User-level GitHub connection flow.                                                                                     |
 
-### Stored Data
+### Stored data
 
-- Tokens are stored in the existing Auth.js **accounts** table:
-  - `provider`: `github`
-  - `providerAccountId`: GitHub user id
-  - `access_token`
-- One connection per user; reconnecting replaces the previous one.
+GitHub integration tokens currently use the existing generic `accounts` persistence structure retained by the Platform:
 
-### Using the API from Code
+- `provider`: `github`
+- `providerAccountId`: GitHub user ID
+- `access_token`
+
+The table's historical origin does **not** make Auth.js part of the current Mkety Auth architecture. It is currently a persistence structure used by integration code. Any future replacement should be handled as a dedicated integration-data migration rather than by reintroducing Auth.js.
+
+One GitHub connection is maintained per user; reconnecting replaces the prior connection according to the current integration implementation.
+
+### Using the API from code
 
 ```ts
 import { getValidAccessToken, githubFetch, isGithubConfigured } from '@/features/github';
 
-// Check if user has connected GitHub
 const tokens = await getValidAccessToken(userId);
 if (tokens) {
-  // Call any GitHub API endpoint
   const user = await githubFetch('/user', tokens);
 }
 ```
 
 ---
 
-## Outbound Webhooks
+## Outbound webhooks
 
-The template includes a full outbound webhook system with delivery tracking, configurable per tenant via admin settings.
+Mkety includes an outbound webhook system with tenant-scoped configuration and delivery tracking.
 
-Tenants can register webhook endpoints to receive notifications for events (e.g., member added, assessment created). Delivery attempts are tracked with retry logic and status history.
+Tenants can register endpoints for supported Platform events. Delivery attempts are tracked for auditing/retry behavior according to the current webhook service implementation.
 
 ### Admin UI
 
-Admins with the **admin:settings** permission can manage webhooks at **Admin → Settings → Webhooks**.
+Admins with the required permission can manage outbound webhook settings from the tenant administration surfaces.
+
+This outbound integration system is separate from the **Automation inbound webhook trigger foundation** implemented under the Automation workspace.
 
 ---
 
-## Adding a New Integration
+## Adding a new integration
 
-To add a new integration, follow the pattern established by the GitHub integration:
+Follow the current GitHub pattern unless a newer integration architecture has been approved:
 
-1. Create a feature module in `src/features/<integration-name>/`
-2. Add OAuth routes in `src/app/api/integrations/<integration-name>/`
-3. Store tokens in the `accounts` table (`provider: '<integration-name>'`)
-4. Use `integration_sync_control` for sync state if the integration involves data sync
-5. Add environment variables to `src/shared/lib/env.ts`
-6. Document the integration in this file
+1. Create a feature module in `src/features/<integration-name>/`.
+2. Add provider callback/connect routes under `src/app/api/integrations/<integration-name>/`.
+3. Keep provider OAuth tokens separate from Mkety Auth sessions.
+4. Scope persisted credentials to the correct user/tenant boundary.
+5. Use `integration_sync_control` when the integration performs synchronization.
+6. Add required environment validation without introducing provider-specific names into the Mkety Auth contract.
+7. Document redirect URIs, token storage, revocation and failure behavior.
 
----
-
-_For Auth.js configuration (sign-in providers), see [AUTHENTICATION.md](./AUTHENTICATION.md)._
+For application authentication, use [AUTHENTICATION.md](./AUTHENTICATION.md) and `docs/MKETY_AUTH_SOURCE_OF_TRUTH.md`.

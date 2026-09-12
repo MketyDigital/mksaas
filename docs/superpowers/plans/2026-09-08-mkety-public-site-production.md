@@ -32,6 +32,7 @@
 ### Task 1: Lock the public route and content contract
 
 **Files:**
+
 - Create: `src/features/platform-content/public-routes.ts`
 - Create: `src/features/platform-content/public-routes.test.ts`
 - Modify: `src/features/platform-content/defaults.ts`
@@ -39,6 +40,7 @@
 - Reference: `src/features/platform-content/server/queries.ts`
 
 **Interfaces:**
+
 - Produces `MKETY_PUBLIC_ROUTES` as the code-owned canonical list of routes that belong to the `mkety.com` public surface.
 - Produces helpers that distinguish public sitemap routes from authenticated/admin routes.
 
@@ -60,7 +62,7 @@ Tests must require at least:
   '/privacy',
   '/terms',
   '/contact',
-]
+];
 ```
 
 Tests must also prove routes beginning with `/t/`, `/admin`, `/api`, `/app`, `/create-workspace` and authenticated tenant paths are not public sitemap pages.
@@ -105,6 +107,7 @@ git commit -m "feat: define Mkety public route contract"
 ### Task 2: Remove public legacy-template metadata and establish Mkety metadata utilities
 
 **Files:**
+
 - Modify: `src/app/layout.tsx`
 - Create: `src/features/platform-content/metadata.ts`
 - Create: `src/features/platform-content/metadata.test.ts`
@@ -112,6 +115,7 @@ git commit -m "feat: define Mkety public route contract"
 - Modify: `src/app/page.tsx`
 
 **Interfaces:**
+
 - Produces `buildMketyMetadata(...)` and canonical base `https://mkety.com`.
 - Consumes `PlatformSiteSettingsInput` and page SEO records.
 
@@ -165,6 +169,7 @@ git commit -m "fix: replace template metadata with Mkety public metadata"
 ### Task 3: Complete the reusable public-site shell
 
 **Files:**
+
 - Create: `src/features/platform-content/components/public/MketyPublicShell.tsx`
 - Create: `src/features/platform-content/components/public/MketyPublicHeader.tsx`
 - Create: `src/features/platform-content/components/public/MketyPublicFooter.tsx`
@@ -172,6 +177,7 @@ git commit -m "fix: replace template metadata with Mkety public metadata"
 - Modify: `src/features/platform-content/components/public/MketyHomePage.tsx`
 
 **Interfaces:**
+
 - Consumes published header navigation, site settings and footer groups.
 - Produces one consistent responsive public shell for homepage and dedicated public pages.
 
@@ -209,6 +215,7 @@ Use existing Radix/UI primitives where practical.
 ### Task 4: Move homepage hard-coded product content into validated CMS section payloads
 
 **Files:**
+
 - Modify: `src/features/platform-content/schemas.ts`
 - Modify: `src/features/platform-content/defaults.ts`
 - Modify: `src/features/platform-content/server/queries.ts`
@@ -218,6 +225,7 @@ Use existing Radix/UI primitives where practical.
 - Tests: platform-content schema/query/homepage tests
 
 **Interfaces:**
+
 - Add validated sections for Platform overview, SolutionHub, Academy, Enterprise and Trust/Public AI presentation as appropriate.
 
 - [ ] **Step 1: Write schema/query tests for the missing homepage section types**
@@ -261,6 +269,7 @@ pnpm db:smoke:mkety-content
 ### Task 5: Implement CMS-backed dedicated public pages
 
 **Files:**
+
 - Create public page components under `src/features/platform-content/components/public/pages/`
 - Create routes:
   - `src/app/platform/page.tsx`
@@ -276,6 +285,7 @@ pnpm db:smoke:mkety-content
 - Extend tests/smoke coverage
 
 **Interfaces:**
+
 - Produce `getPublishedPageContent(slug)` or equivalent typed server boundary.
 - Dedicated pages use `MketyPublicShell` and CMS content/defaults.
 
@@ -312,6 +322,7 @@ Each route must have meaningful content, metadata and CTA behavior.
 ### Task 6: Complete Pricing/Plans public presentation without inventing backend entitlements
 
 **Files:**
+
 - Modify: pricing public components/routes
 - Modify: `src/features/platform-content/defaults.ts`
 - Modify: `scripts/seed-mkety-platform-content.ts`
@@ -319,6 +330,7 @@ Each route must have meaningful content, metadata and CTA behavior.
 - Development DB data: only `saas_template.platform_pricing_plans` and `platform_pricing_features` as required
 
 **Interfaces:**
+
 - Public pricing content remains display data; it does not become the authoritative Billing/Entitlements implementation.
 
 - [ ] **Step 1: Write content tests enforcing approved commercial language**
@@ -346,6 +358,7 @@ Current development DB records all have `sort_order=0`; seed/update only the kno
 ### Task 7: Finish Mkety public docs launch set and quarantine public legacy-template docs
 
 **Files:**
+
 - Modify: `src/app/(docs)/docs/page.tsx`
 - Modify: `src/app/(docs)/docs/[...slug]/page.tsx`
 - Modify docs public components as needed
@@ -355,6 +368,7 @@ Current development DB records all have `sort_order=0`; seed/update only the kno
 - Do not blindly rewrite every internal engineering file in `docs/`
 
 **Interfaces:**
+
 - `/docs` and public article routes must read Mkety CMS/default content.
 
 - [ ] **Step 1: Inventory what is actually reachable from `/docs`**
@@ -401,6 +415,7 @@ Do not claim unfinished implementation is available today.
 ### Task 8: Implement legal/contact/trust pages
 
 **Files:**
+
 - Create: `src/app/privacy/page.tsx`
 - Create: `src/app/terms/page.tsx`
 - Modify/create CMS page content/defaults
@@ -408,6 +423,7 @@ Do not claim unfinished implementation is available today.
 - Add route/component tests
 
 **Interfaces:**
+
 - Legal copy should be CMS/page-backed where normal content editing is expected.
 
 - [ ] **Step 1: Add privacy/terms route tests and metadata tests**
@@ -431,12 +447,14 @@ Current CMS `contact_email` is null; set only an approved Mkety contact value su
 ### Task 9: Add sitemap, robots and canonical indexing controls
 
 **Files:**
+
 - Create: `src/app/sitemap.ts`
 - Create: `src/app/robots.ts`
 - Tests: sitemap/robots route helpers
 - Modify metadata utilities if required
 
 **Interfaces:**
+
 - Consumes `MKETY_PUBLIC_ROUTES`.
 
 - [ ] **Step 1: Write failing sitemap/robots tests**
@@ -466,6 +484,7 @@ Do not accidentally block the entire production public site. Disallow private/ad
 ### Task 10: Decide and implement the Public Mkety AI launch boundary
 
 **Files:**
+
 - Add under `src/features/public-assistant/` if implementation proceeds
 - Add API route under a clearly public path, e.g. `src/app/api/public/assistant/route.ts`
 - Add homepage/public component
@@ -473,6 +492,7 @@ Do not accidentally block the entire production public site. Disallow private/ad
 - Update privacy page if storage/processing requires disclosure
 
 **Interfaces:**
+
 - Public AI is separate from authenticated Agent Builder and tenant assistant data.
 
 - [ ] **Step 1: Verify an approved provider/runtime is configured for public use**
@@ -511,12 +531,14 @@ The site must not simulate a working assistant.
 ### Task 11: Add public error/fallback observability without breaking CMS fallback resilience
 
 **Files:**
+
 - Modify: `src/features/platform-content/server/queries.ts`
 - Add tests around fallback behavior
 - Modify logging utility usage as appropriate
 - Review: `src/app/global-error.tsx`, `src/app/not-found.tsx`
 
 **Interfaces:**
+
 - Keep user-facing fallback content available when appropriate.
 - Make server logs/observability distinguish missing content from database/runtime failure.
 
@@ -572,12 +594,14 @@ Review findings relevant to changed objects; do not “fix” unrelated schemas/
 ### Task 13: Add a durable public-site Cloudflare candidate deployment workflow
 
 **Files:**
+
 - Create/modify durable workflow under `.github/workflows/`
 - Modify: `wrangler.jsonc` only as required for an isolated candidate/production routing contract
 - Modify package scripts only if required
 - Add deployment documentation/handoff
 
 **Interfaces:**
+
 - Consumes GitHub secret `CLOUDFLARE_API_TOKEN` and account identifier variable/secret.
 - Uses `STAGING_DATABASE_URL` or deployment-specific database secret without exposing it.
 
@@ -695,6 +719,7 @@ and Public AI if enabled.
 ### Task 16: Public-site final handoff and resume app.mkety.com
 
 **Files:**
+
 - Update: `docs/MKETY_DEVELOPMENT_CONTINUATION.md`
 - Create/update: `docs/HANDOFF_MKETY_PUBLIC_SITE_2026-09-08.md` (use actual completion date if later)
 

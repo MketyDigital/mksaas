@@ -17,19 +17,25 @@ When an older document conflicts with `AGENTS.md` or the latest dated handoff, t
 | Document | Purpose |
 | --- | --- |
 | [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
-| [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Current PR #24 release gate and operational blockers |
+| [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Current release-gate and Platform continuation boundary |
 | [`MKETY_PUBLIC_CUTOVER_RUNBOOK.md`](./MKETY_PUBLIC_CUTOVER_RUNBOOK.md) | Production `mkety.com` cutover and rollback procedure |
 | [`MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`](./MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md) | Current commercial/product presentation contract |
-
-Stack-specific handoffs that exist only on downstream feature branches are not linked here as if they were present on this branch. For Auth, Billing, and later stack work, use the relevant pull request together with `AGENTS.md`, the latest dated handoff, and the active branch plan/spec.
+| [`MKETY_AUTH_SOURCE_OF_TRUTH.md`](./MKETY_AUTH_SOURCE_OF_TRUTH.md) | Provider-neutral Mkety Auth boundary and ZITADEL adapter model |
+| [`HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`](./HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md) | Current Auth/ZITADEL/Cloudflare preview evidence and promotion gates |
 
 ## Current implementation plans and specs
 
-Active public-site work is rooted in:
+The production public-site baseline is rooted in:
 
 - `docs/superpowers/plans/2026-09-08-mkety-public-site-production.md`
 - `docs/superpowers/plans/2026-09-10-mkety-release-gate-finish.md`
 - `docs/superpowers/specs/2026-09-09-mkety-public-app-visual-contract.md`
+
+The current Auth implementation is rooted in:
+
+- `docs/superpowers/specs/2026-09-06-mkety-auth-zitadel-cloudflare-design.md`
+- `docs/superpowers/plans/2026-09-06-mkety-auth-zitadel-vinext.md`
+- `docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`
 
 The Platform promotion stack remains ordered:
 

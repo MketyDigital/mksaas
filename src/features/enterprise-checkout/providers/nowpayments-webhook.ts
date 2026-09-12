@@ -45,13 +45,9 @@ export async function verifyNowPaymentsWebhook(
   const payload = JSON.parse(rawBody) as Record<string, unknown>;
   const canonicalBody = JSON.stringify(sortJsonValue(payload));
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-512' },
-    false,
-    ['sign'],
-  );
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, [
+    'sign',
+  ]);
   const expectedBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(canonicalBody));
   const expected = new Uint8Array(expectedBuffer);
   const received = hexToBytes(signature);

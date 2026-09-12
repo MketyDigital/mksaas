@@ -1,5 +1,5 @@
 /**
- * Preview GitHub organization members and their mapping to Next.js SaaS AI Template persons.
+ * Preview GitHub organization members and their mapping to Mkety Platform persons.
  * GET /api/tenants/[tenant]/admin/integrations/github/org-members?org=my-org
  */
 

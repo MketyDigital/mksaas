@@ -13,14 +13,17 @@ export function MketyPricingPlans({ plans }: { plans: PlatformPricingPlanInput[]
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Published Mkety plans</p>
           <h2 className="mt-3 text-3xl font-bold md:text-4xl">Choose the access level that fits your work.</h2>
           <p className="mt-4 text-muted-foreground">
-            Plans define commercial access and included capabilities. Usage, credits and specialized enterprise work remain controlled by the applicable plan and entitlement.
+            Plans define commercial access and included capabilities. Usage, credits and specialized enterprise work
+            remain controlled by the applicable plan and entitlement.
           </p>
         </div>
         <div className="mt-10 grid gap-6 md:grid-cols-3">
           {plans.map((plan) => (
             <Card key={plan.key} className={plan.highlighted ? 'rounded-2xl border-primary shadow-lg' : 'rounded-2xl'}>
               <CardHeader>
-                <CardTitle><h3>{plan.name}</h3></CardTitle>
+                <CardTitle>
+                  <h3>{plan.name}</h3>
+                </CardTitle>
                 <p className="text-2xl font-bold">{plan.priceLabel}</p>
                 {plan.billingLabel ? <CardDescription>{plan.billingLabel}</CardDescription> : null}
                 <CardDescription>{plan.description}</CardDescription>

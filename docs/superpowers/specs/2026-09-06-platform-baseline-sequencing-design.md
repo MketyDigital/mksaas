@@ -1,9 +1,11 @@
 # Mkety Platform Baseline Sequencing Design
 
 ## Status
+
 Approved implementation sequence for September 2026.
 
 ## Objective
+
 Move faster without allowing parallel feature work, deployment experiments, legacy template artifacts, or migration conflicts to fragment the Mkety architecture.
 
 ## Authoritative execution order

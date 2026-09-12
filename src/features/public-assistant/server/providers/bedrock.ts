@@ -14,13 +14,7 @@ function toHex(value: Uint8Array) {
 }
 
 async function hmac(key: string | Uint8Array, value: string): Promise<Uint8Array<ArrayBuffer>> {
-  const imported = await crypto.subtle.importKey(
-    'raw',
-    bytes(key),
-    { hash: 'SHA-256', name: 'HMAC' },
-    false,
-    ['sign'],
-  );
+  const imported = await crypto.subtle.importKey('raw', bytes(key), { hash: 'SHA-256', name: 'HMAC' }, false, ['sign']);
   return new Uint8Array(await crypto.subtle.sign('HMAC', imported, bytes(value)));
 }
 
@@ -53,14 +47,7 @@ async function buildBedrockHeaders(input: {
 
   const canonicalHeaders = headerPairs.map(([name, value]) => `${name}:${value.trim()}\n`).join('');
   const signedHeaders = headerPairs.map(([name]) => name).join(';');
-  const canonicalRequest = [
-    'POST',
-    input.path,
-    '',
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join('\n');
+  const canonicalRequest = ['POST', input.path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const scope = `${dateStamp}/${input.region}/bedrock/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${toHex(await sha256(canonicalRequest))}`;
 
@@ -86,12 +73,14 @@ function extractBedrockText(payload: Record<string, unknown>) {
   const message = (output as { message?: unknown }).message;
   if (!message || typeof message !== 'object') return '';
   const content = Array.isArray((message as { content?: unknown }).content)
-    ? ((message as { content: unknown[] }).content)
+    ? (message as { content: unknown[] }).content
     : [];
   return content
-    .map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
-      ? (part as { text: string }).text
-      : ''))
+    .map((part) =>
+      part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+        ? (part as { text: string }).text
+        : '',
+    )
     .join('\n')
     .trim();
 }
@@ -133,7 +122,9 @@ export function createBedrockPublicAdapter(input: {
         signal: request.signal,
       });
       const payload = await readProviderJson(response);
-      const usage = payload.usage as { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown } | undefined;
+      const usage = payload.usage as
+        | { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown }
+        | undefined;
       return {
         text: extractBedrockText(payload),
         usage: usage

@@ -6,22 +6,22 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/mkety-content-db-smoke.yml"
-      - "migrations/0000_platform_content.sql"
-      - "migrations/0001_platform_app_experience.sql"
-      - "migrations/0002_public_ai_memory.sql"
-      - "migrations/0003_platform_enterprise_orders.sql"
-      - "scripts/migrate-mkety-platform-content.ts"
-      - "scripts/seed-mkety-platform-content.ts"
-      - "scripts/smoke-mkety-platform-content.ts"
-      - "src/features/platform-content/**"
-      - "src/features/platform-app-experience/**"
-      - "src/features/enterprise-checkout/**"
-      - "src/shared/db/schema/platform-content.ts"
-      - "src/shared/db/schema/platform-app-experience.ts"
-      - "src/shared/db/schema/platform-enterprise-orders.ts"
-      - "package.json"
-      - "pnpm-lock.yaml"
+      - '.github/workflows/mkety-content-db-smoke.yml'
+      - 'migrations/0000_platform_content.sql'
+      - 'migrations/0001_platform_app_experience.sql'
+      - 'migrations/0002_public_ai_memory.sql'
+      - 'migrations/0003_platform_enterprise_orders.sql'
+      - 'scripts/migrate-mkety-platform-content.ts'
+      - 'scripts/seed-mkety-platform-content.ts'
+      - 'scripts/smoke-mkety-platform-content.ts'
+      - 'src/features/platform-content/**'
+      - 'src/features/platform-app-experience/**'
+      - 'src/features/enterprise-checkout/**'
+      - 'src/shared/db/schema/platform-content.ts'
+      - 'src/shared/db/schema/platform-app-experience.ts'
+      - 'src/shared/db/schema/platform-enterprise-orders.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 20
     env:
       DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      SKIP_ENV_VALIDATION: "true"
+      SKIP_ENV_VALIDATION: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

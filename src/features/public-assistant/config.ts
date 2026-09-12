@@ -1,8 +1,4 @@
-import {
-  assertCurrentPublicAIModel,
-  getDefaultPublicAIModel,
-  type PublicAIProviderId,
-} from './models';
+import { assertCurrentPublicAIModel, getDefaultPublicAIModel, type PublicAIProviderId } from './models';
 
 export type PublicAssistantProvider = PublicAIProviderId;
 
@@ -62,9 +58,7 @@ function parseProvider(value: string | undefined, fallback: PublicAIProviderId):
   return value;
 }
 
-export function parsePublicAIProviderConfig(
-  environment: PublicAssistantEnvironment,
-): PublicAIProviderConfig {
+export function parsePublicAIProviderConfig(environment: PublicAssistantEnvironment): PublicAIProviderConfig {
   const primaryProvider = parseProvider(
     environment.MKETY_PUBLIC_AI_PRIMARY_PROVIDER ?? environment.MKETY_PUBLIC_AI_PROVIDER,
     'openai',
@@ -87,43 +81,36 @@ export function parsePublicAIProviderConfig(
   };
 }
 
-function hasProviderCredential(
-  provider: PublicAIProviderId,
-  environment: PublicAssistantEnvironment,
-): boolean {
+function hasProviderCredential(provider: PublicAIProviderId, environment: PublicAssistantEnvironment): boolean {
   switch (provider) {
     case 'openai':
       return Boolean(environment.MKETY_PUBLIC_OPENAI_API_KEY ?? environment.OPENAI_API_KEY);
     case 'azure-openai':
       return Boolean(
         environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY &&
-          environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT &&
-          environment.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT,
+        environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT &&
+        environment.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT,
       );
     case 'gemini':
       return Boolean(environment.MKETY_PUBLIC_GEMINI_API_KEY);
     case 'vertex':
       return Boolean(
         environment.MKETY_PUBLIC_VERTEX_PROJECT_ID &&
-          environment.MKETY_PUBLIC_VERTEX_LOCATION &&
-          environment.MKETY_PUBLIC_VERTEX_ACCESS_TOKEN,
+        environment.MKETY_PUBLIC_VERTEX_LOCATION &&
+        environment.MKETY_PUBLIC_VERTEX_ACCESS_TOKEN,
       );
     case 'cloudflare-ai':
       return Boolean(
-        environment.MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID &&
-          environment.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN,
+        environment.MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID && environment.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN,
       );
     case 'bedrock':
       return Boolean(
-        environment.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID &&
-          environment.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY,
+        environment.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID && environment.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY,
       );
   }
 }
 
-export function getPublicAssistantLaunchState(
-  environment: PublicAssistantEnvironment,
-): PublicAssistantLaunchState {
+export function getPublicAssistantLaunchState(environment: PublicAssistantEnvironment): PublicAssistantLaunchState {
   if (environment.MKETY_PUBLIC_AI_ENABLED !== 'true') {
     return { enabled: false, reason: 'disabled' };
   }

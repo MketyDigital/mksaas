@@ -24,11 +24,13 @@
 ### Task 1: Repair public release CI blockers
 
 **Files:**
+
 - Modify: `.github/workflows/mkety-public-candidate-route-diagnostic.yml`
 - Modify: `.mega-linter.yml`
 - Modify: `cspell.json`
 
 **Interfaces:**
+
 - Consumes: PR #24 release workflows and candidate HTML.
 - Produces: valid workflow syntax and narrowly scoped static-analysis behavior.
 
@@ -42,9 +44,11 @@
 ### Task 2: Make database smoke failures diagnosable and preserve the contract
 
 **Files:**
+
 - Modify: `.github/workflows/mkety-content-db-smoke.yml`
 
 **Interfaces:**
+
 - Consumes: staging `DATABASE_URL` through `STAGING_DATABASE_URL`.
 - Produces: blocking migration/seed/smoke status plus an always-uploaded diagnostic log.
 
@@ -56,10 +60,12 @@
 ### Task 3: Harden the connected PostgreSQL security boundary
 
 **Files:**
+
 - Create: `migrations/0008_harden_rls_auto_enable.sql`
 - Modify: `scripts/migrate-mkety-platform-content.ts`
 
 **Interfaces:**
+
 - Consumes: existing `public.rls_auto_enable()` event-trigger helper.
 - Produces: internal-only EXECUTE permissions while preserving automatic RLS enablement on DDL.
 
@@ -74,11 +80,13 @@
 ### Task 4: Reconcile active documentation
 
 **Files:**
+
 - Modify: `docs/README.md`
 - Create: `docs/MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`
 - Create: `docs/superpowers/plans/2026-09-10-mkety-release-gate-finish.md`
 
 **Interfaces:**
+
 - Consumes: `AGENTS.md`, continuation roadmap, active PRs, and fresh release evidence.
 - Produces: an unambiguous current source-of-truth index and dated operational handoff.
 
@@ -91,9 +99,11 @@
 ### Task 5: Verify and promote the public-site branch
 
 **Files:**
+
 - Verify only unless a fresh failure identifies a root-cause file.
 
 **Interfaces:**
+
 - Consumes: exact final PR #24 head SHA.
 - Produces: merge eligibility based on immutable evidence.
 
@@ -105,9 +115,11 @@
 ### Task 6: Resume the ordered Platform stack
 
 **Files:**
+
 - Branch/PR-specific; do not flatten the stack.
 
 **Interfaces:**
+
 - Consumes: promoted public-site/main ancestry and verified prerequisite PR head.
 - Produces: revalidated Auth → Webhooks → Billing → Entitlements → Usage/Credits ancestry.
 

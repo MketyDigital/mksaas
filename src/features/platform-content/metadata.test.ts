@@ -1,5 +1,5 @@
-import type { PlatformSiteSettingsInput } from './schemas';
 import { buildMketyMetadata, MKETY_PUBLIC_ORIGIN } from './metadata';
+import type { PlatformSiteSettingsInput } from './schemas';
 
 const settings: PlatformSiteSettingsInput = {
   brandName: 'Mkety',

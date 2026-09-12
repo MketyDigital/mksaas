@@ -1,5 +1,5 @@
-import { formatUsdMinorUnits } from '../domain';
 import type { EnterpriseCheckoutProviderAdapter } from './types';
+import { formatUsdMinorUnits } from '../domain';
 
 interface CreateSelarAdapterOptions {
   checkoutUrl?: string;

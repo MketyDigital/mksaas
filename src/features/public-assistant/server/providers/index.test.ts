@@ -1,18 +1,15 @@
-import { createPublicAIProviderAdapters } from './index';
 import { createOpenAIPublicAdapter } from './openai';
+import { createPublicAIProviderAdapters } from './index';
 
 // Candidate verification marker: exercises the unchanged Public AI provider contract in CI.
 describe('Public Mkety AI provider adapter factory', () => {
   it('builds only configured public-specific providers in requested order', () => {
-    const adapters = createPublicAIProviderAdapters(
-      ['gemini', 'openai', 'cloudflare-ai'],
-      {
-        MKETY_PUBLIC_GEMINI_API_KEY: 'gemini-key',
-        MKETY_PUBLIC_OPENAI_API_KEY: 'openai-key',
-        MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID: 'account',
-        MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN: 'cf-token',
-      },
-    );
+    const adapters = createPublicAIProviderAdapters(['gemini', 'openai', 'cloudflare-ai'], {
+      MKETY_PUBLIC_GEMINI_API_KEY: 'gemini-key',
+      MKETY_PUBLIC_OPENAI_API_KEY: 'openai-key',
+      MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID: 'account',
+      MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN: 'cf-token',
+    });
 
     expect(adapters.map((adapter) => adapter.id)).toEqual(['gemini', 'openai', 'cloudflare-ai']);
   });

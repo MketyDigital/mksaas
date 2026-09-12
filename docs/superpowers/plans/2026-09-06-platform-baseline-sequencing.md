@@ -25,10 +25,12 @@
 ### Task 1: Publish the sequencing rule as repository guidance
 
 **Files:**
+
 - Modify: `AGENTS.md`
 - Reference: `docs/superpowers/specs/2026-09-06-platform-baseline-sequencing-design.md`
 
 **Interfaces:**
+
 - Consumes: existing `AGENTS.md` architectural authority.
 - Produces: a short `Current Execution Gate` section that future agents cannot miss.
 
@@ -54,11 +56,13 @@ git commit -m "docs: establish platform baseline execution gate"
 ### Task 2: Finish and verify Mkety Auth PR #16
 
 **Files:**
+
 - Modify as required in: `src/shared/lib/auth*`, auth route handlers, auth repository/service/provider modules, `src/shared/db/schema/mkety-auth.ts`, `src/shared/db/migrations/0009_mkety_auth.sql`, auth tests, `.env.example`
 - Remove/replace: active Auth.js/NextAuth/Auth0 application paths
 - Update: `docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`
 
 **Interfaces:**
+
 - Consumes: Mkety users, external identities, memberships, roles/permissions, OIDC provider adapter.
 - Produces: provider-neutral Mkety session and authorization API for all Platform routes.
 
@@ -121,10 +125,12 @@ git commit -m "feat: complete Mkety auth baseline"
 ### Task 3: Make the frontend continuously deployable to Cloudflare preview
 
 **Files:**
+
 - Modify/create as required: `wrangler.toml`/`wrangler.jsonc`, OpenNext/vinext config, package scripts, GitHub Actions preview workflow, deployment docs
 - Update: `docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`
 
 **Interfaces:**
+
 - Consumes: green application build and Mkety Auth configuration.
 - Produces: repeatable non-production Worker preview URL for public and authenticated frontend testing.
 
@@ -169,10 +175,12 @@ git commit -m "ci: establish Cloudflare frontend preview baseline"
 ### Task 4: Establish one migration and runtime baseline
 
 **Files:**
+
 - Inspect/modify: `src/shared/db/migrations/*`, root `migrations/*`, Drizzle config, migration scripts, Cloudflare runtime configs, deployment docs
 - Create: migration-order regression/check script if none exists
 
 **Interfaces:**
+
 - Consumes: merged Auth migration and existing CMS/content migration mechanisms.
 - Produces: unique deterministic migration history and explicit current-vs-target runtime contract.
 
@@ -214,11 +222,13 @@ git commit -m "chore: establish migration and runtime baseline"
 ### Task 5: Rebase and secure Automation Webhooks PR #15
 
 **Files:**
+
 - Rebase/modify: webhook branch
 - Renumber: `src/shared/db/migrations/0009_automation_webhook_trigger.sql` to the next valid migration sequence
 - Modify/test: `webhook-secret-crypto.ts`, `webhook-secret-crypto.test.ts`, webhook ingress/security/execution modules as needed
 
 **Interfaces:**
+
 - Consumes: clean post-Auth migration/runtime baseline and shared workflow execution service.
 - Produces: secure webhook ingress with persisted endpoints/deliveries and shared execution semantics.
 
@@ -275,10 +285,12 @@ git commit -m "feat: secure automation webhook baseline"
 ### Task 6: Deep repository cleansing
 
 **Files:**
+
 - Search/modify/remove across docs, workflows, package configuration, auth/setup guides, and stale template surfaces
 - Update authoritative docs as necessary
 
 **Interfaces:**
+
 - Consumes: clean Auth/Webhook/runtime baseline.
 - Produces: repository where current documentation and code do not point future engineers/agents toward obsolete architecture.
 
@@ -324,10 +336,12 @@ git commit -m "chore: cleanse legacy platform architecture"
 ### Task 7: Baseline verification and handoff
 
 **Files:**
+
 - Update: approved handoff/status docs
 - No product feature additions
 
 **Interfaces:**
+
 - Consumes: Tasks 1-6.
 - Produces: one promotion-ready baseline and explicit next Platform milestone.
 

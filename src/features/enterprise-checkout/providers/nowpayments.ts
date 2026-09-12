@@ -1,5 +1,5 @@
-import { formatUsdMinorUnits } from '../domain';
 import type { EnterpriseCheckoutProviderAdapter, ProviderCheckoutInput } from './types';
+import { formatUsdMinorUnits } from '../domain';
 
 interface CreateNowPaymentsAdapterOptions {
   apiKey?: string;

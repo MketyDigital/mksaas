@@ -15,12 +15,39 @@ describe('Mkety documented public commercial presentation', () => {
       'enterprise',
     ]);
 
-    expect(pricingByKey.get('starter')).toMatchObject({ name: 'Starter', priceLabel: '$5.99', billingLabel: '/ month', highlighted: false });
-    expect(pricingByKey.get('ai-workspace')).toMatchObject({ name: 'AI Workspace', priceLabel: '$16.99', billingLabel: '/ month' });
-    expect(pricingByKey.get('automation-workspace')).toMatchObject({ name: 'Automation Workspace', priceLabel: '$16.99', billingLabel: '/ month' });
-    expect(pricingByKey.get('deploy-workspace')).toMatchObject({ name: 'Deploy Workspace', priceLabel: '$9.99', billingLabel: '/ month' });
-    expect(pricingByKey.get('mkety-one')).toMatchObject({ name: 'Mkety One', priceLabel: '$49', billingLabel: '/ month', highlighted: true });
-    expect(pricingByKey.get('enterprise')).toMatchObject({ name: 'Enterprise', priceLabel: 'Custom', highlighted: false, ctaHref: '/enterprise' });
+    expect(pricingByKey.get('starter')).toMatchObject({
+      name: 'Starter',
+      priceLabel: '$5.99',
+      billingLabel: '/ month',
+      highlighted: false,
+    });
+    expect(pricingByKey.get('ai-workspace')).toMatchObject({
+      name: 'AI Workspace',
+      priceLabel: '$16.99',
+      billingLabel: '/ month',
+    });
+    expect(pricingByKey.get('automation-workspace')).toMatchObject({
+      name: 'Automation Workspace',
+      priceLabel: '$16.99',
+      billingLabel: '/ month',
+    });
+    expect(pricingByKey.get('deploy-workspace')).toMatchObject({
+      name: 'Deploy Workspace',
+      priceLabel: '$9.99',
+      billingLabel: '/ month',
+    });
+    expect(pricingByKey.get('mkety-one')).toMatchObject({
+      name: 'Mkety One',
+      priceLabel: '$49',
+      billingLabel: '/ month',
+      highlighted: true,
+    });
+    expect(pricingByKey.get('enterprise')).toMatchObject({
+      name: 'Enterprise',
+      priceLabel: 'Custom',
+      highlighted: false,
+      ctaHref: '/enterprise',
+    });
 
     const obsoletePlanIdentities = new Set(['growth', 'pro', 'business']);
     for (const plan of defaultPricingPlans) {
@@ -39,7 +66,8 @@ describe('Mkety documented public commercial presentation', () => {
   it('keeps Trading visible but sends new buyers through Enterprise first', () => {
     expect(workspaceByKey.get('ai')).toMatchObject({
       title: 'AI Workspace',
-      description: 'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
+      description:
+        'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
     });
     expect(workspaceByKey.get('automation')).toMatchObject({
       title: 'Automation Workspace',
@@ -47,11 +75,13 @@ describe('Mkety documented public commercial presentation', () => {
     });
     expect(workspaceByKey.get('deploy')).toMatchObject({
       title: 'Deploy Workspace',
-      description: 'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
+      description:
+        'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
     });
     expect(workspaceByKey.get('trading')).toMatchObject({
       title: 'Trading Workspace',
-      description: 'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
+      description:
+        'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
       badge: 'Custom / Enterprise',
       href: '/enterprise',
     });

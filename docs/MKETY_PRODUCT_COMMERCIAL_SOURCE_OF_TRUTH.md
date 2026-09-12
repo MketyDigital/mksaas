@@ -17,14 +17,14 @@ There is no Growth, Pro, or Business public Mkety plan. Those names are obsolete
 
 Current public commercial entries:
 
-| Product | Public price | Commercial boundary |
-| --- | --- | --- |
-| Starter | $5.99 / month | Entry Mkety Platform plan |
-| AI Workspace | $16.99 / month | Individual self-service Workspace |
-| Automation Workspace | $16.99 / month | Individual self-service Workspace |
-| Deploy Workspace | $9.99 / month | Individual self-service Workspace |
-| Mkety One | $49 / month | Starter + AI + Automation + Deploy bundle |
-| Enterprise | Custom | Specialized/custom delivery |
+| Product              | Public price   | Commercial boundary                       |
+| -------------------- | -------------- | ----------------------------------------- |
+| Starter              | $5.99 / month  | Entry Mkety Platform plan                 |
+| AI Workspace         | $16.99 / month | Individual self-service Workspace         |
+| Automation Workspace | $16.99 / month | Individual self-service Workspace         |
+| Deploy Workspace     | $9.99 / month  | Individual self-service Workspace         |
+| Mkety One            | $49 / month    | Starter + AI + Automation + Deploy bundle |
+| Enterprise           | Custom         | Specialized/custom delivery               |
 
 Legacy current-site evidence also contains a `$490/year` Mkety One annual value. Do not publish or implement annual billing from that evidence alone unless the active billing/product contract explicitly adopts annual Mkety One in the current Platform implementation.
 

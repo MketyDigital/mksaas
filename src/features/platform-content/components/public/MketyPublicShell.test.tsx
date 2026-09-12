@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 
-import { defaultFooterGroups, defaultPlatformNavigation, defaultPlatformSiteSettings } from '../../defaults';
 import { MketyPublicShell } from './MketyPublicShell';
+import { defaultFooterGroups, defaultPlatformNavigation, defaultPlatformSiteSettings } from '../../defaults';
 
 describe('MketyPublicShell', () => {
   it('renders consistent public navigation, CTAs and legal destinations', () => {

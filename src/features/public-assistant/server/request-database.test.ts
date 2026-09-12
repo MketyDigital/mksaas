@@ -4,10 +4,7 @@ const firstEnd = jest.fn().mockResolvedValue(undefined);
 const secondEnd = jest.fn().mockResolvedValue(undefined);
 const firstClient = Object.assign(jest.fn(), { end: firstEnd });
 const secondClient = Object.assign(jest.fn(), { end: secondEnd });
-const mockPostgres = jest
-  .fn()
-  .mockReturnValueOnce(firstClient)
-  .mockReturnValueOnce(secondClient);
+const mockPostgres = jest.fn().mockReturnValueOnce(firstClient).mockReturnValueOnce(secondClient);
 const firstDb = { request: 1 };
 const secondDb = { request: 2 };
 const mockDrizzle = jest.fn().mockReturnValueOnce(firstDb).mockReturnValueOnce(secondDb);

@@ -449,7 +449,7 @@ export async function sendTestWebhook(
       timestamp: new Date().toISOString(),
       tenant: tenantSlug,
       data: {
-        message: 'This is a test webhook from Next.js SaaS AI Template',
+        message: 'This is a test webhook from Mkety Platform',
         sentAt: new Date().toISOString(),
       },
     };

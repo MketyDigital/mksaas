@@ -24,13 +24,14 @@ export function createOpenAIPublicAdapter(apiKey: string): PublicAIProviderAdapt
       return {
         text: extractOpenAIResponseText(payload),
         providerRequestId: response.headers.get('x-request-id') ?? undefined,
-        usage: typeof payload.usage === 'object' && payload.usage
-          ? {
-              inputTokens: Number((payload.usage as { input_tokens?: unknown }).input_tokens) || undefined,
-              outputTokens: Number((payload.usage as { output_tokens?: unknown }).output_tokens) || undefined,
-              totalTokens: Number((payload.usage as { total_tokens?: unknown }).total_tokens) || undefined,
-            }
-          : undefined,
+        usage:
+          typeof payload.usage === 'object' && payload.usage
+            ? {
+                inputTokens: Number((payload.usage as { input_tokens?: unknown }).input_tokens) || undefined,
+                outputTokens: Number((payload.usage as { output_tokens?: unknown }).output_tokens) || undefined,
+                totalTokens: Number((payload.usage as { total_tokens?: unknown }).total_tokens) || undefined,
+              }
+            : undefined,
       };
     },
   };

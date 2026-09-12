@@ -15,11 +15,7 @@ export interface PublishedPublicPageSeo {
 export async function getPublishedPublicPageSeo(slug: string): Promise<PublishedPublicPageSeo | null> {
   try {
     const row = await db.query.platformPages.findFirst({
-      where: and(
-        eq(platformPages.slug, slug),
-        eq(platformPages.status, PUBLISHED),
-        eq(platformPages.enabled, true),
-      ),
+      where: and(eq(platformPages.slug, slug), eq(platformPages.status, PUBLISHED), eq(platformPages.enabled, true)),
       columns: {
         slug: true,
         title: true,

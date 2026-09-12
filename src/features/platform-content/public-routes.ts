@@ -21,9 +21,7 @@ export const MKETY_PUBLIC_ROUTES = [
   { path: '/contact', key: 'contact', label: 'Contact', sitemap: true, priority: 0.5 },
 ] as const satisfies readonly MketyPublicRoute[];
 
-const PUBLIC_SITEMAP_PATHS = new Set(
-  MKETY_PUBLIC_ROUTES.filter((route) => route.sitemap).map((route) => route.path),
-);
+const PUBLIC_SITEMAP_PATHS = new Set(MKETY_PUBLIC_ROUTES.filter((route) => route.sitemap).map((route) => route.path));
 
 export function isMketyPublicSitemapPath(path: string) {
   return PUBLIC_SITEMAP_PATHS.has(path as (typeof MKETY_PUBLIC_ROUTES)[number]['path']);

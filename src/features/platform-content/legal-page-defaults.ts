@@ -17,9 +17,22 @@ export const MKETY_LEGAL_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'Depending on how you use Mkety, information can include account and organization details, content you submit, configuration data, service usage, security and audit events, and technical request information needed to operate and protect the service.',
         items: [
-          { key: 'account', title: 'Account and organization data', description: 'Identity, membership and workspace information needed to provide authenticated services.' },
-          { key: 'content', title: 'Submitted content', description: 'Content, configuration and files you intentionally provide to product features.' },
-          { key: 'operations', title: 'Operational data', description: 'Usage, security, audit and technical events required to operate, troubleshoot and protect Mkety.' },
+          {
+            key: 'account',
+            title: 'Account and organization data',
+            description: 'Identity, membership and workspace information needed to provide authenticated services.',
+          },
+          {
+            key: 'content',
+            title: 'Submitted content',
+            description: 'Content, configuration and files you intentionally provide to product features.',
+          },
+          {
+            key: 'operations',
+            title: 'Operational data',
+            description:
+              'Usage, security, audit and technical events required to operate, troubleshoot and protect Mkety.',
+          },
         ],
       },
       {
@@ -48,9 +61,22 @@ export const MKETY_LEGAL_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'You are responsible for the content, credentials and instructions you provide, and for keeping access credentials secure. You must not attempt to bypass tenant isolation, authorization, rate limits, security controls or usage restrictions.',
         items: [
-          { key: 'access', title: 'Authorized access', description: 'Use only the organizations, projects, workspaces and services you are authorized to access.' },
-          { key: 'security', title: 'Security', description: 'Do not probe, disrupt or circumvent Mkety security and isolation controls.' },
-          { key: 'commercial', title: 'Commercial terms', description: 'Plans, usage, credits, billing and enterprise arrangements are governed by the applicable offer and backend records.' },
+          {
+            key: 'access',
+            title: 'Authorized access',
+            description: 'Use only the organizations, projects, workspaces and services you are authorized to access.',
+          },
+          {
+            key: 'security',
+            title: 'Security',
+            description: 'Do not probe, disrupt or circumvent Mkety security and isolation controls.',
+          },
+          {
+            key: 'commercial',
+            title: 'Commercial terms',
+            description:
+              'Plans, usage, credits, billing and enterprise arrangements are governed by the applicable offer and backend records.',
+          },
         ],
       },
       {

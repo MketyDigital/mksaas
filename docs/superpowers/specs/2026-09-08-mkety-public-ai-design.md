@@ -17,6 +17,7 @@ The visitor sees one assistant and never selects a model or provider. Internally
 Location: `mkety.com`
 
 Purpose:
+
 - answer questions about Mkety;
 - explain Mkety Platform, Academy, Enterprise and Solutions;
 - explain public plans, pricing concepts and product boundaries;
@@ -36,6 +37,7 @@ Platform AI continues to own tenant/project agents, model selection, tenant know
 ### Hard isolation rule
 
 Public Mkety AI must never silently inherit or import:
+
 - tenant agent memory;
 - tenant/project knowledge;
 - tenant tools or integrations;
@@ -92,6 +94,7 @@ export interface PublicAIProviderAdapter {
 ```
 
 Supported provider IDs for the architecture:
+
 - `openai`
 - `azure-openai`
 - `gemini`
@@ -104,6 +107,7 @@ Adapters must live inside the public-assistant feature boundary. They must not r
 ### Configuration
 
 The public gateway reads public-specific configuration such as:
+
 - `MKETY_PUBLIC_AI_ENABLED`
 - `MKETY_PUBLIC_AI_PRIMARY_PROVIDER`
 - `MKETY_PUBLIC_AI_FALLBACK_PROVIDERS`
@@ -128,6 +132,7 @@ No dynamic autonomous provider marketplace/ranking system is required for launch
 Public Mkety AI must know Mkety through an approved public knowledge boundary.
 
 Allowed sources:
+
 - published Mkety CMS pages;
 - published docs categories/articles;
 - published navigation and product content;
@@ -136,6 +141,7 @@ Allowed sources:
 - explicitly approved public help material.
 
 Disallowed sources:
+
 - unpublished CMS drafts;
 - admin-only revisions;
 - tenant/project data;
@@ -157,23 +163,29 @@ Public Mkety AI has tools from day one, but only informational/support tools.
 Approved initial tool categories:
 
 ### `search_public_docs`
+
 Search published Mkety documentation and return relevant articles/sections.
 
 ### `search_public_site`
+
 Search approved public pages/CMS content for current product and company information.
 
 ### `get_public_pricing`
+
 Retrieve current published plans/pricing/feature presentation without inventing unavailable entitlements.
 
 ### `resolve_public_route`
+
 Return the correct canonical public Mkety route for a requested destination or task.
 
 ### `get_public_product_summary`
+
 Return a bounded summary for Platform, Workspaces, SolutionHub, Academy, Enterprise, Trading-as-Custom/Enterprise and other approved public categories.
 
 These are read-only support tools. They may query only public-approved Mkety content.
 
 Explicitly excluded from the public assistant at this stage:
+
 - account mutation;
 - payments;
 - subscription changes;
@@ -196,6 +208,7 @@ The public assistant remembers visitors across future visits on the same browser
 Use a random opaque anonymous visitor ID stored in a secure browser cookie. The identifier must not encode email, IP address, account ID, tenant ID or other personal data.
 
 Cookie properties:
+
 - `HttpOnly` where server ownership permits;
 - `Secure` in production;
 - `SameSite=Lax` or stricter;
@@ -221,6 +234,7 @@ Exact schema naming may follow existing repo conventions, but tables must be cle
 The assistant restores recent conversation history for the anonymous visitor and can continue prior support conversations across browser visits.
 
 The UI provides:
+
 - reopen/recent conversation behavior;
 - `New chat`;
 - a way to clear/delete public AI history for the browser identity.
@@ -228,6 +242,7 @@ The UI provides:
 ### Long-term support memory
 
 `public_ai_memory_facts` may contain only bounded support-relevant facts derived from the visitor's own public-assistant conversation, for example:
+
 - interests such as Academy vs Platform;
 - the product/workspace they were asking about;
 - onboarding stage;
@@ -289,6 +304,7 @@ This avoids creating two conflicting Mkety brands while preventing the dangerous
 Public Mkety AI should behave as a knowledgeable Mkety website support agent.
 
 It should:
+
 - know Mkety's product hierarchy;
 - understand that Mkety is broader than AI;
 - distinguish Platform, Academy and Enterprise;
@@ -301,6 +317,7 @@ It should:
 - clearly state uncertainty when public information is missing.
 
 It must not:
+
 - claim access to a visitor's Platform account unless such access is deliberately added later with explicit authentication/authorization;
 - expose or infer private tenant data;
 - invent pricing, certifications, SLAs or product capabilities;
@@ -330,6 +347,7 @@ Input and output contracts must be schema validated.
 ## 12. Security and Abuse Controls
 
 Required from launch:
+
 - strict request schema validation;
 - message/input size bounds;
 - bounded history context;
@@ -354,6 +372,7 @@ Prompt text alone is not considered a security boundary. Authorization and data 
 ## 13. Observability
 
 Record provider-neutral operational metadata such as:
+
 - request ID;
 - conversation ID;
 - provider adapter ID;
@@ -374,6 +393,7 @@ The UI should not show provider/model routing details unless Mkety deliberately 
 The public site has one branded Mkety AI experience.
 
 Recommended interaction:
+
 - compact launcher integrated into the public Mkety shell;
 - opens a polished chat panel/drawer appropriate to the existing mksaas design language;
 - welcome copy explaining it can answer questions about Mkety;
@@ -404,6 +424,7 @@ Public AI persistence must not introduce Supabase Auth. ZITADEL + Mkety auth rem
 Public Mkety AI is part of the mkety.com launch gate, not a deferred follow-up.
 
 The isolated Cloudflare candidate must prove:
+
 - public AI configuration is present;
 - at least one real provider adapter is healthy;
 - `/api/public/assistant` returns a grounded Mkety response;
@@ -430,6 +451,7 @@ This preserves the multi-provider architecture without weakening the launch by p
 Use TDD for the implementation.
 
 Minimum automated coverage:
+
 - provider configuration parsing;
 - provider adapter selection;
 - fallback order and retryable/non-retryable failure behavior;
@@ -451,6 +473,7 @@ Minimum automated coverage:
 ## 19. Non-Goals for This Public-AI Launch
 
 The following are not required to satisfy this design:
+
 - exposing provider/model choice to website visitors;
 - turning the public assistant into Agent Builder;
 - arbitrary third-party connectors;

@@ -25,14 +25,24 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
   return (
     <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
       <div className="container mx-auto flex min-h-16 items-center justify-between gap-3 px-4">
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-bold tracking-tight" aria-label={settings.brandName}>
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground" aria-hidden="true">
+        <Link
+          href="/"
+          className="flex shrink-0 items-center gap-2 font-bold tracking-tight"
+          aria-label={settings.brandName}
+        >
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+            aria-hidden="true"
+          >
             M
           </span>
           <span>{settings.brandName}</span>
         </Link>
 
-        <nav aria-label="Primary navigation" className="hidden items-center gap-5 text-sm font-medium text-muted-foreground lg:flex">
+        <nav
+          aria-label="Primary navigation"
+          className="hidden items-center gap-5 text-sm font-medium text-muted-foreground lg:flex"
+        >
           {headerItems.map((item) => (
             <PublicNavLink
               key={`${item.label}-${item.href}`}

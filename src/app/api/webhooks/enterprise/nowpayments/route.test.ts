@@ -29,9 +29,7 @@ describe('POST /api/webhooks/enterprise/nowpayments', () => {
   });
 
   it('fails closed when verification rejects the signature', async () => {
-    mockVerifyNowPaymentsWebhook.mockRejectedValue(
-      new Error('Invalid NOWPayments signature.'),
-    );
+    mockVerifyNowPaymentsWebhook.mockRejectedValue(new Error('Invalid NOWPayments signature.'));
     const response = await POST(
       new Request('https://mkety.com/api/webhooks/enterprise/nowpayments', {
         method: 'POST',

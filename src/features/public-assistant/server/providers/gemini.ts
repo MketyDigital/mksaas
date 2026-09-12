@@ -7,13 +7,13 @@ function extractGeminiText(payload: Record<string, unknown>): string {
   if (!first || typeof first !== 'object') return '';
   const content = (first as { content?: unknown }).content;
   if (!content || typeof content !== 'object') return '';
-  const parts = Array.isArray((content as { parts?: unknown }).parts)
-    ? ((content as { parts: unknown[] }).parts)
-    : [];
+  const parts = Array.isArray((content as { parts?: unknown }).parts) ? (content as { parts: unknown[] }).parts : [];
   return parts
-    .map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
-      ? (part as { text: string }).text
-      : ''))
+    .map((part) =>
+      part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+        ? (part as { text: string }).text
+        : '',
+    )
     .join('\n')
     .trim();
 }

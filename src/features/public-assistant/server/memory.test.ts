@@ -1,8 +1,4 @@
-import {
-  derivePublicConversationTitle,
-  PUBLIC_AI_HISTORY_LIMIT,
-  PUBLIC_AI_MESSAGE_CONTEXT_LIMIT,
-} from './memory';
+import { derivePublicConversationTitle, PUBLIC_AI_HISTORY_LIMIT, PUBLIC_AI_MESSAGE_CONTEXT_LIMIT } from './memory';
 
 describe('Public Mkety AI memory policy', () => {
   it('keeps bounded cross-visit conversation and model context limits', () => {

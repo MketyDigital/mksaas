@@ -3,9 +3,9 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
 
+import { getPublishedNavigation, getPublishedPlatformSiteSettings } from './queries';
 import { defaultFooterGroups } from '../defaults';
 import { footerGroupSchema } from '../schemas';
-import { getPublishedNavigation, getPublishedPlatformSiteSettings } from './queries';
 
 const PUBLISHED = 'published' as const;
 

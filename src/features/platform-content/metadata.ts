@@ -15,9 +15,10 @@ function normalizePublicPath(input: string) {
   const fallback = '/';
 
   try {
-    const parsed = input.startsWith('http://') || input.startsWith('https://')
-      ? new URL(input)
-      : new URL(input.startsWith('/') ? input : `/${input}`, MKETY_PUBLIC_ORIGIN);
+    const parsed =
+      input.startsWith('http://') || input.startsWith('https://')
+        ? new URL(input)
+        : new URL(input.startsWith('/') ? input : `/${input}`, MKETY_PUBLIC_ORIGIN);
 
     const pathname = parsed.pathname || fallback;
     return pathname.startsWith('/') ? pathname : `/${pathname}`;

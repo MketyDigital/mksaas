@@ -2,7 +2,8 @@ import type { PublicSupportToolName } from './tools';
 
 const PRICING_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription|credits?)\b/i;
 const NAVIGATION_PATTERN = /\b(where|find|go to|navigate|page|link|contact|get started|sign in|docs?|documentation)\b/i;
-const PRODUCT_PATTERN = /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one)\b/i;
+const PRODUCT_PATTERN =
+  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one)\b/i;
 const HOW_TO_PATTERN = /\b(how|what|why|explain|learn|guide|use|build|create|start)\b/i;
 
 export function planPublicSupportTools(message: string): PublicSupportToolName[] {

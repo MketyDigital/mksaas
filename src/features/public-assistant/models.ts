@@ -1,10 +1,4 @@
-export type PublicAIProviderId =
-  | 'openai'
-  | 'azure-openai'
-  | 'gemini'
-  | 'vertex'
-  | 'cloudflare-ai'
-  | 'bedrock';
+export type PublicAIProviderId = 'openai' | 'azure-openai' | 'gemini' | 'vertex' | 'cloudflare-ai' | 'bedrock';
 
 export type PublicAIModelStatus = 'current-stable' | 'current-limited';
 
@@ -86,10 +80,7 @@ export function getPublicAIModelDefinition(
   return PUBLIC_AI_MODEL_REGISTRY[provider].models.find((candidate) => candidate.id === model);
 }
 
-export function assertCurrentPublicAIModel(
-  provider: PublicAIProviderId,
-  model: string,
-): PublicAIModelDefinition {
+export function assertCurrentPublicAIModel(provider: PublicAIProviderId, model: string): PublicAIModelDefinition {
   const definition = getPublicAIModelDefinition(provider, model);
   if (!definition) {
     throw new Error(`${provider}/${model} is not an approved current public AI model.`);

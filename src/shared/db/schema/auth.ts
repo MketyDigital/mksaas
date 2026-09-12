@@ -1,13 +1,12 @@
 /**
- * Auth Schema - Auth.js tables for authentication
+ * Mkety identity and tenant authorization schema.
  *
- * Using Drizzle adapter compatible schema.
- * @see https://authjs.dev/getting-started/adapters/drizzle
+ * Mkety owns users, tenant memberships, roles, and permissions. Provider-specific
+ * identity linkage and application sessions are defined in `mkety-auth.ts`.
  */
 
 import { relations } from 'drizzle-orm';
 import { boolean, index, integer, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { AdapterAccountType } from 'next-auth/adapters';
 
 import { persons } from './persons';
 import { roles } from './roles';
@@ -27,13 +26,12 @@ import { tenants } from './tenants';
 export const tenantRoleEnum = appSchema.enum('tenant_role', ['member', 'manager', 'admin']);
 
 // ============================================================================
-// AUTH.JS TABLES
+// MKETY USER / INTEGRATION IDENTITY TABLES
 // ============================================================================
 
 /**
- * Users table - Auth.js user records
- *
- * Links to persons table via email for Next.js SaaS AI Template-specific data
+ * Mkety users are internal application identities.
+ * External provider identities are linked through external_identities.
  */
 export const users = appSchema.table('users', {
   id: text('id')
@@ -46,7 +44,11 @@ export const users = appSchema.table('users', {
 });
 
 /**
- * Accounts table - OAuth provider accounts
+ * Generic integration accounts.
+ *
+ * This table is retained for non-authentication integrations such as GitHub
+ * OAuth connections. It is intentionally separate from Mkety external identity
+ * linkage and is not an application session store.
  */
 export const accounts = appSchema.table(
   'accounts',
@@ -54,7 +56,7 @@ export const accounts = appSchema.table(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    type: text('type').$type<AdapterAccountType>().notNull(),
+    type: text('type').notNull(),
     provider: text('provider').notNull(),
     providerAccountId: text('provider_account_id').notNull(),
     refresh_token: text('refresh_token'),
@@ -73,7 +75,8 @@ export const accounts = appSchema.table(
 );
 
 /**
- * Sessions table - Active user sessions
+ * Legacy session/verification/passkey tables retained for migration safety.
+ * New application sessions are stored in mkety-auth.ts.
  */
 export const sessions = appSchema.table('sessions', {
   sessionToken: text('session_token').primaryKey(),
@@ -83,9 +86,6 @@ export const sessions = appSchema.table('sessions', {
   expires: timestamp('expires', { mode: 'date' }).notNull(),
 });
 
-/**
- * Verification tokens - Email verification, magic links
- */
 export const verificationTokens = appSchema.table(
   'verification_tokens',
   {
@@ -100,9 +100,6 @@ export const verificationTokens = appSchema.table(
   ],
 );
 
-/**
- * Authenticators table - WebAuthn/Passkeys
- */
 export const authenticators = appSchema.table(
   'authenticators',
   {
@@ -129,11 +126,8 @@ export const authenticators = appSchema.table(
 // ============================================================================
 
 /**
- * Tenant memberships - Links Auth.js users to tenants with role-based access
- *
- * This is the core RBAC table that determines what a user can do within each tenant.
+ * Tenant memberships - Links Mkety users to tenants with role-based access.
  * A user can have different roles in different tenants.
- * role enum is for display/backward compat; effective roles come from tenant_membership_roles.
  */
 export const tenantMemberships = appSchema.table(
   'tenant_memberships',
@@ -159,7 +153,7 @@ export const tenantMemberships = appSchema.table(
 );
 
 /**
- * Tenant membership roles - Multiple roles per user per tenant
+ * Tenant membership roles - Multiple roles per user per tenant.
  */
 export const tenantMembershipRoles = appSchema.table(
   'tenant_membership_roles',

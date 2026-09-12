@@ -1,5 +1,5 @@
-import { normalizeWorkspaceSalesLinks } from '../commercial-routing';
 import { getPublishedHomepageContent } from './queries';
+import { normalizeWorkspaceSalesLinks } from '../commercial-routing';
 
 export async function getPublishedPublicHomepageContent() {
   const content = await getPublishedHomepageContent();

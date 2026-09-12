@@ -1,5 +1,5 @@
 /**
- * Logger Configuration - Next.js SaaS AI Template
+ * Logger Configuration - Mkety Platform
  *
  * Structured logging with Pino for server-side observability.
  * Uses a console-backed destination so the same logger works in Node and

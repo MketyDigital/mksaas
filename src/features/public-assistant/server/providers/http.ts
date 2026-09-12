@@ -9,7 +9,8 @@ export async function readProviderJson(response: Response): Promise<Record<strin
   }
 
   if (!response.ok) {
-    const retryable = response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500;
+    const retryable =
+      response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500;
     throw createPublicAIProviderError(`Public AI provider request failed (${response.status}).`, {
       retryable,
       status: response.status,
@@ -26,7 +27,7 @@ export function extractOpenAIResponseText(payload: Record<string, unknown>): str
   for (const item of output) {
     if (!item || typeof item !== 'object') continue;
     const content = Array.isArray((item as { content?: unknown }).content)
-      ? ((item as { content: unknown[] }).content)
+      ? (item as { content: unknown[] }).content
       : [];
     for (const part of content) {
       if (!part || typeof part !== 'object') continue;

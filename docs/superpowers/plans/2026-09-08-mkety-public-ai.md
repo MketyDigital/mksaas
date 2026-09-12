@@ -32,6 +32,7 @@
 ### Task 1: Current-model registry and public configuration
 
 **Files:**
+
 - Modify: `src/features/public-assistant/config.ts`
 - Modify: `src/features/public-assistant/config.test.ts`
 - Create: `src/features/public-assistant/models.ts`
@@ -39,6 +40,7 @@
 - Modify: `src/shared/lib/env.ts`
 
 **Interfaces:**
+
 - Produces `PublicAIProviderId`, `PublicAIModelStatus`, `PUBLIC_AI_MODEL_REGISTRY`, `getPublicAIModelDefinition()`, `assertCurrentPublicAIModel()`, and parsed public provider routing configuration.
 - Provider configuration remains independent of `MKETY_AI_PROVIDER` / `MKETY_AI_MODEL`.
 
@@ -51,6 +53,7 @@
 ### Task 2: Public AI persistence schema and anonymous visitor identity
 
 **Files:**
+
 - Create/modify Drizzle schema following existing repository schema conventions for `public_ai_visitors`, `public_ai_conversations`, `public_ai_messages`, `public_ai_memory_facts`, `public_ai_tool_runs`.
 - Create a forward-only migration in the existing Mkety migration path.
 - Create: `src/features/public-assistant/server/visitor.ts`
@@ -58,6 +61,7 @@
 - Extend Mkety DB migration/smoke scripts only for these repo-owned tables.
 
 **Interfaces:**
+
 - Produces protected opaque visitor identity helpers and repository functions to load/create conversations, append messages, create New chat, and delete visitor history.
 
 - [ ] Write RED tests for different anonymous visitors being isolated, same visitor restoring history, New chat creating a separate conversation, and clear-history deleting only that visitor's public AI data.
@@ -70,12 +74,14 @@
 ### Task 3: Public knowledge retrieval and support tool registry
 
 **Files:**
+
 - Create: `src/features/public-assistant/server/knowledge.ts`
 - Create: `src/features/public-assistant/server/tools.ts`
 - Create corresponding tests.
 - Reuse published-query functions from `src/features/platform-content/server/*` only where they already guarantee published/public scope; otherwise add narrow public query functions there.
 
 **Interfaces:**
+
 - Produces `searchPublicDocs`, `searchPublicSite`, `getPublicPricing`, `resolvePublicRoute`, `getPublicProductSummary`, and `PUBLIC_SUPPORT_TOOLS` allow-list.
 
 - [ ] Write RED tests proving drafts/admin revisions/private data are excluded, public route resolution is canonical, pricing ordering is deterministic, and unknown tools are rejected.
@@ -87,6 +93,7 @@
 ### Task 4: Provider adapter contract and failover gateway
 
 **Files:**
+
 - Create: `src/features/public-assistant/server/providers/types.ts`
 - Create adapter modules for `openai`, `azure-openai`, `gemini`, `vertex`, `cloudflare-ai`, `bedrock`.
 - Create: `src/features/public-assistant/server/providers/index.ts`
@@ -95,6 +102,7 @@
 - Add dependencies only when required by a provider and prefer standards-compatible fetch/AI SDK paths that remain Cloudflare-compatible.
 
 **Interfaces:**
+
 - All adapters implement `PublicAIProviderAdapter.generate(request)`.
 - Gateway produces provider-neutral answer/tool/usage/failure metadata and bounded fallback.
 
@@ -108,11 +116,13 @@
 ### Task 5: Public assistant API and memory lifecycle
 
 **Files:**
+
 - Create: `src/app/api/public/assistant/route.ts`
 - Create supporting conversation history/new/delete routes only where clearer than overloading one endpoint.
 - Create request schemas and API tests.
 
 **Interfaces:**
+
 - `POST /api/public/assistant` accepts bounded visitor messages and returns provider-neutral Mkety AI responses.
 - Supporting routes expose only the requesting anonymous visitor's public conversations.
 
@@ -125,11 +135,13 @@
 ### Task 6: Public Mkety AI UI with cross-visit history
 
 **Files:**
+
 - Create focused public-assistant client components under `src/features/public-assistant/components/`.
 - Modify `src/features/platform-content/components/public/MketyPublicShell.tsx` or its shared composition point.
 - Create UI tests.
 
 **Interfaces:**
+
 - One Mkety AI launcher/panel on public pages, no provider/model selector.
 - Supports recent conversation continuity, New chat, history clearing, loading/retry/unavailable states and suggested Mkety prompts.
 
@@ -142,11 +154,13 @@
 ### Task 7: Candidate configuration, real-provider smoke and freshness gate
 
 **Files:**
+
 - Modify `.github/workflows/mkety-public-candidate-deploy.yml`
 - Add/modify candidate smoke script(s) under `scripts/`.
 - Update continuation documentation after verification.
 
 **Interfaces:**
+
 - Candidate workflow validates public AI env/secrets, applies public AI migration, deploys server Worker, exercises memory/tool/API behavior and rejects configured legacy models.
 
 - [ ] Write/check workflow-level assertions that fail when no current configured provider is healthy, while allowing unconfigured optional adapters.
@@ -158,10 +172,12 @@
 ### Task 8: Full acceptance and production cutover gate
 
 **Files:**
+
 - Modify `docs/MKETY_DEVELOPMENT_CONTINUATION.md` with verified evidence.
 - Add guarded production workflow only after candidate acceptance if not already present.
 
 **Interfaces:**
+
 - Production cutover remains blocked until public site + AI acceptance are green.
 
 - [ ] Run full tests, type-check, lint, vinext compatibility, build, DB smoke and candidate HTTP checks.

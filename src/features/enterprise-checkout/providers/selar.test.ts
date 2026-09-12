@@ -32,6 +32,8 @@ describe('Selar enterprise adapter', () => {
 
   it('fails closed when the checkout URL is missing or non-https', () => {
     expect(() => createSelarAdapter({ checkoutUrl: undefined })).toThrow('Selar is not configured');
-    expect(() => createSelarAdapter({ checkoutUrl: 'http://selar.co/test' })).toThrow('Selar checkout URL must use HTTPS');
+    expect(() => createSelarAdapter({ checkoutUrl: 'http://selar.co/test' })).toThrow(
+      'Selar checkout URL must use HTTPS',
+    );
   });
 });

@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# Post-create script for Next.js SaaS AI Template DevContainer
+# Post-create script for Mkety Platform DevContainer
 # This script runs after the container is created
 # =============================================================================
 
 set -e
 
-echo "🚀 Setting up Next.js SaaS AI Template development environment..."
+echo "🚀 Setting up Mkety Platform development environment..."
 
 # Navigate to workspace
 cd /workspaces/*
@@ -103,7 +103,7 @@ echo "✅ MinIO bucket 'saas-template-uploads' ready"
 # -----------------------------------------------------------------------------
 echo ""
 echo "═══════════════════════════════════════════════════════════════════════════"
-echo "  ✅ Next.js SaaS AI Template development environment is ready!"
+echo "  ✅ Mkety Platform development environment is ready!"
 echo "═══════════════════════════════════════════════════════════════════════════"
 echo ""
 echo "  Environment is managed by direnv (auto-loads when you cd into project)"

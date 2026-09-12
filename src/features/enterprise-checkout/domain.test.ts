@@ -31,14 +31,16 @@ describe('enterprise checkout domain', () => {
   });
 
   it('rejects unsupported provider, currency, and malformed identity fields', () => {
-    expect(() => parseEnterpriseCheckoutInput({
-      fullName: 'A',
-      companyName: 'Company',
-      email: 'not-an-email',
-      projectName: 'Project',
-      amount: '199',
-      currency: 'EUR',
-      provider: 'stripe',
-    })).toThrow();
+    expect(() =>
+      parseEnterpriseCheckoutInput({
+        fullName: 'A',
+        companyName: 'Company',
+        email: 'not-an-email',
+        projectName: 'Project',
+        amount: '199',
+        currency: 'EUR',
+        provider: 'stripe',
+      }),
+    ).toThrow();
   });
 });

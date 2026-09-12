@@ -18,23 +18,29 @@ describe('Mkety public pages admin collection', () => {
 
   it('rejects unsafe or incomplete page collections', () => {
     expect(() => publicPagesAdminPayloadSchema.parse({ pages: [] })).toThrow();
-    expect(() => publicPagesAdminPayloadSchema.parse({
-      pages: [{
-        slug: 'academy',
-        title: 'Academy',
-        seoTitle: 'Academy',
-        seoDescription: 'Academy',
-        eyebrow: 'Academy',
-        headline: 'Academy',
-        intro: 'Academy',
-        sections: [{
-          eyebrow: 'Learning',
-          title: 'Learning',
-          description: 'Learning',
-          items: [],
-          cta: { label: 'Unsafe', href: 'javascript:alert(1)' },
-        }],
-      }],
-    })).toThrow();
+    expect(() =>
+      publicPagesAdminPayloadSchema.parse({
+        pages: [
+          {
+            slug: 'academy',
+            title: 'Academy',
+            seoTitle: 'Academy',
+            seoDescription: 'Academy',
+            eyebrow: 'Academy',
+            headline: 'Academy',
+            intro: 'Academy',
+            sections: [
+              {
+                eyebrow: 'Learning',
+                title: 'Learning',
+                description: 'Learning',
+                items: [],
+                cta: { label: 'Unsafe', href: 'javascript:alert(1)' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow();
   });
 });

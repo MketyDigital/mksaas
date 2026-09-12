@@ -1,12 +1,7 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 
 import type { Database } from '@/shared/db';
-import {
-  publicAIConversations,
-  publicAIMessages,
-  publicAIToolRuns,
-  publicAIVisitors,
-} from '@/shared/db/schema';
+import { publicAIConversations, publicAIMessages, publicAIToolRuns, publicAIVisitors } from '@/shared/db/schema';
 
 export const PUBLIC_AI_HISTORY_LIMIT = 20;
 export const PUBLIC_AI_MESSAGE_CONTEXT_LIMIT = 30;
@@ -33,11 +28,7 @@ export async function ensurePublicAIVisitor(database: Database, visitorId: strin
   return visitor;
 }
 
-export async function createPublicAIConversation(
-  database: Database,
-  visitorId: string,
-  firstMessage?: string,
-) {
+export async function createPublicAIConversation(database: Database, visitorId: string, firstMessage?: string) {
   await ensurePublicAIVisitor(database, visitorId);
   const [conversation] = await database
     .insert(publicAIConversations)
@@ -58,16 +49,9 @@ export async function listPublicAIConversations(database: Database, visitorId: s
   });
 }
 
-export async function getPublicAIConversation(
-  database: Database,
-  visitorId: string,
-  conversationId: string,
-) {
+export async function getPublicAIConversation(database: Database, visitorId: string, conversationId: string) {
   const conversation = await database.query.publicAIConversations.findFirst({
-    where: and(
-      eq(publicAIConversations.id, conversationId),
-      eq(publicAIConversations.visitorId, visitorId),
-    ),
+    where: and(eq(publicAIConversations.id, conversationId), eq(publicAIConversations.visitorId, visitorId)),
   });
 
   if (!conversation) return null;
@@ -112,12 +96,7 @@ export async function appendPublicAIMessage(
   await database
     .update(publicAIConversations)
     .set({ updatedAt: new Date() })
-    .where(
-      and(
-        eq(publicAIConversations.id, conversation.id),
-        eq(publicAIConversations.visitorId, input.visitorId),
-      ),
-    );
+    .where(and(eq(publicAIConversations.id, conversation.id), eq(publicAIConversations.visitorId, input.visitorId)));
 
   return message;
 }
@@ -153,11 +132,7 @@ export async function recordPublicAIToolRun(
   return toolRun;
 }
 
-export async function getPublicAIRecentUserMessageCount(
-  database: Database,
-  visitorId: string,
-  since: Date,
-) {
+export async function getPublicAIRecentUserMessageCount(database: Database, visitorId: string, since: Date) {
   const rows = await database
     .select({ id: publicAIMessages.id })
     .from(publicAIMessages)
@@ -174,19 +149,10 @@ export async function getPublicAIRecentUserMessageCount(
   return rows.length;
 }
 
-export async function deletePublicAIConversation(
-  database: Database,
-  visitorId: string,
-  conversationId: string,
-) {
+export async function deletePublicAIConversation(database: Database, visitorId: string, conversationId: string) {
   const deleted = await database
     .delete(publicAIConversations)
-    .where(
-      and(
-        eq(publicAIConversations.id, conversationId),
-        eq(publicAIConversations.visitorId, visitorId),
-      ),
-    )
+    .where(and(eq(publicAIConversations.id, conversationId), eq(publicAIConversations.visitorId, visitorId)))
     .returning({ id: publicAIConversations.id });
 
   return deleted.length > 0;

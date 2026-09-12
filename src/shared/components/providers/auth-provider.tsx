@@ -1,19 +1,46 @@
 'use client';
 
-import type { Session } from 'next-auth';
-import { SessionProvider } from 'next-auth/react';
+import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+
+import type { MketySession } from '@/shared/lib/auth';
 
 interface AuthProviderProps {
   children: React.ReactNode;
-  session?: Session | null;
 }
 
-/**
- * Auth Provider wrapper for client-side session access
- *
- * Wraps the application with NextAuth's SessionProvider to enable
- * useSession() hook in client components.
- */
-export function AuthProvider({ children, session }: AuthProviderProps) {
-  return <SessionProvider session={session}>{children}</SessionProvider>;
+interface AuthContextValue {
+  session: MketySession | null;
+  isLoading: boolean;
+  refresh: () => Promise<void>;
+}
+
+export const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [session, setSession] = useState<MketySession | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) {
+        setSession(null);
+        return;
+      }
+      setSession((await response.json()) as MketySession | null);
+    } catch {
+      setSession(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const value = useMemo(() => ({ session, isLoading, refresh }), [session, isLoading, refresh]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

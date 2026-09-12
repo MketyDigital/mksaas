@@ -9,10 +9,7 @@ import { getPublishedPlatformSiteSettings } from '@/features/platform-content/se
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const [settings, page] = await Promise.all([
-    getPublishedPlatformSiteSettings(),
-    getPublishedPublicPageSeo('home'),
-  ]);
+  const [settings, page] = await Promise.all([getPublishedPlatformSiteSettings(), getPublishedPublicPageSeo('home')]);
 
   return buildMketyMetadata({
     settings,

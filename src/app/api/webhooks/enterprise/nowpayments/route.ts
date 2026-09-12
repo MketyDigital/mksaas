@@ -52,7 +52,10 @@ export async function POST(request: Request) {
     if (message.includes('signature') || message.includes('required fields')) {
       return json({ success: false, message: 'Invalid webhook.' }, 400);
     }
-    logger.error({ errorName: error instanceof Error ? error.name : 'UnknownError' }, 'Enterprise NOWPayments webhook failed');
+    logger.error(
+      { errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'Enterprise NOWPayments webhook failed',
+    );
     return json({ success: false, message: 'Webhook processing failed.' }, 500);
   }
 }

@@ -2,7 +2,10 @@ import { eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import { platformEnterpriseOrders } from '@/shared/db/schema';
-import type { NewPlatformEnterpriseOrder, PlatformEnterpriseOrder } from '@/shared/db/schema/platform-enterprise-orders';
+import type {
+  NewPlatformEnterpriseOrder,
+  PlatformEnterpriseOrder,
+} from '@/shared/db/schema/platform-enterprise-orders';
 
 export interface EnterpriseOrderRepository {
   findByIdempotencyKey(idempotencyKey: string): Promise<PlatformEnterpriseOrder | null>;
@@ -25,9 +28,11 @@ export interface EnterpriseOrderRepository {
 
 export const enterpriseOrderRepository: EnterpriseOrderRepository = {
   async findByIdempotencyKey(idempotencyKey) {
-    return (await db.query.platformEnterpriseOrders.findFirst({
-      where: eq(platformEnterpriseOrders.idempotencyKey, idempotencyKey),
-    })) ?? null;
+    return (
+      (await db.query.platformEnterpriseOrders.findFirst({
+        where: eq(platformEnterpriseOrders.idempotencyKey, idempotencyKey),
+      })) ?? null
+    );
   },
 
   async createOrder(input) {
@@ -75,8 +80,10 @@ export const enterpriseOrderRepository: EnterpriseOrderRepository = {
   },
 
   async findById(orderId) {
-    return (await db.query.platformEnterpriseOrders.findFirst({
-      where: eq(platformEnterpriseOrders.id, orderId),
-    })) ?? null;
+    return (
+      (await db.query.platformEnterpriseOrders.findFirst({
+        where: eq(platformEnterpriseOrders.id, orderId),
+      })) ?? null
+    );
   },
 };

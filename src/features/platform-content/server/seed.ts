@@ -52,7 +52,12 @@ type SeedResult = {
 
 const homepageSectionDefaults = [
   { sectionKey: 'hero', sectionType: 'hero', sortOrder: 10, contentJson: defaultHeroSection },
-  { sectionKey: 'platform', sectionType: 'platform_overview', sortOrder: 20, contentJson: defaultPlatformOverviewSection },
+  {
+    sectionKey: 'platform',
+    sectionType: 'platform_overview',
+    sortOrder: 20,
+    contentJson: defaultPlatformOverviewSection,
+  },
   { sectionKey: 'workspaces', sectionType: 'workspaces', sortOrder: 30, contentJson: defaultWorkspaceSection },
   { sectionKey: 'solutions', sectionType: 'solution_hub', sortOrder: 40, contentJson: defaultSolutionHubSection },
   { sectionKey: 'academy', sectionType: 'academy', sortOrder: 50, contentJson: defaultAcademySection },

@@ -46,9 +46,7 @@ export function MketyPublicAssistant() {
     setLoadingHistory(true);
     setError(null);
     try {
-      const query = requestedConversationId
-        ? `?conversationId=${encodeURIComponent(requestedConversationId)}`
-        : '';
+      const query = requestedConversationId ? `?conversationId=${encodeURIComponent(requestedConversationId)}` : '';
       const response = await fetch(`/api/public/assistant${query}`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -81,15 +79,10 @@ export function MketyPublicAssistant() {
     setLoading(true);
     setInput('');
     const optimisticId = `local-${Date.now()}`;
-    setMessages((current) => [
-      ...current,
-      { id: optimisticId, role: 'user', content: normalized },
-    ]);
+    setMessages((current) => [...current, { id: optimisticId, role: 'user', content: normalized }]);
 
     try {
-      const body = conversationId
-        ? { message: normalized, conversationId }
-        : { message: normalized };
+      const body = conversationId ? { message: normalized, conversationId } : { message: normalized };
       const response = await fetch('/api/public/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -224,7 +217,9 @@ export function MketyPublicAssistant() {
           {historyOpen ? (
             <div className="border-b border-border bg-muted/30 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent chats</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Recent chats
+                </span>
                 <button
                   type="button"
                   aria-label="Clear history"
@@ -266,7 +261,8 @@ export function MketyPublicAssistant() {
             {!loadingHistory && messages.length === 0 ? (
               <div>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  I can help you understand Mkety, find the right product or workspace, explain plans, and guide you through our public documentation.
+                  I can help you understand Mkety, find the right product or workspace, explain plans, and guide you
+                  through our public documentation.
                 </p>
                 <div className="mt-4 grid gap-2">
                   {suggestedPrompts.map((prompt) => (
@@ -285,10 +281,7 @@ export function MketyPublicAssistant() {
 
             <div className="space-y-3">
               {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+                <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div
                     className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'bg-violet-600 text-white' : 'bg-muted text-foreground'}`}
                   >
@@ -298,21 +291,28 @@ export function MketyPublicAssistant() {
               ))}
               {loading ? (
                 <div className="flex justify-start">
-                  <div className="rounded-2xl bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">Mkety AI is thinking…</div>
+                  <div className="rounded-2xl bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">
+                    Mkety AI is thinking…
+                  </div>
                 </div>
               ) : null}
               <div ref={endRef} />
             </div>
 
             {error ? (
-              <p role="alert" className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <p
+                role="alert"
+                className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+              >
                 {error}
               </p>
             ) : null}
           </div>
 
           <form onSubmit={handleSubmit} className="border-t border-border bg-background p-3">
-            <label htmlFor="mkety-public-ai-message" className="sr-only">Message Mkety AI</label>
+            <label htmlFor="mkety-public-ai-message" className="sr-only">
+              Message Mkety AI
+            </label>
             <div className="flex items-end gap-2 rounded-xl border border-border bg-muted/20 p-2 focus-within:border-violet-400/60">
               <textarea
                 id="mkety-public-ai-message"
@@ -340,7 +340,8 @@ export function MketyPublicAssistant() {
               </button>
             </div>
             <p className="mt-2 px-1 text-[11px] text-muted-foreground">
-              Mkety AI provides public product and documentation guidance. Avoid sharing passwords, payment details or private account data.
+              Mkety AI provides public product and documentation guidance. Avoid sharing passwords, payment details or
+              private account data.
             </p>
           </form>
         </section>

@@ -1,13 +1,13 @@
 ---
-title: Bienvenido a Next.js SaaS AI Template
+title: Bienvenido a Mkety Platform
 description: Visión general de la plataforma — SaaS multi-tenant con asistencia de IA, RBAC e integraciones. Conceptos clave, roles de usuario y enlaces a las guías.
 section: getting-started
 order: 1
 ---
 
-# Bienvenido a Next.js SaaS AI Template
+# Bienvenido a Mkety Platform
 
-Next.js SaaS AI Template es un **starter multi-tenant para SaaS** con asistencia de IA, control de acceso basado en roles e integraciones incorporadas. Ayuda a equipos a colaborar, gestionar miembros y aprovechar IA — todo con aislamiento de datos por tenant y permisos adecuados.
+Mkety Platform es un **starter multi-tenant para SaaS** con asistencia de IA, control de acceso basado en roles e integraciones incorporadas. Ayuda a equipos a colaborar, gestionar miembros y aprovechar IA — todo con aislamiento de datos por tenant y permisos adecuados.
 
 Esta guía presenta la plataforma, los conceptos clave, los roles de usuario y los próximos pasos.
 

@@ -1,8 +1,21 @@
-import { ArrowRight, BookOpen, Bot, CheckCircle2, Cloud, Layers3, Rocket, Shield, Sparkles, Workflow } from 'lucide-react';
+import {
+  ArrowRight,
+  BookOpen,
+  Bot,
+  CheckCircle2,
+  Cloud,
+  Layers3,
+  Rocket,
+  Shield,
+  Sparkles,
+  Workflow,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
+import { MketyProductShowcase, type MketyShowcaseGroup } from './MketyPublicExperience';
+import { MketyPublicShell } from './MketyPublicShell';
 import type {
   PlatformAcademySectionInput,
   PlatformEnterpriseSectionInput,
@@ -17,8 +30,6 @@ import type {
   PlatformTrustSectionInput,
   PlatformWorkspaceSectionInput,
 } from '../../schemas';
-import { MketyProductShowcase, type MketyShowcaseGroup } from './MketyPublicExperience';
-import { MketyPublicShell } from './MketyPublicShell';
 
 interface MketyHomePageProps {
   content: {
@@ -39,13 +50,24 @@ interface MketyHomePageProps {
 
 const workspaceIcons = [Bot, Workflow, Rocket, Layers3];
 
-type ContentSection = PlatformOverviewSectionInput | PlatformSolutionHubSectionInput | PlatformAcademySectionInput | PlatformEnterpriseSectionInput | PlatformTrustSectionInput;
+type ContentSection =
+  | PlatformOverviewSectionInput
+  | PlatformSolutionHubSectionInput
+  | PlatformAcademySectionInput
+  | PlatformEnterpriseSectionInput
+  | PlatformTrustSectionInput;
 
 function PublicContentSection({ section, muted = false }: { section: ContentSection; muted?: boolean }) {
   return (
     <section className="px-4 py-12 md:py-16">
       <div className="container mx-auto">
-        <div className={muted ? 'overflow-hidden rounded-[2rem] border bg-muted/25 p-6 md:p-10' : 'overflow-hidden rounded-[2rem] border bg-card/55 p-6 shadow-sm md:p-10'}>
+        <div
+          className={
+            muted
+              ? 'overflow-hidden rounded-[2rem] border bg-muted/25 p-6 md:p-10'
+              : 'overflow-hidden rounded-[2rem] border bg-card/55 p-6 shadow-sm md:p-10'
+          }
+        >
           <div className="grid gap-8 lg:grid-cols-[0.75fr_1.25fr] lg:items-start">
             <div className="lg:sticky lg:top-24">
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">{section.eyebrow}</p>
@@ -63,14 +85,22 @@ function PublicContentSection({ section, muted = false }: { section: ContentSect
                 {section.items.map((item, index) => (
                   <Card
                     key={item.key}
-                    className={index === 0 && section.items.length > 2 ? 'rounded-3xl border-primary/15 bg-background/80 md:row-span-2' : 'rounded-3xl border-primary/10 bg-background/80'}
+                    className={
+                      index === 0 && section.items.length > 2
+                        ? 'rounded-3xl border-primary/15 bg-background/80 md:row-span-2'
+                        : 'rounded-3xl border-primary/10 bg-background/80'
+                    }
                   >
                     <CardHeader>
                       <div className="mb-5 flex items-start justify-between gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <Sparkles className="h-4 w-4" />
                         </span>
-                        {item.badge && <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">{item.badge}</span>}
+                        {item.badge && (
+                          <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">
+                            {item.badge}
+                          </span>
+                        )}
                       </div>
                       <CardTitle>{item.title}</CardTitle>
                       <CardDescription className="leading-6">{item.description}</CardDescription>
@@ -182,7 +212,9 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
                 <span className="h-2.5 w-2.5 rounded-full bg-primary" />
                 <span className="text-xs font-semibold uppercase tracking-[0.18em]">Mkety Console</span>
               </div>
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">Public preview</span>
+              <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Public preview
+              </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr]">
               <div className="rounded-3xl border bg-background/85 p-5 sm:row-span-2">
@@ -191,7 +223,9 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
                   <span className="text-sm font-semibold">One operating system</span>
                 </div>
                 <p className="mt-3 text-xl font-bold">Build. Automate. Deploy. Operate.</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Platform capabilities become connected surfaces instead of disconnected tools.</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Platform capabilities become connected surfaces instead of disconnected tools.
+                </p>
                 <div className="mt-8 grid grid-cols-2 gap-2">
                   {['AI', 'Flow', 'Deploy', 'Solutions'].map((label) => (
                     <div key={label} className="rounded-2xl border bg-card p-3 text-xs font-semibold">
@@ -203,7 +237,9 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
               {hero.previewItems.slice(0, 2).map((item, index) => (
                 <div key={item.label} className="rounded-3xl border bg-background/85 p-5">
                   <div className="mb-5 flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">0{index + 1}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      0{index + 1}
+                    </span>
                     <span className="h-2 w-2 rounded-full bg-primary/70" />
                   </div>
                   <p className="font-semibold">{item.label}</p>
@@ -242,13 +278,20 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
             {workspaces.items.map((item, index) => {
               const Icon = workspaceIcons[index] ?? Layers3;
               return (
-                <Card key={item.key} className="rounded-3xl border-primary/10 bg-background/80 transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none">
+                <Card
+                  key={item.key}
+                  className="rounded-3xl border-primary/10 bg-background/80 transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
+                >
                   <CardHeader>
                     <div className="mb-6 flex items-center justify-between">
                       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                         <Icon className="h-5 w-5" />
                       </span>
-                      {item.badge && <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">{item.badge}</span>}
+                      {item.badge && (
+                        <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">
+                          {item.badge}
+                        </span>
+                      )}
                     </div>
                     <CardTitle>{item.title}</CardTitle>
                     <CardDescription className="leading-6">{item.description}</CardDescription>
@@ -281,12 +324,21 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
       <section id="pricing" className="px-4 py-12 md:py-16">
         <div className="container mx-auto rounded-[2rem] border bg-card/60 p-6 shadow-sm md:p-10">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Plans, Pricing, Credits, Usage</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">
+              Plans, Pricing, Credits, Usage
+            </p>
             <h2 className="mt-3 text-3xl font-bold md:text-4xl">Clear plans with controlled entitlements.</h2>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             {pricingPlans.map((plan) => (
-              <Card key={plan.key} className={plan.highlighted ? 'rounded-3xl border-primary bg-background shadow-lg' : 'rounded-3xl bg-background/80'}>
+              <Card
+                key={plan.key}
+                className={
+                  plan.highlighted
+                    ? 'rounded-3xl border-primary bg-background shadow-lg'
+                    : 'rounded-3xl bg-background/80'
+                }
+              >
                 <CardHeader>
                   <CardTitle>{plan.name}</CardTitle>
                   <p className="text-2xl font-bold">{plan.priceLabel}</p>

@@ -1,7 +1,7 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { SolutionHubWorkspaceOverview } from '@/features/projects/workspaces/SolutionHubWorkspaceOverview';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
-import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 
 export const dynamic = 'force-dynamic';
 

@@ -17,11 +17,7 @@ describe('Public Mkety AI rate-limit lookup', () => {
       select: mockSelect,
     } as unknown as Parameters<typeof getPublicAIRecentUserMessageCount>[0];
 
-    const count = await getPublicAIRecentUserMessageCount(
-      database,
-      '8bcfb6d6-5246-4a55-87d8-a53f7bbcc6df',
-      new Date(),
-    );
+    const count = await getPublicAIRecentUserMessageCount(database, '8bcfb6d6-5246-4a55-87d8-a53f7bbcc6df', new Date());
 
     expect(mockLimit).toHaveBeenCalledWith(PUBLIC_AI_RATE_LIMIT_PER_MINUTE);
     expect(count).toBe(PUBLIC_AI_RATE_LIMIT_PER_MINUTE);

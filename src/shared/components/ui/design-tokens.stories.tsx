@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 /**
  * # Design Tokens
  *
- * Visual reference for all design tokens in the Next.js SaaS AI Template design system.
+ * Visual reference for all design tokens in the Mkety Platform design system.
  * These tokens are defined in `globals.css` (@theme block).
  *
  * See **docs/DESIGN_SYSTEM.md** for the full documentation of every token

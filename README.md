@@ -18,7 +18,7 @@
 > Docs & catalog: [create-awesome-node-app.vercel.app](https://create-awesome-node-app.vercel.app/) ·
 > Templates: [Create-Node-App/cna-templates](https://github.com/Create-Node-App/cna-templates)
 
-# Next.js SaaS AI Template
+# Mkety Platform
 
 > Production-ready Next.js boilerplate for multi-tenant SaaS with AI built-in
 
@@ -110,7 +110,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## ✨ Features
 
 - 🏢 **Multi-tenant architecture** — tenant-scoped routes (`/t/[tenant]`), full tenant isolation in DB
-- 🔐 **Auth.js v5 + Auth0** — SSO, database sessions, development credentials provider
+- 🔐 **Mkety Auth + ZITADEL adapter** — provider-neutral OIDC, Mkety-owned hashed sessions, DB-backed authorization
 - 🗄️ **PostgreSQL 17 + pgvector + Drizzle ORM** — type-safe queries, vector similarity search
 - 🤖 **AI assistant** — OpenAI/Anthropic via Vercel AI SDK, RAG with embeddings
 - 🔑 **Permission-Based Access Control (PBAC)** — roles are bundles of permissions, multi-role support
@@ -131,11 +131,11 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Category     | Technology                                            |
 | ------------ | ----------------------------------------------------- |
-| Framework    | Next.js 15 (App Router, RSC, Turbopack)               |
+| Framework    | Next.js 16 App Router + vinext on Cloudflare Workers     |
 | Language     | TypeScript 5+ (strict)                                |
 | Styling      | Tailwind CSS v4 + shadcn/ui                           |
 | Database     | PostgreSQL 17 + pgvector + Drizzle ORM                |
-| Auth         | Auth.js v5 + Auth0 (SSO) + database sessions          |
+| Auth         | Mkety Auth + replaceable ZITADEL OIDC adapter            |
 | AI           | OpenAI / Anthropic via Vercel AI SDK + RAG/embeddings |
 | File Storage | AWS S3 (production) / MinIO (local dev)               |
 | i18n         | next-intl (EN + ES)                                   |

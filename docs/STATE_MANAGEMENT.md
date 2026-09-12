@@ -1,6 +1,6 @@
 # 🗃️ State Management
 
-Next.js SaaS AI Template uses a combination of React Server Components, React Context, and local state. There is no need for a single centralized store.
+Mkety Platform uses a combination of React Server Components, React Context, and local state. There is no need for a single centralized store.
 
 ## Server State (Recommended)
 
@@ -12,89 +12,54 @@ import { db } from '@/shared/db';
 
 export default async function TenantDashboard({ params }: Props) {
   const { tenant } = await params;
-
-  // Data is fetched on the server, no client state needed
   const skills = await db.query.skills.findMany({
     where: eq(skills.tenantId, tenant.id),
   });
-
   return <SkillsList skills={skills} />;
 }
 ```
 
 ## Component State
 
-This is the state that only a component needs, and it is not meant to be shared anywhere else. But you can pass it as prop to children components if needed. Most of the time, you want to start from here and lift the state up if needed elsewhere. For this type of state, you will usually need:
+Use local React state for state that belongs to one component or its immediate children. Lift it only when multiple nearby consumers genuinely need it.
 
-- [useState](https://reactjs.org/docs/hooks-reference.html#usestate) - for simpler states that are independent
-- [useReducer](https://reactjs.org/docs/hooks-reference.html#usereducer) - for more complex states where on a single action you want to update several pieces of state
+- `useState` for simple independent state
+- `useReducer` for coordinated state transitions
 
 ## Application State
 
-This is the state that controls interactive parts of an application. Opening modals, notifications, changing color mode, etc. For best performance and maintainability, keep the state as close as possible to the components that are using it. Don't make everything global out of the box.
-
-Our recommendation is to use any of the following state management libraries:
-
-- [jotai](https://github.com/pmndrs/jotai)
-- [recoil](https://recoiljs.org/)
-- [zustand](https://github.com/pmndrs/zustand)
+Keep interactive application state close to the components that use it. Do not make every UI state global.
 
 ## Server Cache State
 
-This is the state that comes from the server which is being cached on the client for further usage. It is possible to store remote data inside a state management store such as redux, but there are better solutions for that.
-
-Our recommendation is:
-
-- [react-query](https://react-query.tanstack.com/)
+Server-derived data that needs client caching should use the project's established data-fetching patterns rather than duplicating the database as a global client store.
 
 ## Form State
 
-This is a state that tracks users inputs in a form.
-
-Forms in React can be [controlled](https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable) and [uncontrolled](https://react.dev/reference/react-dom/components/input#reading-the-input-values-when-submitting-a-form).
-
-For complex forms with validation, we recommend:
-
-- [React Hook Form](https://react-hook-form.com/) - Performance-focused form library
-- [Zod](https://zod.dev/) - Schema validation (already included)
-
-```typescript
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-
-const schema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-});
-
-function MyForm() {
-  const { register, handleSubmit } = useForm({
-    resolver: zodResolver(schema),
-  });
-  // ...
-}
-```
+For complex forms, use React Hook Form with Zod validation.
 
 ## Context State (Multi-tenancy)
 
-Next.js SaaS AI Template uses React Context for tenant information:
-
-```typescript
-import { useTenant } from '@/shared/contexts';
-
-function MyComponent() {
-  const { tenant } = useTenant();
-  return <div>Current tenant: {tenant.name}</div>;
-}
-```
+Tenant information can be shared with React Context where multiple client components need the same current-tenant state.
 
 ## Auth State
 
-Authentication state is managed by Auth.js:
+Authentication is owned by **Mkety Auth**. ZITADEL is the current provider adapter and must not become the application's auth state contract.
+
+Server-side consumers use:
 
 ```typescript
-import { useSession } from 'next-auth/react';
-// or
-import { useAuth } from '@/features/auth';
+import { auth } from '@/shared/lib/auth';
+
+const session = await auth();
 ```
+
+Client components use the Mkety-owned facade:
+
+```typescript
+import { useAuth } from '@/features/auth/hooks/use-auth';
+
+const { user, isAuthenticated, login, logout } = useAuth();
+```
+
+The browser session is represented by an opaque Mkety-owned cookie. Provider access tokens and ID tokens are not client application state.

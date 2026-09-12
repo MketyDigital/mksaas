@@ -1,5 +1,5 @@
 /**
- * Bulk assign GitHub usernames to Next.js SaaS AI Template persons.
+ * Bulk assign GitHub usernames to Mkety Platform persons.
  * POST /api/tenants/[tenant]/admin/integrations/github/assign-usernames
  *
  * Body: { mappings: [{ personId: string, githubUsername: string }] }

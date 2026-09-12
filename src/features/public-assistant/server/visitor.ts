@@ -24,13 +24,10 @@ async function importSigningKey(secret: string): Promise<CryptoKey> {
     throw new Error('MKETY_PUBLIC_AI_VISITOR_SECRET must be at least 32 characters.');
   }
 
-  return crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { hash: 'SHA-256', name: 'HMAC' },
-    false,
-    ['sign', 'verify'],
-  );
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { hash: 'SHA-256', name: 'HMAC' }, false, [
+    'sign',
+    'verify',
+  ]);
 }
 
 export async function createPublicVisitorToken(visitorId: string, secret: string): Promise<string> {
@@ -42,10 +39,7 @@ export async function createPublicVisitorToken(visitorId: string, secret: string
   return `${visitorId}.${toBase64Url(signature)}`;
 }
 
-export async function parsePublicVisitorToken(
-  token: string | undefined,
-  secret: string,
-): Promise<string | null> {
+export async function parsePublicVisitorToken(token: string | undefined, secret: string): Promise<string | null> {
   if (!token) return null;
   const separator = token.lastIndexOf('.');
   if (separator <= 0) return null;
@@ -59,12 +53,7 @@ export async function parsePublicVisitorToken(
 
   const key = await importSigningKey(secret);
   const signatureBuffer = new Uint8Array(signature).buffer;
-  const valid = await crypto.subtle.verify(
-    'HMAC',
-    key,
-    signatureBuffer,
-    new TextEncoder().encode(visitorId),
-  );
+  const valid = await crypto.subtle.verify('HMAC', key, signatureBuffer, new TextEncoder().encode(visitorId));
 
   return valid ? visitorId : null;
 }

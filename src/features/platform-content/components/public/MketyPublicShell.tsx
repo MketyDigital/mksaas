@@ -2,9 +2,9 @@ import type { ReactNode } from 'react';
 
 import { MketyPublicAssistant } from '@/features/public-assistant/components/MketyPublicAssistant';
 
-import type { PlatformFooterGroupInput, PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../schemas';
 import { MketyPublicFooter } from './MketyPublicFooter';
 import { MketyPublicHeader } from './MketyPublicHeader';
+import type { PlatformFooterGroupInput, PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../schemas';
 
 interface MketyPublicShellProps {
   settings: PlatformSiteSettingsInput;

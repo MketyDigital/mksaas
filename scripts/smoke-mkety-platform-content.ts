@@ -114,29 +114,52 @@ async function main() {
 
   const navigation = await getPublishedNavigation();
   assertSmoke(navigation.length >= 5, 'navigation should contain Mkety public links');
-  assertSmoke(navigation.some((item) => item.label === 'Platform'), 'navigation should include Platform');
+  assertSmoke(
+    navigation.some((item) => item.label === 'Platform'),
+    'navigation should include Platform',
+  );
   assertPublicCopySafe(navigation, 'navigation');
 
   const homepage = await getPublishedHomepageContent();
   const expectedWorkspaces = normalizeWorkspaceSalesLinks(defaultWorkspaceSection);
   assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
   assertSmoke(homepage.platformOverview.title.length > 0, 'homepage Platform overview should load');
-  assertSmoke(homepage.workspaces.items.some((item) => item.key === 'trading'), 'homepage workspaces should keep Trading visible');
-  assertSmoke(homepage.workspaces.items.find((item) => item.key === 'trading')?.href === '/enterprise', 'public Trading sales should route through Enterprise');
+  assertSmoke(
+    homepage.workspaces.items.some((item) => item.key === 'trading'),
+    'homepage workspaces should keep Trading visible',
+  );
+  assertSmoke(
+    homepage.workspaces.items.find((item) => item.key === 'trading')?.href === '/enterprise',
+    'public Trading sales should route through Enterprise',
+  );
   assertContractMatch(
     homepage.workspaces.items.map(publicWorkspaceContract),
     expectedWorkspaces.items.map(publicWorkspaceContract),
     'published workspace names, descriptions, links and Trading boundary should match the documented public contract',
   );
   assertSmoke(homepage.solutionHub.title.length > 0, 'homepage SolutionHub section should load');
-  assertSmoke(homepage.academy.items.some((item) => item.title === 'Web & App Engineering'), 'homepage Academy should include the approved learning hubs');
+  assertSmoke(
+    homepage.academy.items.some((item) => item.title === 'Web & App Engineering'),
+    'homepage Academy should include the approved learning hubs',
+  );
   assertSmoke(homepage.enterprise.title.length > 0, 'homepage Enterprise section should load');
   assertSmoke(homepage.trust.items.length > 0, 'homepage trust section should load');
   assertSmoke(homepage.faqItems.length > 0, 'homepage FAQ should load');
   assertSmoke(homepage.footerGroups.length > 0, 'homepage footer groups should load');
   assertPublicCopySafe(homepage, 'homepage');
 
-  for (const slug of ['platform', 'workspaces', 'solutions', 'academy', 'pricing', 'enterprise', 'about', 'contact', 'privacy', 'terms']) {
+  for (const slug of [
+    'platform',
+    'workspaces',
+    'solutions',
+    'academy',
+    'pricing',
+    'enterprise',
+    'about',
+    'contact',
+    'privacy',
+    'terms',
+  ]) {
     const page = await getPublishedPublicPageContent(slug);
     assertSmoke(page?.slug === slug, `public page ${slug} should resolve through CMS or safe default`);
     assertSmoke(page.headline.length > 0, `public page ${slug} should have launch content`);
@@ -145,10 +168,14 @@ async function main() {
 
   const pricing = await getPublishedPricingPlans();
   assertSmoke(
-    pricing.map((plan) => plan.key).join(',') === 'starter,ai-workspace,automation-workspace,deploy-workspace,mkety-one,enterprise',
+    pricing.map((plan) => plan.key).join(',') ===
+      'starter,ai-workspace,automation-workspace,deploy-workspace,mkety-one,enterprise',
     'pricing should use canonical Starter, Workspaces, Mkety One, Enterprise ordering',
   );
-  assertSmoke(!pricing.some((plan) => /^(growth|pro|business)$/i.test(plan.key)), 'pricing must not expose removed Growth, Pro or Business plans');
+  assertSmoke(
+    !pricing.some((plan) => /^(growth|pro|business)$/i.test(plan.key)),
+    'pricing must not expose removed Growth, Pro or Business plans',
+  );
   assertContractMatch(
     pricing.map(publicPlanContract),
     defaultPricingPlans.map(publicPlanContract),
@@ -158,8 +185,24 @@ async function main() {
 
   const docsTree = await getPublishedDocsTree();
   assertSmoke(docsTree.categories.length >= 8, 'docs tree should include the Mkety production categories');
-  for (const slug of ['what-is-mkety', 'projects-and-workspaces', 'plans-usage-credits', 'ai-workspace', 'automation-workspace', 'deploy-workspace', 'solutionhub', 'academy', 'enterprise-and-trading', 'domain-map', 'account-security', 'privacy-and-access']) {
-    assertSmoke(docsTree.articles.some((article) => article.slug === slug), `docs production set should include ${slug}`);
+  for (const slug of [
+    'what-is-mkety',
+    'projects-and-workspaces',
+    'plans-usage-credits',
+    'ai-workspace',
+    'automation-workspace',
+    'deploy-workspace',
+    'solutionhub',
+    'academy',
+    'enterprise-and-trading',
+    'domain-map',
+    'account-security',
+    'privacy-and-access',
+  ]) {
+    assertSmoke(
+      docsTree.articles.some((article) => article.slug === slug),
+      `docs production set should include ${slug}`,
+    );
   }
   assertPublicCopySafe(docsTree, 'docs navigation');
 
@@ -173,8 +216,14 @@ async function main() {
   await assertEnterpriseCheckoutTables();
 
   const appExperience = await getPublishedAppExperience();
-  assertSmoke(appExperience.dashboard.headline.includes('Mkety'), 'app experience dashboard should load Mkety headline');
-  assertSmoke(appExperience.workspaces.some((workspace) => workspace.key === 'trading'), 'app experience should keep Trading visible');
+  assertSmoke(
+    appExperience.dashboard.headline.includes('Mkety'),
+    'app experience dashboard should load Mkety headline',
+  );
+  assertSmoke(
+    appExperience.workspaces.some((workspace) => workspace.key === 'trading'),
+    'app experience should keep Trading visible',
+  );
   assertSmoke(
     appExperience.controlCenterModules.some((controlModule) => controlModule.key === 'public-site-docs'),
     'control center should include Public Website & Docs module',

@@ -1,4 +1,4 @@
-# Next.js SaaS AI Template Development Container
+# Mkety Platform Development Container
 # Based on Node.js 22 LTS (Debian Bookworm)
 
 FROM mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm

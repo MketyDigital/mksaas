@@ -1,0 +1,77 @@
+name: Mkety ZITADEL Login Policy Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: preview
+    env:
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+    steps:
+      - name: Inspect effective organization login policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required ZITADEL diagnostic setting: $name"
+              exit 1
+            fi
+          done
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          issuer="${MKETY_AUTH_ISSUER%/}"
+          project_response="$(curl --fail-with-body --silent --show-error \
+            -X POST "$issuer/zitadel.project.v2.ProjectService/GetProject" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
+            -H 'Connect-Protocol-Version: 1' \
+            -H 'Content-Type: application/json' \
+            --data "{\"projectId\":\"${ZITADEL_PROJECT_ID}\"}")"
+          org_id="$(RESPONSE="$project_response" node <<'NODE'
+          const parsed = JSON.parse(process.env.RESPONSE);
+          if (!parsed.project?.organizationId) throw new Error('ZITADEL project organization id missing');
+          process.stdout.write(parsed.project.organizationId);
+          NODE
+          )"
+
+          domain="$(curl --fail-with-body --silent --show-error \
+            "$issuer/v2/settings/domain?ctx.orgId=$org_id" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}")"
+          login="$(curl --fail-with-body --silent --show-error \
+            "$issuer/v2/settings/login?ctx.orgId=$org_id" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}")"
+          domains="$(curl --fail-with-body --silent --show-error \
+            -X POST "$issuer/v2/organizations/$org_id/domains/search" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data '{}')"
+
+          DOMAIN="$domain" LOGIN="$login" DOMAINS="$domains" node <<'NODE'
+          const domain = JSON.parse(process.env.DOMAIN);
+          const login = JSON.parse(process.env.LOGIN);
+          const domains = JSON.parse(process.env.DOMAINS);
+          const summary = {
+            loginNameIncludesDomain: domain.settings?.loginNameIncludesDomain ?? null,
+            allowUsernamePassword: login.settings?.allowUsernamePassword ?? null,
+            allowLocalAuthentication: login.settings?.allowLocalAuthentication ?? null,
+            disableLoginWithEmail: login.settings?.disableLoginWithEmail ?? null,
+            ignoreUnknownUsernames: login.settings?.ignoreUnknownUsernames ?? null,
+            allowDomainDiscovery: login.settings?.allowDomainDiscovery ?? null,
+            domains: (domains.domains ?? []).map((item) => ({
+              domain: item.domain,
+              isPrimary: item.isPrimary,
+              isVerified: item.isVerified,
+            })),
+          };
+          console.log(JSON.stringify(summary));
+          NODE

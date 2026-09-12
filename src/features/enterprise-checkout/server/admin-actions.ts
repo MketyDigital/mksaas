@@ -34,7 +34,10 @@ export async function createEnterprisePaymentLink(
   await requirePlatformControlAccess(tenantSlug);
 
   const installmentLabel = input.installmentLabel?.trim();
-  const projectDescription = [input.projectDescription?.trim(), installmentLabel ? `Payment schedule: ${installmentLabel}` : '']
+  const projectDescription = [
+    input.projectDescription?.trim(),
+    installmentLabel ? `Payment schedule: ${installmentLabel}` : '',
+  ]
     .filter(Boolean)
     .join('\n\n');
 

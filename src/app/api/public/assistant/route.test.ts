@@ -23,7 +23,10 @@ jest.mock('@/features/public-assistant/server/memory', () => ({
 
 jest.mock('@/features/public-assistant/server/runtime', () => {
   class PublicAssistantRuntimeError extends Error {
-    constructor(message: string, readonly status: number) {
+    constructor(
+      message: string,
+      readonly status: number,
+    ) {
       super(message);
       this.name = 'PublicAssistantRuntimeError';
     }

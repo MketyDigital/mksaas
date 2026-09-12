@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-import {
-  publicAssistantDeleteSchema,
-  publicAssistantMessageSchema,
-} from '@/features/public-assistant/contracts';
+import { publicAssistantDeleteSchema, publicAssistantMessageSchema } from '@/features/public-assistant/contracts';
 import { summarizeErrorChain } from '@/features/public-assistant/server/error-diagnostics';
 import {
   clearPublicAIHistory,
@@ -15,10 +12,7 @@ import {
   PUBLIC_AI_RATE_LIMIT_PER_MINUTE,
 } from '@/features/public-assistant/server/memory';
 import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
-import {
-  PublicAssistantRuntimeError,
-  runMketyPublicAssistant,
-} from '@/features/public-assistant/server/runtime';
+import { PublicAssistantRuntimeError, runMketyPublicAssistant } from '@/features/public-assistant/server/runtime';
 import {
   createPublicVisitorToken,
   parsePublicVisitorToken,
@@ -209,11 +203,7 @@ export async function DELETE(request: Request) {
         return response;
       }
 
-      const deleted = await deletePublicAIConversation(
-        database,
-        visitor.visitorId,
-        input.conversationId,
-      );
+      const deleted = await deletePublicAIConversation(database, visitor.visitorId, input.conversationId);
       return withVisitorCookie(json({ deleted }), visitor.setCookie, request);
     });
   } catch (error) {

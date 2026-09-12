@@ -13,7 +13,13 @@ type PublicOrderStatus = {
   confirmedAt: string | null;
 };
 
-export function EnterprisePaymentStatus({ orderId, returnState }: { orderId?: string; returnState: 'pending' | 'success' | 'cancelled' }) {
+export function EnterprisePaymentStatus({
+  orderId,
+  returnState,
+}: {
+  orderId?: string;
+  returnState: 'pending' | 'success' | 'cancelled';
+}) {
   const [order, setOrder] = useState<PublicOrderStatus | null>(null);
   const [loading, setLoading] = useState(Boolean(orderId));
 
@@ -22,9 +28,15 @@ export function EnterprisePaymentStatus({ orderId, returnState }: { orderId?: st
     let active = true;
     fetch(`/api/payments/enterprise/status?orderId=${encodeURIComponent(orderId)}`, { cache: 'no-store' })
       .then((response) => response.json())
-      .then((data) => { if (active && data?.order) setOrder(data.order); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+      .then((data) => {
+        if (active && data?.order) setOrder(data.order);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [orderId]);
 
   const confirmed = order?.paymentStatus === 'confirmed';
@@ -46,15 +58,33 @@ export function EnterprisePaymentStatus({ orderId, returnState }: { orderId?: st
       {loading ? <p className="mt-6 text-sm text-muted-foreground">Checking order status…</p> : null}
       {order ? (
         <dl className="mt-8 grid gap-3 rounded-2xl bg-muted/50 p-5 text-left text-sm">
-          <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Order</dt><dd className="font-medium">{order.id}</dd></div>
-          <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Project</dt><dd className="font-medium">{order.projectName}</dd></div>
-          <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Provider</dt><dd className="font-medium">{order.provider}</dd></div>
-          <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Payment status</dt><dd className="font-medium">{order.paymentStatus}</dd></div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Order</dt>
+            <dd className="font-medium">{order.id}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Project</dt>
+            <dd className="font-medium">{order.projectName}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Provider</dt>
+            <dd className="font-medium">{order.provider}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Payment status</dt>
+            <dd className="font-medium">{order.paymentStatus}</dd>
+          </div>
         </dl>
       ) : null}
       <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <a href="/enterprise" className="rounded-xl border border-border px-5 py-3 text-sm font-semibold">Back to Enterprise</a>
-        {!confirmed && !failed ? <a href="/contact" className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Contact Mkety</a> : null}
+        <a href="/enterprise" className="rounded-xl border border-border px-5 py-3 text-sm font-semibold">
+          Back to Enterprise
+        </a>
+        {!confirmed && !failed ? (
+          <a href="/contact" className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">
+            Contact Mkety
+          </a>
+        ) : null}
       </div>
     </div>
   );

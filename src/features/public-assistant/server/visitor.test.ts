@@ -1,10 +1,6 @@
 /** @jest-environment node */
 
-import {
-  createPublicVisitorToken,
-  parsePublicVisitorToken,
-  PUBLIC_AI_VISITOR_COOKIE,
-} from './visitor';
+import { createPublicVisitorToken, parsePublicVisitorToken, PUBLIC_AI_VISITOR_COOKIE } from './visitor';
 
 describe('Public Mkety AI anonymous visitor identity', () => {
   const secret = '0123456789abcdef0123456789abcdef';

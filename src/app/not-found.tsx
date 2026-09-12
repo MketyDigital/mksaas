@@ -12,7 +12,10 @@ export default function NotFound() {
       <Card className="w-full max-w-lg rounded-3xl border-border/70 shadow-xl">
         <CardContent className="flex flex-col items-center px-8 py-14 text-center">
           <Link href="/" className="mb-8 flex items-center gap-2 font-bold tracking-tight" aria-label="Mkety home">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground" aria-hidden="true">
+            <span
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+              aria-hidden="true"
+            >
               M
             </span>
             <span>Mkety</span>

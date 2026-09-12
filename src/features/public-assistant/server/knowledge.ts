@@ -9,7 +9,10 @@ const MAX_RESULT_TEXT = 1800;
 const MAX_RESULTS = 5;
 
 function normalize(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function terms(query: string) {
@@ -66,15 +69,16 @@ const SEARCHABLE_PUBLIC_PAGE_SLUGS = [
 ] as const;
 
 export async function searchPublicSite(query: string): Promise<PublicKnowledgeResult[]> {
-  const pages = await Promise.all(
-    SEARCHABLE_PUBLIC_PAGE_SLUGS.map((slug) => getPublishedPublicPageContent(slug)),
-  );
+  const pages = await Promise.all(SEARCHABLE_PUBLIC_PAGE_SLUGS.map((slug) => getPublishedPublicPageContent(slug)));
 
   return pages
     .filter((page): page is NonNullable<typeof page> => Boolean(page))
     .map((page) => {
       const sectionText = page.sections
-        .map((section) => `${section.title} ${section.description} ${section.items.map((item) => `${item.title} ${item.description}`).join(' ')}`)
+        .map(
+          (section) =>
+            `${section.title} ${section.description} ${section.items.map((item) => `${item.title} ${item.description}`).join(' ')}`,
+        )
         .join(' ');
       return {
         type: 'page' as const,
@@ -112,9 +116,7 @@ export async function getPublicProductKnowledge(product: string) {
     return {
       key: 'trading',
       title: trading?.title ?? 'Trading Workspace',
-      summary:
-        trading?.description ??
-        'Trading is a specialized Mkety Custom / Enterprise product.',
+      summary: trading?.description ?? 'Trading is a specialized Mkety Custom / Enterprise product.',
       path: 'https://trade.mkety.com',
       commercialModel: 'Custom / Enterprise',
     };

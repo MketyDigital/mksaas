@@ -14,6 +14,7 @@ export * from './integration-sync-control';
 export * from './invitations';
 export * from './knowledge';
 export * from './knowledge-chunks';
+export * from './mkety-auth';
 export * from './persons';
 export * from './platform-app-experience';
 export * from './platform-content';

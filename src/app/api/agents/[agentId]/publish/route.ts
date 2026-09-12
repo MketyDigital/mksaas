@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
-import { auth } from '@/shared/lib/auth';
+import { NextResponse } from 'next/server';
+import { publishAgentVersion } from '@/features/ai/lib/agent-versioning';
 import { db } from '@/shared/db';
 import { agents, agentVersions, projects, tenantMemberships, tenants } from '@/shared/db/schema';
-import { publishAgentVersion } from '@/features/ai/lib/agent-versioning';
+import { auth } from '@/shared/lib/auth';
 
 export async function POST(req: Request, { params }: { params: Promise<{ agentId: string }> }) {
   const session = await auth(); if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

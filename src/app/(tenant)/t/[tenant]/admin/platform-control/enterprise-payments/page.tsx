@@ -14,11 +14,14 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
   return (
     <div className="space-y-8">
       <div>
-        <Link href={`/t/${tenant}/admin/platform-control`} className="text-sm font-medium text-primary hover:underline">← Platform Control Center</Link>
+        <Link href={`/t/${tenant}/admin/platform-control`} className="text-sm font-medium text-primary hover:underline">
+          ← Platform Control Center
+        </Link>
         <p className="mt-4 text-sm font-semibold uppercase tracking-[0.25em] text-primary">Enterprise operations</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">Enterprise Payments</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Create hosted payment links for agreed Enterprise quotes, deposits, milestones, and balances. The amount is set by Mkety administration and is not customer-editable.
+          Create hosted payment links for agreed Enterprise quotes, deposits, milestones, and balances. The amount is
+          set by Mkety administration and is not customer-editable.
         </p>
       </div>
 

@@ -13,7 +13,9 @@ export function normalizeWorkspaceSalesLinks(section: PlatformWorkspaceSectionIn
   };
 }
 
-export function normalizePublicPageSalesLinks(sections: PlatformOverviewSectionInput[]): PlatformOverviewSectionInput[] {
+export function normalizePublicPageSalesLinks(
+  sections: PlatformOverviewSectionInput[],
+): PlatformOverviewSectionInput[] {
   return sections.map((section) => ({
     ...section,
     items: section.items.map((item) =>

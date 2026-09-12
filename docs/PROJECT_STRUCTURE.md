@@ -1,6 +1,6 @@
 # 🗄️ Project Structure
 
-The Next.js SaaS AI Template follows a Feature-Based Architecture adapted for Next.js App Router, combining the best practices of modular architecture with Next.js conventions. The main goal is to organize code around business capabilities while leveraging Next.js's powerful routing and server components.
+The Mkety Platform follows a Feature-Based Architecture adapted for Next.js App Router, combining the best practices of modular architecture with Next.js conventions. The main goal is to organize code around business capabilities while leveraging Next.js's powerful routing and server components.
 
 ## Architecture Overview
 
@@ -44,7 +44,7 @@ src/
 │   │       └── invite/[token]/    # Invitation acceptance
 │   │
 │   ├── api/                       # API routes
-│   │   ├── auth/[...nextauth]/    # Auth.js handlers
+│   │   ├── auth/                 # Mkety login/callback/logout/session routes
 │   │   ├── chat/                  # AI chat endpoint
 │   │   ├── health/                # Health check endpoint
 │   │   └── tenants/[tenant]/      # Tenant-scoped APIs

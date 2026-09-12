@@ -4,7 +4,10 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
-import { type PublicPagesAdminPayload, publicPagesAdminPayloadSchema } from '@/features/platform-content/public-pages-admin';
+import {
+  type PublicPagesAdminPayload,
+  publicPagesAdminPayloadSchema,
+} from '@/features/platform-content/public-pages-admin';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import type { PlatformJson } from '@/shared/db/schema/platform-content';
@@ -74,8 +77,15 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
         updatedAt: new Date(),
       };
       const [page] = existingPage
-        ? await tx.update(schema.platformPages).set(pageValues).where(eq(schema.platformPages.id, existingPage.id)).returning()
-        : await tx.insert(schema.platformPages).values({ ...pageValues, createdBy: actor.userId }).returning();
+        ? await tx
+            .update(schema.platformPages)
+            .set(pageValues)
+            .where(eq(schema.platformPages.id, existingPage.id))
+            .returning()
+        : await tx
+            .insert(schema.platformPages)
+            .values({ ...pageValues, createdBy: actor.userId })
+            .returning();
 
       await tx.insert(schema.platformContentRevisions).values({
         entityType: 'page',
@@ -126,8 +136,15 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
           updatedAt: new Date(),
         };
         const [section] = existingSection
-          ? await tx.update(schema.platformPageSections).set(sectionValues).where(eq(schema.platformPageSections.id, existingSection.id)).returning()
-          : await tx.insert(schema.platformPageSections).values({ ...sectionValues, createdBy: actor.userId }).returning();
+          ? await tx
+              .update(schema.platformPageSections)
+              .set(sectionValues)
+              .where(eq(schema.platformPageSections.id, existingSection.id))
+              .returning()
+          : await tx
+              .insert(schema.platformPageSections)
+              .values({ ...sectionValues, createdBy: actor.userId })
+              .returning();
 
         await tx.insert(schema.platformContentRevisions).values({
           entityType: 'page_section',
@@ -142,7 +159,10 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
 
       const staleSections = existingSections.filter((section) => !managedSectionKeys.includes(section.sectionKey));
       for (const staleSection of staleSections) {
-        await tx.update(schema.platformPageSections).set({ enabled: false, status: 'draft', updatedBy: actor.userId, updatedAt: new Date() }).where(eq(schema.platformPageSections.id, staleSection.id));
+        await tx
+          .update(schema.platformPageSections)
+          .set({ enabled: false, status: 'draft', updatedBy: actor.userId, updatedAt: new Date() })
+          .where(eq(schema.platformPageSections.id, staleSection.id));
         count += 1;
       }
     }
@@ -158,7 +178,10 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
     payload: parsed,
     mutatedRecords,
   });
-  revalidatePublicPages(tenantSlug, parsed.pages.map((page) => page.slug));
+  revalidatePublicPages(
+    tenantSlug,
+    parsed.pages.map((page) => page.slug),
+  );
 
   return {
     ok: true as const,
@@ -177,9 +200,15 @@ export async function publishPublicPages(tenantSlug: string) {
   const now = new Date();
 
   const mutatedRecords = await db.transaction(async (tx) => {
-    const pages = await tx.update(schema.platformPages)
+    const pages = await tx
+      .update(schema.platformPages)
       .set({ status: 'published', publishedAt: now, updatedBy: actor.userId, updatedAt: now })
-      .where(and(inArray(schema.platformPages.slug, [...MANAGED_PUBLIC_PAGE_SLUGS]), eq(schema.platformPages.status, 'draft')))
+      .where(
+        and(
+          inArray(schema.platformPages.slug, [...MANAGED_PUBLIC_PAGE_SLUGS]),
+          eq(schema.platformPages.status, 'draft'),
+        ),
+      )
       .returning();
 
     let count = pages.length;
@@ -192,7 +221,8 @@ export async function publishPublicPages(tenantSlug: string) {
         actorId: actor.userId,
       });
 
-      const sections = await tx.update(schema.platformPageSections)
+      const sections = await tx
+        .update(schema.platformPageSections)
         .set({ status: 'published', publishedAt: now, updatedBy: actor.userId, updatedAt: now })
         .where(and(eq(schema.platformPageSections.pageId, page.id), eq(schema.platformPageSections.status, 'draft')))
         .returning();

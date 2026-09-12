@@ -1,12 +1,12 @@
 import { and, desc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 
-import { AgentPlayground } from '@/features/projects/AgentPlayground';
 import { createAgentVersion, publishAgentVersionAction, updateAgent } from '@/features/projects/agent-actions';
+import { AgentPlayground } from '@/features/projects/AgentPlayground';
 import { requireProjectAccess } from '@/features/projects/server/access';
 import { AgentBuilderStatusPanel } from '@/features/projects/workspaces/ai/AgentBuilderStatusPanel';
-import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
+import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { db } from '@/shared/db';
 import { agents, agentVersions } from '@/shared/db/schema';
 

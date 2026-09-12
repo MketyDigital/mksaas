@@ -23,7 +23,9 @@ const showcaseGroups: MketyShowcaseGroup[] = [
     title: 'Practical learning',
     description: 'Build modern skills.',
     href: '/academy',
-    items: [{ key: 'automation', title: 'Automation Lab', description: 'Learn automation.', href: '/academy#automation' }],
+    items: [
+      { key: 'automation', title: 'Automation Lab', description: 'Learn automation.', href: '/academy#automation' },
+    ],
   },
 ];
 

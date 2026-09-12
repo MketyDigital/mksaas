@@ -1,9 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
+import { publishAgentVersion, snapshotAgentVersion } from '@/features/ai/lib/agent-versioning';
+import { db } from '@/shared/db';
 import { agents, agentVersions, projects, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
-import { db } from '@/shared/db';
-import { publishAgentVersion, snapshotAgentVersion } from '@/features/ai/lib/agent-versioning';
 
 async function getContext(req: Request, agentId: string) {
   const session = await auth();

@@ -42,11 +42,18 @@ describe('MketyPublicAssistant', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ answer: 'Mkety helps you build, automate and deploy.', conversationId: '11111111-1111-4111-8111-111111111111' }),
+        json: async () => ({
+          answer: 'Mkety helps you build, automate and deploy.',
+          conversationId: '11111111-1111-4111-8111-111111111111',
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ conversations: [], activeConversationId: '11111111-1111-4111-8111-111111111111', messages: [] }),
+        json: async () => ({
+          conversations: [],
+          activeConversationId: '11111111-1111-4111-8111-111111111111',
+          messages: [],
+        }),
       });
 
     render(<MketyPublicAssistant />);

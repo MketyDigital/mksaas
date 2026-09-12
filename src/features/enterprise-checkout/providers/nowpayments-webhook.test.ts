@@ -14,7 +14,9 @@ function sortObject(value: unknown): unknown {
 
 async function signatureFor(payload: Record<string, unknown>, secret: string) {
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, [
+    'sign',
+  ]);
   const canonicalBody = JSON.stringify(sortObject(payload));
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(canonicalBody));
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -35,7 +37,9 @@ describe('NOWPayments enterprise webhook', () => {
   });
 
   it('rejects an invalid signature', async () => {
-    await expect(verifyNowPaymentsWebhook(body, 'deadbeef', 'secret')).rejects.toThrow('Invalid NOWPayments signature.');
+    await expect(verifyNowPaymentsWebhook(body, 'deadbeef', 'secret')).rejects.toThrow(
+      'Invalid NOWPayments signature.',
+    );
   });
 
   it('verifies the recursively sorted JSON payload required by NOWPayments', async () => {

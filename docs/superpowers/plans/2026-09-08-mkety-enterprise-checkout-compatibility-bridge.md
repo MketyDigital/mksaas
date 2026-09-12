@@ -32,6 +32,7 @@
 ### Task 1: Enterprise order schema and migration
 
 **Files:**
+
 - Create: `src/shared/db/schema/platform-enterprise-orders.ts`
 - Modify: `src/shared/db/schema/index.ts`
 - Create: `migrations/0004_platform_enterprise_orders.sql` (use next available public-branch migration number if the exact number is occupied)
@@ -40,6 +41,7 @@
 - Test: `src/shared/db/schema/platform-enterprise-orders.test.ts`
 
 **Interfaces:**
+
 - Produces `platformEnterpriseOrders` Drizzle table.
 - Order IDs are Mkety-generated text IDs such as `MKETY-ENT-<uuid-or-stable-random-suffix>`.
 - Money is `amountMinor: bigint`/Postgres bigint and `currency='USD'`.
@@ -75,27 +77,27 @@ Expected: FAIL because the schema module/table does not exist.
 Required columns:
 
 ```ts
-id
-customerName
-companyName
-email
-phone
-country
-scopeId
-projectName
-projectDescription
-amountMinor
-currency
-paymentProvider
-checkoutStatus
-paymentStatus
-providerCheckoutReference
-providerPaymentReference
-idempotencyKey
-metadata
-createdAt
-updatedAt
-confirmedAt
+id;
+customerName;
+companyName;
+email;
+phone;
+country;
+scopeId;
+projectName;
+projectDescription;
+amountMinor;
+currency;
+paymentProvider;
+checkoutStatus;
+paymentStatus;
+providerCheckoutReference;
+providerPaymentReference;
+idempotencyKey;
+metadata;
+createdAt;
+updatedAt;
+confirmedAt;
 ```
 
 Add unique index on `idempotencyKey`, indexes on `email`, `paymentStatus`, `paymentProvider`, and `createdAt`. Do not add tenant/account foreign keys.
@@ -122,10 +124,12 @@ git commit -m "feat: add enterprise checkout intake schema"
 ### Task 2: Enterprise checkout domain validation and money conversion
 
 **Files:**
+
 - Create: `src/features/enterprise-checkout/domain.ts`
 - Create: `src/features/enterprise-checkout/domain.test.ts`
 
 **Interfaces:**
+
 - Produces `EnterprisePaymentProvider = 'nowpayments' | 'selar'`.
 - Produces `EnterpriseCheckoutRequest`, `EnterpriseCheckoutResult`, `parseEnterpriseCheckoutInput()`, and `parseUsdAmountToMinorUnits()`.
 - Server launch bounds: minimum USD 10.00; maximum USD 1,000,000.00.
@@ -170,6 +174,7 @@ git commit -m "feat: validate enterprise checkout requests"
 ### Task 3: Provider-neutral adapters using legacy-compatible environment variables
 
 **Files:**
+
 - Create: `src/features/enterprise-checkout/providers/types.ts`
 - Create: `src/features/enterprise-checkout/providers/nowpayments.ts`
 - Create: `src/features/enterprise-checkout/providers/selar.ts`
@@ -195,12 +200,12 @@ NOWPayments consumes `NOWPAYMENTS_API_KEY`; Selar consumes `SELAR_ENTERPRISE_CHE
 Assert invoice request includes:
 
 ```ts
-price_amount: '199.99'
-price_currency: 'usd'
-order_id: '<Mkety order id>'
-ipn_callback_url: 'https://mkety.com/api/webhooks/enterprise/nowpayments'
-success_url: 'https://mkety.com/payment/enterprise/success?orderId=<encoded>'
-cancel_url: 'https://mkety.com/payment/enterprise/cancelled?orderId=<encoded>'
+price_amount: '199.99';
+price_currency: 'usd';
+order_id: '<Mkety order id>';
+ipn_callback_url: 'https://mkety.com/api/webhooks/enterprise/nowpayments';
+success_url: 'https://mkety.com/payment/enterprise/success?orderId=<encoded>';
+cancel_url: 'https://mkety.com/payment/enterprise/cancelled?orderId=<encoded>';
 ```
 
 Assert missing `NOWPAYMENTS_API_KEY` fails safely without issuing fetch.
@@ -241,6 +246,7 @@ git commit -m "feat: add enterprise payment provider adapters"
 ### Task 4: Order repository, idempotent checkout service, and create API
 
 **Files:**
+
 - Create: `src/features/enterprise-checkout/server/repository.ts`
 - Create: `src/features/enterprise-checkout/server/service.ts`
 - Create: `src/features/enterprise-checkout/server/service.test.ts`
@@ -248,6 +254,7 @@ git commit -m "feat: add enterprise payment provider adapters"
 - Create: `src/app/api/payments/enterprise/create/route.test.ts`
 
 **Interfaces:**
+
 - `createEnterpriseCheckout(input, requestContext)` validates, generates/uses idempotency key, creates order first, invokes selected provider adapter, updates checkout reference/status, and returns a safe `EnterpriseCheckoutResult`.
 - Same idempotency key + same normalized request returns the existing checkout result and does not create a duplicate order/provider invoice.
 - Same idempotency key + materially different request fails conflict-safe.
@@ -304,6 +311,7 @@ git commit -m "feat: create enterprise checkout service"
 ### Task 5: Fail-closed NOWPayments webhook and enterprise status API
 
 **Files:**
+
 - Create: `src/features/enterprise-checkout/providers/nowpayments-webhook.ts`
 - Create: `src/features/enterprise-checkout/providers/nowpayments-webhook.test.ts`
 - Create: `src/app/api/webhooks/enterprise/nowpayments/route.ts`
@@ -311,6 +319,7 @@ git commit -m "feat: create enterprise checkout service"
 - Create: `src/app/api/payments/enterprise/status/route.ts`
 
 **Interfaces:**
+
 - `verifyNowPaymentsWebhook(rawBody, signature, secret)` returns parsed verified event or throws.
 - `applyVerifiedNowPaymentsEvent(event)` performs monotonic/idempotent state update.
 - Confirm only provider `payment_status === 'finished'`.
@@ -356,6 +365,7 @@ git commit -m "feat: verify enterprise payment webhooks"
 ### Task 6: Mkety enterprise checkout and payment-status UI
 
 **Files:**
+
 - Create: `src/features/enterprise-checkout/components/EnterpriseCheckoutForm.tsx`
 - Create: `src/app/enterprise/checkout/page.tsx`
 - Create: `src/app/payment/enterprise/pending/page.tsx`
@@ -366,6 +376,7 @@ git commit -m "feat: verify enterprise payment webhooks"
 - Test: `src/features/enterprise-checkout/components/EnterpriseCheckoutForm.test.tsx`
 
 **Interfaces:**
+
 - Public CTA from `/enterprise` routes to `/enterprise/checkout`.
 - Form posts only customer/project/amount/provider; it cannot set payment status.
 - Provider options: Crypto / NOWPayments and Card/Local / Selar.
@@ -405,12 +416,14 @@ git commit -m "feat: add Mkety enterprise checkout experience"
 ### Task 7: Cloudflare candidate/payment-secret wiring and non-charging checkout smoke
 
 **Files:**
+
 - Modify: `.github/workflows/mkety-public-candidate-deploy.yml`
 - Modify: `.github/workflows/mkety-production-preflight.yml` only if additional read-only validation is necessary
 - Create or Modify: production deployment workflow prepared for PUBLIC-15
 - Modify: `docs/MKETY_PUBLIC_CUTOVER_RUNBOOK.md`
 
 **Interfaces:**
+
 - Candidate/production support the three legacy-compatible payment env names.
 - Secret values must never be echoed.
 - Candidate smoke must not submit a real paid transaction.
@@ -438,6 +451,7 @@ Use Wrangler secret/config mechanisms without printing values. Do not borrow cre
 - [ ] **Step 4: Add safe candidate smoke**
 
 Safe checks:
+
 - enterprise checkout page returns 200.
 - invalid checkout payload returns 4xx.
 - status lookup for nonexistent order returns safe 404/empty result.
@@ -461,10 +475,12 @@ git commit -m "ci: verify enterprise checkout on Cloudflare candidate"
 ### Task 8: Full verification, public-site acceptance, and production cutover gate
 
 **Files:**
+
 - Modify only files required by defects found during verification.
 - Modify: `docs/MKETY_DEVELOPMENT_CONTINUATION.md` after verified deployment.
 
 **Interfaces:**
+
 - This task closes PUBLIC-14 and PUBLIC-15 only after both Public Mkety AI and enterprise checkout candidate gates pass.
 
 - [ ] **Step 1: Run targeted enterprise suite**
@@ -498,6 +514,7 @@ Expected: existing public CMS/Public-AI tables and `platform_enterprise_orders` 
 - [ ] **Step 4: Run Cloudflare candidate**
 
 Must pass:
+
 - public route crawl.
 - Public Mkety AI real-provider smoke, memory restore, New Chat isolation.
 - enterprise checkout/status/webhook safe smoke.
@@ -523,6 +540,7 @@ Do not deploy via Vercel. Preserve proxied A records unless the reviewed workflo
 - [ ] **Step 7: Production smoke**
 
 Verify:
+
 - `https://mkety.com/` 200.
 - `https://www.mkety.com/...` canonical 308 to root preserving path/query.
 - public pages/pricing/docs/legal/contact.

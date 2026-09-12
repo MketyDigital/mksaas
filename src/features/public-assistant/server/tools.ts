@@ -2,12 +2,7 @@ import { z } from 'zod';
 
 import { MKETY_PUBLIC_ROUTES } from '@/features/platform-content/public-routes';
 
-import {
-  getPublicPricingKnowledge,
-  getPublicProductKnowledge,
-  searchPublicDocs,
-  searchPublicSite,
-} from './knowledge';
+import { getPublicPricingKnowledge, getPublicProductKnowledge, searchPublicDocs, searchPublicSite } from './knowledge';
 
 export const PUBLIC_SUPPORT_TOOL_NAMES = [
   'search_public_docs',
@@ -25,7 +20,10 @@ const productInputSchema = z.object({ product: z.string().trim().min(1).max(300)
 const emptyInputSchema = z.object({}).strict();
 
 function normalize(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 const EXTERNAL_PRODUCT_ROUTES: Array<{ aliases: string[]; label: string; path: string }> = [

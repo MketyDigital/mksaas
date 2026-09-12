@@ -1,7 +1,7 @@
-import type { EnterprisePaymentProvider } from '../domain';
 import { createNowPaymentsAdapter } from './nowpayments';
 import { createSelarAdapter } from './selar';
 import type { EnterpriseCheckoutProviderAdapter } from './types';
+import type { EnterprisePaymentProvider } from '../domain';
 
 interface EnterpriseProviderEnvironment {
   [key: string]: string | undefined;

@@ -1,6 +1,6 @@
-# Next.js SaaS AI Template — Brand Guidelines
+# Mkety Platform — Brand Guidelines
 
-> This document defines the visual identity defaults of the Next.js SaaS AI Template. Tenants can customize brand colors and logos via admin settings. For design tokens, principles, and component patterns, see [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md).
+> This document defines the visual identity defaults of the Mkety Platform. Tenants can customize brand colors and logos via admin settings. For design tokens, principles, and component patterns, see [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md).
 
 ---
 

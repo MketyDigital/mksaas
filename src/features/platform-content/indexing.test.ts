@@ -18,11 +18,7 @@ describe('Mkety public indexing controls', () => {
 
   it('allows the public site while blocking private application surfaces', () => {
     const robots = getMketyRobotsPolicy();
-    expect(robots.rules).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ userAgent: '*', allow: '/' }),
-      ]),
-    );
+    expect(robots.rules).toEqual(expect.arrayContaining([expect.objectContaining({ userAgent: '*', allow: '/' })]));
     const serialized = JSON.stringify(robots);
     expect(serialized).toContain('/api/');
     expect(serialized).toContain('/admin/');

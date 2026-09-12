@@ -3,9 +3,12 @@ import { z } from 'zod';
 const safeHrefSchema = z
   .string()
   .min(1)
-  .refine((href) => href.startsWith('/') || href.startsWith('#') || href.startsWith('https://') || href.startsWith('mailto:'), {
-    message: 'Href must be a relative path, anchor, HTTPS URL, or mailto link.',
-  });
+  .refine(
+    (href) => href.startsWith('/') || href.startsWith('#') || href.startsWith('https://') || href.startsWith('mailto:'),
+    {
+      message: 'Href must be a relative path, anchor, HTTPS URL, or mailto link.',
+    },
+  );
 
 const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a 6-digit hex value.');
 
@@ -124,7 +127,11 @@ export const docsCategorySchema = z.object({
 
 export const docsArticleSchema = z.object({
   categoryKey: z.string().min(1).max(100),
-  slug: z.string().min(1).max(180).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  slug: z
+    .string()
+    .min(1)
+    .max(180)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   title: z.string().min(1).max(220),
   excerpt: z.string().max(420).optional(),
   bodyMarkdown: z.string().min(1),

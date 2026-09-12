@@ -4,8 +4,12 @@ import type { ReactNode } from 'react';
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
+import type {
+  PlatformFooterGroupInput,
+  PlatformNavigationItemInput,
+  PlatformSiteSettingsInput,
+} from '../../../schemas';
 import type { MketyPublishedPublicPage } from '../../../server/public-page';
-import type { PlatformFooterGroupInput, PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../../schemas';
 import { MketyPublicShell } from '../MketyPublicShell';
 
 interface MketyPublicPageProps {
@@ -34,7 +38,9 @@ export function MketyPublicPage({ page, settings, navigation, footerGroups, feat
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <Grid3X3 className="h-5 w-5" />
                   </span>
-                  <span className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Mkety public surface</span>
+                  <span className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Mkety public surface
+                  </span>
                 </div>
                 <p className="mt-8 text-sm font-semibold">{page.eyebrow}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2" aria-hidden="true">
@@ -78,14 +84,22 @@ export function MketyPublicPage({ page, settings, navigation, footerGroups, feat
                     {section.items.map((item, itemIndex) => (
                       <Card
                         key={item.key}
-                        className={itemIndex === 0 && section.items.length > 2 ? 'rounded-3xl border-primary/15 bg-background/85 md:row-span-2' : 'rounded-3xl border-primary/10 bg-background/85'}
+                        className={
+                          itemIndex === 0 && section.items.length > 2
+                            ? 'rounded-3xl border-primary/15 bg-background/85 md:row-span-2'
+                            : 'rounded-3xl border-primary/10 bg-background/85'
+                        }
                       >
                         <CardHeader>
                           <div className="mb-5 flex items-start justify-between gap-3">
                             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                               <Sparkles className="h-4 w-4" />
                             </span>
-                            {item.badge && <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">{item.badge}</span>}
+                            {item.badge && (
+                              <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">
+                                {item.badge}
+                              </span>
+                            )}
                           </div>
                           <CardTitle>{item.title}</CardTitle>
                           <CardDescription className="leading-6">{item.description}</CardDescription>
