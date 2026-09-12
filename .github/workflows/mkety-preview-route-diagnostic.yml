@@ -1,0 +1,40 @@
+name: Mkety Preview Route Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PREVIEW_URL: https://mkety-platform-preview.dry-glitter-7e16.workers.dev
+    steps:
+      - name: Probe live preview routes without following redirects
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /api/health / /login /api/auth/session '/api/auth/login?returnTo=/select-tenant'; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            status="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL$path")"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            server="$(awk 'BEGIN{IGNORECASE=1} /^server:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            cf_ray="$(awk 'BEGIN{IGNORECASE=1} /^cf-ray:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            bytes="$(wc -c < "$body" | tr -d ' ')"
+            printf '%s -> HTTP %s; type=%s; bytes=%s; server=%s; cf-ray=%s\n' "$path" "$status" "${content_type:-none}" "$bytes" "${server:-none}" "${cf_ray:-none}"
+            if [ -n "$location" ]; then
+              printf '  location=%s\n' "$location"
+            fi
+            printf '  body-prefix='
+            head -c 300 "$body" | tr '\r\n' '  ' | sed -E 's/[[:space:]]+/ /g'
+            printf '\n'
+            rm -f "$headers" "$body"
+          done
