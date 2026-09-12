@@ -23,7 +23,7 @@ env:
 jobs:
   reconcile:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,8 +68,7 @@ jobs:
             while IFS= read -r path; do
               [ -z "$path" ] && continue
               case "$path" in
-                .env.example|.mega-linter.yml|docs/README.md|jest.setup.tsx|src/app/layout.tsx)
-                  ;;
+                .env.example|.mega-linter.yml|docs/README.md|jest.setup.tsx|src/app/layout.tsx) ;;
                 *)
                   echo "::error::Unexpected merge conflict: $path"
                   git merge --abort || true
@@ -77,7 +76,6 @@ jobs:
                   ;;
               esac
             done < /tmp/conflicts.txt
-
             echo "Known conflicts detected; resolving with pre-reviewed Auth-side versions:"
             cat /tmp/conflicts.txt
             while IFS= read -r path; do
@@ -96,14 +94,12 @@ jobs:
             git diff --name-only --diff-filter=U
             exit 1
           fi
-
-          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' \
-            .env.example .mega-linter.yml docs/README.md jest.setup.tsx src/app/layout.tsx; then
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' .env.example .mega-linter.yml docs/README.md jest.setup.tsx src/app/layout.tsx; then
             echo "::error::Conflict markers remain in reconciled files"
             exit 1
           fi
-
           git diff --check
+
           echo "### Guarded Auth reconciliation" >> "$GITHUB_STEP_SUMMARY"
           echo "- Auth pre-merge SHA: \`$auth_sha\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Main SHA: \`$main_sha\`" >> "$GITHUB_STEP_SUMMARY"
@@ -111,8 +107,6 @@ jobs:
           if [ -s /tmp/conflicts.txt ]; then
             echo "- Reviewed conflicts:" >> "$GITHUB_STEP_SUMMARY"
             while IFS= read -r path; do echo "  - \`$path\`" >> "$GITHUB_STEP_SUMMARY"; done < /tmp/conflicts.txt
-          else
-            echo "- Reviewed conflicts: none after pre-reconciliation" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Repair known public-content migration prefix collision
@@ -128,10 +122,8 @@ jobs:
           fi
           if [ ! -f "$source_path" ] || [ -e "$target_path" ]; then
             echo "::error::Unexpected content migration namespace state before repair"
-            ls -1 migrations
             exit 1
           fi
-
           git mv "$source_path" "$target_path"
           python - <<'PY'
           from pathlib import Path
@@ -139,14 +131,12 @@ jobs:
           text = path.read_text()
           needle = "  'migrations/0008_harden_rls_auto_enable.sql',\n"
           addition = needle + "  'migrations/0009_platform_commercial_content_repair.sql',\n"
-          if text.count(needle) != 1:
-              raise SystemExit('expected exactly one 0008 content-runner entry')
-          if '0009_platform_commercial_content_repair.sql' in text:
-              raise SystemExit('0009 content repair is unexpectedly already present')
+          if text.count(needle) != 1 or '0009_platform_commercial_content_repair.sql' in text:
+              raise SystemExit('unexpected content migration runner state')
           path.write_text(text.replace(needle, addition))
           PY
           git add "$target_path" scripts/migrate-mkety-platform-content.ts
-          echo "- Repaired pre-existing content migration collision: later commercial repair moved from \`0004\` to \`0009\` and added to the explicit runner." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Repaired public-content migration prefix collision: later commercial repair is now root migration \`0009\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
@@ -161,7 +151,6 @@ jobs:
             echo "::error::Unexpected deploy helper blob: $helper_blob"
             exit 1
           fi
-
           python - <<'PY'
           from pathlib import Path
           path = Path('scripts/deploy-vinext-cloudflare.sh')
@@ -192,7 +181,6 @@ jobs:
           path.write_text(text.replace(old, new))
           PY
           git add "$helper"
-
           worker_name="$(node - <<'NODE'
           const fs = require('node:fs');
           const ts = require('typescript');
@@ -201,11 +189,82 @@ jobs:
           process.stdout.write(parsed.config?.name || '');
           NODE
           )"
-          if [ "$worker_name" != "mkety-platform" ]; then
-            echo "::error::JSONC parser returned unexpected Worker name: $worker_name"
+          test "$worker_name" = "mkety-platform"
+          echo "- Repaired deploy helper to parse valid JSONC with the repository TypeScript parser." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refresh merged Drizzle baseline snapshot without duplicate SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot="src/shared/db/migrations/meta/0009_snapshot.json"
+          journal="src/shared/db/migrations/meta/_journal.json"
+          cp "$journal" /tmp/journal.before-public-baseline.json
+
+          node - <<'NODE' > /tmp/0009-identity.json
+          const fs = require('node:fs');
+          const s = JSON.parse(fs.readFileSync('src/shared/db/migrations/meta/0009_snapshot.json', 'utf8'));
+          process.stdout.write(JSON.stringify({ id: s.id, prevId: s.prevId }));
+          NODE
+
+          pnpm db:generate
+          generated_sql="$(git ls-files --others --exclude-standard 'src/shared/db/migrations/0010_*.sql' | head -n 1)"
+          generated_snapshot="src/shared/db/migrations/meta/0010_snapshot.json"
+          if [ -z "$generated_sql" ] || [ ! -f "$generated_snapshot" ]; then
+            echo "::error::Expected exactly one generated 0010 SQL and snapshot for baseline inspection"
+            git status --short
             exit 1
           fi
-          echo "- Repaired deploy helper to parse real JSONC (comments/trailing commas) through TypeScript instead of strict JSON.parse." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(git ls-files --others --exclude-standard 'src/shared/db/migrations/0010_*.sql' | wc -l)" -ne 1 ]; then
+            echo "::error::Unexpected number of generated SQL files"
+            exit 1
+          fi
+
+          actual_tables="$(grep -oE '"saas_template"\."[A-Za-z0-9_]+"' "$generated_sql" | sed -E 's/"saas_template"\."([A-Za-z0-9_]+)"/\1/' | sort -u)"
+          expected_tables="$(printf '%s\n' \
+            platform_enterprise_orders \
+            public_ai_conversations \
+            public_ai_memory_facts \
+            public_ai_messages \
+            public_ai_tool_runs \
+            public_ai_visitors | sort)"
+          if [ "$actual_tables" != "$expected_tables" ]; then
+            echo "::error::Generated Drizzle delta contains tables outside the public-site-owned baseline"
+            echo "Actual:"; printf '%s\n' "$actual_tables"
+            exit 1
+          fi
+
+          # These six tables are already owned by root migrations 0002 and 0003.
+          grep -q 'CREATE TABLE IF NOT EXISTS "saas_template"."public_ai_visitors"' migrations/0002_public_ai_memory.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS "saas_template"."platform_enterprise_orders"' migrations/0003_platform_enterprise_orders.sql
+
+          cp "$generated_snapshot" "$snapshot"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = 'src/shared/db/migrations/meta/0009_snapshot.json';
+          const identity = JSON.parse(fs.readFileSync('/tmp/0009-identity.json', 'utf8'));
+          const snapshot = JSON.parse(fs.readFileSync(path, 'utf8'));
+          snapshot.id = identity.id;
+          snapshot.prevId = identity.prevId;
+          fs.writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`);
+          NODE
+          cp /tmp/journal.before-public-baseline.json "$journal"
+          rm -f "$generated_sql" "$generated_snapshot"
+          git add "$snapshot" "$journal"
+
+          before="$(git status --porcelain)"
+          pnpm db:generate
+          after="$(git status --porcelain)"
+          if [ "$before" != "$after" ]; then
+            echo "::error::Merged Drizzle baseline is still not a forward-generation no-op"
+            git status --short
+            exit 1
+          fi
+          if git ls-files --others --exclude-standard 'src/shared/db/migrations/*.sql' 'src/shared/db/migrations/meta/*_snapshot.json' | grep -q .; then
+            echo "::error::Forward generation left unexpected migration artifacts"
+            git ls-files --others --exclude-standard 'src/shared/db/migrations/*.sql' 'src/shared/db/migrations/meta/*_snapshot.json'
+            exit 1
+          fi
+          echo "- Refreshed \`0009_mkety_auth\` snapshot metadata to include public-site-owned tables already migrated by root migrations 0002/0003; no duplicate application SQL was added." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify Auth.js and Auth0 are absent from active package/config
         shell: bash
@@ -246,24 +305,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f .git/MERGE_HEAD ]; then
-            echo "::error::Expected an in-progress merge before creating the guarded merge commit"
-            exit 1
-          fi
+          test -f .git/MERGE_HEAD
           git commit -m "Merge main ${EXPECTED_MAIN_SHA:0:12} into Mkety Auth after guarded verification"
           merge_sha="$(git rev-parse HEAD)"
           echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
           echo "- Verified merge SHA: \`$merge_sha\`" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Prove forward migration generation is a no-op
+      - name: Prove committed forward migration generation is a no-op
         shell: bash
         run: |
           set -euo pipefail
+          before="$(git status --porcelain)"
           pnpm db:generate
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::db:generate changed the verified merged tree"
+          after="$(git status --porcelain)"
+          if [ "$before" != "$after" ] || [ -n "$after" ]; then
+            echo "::error::db:generate changed the committed verified merge"
             git status --short
-            git diff -- src/shared/db/migrations src/shared/db/schema || true
             exit 1
           fi
           pnpm db:check:migrations
