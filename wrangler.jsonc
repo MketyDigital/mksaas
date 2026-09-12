@@ -27,7 +27,6 @@
     "preview": {
       "workers_dev": true,
       "preview_urls": true,
-      "keep_vars": true,
       "observability": {
         "enabled": true,
       },
