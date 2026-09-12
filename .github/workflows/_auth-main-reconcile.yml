@@ -63,24 +63,20 @@ jobs:
           conflicts="$(git diff --name-only --diff-filter=U || true)"
           if [ -n "$conflicts" ]; then
             printf '%s\n' "$conflicts" > /tmp/conflicts.txt
-            allowed="$(cat <<'EOF'
-.env.example
-.mega-linter.yml
-docs/README.md
-jest.setup.tsx
-src/app/layout.tsx
-EOF
-)"
             while IFS= read -r path; do
               [ -z "$path" ] && continue
-              if ! grep -Fxq "$path" <<< "$allowed"; then
-                echo "::error::Unexpected merge conflict: $path"
-                git merge --abort || true
-                exit 1
-              fi
+              case "$path" in
+                .env.example|.mega-linter.yml|docs/README.md|jest.setup.tsx|src/app/layout.tsx)
+                  ;;
+                *)
+                  echo "::error::Unexpected merge conflict: $path"
+                  git merge --abort || true
+                  exit 1
+                  ;;
+              esac
             done < /tmp/conflicts.txt
 
-            echo "Known conflicts detected; resolving with the pre-reviewed Auth-side versions:"
+            echo "Known conflicts detected; resolving with pre-reviewed Auth-side versions:"
             cat /tmp/conflicts.txt
             while IFS= read -r path; do
               [ -z "$path" ] && continue
@@ -124,12 +120,7 @@ EOF
         shell: bash
         run: |
           set -euo pipefail
-          if node -e "const p=require('./package.json'); process.exit((p.dependencies?.['next-auth'] || p.dependencies?.['@auth/drizzle-adapter']) ? 1 : 0)"; then
-            :
-          else
-            echo "::error::Auth.js/NextAuth dependency was reintroduced by reconciliation"
-            exit 1
-          fi
+          node -e "const p=require('./package.json'); if (p.dependencies?.['next-auth'] || p.dependencies?.['@auth/drizzle-adapter']) process.exit(1)"
           if grep -nE 'AUTH0_|NEXTAUTH_' .env.example; then
             echo "::error::Legacy Auth0/NextAuth environment names were reintroduced"
             exit 1
@@ -177,10 +168,8 @@ EOF
         shell: bash
         run: |
           set -euo pipefail
-          before="$(git status --porcelain)"
           pnpm db:generate
-          after="$(git status --porcelain)"
-          if [ "$before" != "$after" ] || [ -n "$after" ]; then
+          if [ -n "$(git status --porcelain)" ]; then
             echo "::error::db:generate changed the verified merged tree"
             git status --short
             git diff -- src/shared/db/migrations src/shared/db/schema || true
@@ -193,12 +182,13 @@ EOF
         shell: bash
         env:
           MERGE_SHA: ${{ steps.commit.outputs.merge_sha }}
+          AUTH_PREMERGE_SHA: ${{ steps.merge.outputs.auth_sha }}
         run: |
           set -euo pipefail
           remote_head="$(git ls-remote origin refs/heads/feat/mkety-auth-zitadel-vinext | cut -f1)"
-          if [ "$remote_head" != "${{ steps.merge.outputs.auth_sha }}" ]; then
+          if [ "$remote_head" != "$AUTH_PREMERGE_SHA" ]; then
             echo "::error::Auth branch moved during guarded verification; refusing to push"
-            echo "Expected remote head: ${{ steps.merge.outputs.auth_sha }}"
+            echo "Expected remote head: $AUTH_PREMERGE_SHA"
             echo "Actual remote head:   $remote_head"
             exit 1
           fi
