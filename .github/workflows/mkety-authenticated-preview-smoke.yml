@@ -1,0 +1,314 @@
+name: Mkety Authenticated Preview Smoke
+
+on:
+  workflow_run:
+    workflows:
+      - Mkety Cloudflare Preview
+    types:
+      - completed
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-authenticated-preview-smoke
+  cancel-in-progress: true
+
+jobs:
+  authenticated-smoke:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'success'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mkety-auth-zitadel-vinext
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require preview smoke credentials
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID_VAR: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID_VAR:-}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID_VAR" >> "$GITHUB_ENV"
+            export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_VAR"
+          fi
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID ZITADEL_ISSUER; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing authenticated smoke configuration: $name"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          echo "::add-mask::$STAGING_DATABASE_URL"
+
+      - name: Derive preview URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
+          subdomain="$(RESPONSE="$response" node <<'NODE'
+          const parsed = JSON.parse(process.env.RESPONSE);
+          if (parsed.success !== true || !parsed.result?.subdomain) {
+            throw new Error('Cloudflare did not return the account workers.dev subdomain');
+          }
+          process.stdout.write(parsed.result.subdomain);
+          NODE
+          )"
+          preview_url="https://mkety-platform-preview.${subdomain}.workers.dev"
+          echo "PREVIEW_URL=$preview_url" >> "$GITHUB_ENV"
+          echo "- Preview URL: $preview_url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create ephemeral ZITADEL smoke identity
+        id: smoke-user
+        shell: bash
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -hex 24)Aa1!"
+          email="mkety-auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.com"
+          echo "::add-mask::$password"
+          echo "SMOKE_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "SMOKE_EMAIL=$email" >> "$GITHUB_ENV"
+
+          project_response="$(curl --fail-with-body --silent --show-error \
+            -X POST "${ZITADEL_ISSUER%/}/zitadel.project.v2.ProjectService/GetProject" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
+            -H 'Connect-Protocol-Version: 1' \
+            -H 'Content-Type: application/json' \
+            --data "{\"projectId\":\"${ZITADEL_PROJECT_ID}\"}")"
+          organization_id="$(PROJECT_RESPONSE="$project_response" node <<'NODE'
+          const parsed = JSON.parse(process.env.PROJECT_RESPONSE);
+          const id = parsed.project?.organizationId || parsed.project?.organization_id;
+          if (!id) throw new Error('ZITADEL project response did not include organization id');
+          process.stdout.write(id);
+          NODE
+          )"
+
+          payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" ORGANIZATION_ID="$organization_id" node <<'NODE'
+          const payload = {
+            organizationId: process.env.ORGANIZATION_ID,
+            username: process.env.SMOKE_EMAIL,
+            human: {
+              profile: {
+                givenName: 'Mkety',
+                familyName: 'Smoke',
+                displayName: 'Mkety Auth Smoke',
+                preferredLanguage: 'en',
+              },
+              email: {
+                email: process.env.SMOKE_EMAIL,
+                isVerified: true,
+              },
+              password: {
+                password: process.env.SMOKE_PASSWORD,
+                changeRequired: false,
+              },
+            },
+          };
+          process.stdout.write(JSON.stringify(payload));
+          NODE
+          )"
+
+          create_response="$(curl --fail-with-body --silent --show-error \
+            -X POST "${ZITADEL_ISSUER%/}/v2/users/new" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "$payload")"
+          user_id="$(CREATE_RESPONSE="$create_response" node <<'NODE'
+          const parsed = JSON.parse(process.env.CREATE_RESPONSE);
+          const id = parsed.id || parsed.userId || parsed.user_id;
+          if (!id) throw new Error('ZITADEL CreateUser response did not include a user id');
+          process.stdout.write(id);
+          NODE
+          )"
+          echo "SMOKE_ZITADEL_USER_ID=$user_id" >> "$GITHUB_ENV"
+          echo "user_id=$user_id" >> "$GITHUB_OUTPUT"
+          echo "- Ephemeral ZITADEL identity created for this run" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install browser smoke dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm add --ignore-workspace-root-check --save-dev @playwright/test@1.55.0
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Run real hosted-login, Mkety session, tenant and logout smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          slug="auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "SMOKE_WORKSPACE_SLUG=$slug" >> "$GITHUB_ENV"
+          cat > .tmp-mkety-auth-smoke.spec.ts <<'TEST'
+          import { test, expect, type Page } from '@playwright/test';
+
+          const previewUrl = process.env.PREVIEW_URL!;
+          const issuer = new URL(process.env.ZITADEL_ISSUER!).origin;
+          const email = process.env.SMOKE_EMAIL!;
+          const password = process.env.SMOKE_PASSWORD!;
+          const slug = process.env.SMOKE_WORKSPACE_SLUG!;
+
+          async function firstVisible(page: Page, selectors: string[]) {
+            for (const selector of selectors) {
+              const locator = page.locator(selector).first();
+              if (await locator.isVisible().catch(() => false)) return locator;
+            }
+            return null;
+          }
+
+          async function clickContinue(page: Page) {
+            const candidates = [
+              page.getByRole('button', { name: /continue/i }).first(),
+              page.getByRole('button', { name: /next/i }).first(),
+              page.getByRole('button', { name: /sign in/i }).first(),
+              page.getByRole('button', { name: /login/i }).first(),
+              page.getByRole('button', { name: /authorize|allow/i }).first(),
+              page.locator('button[type="submit"]').first(),
+            ];
+            for (const candidate of candidates) {
+              if (await candidate.isVisible().catch(() => false)) {
+                await candidate.click();
+                return;
+              }
+            }
+            throw new Error(`No visible continue/login button at ${page.url()}`);
+          }
+
+          test('real ZITADEL login creates Mkety session, tenant access works, logout revokes session', async ({ page }) => {
+            await page.goto(`${previewUrl}/api/auth/login?returnTo=/create-workspace`, { waitUntil: 'domcontentloaded' });
+            await expect.poll(() => new URL(page.url()).origin, { timeout: 20_000 }).toBe(issuer);
+
+            for (let step = 0; step < 8 && !page.url().startsWith(previewUrl); step += 1) {
+              const passwordInput = await firstVisible(page, [
+                'input[type="password"]',
+                'input[name="password"]',
+                'input[autocomplete="current-password"]',
+              ]);
+              if (passwordInput) {
+                await passwordInput.fill(password);
+                await clickContinue(page);
+                await page.waitForTimeout(400);
+                continue;
+              }
+
+              const loginInput = await firstVisible(page, [
+                'input[name="loginName"]',
+                'input[name="username"]',
+                'input[type="email"]',
+                'input[autocomplete="username"]',
+                'input[type="text"]',
+              ]);
+              if (loginInput) {
+                await loginInput.fill(email);
+                await clickContinue(page);
+                await page.waitForTimeout(400);
+                continue;
+              }
+
+              const authorize = page.getByRole('button', { name: /authorize|allow|continue/i }).first();
+              if (await authorize.isVisible().catch(() => false)) {
+                await authorize.click();
+                await page.waitForTimeout(400);
+                continue;
+              }
+
+              await page.waitForTimeout(750);
+            }
+
+            await page.waitForURL((url) => url.origin === new URL(previewUrl).origin, { timeout: 30_000 });
+            await page.goto(`${previewUrl}/create-workspace`, { waitUntil: 'networkidle' });
+            await expect(page.getByRole('heading', { name: 'Create a workspace' })).toBeVisible();
+            await expect(page.getByText('Sign in first.')).toHaveCount(0);
+
+            const sessionResponse = await page.context().request.get(`${previewUrl}/api/auth/session`);
+            expect(sessionResponse.status()).toBe(200);
+            const session = await sessionResponse.json();
+            expect(session?.user?.email).toBe(email);
+
+            await page.getByLabel('Workspace name').fill('Mkety Auth Smoke');
+            await page.getByLabel('Workspace slug').fill(slug);
+            await Promise.all([
+              page.waitForURL(`**/t/${slug}`, { timeout: 20_000 }),
+              page.getByRole('button', { name: 'Create workspace' }).click(),
+            ]);
+            await expect(page).toHaveURL(new RegExp(`/t/${slug}$`));
+            await expect(page.getByText('Mkety Auth Smoke').first()).toBeVisible();
+
+            const protectedResponse = await page.context().request.get(`${previewUrl}/t/${slug}`);
+            expect(protectedResponse.status()).toBe(200);
+
+            await page.goto(`${previewUrl}/api/auth/logout?returnTo=/login`, { waitUntil: 'domcontentloaded' });
+            await page.waitForURL('**/login', { timeout: 20_000 });
+
+            const afterLogout = await page.context().request.get(`${previewUrl}/api/auth/session`);
+            expect(afterLogout.status()).toBe(200);
+            expect(await afterLogout.json()).toBeNull();
+          });
+          TEST
+
+          pnpm exec playwright test .tmp-mkety-auth-smoke.spec.ts \
+            --browser=chromium \
+            --reporter=line \
+            --workers=1
+          rm -f .tmp-mkety-auth-smoke.spec.ts
+          echo "- Authenticated browser flow: login → callback → Mkety session → tenant access → logout verified" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up Mkety smoke records
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_EMAIL:-}" ]; then exit 0; fi
+          node --input-type=module <<'NODE'
+          import postgres from 'postgres';
+          const sql = postgres(process.env.STAGING_DATABASE_URL, { max: 1, prepare: false });
+          try {
+            const slug = process.env.SMOKE_WORKSPACE_SLUG;
+            if (slug) {
+              await sql`delete from saas_template.tenants where slug = ${slug}`;
+            }
+            await sql`delete from saas_template.users where email = ${process.env.SMOKE_EMAIL}`;
+          } finally {
+            await sql.end();
+          }
+          NODE
+
+      - name: Delete ephemeral ZITADEL smoke identity
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_ZITADEL_USER_ID:-}" ]; then exit 0; fi
+          curl --fail-with-body --silent --show-error \
+            -X DELETE "${ZITADEL_ISSUER%/}/v2/users/${SMOKE_ZITADEL_USER_ID}" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" >/dev/null
+          echo "- Ephemeral ZITADEL identity removed after smoke" >> "$GITHUB_STEP_SUMMARY"
