@@ -15,16 +15,32 @@ type ZitadelGetApplicationResponse = {
   application?: ZitadelApplication;
 };
 
+type ZitadelListApplicationsResponse = {
+  applications?: ZitadelApplication[];
+};
+
+type ZitadelCreateApplicationResponse = {
+  applicationId?: string;
+  oidcConfiguration?: {
+    clientId?: string;
+    clientSecret?: string;
+  };
+};
+
 export type ZitadelManagementConfig = {
   issuer: string;
   accessToken: string;
   projectId: string;
-  applicationId: string;
+  applicationId?: string;
 };
 
 export type ZitadelRedirectProvisioning = {
   redirectUri: string;
   postLogoutRedirectUri: string;
+};
+
+export type ZitadelOidcApplicationProvisioning = ZitadelRedirectProvisioning & {
+  applicationName: string;
 };
 
 export type ZitadelRedirectProvisioningResult = {
@@ -34,6 +50,11 @@ export type ZitadelRedirectProvisioningResult = {
   redirectUris: string[];
   postLogoutRedirectUris: string[];
   changed: boolean;
+};
+
+export type ZitadelOidcApplicationProvisioningResult = ZitadelRedirectProvisioningResult & {
+  created: boolean;
+  clientSecret: string | null;
 };
 
 function normalizeIssuer(issuer: string): string {
@@ -77,39 +98,57 @@ async function callZitadel<T>(
   return (await response.json()) as T;
 }
 
+async function getApplication(
+  config: ZitadelManagementConfig,
+  applicationId: string,
+): Promise<ZitadelApplication> {
+  const current = await callZitadel<ZitadelGetApplicationResponse>(config, 'GetApplication', {
+    applicationId,
+  });
+  const application = current.application;
+  if (!application) {
+    throw new Error('ZITADEL GetApplication response did not include an application');
+  }
+  return application;
+}
+
+function assertApplicationProject(application: ZitadelApplication, projectId: string): void {
+  if (application.projectId !== projectId) {
+    throw new Error(
+      `ZITADEL application project mismatch: expected ${projectId}, received ${application.projectId}`,
+    );
+  }
+}
+
+function assertOidcApplication(application: ZitadelApplication): void {
+  if (!application.oidcConfiguration) {
+    throw new Error('Configured ZITADEL application is not an OIDC application');
+  }
+}
+
 export async function ensureZitadelRedirectUris(
   config: ZitadelManagementConfig,
   required: ZitadelRedirectProvisioning,
 ): Promise<ZitadelRedirectProvisioningResult> {
-  const current = await callZitadel<ZitadelGetApplicationResponse>(config, 'GetApplication', {
-    applicationId: config.applicationId,
-  });
-  const application = current.application;
+  const applicationId = config.applicationId?.trim();
+  if (!applicationId) throw new Error('ZITADEL application id is required');
 
-  if (!application) {
-    throw new Error('ZITADEL GetApplication response did not include an application');
-  }
-  if (application.projectId !== config.projectId) {
-    throw new Error(
-      `ZITADEL application project mismatch: expected ${config.projectId}, received ${application.projectId}`,
-    );
-  }
-  if (!application.oidcConfiguration) {
-    throw new Error('Configured ZITADEL application is not an OIDC application');
-  }
+  const application = await getApplication(config, applicationId);
+  assertApplicationProject(application, config.projectId);
+  assertOidcApplication(application);
 
-  const redirectUris = mergeExactUri(application.oidcConfiguration.redirectUris, required.redirectUri);
+  const redirectUris = mergeExactUri(application.oidcConfiguration?.redirectUris, required.redirectUri);
   const postLogoutRedirectUris = mergeExactUri(
-    application.oidcConfiguration.postLogoutRedirectUris,
+    application.oidcConfiguration?.postLogoutRedirectUris,
     required.postLogoutRedirectUri,
   );
   const changed =
-    !arraysEqual(application.oidcConfiguration.redirectUris, redirectUris) ||
-    !arraysEqual(application.oidcConfiguration.postLogoutRedirectUris, postLogoutRedirectUris);
+    !arraysEqual(application.oidcConfiguration?.redirectUris, redirectUris) ||
+    !arraysEqual(application.oidcConfiguration?.postLogoutRedirectUris, postLogoutRedirectUris);
 
   if (changed) {
     await callZitadel(config, 'UpdateApplication', {
-      applicationId: config.applicationId,
+      applicationId,
       projectId: config.projectId,
       oidcConfiguration: {
         redirectUris,
@@ -121,9 +160,91 @@ export async function ensureZitadelRedirectUris(
   return {
     applicationId: application.applicationId,
     projectId: application.projectId,
-    clientId: application.oidcConfiguration.clientId ?? null,
+    clientId: application.oidcConfiguration?.clientId ?? null,
     redirectUris,
     postLogoutRedirectUris,
     changed,
+  };
+}
+
+async function findExistingApplication(
+  config: ZitadelManagementConfig,
+  applicationName: string,
+): Promise<ZitadelApplication | null> {
+  if (config.applicationId?.trim()) {
+    const application = await getApplication(config, config.applicationId.trim());
+    assertApplicationProject(application, config.projectId);
+    assertOidcApplication(application);
+    return application;
+  }
+
+  const listed = await callZitadel<ZitadelListApplicationsResponse>(config, 'ListApplications', {});
+  const matches = (listed.applications ?? []).filter(
+    (application) => application.projectId === config.projectId && application.name === applicationName,
+  );
+
+  if (matches.length > 1) {
+    throw new Error(`Multiple ZITADEL applications named ${applicationName} exist in project ${config.projectId}`);
+  }
+
+  const application = matches[0];
+  if (!application) return null;
+  assertOidcApplication(application);
+  return application;
+}
+
+export async function ensureZitadelOidcApplication(
+  config: ZitadelManagementConfig,
+  required: ZitadelOidcApplicationProvisioning,
+): Promise<ZitadelOidcApplicationProvisioningResult> {
+  const existing = await findExistingApplication(config, required.applicationName);
+
+  if (existing) {
+    const reconciled = await ensureZitadelRedirectUris(
+      { ...config, applicationId: existing.applicationId },
+      required,
+    );
+    return {
+      ...reconciled,
+      created: false,
+      clientSecret: null,
+    };
+  }
+
+  const created = await callZitadel<ZitadelCreateApplicationResponse>(config, 'CreateApplication', {
+    projectId: config.projectId,
+    name: required.applicationName,
+    oidcConfiguration: {
+      redirectUris: [required.redirectUri],
+      responseTypes: ['OIDC_RESPONSE_TYPE_CODE'],
+      grantTypes: ['OIDC_GRANT_TYPE_AUTHORIZATION_CODE'],
+      applicationType: 'OIDC_APP_TYPE_WEB',
+      authMethodType: 'OIDC_AUTH_METHOD_TYPE_BASIC',
+      postLogoutRedirectUris: [required.postLogoutRedirectUri],
+      version: 'OIDC_VERSION_1_0',
+      developmentMode: false,
+      accessTokenType: 'OIDC_TOKEN_TYPE_BEARER',
+    },
+  });
+
+  const applicationId = created.applicationId?.trim();
+  const clientId = created.oidcConfiguration?.clientId?.trim();
+  const clientSecret = created.oidcConfiguration?.clientSecret?.trim();
+
+  if (!applicationId) throw new Error('ZITADEL CreateApplication response did not include an application id');
+  if (!clientId) throw new Error('ZITADEL CreateApplication response did not include an OIDC client id');
+  if (!clientSecret) {
+    throw new Error('ZITADEL CreateApplication response did not include the confidential client secret');
+  }
+
+  return {
+    applicationId,
+    projectId: config.projectId,
+    clientId,
+    clientSecret,
+    redirectUris: [required.redirectUri],
+    postLogoutRedirectUris: [required.postLogoutRedirectUri],
+    created: true,
+    changed: true,
   };
 }
