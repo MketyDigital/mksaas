@@ -25,7 +25,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: feat/mkety-auth-zitadel-vinext
-
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -40,7 +39,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           test "$(git rev-parse origin/main)" = "$EXPECTED_MAIN_SHA"
-
           set +e
           git merge --no-commit --no-ff origin/main >/tmp/merge.out 2>&1
           merge_status=$?
@@ -51,18 +49,12 @@ jobs:
               [ -z "$path" ] && continue
               case "$path" in
                 .env.example|.mega-linter.yml|docs/README.md|jest.setup.tsx|src/app/layout.tsx)
-                  git checkout --ours -- "$path"
-                  git add "$path"
-                  ;;
-                *)
-                  echo "Unexpected conflict: $path" >&2
-                  exit 1
-                  ;;
+                  git checkout --ours -- "$path"; git add "$path" ;;
+                *) echo "Unexpected conflict: $path" >&2; exit 1 ;;
               esac
             done <<< "$conflicts"
           elif [ "$merge_status" -ne 0 ]; then
-            cat /tmp/merge.out >&2
-            exit "$merge_status"
+            cat /tmp/merge.out >&2; exit "$merge_status"
           fi
 
           source_path="migrations/0004_platform_commercial_content_repair.sql"
@@ -113,28 +105,29 @@ jobs:
           path.write_text(text.replace(old, new))
           PY
           git add "$helper"
-
           git commit -m "probe: materialize reconciled Auth tree" >/dev/null
 
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run forward generation and print bounded drift
+      - name: Run forward generation and print generated SQL
         shell: bash
         run: |
           set -euo pipefail
-          before_sha="$(git rev-parse HEAD)"
-          echo "BASELINE_SHA=$before_sha"
           pnpm db:generate
           echo "DRIFT_STATUS_BEGIN"
           git status --short
           echo "DRIFT_STATUS_END"
-          echo "DRIFT_NAMES_BEGIN"
-          git diff --name-only
-          git ls-files --others --exclude-standard
-          echo "DRIFT_NAMES_END"
-          echo "DRIFT_DIFF_BEGIN"
-          git diff -- src/shared/db/migrations/meta/_journal.json src/shared/db/migrations/meta '*.sql' | head -n 500 || true
-          echo "DRIFT_DIFF_END"
-          # Diagnostic only: fail when drift exists so the result cannot be mistaken for a green gate.
+          generated_sql="$(git ls-files --others --exclude-standard 'src/shared/db/migrations/*.sql' | head -n 1)"
+          generated_snapshot="$(git ls-files --others --exclude-standard 'src/shared/db/migrations/meta/*_snapshot.json' | head -n 1)"
+          echo "GENERATED_SQL=$generated_sql"
+          echo "GENERATED_SNAPSHOT=$generated_snapshot"
+          if [ -n "$generated_sql" ]; then
+            echo "GENERATED_SQL_BEGIN"
+            sed -n '1,700p' "$generated_sql"
+            echo "GENERATED_SQL_END"
+          fi
+          echo "JOURNAL_DIFF_BEGIN"
+          git diff -- src/shared/db/migrations/meta/_journal.json
+          echo "JOURNAL_DIFF_END"
           test -z "$(git status --porcelain)"
