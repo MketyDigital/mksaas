@@ -15,11 +15,12 @@ const preview = {
   postLogoutRedirectUri: 'https://mkety-platform-preview.example.workers.dev/login',
 };
 
-describe('ZITADEL redirect provisioning', () => {
-  beforeEach(() => {
-    jest.restoreAllMocks();
-  });
+beforeEach(() => {
+  jest.restoreAllMocks();
+  jest.clearAllMocks();
+});
 
+describe('ZITADEL redirect provisioning', () => {
   it('preserves existing URIs and adds the exact preview callback and logout URIs', async () => {
     const fetchMock = jest
       .spyOn(global, 'fetch')
@@ -60,14 +61,8 @@ describe('ZITADEL redirect provisioning', () => {
       applicationId: 'app-1',
       projectId: 'project-1',
       oidcConfiguration: {
-        redirectUris: [
-          'https://app.mkety.com/api/auth/callback',
-          preview.redirectUri,
-        ],
-        postLogoutRedirectUris: [
-          'https://app.mkety.com/login',
-          preview.postLogoutRedirectUri,
-        ],
+        redirectUris: ['https://app.mkety.com/api/auth/callback', preview.redirectUri],
+        postLogoutRedirectUris: ['https://app.mkety.com/login', preview.postLogoutRedirectUri],
       },
     });
   });
@@ -113,10 +108,6 @@ describe('ZITADEL redirect provisioning', () => {
 });
 
 describe('ZITADEL OIDC application bootstrap', () => {
-  beforeEach(() => {
-    jest.restoreAllMocks();
-  });
-
   it('reuses an existing Mkety Platform OIDC application and preserves its existing redirects', async () => {
     const fetchMock = jest
       .spyOn(global, 'fetch')
@@ -128,9 +119,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
               applicationId: 'app-existing',
               projectId: 'project-1',
               name: 'Mkety Platform',
-              oidcConfiguration: {
-                clientId: 'client-existing',
-              },
+              oidcConfiguration: { clientId: 'client-existing' },
             },
           ],
         }),
@@ -161,10 +150,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
         accessToken: 'management-token',
         projectId: 'project-1',
       },
-      {
-        applicationName: 'Mkety Platform',
-        ...preview,
-      },
+      { applicationName: 'Mkety Platform', ...preview },
     );
 
     expect(result.created).toBe(false);
@@ -205,10 +191,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
         accessToken: 'management-token',
         projectId: 'project-1',
       },
-      {
-        applicationName: 'Mkety Platform',
-        ...preview,
-      },
+      { applicationName: 'Mkety Platform', ...preview },
     );
 
     expect(result).toMatchObject({
@@ -264,10 +247,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
         projectId: 'project-1',
         applicationId: 'app-explicit',
       },
-      {
-        applicationName: 'Mkety Platform',
-        ...preview,
-      },
+      { applicationName: 'Mkety Platform', ...preview },
     );
 
     expect(result.applicationId).toBe('app-explicit');
@@ -303,10 +283,7 @@ describe('ZITADEL OIDC application bootstrap', () => {
           accessToken: 'management-token',
           projectId: 'project-1',
         },
-        {
-          applicationName: 'Mkety Platform',
-          ...preview,
-        },
+        { applicationName: 'Mkety Platform', ...preview },
       ),
     ).rejects.toThrow('Multiple ZITADEL applications named Mkety Platform');
   });
