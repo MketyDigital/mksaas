@@ -54,10 +54,7 @@ function toBase64Url(bytes: Uint8Array): string {
 }
 
 function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
-  const normalized = value
-    .replace(/-/g, '+')
-    .replace(/_/g, '/')
-    .padEnd(Math.ceil(value.length / 4) * 4, '=');
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
   const binary = atob(normalized);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
@@ -112,9 +109,13 @@ export async function verifyIdToken(token: string, options: VerifyIdTokenOptions
   const jwk = options.jwks.keys.find((candidate) => candidate.kid === header.kid && candidate.kty === 'RSA');
   if (!jwk) throw new Error('ID token signing key not found');
 
-  const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, [
-    'verify',
-  ]);
+  const publicKey = await crypto.subtle.importKey(
+    'jwk',
+    jwk,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
 
   const signingInput = `${parts[0]}.${parts[1]}`;
   const signatureValid = await crypto.subtle.verify(
@@ -136,8 +137,7 @@ export async function verifyIdToken(token: string, options: VerifyIdTokenOptions
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (!audiences.includes(options.clientId)) throw new Error('Invalid ID token audience');
   if (!Number.isFinite(claims.exp) || claims.exp <= now - clockSkew) throw new Error('ID token is expired');
-  if (!Number.isFinite(claims.iat) || claims.iat > now + clockSkew)
-    throw new Error('ID token issued-at time is invalid');
+  if (!Number.isFinite(claims.iat) || claims.iat > now + clockSkew) throw new Error('ID token issued-at time is invalid');
   if (claims.nbf !== undefined && (typeof claims.nbf !== 'number' || claims.nbf > now + clockSkew)) {
     throw new Error('ID token is not active yet');
   }

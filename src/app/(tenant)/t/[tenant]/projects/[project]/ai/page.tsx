@@ -5,8 +5,8 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { AiAgentSummaryGrid } from '@/features/projects/workspaces/ai/AiAgentSummaryGrid';
 import { AiWorkspaceReadiness } from '@/features/projects/workspaces/ai/AiWorkspaceReadiness';
 import { AiWorkspaceStatusPanel } from '@/features/projects/workspaces/ai/AiWorkspaceStatusPanel';
-import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
+import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
 import { db } from '@/shared/db';
 import { agents } from '@/shared/db/schema';
 

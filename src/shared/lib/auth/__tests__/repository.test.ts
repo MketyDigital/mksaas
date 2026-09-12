@@ -67,13 +67,7 @@ describe('Mkety Auth repository', () => {
       expiresAt: new Date(Date.now() + 300_000),
     });
 
-    const transaction = {
-      state: 'state-1',
-      provider: 'zitadel',
-      verifier: 'verifier',
-      nonce: 'nonce',
-      returnTo: '/select-tenant',
-    };
+    const transaction = { state: 'state-1', provider: 'zitadel', verifier: 'verifier', nonce: 'nonce', returnTo: '/select-tenant' };
     const returning = jest.fn().mockResolvedValue([transaction]);
     const where = jest.fn().mockReturnValue({ returning });
     mockDb.delete.mockReturnValue({ where });

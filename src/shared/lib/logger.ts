@@ -2,7 +2,8 @@
  * Logger Configuration - Mkety Platform
  *
  * Structured logging with Pino for server-side observability.
- * Supports JSON format for production and pretty printing for development.
+ * Uses a console-backed destination so the same logger works in Node and
+ * Cloudflare Workers without relying on request-bound fs/stdout shims.
  *
  * @see https://getpino.io
  */
@@ -10,6 +11,12 @@
 import pino from 'pino';
 
 const isDevelopment = process.env.NEXT_PUBLIC_STAGE === 'dev' || process.env.NODE_ENV === 'development';
+
+const consoleDestination: pino.DestinationStream = {
+  write(message: string) {
+    console.log(message.trimEnd());
+  },
+};
 
 /**
  * Base logger instance
@@ -22,15 +29,16 @@ const isDevelopment = process.env.NEXT_PUBLIC_STAGE === 'dev' || process.env.NOD
  * logger.error({ error: err.message }, 'Failed to process');
  * ```
  */
-export const logger = pino({
-  level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
-  // Use synchronous logging to avoid worker thread issues with Next.js
-  // In production, log aggregators handle formatting
-  formatters: {
-    level: (label) => ({ level: label }),
+export const logger = pino(
+  {
+    level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
+    formatters: {
+      level: (label) => ({ level: label }),
+    },
+    timestamp: pino.stdTimeFunctions.isoTime,
   },
-  timestamp: pino.stdTimeFunctions.isoTime,
-});
+  consoleDestination,
+);
 
 /**
  * Create a child logger with additional context

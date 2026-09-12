@@ -1,0 +1,101 @@
+name: Mkety Public AI Route Handler Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-public-site-production
+    paths:
+      - '.github/workflows/mkety-public-ai-route-handler-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      MKETY_PUBLIC_AI_ENABLED: 'true'
+      MKETY_PUBLIC_AI_PRIMARY_PROVIDER: openai
+      MKETY_PUBLIC_AI_MODEL: gpt-5.6-luna
+      MKETY_PUBLIC_AI_FALLBACK_PROVIDERS: ''
+      MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Exercise assistant HTTP route repeatedly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > ./mkety-public-ai-route-diagnostic.ts <<'TS'
+          import { GET, POST } from './src/app/api/public/assistant/route';
+          import { clearPublicAIHistory } from './src/features/public-assistant/server/memory';
+          import { parsePublicVisitorToken, PUBLIC_AI_VISITOR_COOKIE } from './src/features/public-assistant/server/visitor';
+
+          const url = 'https://mkety.local/api/public/assistant';
+          const origin = 'https://mkety.local';
+
+          async function body(response: Response) {
+            const text = await response.text();
+            let json: any = null;
+            try { json = JSON.parse(text); } catch {}
+            return { text, json };
+          }
+
+          async function invoke(name: string, request: Request, fn: (request: Request) => Promise<Response>) {
+            const started = Date.now();
+            const response = await fn(request);
+            const payload = await body(response);
+            console.log(`${name}: HTTP ${response.status} (${Date.now() - started}ms)`);
+            console.log(payload.text.slice(0, 1000));
+            if (!response.ok) throw new Error(`${name} failed with HTTP ${response.status}`);
+            return { response, payload };
+          }
+
+          const firstGet = await invoke('initial-get', new Request(url), GET);
+          const setCookie = firstGet.response.headers.get('set-cookie');
+          if (!setCookie) throw new Error('initial GET did not set visitor cookie');
+          const cookiePair = setCookie.split(';', 1)[0];
+          if (!cookiePair.startsWith(`${PUBLIC_AI_VISITOR_COOKIE}=`)) throw new Error('unexpected visitor cookie');
+
+          const first = await invoke('first-post', new Request(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookiePair },
+            body: JSON.stringify({ message: 'Where can I read Mkety documentation and what is SolutionHub?' }),
+          }), POST);
+          const conversationId = first.payload.json?.conversationId;
+          if (!conversationId) throw new Error('first POST missing conversationId');
+
+          await invoke('second-post', new Request(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookiePair },
+            body: JSON.stringify({ message: 'What was I just asking you about?', conversationId }),
+          }), POST);
+
+          await invoke('restored-get', new Request(`${url}?conversationId=${conversationId}`, {
+            headers: { Cookie: cookiePair },
+          }), GET);
+
+          await invoke('new-chat-post', new Request(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookiePair },
+            body: JSON.stringify({ message: 'Tell me about Mkety Academy.' }),
+          }), POST);
+
+          const token = cookiePair.slice(cookiePair.indexOf('=') + 1);
+          const visitorId = await parsePublicVisitorToken(decodeURIComponent(token), process.env.MKETY_PUBLIC_AI_VISITOR_SECRET!);
+          if (visitorId) await clearPublicAIHistory(visitorId);
+          console.log('route diagnostic complete');
+          process.exit(0);
+          TS
+          pnpm exec tsx ./mkety-public-ai-route-diagnostic.ts
+          rm ./mkety-public-ai-route-diagnostic.ts

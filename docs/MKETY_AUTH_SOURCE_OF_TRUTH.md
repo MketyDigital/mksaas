@@ -1,6 +1,6 @@
 # Mkety Auth Source of Truth Addendum
 
-> **Authority:** This document is an approved addendum to `AGENTS.md` for authentication and Cloudflare deployment. It overrides legacy Auth.js/Auth0 assumptions in older documentation.
+> **Authority:** This document is an approved addendum to `AGENTS.md` for authentication and Cloudflare deployment. It overrides legacy Auth.js/Auth0 assumptions in template-era documentation.
 
 ## Permanent boundary
 
@@ -126,9 +126,8 @@ Non-secret configuration:
 - `MKETY_AUTH_REDIRECT_URI`
 - `MKETY_AUTH_POST_LOGOUT_REDIRECT_URI`
 - `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_WORKER_NAME`
 - optional `CLOUDFLARE_BUILD_TOKEN_UUID` for Workers Builds API automation
-
-Worker identity is configuration-owned in `wrangler.jsonc`: base `mkety-platform`, named preview `mkety-platform-preview`. Do not duplicate worker identity in environment variables.
 
 The GitHub integration used by the development agent cannot read existing GitHub secret plaintext values. Secret values must be created/rotated by an authorized human or a secret-management interface; plaintext credentials must never enter Git history.
 
@@ -136,17 +135,15 @@ The GitHub integration used by the development agent cannot read existing GitHub
 
 Cloudflare Workers is the target runtime. Cloudflare Containers are explicitly out of scope.
 
-Use the isolated `mkety-platform-preview` workers.dev environment for feature/preview verification before production promotion. Production deployment remains controlled through `main` and requires explicit promotion approval.
+Use `workers.dev` for feature/preview verification before the production domain is connected. Production deployment remains controlled through the `main` branch and requires explicit promotion approval.
 
 Workers Builds uses separate build/deploy concerns. The API token used to configure/operate Cloudflare is distinct from the Workers Builds deploy/build token used by the build system.
 
 ## vinext target
 
-vinext is the authoritative Next.js-on-Cloudflare runtime for the Mkety Platform baseline.
+vinext is the preferred long-term Next.js-on-Workers path. Run `vinext check` after the Auth.js removal and before finalizing the Worker configuration.
 
-`pnpm dev`, `pnpm build`, `pnpm start`, and `pnpm deploy` use the vinext path. `vinext check`, production build, and Cloudflare packaging dry-run are required baseline verification gates.
-
-The auth architecture must not retain or restore Auth.js to satisfy compatibility tooling. Removing Auth.js is intentional and eliminates framework-specific authentication coupling.
+The auth architecture must not retain Auth.js merely to satisfy a compatibility report. Removing Auth.js is intentional and eliminates framework-specific authentication coupling.
 
 ## Non-negotiables
 

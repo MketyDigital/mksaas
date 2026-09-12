@@ -1,9 +1,9 @@
 import { index, integer, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
 
+import { knowledgeDocuments } from './knowledge';
+import { projects } from './projects';
 import { appSchema } from './schema';
 import { tenants } from './tenants';
-import { projects } from './projects';
-import { knowledgeDocuments } from './knowledge';
 
 export const knowledgeChunks = appSchema.table(
   'knowledge_chunks',

@@ -58,11 +58,7 @@ export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp }: Uni
   const viewHeaderConfig = useMemo(() => {
     switch (currentView) {
       case 'admin':
-        return {
-          title: t('adminPanel'),
-          icon: <Settings className="h-6 w-6 shrink-0 text-primary" />,
-          href: `${basePath}/admin`,
-        };
+        return { title: t('adminPanel'), icon: <Settings className="h-6 w-6 shrink-0 text-primary" />, href: `${basePath}/admin` };
       default:
         return { title: null, icon: null, href: basePath || '/' };
     }
@@ -78,157 +74,51 @@ export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp }: Uni
     }
   };
 
-  const toggleIcon = isPeeking ? (
-    <Pin className="h-4 w-4" />
-  ) : isCollapsed ? (
-    <ChevronRight className="h-4 w-4" />
-  ) : (
-    <ChevronLeft className="h-4 w-4" />
-  );
+  const toggleIcon = isPeeking ? <Pin className="h-4 w-4" /> : isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />;
   const toggleLabel = isPeeking ? 'Pin sidebar open' : isCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
 
   return (
     <TooltipProvider delayDuration={0}>
-      <aside
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        className={cn(
-          'hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden lg:border-r lg:border-border/80 lg:bg-card transition-[width,box-shadow] duration-200 ease-out',
-          isPeeking && isCollapsed && 'lg:w-64 lg:shadow-2xl lg:z-[60]',
-          isCollapsed && !isPeeking && 'lg:w-16 lg:shadow-sm',
-          !isCollapsed && 'lg:w-64 lg:shadow-sm',
-        )}
-      >
-        <div
-          className={cn(
-            'relative flex h-16 shrink-0 items-center border-b border-border/80 px-3',
-            showExpanded ? 'justify-between' : 'justify-center',
-          )}
-        >
+      <aside onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} className={cn('hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden lg:border-r lg:border-border/80 lg:bg-card transition-[width,box-shadow] duration-200 ease-out', isPeeking && isCollapsed && 'lg:w-64 lg:shadow-2xl lg:z-[60]', isCollapsed && !isPeeking && 'lg:w-16 lg:shadow-sm', !isCollapsed && 'lg:w-64 lg:shadow-sm')}>
+        <div className={cn('relative flex h-16 shrink-0 items-center border-b border-border/80 px-3', showExpanded ? 'justify-between' : 'justify-center')}>
           <div className="absolute top-0 left-0 right-0 h-0.5 brand-gradient" aria-hidden />
           {showExpanded ? (
             <>
-              {viewHeaderConfig.title ? (
-                <a href={viewHeaderConfig.href} className="flex items-center gap-2 min-w-0">
-                  {viewHeaderConfig.icon}
-                  <span className="font-semibold text-foreground truncate">{viewHeaderConfig.title}</span>
-                </a>
-              ) : (
-                <AppLogo href={basePath || '/'} showText size="md" />
-              )}
-              {toggleCollapsed && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={toggleCollapsed}
-                      className="h-8 w-8 shrink-0"
-                      aria-label={toggleLabel}
-                    >
-                      {toggleIcon}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{toggleLabel}</TooltipContent>
-                </Tooltip>
-              )}
+              {viewHeaderConfig.title ? <a href={viewHeaderConfig.href} className="flex items-center gap-2 min-w-0">{viewHeaderConfig.icon}<span className="font-semibold text-foreground truncate">{viewHeaderConfig.title}</span></a> : <AppLogo href={basePath || '/'} showText size="md" />}
+              {toggleCollapsed && <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleCollapsed} className="h-8 w-8 shrink-0" aria-label={toggleLabel}>{toggleIcon}</Button></TooltipTrigger><TooltipContent side="right">{toggleLabel}</TooltipContent></Tooltip>}
             </>
-          ) : (
-            <AppLogo href={basePath || '/'} showText={false} size="md" />
-          )}
+          ) : <AppLogo href={basePath || '/'} showText={false} size="md" />}
         </div>
 
-        {tenantSlug && (
-          <div className="shrink-0 border-b border-border/80 px-3 py-2">
-            <ViewSwitcher tenantSlug={tenantSlug} />
-          </div>
-        )}
+        {tenantSlug && <div className="shrink-0 border-b border-border/80 px-3 py-2"><ViewSwitcher tenantSlug={tenantSlug} /></div>}
 
-        {tenantSlug && (
-          <nav
-            key={currentView}
-            className={cn(
-              'flex min-h-0 flex-1 flex-col overflow-y-auto py-4 animate-in fade-in duration-200',
-              showExpanded ? 'gap-4 px-3' : 'gap-1 px-1.5',
-            )}
-            aria-label="Main navigation"
-          >
-            {renderNavContent()}
-          </nav>
-        )}
+        {tenantSlug && <nav key={currentView} className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto py-4 animate-in fade-in duration-200', showExpanded ? 'gap-4 px-3' : 'gap-1 px-1.5')} aria-label="Main navigation">{renderNavContent()}</nav>}
       </aside>
 
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-card lg:hidden">
         <div className="flex items-center gap-2 px-4">
           <Link href={viewHeaderConfig.href} className="flex items-center gap-2">
-            {viewHeaderConfig.title ? (
-              <>
-                {viewHeaderConfig.icon}
-                <span className="font-semibold">{viewHeaderConfig.title}</span>
-              </>
-            ) : (
-              <AppLogo size="md" href={null} />
-            )}
+            {viewHeaderConfig.title ? <>{viewHeaderConfig.icon}<span className="font-semibold">{viewHeaderConfig.title}</span></> : <AppLogo size="md" href={null} />}
           </Link>
         </div>
         <div className="flex items-center gap-2 px-4">
           <SidebarBottomActions tenantSlug={tenantSlug} />
-          {user && (
-            <SidebarUserMenu
-              user={user}
-              tenantSlug={tenantSlug}
-              showBackLink={showBackLink}
-              showProfileLink={!showBackLink}
-              isCompact
-            />
-          )}
-          {tenantSlug && (
-            <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(true)}>
-              <span className="sr-only">Open menu</span>
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </Button>
-          )}
+          {user && <SidebarUserMenu user={user} tenantSlug={tenantSlug} showBackLink={showBackLink} showProfileLink={!showBackLink} isCompact />}
+          {tenantSlug && <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(true)}><span className="sr-only">Open menu</span><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></Button>}
         </div>
       </header>
 
-      {tenantSlug && (
-        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <SheetContent side="left" className="flex w-72 flex-col p-0">
-            <SheetHeader className="shrink-0 border-b border-border/80 px-6 pr-12 py-4">
-              <SheetTitle className="flex items-center gap-2">
-                {viewHeaderConfig.title ? (
-                  <>
-                    {viewHeaderConfig.icon}
-                    <span>{viewHeaderConfig.title}</span>
-                  </>
-                ) : (
-                  <AppLogo href={basePath || '/'} size="md" />
-                )}
-              </SheetTitle>
-            </SheetHeader>
-            <div className="shrink-0 border-b border-border/80 px-4 py-2">
-              <ViewSwitcher tenantSlug={tenantSlug} />
-            </div>
-            <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-4">
-              {renderNavContent(() => setMobileMenuOpen(false))}
-            </nav>
-            <div className="shrink-0 border-t border-border/80 p-4">
-              <SidebarUserMenu
-                user={user ?? null}
-                tenantSlug={tenantSlug}
-                showBackLink={showBackLink}
-                showProfileLink={!showBackLink}
-                onItemClick={() => setMobileMenuOpen(false)}
-              />
-              <div className="mt-3">
-                <SidebarBottomActions tenantSlug={tenantSlug} />
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
-      )}
+      {tenantSlug && <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="flex w-72 flex-col p-0">
+          <SheetHeader className="shrink-0 border-b border-border/80 px-6 pr-12 py-4"><SheetTitle className="flex items-center gap-2">{viewHeaderConfig.title ? <>{viewHeaderConfig.icon}<span>{viewHeaderConfig.title}</span></> : <AppLogo href={basePath || '/'} size="md" />}</SheetTitle></SheetHeader>
+          <div className="shrink-0 border-b border-border/80 px-4 py-2"><ViewSwitcher tenantSlug={tenantSlug} /></div>
+          <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-4">{renderNavContent(() => setMobileMenuOpen(false))}</nav>
+          <div className="shrink-0 border-t border-border/80 p-4">
+            <SidebarUserMenu user={user ?? null} tenantSlug={tenantSlug} showBackLink={showBackLink} showProfileLink={!showBackLink} onItemClick={() => setMobileMenuOpen(false)} />
+            <div className="mt-3"><SidebarBottomActions tenantSlug={tenantSlug} /></div>
+          </div>
+        </SheetContent>
+      </Sheet>}
     </TooltipProvider>
   );
 }

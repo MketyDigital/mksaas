@@ -1,0 +1,96 @@
+name: Mkety Production Routing Preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-production-preflight.yml'
+      - '.github/workflows/mkety-public-candidate-deploy.yml'
+      - 'wrangler.jsonc'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect mkety.com routing without mutation
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Cloudflare read credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!variable:-}" ]; then
+              echo "$variable is not configured."
+              exit 1
+            fi
+          done
+
+      - name: Inspect zone, DNS and Worker routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          curl -fsS "${auth[@]}" "$api/zones?name=mkety.com&account.id=$CLOUDFLARE_ACCOUNT_ID" > /tmp/mkety-zone.json
+          zone_id="$(node <<'NODE'
+          const response = require('/tmp/mkety-zone.json');
+          if (!response.success || !Array.isArray(response.result) || response.result.length !== 1) {
+            console.error('Expected exactly one accessible mkety.com Cloudflare zone.');
+            process.exit(1);
+          }
+          process.stdout.write(response.result[0].id);
+          NODE
+          )"
+
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=mkety.com" > /tmp/mkety-root-dns.json
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=www.mkety.com" > /tmp/mkety-www-dns.json
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/workers/routes" > /tmp/mkety-worker-routes.json
+
+          ZONE_ID="$zone_id" node <<'NODE'
+          const root = require('/tmp/mkety-root-dns.json');
+          const www = require('/tmp/mkety-www-dns.json');
+          const routes = require('/tmp/mkety-worker-routes.json');
+          for (const [name, payload] of [['root DNS', root], ['www DNS', www], ['Worker routes', routes]]) {
+            if (!payload.success || !Array.isArray(payload.result)) {
+              console.error(`Cloudflare ${name} lookup failed.`);
+              process.exit(1);
+            }
+          }
+
+          function safeRecord(record) {
+            return {
+              name: record.name,
+              type: record.type,
+              proxied: record.proxied,
+              ttl: record.ttl,
+              contentKind: typeof record.content === 'string'
+                ? (record.content.includes('pages.dev') ? 'pages.dev' : record.content.includes('workers.dev') ? 'workers.dev' : 'other')
+                : 'unknown',
+            };
+          }
+
+          console.log(`mkety.com zone accessible: yes (${process.env.ZONE_ID.slice(0, 8)}…)`);
+          console.log('Root DNS records:', JSON.stringify(root.result.map(safeRecord)));
+          console.log('www DNS records:', JSON.stringify(www.result.map(safeRecord)));
+          console.log('Worker route patterns:', JSON.stringify(routes.result.map((route) => ({ pattern: route.pattern, script: route.script || null }))));
+          NODE
+
+      - name: Assert preflight remains read-only
+        shell: bash
+        run: |
+          echo 'Preflight completed using GET requests only.'
+          echo 'No DNS record, Worker route, custom domain, script or zone setting was mutated.'

@@ -21,6 +21,8 @@ const eslintIgnore = [
   '*.min.js',
   '*.config.js',
   '*.d.ts',
+  '.sst/',
+  '.open-next/',
 ];
 
 const config = typescriptEslint.config(
@@ -40,6 +42,7 @@ const config = typescriptEslint.config(
       ...eslintPluginNext.configs['core-web-vitals'].rules,
       ...eslintPluginReactHooks.configs.recommended.rules,
       ...eslintPluginJsxA11y.configs.recommended.rules,
+      // Accessibility rules configuration
       'jsx-a11y/alt-text': 'warn',
       'jsx-a11y/aria-role': 'warn',
       'jsx-a11y/aria-props': 'warn',

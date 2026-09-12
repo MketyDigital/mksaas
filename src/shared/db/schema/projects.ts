@@ -1,7 +1,7 @@
 import { index, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
-import { tenants } from './tenants';
 import { appSchema } from './schema';
+import { tenants } from './tenants';
 
 export const projects = appSchema.table(
   'projects',
