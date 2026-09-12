@@ -14,18 +14,19 @@ describe('MketyPublicAssistant', () => {
     }) as jest.Mock;
   });
 
-  it('renders one Mkety AI launcher without exposing provider or model controls', () => {
+  it('renders one centered Mkety AI command surface without provider or model controls', () => {
     render(<MketyPublicAssistant />);
 
-    expect(screen.getByRole('button', { name: /ask mkety ai/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ask mkety ai/i })).toHaveAttribute('data-surface', 'mkety-ai-command');
     expect(screen.queryByText(/openai|gemini|bedrock|vertex|model selector/i)).not.toBeInTheDocument();
   });
 
-  it('opens an accessible support panel with suggested Mkety questions', async () => {
+  it('opens a centered rectangular support panel with suggested Mkety questions', async () => {
     render(<MketyPublicAssistant />);
     fireEvent.click(screen.getByRole('button', { name: /ask mkety ai/i }));
 
-    expect(await screen.findByRole('dialog', { name: /mkety ai/i })).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog', { name: /mkety ai/i });
+    expect(dialog).toHaveAttribute('data-surface', 'mkety-ai-panel');
     expect(await screen.findByText('What can I build with Mkety?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /new chat/i })).toBeInTheDocument();
 
