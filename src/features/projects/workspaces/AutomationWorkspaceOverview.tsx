@@ -26,7 +26,7 @@ export const emptyAutomationWorkspaceSnapshot: AutomationWorkspaceSnapshot = {
     webhookWorkflowCount: 0,
     runCount: 0,
     failedRunCount: 0,
-    executionEnabled: false,
+    executionEnabled: true,
   },
   recentRuns: [],
   recentWorkflows: [],
@@ -37,44 +37,44 @@ export function buildAutomationWorkspaceCapabilities(_: BuildAutomationWorkspace
     {
       key: 'workflows',
       title: 'Workflows',
-      description: 'View and organize project workflows before the visual builder and execution engine expand.',
+      description: 'Create and configure project workflows in the builder with preflight and runtime readiness checks.',
       status: 'available',
-      statusLabel: 'Read-only',
+      statusLabel: 'Available',
     },
     {
       key: 'triggers',
       title: 'Triggers',
-      description: 'Prepare manual, scheduled, webhook, and app-event entry points for future automation runs.',
-      status: 'planned',
-      statusLabel: 'Planned',
+      description: 'Run workflows manually or through authenticated webhooks. Scheduled and app-event triggers remain planned.',
+      status: 'available',
+      statusLabel: 'Manual + webhook',
     },
     {
       key: 'actions',
       title: 'Actions',
-      description: 'Map the steps automations can perform across AI, integrations, APIs, notifications, and apps.',
-      status: 'planned',
-      statusLabel: 'Planned',
+      description: 'Execute transforms, conditions, guarded HTTPS actions, and published Agent versions through one workflow kernel.',
+      status: 'available',
+      statusLabel: 'Runtime ready',
     },
     {
       key: 'webhooks',
       title: 'Webhooks',
-      description: 'Reserve the inbound and outbound webhook surface without exposing unaudited endpoints yet.',
-      status: 'protected',
-      statusLabel: 'Protected',
+      description: 'Provision signed inbound webhook endpoints from each webhook-triggered workflow builder.',
+      status: 'available',
+      statusLabel: 'Builder-managed',
     },
     {
       key: 'run-history',
       title: 'Run history',
-      description: 'Read existing automation attempts, outputs, timings, and audit context without executing workflows.',
+      description: 'Review auditable manual and webhook workflow run outcomes and timings.',
       status: 'available',
-      statusLabel: 'Read-only',
+      statusLabel: 'Available',
     },
     {
       key: 'failures',
       title: 'Failures & retries',
-      description: 'Surface failed runs and retry readiness while retry execution remains disabled.',
+      description: 'Failed runs are recorded now; bounded retry execution remains a later phase.',
       status: 'planned',
-      statusLabel: 'Planned',
+      statusLabel: 'Retries planned',
     },
   ];
 }
@@ -91,13 +91,12 @@ export function AutomationWorkspaceOverview({
     <section aria-labelledby="automation-workspace-overview-heading" className="space-y-5 rounded-2xl border bg-card p-5 md:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">Automation Workspace foundation</p>
+          <p className="text-sm font-medium text-muted-foreground">Automation Workspace</p>
           <h2 className="mt-1 text-xl font-semibold" id="automation-workspace-overview-heading">
             Design repeatable workflows safely
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            This overview exposes the Mkety automation product surface and now reads the existing workflow data model, while
-            keeping real triggers, webhooks, execution, retries, and workflow-engine expansion behind planned or protected states.
+            Build workflows with readiness checks, run them manually, or receive authenticated webhook events through the same auditable execution lifecycle.
           </p>
         </div>
         <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">
@@ -162,20 +161,19 @@ export function AutomationWorkspaceOverview({
                     className="rounded-md border px-2 py-1 text-xs font-medium"
                     href={`/t/${tenantSlug}/projects/${projectSlug}/automation/${workflow.slug}`}
                   >
-                    Open builder shell
+                    Open builder
                   </Link>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">No workflow records yet. The data model is ready for read-only display before builder and execution features are enabled.</p>
+          <p className="mt-2 text-sm text-muted-foreground">No workflow records yet. Create a workflow to configure its trigger, nodes, readiness, and execution.</p>
         )}
       </div>
 
       <p className="text-xs leading-5 text-muted-foreground">
-        Automation execution remains intentionally inactive in this branch. Existing workflow and run records can be displayed,
-        but no trigger, webhook, retry, or action execution is exposed here.
+        Manual and authenticated webhook execution are available through workflow builders. Schedules, retries, Agent tools, and arbitrary credentials remain disabled until their dedicated safety phases.
       </p>
     </section>
   );

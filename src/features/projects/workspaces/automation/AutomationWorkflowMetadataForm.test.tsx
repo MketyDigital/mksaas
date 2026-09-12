@@ -6,10 +6,11 @@ const workflow = {
   description: 'Follow up with new leads.',
   name: 'Lead follow-up',
   slug: 'lead-follow-up',
+  triggerType: 'manual',
 };
 
 describe('AutomationWorkflowMetadataForm', () => {
-  it('renders a manager-only metadata edit form', () => {
+  it('renders manager-editable workflow details and authoritative trigger type', () => {
     render(
       <AutomationWorkflowMetadataForm
         canManage
@@ -22,8 +23,9 @@ describe('AutomationWorkflowMetadataForm', () => {
     expect(screen.getByRole('heading', { name: 'Edit workflow details' })).toBeInTheDocument();
     expect(screen.getByLabelText('Workflow name')).toHaveValue('Lead follow-up');
     expect(screen.getByLabelText('Description')).toHaveValue('Follow up with new leads.');
+    expect(screen.getByLabelText('Trigger type')).toHaveValue('manual');
+    expect(screen.getByRole('option', { name: 'Webhook' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save workflow details' })).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Trigger/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Nodes/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Run workflow/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Activate/i })).not.toBeInTheDocument();

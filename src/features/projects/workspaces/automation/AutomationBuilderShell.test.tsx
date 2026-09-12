@@ -14,10 +14,11 @@ const workflow: AutomationBuilderWorkflowSummary = {
 };
 
 describe('AutomationBuilderShell', () => {
-  it('renders workflow builder details without execution controls', () => {
+  it('renders workflow builder details while leaving execution controls to readiness-gated forms', () => {
     render(<AutomationBuilderShell projectSlug="demo" recentRuns={[]} tenantSlug="acme" workflow={workflow} />);
     expect(screen.getByRole('heading', { name: 'Lead follow-up' })).toBeInTheDocument();
-    expect(screen.getByText('Builder shell')).toBeInTheDocument();
+    expect(screen.getByText('Workflow builder')).toBeInTheDocument();
+    expect(screen.getByText('Execution available')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('nodes')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Definition nodes' })).toBeInTheDocument();
@@ -30,15 +31,18 @@ describe('AutomationBuilderShell', () => {
     expect(screen.queryByRole('link', { name: /Activate workflow/i })).not.toBeInTheDocument();
   });
 
-  it('keeps execution and webhook activation disabled in readiness data', () => {
-    const readiness = buildAutomationBuilderReadiness(workflow);
-    expect(readiness.executionEnabled).toBe(false);
-    expect(readiness.webhookActivationEnabled).toBe(false);
-    expect(readiness.publishEnabled).toBe(false);
-    expect(readiness.definitionReady).toBe(true);
+  it('marks runtime available and webhook management conditional on trigger type', () => {
+    const manualReadiness = buildAutomationBuilderReadiness(workflow);
+    expect(manualReadiness.executionEnabled).toBe(true);
+    expect(manualReadiness.webhookActivationEnabled).toBe(false);
+    expect(manualReadiness.publishEnabled).toBe(false);
+    expect(manualReadiness.definitionReady).toBe(true);
+
+    const webhookReadiness = buildAutomationBuilderReadiness({ ...workflow, triggerType: 'webhook' });
+    expect(webhookReadiness.webhookActivationEnabled).toBe(true);
   });
 
-  it('renders recent runs as read-only records', () => {
+  it('renders recent runs as read-only auditable records', () => {
     render(<AutomationBuilderShell projectSlug="demo" recentRuns={[{ id: 'run-1', workflowId: 'workflow-1', status: 'failed', triggerType: 'manual', startedAt: new Date('2026-09-05T12:10:00Z'), completedAt: new Date('2026-09-05T12:11:00Z') }]} tenantSlug="acme" workflow={workflow} />);
     expect(screen.getByRole('heading', { name: 'Recent run records' })).toBeInTheDocument();
     expect(screen.getByText('failed')).toBeInTheDocument();

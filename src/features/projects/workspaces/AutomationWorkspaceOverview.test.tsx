@@ -7,7 +7,7 @@ import {
 } from './AutomationWorkspaceOverview';
 
 describe('AutomationWorkspaceOverview', () => {
-  it('renders the automation workspace capability map and read-only metrics', () => {
+  it('renders the automation workspace capability map and execution metrics', () => {
     render(<AutomationWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
     expect(screen.getByRole('heading', { name: /Design repeatable workflows safely/i })).toBeInTheDocument();
@@ -17,28 +17,30 @@ describe('AutomationWorkspaceOverview', () => {
     expect(screen.getByRole('heading', { name: 'Webhooks' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Run history' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Failures & retries' })).toBeInTheDocument();
-    expect(screen.getByText('Execution disabled')).toBeInTheDocument();
+    expect(screen.getByText('Execution enabled')).toBeInTheDocument();
     expect(screen.getByText('Run records')).toBeInTheDocument();
   });
 
-  it('keeps webhooks protected until endpoint security is implemented', () => {
+  it('marks authenticated webhooks available while keeping management inside workflow builders', () => {
     const webhooks = buildAutomationWorkspaceCapabilities({ projectSlug: 'demo', tenantSlug: 'acme' }).find(
       (capability) => capability.key === 'webhooks',
     );
 
-    expect(webhooks?.statusLabel).toBe('Protected');
+    expect(webhooks?.statusLabel).toBe('Builder-managed');
+    expect(webhooks?.status).toBe('available');
     expect(webhooks?.href).toBeUndefined();
   });
 
-  it('does not expose active workflow execution actions yet', () => {
+  it('does not expose global run or activation actions and preserves bounded future phases', () => {
     render(<AutomationWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
     expect(screen.queryByRole('button', { name: /Run workflow/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Activate workflow/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/Automation execution remains intentionally inactive/i)).toBeInTheDocument();
+    expect(screen.getByText(/Manual and authenticated webhook execution are available/i)).toBeInTheDocument();
+    expect(screen.getByText(/Schedules, retries, Agent tools, and arbitrary credentials remain disabled/i)).toBeInTheDocument();
   });
 
-  it('links recent workflow records to the read-only builder shell', () => {
+  it('links recent workflow records to the builder', () => {
     render(
       <AutomationWorkspaceOverview
         projectSlug="demo"
@@ -67,7 +69,7 @@ describe('AutomationWorkspaceOverview', () => {
 
     expect(screen.getByText('Lead follow-up')).toBeInTheDocument();
     expect(screen.getByText(/manual trigger/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open builder shell' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open builder' })).toHaveAttribute(
       'href',
       '/t/acme/projects/demo/automation/lead-follow-up',
     );

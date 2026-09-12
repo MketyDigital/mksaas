@@ -11,7 +11,7 @@ describe('validateAutomationWorkflowDefinition', () => {
         { id: 'transform-1', type: 'transform', config: { input: '{{http.body}}', mapping: '{"email":"{{input.email}}"}' } },
         { id: 'condition-1', type: 'condition', config: { field: 'status', operator: 'equals', value: 'qualified' } },
       ],
-    });
+    }, { triggerType: 'manual' });
 
     expect(result.readyForExecutionFoundation).toBe(true);
     expect(result.errorCount).toBe(0);
@@ -21,6 +21,34 @@ describe('validateAutomationWorkflowDefinition', () => {
       expect.objectContaining({ code: 'agent.reference-present', nodeId: 'agent-1', severity: 'ready' }),
       expect.objectContaining({ code: 'http.url-valid', nodeId: 'http-1', severity: 'ready' }),
       expect.objectContaining({ code: 'workflow.trigger-ready', severity: 'ready' }),
+    ]));
+  });
+
+  it.each([
+    ['manual', 'manual'],
+    ['webhook', 'webhook'],
+  ])('accepts matching workflow %s and trigger-node %s modes', (triggerType, triggerMode) => {
+    const result = validateAutomationWorkflowDefinition({
+      nodes: [{ id: 'trigger-1', type: 'trigger', config: { triggerMode } }],
+    }, { triggerType });
+
+    expect(result.checks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'trigger.mode-mismatch' }),
+    ]));
+    expect(result.errorCount).toBe(0);
+  });
+
+  it.each([
+    ['webhook', 'manual'],
+    ['manual', 'webhook'],
+  ])('rejects workflow %s when the trigger node is configured as %s', (triggerType, triggerMode) => {
+    const result = validateAutomationWorkflowDefinition({
+      nodes: [{ id: 'trigger-1', type: 'trigger', config: { triggerMode } }],
+    }, { triggerType });
+
+    expect(result.readyForExecutionFoundation).toBe(false);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'trigger.mode-mismatch', severity: 'error', nodeId: 'trigger-1' }),
     ]));
   });
 

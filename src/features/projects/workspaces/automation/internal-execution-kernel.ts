@@ -4,7 +4,7 @@ import { type AutomationHttpExecutionInput, executeAutomationHttpAction } from '
 
 type WorkflowData = Record<string, unknown>;
 type RawWorkflowNode = { id?: unknown; type?: unknown; config?: unknown };
-export type AutomationExecutionContext = { tenantId: string; projectId: string; workflowId: string; triggerType: 'manual' };
+export type AutomationExecutionContext = { tenantId: string; projectId: string; workflowId: string; triggerType: 'manual' | 'webhook' };
 export type AutomationResolvedDependencies = { agents: Record<string, AutomationAgentDependency> };
 export type AutomationExecutionStep = {
   nodeId: string;

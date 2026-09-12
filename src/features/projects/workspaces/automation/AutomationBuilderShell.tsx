@@ -29,11 +29,11 @@ export type AutomationBuilderReadiness = {
 export function buildAutomationBuilderReadiness(workflow: AutomationBuilderWorkflowSummary): AutomationBuilderReadiness {
   return {
     definitionReady: workflow.nodeCount > 0,
-    executionEnabled: false,
+    executionEnabled: true,
     publishEnabled: false,
-    webhookActivationEnabled: false,
+    webhookActivationEnabled: workflow.triggerType === 'webhook',
     safetyNote:
-      'Builder inspection is enabled, but execution, webhook activation, publishing, retries, and action dispatch remain disabled until runtime safety is implemented.',
+      'Manual and authenticated webhook execution use readiness-gated workflow runtimes. Publishing, retries, schedules, Agent tools, and arbitrary credentials remain protected.',
   };
 }
 
@@ -56,16 +56,16 @@ export function AutomationBuilderShell({
     <section aria-labelledby="automation-builder-heading" className="space-y-5 rounded-2xl border bg-card p-5 md:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">Builder shell</p>
+          <p className="text-sm font-medium text-muted-foreground">Workflow builder</p>
           <h2 className="mt-1 text-xl font-semibold" id="automation-builder-heading">
             {workflow.name}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            {workflow.description || 'Inspect this workflow definition before editing, execution, webhook activation, and publishing are enabled.'}
+            {workflow.description || 'Configure this workflow, resolve readiness checks, and use the execution controls below when it is ready.'}
           </p>
         </div>
         <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">
-          Execution disabled
+          Execution available
         </span>
       </div>
 
@@ -93,8 +93,8 @@ export function AutomationBuilderShell({
           ['Definition inspection', readiness.definitionReady ? 'Ready' : 'Needs nodes'],
           ['Prepared nodes', String(preparedNodeCount)],
           ['Needs review', String(needsReviewNodeCount)],
-          ['Execution runtime', readiness.executionEnabled ? 'Enabled' : 'Disabled'],
-          ['Webhook activation', readiness.webhookActivationEnabled ? 'Enabled' : 'Protected'],
+          ['Execution runtime', readiness.executionEnabled ? 'Available' : 'Disabled'],
+          ['Webhook management', readiness.webhookActivationEnabled ? 'Available' : 'Use webhook trigger'],
           ['Publish controls', readiness.publishEnabled ? 'Enabled' : 'Protected'],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border bg-background p-4">
@@ -119,12 +119,12 @@ export function AutomationBuilderShell({
                     {node.configKeys.length ? `${node.configKeys.length} config keys: ${node.configKeys.join(', ')}` : 'No config keys yet'}
                   </p>
                 </div>
-                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">Read-only</span>
+                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">Configured below</span>
               </div>
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">No nodes yet. The visual builder can be introduced after schema and runtime safety are expanded.</p>
+          <p className="mt-2 text-sm text-muted-foreground">No nodes yet. Add a trigger and workflow steps below to begin.</p>
         )}
       </div>
 
@@ -136,14 +136,14 @@ export function AutomationBuilderShell({
               <div key={run.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                 <div>
                   <p className="font-medium">{run.status}</p>
-                  <p className="text-xs text-muted-foreground">{run.triggerType} trigger · read-only record</p>
+                  <p className="text-xs text-muted-foreground">{run.triggerType} trigger · auditable record</p>
                 </div>
                 <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">No retry</span>
               </div>
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">No run records yet. This shell will display historical attempts without exposing run or retry buttons.</p>
+          <p className="mt-2 text-sm text-muted-foreground">No run records yet. Successful or failed manual and webhook attempts will appear here.</p>
         )}
       </div>
 

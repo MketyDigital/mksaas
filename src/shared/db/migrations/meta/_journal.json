@@ -71,6 +71,13 @@
       "when": 1788753773740,
       "tag": "0009_mkety_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788754310297,
+      "tag": "0010_automation_webhook_trigger",
+      "breakpoints": true
     }
   ]
 }

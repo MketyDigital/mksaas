@@ -10,7 +10,7 @@ describe('AutomationWorkflowManualRunForm', () => {
     render(<AutomationWorkflowManualRunForm canManage dependencyReadiness={readyDependencies} preflight={readyPreflight} runtimeReadiness={readyRuntime} projectSlug="demo" tenantSlug="acme" workflowSlug="lead-follow-up" />);
     expect(screen.getByRole('button', { name: 'Run workflow' })).toBeEnabled();
     expect(screen.getByText(/published Agent versions/i)).toBeInTheDocument();
-    expect(screen.getByText(/Agent tools, webhooks, retries, credentials, and schedules remain disabled/i)).toBeInTheDocument();
+    expect(screen.getByText(/Agent tools, retries, arbitrary credentials, and schedules remain disabled/i)).toBeInTheDocument();
   });
   it('disables execution and renders dependency blockers', () => {
     render(<AutomationWorkflowManualRunForm canManage dependencyReadiness={{ ready: false, blockers: [{ code: 'agent.dependency-no-published-version', message: 'Publish this Agent before running the workflow.', nodeId: 'agent-1' }], agents: {} }} preflight={readyPreflight} runtimeReadiness={readyRuntime} projectSlug="demo" tenantSlug="acme" workflowSlug="lead-follow-up" />);
