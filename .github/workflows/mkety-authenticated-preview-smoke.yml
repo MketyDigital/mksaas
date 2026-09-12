@@ -1,29 +1,13 @@
 name: Mkety Authenticated Preview Smoke
 
 on:
-  workflow_run:
-    workflows:
-      - Mkety Cloudflare Preview
-    types:
-      - completed
-    branches:
-      - feat/mkety-auth-zitadel-vinext
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-concurrency:
-  group: mkety-authenticated-preview-smoke
-  cancel-in-progress: true
-
 jobs:
   authenticated-smoke:
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        github.event.workflow_run.conclusion == 'success'
-      }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: preview
@@ -168,7 +152,7 @@ jobs:
           set -euo pipefail
           slug="auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "SMOKE_WORKSPACE_SLUG=$slug" >> "$GITHUB_ENV"
-          cat > .tmp-mkety-auth-smoke.spec.ts <<'TEST'
+          cat > mkety-auth-smoke.spec.ts <<'TEST'
           import { test, expect, type Page } from '@playwright/test';
 
           const previewUrl = process.env.PREVIEW_URL!;
@@ -275,11 +259,11 @@ jobs:
           });
           TEST
 
-          pnpm exec playwright test .tmp-mkety-auth-smoke.spec.ts \
+          pnpm exec playwright test mkety-auth-smoke.spec.ts \
             --browser=chromium \
             --reporter=line \
             --workers=1
-          rm -f .tmp-mkety-auth-smoke.spec.ts
+          rm -f mkety-auth-smoke.spec.ts
           echo "- Authenticated browser flow: login → callback → Mkety session → tenant access → logout verified" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean up Mkety smoke records
