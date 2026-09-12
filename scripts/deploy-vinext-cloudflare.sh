@@ -50,6 +50,7 @@ if [ -z "$server_config" ]; then
 fi
 
 deploy_env=''
+dry_run='false'
 forward_args=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -63,6 +64,11 @@ while [ "$#" -gt 0 ]; do
       ;;
     --env=*)
       deploy_env="${1#--env=}"
+      shift
+      ;;
+    --dry-run)
+      dry_run='true'
+      forward_args+=("$1")
       shift
       ;;
     *)
@@ -96,4 +102,41 @@ elif [ -n "$deploy_env" ]; then
 fi
 
 echo "Deploying generated server Worker config: $server_config"
-exec pnpm exec wrangler deploy --config "$server_config" "${forward_args[@]}"
+
+# Dry-runs have no published target to wait for.
+if [ "$dry_run" = 'true' ] || [ "$deploy_env" != 'preview' ]; then
+  exec pnpm exec wrangler deploy --config "$server_config" "${forward_args[@]}"
+fi
+
+# A successful Wrangler upload can precede workers.dev edge propagation by a
+# few seconds. The preview workflow performs strict route smokes immediately
+# after this command, so wait until the deployed Worker route is actually
+# reachable rather than allowing a transient Cloudflare 404 to fail the gate.
+deploy_log="$(mktemp)"
+trap 'rm -f "$deploy_log"' EXIT
+set +e
+pnpm exec wrangler deploy --config "$server_config" "${forward_args[@]}" 2>&1 | tee "$deploy_log"
+deploy_status=${PIPESTATUS[0]}
+set -e
+if [ "$deploy_status" -ne 0 ]; then
+  exit "$deploy_status"
+fi
+
+preview_url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$deploy_log" | tail -n 1 || true)"
+if [ -z "$preview_url" ]; then
+  echo 'Wrangler deployed the preview Worker but did not report a workers.dev URL.' >&2
+  exit 1
+fi
+
+for attempt in $(seq 1 15); do
+  status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 "$preview_url/api/health" || true)"
+  if [ "$status" != '000' ] && [ "$status" != '404' ]; then
+    echo "Preview Worker is reachable at $preview_url (health route HTTP $status; attempt $attempt)."
+    exit 0
+  fi
+  echo "Preview Worker propagation pending at $preview_url (HTTP ${status:-000}; attempt $attempt/15)."
+  sleep 2
+done
+
+echo "Preview Worker did not become reachable at $preview_url within the propagation window." >&2
+exit 1
