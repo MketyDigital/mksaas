@@ -69,29 +69,35 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Require Cloudflare preview credentials
+      - name: Require Cloudflare preview credentials and database
         shell: bash
         run: |
           missing=0
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::Missing preview secret CLOUDFLARE_API_TOKEN"
-            missing=1
-          fi
-          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "::error::Missing preview secret CLOUDFLARE_ACCOUNT_ID"
-            missing=1
-          fi
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing preview secret $name"
+              missing=1
+            fi
+          done
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
       - name: Build bootstrap preview artifact
         run: pnpm build
-      - name: Bootstrap isolated preview Worker
+      - name: Bootstrap isolated preview Worker with database secret
         id: bootstrap
         shell: bash
         run: |
           set -euo pipefail
-          pnpm run deploy --env preview 2>&1 | tee preview-deploy.log
+          secrets_file="$(mktemp)"
+          trap 'rm -f "$secrets_file"' EXIT
+          SECRETS_FILE="$secrets_file" node <<'NODE'
+          const fs = require('node:fs');
+          const value = process.env.STAGING_DATABASE_URL;
+          if (!value) throw new Error('STAGING_DATABASE_URL is required');
+          fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify({ DATABASE_URL: value }));
+          NODE
+          pnpm run deploy --env preview --secrets-file "$secrets_file" 2>&1 | tee preview-deploy.log
       - name: Capture exact workers.dev URL
         id: preview-url
         shell: bash
@@ -144,7 +150,10 @@ jobs:
           MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/login
         run: |
           set -euo pipefail
-          node <<'NODE' > .preview-runtime-secrets.json
+          secrets_file="$(mktemp)"
+          trap 'rm -f "$secrets_file"' EXIT
+          SECRETS_FILE="$secrets_file" node <<'NODE'
+          const fs = require('node:fs');
           const required = {
             DATABASE_URL: process.env.STAGING_DATABASE_URL,
             MKETY_AUTH_PROVIDER: 'zitadel',
@@ -158,10 +167,9 @@ jobs:
           for (const [key, value] of Object.entries(required)) {
             if (!value) throw new Error(`Missing required runtime value: ${key}`);
           }
-          process.stdout.write(JSON.stringify(required));
+          fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify(required));
           NODE
-          pnpm exec wrangler secret bulk .preview-runtime-secrets.json --env preview
-          rm -f .preview-runtime-secrets.json
+          pnpm exec wrangler secret bulk "$secrets_file" --env preview
       - name: Build Auth-ready preview artifact
         if: steps.auth-readiness.outputs.ready == 'true'
         env:
