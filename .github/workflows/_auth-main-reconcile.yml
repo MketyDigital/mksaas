@@ -17,6 +17,7 @@ concurrency:
 env:
   EXPECTED_MAIN_SHA: 0693b00fba639549d92c4dd82a2fcef618d0bd47
   EXPECTED_CONTENT_REPAIR_BLOB: 8b8be8e68785dec4bbdf39d3d680cfc9ad808fc2
+  EXPECTED_DEPLOY_HELPER_BLOB: eb21835005713fd1ecbaccd1eee9bc23f8bc8abb
   SKIP_ENV_VALIDATION: 'true'
 
 jobs:
@@ -146,6 +147,65 @@ jobs:
           PY
           git add "$target_path" scripts/migrate-mkety-platform-content.ts
           echo "- Repaired pre-existing content migration collision: later commercial repair moved from \`0004\` to \`0009\` and added to the explicit runner." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Repair JSONC parsing in Cloudflare deploy helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="scripts/deploy-vinext-cloudflare.sh"
+          helper_blob="$(git rev-parse "origin/main:$helper")"
+          if [ "$helper_blob" != "$EXPECTED_DEPLOY_HELPER_BLOB" ]; then
+            echo "::error::Unexpected deploy helper blob: $helper_blob"
+            exit 1
+          fi
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/deploy-vinext-cloudflare.sh')
+          text = path.read_text()
+          old = '''expected_worker_name="${CANDIDATE_WORKER_NAME:-}"
+          if [ -z "$expected_worker_name" ]; then
+            expected_worker_name="$(node -e "const fs=require('node:fs'); const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8')); process.stdout.write(c.name || '')")"
+          fi
+          '''
+          new = '''expected_worker_name="${CANDIDATE_WORKER_NAME:-}"
+          if [ -z "$expected_worker_name" ]; then
+            expected_worker_name="$(node - <<'NODE'
+          const fs = require('node:fs');
+          const ts = require('typescript');
+          const file = 'wrangler.jsonc';
+          const parsed = ts.parseConfigFileTextToJson(file, fs.readFileSync(file, 'utf8'));
+          if (parsed.error) {
+            const message = ts.flattenDiagnosticMessageText(parsed.error.messageText, '\\n');
+            throw new Error(`Unable to parse ${file}: ${message}`);
+          }
+          process.stdout.write(typeof parsed.config?.name === 'string' ? parsed.config.name : '');
+          NODE
+          )"
+          fi
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected strict-JSON worker-name parser exactly once')
+          path.write_text(text.replace(old, new))
+          PY
+          git add "$helper"
+
+          # RED was captured in prior run 34684703304: strict JSON.parse rejected
+          # Auth's valid JSONC trailing commas. Prove the repaired parser accepts
+          # the real Auth JSONC before the broader packaging gate runs.
+          worker_name="$(node - <<'NODE'
+          const fs = require('node:fs');
+          const ts = require('typescript');
+          const parsed = ts.parseConfigFileTextToJson('wrangler.jsonc', fs.readFileSync('wrangler.jsonc', 'utf8'));
+          if (parsed.error) process.exit(1);
+          process.stdout.write(parsed.config?.name || '');
+          NODE
+          )"
+          if [ "$worker_name" != "mkety-platform" ]; then
+            echo "::error::JSONC parser returned unexpected Worker name: $worker_name"
+            exit 1
+          fi
+          echo "- Repaired deploy helper to parse real JSONC (comments/trailing commas) through TypeScript instead of strict JSON.parse." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
