@@ -178,7 +178,7 @@ jobs:
           fi
           '''
           if text.count(old) != 1:
-              raise SystemExit('expected strict-JSON worker-name parser exactly once')
+            raise SystemExit('expected strict-JSON worker-name parser exactly once')
           path.write_text(text.replace(old, new))
           PY
           git add "$helper"
@@ -234,7 +234,6 @@ jobs:
             exit 1
           fi
 
-          # These six tables are already owned by root migrations 0002 and 0003.
           grep -q 'CREATE TABLE IF NOT EXISTS "saas_template"."public_ai_visitors"' migrations/0002_public_ai_memory.sql
           grep -q 'CREATE TABLE IF NOT EXISTS "saas_template"."platform_enterprise_orders"' migrations/0003_platform_enterprise_orders.sql
 
@@ -266,6 +265,16 @@ jobs:
             exit 1
           fi
           echo "- Refreshed \`0009_mkety_auth\` snapshot metadata to include public-site-owned tables already migrated by root migrations 0002/0003; no duplicate application SQL was added." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Normalize staged merge with repository pre-commit transforms
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .git/MERGE_HEAD
+          HUSKY=0 pnpm exec lint-staged --no-stash
+          git add -A
+          git diff --cached --check
+          echo "- Applied the repository lint-staged transforms before verification so the final commit cannot mutate already-verified content." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify Auth.js and Auth0 are absent from active package/config
         shell: bash
@@ -301,24 +310,24 @@ jobs:
       - name: Validate isolated preview packaging
         run: pnpm run deploy --env preview --dry-run
 
-      - name: Commit merge locally after verification
+      - name: Commit verified normalized merge
         id: commit
         shell: bash
         run: |
           set -euo pipefail
           test -f .git/MERGE_HEAD
-          git commit -m "Merge main ${EXPECTED_MAIN_SHA:0:12} into Mkety Auth after guarded verification"
+          HUSKY=0 git commit -m "Merge main ${EXPECTED_MAIN_SHA:0:12} into Mkety Auth after guarded verification"
           merge_sha="$(git rev-parse HEAD)"
           echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
-          echo "- Verified merge SHA: \`$merge_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Verified normalized merge SHA: \`$merge_sha\`" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Assert merge commit hook left worktree clean
+      - name: Assert verified merge worktree is clean
         shell: bash
         run: |
           set -euo pipefail
           git status --short
           if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::Merge commit hook left the verified worktree dirty"
+            echo "::error::Verified merge commit left the worktree dirty"
             git diff --name-status
             git diff --cached --name-status
             git ls-files --others --exclude-standard
@@ -329,30 +338,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          snapshot="src/shared/db/migrations/meta/0009_snapshot.json"
-          journal="src/shared/db/migrations/meta/_journal.json"
-          cp "$snapshot" /tmp/0009.postcommit.before.json
-          cp "$journal" /tmp/journal.postcommit.before.json
-
           pnpm db:generate
-
-          echo "--- diagnostic after db:generate ---"
-          git status --short
-          echo "snapshot hashes after:"
-          sha256sum "$snapshot" "$journal"
-          echo "tracked worktree changes:"
-          git diff --name-status
-          echo "staged changes:"
-          git diff --cached --name-status
-          echo "untracked generated migration artifacts:"
-          git ls-files --others --exclude-standard 'src/shared/db/migrations/*.sql' 'src/shared/db/migrations/meta/*_snapshot.json' || true
-          echo "snapshot diff summary:"
-          diff -u /tmp/0009.postcommit.before.json "$snapshot" | sed -n '1,160p' || true
-          echo "journal diff summary:"
-          diff -u /tmp/journal.postcommit.before.json "$journal" | sed -n '1,160p' || true
-
           if [ -n "$(git status --porcelain)" ]; then
             echo "::error::db:generate changed the committed verified merge"
+            git status --short
+            git diff --name-status
+            git diff --cached --name-status
+            git ls-files --others --exclude-standard 'src/shared/db/migrations/*.sql' 'src/shared/db/migrations/meta/*_snapshot.json' || true
             exit 1
           fi
           pnpm db:check:migrations
