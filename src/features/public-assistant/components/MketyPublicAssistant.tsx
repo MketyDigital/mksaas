@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, History, MessageCircle, Plus, Send, Trash2, X } from 'lucide-react';
+import { Bot, History, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 interface PublicConversationSummary {
@@ -158,32 +158,46 @@ export function MketyPublicAssistant() {
 
   return (
     <>
-      <button
-        type="button"
-        aria-label="Ask Mkety AI"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="fixed bottom-5 right-5 z-50 inline-flex h-14 items-center gap-2 rounded-full border border-violet-400/30 bg-violet-600 px-5 text-sm font-semibold text-white shadow-xl shadow-violet-950/20 transition hover:-translate-y-0.5 hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
-      >
-        {open ? <X className="h-5 w-5" aria-hidden="true" /> : <MessageCircle className="h-5 w-5" aria-hidden="true" />}
-        <span className="hidden sm:inline">Mkety AI</span>
-      </button>
+      {!open ? (
+        <button
+          type="button"
+          aria-label="Ask Mkety AI"
+          aria-expanded="false"
+          data-surface="mkety-ai-command"
+          onClick={() => setOpen(true)}
+          className="fixed inset-x-3 bottom-[5.75rem] z-[55] mx-auto flex min-h-14 w-[calc(100%-1.5rem)] max-w-[720px] items-center gap-3 rounded-2xl border border-violet-400/30 bg-background/92 px-4 py-3 text-left shadow-2xl shadow-violet-950/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-violet-400/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 supports-[backdrop-filter]:bg-background/78"
+        >
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white">
+            <Sparkles className="h-4.5 w-4.5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-foreground">Ask Mkety AI</span>
+            <span className="block truncate text-xs text-muted-foreground sm:text-sm">
+              Ask about Mkety, products, plans, workspaces and docs…
+            </span>
+          </span>
+          <span className="hidden rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 px-3 py-2 text-xs font-semibold text-white sm:inline-flex">
+            Open AI
+          </span>
+        </button>
+      ) : null}
 
       {open ? (
         <section
           role="dialog"
           aria-modal="false"
           aria-label="Mkety AI"
-          className="fixed inset-x-3 bottom-24 z-50 flex max-h-[min(720px,calc(100vh-7rem))] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:left-auto sm:right-5 sm:w-[420px]"
+          data-surface="mkety-ai-panel"
+          className="fixed inset-x-3 bottom-[5.75rem] z-[55] mx-auto flex max-h-[min(720px,calc(100vh-7rem))] w-[calc(100%-1.5rem)] max-w-[760px] flex-col overflow-hidden rounded-[1.75rem] border border-violet-400/20 bg-background/96 shadow-2xl shadow-violet-950/20 backdrop-blur-xl supports-[backdrop-filter]:bg-background/88"
         >
-          <header className="flex items-center justify-between border-b border-border px-4 py-3">
+          <header className="flex items-center justify-between border-b border-border/80 bg-gradient-to-r from-violet-600/[0.08] to-cyan-500/[0.08] px-4 py-3 sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-600 text-white">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
                 <Bot className="h-5 w-5" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <h2 className="font-semibold">Mkety AI</h2>
-                <p className="truncate text-xs text-muted-foreground">Ask about Mkety, products, plans and docs</p>
+                <p className="truncate text-xs text-muted-foreground">Your guide to Mkety products, plans and documentation</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -215,11 +229,9 @@ export function MketyPublicAssistant() {
           </header>
 
           {historyOpen ? (
-            <div className="border-b border-border bg-muted/30 p-3">
+            <div className="border-b border-border bg-muted/30 p-3 sm:px-5">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Recent chats
-                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent chats</span>
                 <button
                   type="button"
                   aria-label="Clear history"
@@ -253,18 +265,18 @@ export function MketyPublicAssistant() {
             </div>
           ) : null}
 
-          <div className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
+          <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5" aria-live="polite">
             {loadingHistory && messages.length === 0 ? (
               <p className="text-sm text-muted-foreground">Loading your Mkety AI conversation…</p>
             ) : null}
 
             {!loadingHistory && messages.length === 0 ? (
               <div>
-                <p className="text-sm leading-6 text-muted-foreground">
+                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                   I can help you understand Mkety, find the right product or workspace, explain plans, and guide you
                   through our public documentation.
                 </p>
-                <div className="mt-4 grid gap-2">
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {suggestedPrompts.map((prompt) => (
                     <button
                       key={prompt}
@@ -283,7 +295,7 @@ export function MketyPublicAssistant() {
               {messages.map((message) => (
                 <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'bg-violet-600 text-white' : 'bg-muted text-foreground'}`}
+                    className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'bg-gradient-to-br from-violet-600 to-violet-500 text-white' : 'bg-muted text-foreground'}`}
                   >
                     {message.content}
                   </div>
@@ -291,9 +303,7 @@ export function MketyPublicAssistant() {
               ))}
               {loading ? (
                 <div className="flex justify-start">
-                  <div className="rounded-2xl bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">
-                    Mkety AI is thinking…
-                  </div>
+                  <div className="rounded-2xl bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">Mkety AI is thinking…</div>
                 </div>
               ) : null}
               <div ref={endRef} />
@@ -309,11 +319,11 @@ export function MketyPublicAssistant() {
             ) : null}
           </div>
 
-          <form onSubmit={handleSubmit} className="border-t border-border bg-background p-3">
+          <form onSubmit={handleSubmit} className="border-t border-border bg-background/95 p-3 sm:px-5 sm:py-4">
             <label htmlFor="mkety-public-ai-message" className="sr-only">
               Message Mkety AI
             </label>
-            <div className="flex items-end gap-2 rounded-xl border border-border bg-muted/20 p-2 focus-within:border-violet-400/60">
+            <div className="flex items-end gap-2 rounded-2xl border border-border bg-muted/20 p-2 focus-within:border-violet-400/60 focus-within:ring-1 focus-within:ring-violet-400/20">
               <textarea
                 id="mkety-public-ai-message"
                 aria-label="Message Mkety AI"
@@ -334,7 +344,7 @@ export function MketyPublicAssistant() {
                 type="submit"
                 aria-label="Send message"
                 disabled={loading || !input.trim()}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-600 text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Send className="h-4 w-4" aria-hidden="true" />
               </button>
