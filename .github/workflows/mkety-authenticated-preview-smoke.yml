@@ -190,8 +190,6 @@ jobs:
 
           async function fillHostedField(page: Page, input: Locator, value: string, phase: string) {
             await expect(input, `${phase} input should be visible`).toBeVisible({ timeout: 5_000 });
-            // ZITADEL Login V2 can paint the input before its client handlers are hydrated.
-            // Keyboard events after a short settle reliably update its controlled form state.
             await page.waitForTimeout(500);
             await input.click();
             await input.fill('');
@@ -253,19 +251,15 @@ jobs:
                 continue;
               }
 
-              const authorization = page
-                .getByRole('button', { name: /authorize|allow|continue/i })
-                .first();
+              const authorization = page.getByRole('button', { name: /authorize|allow|continue/i }).first();
               if (await visible(authorization)) {
                 unknownStateCount = 0;
                 const before = page.url();
                 await authorization.click();
-                await page
-                  .waitForURL((url) => url.href !== before, { timeout: 15_000 })
-                  .catch(async () => {
-                    await safeDiagnostic(page, 'authorization');
-                    throw new Error(`ZITADEL authorization did not transition; url=${page.url()}`);
-                  });
+                await page.waitForURL((url) => url.href !== before, { timeout: 15_000 }).catch(async () => {
+                  await safeDiagnostic(page, 'authorization');
+                  throw new Error(`ZITADEL authorization did not transition; url=${page.url()}`);
+                });
                 continue;
               }
 
@@ -279,6 +273,39 @@ jobs:
 
             await safeDiagnostic(page, 'hosted-login-deadline');
             throw new Error(`Hosted login did not return to Mkety preview within 70s; url=${page.url()}`);
+          }
+
+          async function completeHostedLogout(page: Page) {
+            const deadline = Date.now() + 30_000;
+            let unknownStateCount = 0;
+
+            while (Date.now() < deadline) {
+              const current = new URL(page.url());
+              if (current.origin === previewOrigin && current.pathname === '/login') return;
+              if (current.origin !== issuer) {
+                await safeDiagnostic(page, 'unexpected-logout-origin');
+                throw new Error(`Unexpected hosted-logout origin: ${current.origin}`);
+              }
+
+              const account = page.getByRole('button').filter({ hasText: email }).first();
+              if (await visible(account)) {
+                unknownStateCount = 0;
+                const before = page.url();
+                await account.click();
+                await page.waitForURL((url) => url.href !== before, { timeout: 15_000 }).catch(() => undefined);
+                continue;
+              }
+
+              unknownStateCount += 1;
+              if (unknownStateCount >= 10) {
+                await safeDiagnostic(page, 'unknown-hosted-logout-state');
+                throw new Error(`Unrecognized ZITADEL hosted-logout state at ${page.url()}`);
+              }
+              await page.waitForTimeout(500);
+            }
+
+            await safeDiagnostic(page, 'hosted-logout-deadline');
+            throw new Error(`Hosted logout did not return to Mkety preview within 30s; url=${page.url()}`);
           }
 
           test('real ZITADEL login creates Mkety session, tenant access works, logout revokes session', async ({ page }) => {
@@ -311,7 +338,8 @@ jobs:
             expect(protectedResponse.status()).toBe(200);
 
             await page.goto(`${previewUrl}/api/auth/logout?returnTo=/login`, { waitUntil: 'domcontentloaded' });
-            await page.waitForURL('**/login', { timeout: 20_000 });
+            await completeHostedLogout(page);
+            await page.waitForURL((url) => url.origin === previewOrigin && url.pathname === '/login', { timeout: 20_000 });
 
             const afterLogout = await page.context().request.get(`${previewUrl}/api/auth/session`);
             expect(afterLogout.status()).toBe(200);
@@ -335,7 +363,7 @@ jobs:
             --browser=chromium \
             --reporter=line \
             --workers=1
-          echo "- Authenticated browser flow: login → callback → Mkety session → tenant access → logout verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Authenticated browser flow: login → callback → Mkety session → tenant access → hosted logout verified" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload authenticated smoke failure evidence
         if: failure()
