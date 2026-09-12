@@ -3,8 +3,12 @@ import { render, screen } from '@testing-library/react';
 import { MketyPublicShell } from './MketyPublicShell';
 import { defaultFooterGroups, defaultPlatformNavigation, defaultPlatformSiteSettings } from '../../defaults';
 
+jest.mock('next/navigation', () => ({
+  usePathname: () => '/',
+}));
+
 describe('MketyPublicShell', () => {
-  it('renders consistent public navigation, CTAs and legal destinations', () => {
+  it('renders consistent public CTAs, legal destinations and content', () => {
     render(
       <MketyPublicShell
         settings={defaultPlatformSiteSettings}
@@ -23,7 +27,7 @@ describe('MketyPublicShell', () => {
     expect(screen.getByRole('heading', { name: 'Public content' })).toBeInTheDocument();
   });
 
-  it('provides an accessible mobile navigation disclosure', () => {
+  it('provides the global Mkety app dock and AI command surface', () => {
     render(
       <MketyPublicShell
         settings={defaultPlatformSiteSettings}
@@ -34,7 +38,7 @@ describe('MketyPublicShell', () => {
       </MketyPublicShell>,
     );
 
-    expect(screen.getByText('Menu')).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: /mkety app navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ask mkety ai/i })).toHaveAttribute('data-surface', 'mkety-ai-command');
   });
 });
