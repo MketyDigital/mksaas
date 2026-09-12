@@ -312,28 +312,27 @@ jobs:
           echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
           echo "- Verified merge SHA: \`$merge_sha\`" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Assert merge commit hook left worktree clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Merge commit hook left the verified worktree dirty"
+            git diff --name-status
+            git diff --cached --name-status
+            git ls-files --others --exclude-standard
+            exit 1
+          fi
+
       - name: Prove committed forward migration generation is a no-op
         shell: bash
         run: |
           set -euo pipefail
           snapshot="src/shared/db/migrations/meta/0009_snapshot.json"
           journal="src/shared/db/migrations/meta/_journal.json"
-
-          echo "--- clean-state diagnostic before db:generate ---"
-          git status --short
-          echo "snapshot hashes before:"
-          sha256sum "$snapshot" "$journal"
           cp "$snapshot" /tmp/0009.postcommit.before.json
           cp "$journal" /tmp/journal.postcommit.before.json
-
-          before="$(git status --porcelain)"
-          if [ -n "$before" ]; then
-            echo "::error::Verified merge commit started the forward-generation proof with a dirty worktree"
-            git diff --name-status
-            git diff --cached --name-status
-            git ls-files --others --exclude-standard
-            exit 1
-          fi
 
           pnpm db:generate
 
@@ -352,8 +351,7 @@ jobs:
           echo "journal diff summary:"
           diff -u /tmp/journal.postcommit.before.json "$journal" | sed -n '1,160p' || true
 
-          after="$(git status --porcelain)"
-          if [ -n "$after" ]; then
+          if [ -n "$(git status --porcelain)" ]; then
             echo "::error::db:generate changed the committed verified merge"
             exit 1
           fi
