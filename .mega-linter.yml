@@ -19,10 +19,10 @@ DISABLE_LINTERS:
 # dedicated shell formatting/linting and do not affect workflow correctness.
 ACTION_ACTIONLINT_ARGUMENTS: "-ignore=SC2034 -ignore=SC2129 -ignore=SC2006"
 
-# JSONLint does not understand JSON-with-comments. Dev Containers intentionally
-# use JSONC syntax even though the conventional filename ends in .json.
+# JSONLint does not understand JSON-with-comments. These files intentionally use
+# JSONC syntax even though their conventional filenames end in .json.
 JSON_JSONLINT_FILTER_REGEX_EXCLUDE: >-
-  (\.devcontainer/devcontainer\.json)
+  (\.devcontainer/devcontainer\.json|tools/danger/tsconfig\.json)
 
 # v8r is useful for schema-backed YAML, but these files either have no published
 # schema or use valid tool/GitHub syntax that the current SchemaStore definitions
