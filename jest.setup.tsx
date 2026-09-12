@@ -5,23 +5,44 @@ import { TextDecoder, TextEncoder } from 'node:util';
 
 import '@testing-library/jest-dom';
 
-// Mkety Auth deliberately uses Web-standard crypto APIs so the same primitives work
-// in browsers and Cloudflare Workers. jsdom does not expose all Node 22 Web globals,
-// therefore the test harness supplies the standards-compatible Node implementations.
-Object.defineProperty(globalThis, 'TextEncoder', { configurable: true, value: TextEncoder });
-Object.defineProperty(globalThis, 'TextDecoder', { configurable: true, value: TextDecoder });
-Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
-
+// Mkety Auth and Public Mkety AI deliberately use Web-standard crypto APIs so
+// the same primitives work in browsers, Node, and Cloudflare Workers. jsdom
+// does not expose the complete modern Web Crypto / Encoding surface, therefore
+// the test harness supplies the standards-compatible Node implementations.
+if (!globalThis.crypto?.subtle) {
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: webcrypto,
+  });
+}
+if (!globalThis.TextEncoder) {
+  Object.defineProperty(globalThis, 'TextEncoder', {
+    configurable: true,
+    value: TextEncoder,
+  });
+}
+if (!globalThis.TextDecoder) {
+  Object.defineProperty(globalThis, 'TextDecoder', {
+    configurable: true,
+    value: TextDecoder,
+  });
+}
 if (!globalThis.fetch) {
-  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: jest.fn() });
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: jest.fn(),
+  });
 }
 
 // ============================================================================
 // Global Mocks
 // ============================================================================
 
-// Runtime environment validation uses an ESM-only dependency. Unit tests exercise
-// consumers, not environment parsing, so keep that boundary explicit and deterministic.
+// Runtime environment validation uses an ESM-only dependency. Unit tests
+// exercise consumers, not environment parsing, so keep that boundary explicit
+// and deterministic. Do not reintroduce Auth.js/NextAuth mocks here: Mkety owns
+// the application auth/session boundary and ZITADEL is only the OIDC adapter.
 jest.mock('@/shared/lib/env', () => ({
   env: {
     NODE_ENV: 'test',
@@ -39,6 +60,9 @@ jest.mock('@/shared/lib/env', () => ({
     ENABLE_TEST_LOGIN: false,
     MKETY_AI_PROVIDER: 'openai',
     MKETY_AI_MODEL: 'gpt-4o-mini',
+    MKETY_PUBLIC_AI_ENABLED: false,
+    MKETY_PUBLIC_AI_PRIMARY_PROVIDER: 'openai',
+    MKETY_PUBLIC_AI_FALLBACK_PROVIDERS: '',
     AWS_REGION: 'us-east-1',
     S3_REGION: 'us-east-1',
   },
