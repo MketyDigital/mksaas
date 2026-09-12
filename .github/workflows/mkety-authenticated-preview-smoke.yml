@@ -151,6 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           slug="auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          export SMOKE_WORKSPACE_SLUG="$slug"
           echo "SMOKE_WORKSPACE_SLUG=$slug" >> "$GITHUB_ENV"
           cat > mkety-auth-smoke.spec.ts <<'TEST'
           import { test, expect, type Locator, type Page } from '@playwright/test';
