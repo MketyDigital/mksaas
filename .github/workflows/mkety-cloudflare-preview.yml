@@ -165,12 +165,7 @@ jobs:
 
           existing="false"
           if pnpm exec wrangler secret list --env preview --format json > /tmp/mkety-existing-secrets.json 2>/dev/null; then
-            existing="$(node <<'NODE'
-            const fs = require('node:fs');
-            const entries = JSON.parse(fs.readFileSync('/tmp/mkety-existing-secrets.json', 'utf8'));
-            process.stdout.write(entries.some((entry) => entry.name === 'MKETY_AUTH_SESSION_SECRET') ? 'true' : 'false');
-            NODE
-            )"
+            existing="$(node -e "const fs=require('node:fs'); const entries=JSON.parse(fs.readFileSync('/tmp/mkety-existing-secrets.json','utf8')); process.stdout.write(entries.some((entry)=>entry.name==='MKETY_AUTH_SESSION_SECRET')?'true':'false');")"
           fi
 
           if [ "$existing" = "true" ]; then
