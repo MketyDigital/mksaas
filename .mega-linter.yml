@@ -5,7 +5,7 @@
 
 # Ignore generated and third-party directories.
 FILTER_REGEX_EXCLUDE: >-
-  (\.git/|node_modules/|\.next/|dist/|build/|coverage/|pnpm-lock\.yaml)
+  (\.git/|node_modules/|\.next/|dist/|build/|coverage/|megalinter-reports/|pnpm-lock\.yaml)
 
 # ESLint plus tsc are the canonical TypeScript quality gates for this codebase.
 # GitHub Actions YAML is validated by actionlint, Prettier and schema validation;
@@ -40,9 +40,9 @@ MARKDOWN_MARKDOWN_LINK_CHECK_DISABLE_ERRORS: true
 
 # The production cutover intentionally uses two manual dispatch inputs: an exact
 # verified SHA and a typed confirmation phrase. CKV_GHA_7 rejects all dispatch
-# inputs categorically, so skip only that rule while retaining every other
-# Checkov GitHub Actions security check.
-REPOSITORY_CHECKOV_ARGUMENTS: "--skip-check CKV_GHA_7"
+# inputs categorically. Checkov must also ignore MegaLinter's generated reports,
+# which can contain copied/redacted source snippets and are not repository source.
+REPOSITORY_CHECKOV_ARGUMENTS: "--skip-check CKV_GHA_7 --skip-path megalinter-reports"
 
 # EditorConfig remains visible while line-ending-only drift is normalized by the
 # repository formatting workflow instead of blocking production behavior checks.
