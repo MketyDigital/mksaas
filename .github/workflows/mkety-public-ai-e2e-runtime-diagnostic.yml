@@ -1,0 +1,96 @@
+name: Mkety Public AI E2E Runtime Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/mkety-public-site-production
+    paths:
+      - '.github/workflows/mkety-public-ai-e2e-runtime-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      MKETY_PUBLIC_AI_ENABLED: 'true'
+      MKETY_PUBLIC_AI_PRIMARY_PROVIDER: openai
+      MKETY_PUBLIC_AI_MODEL: gpt-5.6-luna
+      MKETY_PUBLIC_AI_FALLBACK_PROVIDERS: ''
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run assistant runtime twice for the same visitor
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > ./mkety-public-ai-e2e-diagnostic.ts <<'TS'
+          import { randomUUID } from 'node:crypto';
+          import { clearPublicAIHistory } from './src/features/public-assistant/server/memory';
+          import { runMketyPublicAssistant } from './src/features/public-assistant/server/runtime';
+
+          const visitorId = randomUUID();
+          const environment = process.env;
+
+          async function stage<T>(name: string, fn: () => Promise<T>) {
+            const started = Date.now();
+            try {
+              const result = await fn();
+              console.log(`${name}: OK (${Date.now() - started}ms)`);
+              return result;
+            } catch (error) {
+              console.error(`${name}: FAILED (${Date.now() - started}ms)`);
+              if (error instanceof Error) {
+                console.error(`name=${error.name}`);
+                console.error(`message=${error.message}`);
+                console.error(error.stack ?? 'no stack');
+              } else {
+                console.error(String(error));
+              }
+              throw error;
+            }
+          }
+
+          try {
+            const first = await stage('first-turn', () => runMketyPublicAssistant({
+              visitorId,
+              message: 'Where can I read Mkety documentation and what is SolutionHub?',
+              environment,
+            }));
+            console.log(`first conversation present=${Boolean(first.conversationId)} answer chars=${first.answer.length}`);
+
+            const second = await stage('second-turn-same-conversation', () => runMketyPublicAssistant({
+              visitorId,
+              conversationId: first.conversationId,
+              message: 'What was I just asking you about?',
+              environment,
+            }));
+            console.log(`second conversation same=${second.conversationId === first.conversationId} answer chars=${second.answer.length}`);
+
+            const third = await stage('new-conversation-same-visitor', () => runMketyPublicAssistant({
+              visitorId,
+              message: 'Tell me about Mkety Academy.',
+              environment,
+            }));
+            console.log(`third conversation new=${third.conversationId !== first.conversationId} answer chars=${third.answer.length}`);
+          } finally {
+            await clearPublicAIHistory(visitorId).catch((error) => {
+              console.error(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+            });
+          }
+          console.log('diagnostic complete');
+          process.exit(0);
+          TS
+          pnpm exec tsx ./mkety-public-ai-e2e-diagnostic.ts
+          rm ./mkety-public-ai-e2e-diagnostic.ts

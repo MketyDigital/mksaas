@@ -53,9 +53,7 @@ describe('useAuth', () => {
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }) => (
-        <AuthContext.Provider
-          value={{ session: { user, expiresAt: new Date('2026-10-01') }, isLoading: false, refresh: jest.fn() }}
-        >
+        <AuthContext.Provider value={{ session: { user, expiresAt: new Date('2026-10-01') }, isLoading: false, refresh: jest.fn() }}>
           {children}
         </AuthContext.Provider>
       ),

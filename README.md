@@ -1,152 +1,224 @@
+> [!IMPORTANT]
+> **Showcase sample — prefer the CLI for new projects.**
+>
+> This repository is a **capability demo** of
+> [`create-awesome-node-app`](https://www.npmjs.com/package/create-awesome-node-app):
+> a real multi-tenant Next.js SaaS with AI, built from the
+> `nextjs-saas-ai-starter` template.
+>
+> It is **not** the recommended way to start a new product. This snapshot can
+> lag the live template bank, miss bugfixes, and omit newer extensions.
+>
+> **Start here instead:**
+>
+> ```bash
+> npx create-awesome-node-app my-saas-app --template nextjs-saas-ai-starter
+> ```
+>
+> Docs & catalog: [create-awesome-node-app.vercel.app](https://create-awesome-node-app.vercel.app/) ·
+> Templates: [Create-Node-App/cna-templates](https://github.com/Create-Node-App/cna-templates)
+
 # Mkety Platform
 
-`mksaas` is the authoritative development repository for the modern Mkety Platform and Mkety public website.
+> Production-ready Next.js boilerplate for multi-tenant SaaS with AI built-in
 
-Mkety is organized around two primary products: **Platform** and **Academy**. This repository owns the Platform application, public website, shared platform services, and the architecture needed to support AI, Automation, Deploy, Workspaces, SolutionHub, Billing, administration, and enterprise/custom surfaces such as Trading.
+<div align="center">
 
-## Runtime
+[![GitHub stars](https://img.shields.io/github/stars/Create-Node-App/nextjs-saas-ai-template?style=social)](https://github.com/Create-Node-App/nextjs-saas-ai-template)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![pnpm](https://img.shields.io/badge/pnpm-9-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-The authoritative runtime is:
+[![Built with create-awesome-node-app](https://img.shields.io/badge/Built%20with-create--awesome--node--app-blue?style=flat-square)](https://www.npmjs.com/package/create-awesome-node-app)
 
-- Next.js 16 App Router
-- vinext
-- Cloudflare Workers
-- TypeScript 5+
-- Tailwind CSS v4
-- PostgreSQL + pgvector + Drizzle ORM
-- Mkety-owned Auth with a replaceable ZITADEL OIDC adapter
+</div>
 
-Production deployment is not authorized merely because a branch builds. Promotion must follow the verified Cloudflare preview and product-specific release gates documented in the repository.
+A fully-featured, production-ready Next.js 15 template for building multi-tenant SaaS applications with AI capabilities built-in. Part of the [Create-Node-App](https://github.com/Create-Node-App) ecosystem.
 
-## Authentication Boundary
+---
 
-Mkety owns application identity, sessions, tenant membership, roles, permissions, and server-side authorization. ZITADEL is the current replaceable OIDC adapter; provider claims and provider tokens are not the application authorization source of truth.
+## 🛠️ How to Use This Template
 
-Do not reintroduce Auth.js/NextAuth, Auth0-owned application sessions, or provider-specific authorization logic into product code.
+> [!TIP]
+> **Using the CLI is always recommended over cloning this repo directly.**
+> This template repository may become outdated over time. The CLI always fetches the latest version of the template plus lets you add extensions (Tailwind, shadcn/ui, Auth.js, Drizzle, i18n, and more) in a single command.
 
-## Platform Areas
+### ⚡ Option 1 — CLI (Recommended — always up to date)
 
-Current architecture includes:
-
-- **AI** — agents, models/providers, knowledge, versions, runs, and publishing boundaries
-- **Automation** — workflows, triggers, actions, webhooks, execution records, failures, and retries
-- **Deploy** — applications/sites, environments, deployments, domains, previews, and production boundaries
-- **Workspaces** — tenant/project-scoped product surfaces and shared navigation
-- **SolutionHub** — reusable solutions, templates, blueprints, requests, and Academy-linked offerings
-- **Billing / Plans / Pricing** — Platform-owned plans, entitlements, usage/credits, and ledger-visible state
-- **Platform Administration** — public content, app experience, tenant/platform controls, and audit boundaries
-- **Trading** — visible as enterprise/custom only and architecturally standalone from the self-service Platform core
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 22+
-- pnpm 10+
-- PostgreSQL for database-backed development
-
-Install dependencies:
+Use **[`create-awesome-node-app`](https://www.npmjs.com/package/create-awesome-node-app)** to scaffold the latest version of this template with optional addons:
 
 ```bash
-pnpm install --frozen-lockfile
+npx create-awesome-node-app my-saas-app \
+  --template nextjs-saas-ai-starter
 ```
 
-Configure local environment:
+Browse all available templates, extensions, and docs at **[create-awesome-node-app.vercel.app](https://create-awesome-node-app.vercel.app/)**. Template definitions live in **[Create-Node-App/cna-templates](https://github.com/Create-Node-App/cna-templates)**.
+
+> [!NOTE]
+> The CLI automatically pulls the latest template version and lets you compose extensions on top of it.
+> This repo snapshot may lag behind. **Always prefer the CLI for new projects.**
+
+---
+
+### 🐙 Option 2 — GitHub Template (quick start, may be outdated)
+
+Click the **"Use this template"** button at the top of this page, or:
 
 ```bash
-cp .envrc.example .envrc
-direnv allow
+gh repo create my-saas-app --template Create-Node-App/nextjs-saas-ai-template --clone
+cd my-saas-app
 ```
 
-See `.env.example` and `docs/PROJECT_CONFIGURATION.md` for the active Mkety environment contract.
+> [!WARNING]
+> This repository is a point-in-time snapshot. It may not include the latest updates, bug fixes, or new extensions available through the CLI. For production projects, **Option 1 is strongly recommended**.
 
-Start development:
+---
+
+## 🚀 Getting Started
+
+Once you have created your project (via the CLI or GitHub template above), start the local development environment using **DevContainer** — no manual setup needed.
+
+**Prerequisites:** [Docker](https://www.docker.com/) + IDE with Dev Containers support (VS Code, Cursor)
 
 ```bash
+cd my-saas-app
+# Open in VS Code/Cursor and click "Reopen in Container"
 pnpm dev
 ```
 
-The default local application URL is `http://localhost:3000` unless overridden.
-
-## Core Verification
-
-Before promoting a meaningful change, run the relevant gates:
+Or with the DevContainer CLI:
 
 ```bash
-pnpm test
-pnpm type-check
-pnpm lint
-pnpx vinext check
-pnpm build
-pnpm run deploy --dry-run
+npm install -g @devcontainers/cli
+
+cd my-saas-app
+devcontainer up --workspace-folder .
+devcontainer exec --workspace-folder . pnpm dev
 ```
 
-Database changes must also pass:
+The DevContainer automatically configures PostgreSQL + pgvector, environment variables, and all tooling.
 
-```bash
-pnpm db:check:migrations
-pnpm exec drizzle-kit check
+Open [http://localhost:3000](http://localhost:3000).
+
+> **Note:** Create `.env.local` only if you need to override specific values (e.g., `OPENAI_API_KEY` for AI features).
+
+---
+
+## ✨ Features
+
+- 🏢 **Multi-tenant architecture** — tenant-scoped routes (`/t/[tenant]`), full tenant isolation in DB
+- 🔐 **Mkety Auth + ZITADEL adapter** — provider-neutral OIDC, Mkety-owned hashed sessions, DB-backed authorization
+- 🗄️ **PostgreSQL 17 + pgvector + Drizzle ORM** — type-safe queries, vector similarity search
+- 🤖 **AI assistant** — OpenAI/Anthropic via Vercel AI SDK, RAG with embeddings
+- 🔑 **Permission-Based Access Control (PBAC)** — roles are bundles of permissions, multi-role support
+- 🔗 **Integration architecture** — GitHub OAuth2 example, extensible via `integration_sync_control`
+- 🛡️ **Admin panel** — member management, roles, settings, webhooks, bulk import
+- 📣 **Outbound webhooks** — configurable with delivery tracking
+- 📋 **Audit logging** — all sensitive operations are tracked
+- 📁 **File uploads** — AWS S3 in production, MinIO for local dev
+- 📦 **DevContainer + direnv** — zero-config local development environment
+- 🌍 **i18n** — next-intl with English and Spanish out of the box
+- 📚 **Storybook** — component development and visual testing
+- ⚡ **GitHub Actions CI** — build, lint, type-check, tests, mega-linter
+- 🧩 **Feature template** — `_feature-template_` scaffold for adding new features
+
+---
+
+## 🛠️ Tech Stack
+
+| Category     | Technology                                            |
+| ------------ | ----------------------------------------------------- |
+| Framework    | Next.js 16 App Router + vinext on Cloudflare Workers     |
+| Language     | TypeScript 5+ (strict)                                |
+| Styling      | Tailwind CSS v4 + shadcn/ui                           |
+| Database     | PostgreSQL 17 + pgvector + Drizzle ORM                |
+| Auth         | Mkety Auth + replaceable ZITADEL OIDC adapter            |
+| AI           | OpenAI / Anthropic via Vercel AI SDK + RAG/embeddings |
+| File Storage | AWS S3 (production) / MinIO (local dev)               |
+| i18n         | next-intl (EN + ES)                                   |
+| Testing      | Jest + React Testing Library                          |
+| Linting      | ESLint 9 (flat config) + Prettier + Mega Linter       |
+| CI/CD        | GitHub Actions                                        |
+| Dev Env      | DevContainer + direnv                                 |
+
+---
+
+## 📁 Project Structure
+
+```
+src/
+├── app/                    # Next.js App Router
+│   ├── (auth)/            # Auth routes (login, tenant selection)
+│   ├── (tenant)/t/[tenant]/ # Tenant-scoped routes
+│   ├── api/               # API routes
+│   └── layout.tsx         # Root layout
+├── features/              # Feature modules
+│   ├── admin/             # Admin panel
+│   ├── assistant/         # AI assistant
+│   ├── auth/              # Authentication
+│   └── _feature-template_/ # Template for new features
+├── shared/                # Shared infrastructure
+│   ├── components/ui/     # shadcn/ui components
+│   ├── db/                # Database (Drizzle + pgvector)
+│   └── lib/               # Utilities (auth, permissions, env)
+└── i18n/                  # Translations (EN, ES)
 ```
 
-## Database Migration Namespaces
+---
 
-Mkety currently has two explicit migration paths:
+## 📜 Scripts
 
-```bash
-pnpm db:migrate
-pnpm db:migrate:mkety-content
-```
+| Command           | Description                   |
+| ----------------- | ----------------------------- |
+| `pnpm dev`        | Start development server      |
+| `pnpm build`      | Build for production          |
+| `pnpm lint`       | Run ESLint                    |
+| `pnpm type-check` | Run TypeScript check          |
+| `pnpm test`       | Run tests                     |
+| `pnpm storybook`  | Start Storybook (port 6006)   |
+| `pnpm db:push`    | Push schema to database (dev) |
+| `pnpm db:migrate` | Run pending migrations        |
+| `pnpm db:studio`  | Open Drizzle Studio           |
 
-`pnpm db:migrate` applies the Drizzle application migrations under `src/shared/db/migrations`.
+---
 
-`pnpm db:migrate:mkety-content` applies the independent Mkety public-content/app-experience SQL under root `migrations/`.
+## 📖 Documentation
 
-Do not assume one command covers both namespaces. See `docs/MKETY_MIGRATION_BASELINE.md` and `docs/MKETY_PUBLIC_CMS_ROLLOUT_CHECKLIST.md` before shared or production database rollout.
+The **single source of truth** is **[docs/](./docs/)**.
 
-## Useful Commands
+- **Full index:** [docs/README.md](./docs/README.md)
+- **Architecture:** [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md)
+- **Auth:** [docs/AUTHENTICATION.md](./docs/AUTHENTICATION.md)
+- **Database:** [docs/DATABASE.md](./docs/DATABASE.md)
+- **Permissions (PBAC):** [docs/ROLES_AND_PERMISSIONS.md](./docs/ROLES_AND_PERMISSIONS.md)
+- **API:** [docs/API.md](./docs/API.md)
+- **Integrations:** [docs/INTEGRATIONS.md](./docs/INTEGRATIONS.md)
+- **Deployment:** [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)
+- **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md)
 
-| Command | Purpose |
-| ------- | ------- |
-| `pnpm dev` | Start the authoritative vinext development runtime |
-| `pnpm build` | Build the vinext production artifact |
-| `pnpm start` | Start the built vinext application |
-| `pnpm deploy` | Deploy through the vinext Cloudflare adapter |
-| `pnpm test` | Run Jest tests |
-| `pnpm type-check` | Run strict TypeScript checking |
-| `pnpm lint` | Run ESLint |
-| `pnpm db:check:migrations` | Verify application migration sequence/metadata integrity |
-| `pnpm db:generate` | Generate the next Drizzle migration from the verified metadata baseline |
-| `pnpm db:migrate` | Apply application migrations |
-| `pnpm db:migrate:mkety-content` | Apply Mkety content/app-experience SQL migrations |
-| `pnpm db:seed:mkety-content` | Seed Mkety content defaults |
-| `pnpm db:smoke:mkety-content` | Smoke the Mkety content data path |
-| `pnpm storybook` | Start Storybook |
+---
 
-`dev:next` and `build:next` are framework diagnostics only. vinext is the deployment/runtime authority.
+## 🤝 Contributing
 
-## Source of Truth
+Contributions, issues, and feature requests are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 
-Start with:
+---
 
-- `AGENTS.md` — master Mkety ecosystem/product blueprint
-- `docs/README.md` — documentation index
-- `docs/AUTHENTICATION.md` — current application Auth implementation
-- `docs/MKETY_AUTH_SOURCE_OF_TRUTH.md` — Auth ownership and provider boundaries
-- `docs/DEPLOYMENT.md` — Cloudflare/vinext deployment rules
-- `docs/MKETY_MIGRATION_BASELINE.md` — database migration authority and forward-generation rules
-- `docs/MKETY_BILLING_ARCHITECTURE.md` — billing integration boundary
-- `docs/MKETY_DOMAIN_ARCHITECTURE.md` — domain ownership/routing rules
+## 📄 License
 
-Historical implementation plans under `docs/superpowers/` explain how specific slices were built, but the active architecture documents above take precedence when old implementation assumptions conflict.
+MIT — see [LICENSE](./LICENSE) for details.
 
-## Promotion Discipline
+---
 
-- Do not deploy production from an unverified feature branch.
-- Do not bypass tenant authorization or migration guards to make a test pass.
-- Do not revive superseded Auth/runtime branches into the active baseline.
-- Keep Trading enterprise/custom unless the master architecture is explicitly changed.
-- Preserve verified external subsystem boundaries rather than duplicating them inside Platform.
+_Part of the [Create-Node-App](https://github.com/Create-Node-App) ecosystem — spin up production-ready applications with best practices baked in._
 
-## License
+## 👥 Contributors
 
-See `LICENSE`.
+<a href="https://github.com/Create-Node-App/nextjs-saas-ai-template/contributors">
+  <img src="https://contrib.rocks/image?repo=Create-Node-App/nextjs-saas-ai-template"/>
+</a>
+
+Made with [contributors-img](https://contrib.rocks).

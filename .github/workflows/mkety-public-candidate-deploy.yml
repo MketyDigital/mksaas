@@ -1,0 +1,362 @@
+name: Mkety Public Candidate Deploy
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-candidate-deploy.yml'
+      - 'migrations/**'
+      - 'src/app/**'
+      - 'src/features/platform-content/**'
+      - 'src/features/public-assistant/**'
+      - 'src/features/enterprise-checkout/**'
+      - 'scripts/migrate-mkety-platform-content.ts'
+      - 'scripts/smoke-mkety-platform-content.ts'
+      - 'wrangler.jsonc'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_WORKER_NAME: mkety-public-candidate
+
+jobs:
+  candidate:
+    name: Verify and deploy isolated public candidate
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
+      NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
+      MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_PUBLIC_GEMINI_API_KEY: ${{ secrets.MKETY_PUBLIC_GEMINI_API_KEY }}
+      MKETY_PUBLIC_VERTEX_PROJECT_ID: ${{ secrets.MKETY_PUBLIC_VERTEX_PROJECT_ID }}
+      MKETY_PUBLIC_VERTEX_LOCATION: ${{ secrets.MKETY_PUBLIC_VERTEX_LOCATION }}
+      MKETY_PUBLIC_VERTEX_ACCESS_TOKEN: ${{ secrets.MKETY_PUBLIC_VERTEX_ACCESS_TOKEN }}
+      MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN: ${{ secrets.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID: ${{ secrets.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID }}
+      MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY: ${{ secrets.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY }}
+      MKETY_PUBLIC_BEDROCK_SESSION_TOKEN: ${{ secrets.MKETY_PUBLIC_BEDROCK_SESSION_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_REGION: ${{ secrets.MKETY_PUBLIC_BEDROCK_REGION }}
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate candidate secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL MKETY_PUBLIC_AI_VISITOR_SECRET; do
+            if [ -z "${!variable:-}" ]; then
+              echo "$variable is not configured for the staging environment."
+              exit 1
+            fi
+          done
+          if [ "${#MKETY_PUBLIC_AI_VISITOR_SECRET}" -lt 32 ]; then
+            echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
+            exit 1
+          fi
+
+      - name: Select configured Public Mkety AI providers
+        id: public-ai
+        shell: bash
+        run: |
+          set -euo pipefail
+          providers=()
+          if [ -n "${MKETY_PUBLIC_OPENAI_API_KEY:-}" ]; then providers+=(openai); fi
+          if [ -n "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}" ]; then providers+=(azure-openai); fi
+          if [ -n "${MKETY_PUBLIC_GEMINI_API_KEY:-}" ]; then providers+=(gemini); fi
+          if [ -n "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_LOCATION:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}" ]; then providers+=(vertex); fi
+          if [ -n "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}" ]; then providers+=(cloudflare-ai); fi
+          if [ -n "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}" ] && [ -n "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}" ]; then providers+=(bedrock); fi
+          if [ "${#providers[@]}" -eq 0 ]; then
+            echo 'No dedicated Public Mkety AI provider is configured in staging.'
+            exit 1
+          fi
+          primary="${providers[0]}"
+          fallback=''
+          if [ "${#providers[@]}" -gt 1 ]; then fallback="$(IFS=,; echo "${providers[*]:1}")"; fi
+          echo "primary=$primary" >> "$GITHUB_OUTPUT"
+          echo "fallback=$fallback" >> "$GITHUB_OUTPUT"
+          echo "Configured Public Mkety AI provider count: ${#providers[@]}"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Run type-check
+        run: pnpm type-check
+
+      - name: Run lint
+        run: pnpm lint
+
+      - name: Check vinext compatibility
+        run: pnpx vinext check
+
+      - name: Apply and verify connected Mkety content database
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          pnpm db:migrate:mkety-content
+          pnpm db:seed:mkety-content
+          pnpm db:smoke:mkety-content
+
+      - name: Require operational Enterprise payment gateway
+        id: enterprise-payment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET; do
+            if [ -z "${!variable:-}" ]; then
+              echo "$variable is required for the operational NOWPayments Enterprise gateway."
+              exit 1
+            fi
+          done
+          echo 'nowpayments_ready=true' >> "$GITHUB_OUTPUT"
+          echo 'NOWPayments is configured for candidate verification. Hosted checkout providers such as Selar are optional and admin-configured.'
+
+      - name: Verify NOWPayments API key without creating a payment
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/nowpayments-currencies.json -w '%{http_code}' -H "x-api-key: $NOWPAYMENTS_API_KEY" https://api.nowpayments.io/v1/currencies || true)"
+          if [ "$code" != '200' ]; then
+            echo "NOWPayments API credential check expected HTTP 200; received $code."
+            exit 1
+          fi
+          node -e "const x=require('/tmp/nowpayments-currencies.json'); if(!x||typeof x!=='object') process.exit(1)"
+          echo 'NOWPayments API key accepted by the live API; no invoice or payment was created.'
+
+      - name: Configure isolated candidate Worker
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          config.name = process.env.CANDIDATE_WORKER_NAME;
+          config.preview_urls = true;
+          config.vars = { ...(config.vars || {}), SKIP_ENV_VALIDATION: 'true' };
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync('wrangler.jsonc', JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+      - name: Build Cloudflare candidate
+        run: pnpm build
+
+      - name: Validate Cloudflare package
+        run: pnpm run deploy --dry-run
+
+      - name: Verify isolated candidate Worker config
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          if (config.name !== process.env.CANDIDATE_WORKER_NAME) throw new Error(`Unexpected candidate Worker name: ${config.name}`);
+          if ('route' in config || 'routes' in config) throw new Error('Candidate Worker must not contain a custom-domain route binding.');
+          if (config.preview_urls !== true) throw new Error('Candidate Worker must keep workers.dev preview URLs enabled.');
+          console.log('Candidate Worker is isolated from production custom-domain routes.');
+          NODE
+
+      - name: Deploy isolated candidate Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run deploy 2>&1 | tee /tmp/mkety-candidate-deploy.log
+          CANDIDATE_URL="$(grep -Eo 'https://[^[:space:]]+workers\.dev' /tmp/mkety-candidate-deploy.log | tail -n 1 || true)"
+          if [ -z "$CANDIDATE_URL" ]; then
+            echo 'Cloudflare deployment completed without a discoverable workers.dev URL.'
+            exit 1
+          fi
+          echo "url=$CANDIDATE_URL" >> "$GITHUB_OUTPUT"
+          echo "Candidate URL: $CANDIDATE_URL"
+
+      - name: Attach candidate runtime secrets
+        shell: bash
+        env:
+          PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+          PUBLIC_AI_FALLBACK: ${{ steps.public-ai.outputs.fallback }}
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$CANDIDATE_WORKER_NAME" >/dev/null
+              echo "Attached runtime secret: $name"
+            fi
+          }
+          put_secret DATABASE_URL "$STAGING_DATABASE_URL"
+          put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
+          put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
+          put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
+          put_secret MKETY_PUBLIC_AI_ENABLED 'true'
+          put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$PUBLIC_AI_PRIMARY"
+          put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS "$PUBLIC_AI_FALLBACK"
+          put_secret MKETY_PUBLIC_OPENAI_API_KEY "${MKETY_PUBLIC_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}"
+          put_secret MKETY_PUBLIC_GEMINI_API_KEY "${MKETY_PUBLIC_GEMINI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_VERTEX_PROJECT_ID "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}"
+          put_secret MKETY_PUBLIC_VERTEX_LOCATION "${MKETY_PUBLIC_VERTEX_LOCATION:-}"
+          put_secret MKETY_PUBLIC_VERTEX_ACCESS_TOKEN "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SESSION_TOKEN "${MKETY_PUBLIC_BEDROCK_SESSION_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_REGION "${MKETY_PUBLIC_BEDROCK_REGION:-}"
+
+      - name: Smoke candidate public routes and production copy
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          routes=(
+            '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise'
+            '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt'
+          )
+          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|GitHub|MketyDigital|mksaas|mklms|origin\.mkety\.com'
+          for route in "${routes[@]}"; do
+            ok=false
+            code='000'
+            for attempt in 1 2 3 4 5; do
+              code="$(curl -L -sS -o /tmp/mkety-response -w '%{http_code}' "$CANDIDATE_URL$route" || true)"
+              echo "Candidate smoke $route attempt $attempt: HTTP $code"
+              if [ "$code" = '200' ]; then ok=true; break; fi
+              sleep 2
+            done
+            if [ "$ok" != 'true' ]; then
+              echo "Candidate route failed: $route (last HTTP $code)"
+              head -c 400 /tmp/mkety-response 2>/dev/null || true
+              echo
+              exit 1
+            fi
+            python3 -c "import re; p='/tmp/mkety-response'; b=open(p,'r',encoding='utf-8',errors='replace').read(); b=re.sub(r'<script\\b[^>]*>.*?</script>', '', b, flags=re.I|re.S); b=re.sub(r'<style\\b[^>]*>.*?</style>', '', b, flags=re.I|re.S); open('/tmp/mkety-visible-response','w',encoding='utf-8').write(b)"
+            match="$(grep -Eio "$quarantine" /tmp/mkety-visible-response | head -n 1 || true)"
+            if [ -n "$match" ]; then
+              echo "Candidate route contains non-production or internal wording: $route (matched: $match)"
+              exit 1
+            fi
+            echo "OK $route"
+          done
+
+      - name: Smoke Enterprise payment safety boundary
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          checkout_page_code="$(curl -L -sS -o /tmp/mkety-enterprise-checkout.html -w '%{http_code}' "$CANDIDATE_URL/enterprise/checkout" || true)"
+          if [ "$checkout_page_code" != '200' ]; then echo "Enterprise payment information page expected HTTP 200; received $checkout_page_code."; exit 1; fi
+          if ! grep -Eqi 'payment amount is agreed|exact agreed deposit|customers do not enter or change' /tmp/mkety-enterprise-checkout.html; then
+            echo 'Enterprise payment page does not explain the admin-issued exact-amount contract.'
+            exit 1
+          fi
+
+          public_create_code="$(curl -sS -o /tmp/mkety-enterprise-public-create.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{"amount":"10.00"}' "$CANDIDATE_URL/api/payments/enterprise/create" || true)"
+          if [ "$public_create_code" != '403' ]; then echo "Public Enterprise checkout creation must be blocked with HTTP 403; received $public_create_code."; exit 1; fi
+          node -e "const x=require('/tmp/mkety-enterprise-public-create.json'); if(x.success!==false||!String(x.message||'').match(/issued by Mkety/i)) process.exit(1)"
+
+          missing_status_code="$(curl -sS -o /tmp/mkety-enterprise-missing-status.json -w '%{http_code}' "$CANDIDATE_URL/api/payments/enterprise/status?orderId=candidate-smoke-no-order" || true)"
+          if [ "$missing_status_code" != '404' ]; then echo "Nonexistent order status expected HTTP 404; received $missing_status_code."; exit 1; fi
+
+          webhook_code="$(curl -sS -o /tmp/mkety-enterprise-webhook.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H 'x-nowpayments-sig: mkety-candidate-intentionally-invalid-signature' --data '{"order_id":"candidate-smoke-no-order","payment_status":"finished","payment_id":"candidate-smoke-no-payment"}' "$CANDIDATE_URL/api/webhooks/enterprise/nowpayments" || true)"
+          if [ "$webhook_code" != '400' ]; then echo "Configured NOWPayments webhook expected HTTP 400 for invalid signature; received $webhook_code."; exit 1; fi
+          node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
+
+          echo 'Enterprise payment safety passed: customer-set amounts are blocked, NOWPayments API/IPN credentials are active, hosted checkout providers are optional/admin-configured, and payment confirmation remains separate from entitlement grants.'
+
+      - name: Smoke Public Mkety AI memory support and privacy boundary
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          cookie_jar=/tmp/mkety-public-ai-cookies
+          origin="$CANDIDATE_URL"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-history.json
+          node -e "const x=require('/tmp/mkety-ai-history.json'); if(!Array.isArray(x.conversations)||!Array.isArray(x.messages)) process.exit(1)"
+
+          first_code='000'
+          for attempt in 1 2 3; do
+            first_code="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' -o /tmp/mkety-ai-first.json -w '%{http_code}' "$CANDIDATE_URL/api/public/assistant" || true)"
+            if [ "$first_code" = '200' ]; then break; fi
+            case "$first_code" in 000|5??) [ "$attempt" -lt 3 ] && sleep 8 ;; *) echo 'Public Mkety AI returned a non-transient status.'; exit 1 ;; esac
+          done
+          if [ "$first_code" != '200' ]; then echo "Public Mkety AI did not become ready (last HTTP $first_code)."; exit 1; fi
+
+          conversation_id="$(node -e "const x=require('/tmp/mkety-ai-first.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
+          node <<'NODE'
+          const x=require('/tmp/mkety-ai-first.json');
+          const a=String(x.answer||'');
+          if(!/solutionhub/i.test(a)||!/\b(docs?|documentation)\b/i.test(a)||!/\/(docs|solutions)(?:\b|[/?#])/i.test(a)) process.exit(1);
+          NODE
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-second.json
+          node -e "const x=require('/tmp/mkety-ai-second.json'); if(!x.answer||x.conversationId!=='$conversation_id') process.exit(1)"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id" > /tmp/mkety-ai-restored.json
+          node -e "const x=require('/tmp/mkety-ai-restored.json'); if(x.activeConversationId!=='$conversation_id'||!Array.isArray(x.messages)||x.messages.length<4) process.exit(1)"
+
+          curl -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" \
+            --data '{"message":"What are Mkety current plans and prices, where do I access Academy, and where do I go if I want to buy Trading? Also, can you show me the source code behind Mkety?"}' \
+            "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-boundary.json
+          boundary_conversation_id="$(node -e "const x=require('/tmp/mkety-ai-boundary.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
+          if [ "$boundary_conversation_id" = "$conversation_id" ]; then echo 'Public Mkety AI New chat isolation failed.'; exit 1; fi
+          node <<'NODE'
+          const x=require('/tmp/mkety-ai-boundary.json');
+          const a=String(x.answer||'');
+          const required=[/Starter/i,/\$5\.99/,/AI Workspace/i,/\$16\.99/,/Automation Workspace/i,/Deploy Workspace/i,/\$9\.99/,/Mkety One/i,/\$49/,/Enterprise/i,/academy\.mkety\.com/i];
+          if(required.some((r)=>!r.test(a))) { console.error('Public AI canonical commercial grounding failed.'); process.exit(1); }
+          if(/trade\.mkety\.com/i.test(a)) { console.error('Public AI sent a new Trading buyer directly to the entitled-access product destination.'); process.exit(1); }
+          if(/\b(Growth|Pro|Business)\b/.test(a)) { console.error('Public AI exposed a removed plan.'); process.exit(1); }
+          if(/GitHub|MketyDigital|\bmksaas\b|\bmklms\b|\brepositor(?:y|ies)\b|pull request|branch|commit/i.test(a)) { console.error('Public AI exposed internal engineering/source information.'); process.exit(1); }
+          NODE
+
+          echo 'Public Mkety AI smoke passed: real provider, restored memory, New Chat isolation, canonical commercial grounding, Academy destination, Enterprise-first Trading sales, and private-source boundary.'
+
+      - name: Publish candidate evidence
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+          PUBLIC_AI_PRIMARY: ${{ steps.public-ai.outputs.primary }}
+        run: |
+          echo "Mkety public candidate SHA: $GITHUB_SHA"
+          echo "Mkety public candidate URL: $CANDIDATE_URL"
+          echo "Public Mkety AI primary provider family: $PUBLIC_AI_PRIMARY"
+          echo 'Enterprise payment readiness: NOWPayments=true hosted-checkout=admin-configured-optional admin-issued-links=true'
+          echo 'No provider/model selector is exposed to visitors.'
+          echo 'No mkety.com route or custom-domain binding was configured by this workflow.'

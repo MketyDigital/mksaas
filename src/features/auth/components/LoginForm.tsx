@@ -4,15 +4,7 @@ import { Lock } from 'lucide-react';
 import { useState } from 'react';
 
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  FormGlobalError,
-} from '@/shared/components/ui';
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormGlobalError } from '@/shared/components/ui';
 
 interface LoginFormProps {
   initialEmail?: string;

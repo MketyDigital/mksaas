@@ -16,6 +16,9 @@ on:
       - 'docs/superpowers/plans/2026-09-05-mkety-platform-core-workspaces.md'
       - '.github/workflows/mkety-platform-core-workspaces-smoke.yml'
 
+permissions:
+  contents: read
+
 concurrency:
   group: mkety-platform-core-workspaces-smoke-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { db } from '@/shared/db';
+import { type Database, db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import type { Role } from '@/shared/db/schema/roles';
 import { auth } from '@/shared/lib/auth';
@@ -36,8 +36,8 @@ async function getEffectivePermissionKeys(tenantSlug: string, userId: string): P
   return new Set(perms.map((p) => p.key));
 }
 
-export async function getAllTenantPermissionsForUser(userId: string): Promise<Record<string, string[]>> {
-  const memberships = await db.query.tenantMemberships.findMany({
+export async function getAllTenantPermissionsForUser(userId: string, database: Database = db): Promise<Record<string, string[]>> {
+  const memberships = await database.query.tenantMemberships.findMany({
     where: eq(schema.tenantMemberships.userId, userId),
     columns: { id: true, role: true },
     with: { tenant: { columns: { slug: true, id: true } } },
@@ -52,19 +52,19 @@ export async function getAllTenantPermissionsForUser(userId: string): Promise<Re
 
   const membershipIds = nonAdmin.map((m) => m.id);
   const tenantIds = [...new Set(nonAdmin.map((m) => m.tenant.id))];
-  const membershipRoles = await db.query.tenantMembershipRoles.findMany({ where: inArray(schema.tenantMembershipRoles.membershipId, membershipIds), columns: { membershipId: true, roleId: true } });
+  const membershipRoles = await database.query.tenantMembershipRoles.findMany({ where: inArray(schema.tenantMembershipRoles.membershipId, membershipIds), columns: { membershipId: true, roleId: true } });
   const roleIdsByMembershipId = new Map<string, string[]>();
   for (const row of membershipRoles) roleIdsByMembershipId.set(row.membershipId, [...(roleIdsByMembershipId.get(row.membershipId) ?? []), row.roleId]);
   const allRoleIds = [...new Set(membershipRoles.map((r) => r.roleId))];
   if (allRoleIds.length === 0) return Object.fromEntries(memberships.map((m) => [m.tenant.slug, adminResults.get(m.tenant.slug) ?? []]));
 
-  const rpRows = await db.query.rolePermissions.findMany({ where: inArray(schema.rolePermissions.roleId, allRoleIds), columns: { roleId: true, permissionId: true } });
+  const rpRows = await database.query.rolePermissions.findMany({ where: inArray(schema.rolePermissions.roleId, allRoleIds), columns: { roleId: true, permissionId: true } });
   const permissionIdsByRoleId = new Map<string, string[]>();
   for (const row of rpRows) permissionIdsByRoleId.set(row.roleId, [...(permissionIdsByRoleId.get(row.roleId) ?? []), row.permissionId]);
   const allPermissionIds = [...new Set(rpRows.map((r) => r.permissionId))];
   if (allPermissionIds.length === 0) return Object.fromEntries(memberships.map((m) => [m.tenant.slug, adminResults.get(m.tenant.slug) ?? []]));
 
-  const permsRows = await db.query.permissions.findMany({
+  const permsRows = await database.query.permissions.findMany({
     where: and(inArray(schema.permissions.id, allPermissionIds), or(inArray(schema.permissions.tenantId, tenantIds), isNull(schema.permissions.tenantId))),
     columns: { id: true, key: true, tenantId: true },
   });

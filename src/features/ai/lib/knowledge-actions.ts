@@ -3,11 +3,11 @@
 import { and, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { ingestKnowledgeText } from './knowledge-ingestion';
 import { db } from '@/shared/db';
 import { knowledgeDocuments, projects, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
+import { ingestKnowledgeText } from './knowledge-ingestion';
 
 async function requireManager(tenantSlug: string) {
   const session = await auth();

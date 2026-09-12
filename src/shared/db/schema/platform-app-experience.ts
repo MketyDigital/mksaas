@@ -1,9 +1,9 @@
 import { relations } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
-import { tenants } from './tenants';
 import { users } from './auth';
 import { appSchema } from './schema';
+import { tenants } from './tenants';
 
 export const platformAppExperienceStatusEnum = appSchema.enum('platform_app_experience_status', [
   'draft',

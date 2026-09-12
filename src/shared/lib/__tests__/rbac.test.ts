@@ -11,16 +11,7 @@ jest.mock('../permissions', () => ({
   hasPermission: jest.fn(),
 }));
 
-import {
-  type Capability,
-  hasCapability,
-  hasRole,
-  isTenantAdmin,
-  isTenantManager,
-  isTenantMember,
-  RoleCapabilities,
-  roleHasCapability,
-} from '../rbac';
+import { type Capability, hasCapability, hasRole, isTenantAdmin, isTenantManager, isTenantMember, RoleCapabilities, roleHasCapability } from '../rbac';
 // eslint-disable-next-line import/order -- must import after jest.mock
 import { hasPermission } from '../permissions';
 

@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
+import { NextResponse } from 'next/server';
 
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
@@ -70,6 +70,6 @@ export async function POST(request: Request) {
     return created;
   });
 
-  if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(`/t/${tenant.slug}`, request.url));
+  if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(`/t/${tenant.slug}`, request.url), 303);
   return NextResponse.json({ success: true, data: tenant, redirectTo: `/t/${tenant.slug}` });
 }
