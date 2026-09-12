@@ -252,8 +252,8 @@ jobs:
           for path in / /login; do
             status="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL$path")"
             echo "$path -> HTTP $status"
-            if [ "$status" -ge 500 ] || [ "$status" -eq 0 ]; then
-              echo "::error::Preview smoke failed for $path with HTTP $status"
+            if [ "$status" -lt 200 ] || [ "$status" -ge 400 ]; then
+              echo "::error::Preview route $path did not resolve successfully; HTTP $status"
               exit 1
             fi
           done
@@ -266,8 +266,8 @@ jobs:
           set -euo pipefail
           status="$(curl --silent --show-error --output /tmp/session.json --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL/api/auth/session")"
           echo "/api/auth/session -> HTTP $status"
-          if [ "$status" -ge 500 ] || [ "$status" -eq 0 ]; then
-            echo "::error::Mkety Auth session boundary returned HTTP $status"
+          if [ "$status" -eq 404 ] || [ "$status" -ge 500 ] || [ "$status" -eq 0 ]; then
+            echo "::error::Mkety Auth session boundary is missing or unhealthy; HTTP $status"
             exit 1
           fi
           echo "- Unauthenticated session boundary: HTTP $status" >> "$GITHUB_STEP_SUMMARY"
