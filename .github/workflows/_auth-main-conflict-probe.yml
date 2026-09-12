@@ -28,6 +28,9 @@ jobs:
           auth_sha="$(git rev-parse HEAD)"
           main_sha="$(git rev-parse origin/main)"
           merge_base="$(git merge-base HEAD origin/main)"
+          echo "AUTH_SHA=$auth_sha"
+          echo "MAIN_SHA=$main_sha"
+          echo "MERGE_BASE=$merge_base"
           echo "### Auth ↔ main reconciliation probe" >> "$GITHUB_STEP_SUMMARY"
           echo "- Auth SHA: \`$auth_sha\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Main SHA: \`$main_sha\`" >> "$GITHUB_STEP_SUMMARY"
@@ -40,11 +43,15 @@ jobs:
 
           conflicts="$(git diff --name-only --diff-filter=U || true)"
           if [ -n "$conflicts" ]; then
+            echo "CONFLICTS_BEGIN"
+            printf '%s\n' "$conflicts"
+            echo "CONFLICTS_END"
             echo "- Conflicts:" >> "$GITHUB_STEP_SUMMARY"
             while IFS= read -r path; do
               [ -n "$path" ] && echo "  - \`$path\`" >> "$GITHUB_STEP_SUMMARY"
             done <<< "$conflicts"
           else
+            echo "CONFLICTS_NONE"
             echo "- Conflicts: none" >> "$GITHUB_STEP_SUMMARY"
           fi
 
