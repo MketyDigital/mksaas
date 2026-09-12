@@ -2,9 +2,9 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { AutomationWorkflowDraftForm } from '@/features/projects/workspaces/automation/AutomationWorkflowDraftForm';
 import { getAutomationWorkspaceSnapshot } from '@/features/projects/workspaces/automation/data';
 import { AutomationWorkspaceOverview } from '@/features/projects/workspaces/AutomationWorkspaceOverview';
+import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { WorkspaceEmptyState } from '@/features/projects/workspaces/WorkspaceEmptyState';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
-import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,10 +1,10 @@
 import { index, primaryKey, uuid } from 'drizzle-orm/pg-core';
 
-import { appSchema } from './schema';
-import { tenants } from './tenants';
-import { projects } from './projects';
 import { agents } from './agents';
 import { knowledgeDocuments } from './knowledge';
+import { projects } from './projects';
+import { appSchema } from './schema';
+import { tenants } from './tenants';
 
 export const agentKnowledge = appSchema.table(
   'agent_knowledge',

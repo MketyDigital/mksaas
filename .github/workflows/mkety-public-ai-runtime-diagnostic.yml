@@ -1,0 +1,78 @@
+name: Mkety Public AI Runtime Diagnostic
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-ai-runtime-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Detect accessible Public AI OpenAI model
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: staging
+    env:
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+    steps:
+      - name: Probe approved OpenAI models
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=''
+          for model in gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol gpt-5.6; do
+            code="$(curl -sS -o /tmp/model.json -w '%{http_code}' \
+              -H "Authorization: Bearer $MKETY_PUBLIC_OPENAI_API_KEY" \
+              "https://api.openai.com/v1/models/$model" || true)"
+            echo "$model access status: $code"
+            if [ "$code" = '200' ] && [ -z "$found" ]; then
+              found="$model"
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo 'No currently approved GPT-5.6 Public AI model is accessible to this OpenAI project.'
+            exit 1
+          fi
+          echo "First accessible approved model: $found"
+
+      - name: Probe real OpenAI Responses API
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/response.json -w '%{http_code}' \
+            -H "Authorization: Bearer $MKETY_PUBLIC_OPENAI_API_KEY" \
+            -H 'Content-Type: application/json' \
+            --data '{"model":"gpt-5.6-luna","instructions":"Answer briefly.","input":[{"role":"user","content":"Reply with exactly: mkety-public-ai-ok"}],"max_output_tokens":64}' \
+            'https://api.openai.com/v1/responses' || true)"
+          echo "OpenAI Responses API status: $code"
+          if [ "$code" != '200' ]; then
+            node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/response.json', 'utf8') || '{}');
+          const error = payload && typeof payload.error === 'object' ? payload.error : {};
+          console.log(`OpenAI error type: ${error.type || 'unknown'}`);
+          console.log(`OpenAI error code: ${error.code || 'unknown'}`);
+          console.log(`OpenAI error param: ${error.param || 'unknown'}`);
+          console.log(`OpenAI error message: ${String(error.message || 'unknown').slice(0, 500)}`);
+          NODE
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/response.json', 'utf8'));
+          const text = typeof payload.output_text === 'string'
+            ? payload.output_text
+            : (Array.isArray(payload.output) ? payload.output : [])
+                .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+                .map((part) => typeof part?.text === 'string' ? part.text : '')
+                .join('\n')
+                .trim();
+          if (!text) throw new Error('OpenAI Responses API returned no text output.');
+          console.log(`OpenAI Responses API text output present: yes (${text.length} chars)`);
+          NODE

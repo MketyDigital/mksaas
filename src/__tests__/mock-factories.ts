@@ -154,9 +154,7 @@ export function isSession(value: AuthResult): value is MketySession {
   return value !== null && typeof value === 'object' && 'user' in value && 'expiresAt' in value;
 }
 
-export function hasEmail(
-  session: MketySession,
-): session is MketySession & { user: MketySessionUser & { email: string } } {
+export function hasEmail(session: MketySession): session is MketySession & { user: MketySessionUser & { email: string } } {
   return typeof session.user.email === 'string';
 }
 

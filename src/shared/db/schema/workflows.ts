@@ -1,8 +1,8 @@
 import { index, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { projects } from './projects';
-import { tenants } from './tenants';
 import { appSchema } from './schema';
+import { tenants } from './tenants';
 
 export const workflows = appSchema.table(
   'workflows',

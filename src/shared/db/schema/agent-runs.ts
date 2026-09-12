@@ -2,8 +2,8 @@ import { index, integer, jsonb, text, timestamp, uuid, varchar } from 'drizzle-o
 
 import { agents } from './agents';
 import { projects } from './projects';
-import { tenants } from './tenants';
 import { appSchema } from './schema';
+import { tenants } from './tenants';
 
 export const agentRuns = appSchema.table(
   'agent_runs',

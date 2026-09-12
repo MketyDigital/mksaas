@@ -11,14 +11,7 @@ import { LoginForm } from '../LoginForm';
 describe('LoginForm', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseAuth.mockReturnValue({
-      login: mockLogin,
-      logout: jest.fn(),
-      user: null,
-      isLoading: false,
-      isAuthenticated: false,
-      refresh: jest.fn(),
-    });
+    mockUseAuth.mockReturnValue({ login: mockLogin, logout: jest.fn(), user: null, isLoading: false, isAuthenticated: false, refresh: jest.fn() });
   });
 
   it('renders the Mkety/ZITADEL sign-in action', () => {

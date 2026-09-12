@@ -3,7 +3,17 @@
 import { useState, useTransition } from 'react';
 
 import { publishPlatformContent, savePlatformContentDraft } from '@/features/platform-content/server/actions';
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Label, Textarea } from '@/shared/components/ui';
+import { publishPublicPages, savePublicPagesDraft } from '@/features/platform-content/server/public-pages-actions';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Label,
+  Textarea,
+} from '@/shared/components/ui';
 
 type PlatformContentDraftFormProps = {
   tenant: string;
@@ -26,7 +36,10 @@ type PlatformContentDraftFormProps = {
 
 type AdminAction = 'save' | 'publish';
 
-function formatActionStatus(action: AdminAction, result: { mutatedRecords: number; auditRecorded: boolean; entityType: string; entityKey: string }) {
+function formatActionStatus(
+  action: AdminAction,
+  result: { mutatedRecords: number; auditRecorded: boolean; entityType: string; entityKey: string },
+) {
   const verb = action === 'save' ? 'Saved draft' : 'Published draft';
   const audit = result.auditRecorded ? 'Audit recorded' : 'Audit not recorded';
   return `${verb}: ${result.entityType}/${result.entityKey}. Records affected: ${result.mutatedRecords}. ${audit}.`;
@@ -52,9 +65,13 @@ export function PlatformContentDraftForm({
       try {
         const payload = JSON.parse(payloadText) as Record<string, unknown>;
         const result =
-          action === 'save'
-            ? await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload })
-            : await publishPlatformContent(tenant, { area, entityType, entityKey });
+          entityType === 'page'
+            ? action === 'save'
+              ? await savePublicPagesDraft(tenant, payload as { pages: never[] })
+              : await publishPublicPages(tenant)
+            : action === 'save'
+              ? await savePlatformContentDraft(tenant, { area, entityType, entityKey, payload })
+              : await publishPlatformContent(tenant, { area, entityType, entityKey });
 
         setStatus(formatActionStatus(action, result));
       } catch (error) {
@@ -82,8 +99,8 @@ export function PlatformContentDraftForm({
             spellCheck={false}
           />
           <p className="text-xs text-muted-foreground">
-            Save creates or updates draft records. Publish promotes supported draft records to published content, records revisions,
-            attempts an audit event, and revalidates Mkety public/docs/admin paths.
+            Save creates or updates draft records. Publish promotes supported draft records to published content,
+            records revisions, attempts an audit event, and revalidates Mkety public/docs/admin paths.
           </p>
         </div>
 

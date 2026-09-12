@@ -52,11 +52,7 @@ describe('Mkety Auth service', () => {
       expect.objectContaining({ provider: 'zitadel', returnTo: '/select-tenant' }),
     );
     expect(mockProvider.createAuthorizationUrl).toHaveBeenCalledWith(
-      expect.objectContaining({
-        state: expect.any(String),
-        nonce: expect.any(String),
-        codeChallenge: expect.any(String),
-      }),
+      expect.objectContaining({ state: expect.any(String), nonce: expect.any(String), codeChallenge: expect.any(String) }),
     );
     expect(result).toContain('https://example.zitadel.cloud/');
   });
@@ -80,29 +76,15 @@ describe('Mkety Auth service', () => {
     });
     (findUserByExternalIdentity as jest.Mock).mockResolvedValue(null);
     (findUserByEmail as jest.Mock).mockResolvedValue(null);
-    (createUser as jest.Mock).mockResolvedValue({
-      id: 'user-1',
-      email: 'user@example.com',
-      name: 'Example User',
-      image: null,
-    });
+    (createUser as jest.Mock).mockResolvedValue({ id: 'user-1', email: 'user@example.com', name: 'Example User', image: null });
     (createExternalIdentity as jest.Mock).mockResolvedValue({ id: 'identity-1' });
-    (createSession as jest.Mock).mockResolvedValue({
-      token: 'session-token',
-      expiresAt: new Date('2026-10-01T00:00:00Z'),
-    });
+    (createSession as jest.Mock).mockResolvedValue({ token: 'session-token', expiresAt: new Date('2026-10-01T00:00:00Z') });
 
     const result = await completeLogin('code-1', 'state-1');
 
     expect(createUser).toHaveBeenCalledWith({ email: 'user@example.com', name: 'Example User', image: null });
-    expect(createExternalIdentity).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-1', provider: 'zitadel', subject: 'subject-1' }),
-    );
+    expect(createExternalIdentity).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', provider: 'zitadel', subject: 'subject-1' }));
     expect(createSession).toHaveBeenCalledWith('user-1', expect.any(Date));
-    expect(result).toEqual({
-      token: 'session-token',
-      expiresAt: new Date('2026-10-01T00:00:00Z'),
-      redirectTo: '/select-tenant',
-    });
+    expect(result).toEqual({ token: 'session-token', expiresAt: new Date('2026-10-01T00:00:00Z'), redirectTo: '/select-tenant' });
   });
 });

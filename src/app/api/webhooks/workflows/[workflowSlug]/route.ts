@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
+import { executeWorkflow } from '@/features/automation/lib/workflow-runtime';
 import { db } from '@/shared/db';
 import { projects, tenants, workflows } from '@/shared/db/schema';
-import { executeWorkflow } from '@/features/automation/lib/workflow-runtime';
 
 export async function POST(req: Request, { params }: { params: Promise<{ workflowSlug: string }> }) {
   const { workflowSlug } = await params;

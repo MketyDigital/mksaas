@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { and, desc, eq } from 'drizzle-orm';
+import Link from 'next/link';
 
 import { createKnowledgeDocument } from '@/features/ai/lib/knowledge-actions';
 import { db } from '@/shared/db';

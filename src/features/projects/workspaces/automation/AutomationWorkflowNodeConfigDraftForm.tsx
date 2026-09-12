@@ -1,5 +1,5 @@
-import type { AutomationBuilderNodeSummary } from './AutomationBuilderShell';
 import { updateAutomationWorkflowNodeConfigDraft } from './actions';
+import type { AutomationBuilderNodeSummary } from './AutomationBuilderShell';
 
 function TypeSpecificFields({ node }: { node: AutomationBuilderNodeSummary }) {
   const draft = node.typeConfigDraft;

@@ -67,13 +67,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
       </div>
 
       <div className="flex items-center gap-1.5">
-        <Link
-          href="/docs"
-          target="_blank"
-          className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title={tCommon('docs.title')}
-          aria-label={tCommon('docs.title')}
-        >
+        <Link href="/docs" target="_blank" className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title={tCommon('docs.title')} aria-label={tCommon('docs.title')}>
           <BookOpen className="h-4 w-4" />
         </Link>
         <ThemeToggle />
@@ -85,9 +79,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
               <Button variant="ghost" className="relative ml-1 h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9 border-2 border-primary/20">
                   <AvatarImage src={user.image ?? undefined} alt={user.name ?? 'User avatar'} />
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {user.name?.charAt(0).toUpperCase() ?? 'U'}
-                  </AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">{user.name?.charAt(0).toUpperCase() ?? 'U'}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
@@ -95,9 +87,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
               <div className="flex items-center justify-start gap-2 p-2">
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={user.image ?? undefined} alt={user.name ?? 'User avatar'} />
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {user.name?.charAt(0).toUpperCase() ?? 'U'}
-                  </AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">{user.name?.charAt(0).toUpperCase() ?? 'U'}</AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col space-y-1 leading-none">
                   {user.name && <p className="font-medium">{user.name}</p>}
@@ -105,18 +95,8 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
                 </div>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href={`${basePath}/profile`} className="cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  {t('profile')}
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href={`${basePath}/profile/settings`} className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  {t('settings')}
-                </Link>
-              </DropdownMenuItem>
+              <DropdownMenuItem asChild><Link href={`${basePath}/profile`} className="cursor-pointer"><User className="mr-2 h-4 w-4" />{t('profile')}</Link></DropdownMenuItem>
+              <DropdownMenuItem asChild><Link href={`${basePath}/profile/settings`} className="cursor-pointer"><Settings className="mr-2 h-4 w-4" />{t('settings')}</Link></DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="cursor-pointer text-destructive" onClick={() => void logout('/')}>
                 <LogOut className="mr-2 h-4 w-4" />
@@ -125,9 +105,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Link href="/login">
-            <Button size="sm">{tAuth('signIn')}</Button>
-          </Link>
+          <Link href="/login"><Button size="sm">{tAuth('signIn')}</Button></Link>
         )}
       </div>
     </header>

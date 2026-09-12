@@ -51,15 +51,16 @@ jobs:
     environment: preview
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      MKETY_AUTH_ISSUER: ${{ vars.MKETY_AUTH_ISSUER }}
-      MKETY_AUTH_CLIENT_ID: ${{ vars.MKETY_AUTH_CLIENT_ID }}
-      MKETY_AUTH_CLIENT_SECRET: ${{ secrets.MKETY_AUTH_CLIENT_SECRET }}
-      MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      CONFIGURED_MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
     outputs:
       preview_url: ${{ steps.preview-url.outputs.url }}
-      auth_runtime_ready: ${{ steps.auth-readiness.outputs.ready }}
+      zitadel_application_id: ${{ steps.zitadel.outputs.application_id }}
+      zitadel_client_id: ${{ steps.zitadel.outputs.client_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -67,118 +68,181 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Require Cloudflare preview credentials
+
+      - name: Require exact preview credentials
         shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID_VAR: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID_VAR:-}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID_VAR" >> "$GITHUB_ENV"
+            export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_VAR"
+          fi
           missing=0
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::Missing preview secret CLOUDFLARE_API_TOKEN"
-            missing=1
-          fi
-          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "::error::Missing preview variable CLOUDFLARE_ACCOUNT_ID"
-            missing=1
-          fi
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_DATABASE_URL ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required preview credential/configuration: $name"
+              missing=1
+            fi
+          done
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-      - name: Bootstrap isolated preview Worker
-        id: bootstrap
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm run deploy --env preview 2>&1 | tee preview-deploy.log
-      - name: Capture exact workers.dev URL
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          echo "Using exact configured ZITADEL keys: ZITADEL_MANAGEMENT_PAT, ZITADEL_URL, ZITADEL_PROJECT_ID."
+
+      - name: Derive exact workers.dev URL before deployment
         id: preview-url
         shell: bash
         run: |
           set -euo pipefail
-          url="$(grep -Eo 'https://[^[:space:]]*mkety-platform-preview[^[:space:]]*\.workers\.dev[^[:space:]]*' preview-deploy.log | tail -n 1 | sed 's/[),;]$//' || true)"
-          if [ -z "$url" ]; then
-            url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev[^[:space:]]*' preview-deploy.log | tail -n 1 | sed 's/[),;]$//' || true)"
-          fi
-          if [ -z "$url" ]; then
-            echo "::error::Cloudflare deploy succeeded but no workers.dev URL could be extracted from deploy output."
+          response="$(curl --fail-with-body --silent --show-error \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
+          subdomain="$(RESPONSE="$response" node <<'NODE'
+          const parsed = JSON.parse(process.env.RESPONSE);
+          if (parsed.success !== true || !parsed.result?.subdomain) {
+            throw new Error('Cloudflare did not return the account workers.dev subdomain');
+          }
+          process.stdout.write(parsed.result.subdomain);
+          NODE
+          )"
+          url="https://mkety-platform-preview.${subdomain}.workers.dev"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "PREVIEW_URL=$url" >> "$GITHUB_ENV"
+          echo "MKETY_AUTH_REDIRECT_URI=$url/api/auth/callback" >> "$GITHUB_ENV"
+          echo "MKETY_AUTH_POST_LOGOUT_REDIRECT_URI=$url/login" >> "$GITHUB_ENV"
+          echo "### Cloudflare preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Worker name: \`mkety-platform-preview\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deterministic URL: $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or reconcile Mkety Platform Preview in ZITADEL
+        id: zitadel
+        shell: bash
+        env:
+          ZITADEL_APPLICATION_NAME: Mkety Platform Preview
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/provision-zitadel-redirects.ts
+
+      - name: Require returned ZITADEL client and summarize non-secret identity
+        shell: bash
+        env:
+          ZITADEL_APPLICATION_ID: ${{ steps.zitadel.outputs.application_id }}
+          ZITADEL_CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
+          ZITADEL_CREATED: ${{ steps.zitadel.outputs.created }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ZITADEL_APPLICATION_ID" ] || [ -z "$ZITADEL_CLIENT_ID" ]; then
+            echo "::error::ZITADEL provisioning did not return an application id and client id."
             exit 1
           fi
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "### Cloudflare preview" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Worker environment: \`preview\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Worker name: \`mkety-platform-preview\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- URL: $url" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Commit: \`${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
-      - name: Rebuild frontend for exact preview origin
+          echo "MKETY_AUTH_CLIENT_ID=$ZITADEL_CLIENT_ID" >> "$GITHUB_ENV"
+          echo "ZITADEL_APPLICATION_ID=$ZITADEL_APPLICATION_ID" >> "$GITHUB_ENV"
+          echo "- ZITADEL application: \`Mkety Platform Preview\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ZITADEL application id: \`$ZITADEL_APPLICATION_ID\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ZITADEL client id: \`$ZITADEL_CLIENT_ID\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Created this run: \`$ZITADEL_CREATED\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- OIDC mode: public Web client, Authorization Code + PKCE, no client secret" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Determine durable preview session-secret strategy
+        id: session
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CONFIGURED_MKETY_AUTH_SESSION_SECRET:-}" ]; then
+            echo "::add-mask::$CONFIGURED_MKETY_AUTH_SESSION_SECRET"
+            echo "EFFECTIVE_MKETY_AUTH_SESSION_SECRET=$CONFIGURED_MKETY_AUTH_SESSION_SECRET" >> "$GITHUB_ENV"
+            echo "include_session_secret=true" >> "$GITHUB_OUTPUT"
+            echo "- Session secret source: configured GitHub preview secret" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          existing="false"
+          if pnpm exec wrangler secret list --env preview --format json > /tmp/mkety-existing-secrets.json 2>/dev/null; then
+            existing="$(node -e "const fs=require('node:fs'); const raw=fs.readFileSync('/tmp/mkety-existing-secrets.json','utf8'); const match=raw.match(/\[\s*(?:\{|\])/); if(!match) throw new Error('Wrangler output did not contain a JSON array'); const entries=JSON.parse(raw.slice(match.index)); process.stdout.write(entries.some((entry)=>entry.name==='MKETY_AUTH_SESSION_SECRET')?'true':'false');")"
+          fi
+
+          if [ "$existing" = "true" ]; then
+            echo "include_session_secret=false" >> "$GITHUB_OUTPUT"
+            echo "- Session secret source: existing Cloudflare binding preserved via keep_vars" >> "$GITHUB_STEP_SUMMARY"
+          else
+            session_secret="$(openssl rand -hex 32)"
+            echo "::add-mask::$session_secret"
+            echo "EFFECTIVE_MKETY_AUTH_SESSION_SECRET=$session_secret" >> "$GITHUB_ENV"
+            echo "include_session_secret=true" >> "$GITHUB_OUTPUT"
+            echo "- Session secret source: generated once for first preview deployment" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build exact-origin preview artifact
         env:
           NEXT_PUBLIC_APP_URL: ${{ steps.preview-url.outputs.url }}
         run: pnpm build
-      - name: Redeploy exact-origin frontend
+
+      - name: Deploy preview Worker with complete required runtime
+        shell: bash
         env:
+          INCLUDE_SESSION_SECRET: ${{ steps.session.outputs.include_session_secret }}
           NEXT_PUBLIC_APP_URL: ${{ steps.preview-url.outputs.url }}
-        run: pnpm run deploy --env preview --skip-build
-      - name: Check Auth runtime configuration readiness
-        id: auth-readiness
-        shell: bash
-        run: |
-          ready=true
-          for name in STAGING_DATABASE_URL MKETY_AUTH_ISSUER MKETY_AUTH_CLIENT_ID MKETY_AUTH_CLIENT_SECRET MKETY_AUTH_SESSION_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "::notice::Preview Auth runtime is not fully configured: missing $name"
-              ready=false
-            fi
-          done
-          echo "ready=$ready" >> "$GITHUB_OUTPUT"
-          if [ "$ready" = "true" ]; then
-            echo "- Auth runtime configuration: ready for binding" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "- Auth runtime configuration: public-preview bootstrap only; real ZITADEL smoke remains blocked" >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Bind preview database and Mkety Auth runtime secrets
-        if: steps.auth-readiness.outputs.ready == 'true'
-        shell: bash
-        env:
-          MKETY_AUTH_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/api/auth/callback
-          MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/login
         run: |
           set -euo pipefail
-          node <<'NODE' > .preview-runtime-secrets.json
-          const required = {
+          secrets_file="$(mktemp)"
+          trap 'rm -f "$secrets_file"' EXIT
+          SECRETS_FILE="$secrets_file" node <<'NODE'
+          const fs = require('node:fs');
+          const values = {
+            NODE_ENV: 'production',
             DATABASE_URL: process.env.STAGING_DATABASE_URL,
             MKETY_AUTH_PROVIDER: 'zitadel',
             MKETY_AUTH_ISSUER: process.env.MKETY_AUTH_ISSUER,
             MKETY_AUTH_CLIENT_ID: process.env.MKETY_AUTH_CLIENT_ID,
-            MKETY_AUTH_CLIENT_SECRET: process.env.MKETY_AUTH_CLIENT_SECRET,
             MKETY_AUTH_REDIRECT_URI: process.env.MKETY_AUTH_REDIRECT_URI,
             MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: process.env.MKETY_AUTH_POST_LOGOUT_REDIRECT_URI,
-            MKETY_AUTH_SESSION_SECRET: process.env.MKETY_AUTH_SESSION_SECRET,
+            NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
           };
-          for (const [key, value] of Object.entries(required)) {
-            if (!value) throw new Error(`Missing required runtime value: ${key}`);
+          if (process.env.INCLUDE_SESSION_SECRET === 'true') {
+            values.MKETY_AUTH_SESSION_SECRET = process.env.EFFECTIVE_MKETY_AUTH_SESSION_SECRET;
           }
-          process.stdout.write(JSON.stringify(required));
+          for (const [key, value] of Object.entries(values)) {
+            if (!value) throw new Error(`Missing required preview runtime value: ${key}`);
+          }
+          fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify(values));
           NODE
-          pnpm exec wrangler secret bulk .preview-runtime-secrets.json --env preview
-          rm -f .preview-runtime-secrets.json
-      - name: Build Auth-ready preview artifact
-        if: steps.auth-readiness.outputs.ready == 'true'
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          MKETY_AUTH_PROVIDER: zitadel
-          MKETY_AUTH_ISSUER: ${{ vars.MKETY_AUTH_ISSUER }}
-          MKETY_AUTH_CLIENT_ID: ${{ vars.MKETY_AUTH_CLIENT_ID }}
-          MKETY_AUTH_CLIENT_SECRET: ${{ secrets.MKETY_AUTH_CLIENT_SECRET }}
-          MKETY_AUTH_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/api/auth/callback
-          MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/login
-          MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
-          NEXT_PUBLIC_APP_URL: ${{ steps.preview-url.outputs.url }}
-          SKIP_ENV_VALIDATION: 'false'
-        run: pnpm build
-      - name: Deploy Auth-ready preview artifact
-        if: steps.auth-readiness.outputs.ready == 'true'
-        env:
-          NEXT_PUBLIC_APP_URL: ${{ steps.preview-url.outputs.url }}
-        run: pnpm run deploy --env preview --skip-build
+          pnpm run deploy --env preview --secrets-file "$secrets_file" 2>&1 | tee preview-deploy.log
+
+      - name: Verify required Cloudflare bindings exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler secret list --env preview --format json > /tmp/mkety-preview-secrets.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = fs.readFileSync('/tmp/mkety-preview-secrets.json', 'utf8');
+          const match = raw.match(/\[\s*(?:\{|\])/);
+          if (!match) throw new Error('Wrangler output did not contain a JSON array');
+          const entries = JSON.parse(raw.slice(match.index));
+          const names = new Set(entries.map((entry) => entry.name));
+          const required = [
+            'DATABASE_URL',
+            'MKETY_AUTH_PROVIDER',
+            'MKETY_AUTH_ISSUER',
+            'MKETY_AUTH_CLIENT_ID',
+            'MKETY_AUTH_REDIRECT_URI',
+            'MKETY_AUTH_POST_LOGOUT_REDIRECT_URI',
+            'MKETY_AUTH_SESSION_SECRET',
+          ];
+          const missing = required.filter((name) => !names.has(name));
+          if (missing.length) {
+            throw new Error(`Preview Worker is missing required secret bindings: ${missing.join(', ')}`);
+          }
+          console.log(`Verified ${required.length} required Mkety Auth bindings by name.`);
+          NODE
+
       - name: Smoke public preview routes
         shell: bash
         env:
@@ -188,13 +252,13 @@ jobs:
           for path in / /login; do
             status="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL$path")"
             echo "$path -> HTTP $status"
-            if [ "$status" -ge 500 ] || [ "$status" -eq 0 ]; then
-              echo "::error::Preview smoke failed for $path with HTTP $status"
+            if [ "$status" -lt 200 ] || [ "$status" -ge 400 ]; then
+              echo "::error::Preview route $path did not resolve successfully; HTTP $status"
               exit 1
             fi
           done
+
       - name: Smoke unauthenticated session boundary
-        if: steps.auth-readiness.outputs.ready == 'true'
         shell: bash
         env:
           PREVIEW_URL: ${{ steps.preview-url.outputs.url }}
@@ -202,17 +266,48 @@ jobs:
           set -euo pipefail
           status="$(curl --silent --show-error --output /tmp/session.json --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL/api/auth/session")"
           echo "/api/auth/session -> HTTP $status"
-          if [ "$status" -ge 500 ] || [ "$status" -eq 0 ]; then
-            echo "::error::Mkety Auth session boundary returned HTTP $status"
+          if [ "$status" -eq 404 ] || [ "$status" -ge 500 ] || [ "$status" -eq 0 ]; then
+            echo "::error::Mkety Auth session boundary is missing or unhealthy; HTTP $status"
             exit 1
           fi
           echo "- Unauthenticated session boundary: HTTP $status" >> "$GITHUB_STEP_SUMMARY"
-      - name: Record real-ZITADEL smoke requirement
-        if: steps.auth-readiness.outputs.ready == 'true'
+
+      - name: Smoke real ZITADEL authorization redirect and PKCE
         shell: bash
         env:
           PREVIEW_URL: ${{ steps.preview-url.outputs.url }}
+          EXPECTED_ISSUER: ${{ env.MKETY_AUTH_ISSUER }}
+          EXPECTED_CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
+          EXPECTED_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/api/auth/callback
         run: |
-          echo "- ZITADEL callback URI to register: $PREVIEW_URL/api/auth/callback" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Post-logout URI to register: $PREVIEW_URL/login" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Remaining promotion gate: browser smoke of real login → callback → session → protected route/tenant authorization → logout." >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          headers="$(mktemp)"
+          trap 'rm -f "$headers"' EXIT
+          status="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL/api/auth/login?returnTo=/select-tenant")"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          echo "/api/auth/login -> HTTP $status"
+          if [ "$status" -lt 300 ] || [ "$status" -ge 400 ] || [ -z "$location" ]; then
+            echo "::error::Mkety Auth login did not return a ZITADEL redirect."
+            exit 1
+          fi
+          LOCATION="$location" node <<'NODE'
+          const location = new URL(process.env.LOCATION);
+          const issuer = new URL(process.env.EXPECTED_ISSUER);
+          if (location.origin !== issuer.origin) throw new Error(`Authorization redirect origin mismatch: ${location.origin}`);
+          if (location.searchParams.get('client_id') !== process.env.EXPECTED_CLIENT_ID) throw new Error('Authorization redirect client_id mismatch');
+          if (location.searchParams.get('redirect_uri') !== process.env.EXPECTED_REDIRECT_URI) throw new Error('Authorization redirect callback mismatch');
+          if (location.searchParams.get('response_type') !== 'code') throw new Error('Authorization redirect must use response_type=code');
+          if (!location.searchParams.get('code_challenge')) throw new Error('Authorization redirect is missing PKCE code_challenge');
+          if (location.searchParams.get('code_challenge_method') !== 'S256') throw new Error('Authorization redirect must use PKCE S256');
+          console.log('Verified real ZITADEL authorization redirect, client id, exact callback, and PKCE S256.');
+          NODE
+          echo "- Real ZITADEL authorization redirect + PKCE: verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ZITADEL callback URI: $EXPECTED_REDIRECT_URI" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ZITADEL post-logout URI: $PREVIEW_URL/login" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Automated authorization redirect gate: verified; authenticated browser gate follows." >> "$GITHUB_STEP_SUMMARY"
+
+  authenticated-smoke:
+    name: Authenticated login, tenant and logout gate
+    needs: deploy-preview
+    uses: ./.github/workflows/mkety-authenticated-preview-smoke.yml
+    secrets: inherit
