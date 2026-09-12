@@ -148,6 +148,9 @@ jobs:
           git add "$target_path" scripts/migrate-mkety-platform-content.ts
           echo "- Repaired pre-existing content migration collision: later commercial repair moved from \`0004\` to \`0009\` and added to the explicit runner." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Repair JSONC parsing in Cloudflare deploy helper
         shell: bash
         run: |
@@ -190,9 +193,6 @@ jobs:
           PY
           git add "$helper"
 
-          # RED was captured in prior run 34684703304: strict JSON.parse rejected
-          # Auth's valid JSONC trailing commas. Prove the repaired parser accepts
-          # the real Auth JSONC before the broader packaging gate runs.
           worker_name="$(node - <<'NODE'
           const fs = require('node:fs');
           const ts = require('typescript');
@@ -206,9 +206,6 @@ jobs:
             exit 1
           fi
           echo "- Repaired deploy helper to parse real JSONC (comments/trailing commas) through TypeScript instead of strict JSON.parse." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Install frozen dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Verify Auth.js and Auth0 are absent from active package/config
         shell: bash
