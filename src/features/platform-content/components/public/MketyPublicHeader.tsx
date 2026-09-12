@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { Button } from '@/shared/components/ui';
 
+import { dedupePublicNavigation } from './public-navigation';
 import type { PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../schemas';
 
 interface MketyPublicHeaderProps {
@@ -20,18 +21,19 @@ function PublicNavLink({ item, className }: { item: PlatformNavigationItemInput;
 }
 
 export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderProps) {
-  const headerItems = navigation.filter((item) => item.area === 'header' && item.enabled !== false);
+  const headerItems = dedupePublicNavigation(navigation.filter((item) => item.area === 'header'));
+  const utilityItems = headerItems.filter((item) => item.href === '/docs').slice(0, 1);
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
       <div className="container mx-auto flex min-h-16 items-center justify-between gap-3 px-4">
         <Link
           href="/"
-          className="flex shrink-0 items-center gap-2 font-bold tracking-tight"
+          className="flex shrink-0 items-center gap-2.5 font-bold tracking-tight"
           aria-label={settings.brandName}
         >
           <span
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm shadow-violet-950/15"
             aria-hidden="true"
           >
             M
@@ -39,42 +41,20 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
           <span>{settings.brandName}</span>
         </Link>
 
-        <nav
-          aria-label="Primary navigation"
-          className="hidden items-center gap-5 text-sm font-medium text-muted-foreground lg:flex"
-        >
-          {headerItems.map((item) => (
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {utilityItems.map((item) => (
             <PublicNavLink
               key={`${item.label}-${item.href}`}
               item={item}
-              className="transition-colors hover:text-foreground focus-visible:text-foreground"
+              className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:inline-flex"
             />
           ))}
-        </nav>
-
-        <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" className="hidden sm:inline-flex">
+          <Button asChild variant="ghost" className="px-3">
             <Link href="/login">Sign In</Link>
           </Button>
-          <Button asChild className="hidden rounded-xl md:inline-flex">
+          <Button asChild className="hidden rounded-xl sm:inline-flex">
             <Link href="/create-workspace">Get Started</Link>
           </Button>
-          <details className="relative lg:hidden">
-            <summary className="cursor-pointer list-none rounded-lg border px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Menu
-            </summary>
-            <div className="absolute right-0 mt-2 w-72 rounded-2xl border bg-background p-3 shadow-xl">
-              <nav aria-label="Mobile navigation" className="grid gap-1">
-                {headerItems.map((item) => (
-                  <PublicNavLink
-                    key={`mobile-${item.label}-${item.href}`}
-                    item={item}
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                  />
-                ))}
-              </nav>
-            </div>
-          </details>
         </div>
       </div>
     </header>
