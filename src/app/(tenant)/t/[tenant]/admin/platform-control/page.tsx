@@ -32,11 +32,31 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
         <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety administration</p>
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">Platform Control Center</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-          Central command surface for Mkety public content, app experience, plans, billing operations, deployments, identity, and security visibility. Each module keeps its own server-side permission and safety boundary.
+          Central command surface for Mkety public content, app experience, plans, billing operations, deployments,
+          identity, and security visibility. Each module keeps its own server-side permission and safety boundary.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Link href={`/t/${tenant}/admin/platform-control/enterprise-payments`}>
+          <Card className="h-full rounded-2xl border-primary/25 bg-primary/[0.03] transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg">
+            <CardHeader>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Wallet className="h-5 w-5" />
+                </span>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                  Enterprise
+                </span>
+              </div>
+              <CardTitle>Enterprise Payments</CardTitle>
+              <CardDescription>
+                Create exact-amount NOWPayments or Selar links for agreed quotes, deposits, milestones, and balances.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
         {modules.map((module) => {
           const Icon = iconMap[module.iconKey as keyof typeof iconMap] ?? Shield;
           return (
@@ -47,7 +67,9 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
                     <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
                       <Icon className="h-5 w-5" />
                     </span>
-                    <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">Level {module.level}</span>
+                    <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                      Level {module.level}
+                    </span>
                   </div>
                   <CardTitle>{module.label}</CardTitle>
                   <CardDescription>{module.description}</CardDescription>

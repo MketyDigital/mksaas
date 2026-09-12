@@ -1,5 +1,5 @@
-import type { AutomationBuilderNodeSummary } from './AutomationBuilderShell';
 import { updateAutomationWorkflowNodeStructureDraft } from './actions';
+import type { AutomationBuilderNodeSummary } from './AutomationBuilderShell';
 
 function StructureButton({ operation, children }: { operation: string; children: React.ReactNode }) {
   return (

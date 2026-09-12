@@ -1,3 +1,4 @@
+import type { ZitadelAdapterConfig } from './types';
 import { buildAuthorizationUrl, normalizeIssuer, verifyIdToken } from '../oidc';
 import type {
   AuthorizationCodeExchange,
@@ -6,7 +7,6 @@ import type {
   IdentityProviderAdapter,
   ProviderLogoutRequest,
 } from '../types';
-import type { ZitadelAdapterConfig } from './types';
 
 interface OidcDiscovery {
   authorization_endpoint: string;

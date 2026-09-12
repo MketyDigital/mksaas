@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
+import { NextResponse } from 'next/server';
 import { listAgentTools } from '@/features/ai/lib/tool-registry';
 import { db } from '@/shared/db';
 import { agents, projects, tenantMemberships, tenants } from '@/shared/db/schema';

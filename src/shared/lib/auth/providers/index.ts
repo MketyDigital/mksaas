@@ -1,7 +1,7 @@
 import { env } from '@/shared/lib/env';
 
-import type { IdentityProviderAdapter } from '../types';
 import { createZitadelAdapter } from './zitadel';
+import type { IdentityProviderAdapter } from '../types';
 
 export function getIdentityProvider(): IdentityProviderAdapter {
   if (env.MKETY_AUTH_PROVIDER !== 'zitadel') {

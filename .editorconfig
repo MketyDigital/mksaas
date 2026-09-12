@@ -14,5 +14,6 @@ trim_trailing_whitespace = true
 indent_size = 4
 
 [*.md]
-insert_final_newline = false
+indent_size = unset
+insert_final_newline = true
 trim_trailing_whitespace = false

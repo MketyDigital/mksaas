@@ -1,10 +1,11 @@
+import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
-import type { TenantRole } from '@/shared/db/schema/auth';
+import { getCanonicalMketyPublicUrl } from '@/features/platform-content/public-host-routing';
 import { db } from '@/shared/db';
 import { customDomains, tenants } from '@/shared/db/schema';
+import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
-import { eq } from 'drizzle-orm';
 
 function isPublicPath(pathname: string): boolean {
   return (
@@ -24,6 +25,11 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   const session = await auth(request);
   let effectivePathname = pathname;
 
+  const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
+  if (canonicalPublicUrl) {
+    return NextResponse.redirect(canonicalPublicUrl, 308);
+  }
+
   if (!pathname.startsWith('/t/') && hostname) {
     const appHost = (() => {
       try {
@@ -34,11 +40,17 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     })();
     const vercelHost = process.env.VERCEL_URL || '';
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const isKnownAppHost = hostname === appHost || hostname === vercelHost || hostname.endsWith('.vercel.app') || hostname.endsWith('.workers.dev');
+    const isKnownAppHost =
+      hostname === appHost ||
+      hostname === vercelHost ||
+      hostname.endsWith('.vercel.app') ||
+      hostname.endsWith('.workers.dev');
 
     if (!isLocalHost && !isKnownAppHost && !pathname.startsWith('/api/')) {
       try {
-        const domain = await db.query.customDomains.findFirst({ where: eq(customDomains.hostname, hostname.toLowerCase()) });
+        const domain = await db.query.customDomains.findFirst({
+          where: eq(customDomains.hostname, hostname.toLowerCase()),
+        });
         if (domain?.status === 'verified') {
           const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, domain.tenantId) });
           if (tenant) {

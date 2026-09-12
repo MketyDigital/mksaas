@@ -1,6 +1,6 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
-import { WorkspaceHub } from '@/features/projects/workspaces/WorkspaceHub';
 import { projectWorkspaces } from '@/features/projects/workspaces/registry';
+import { WorkspaceHub } from '@/features/projects/workspaces/WorkspaceHub';
 
 export const dynamic = 'force-dynamic';
 

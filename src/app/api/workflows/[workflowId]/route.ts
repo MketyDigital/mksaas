@@ -2,8 +2,8 @@ import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import { projects, tenantMemberships, tenants, workflows } from '@/shared/db/schema';
-import { auth } from '@/shared/lib/auth';
 import type { WorkflowDefinition } from '@/shared/db/schema/workflows';
+import { auth } from '@/shared/lib/auth';
 
 function isWorkflowDefinition(value: unknown): value is WorkflowDefinition {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Array.isArray((value as { nodes?: unknown }).nodes));

@@ -1,7 +1,7 @@
 import { requireProjectAccess } from '@/features/projects/server/access';
+import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { TradingWorkspaceOverview } from '@/features/projects/workspaces/TradingWorkspaceOverview';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
-import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 
 export const dynamic = 'force-dynamic';
 
