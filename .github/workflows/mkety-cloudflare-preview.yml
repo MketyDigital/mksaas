@@ -165,7 +165,7 @@ jobs:
 
           existing="false"
           if pnpm exec wrangler secret list --env preview --format json > /tmp/mkety-existing-secrets.json 2>/dev/null; then
-            existing="$(node -e "const fs=require('node:fs'); const entries=JSON.parse(fs.readFileSync('/tmp/mkety-existing-secrets.json','utf8')); process.stdout.write(entries.some((entry)=>entry.name==='MKETY_AUTH_SESSION_SECRET')?'true':'false');")"
+            existing="$(node -e "const fs=require('node:fs'); const raw=fs.readFileSync('/tmp/mkety-existing-secrets.json','utf8'); const match=raw.match(/\[\s*(?:\{|\])/); if(!match) throw new Error('Wrangler output did not contain a JSON array'); const entries=JSON.parse(raw.slice(match.index)); process.stdout.write(entries.some((entry)=>entry.name==='MKETY_AUTH_SESSION_SECRET')?'true':'false');")"
           fi
 
           if [ "$existing" = "true" ]; then
@@ -222,7 +222,10 @@ jobs:
           pnpm exec wrangler secret list --env preview --format json > /tmp/mkety-preview-secrets.json
           node <<'NODE'
           const fs = require('node:fs');
-          const entries = JSON.parse(fs.readFileSync('/tmp/mkety-preview-secrets.json', 'utf8'));
+          const raw = fs.readFileSync('/tmp/mkety-preview-secrets.json', 'utf8');
+          const match = raw.match(/\[\s*(?:\{|\])/);
+          if (!match) throw new Error('Wrangler output did not contain a JSON array');
+          const entries = JSON.parse(raw.slice(match.index));
           const names = new Set(entries.map((entry) => entry.name));
           const required = [
             'DATABASE_URL',
