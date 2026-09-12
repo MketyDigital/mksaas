@@ -148,7 +148,8 @@ jobs:
           echo "- ZITADEL exact preview redirect provisioning: complete" >> "$GITHUB_STEP_SUMMARY"
       - name: Record ZITADEL provisioning credential blocker
         if: steps.zitadel-management-readiness.outputs.ready != 'true'
-        run: echo "- ZITADEL redirect provisioning: blocked until management token/project/application IDs are configured in the preview environment" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "- ZITADEL redirect provisioning: blocked until management token/project/application IDs are configured in the preview environment" >> "$GITHUB_STEP_SUMMARY"
       - name: Rebuild frontend for exact preview origin
         env:
           NEXT_PUBLIC_APP_URL: ${{ steps.preview-url.outputs.url }}
