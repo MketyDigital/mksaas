@@ -1,0 +1,206 @@
+name: Guarded Main to Auth Reconciliation
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+    paths:
+      - .github/workflows/_auth-main-reconcile.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mkety-auth-main-reconcile
+  cancel-in-progress: false
+
+env:
+  EXPECTED_MAIN_SHA: 0693b00fba639549d92c4dd82a2fcef618d0bd47
+  SKIP_ENV_VALIDATION: 'true'
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feat/mkety-auth-zitadel-vinext
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Guard exact main and start merge
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$main_sha" != "$EXPECTED_MAIN_SHA" ]; then
+            echo "::error::main moved: expected $EXPECTED_MAIN_SHA, found $main_sha"
+            exit 1
+          fi
+
+          auth_sha="$(git rev-parse HEAD)"
+          merge_base="$(git merge-base HEAD origin/main)"
+          echo "auth_sha=$auth_sha" >> "$GITHUB_OUTPUT"
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
+
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+
+          conflicts="$(git diff --name-only --diff-filter=U || true)"
+          if [ -n "$conflicts" ]; then
+            printf '%s\n' "$conflicts" > /tmp/conflicts.txt
+            allowed="$(cat <<'EOF'
+.env.example
+.mega-linter.yml
+docs/README.md
+jest.setup.tsx
+src/app/layout.tsx
+EOF
+)"
+            while IFS= read -r path; do
+              [ -z "$path" ] && continue
+              if ! grep -Fxq "$path" <<< "$allowed"; then
+                echo "::error::Unexpected merge conflict: $path"
+                git merge --abort || true
+                exit 1
+              fi
+            done < /tmp/conflicts.txt
+
+            echo "Known conflicts detected; resolving with the pre-reviewed Auth-side versions:"
+            cat /tmp/conflicts.txt
+            while IFS= read -r path; do
+              [ -z "$path" ] && continue
+              git checkout --ours -- "$path"
+              git add "$path"
+            done < /tmp/conflicts.txt
+          elif [ "$merge_status" -ne 0 ]; then
+            echo "::error::Merge failed without ordinary content conflicts"
+            git merge --abort || true
+            exit "$merge_status"
+          fi
+
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "::error::Unresolved merge paths remain"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' \
+            .env.example .mega-linter.yml docs/README.md jest.setup.tsx src/app/layout.tsx; then
+            echo "::error::Conflict markers remain in reconciled files"
+            exit 1
+          fi
+
+          git diff --check
+          echo "### Guarded Auth reconciliation" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Auth pre-merge SHA: \`$auth_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Main SHA: \`$main_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Merge base: \`$merge_base\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s /tmp/conflicts.txt ]; then
+            echo "- Reviewed conflicts:" >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r path; do echo "  - \`$path\`" >> "$GITHUB_STEP_SUMMARY"; done < /tmp/conflicts.txt
+          else
+            echo "- Reviewed conflicts: none after pre-reconciliation" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Auth.js and Auth0 are absent from active package/config
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node -e "const p=require('./package.json'); process.exit((p.dependencies?.['next-auth'] || p.dependencies?.['@auth/drizzle-adapter']) ? 1 : 0)"; then
+            :
+          else
+            echo "::error::Auth.js/NextAuth dependency was reintroduced by reconciliation"
+            exit 1
+          fi
+          if grep -nE 'AUTH0_|NEXTAUTH_' .env.example; then
+            echo "::error::Legacy Auth0/NextAuth environment names were reintroduced"
+            exit 1
+          fi
+
+      - name: Verify migration baseline
+        run: pnpm db:check:migrations
+
+      - name: Verify Drizzle consistency
+        run: pnpm exec drizzle-kit check
+
+      - name: Run full tests
+        run: pnpm test
+
+      - name: Run type-check
+        run: pnpm type-check
+
+      - name: Run lint
+        run: pnpm lint
+
+      - name: Check vinext compatibility
+        run: pnpx vinext check
+
+      - name: Build production artifact
+        run: pnpm build
+
+      - name: Validate isolated preview packaging
+        run: pnpm run deploy --env preview --dry-run
+
+      - name: Commit merge locally after verification
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .git/MERGE_HEAD ]; then
+            echo "::error::Expected an in-progress merge before creating the guarded merge commit"
+            exit 1
+          fi
+          git commit -m "Merge main ${EXPECTED_MAIN_SHA:0:12} into Mkety Auth after guarded verification"
+          merge_sha="$(git rev-parse HEAD)"
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+          echo "- Verified merge SHA: \`$merge_sha\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prove forward migration generation is a no-op
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(git status --porcelain)"
+          pnpm db:generate
+          after="$(git status --porcelain)"
+          if [ "$before" != "$after" ] || [ -n "$after" ]; then
+            echo "::error::db:generate changed the verified merged tree"
+            git status --short
+            git diff -- src/shared/db/migrations src/shared/db/schema || true
+            exit 1
+          fi
+          pnpm db:check:migrations
+          pnpm exec drizzle-kit check
+
+      - name: Push verified merge to Auth branch
+        shell: bash
+        env:
+          MERGE_SHA: ${{ steps.commit.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin refs/heads/feat/mkety-auth-zitadel-vinext | cut -f1)"
+          if [ "$remote_head" != "${{ steps.merge.outputs.auth_sha }}" ]; then
+            echo "::error::Auth branch moved during guarded verification; refusing to push"
+            echo "Expected remote head: ${{ steps.merge.outputs.auth_sha }}"
+            echo "Actual remote head:   $remote_head"
+            exit 1
+          fi
+          git push origin "$MERGE_SHA:refs/heads/feat/mkety-auth-zitadel-vinext"
+          echo "- Remote Auth branch updated only after all internal gates passed." >> "$GITHUB_STEP_SUMMARY"
