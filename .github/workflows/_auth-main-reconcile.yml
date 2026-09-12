@@ -316,12 +316,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          snapshot="src/shared/db/migrations/meta/0009_snapshot.json"
+          journal="src/shared/db/migrations/meta/_journal.json"
+
+          echo "--- clean-state diagnostic before db:generate ---"
+          git status --short
+          echo "snapshot hashes before:"
+          sha256sum "$snapshot" "$journal"
+          cp "$snapshot" /tmp/0009.postcommit.before.json
+          cp "$journal" /tmp/journal.postcommit.before.json
+
           before="$(git status --porcelain)"
+          if [ -n "$before" ]; then
+            echo "::error::Verified merge commit started the forward-generation proof with a dirty worktree"
+            git diff --name-status
+            git diff --cached --name-status
+            git ls-files --others --exclude-standard
+            exit 1
+          fi
+
           pnpm db:generate
+
+          echo "--- diagnostic after db:generate ---"
+          git status --short
+          echo "snapshot hashes after:"
+          sha256sum "$snapshot" "$journal"
+          echo "tracked worktree changes:"
+          git diff --name-status
+          echo "staged changes:"
+          git diff --cached --name-status
+          echo "untracked generated migration artifacts:"
+          git ls-files --others --exclude-standard 'src/shared/db/migrations/*.sql' 'src/shared/db/migrations/meta/*_snapshot.json' || true
+          echo "snapshot diff summary:"
+          diff -u /tmp/0009.postcommit.before.json "$snapshot" | sed -n '1,160p' || true
+          echo "journal diff summary:"
+          diff -u /tmp/journal.postcommit.before.json "$journal" | sed -n '1,160p' || true
+
           after="$(git status --porcelain)"
-          if [ "$before" != "$after" ] || [ -n "$after" ]; then
+          if [ -n "$after" ]; then
             echo "::error::db:generate changed the committed verified merge"
-            git status --short
             exit 1
           fi
           pnpm db:check:migrations
