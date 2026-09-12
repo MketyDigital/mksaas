@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
+import { filterWorkspaceCardsByEntitlement } from '@/features/entitlements/server/workspace-access';
 import { db } from '@/shared/db';
 import {
   platformAppControlCenterModules,
@@ -90,6 +91,10 @@ export async function getPublishedWorkspaceCards() {
         }),
       );
   }, defaultAppExperience.workspaces.filter((workspace) => workspace.enabled !== false).sort((a, b) => a.sortOrder - b.sortOrder));
+}
+
+export async function getPublishedWorkspaceCardsForTenant(tenantId: string) {
+  return filterWorkspaceCardsByEntitlement(await getPublishedWorkspaceCards(), tenantId);
 }
 
 export async function getPublishedControlCenterModules() {
