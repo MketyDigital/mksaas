@@ -304,4 +304,10 @@ jobs:
           echo "- Real ZITADEL authorization redirect + PKCE: verified" >> "$GITHUB_STEP_SUMMARY"
           echo "- ZITADEL callback URI: $EXPECTED_REDIRECT_URI" >> "$GITHUB_STEP_SUMMARY"
           echo "- ZITADEL post-logout URI: $PREVIEW_URL/login" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Remaining browser-only gate: interactive ZITADEL login → callback → protected tenant route → logout." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Automated authorization redirect gate: verified; authenticated browser gate follows." >> "$GITHUB_STEP_SUMMARY"
+
+  authenticated-smoke:
+    name: Authenticated login, tenant and logout gate
+    needs: deploy-preview
+    uses: ./.github/workflows/mkety-authenticated-preview-smoke.yml
+    secrets: inherit
