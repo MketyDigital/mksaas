@@ -10,3 +10,10 @@ commits = [
   "0516b324e85b6981a92d8275b0719847a4ffe99d",
   "6dd51fa23b4d9086a07ece109be9371a39ffe0e2",
 ]
+
+[[allowlists]]
+description = "Git commit SHAs documented in the Automation/Webhooks promotion handoff"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^docs/HANDOFF_MKETY_AUTOMATION_WEBHOOK_PROMOTION_2026-09-12\.md$''']
+regexes = ['''^[0-9a-f]{40}$''']
