@@ -55,21 +55,13 @@ jobs:
             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
             -H 'Content-Type: application/json' \
             --data '{}')"
-          organization_settings="$(curl --fail-with-body --silent --show-error \
-            -X POST "$issuer/v2/settings/organization/search" \
-            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            --data '{}')"
 
-          ORG_ID="$org_id" DOMAIN="$domain" LOGIN="$login" DOMAINS="$domains" ORG_SETTINGS="$organization_settings" node <<'NODE'
+          DOMAIN="$domain" LOGIN="$login" DOMAINS="$domains" node <<'NODE'
           const domain = JSON.parse(process.env.DOMAIN);
           const login = JSON.parse(process.env.LOGIN);
           const domains = JSON.parse(process.env.DOMAINS);
-          const orgSettings = JSON.parse(process.env.ORG_SETTINGS);
-          const orgSetting = (orgSettings.organizationSettings ?? []).find((item) => item.organizationId === process.env.ORG_ID);
           const summary = {
             loginNameIncludesDomain: domain.settings?.loginNameIncludesDomain ?? null,
-            organizationScopedUsernames: orgSetting?.organizationScopedUsernames ?? null,
             allowUsernamePassword: login.settings?.allowUsernamePassword ?? null,
             allowLocalAuthentication: login.settings?.allowLocalAuthentication ?? null,
             disableLoginWithEmail: login.settings?.disableLoginWithEmail ?? null,
