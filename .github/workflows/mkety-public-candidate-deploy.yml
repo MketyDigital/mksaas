@@ -160,6 +160,7 @@ jobs:
           const fs = require('node:fs');
           const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
           config.name = process.env.CANDIDATE_WORKER_NAME;
+          config.workers_dev = true;
           config.preview_urls = true;
           config.vars = { ...(config.vars || {}), SKIP_ENV_VALIDATION: 'true' };
           delete config.route;
@@ -181,8 +182,9 @@ jobs:
           const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
           if (config.name !== process.env.CANDIDATE_WORKER_NAME) throw new Error(`Unexpected candidate Worker name: ${config.name}`);
           if ('route' in config || 'routes' in config) throw new Error('Candidate Worker must not contain a custom-domain route binding.');
+          if (config.workers_dev !== true) throw new Error('Candidate Worker must deploy to the account Workers.dev namespace.');
           if (config.preview_urls !== true) throw new Error('Candidate Worker must keep workers.dev preview URLs enabled.');
-          console.log('Candidate Worker is isolated from production custom-domain routes.');
+          console.log('Candidate Worker is isolated from production custom-domain routes and enabled for Workers.dev.');
           NODE
 
       - name: Deploy isolated candidate Worker
