@@ -219,7 +219,7 @@ export async function ensureZitadelOidcApplication(
       responseTypes: ['OIDC_RESPONSE_TYPE_CODE'],
       grantTypes: ['OIDC_GRANT_TYPE_AUTHORIZATION_CODE'],
       applicationType: 'OIDC_APP_TYPE_WEB',
-      authMethodType: 'OIDC_AUTH_METHOD_TYPE_BASIC',
+      authMethodType: 'OIDC_AUTH_METHOD_TYPE_NONE',
       postLogoutRedirectUris: [required.postLogoutRedirectUri],
       version: 'OIDC_VERSION_1_0',
       developmentMode: false,
@@ -229,19 +229,15 @@ export async function ensureZitadelOidcApplication(
 
   const applicationId = created.applicationId?.trim();
   const clientId = created.oidcConfiguration?.clientId?.trim();
-  const clientSecret = created.oidcConfiguration?.clientSecret?.trim();
 
   if (!applicationId) throw new Error('ZITADEL CreateApplication response did not include an application id');
   if (!clientId) throw new Error('ZITADEL CreateApplication response did not include an OIDC client id');
-  if (!clientSecret) {
-    throw new Error('ZITADEL CreateApplication response did not include the confidential client secret');
-  }
 
   return {
     applicationId,
     projectId: config.projectId,
     clientId,
-    clientSecret,
+    clientSecret: null,
     redirectUris: [required.redirectUri],
     postLogoutRedirectUris: [required.postLogoutRedirectUri],
     created: true,
