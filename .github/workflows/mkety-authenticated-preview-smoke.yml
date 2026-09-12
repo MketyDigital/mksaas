@@ -153,82 +153,126 @@ jobs:
           slug="auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "SMOKE_WORKSPACE_SLUG=$slug" >> "$GITHUB_ENV"
           cat > mkety-auth-smoke.spec.ts <<'TEST'
-          import { test, expect, type Page } from '@playwright/test';
+          import { test, expect, type Locator, type Page } from '@playwright/test';
 
           const previewUrl = process.env.PREVIEW_URL!;
+          const previewOrigin = new URL(previewUrl).origin;
           const issuer = new URL(process.env.ZITADEL_ISSUER!).origin;
           const email = process.env.SMOKE_EMAIL!;
           const password = process.env.SMOKE_PASSWORD!;
           const slug = process.env.SMOKE_WORKSPACE_SLUG!;
 
-          async function firstVisible(page: Page, selectors: string[]) {
-            for (const selector of selectors) {
-              const locator = page.locator(selector).first();
-              if (await locator.isVisible().catch(() => false)) return locator;
-            }
-            return null;
+          async function visible(locator: Locator) {
+            return locator.isVisible().catch(() => false);
           }
 
-          async function clickContinue(page: Page) {
-            const candidates = [
-              page.getByRole('button', { name: /continue/i }).first(),
-              page.getByRole('button', { name: /next/i }).first(),
-              page.getByRole('button', { name: /sign in/i }).first(),
-              page.getByRole('button', { name: /login/i }).first(),
-              page.getByRole('button', { name: /authorize|allow/i }).first(),
-              page.locator('button[type="submit"]').first(),
-            ];
-            for (const candidate of candidates) {
-              if (await candidate.isVisible().catch(() => false)) {
-                await candidate.click();
-                return;
+          async function safeDiagnostic(page: Page, phase: string) {
+            const diagnostic = await page.evaluate(() => ({
+              title: document.title,
+              inputs: Array.from(document.querySelectorAll('input')).map((input) => ({
+                type: input.type,
+                name: input.name,
+                autocomplete: input.autocomplete,
+                ariaLabel: input.getAttribute('aria-label'),
+                testId: input.getAttribute('data-testid'),
+              })),
+              buttons: Array.from(document.querySelectorAll('button')).map((button) => ({
+                text: (button.textContent || '').trim().slice(0, 120),
+                disabled: button.disabled,
+                testId: button.getAttribute('data-testid'),
+                type: button.type,
+              })),
+            }));
+            console.error(JSON.stringify({ phase, url: page.url(), ...diagnostic }, null, 2));
+          }
+
+          async function submitHostedForm(page: Page, phase: string) {
+            const before = page.url();
+            const submit = page.getByTestId('submit-button').first();
+            await expect(submit, `${phase} submit button should be visible`).toBeVisible({ timeout: 5_000 });
+            await expect(submit, `${phase} submit button should be enabled`).toBeEnabled({ timeout: 5_000 });
+            await submit.click();
+
+            const deadline = Date.now() + 15_000;
+            while (Date.now() < deadline) {
+              if (page.url() !== before) return;
+              const error = page.getByTestId('error').first();
+              if (await visible(error)) {
+                const message = (await error.innerText()).trim().slice(0, 240);
+                await safeDiagnostic(page, phase);
+                throw new Error(`ZITADEL ${phase} rejected: ${message || 'visible error state'}`);
               }
+              await page.waitForTimeout(250);
             }
-            throw new Error(`No visible continue/login button at ${page.url()}`);
+
+            await safeDiagnostic(page, phase);
+            throw new Error(`ZITADEL ${phase} did not transition within 15s; url=${page.url()}`);
+          }
+
+          async function completeHostedLogin(page: Page) {
+            const deadline = Date.now() + 70_000;
+            let unknownStateCount = 0;
+
+            while (Date.now() < deadline) {
+              const current = new URL(page.url());
+              if (current.origin === previewOrigin) return;
+              if (current.origin !== issuer) {
+                await safeDiagnostic(page, 'unexpected-origin');
+                throw new Error(`Unexpected hosted-login origin: ${current.origin}`);
+              }
+
+              const passwordInput = page.getByTestId('password-text-input').first();
+              if (await visible(passwordInput)) {
+                unknownStateCount = 0;
+                await passwordInput.fill(password);
+                await submitHostedForm(page, 'password');
+                continue;
+              }
+
+              const loginInput = page.getByTestId('username-text-input').first();
+              if (await visible(loginInput)) {
+                unknownStateCount = 0;
+                await loginInput.fill(email);
+                await submitHostedForm(page, 'identifier');
+                continue;
+              }
+
+              const authorization = page
+                .getByRole('button', { name: /authorize|allow|continue/i })
+                .first();
+              if (await visible(authorization)) {
+                unknownStateCount = 0;
+                const before = page.url();
+                await authorization.click();
+                await page
+                  .waitForURL((url) => url.href !== before, { timeout: 15_000 })
+                  .catch(async () => {
+                    await safeDiagnostic(page, 'authorization');
+                    throw new Error(`ZITADEL authorization did not transition; url=${page.url()}`);
+                  });
+                continue;
+              }
+
+              unknownStateCount += 1;
+              if (unknownStateCount >= 10) {
+                await safeDiagnostic(page, 'unknown-hosted-login-state');
+                throw new Error(`Unrecognized ZITADEL hosted-login state at ${page.url()}`);
+              }
+              await page.waitForTimeout(500);
+            }
+
+            await safeDiagnostic(page, 'hosted-login-deadline');
+            throw new Error(`Hosted login did not return to Mkety preview within 70s; url=${page.url()}`);
           }
 
           test('real ZITADEL login creates Mkety session, tenant access works, logout revokes session', async ({ page }) => {
+            test.setTimeout(120_000);
+
             await page.goto(`${previewUrl}/api/auth/login?returnTo=/create-workspace`, { waitUntil: 'domcontentloaded' });
             await expect.poll(() => new URL(page.url()).origin, { timeout: 20_000 }).toBe(issuer);
+            await completeHostedLogin(page);
+            await page.waitForURL((url) => url.origin === previewOrigin, { timeout: 20_000 });
 
-            for (let step = 0; step < 8 && !page.url().startsWith(previewUrl); step += 1) {
-              const passwordInput = await firstVisible(page, [
-                'input[type="password"]',
-                'input[name="password"]',
-                'input[autocomplete="current-password"]',
-              ]);
-              if (passwordInput) {
-                await passwordInput.fill(password);
-                await clickContinue(page);
-                await page.waitForTimeout(400);
-                continue;
-              }
-
-              const loginInput = await firstVisible(page, [
-                'input[name="loginName"]',
-                'input[name="username"]',
-                'input[type="email"]',
-                'input[autocomplete="username"]',
-                'input[type="text"]',
-              ]);
-              if (loginInput) {
-                await loginInput.fill(email);
-                await clickContinue(page);
-                await page.waitForTimeout(400);
-                continue;
-              }
-
-              const authorize = page.getByRole('button', { name: /authorize|allow|continue/i }).first();
-              if (await authorize.isVisible().catch(() => false)) {
-                await authorize.click();
-                await page.waitForTimeout(400);
-                continue;
-              }
-
-              await page.waitForTimeout(750);
-            }
-
-            await page.waitForURL((url) => url.origin === new URL(previewUrl).origin, { timeout: 30_000 });
             await page.goto(`${previewUrl}/create-workspace`, { waitUntil: 'networkidle' });
             await expect(page.getByRole('heading', { name: 'Create a workspace' })).toBeVisible();
             await expect(page.getByText('Sign in first.')).toHaveCount(0);
@@ -259,12 +303,39 @@ jobs:
           });
           TEST
 
+          cat > playwright.auth-smoke.config.ts <<'CONFIG'
+          import { defineConfig } from '@playwright/test';
+
+          export default defineConfig({
+            use: {
+              trace: 'retain-on-failure',
+              screenshot: 'only-on-failure',
+            },
+          });
+          CONFIG
+
           pnpm exec playwright test mkety-auth-smoke.spec.ts \
+            --config=playwright.auth-smoke.config.ts \
             --browser=chromium \
             --reporter=line \
             --workers=1
-          rm -f mkety-auth-smoke.spec.ts
           echo "- Authenticated browser flow: login → callback → Mkety session → tenant access → logout verified" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload authenticated smoke failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-auth-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/**
+            playwright-report/**
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Remove generated browser smoke files
+        if: always()
+        shell: bash
+        run: rm -f mkety-auth-smoke.spec.ts playwright.auth-smoke.config.ts
 
       - name: Clean up Mkety smoke records
         if: always()
