@@ -1,3 +1,4 @@
+# Approved production-promotion reconciliation trigger: 2026-09-12
 name: Guarded Main to Auth Reconciliation
 
 on:
