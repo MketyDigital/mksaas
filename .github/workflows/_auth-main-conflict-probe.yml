@@ -1,0 +1,57 @@
+name: Auth Main Conflict Probe
+
+on:
+  push:
+    branches:
+      - feat/mkety-auth-zitadel-vinext
+    paths:
+      - .github/workflows/_auth-main-conflict-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Probe merge conflicts without changing remote history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          auth_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          merge_base="$(git merge-base HEAD origin/main)"
+          echo "### Auth ↔ main reconciliation probe" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Auth SHA: \`$auth_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Main SHA: \`$main_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Merge base: \`$merge_base\`" >> "$GITHUB_STEP_SUMMARY"
+
+          set +e
+          git merge --no-commit --no-ff origin/main >/tmp/merge.out 2>&1
+          merge_status=$?
+          set -e
+
+          conflicts="$(git diff --name-only --diff-filter=U || true)"
+          if [ -n "$conflicts" ]; then
+            echo "- Conflicts:" >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r path; do
+              [ -n "$path" ] && echo "  - \`$path\`" >> "$GITHUB_STEP_SUMMARY"
+            done <<< "$conflicts"
+          else
+            echo "- Conflicts: none" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          git merge --abort >/dev/null 2>&1 || true
+
+          if [ "$merge_status" -ne 0 ] && [ -z "$conflicts" ]; then
+            echo "Merge probe failed without ordinary content conflicts." >&2
+            cat /tmp/merge.out >&2
+            exit "$merge_status"
+          fi
+
+          echo "Conflict probe complete; remote history was not changed."
