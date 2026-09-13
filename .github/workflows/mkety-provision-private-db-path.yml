@@ -19,193 +19,365 @@ jobs:
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
-      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
-      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
       TUNNEL_NAME: mkety-production-vpc
+      TUNNEL_ID_EXPECTED: 3ced1d56-8418-42e5-830b-f7ce9cd6fde4
       CONNECTOR_APP_NAME: mkety-production-cloudflared
-      VPC_SERVICE_NAME: mkety-production-postgres
+      DB_HOSTNAME: db-runtime.mkety.com
+      ACCESS_TOKEN_NAME: mkety-production-hyperdrive
+      ACCESS_APP_NAME: mkety-production-postgres
+      ACCESS_POLICY_NAME: mkety-production-hyperdrive-only
       HYPERDRIVE_NAME: mkety-production-db
+      ZONE_NAME: mkety.com
     steps:
       - name: Checkout diagnostic branch
         uses: actions/checkout@v4
 
-      - name: Resolve private PostgreSQL connection metadata
-        id: db
+      - name: Resolve private PostgreSQL metadata
         shell: bash
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
           node <<'NODE' >/tmp/db.env
           const fs=require('node:fs');
           const x=JSON.parse(fs.readFileSync('/tmp/db.json','utf8'));
           if(x.is_public !== false) throw new Error('Production PostgreSQL unexpectedly public.');
           if(x.enable_ssl !== true) throw new Error('Production PostgreSQL TLS is not enabled.');
           if(!String(x.status||'').includes('healthy')) throw new Error('Production PostgreSQL is not healthy.');
+          if(!x.internal_db_url) throw new Error('Private PostgreSQL URL missing.');
           const u=new URL(x.internal_db_url);
-          const vals={DB_HOST:u.hostname,DB_PORT:u.port||'5432',DB_NAME:decodeURIComponent(u.pathname.replace(/^\//,'')),DB_USER:decodeURIComponent(u.username),DB_PASSWORD:decodeURIComponent(u.password)};
-          for (const [k,v] of Object.entries(vals)) console.log(`${k}=${v}`);
+          const vals={
+            DB_HOST:u.hostname,
+            DB_PORT:u.port||'5432',
+            DB_NAME:decodeURIComponent(u.pathname.replace(/^\//,'')),
+            DB_USER:decodeURIComponent(u.username),
+            DB_PASSWORD:decodeURIComponent(u.password)
+          };
+          for(const [k,v] of Object.entries(vals)) console.log(`${k}=${v}`);
           NODE
           while IFS='=' read -r k v; do
             echo "::add-mask::$v"
             echo "$k=$v" >> "$GITHUB_ENV"
           done </tmp/db.env
-          echo 'Private PostgreSQL metadata resolved; DB remains private, healthy, and TLS-enabled.'
+          echo 'MKETY_DB_ORIGIN_PREFLIGHT_OK=true'
 
-      - name: Resolve or create dedicated Cloudflare Tunnel
-        id: tunnel
+      - name: Preflight Cloudflare permissions and exact resource identity
+        id: preflight
         shell: bash
         run: |
           set -euo pipefail
-          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "$cf/cfd_tunnel?is_deleted=false&per_page=100" -o /tmp/tunnels.json
-          TUNNEL_NAME="$TUNNEL_NAME" node <<'NODE' >/tmp/tunnel-count
-          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/tunnels.json','utf8'));const a=(p.result||[]).filter(x=>x.name===process.env.TUNNEL_NAME);console.log(a.length);if(a.length===1) console.log(a[0].id);
-          NODE
-          count="$(sed -n '1p' /tmp/tunnel-count)"
-          if [ "$count" = '0' ]; then
-            TUNNEL_NAME="$TUNNEL_NAME" node <<'NODE' >/tmp/create-tunnel.json
-          process.stdout.write(JSON.stringify({name:process.env.TUNNEL_NAME,config_src:'cloudflare'}));
-          NODE
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/tunnel-created.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create-tunnel.json "$cf/cfd_tunnel")"
-            [ "$code" = '200' ] || { echo "Cloudflare Tunnel creation failed with HTTP $code"; cat /tmp/tunnel-created.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{let p=JSON.parse(s);console.error(JSON.stringify({errors:p.errors||[]}))}catch{}})"; exit 2; }
-            tunnel_id="$(node -e "const p=require('/tmp/tunnel-created.json');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
-          elif [ "$count" = '1' ]; then
-            tunnel_id="$(sed -n '2p' /tmp/tunnel-count)"
-          else
-            echo "Expected at most one tunnel named $TUNNEL_NAME; found $count"; exit 3
-          fi
-          echo "tunnel_id=$tunnel_id" >> "$GITHUB_OUTPUT"
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/cfd_tunnel/$tunnel_id/token" -o /tmp/tunnel-token.json
-          tunnel_token="$(node -e "const p=require('/tmp/tunnel-token.json');if(!p.success||typeof p.result!=='string')process.exit(1);process.stdout.write(p.result)")"
-          echo "::add-mask::$tunnel_token"
-          printf '%s' "$tunnel_token" >/tmp/tunnel-token
-          chmod 600 /tmp/tunnel-token
-          echo "Dedicated tunnel resolved: $TUNNEL_NAME ($tunnel_id)"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
 
-      - name: Ensure private cloudflared connector is running in Coolify network
-        id: connector
+          api_get() {
+            local label="$1" url="$2" out="$3"
+            local code
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o "$out" -w '%{http_code}' "${auth[@]}" "$url")"
+            echo "$label HTTP $code"
+            if [ "$code" != '200' ]; then
+              LABEL="$label" FILE="$out" node <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync(process.env.FILE,'utf8'));
+          console.error(JSON.stringify({label:process.env.LABEL,errors:p.errors||[]}));
+          NODE
+              exit 20
+            fi
+            FILE="$out" node -e "const p=require(process.env.FILE);if(p.success!==true)process.exit(1)"
+          }
+
+          api_get 'Tunnel list' "$acct/cfd_tunnel?is_deleted=false&per_page=100" /tmp/tunnels.json
+          api_get 'Hyperdrive list' "$acct/hyperdrive/configs?per_page=100" /tmp/hyperdrives.json
+          api_get 'Access service-token list' "$acct/access/service_tokens?per_page=100" /tmp/access-tokens.json
+          api_get 'Access application list' "$acct/access/apps?per_page=100" /tmp/access-apps.json
+
+          zone_url="https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME&account.id=$CLOUDFLARE_ACCOUNT_ID&status=active&per_page=50"
+          api_get 'Zone lookup' "$zone_url" /tmp/zones.json
+
+          TUNNEL_NAME="$TUNNEL_NAME" EXPECTED="$TUNNEL_ID_EXPECTED" node <<'NODE' >/tmp/tunnel-id
+          const p=require('/tmp/tunnels.json');
+          const m=(p.result||[]).filter(x=>x.name===process.env.TUNNEL_NAME);
+          if(m.length!==1) throw new Error(`Expected exactly one Mkety tunnel; found ${m.length}`);
+          if(m[0].id!==process.env.EXPECTED) throw new Error('Mkety tunnel ID differs from certified inventory.');
+          if(String(m[0].status).toLowerCase()!=='healthy') throw new Error('Mkety tunnel is not healthy.');
+          process.stdout.write(m[0].id);
+          NODE
+          tunnel_id="$(cat /tmp/tunnel-id)"
+          echo "tunnel_id=$tunnel_id" >> "$GITHUB_OUTPUT"
+
+          api_get 'Tunnel configuration' "$acct/cfd_tunnel/$tunnel_id/configurations" /tmp/tunnel-config.json
+
+          ZONE_NAME="$ZONE_NAME" node <<'NODE' >/tmp/zone-id
+          const p=require('/tmp/zones.json');
+          const m=(p.result||[]).filter(x=>x.name===process.env.ZONE_NAME && x.status==='active');
+          if(m.length!==1) throw new Error(`Expected exactly one active Mkety zone; found ${m.length}`);
+          process.stdout.write(m[0].id);
+          NODE
+          zone_id="$(cat /tmp/zone-id)"
+          echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+
+          api_get 'Database DNS lookup' "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=$DB_HOSTNAME&per_page=100" /tmp/dns.json
+
+          DB_HOSTNAME="$DB_HOSTNAME" TUNNEL_ID="$tunnel_id" node <<'NODE'
+          const t=require('/tmp/tunnel-config.json');
+          const ingress=t.result?.config?.ingress||[];
+          const allowed=ingress.every((x,i)=>
+            (x.hostname===process.env.DB_HOSTNAME && String(x.service||'').startsWith('tcp://')) ||
+            (!x.hostname && x.service==='http_status:404' && i===ingress.length-1)
+          );
+          if(!allowed) throw new Error('Tunnel contains an unrelated ingress rule; refusing to replace configuration.');
+
+          const d=require('/tmp/dns.json');
+          const dns=d.result||[];
+          if(dns.length>1) throw new Error('Multiple database hostname DNS records exist.');
+          if(dns.length===1){
+            const expected=`${process.env.TUNNEL_ID}.cfargotunnel.com`;
+            if(dns[0].type!=='CNAME' || String(dns[0].content).toLowerCase()!==expected.toLowerCase())
+              throw new Error('Database hostname already points somewhere other than the dedicated Mkety tunnel.');
+          }
+
+          const h=require('/tmp/hyperdrives.json').result||[];
+          const target=h.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(target.length>1) throw new Error('Multiple mkety-production-db Hyperdrives exist.');
+          const expectedMklms=new Map([
+            ['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],
+            ['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],
+            ['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],
+            ['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']
+          ]);
+          for(const [name,id] of expectedMklms){
+            const x=h.find(v=>v.name===name);
+            if(!x || x.id!==id) throw new Error(`Protected unrelated Hyperdrive inventory changed: ${name}`);
+          }
+          NODE
+
+          ACCESS_TOKEN_NAME="$ACCESS_TOKEN_NAME" node <<'NODE' >/tmp/token-match
+          const p=require('/tmp/access-tokens.json');const a=(p.result||[]).filter(x=>x.name===process.env.ACCESS_TOKEN_NAME);
+          if(a.length>1) throw new Error('Multiple Mkety Access service tokens found.');
+          console.log(a.length);if(a.length===1){console.log(a[0].id);console.log(a[0].client_id||'');}
+          NODE
+          echo "access_token_count=$(sed -n '1p' /tmp/token-match)" >> "$GITHUB_OUTPUT"
+          echo "access_token_id=$(sed -n '2p' /tmp/token-match)" >> "$GITHUB_OUTPUT"
+
+          ACCESS_APP_NAME="$ACCESS_APP_NAME" DB_HOSTNAME="$DB_HOSTNAME" node <<'NODE' >/tmp/app-match
+          const p=require('/tmp/access-apps.json');const a=(p.result||[]).filter(x=>x.name===process.env.ACCESS_APP_NAME);
+          if(a.length>1) throw new Error('Multiple Mkety Access applications found.');
+          if(a.length===1 && xDomain(a[0])!==process.env.DB_HOSTNAME) throw new Error('Existing Mkety Access application protects a different hostname.');
+          function xDomain(x){return x.domain || (x.destinations||[]).find(d=>d.type==='public')?.uri || '';}
+          console.log(a.length);if(a.length===1)console.log(a[0].id);
+          NODE
+          echo "access_app_count=$(sed -n '1p' /tmp/app-match)" >> "$GITHUB_OUTPUT"
+          echo "access_app_id=$(sed -n '2p' /tmp/app-match)" >> "$GITHUB_OUTPUT"
+
+          HYPERDRIVE_NAME="$HYPERDRIVE_NAME" DB_HOSTNAME="$DB_HOSTNAME" node <<'NODE' >/tmp/hd-match
+          const p=require('/tmp/hyperdrives.json');const a=(p.result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          console.log(a.length);if(a.length===1){
+            const x=a[0];
+            if(x.origin?.host!==process.env.DB_HOSTNAME) throw new Error('Existing Mkety Hyperdrive points to a different host.');
+            if(x.origin?.service_id) throw new Error('Existing Mkety Hyperdrive still uses Workers VPC.');
+            console.log(x.id);
+          }
+          NODE
+          echo "hyperdrive_count=$(sed -n '1p' /tmp/hd-match)" >> "$GITHUB_OUTPUT"
+          echo "hyperdrive_id=$(sed -n '2p' /tmp/hd-match)" >> "$GITHUB_OUTPUT"
+          echo 'MKETY_TUNNEL_ACCESS_PREFLIGHT_OK=true'
+
+      - name: Configure dedicated database hostname on tunnel
+        if: steps.preflight.outputs.hyperdrive_count == '0'
         shell: bash
         env:
-          TUNNEL_ID: ${{ steps.tunnel.outputs.tunnel_id }}
+          TUNNEL_ID: ${{ steps.preflight.outputs.tunnel_id }}
+          ZONE_ID: ${{ steps.preflight.outputs.zone_id }}
         run: |
           set -euo pipefail
-          base="${COOLIFY_URL%/}/api/v1"
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
-          CONNECTOR_APP_NAME="$CONNECTOR_APP_NAME" node <<'NODE' >/tmp/app-match
-          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));const a=(Array.isArray(p)?p:[]).filter(x=>x.name===process.env.CONNECTOR_APP_NAME);console.log(a.length);if(a.length===1)console.log(a[0].uuid);
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          service="tcp://$DB_HOST:$DB_PORT"
+          echo "::add-mask::$service"
+          SERVICE="$service" node <<'NODE' >/tmp/tunnel-put.json
+          process.stdout.write(JSON.stringify({config:{ingress:[
+            {hostname:process.env.DB_HOSTNAME,service:process.env.SERVICE},
+            {service:'http_status:404'}
+          ]}}));
           NODE
-          count="$(sed -n '1p' /tmp/app-match)"
-          created='no'
-          if [ "$count" = '0' ]; then
-            node <<'NODE' >/tmp/create-app.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/tunnel-put-response.json -w '%{http_code}' \
+            -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/tunnel-put.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"
+          [ "$code" = '200' ] || { echo "Tunnel configuration update failed HTTP $code"; exit 30; }
+          node -e "const p=require('/tmp/tunnel-put-response.json');if(p.success!==true)process.exit(1)"
+
+          node <<'NODE' >/tmp/dns-create.json
+          process.stdout.write(JSON.stringify({type:'CNAME',name:process.env.DB_HOSTNAME,content:`${process.env.TUNNEL_ID}.cfargotunnel.com`,proxied:true,ttl:1}));
+          NODE
+          dns_count="$(node -e "const p=require('/tmp/dns.json');process.stdout.write(String((p.result||[]).length))")"
+          if [ "$dns_count" = '0' ]; then
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/dns-create-response.json -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/dns-create.json "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records")"
+            [ "$code" = '200' ] || { echo "Database DNS creation failed HTTP $code"; exit 31; }
+            node -e "const p=require('/tmp/dns-create-response.json');if(p.success!==true)process.exit(1)"
+          fi
+          echo 'MKETY_TUNNEL_DB_HOSTNAME_OK=true'
+
+      - name: Resolve Access service token secret
+        id: token
+        if: steps.preflight.outputs.hyperdrive_count == '0'
+        shell: bash
+        env:
+          TOKEN_COUNT: ${{ steps.preflight.outputs.access_token_count }}
+          TOKEN_ID_EXISTING: ${{ steps.preflight.outputs.access_token_id }}
+        run: |
+          set -euo pipefail
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          if [ "$TOKEN_COUNT" = '0' ]; then
+            ACCESS_TOKEN_NAME="$ACCESS_TOKEN_NAME" node <<'NODE' >/tmp/token-create.json
+          process.stdout.write(JSON.stringify({name:process.env.ACCESS_TOKEN_NAME,duration:'8760h'}));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/token-response.json -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/token-create.json "$acct/access/service_tokens")"
+            [ "$code" = '200' ] || { echo "Access service-token creation failed HTTP $code"; exit 40; }
+          elif [ "$TOKEN_COUNT" = '1' ]; then
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/token-response.json -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+              --data '{}' "$acct/access/service_tokens/$TOKEN_ID_EXISTING/rotate")"
+            [ "$code" = '200' ] || { echo "Access service-token rotation failed HTTP $code"; exit 41; }
+          else
+            echo 'Invalid Access token preflight count.'; exit 42
+          fi
+          node <<'NODE' >/tmp/token-secret.env
+          const p=require('/tmp/token-response.json');
+          if(p.success!==true || !p.result?.id || !p.result?.client_id || !p.result?.client_secret) throw new Error('Access token response missing required fields.');
+          console.log(`ACCESS_TOKEN_ID=${p.result.id}`);
+          console.log(`ACCESS_CLIENT_ID=${p.result.client_id}`);
+          console.log(`ACCESS_CLIENT_SECRET=${p.result.client_secret}`);
+          NODE
+          while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "$k=$v" >> "$GITHUB_ENV"
+          done </tmp/token-secret.env
+          echo 'MKETY_ACCESS_SERVICE_TOKEN_OK=true'
+
+      - name: Resolve or create Access application and Service Auth policy
+        id: access
+        if: steps.preflight.outputs.hyperdrive_count == '0'
+        shell: bash
+        env:
+          APP_COUNT: ${{ steps.preflight.outputs.access_app_count }}
+          APP_ID_EXISTING: ${{ steps.preflight.outputs.access_app_id }}
+        run: |
+          set -euo pipefail
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          if [ "$APP_COUNT" = '0' ]; then
+            node <<'NODE' >/tmp/app-create.json
           process.stdout.write(JSON.stringify({
-            project_uuid:process.env.PROJECT_UUID,
-            server_uuid:process.env.SERVER_UUID,
-            environment_uuid:process.env.ENVIRONMENT_UUID,
-            git_repository:'https://github.com/MketyDigital/mksaas',
-            git_branch:process.env.GITHUB_REF_NAME,
-            git_commit_sha:process.env.GITHUB_SHA,
-            build_pack:'dockerfile',
-            dockerfile_location:'/ops/cloudflared-vpc/Dockerfile',
-            ports_exposes:'2000',
-            name:process.env.CONNECTOR_APP_NAME,
-            description:'Persistent Cloudflare Tunnel connector for Mkety private production services',
-            autogenerate_domain:false,
-            connect_to_docker_network:true,
-            instant_deploy:false
+            name:process.env.ACCESS_APP_NAME,
+            type:'self_hosted',
+            domain:process.env.DB_HOSTNAME,
+            destinations:[{type:'public',uri:process.env.DB_HOSTNAME}],
+            session_duration:'0s',
+            app_launcher_visible:false,
+            service_auth_401_redirect:true,
+            skip_interstitial:true
           }));
           NODE
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-app-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create-app.json "$base/applications/public")"
-            [ "$code" = '201' ] || { echo "Coolify connector creation failed with HTTP $code"; exit 4; }
-            app_uuid="$(node -e "const p=require('/tmp/create-app-response.json');if(!p.uuid)process.exit(1);process.stdout.write(p.uuid)")"
-            created='yes'
-          elif [ "$count" = '1' ]; then
-            app_uuid="$(sed -n '2p' /tmp/app-match)"
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/app-response.json -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/app-create.json "$acct/access/apps")"
+            [ "$code" = '200' ] || { echo "Access application creation failed HTTP $code"; node -e "const p=require('/tmp/app-response.json');console.error(JSON.stringify({errors:p.errors||[]}))"; exit 50; }
+            app_id="$(node -e "const p=require('/tmp/app-response.json');if(p.success!==true||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
           else
-            echo "Expected at most one connector app named $CONNECTOR_APP_NAME; found $count"; exit 5
+            app_id="$APP_ID_EXISTING"
           fi
-          echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
-          if [ "$created" = 'yes' ]; then
-            token="$(cat /tmp/tunnel-token)"
-            KEY='TUNNEL_TOKEN' VALUE="$token" node <<'NODE' >/tmp/env.json
-          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
-          NODE
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$app_uuid/envs")"
-            [ "$code" = '201' ] || { echo "Failed to inject tunnel token (HTTP $code)"; exit 6; }
-          fi
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$app_uuid&force=true")"
-          [ "$code" = '200' ] || { echo "Connector deploy failed with HTTP $code"; exit 7; }
-          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
-          healthy='no'
-          for i in $(seq 1 90); do
-            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/cfd_tunnel/$TUNNEL_ID" -o /tmp/tunnel-state.json
-            status="$(node -e "const p=require('/tmp/tunnel-state.json');process.stdout.write(String(p.result?.status||''))")"
-            if [ "${status,,}" = 'healthy' ]; then healthy='yes'; break; fi
-            sleep 4
-          done
-          [ "$healthy" = 'yes' ] || { echo 'Dedicated Cloudflare Tunnel did not become healthy.'; exit 8; }
-          echo "Persistent private connector is healthy: app=$app_uuid tunnel=$TUNNEL_ID"
+          echo "app_id=$app_id" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve or create PostgreSQL VPC service
-        id: service
-        shell: bash
-        env:
-          TUNNEL_ID: ${{ steps.tunnel.outputs.tunnel_id }}
-        run: |
-          set -euo pipefail
-          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/connectivity/directory/services?per_page=100" -o /tmp/services.json
-          VPC_SERVICE_NAME="$VPC_SERVICE_NAME" node <<'NODE' >/tmp/service-match
-          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/services.json','utf8'));const a=(p.result||[]).filter(x=>x.name===process.env.VPC_SERVICE_NAME);console.log(a.length);if(a.length===1)console.log(a[0].service_id);
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$acct/access/apps/$app_id/policies?per_page=100" -o /tmp/policies.json
+          ACCESS_POLICY_NAME="$ACCESS_POLICY_NAME" ACCESS_TOKEN_ID="$ACCESS_TOKEN_ID" node <<'NODE' >/tmp/policy-match
+          const p=require('/tmp/policies.json');const a=(p.result||[]).filter(x=>x.name===process.env.ACCESS_POLICY_NAME);
+          if(a.length>1) throw new Error('Multiple Mkety Access policies found.');
+          if(a.length===1){
+            if(a[0].decision!=='non_identity') throw new Error('Mkety Access policy is not Service Auth.');
+            const ids=(a[0].include||[]).map(x=>x.service_token?.token_id).filter(Boolean);
+            if(ids.length!==1 || ids[0]!==process.env.ACCESS_TOKEN_ID) throw new Error('Mkety Access policy is not restricted to the dedicated service token.');
+          }
+          console.log(a.length);if(a.length===1)console.log(a[0].id);
           NODE
-          count="$(sed -n '1p' /tmp/service-match)"
-          if [ "$count" = '0' ]; then
-            DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" TUNNEL_ID="$TUNNEL_ID" VPC_SERVICE_NAME="$VPC_SERVICE_NAME" node <<'NODE' >/tmp/service-create.json
-          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',host:{hostname:process.env.DB_HOST,resolver_network:{tunnel_id:process.env.TUNNEL_ID}},tcp_port:Number(process.env.DB_PORT||5432),app_protocol:'postgresql',tls_settings:{cert_verification_mode:'verify_ca'}}));
+          policy_count="$(sed -n '1p' /tmp/policy-match)"
+          if [ "$policy_count" = '0' ]; then
+            node <<'NODE' >/tmp/policy-create.json
+          process.stdout.write(JSON.stringify({
+            name:process.env.ACCESS_POLICY_NAME,
+            decision:'non_identity',
+            precedence:1,
+            include:[{service_token:{token_id:process.env.ACCESS_TOKEN_ID}}],
+            exclude:[],
+            require:[]
+          }));
           NODE
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/service-created.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/service-create.json "$cf/connectivity/directory/services")"
-            [ "$code" = '200' ] || { echo "VPC service creation failed with HTTP $code"; cat /tmp/service-created.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{let p=JSON.parse(s);console.error(JSON.stringify({errors:p.errors||[]}))}catch{}})"; exit 9; }
-            service_id="$(node -e "const p=require('/tmp/service-created.json');if(!p.success||!p.result?.service_id)process.exit(1);process.stdout.write(p.result.service_id)")"
-          elif [ "$count" = '1' ]; then
-            service_id="$(sed -n '2p' /tmp/service-match)"
-          else
-            echo "Expected at most one VPC service named $VPC_SERVICE_NAME; found $count"; exit 10
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/policy-response.json -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/policy-create.json "$acct/access/apps/$app_id/policies")"
+            [ "$code" = '200' ] || { echo "Access Service Auth policy creation failed HTTP $code"; node -e "const p=require('/tmp/policy-response.json');console.error(JSON.stringify({errors:p.errors||[]}))"; exit 51; }
           fi
-          echo "service_id=$service_id" >> "$GITHUB_OUTPUT"
-          echo "Dedicated PostgreSQL VPC service resolved: $service_id"
+          echo 'MKETY_ACCESS_POLICY_OK=true'
 
-      - name: Resolve or create dedicated Hyperdrive
+      - name: Create dedicated Hyperdrive over Tunnel and Access
         id: hyperdrive
+        if: steps.preflight.outputs.hyperdrive_count == '0'
         shell: bash
-        env:
-          SERVICE_ID: ${{ steps.service.outputs.service_id }}
         run: |
           set -euo pipefail
-          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/hyperdrive/configs" -o /tmp/hyperdrives.json
-          HYPERDRIVE_NAME="$HYPERDRIVE_NAME" node <<'NODE' >/tmp/hd-match
-          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/hyperdrives.json','utf8'));const a=(p.result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);console.log(a.length);if(a.length===1){console.log(a[0].id);console.log(a[0].origin?.service_id||'');}
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          node <<'NODE' >/tmp/hd-create.json
+          process.stdout.write(JSON.stringify({
+            name:process.env.HYPERDRIVE_NAME,
+            origin:{
+              host:process.env.DB_HOSTNAME,
+              database:process.env.DB_NAME,
+              user:process.env.DB_USER,
+              password:process.env.DB_PASSWORD,
+              scheme:'postgres',
+              access_client_id:process.env.ACCESS_CLIENT_ID,
+              access_client_secret:process.env.ACCESS_CLIENT_SECRET
+            }
+          }));
           NODE
-          count="$(sed -n '1p' /tmp/hd-match)"
-          if [ "$count" = '0' ]; then
-            HYPERDRIVE_NAME="$HYPERDRIVE_NAME" SERVICE_ID="$SERVICE_ID" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node <<'NODE' >/tmp/hd-create.json
-          process.stdout.write(JSON.stringify({name:process.env.HYPERDRIVE_NAME,origin:{service_id:process.env.SERVICE_ID,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,scheme:'postgresql'}}));
-          NODE
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/hd-created.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/hd-create.json "$cf/hyperdrive/configs")"
-            [ "$code" = '200' ] || { echo "Hyperdrive creation failed with HTTP $code"; cat /tmp/hd-created.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{let p=JSON.parse(s);console.error(JSON.stringify({errors:p.errors||[]}))}catch{}})"; exit 11; }
-            hd_id="$(node -e "const p=require('/tmp/hd-created.json');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
-          elif [ "$count" = '1' ]; then
-            hd_id="$(sed -n '2p' /tmp/hd-match)"
-            existing_service="$(sed -n '3p' /tmp/hd-match)"
-            [ "$existing_service" = "$SERVICE_ID" ] || { echo 'Existing mkety-production-db Hyperdrive points to a different VPC service.'; exit 12; }
-          else
-            echo "Expected exactly zero or one Hyperdrive named $HYPERDRIVE_NAME; found $count"; exit 13
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/hd-response.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/hd-create.json "$acct/hyperdrive/configs")"
+          if [ "$code" != '200' ]; then
+            echo "Hyperdrive Tunnel+Access creation failed HTTP $code"
+            node -e "const p=require('/tmp/hd-response.json');console.error(JSON.stringify({errors:p.errors||[]}))"
+            exit 60
           fi
+          hd_id="$(node -e "const p=require('/tmp/hd-response.json');if(p.success!==true||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
           echo "hyperdrive_id=$hd_id" >> "$GITHUB_OUTPUT"
-          echo "MKETY_PRIVATE_DB_PATH_OK=true"
-          echo "Tunnel: ${{ steps.tunnel.outputs.tunnel_id }}"
-          echo "VPC service: $SERVICE_ID"
-          echo "Hyperdrive: $hd_id"
+          echo 'MKETY_HYPERDRIVE_TUNNEL_ACCESS_CREATE_OK=true'
+
+      - name: Verify final dedicated private database chain
+        shell: bash
+        env:
+          PREFLIGHT_HD_COUNT: ${{ steps.preflight.outputs.hyperdrive_count }}
+          PREFLIGHT_HD_ID: ${{ steps.preflight.outputs.hyperdrive_id }}
+          TUNNEL_ID: ${{ steps.preflight.outputs.tunnel_id }}
+        run: |
+          set -euo pipefail
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/cfd_tunnel/$TUNNEL_ID" -o /tmp/tunnel-final.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hd-final.json
+          HYPERDRIVE_NAME="$HYPERDRIVE_NAME" DB_HOSTNAME="$DB_HOSTNAME" node <<'NODE'
+          const t=require('/tmp/tunnel-final.json');
+          if(t.success!==true || String(t.result?.status).toLowerCase()!=='healthy') throw new Error('Dedicated Mkety tunnel is not healthy after provisioning.');
+          const p=require('/tmp/hd-final.json');
+          const a=(p.result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(a.length!==1) throw new Error(`Expected exactly one Mkety Hyperdrive; found ${a.length}`);
+          const x=a[0];
+          if(x.origin?.host!==process.env.DB_HOSTNAME) throw new Error('Mkety Hyperdrive host mismatch.');
+          if(x.origin?.service_id) throw new Error('Mkety Hyperdrive unexpectedly uses Workers VPC.');
+          if(!x.origin?.access_client_id) throw new Error('Mkety Hyperdrive is missing Access client identity.');
+          console.log(JSON.stringify({tunnel:{id:t.result.id,name:t.result.name,status:t.result.status},hyperdrive:{id:x.id,name:x.name,host:x.origin.host,scheme:x.origin.scheme,access_protected:true,port_omitted:x.origin.port==null}},null,2));
+          NODE
+          echo 'MKETY_PRIVATE_DB_PATH_OK=true'
