@@ -67,6 +67,7 @@ jobs:
           const latestFresh = Number.isFinite(latestCreated) && Date.now() - latestCreated <= 30 * 60 * 60 * 1000;
           const latestStatus = String(latest?.status || '').toLowerCase();
           const latestSuccess = ['success', 'successful', 'succeeded', 'completed'].includes(latestStatus);
+          const latestS3Uploaded = latest?.s3_uploaded === true || latest?.s3_uploaded === 1;
 
           const summary = {
             db: {
@@ -92,6 +93,7 @@ jobs:
                 created_at: latest.created_at ?? null,
                 fresh_within_30h: latestFresh,
                 success_status: latestSuccess,
+                s3_uploaded: latestS3Uploaded,
                 returned_keys: Object.keys(latest).sort(),
               } : null,
             },
@@ -110,6 +112,7 @@ jobs:
           fs.appendFileSync(out, `local_retention_ok=${summary.backup.local_retention >= 7}\n`);
           fs.appendFileSync(out, `s3_retention_ok=${summary.backup.s3_retention >= 30}\n`);
           fs.appendFileSync(out, `coolify_execution_ok=${Boolean(latest && latestSuccess && latestFresh && Number(latest.size || 0) > 0)}\n`);
+          fs.appendFileSync(out, `coolify_s3_uploaded=${latestS3Uploaded}\n`);
           NODE
 
       - name: Verify fresh non-empty R2 backup object
@@ -124,32 +127,44 @@ jobs:
             python3 -m pip install --user --quiet awscli
             export PATH="$HOME/.local/bin:$PATH"
           fi
-          aws s3api list-objects-v2 \
-            --endpoint-url "$R2_S3_API" \
+
+          endpoint_origin="$(node -e "const u=new URL(process.env.R2_S3_API); console.log(u.origin)")"
+          endpoint_path="$(node -e "const u=new URL(process.env.R2_S3_API); console.log(u.pathname || '/')")"
+          endpoint_host="$(node -e "const u=new URL(process.env.R2_S3_API); console.log(u.host)")"
+          echo "R2 endpoint host: $endpoint_host"
+          echo "R2 endpoint path present: $([ "$endpoint_path" = '/' ] && echo false || echo true)"
+
+          if aws s3api list-objects-v2 \
+            --endpoint-url "$endpoint_origin" \
             --bucket "$R2_BUCKET" \
             --max-items 1000 \
-            --output json > /tmp/r2-objects.json
-
-          node <<'NODE'
-          const fs = require('node:fs');
-          const payload = JSON.parse(fs.readFileSync('/tmp/r2-objects.json', 'utf8'));
-          const objects = Array.isArray(payload.Contents) ? payload.Contents : [];
-          const latest = [...objects].sort((a, b) => new Date(b.LastModified || 0) - new Date(a.LastModified || 0))[0] || null;
-          const modified = latest ? new Date(latest.LastModified || 0).getTime() : NaN;
-          const fresh = Number.isFinite(modified) && Date.now() - modified <= 30 * 60 * 60 * 1000;
-          const nonEmpty = Number(latest?.Size || 0) > 0;
-          const summary = {
-            bucket: process.env.R2_BUCKET,
-            object_count: objects.length,
-            latest_modified: latest?.LastModified ?? null,
-            latest_size: Number(latest?.Size || 0),
-            fresh_within_30h: fresh,
-            non_empty: nonEmpty,
-          };
-          fs.writeFileSync('/tmp/r2-precutover.json', JSON.stringify(summary, null, 2));
-          console.log(JSON.stringify(summary, null, 2));
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `r2_ok=${Boolean(objects.length && fresh && nonEmpty)}\n`);
-          NODE
+            --output json > /tmp/r2-objects.json 2>/tmp/r2-error.txt; then
+            node <<'NODE'
+            const fs = require('node:fs');
+            const payload = JSON.parse(fs.readFileSync('/tmp/r2-objects.json', 'utf8'));
+            const objects = Array.isArray(payload.Contents) ? payload.Contents : [];
+            const latest = [...objects].sort((a, b) => new Date(b.LastModified || 0) - new Date(a.LastModified || 0))[0] || null;
+            const modified = latest ? new Date(latest.LastModified || 0).getTime() : NaN;
+            const fresh = Number.isFinite(modified) && Date.now() - modified <= 30 * 60 * 60 * 1000;
+            const nonEmpty = Number(latest?.Size || 0) > 0;
+            const summary = {
+              bucket: process.env.R2_BUCKET,
+              object_count: objects.length,
+              latest_modified: latest?.LastModified ?? null,
+              latest_size: Number(latest?.Size || 0),
+              fresh_within_30h: fresh,
+              non_empty: nonEmpty,
+            };
+            fs.writeFileSync('/tmp/r2-precutover.json', JSON.stringify(summary, null, 2));
+            console.log(JSON.stringify(summary, null, 2));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `r2_ok=${Boolean(objects.length && fresh && nonEmpty)}\n`);
+            NODE
+          else
+            echo 'R2 ListObjectsV2 failed after normalizing the endpoint origin.'
+            sed -E 's/[A-Za-z0-9+\/=]{20,}/[redacted]/g' /tmp/r2-error.txt || true
+            printf '{"bucket":"%s","list_succeeded":false}\n' "$R2_BUCKET" > /tmp/r2-precutover.json
+            echo 'r2_ok=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Verify dedicated Cloudflare Hyperdrive exists
         id: hyperdrive
@@ -165,15 +180,22 @@ jobs:
           const payload = JSON.parse(process.env.HYPERDRIVES || '{}');
           if (!payload.success || !Array.isArray(payload.result)) throw new Error('Could not list Cloudflare Hyperdrive configs.');
           const matches = payload.result.filter((item) => item?.name === process.env.MKETY_HYPERDRIVE_NAME);
+          const match = matches[0] || null;
+          const vpcService = Boolean(match?.origin?.service_id);
           const summary = {
             name: process.env.MKETY_HYPERDRIVE_NAME,
             match_count: matches.length,
             has_exact_single_config: matches.length === 1,
-            id_present: Boolean(matches[0]?.id),
+            id_present: Boolean(match?.id),
+            origin_type: vpcService ? 'vpc-service' : match?.origin ? 'internet-or-access' : 'unknown',
+            scheme: match?.origin?.scheme ?? null,
+            port: match?.origin?.port ?? null,
+            sslmode: match?.mtls?.sslmode ?? (vpcService ? 'managed-by-vpc-service' : 'default-require'),
           };
           fs.writeFileSync('/tmp/hyperdrive-precutover.json', JSON.stringify(summary, null, 2));
           console.log(JSON.stringify(summary, null, 2));
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `hyperdrive_ok=${Boolean(matches.length === 1 && matches[0]?.id)}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `hyperdrive_ok=${Boolean(matches.length === 1 && match?.id)}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `hyperdrive_vpc=${vpcService}\n`);
           NODE
 
       - name: Enforce precutover gates
@@ -188,16 +210,24 @@ jobs:
           LOCAL_RETENTION_OK: ${{ steps.coolify.outputs.local_retention_ok }}
           S3_RETENTION_OK: ${{ steps.coolify.outputs.s3_retention_ok }}
           COOLIFY_EXECUTION_OK: ${{ steps.coolify.outputs.coolify_execution_ok }}
+          COOLIFY_S3_UPLOADED: ${{ steps.coolify.outputs.coolify_s3_uploaded }}
           R2_OK: ${{ steps.r2.outputs.r2_ok }}
           HYPERDRIVE_OK: ${{ steps.hyperdrive.outputs.hyperdrive_ok }}
+          HYPERDRIVE_VPC: ${{ steps.hyperdrive.outputs.hyperdrive_vpc }}
         run: |
           set -euo pipefail
           failed=0
-          for variable in DB_PRIVATE DB_HEALTHY DB_TLS BACKUP_ENABLED BACKUP_SAVE_S3 BACKUP_LINKED LOCAL_RETENTION_OK S3_RETENTION_OK COOLIFY_EXECUTION_OK R2_OK HYPERDRIVE_OK; do
+          for variable in DB_PRIVATE DB_HEALTHY BACKUP_ENABLED BACKUP_SAVE_S3 BACKUP_LINKED LOCAL_RETENTION_OK S3_RETENTION_OK COOLIFY_EXECUTION_OK COOLIFY_S3_UPLOADED R2_OK HYPERDRIVE_OK; do
             value="${!variable:-false}"
             printf '%s=%s\n' "$variable" "$value"
             if [ "$value" != 'true' ]; then failed=1; fi
           done
+          printf 'DB_TLS=%s\n' "${DB_TLS:-false}"
+          printf 'HYPERDRIVE_VPC=%s\n' "${HYPERDRIVE_VPC:-false}"
+          if [ "${HYPERDRIVE_VPC:-false}" != 'true' ] && [ "${DB_TLS:-false}" != 'true' ]; then
+            echo 'Internet-origin Hyperdrive requires PostgreSQL TLS, but Coolify reports enable_ssl=false.'
+            failed=1
+          fi
           if [ "$failed" -ne 0 ]; then
             echo 'One or more production precutover gates failed.'
             exit 1
