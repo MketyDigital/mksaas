@@ -1,0 +1,157 @@
+name: Mkety Coolify Database Protection
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-db-protection.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  protect-postgres:
+    name: Enforce private Postgres and scheduled backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+
+    steps:
+      - name: Validate secure Coolify credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
+
+      - name: Verify exact production Postgres resource is private and healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID" -o /tmp/postgres.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const db = JSON.parse(fs.readFileSync('/tmp/postgres.json', 'utf8'));
+          if (db.uuid !== process.env.POSTGRES_UUID) throw new Error('Unexpected Postgres UUID.');
+          if (db.name !== 'mkety-postgres') throw new Error(`Unexpected database resource: ${db.name || 'unnamed'}`);
+          if (db.is_public !== false) throw new Error('Production Postgres is publicly exposed; refusing to continue.');
+          if (db.public_port !== null && db.public_port !== undefined && db.public_port !== 0) throw new Error('Production Postgres has a public port configured.');
+          if (!String(db.status || '').includes('healthy')) throw new Error(`Production Postgres is not healthy: ${db.status || 'unknown'}`);
+          const safe = {
+            uuid: db.uuid,
+            name: db.name,
+            status: db.status,
+            image: db.image,
+            is_public: db.is_public,
+            public_port: db.public_port ?? null,
+            health_check_enabled: db.health_check_enabled,
+            health_check_interval: db.health_check_interval,
+            health_check_timeout: db.health_check_timeout,
+            health_check_retries: db.health_check_retries,
+            health_check_start_period: db.health_check_start_period,
+            limits_memory: db.limits_memory,
+            limits_cpus: db.limits_cpus,
+          };
+          fs.writeFileSync('/tmp/postgres-security-sanitized.json', JSON.stringify(safe, null, 2));
+          console.log('Production Postgres identity, private networking, and healthy state verified.');
+          NODE
+
+      - name: Create daily logical backup policy if missing
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups-before.json
+
+          existing_uuid="$(node <<'NODE'
+          const fs = require('node:fs');
+          const raw = JSON.parse(fs.readFileSync('/tmp/backups-before.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.backups) ? raw.backups : [];
+          const exact = list.find((x) => x && x.enabled !== false && x.frequency === '0 2 * * *');
+          if (exact?.uuid) process.stdout.write(exact.uuid);
+          NODE
+          )"
+
+          if [ -n "$existing_uuid" ]; then
+            echo "backup_uuid=$existing_uuid" >> "$GITHUB_OUTPUT"
+            echo 'Daily 02:00 UTC Postgres backup policy already exists; no duplicate created.'
+          else
+            cat >/tmp/backup-create.json <<'JSON'
+          {
+            "frequency": "0 2 * * *",
+            "enabled": true,
+            "save_s3": false,
+            "dump_all": true,
+            "backup_now": true,
+            "database_backup_retention_amount_locally": 7,
+            "database_backup_retention_days_locally": 0,
+            "database_backup_retention_max_storage_locally": 0,
+            "timeout": 3600
+          }
+          JSON
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/backup-created.json -w '%{http_code}' \
+              -X POST "${auth[@]}" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/backup-create.json \
+              "$base/databases/$POSTGRES_UUID/backups")"
+            [ "$code" = '201' ] || { echo "Creating Postgres backup policy failed with HTTP $code."; cat /tmp/backup-created.json; exit 1; }
+            created_uuid="$(node -e "const x=require('/tmp/backup-created.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
+            echo "backup_uuid=$created_uuid" >> "$GITHUB_OUTPUT"
+            echo 'Daily Postgres backup policy created and initial backup requested.'
+          fi
+
+      - name: Verify backup policy and record sanitized evidence
+        shell: bash
+        env:
+          BACKUP_UUID: ${{ steps.backup.outputs.backup_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups-after.json
+
+          BACKUP_UUID="$BACKUP_UUID" node <<'NODE'
+          const fs = require('node:fs');
+          const raw = JSON.parse(fs.readFileSync('/tmp/backups-after.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.backups) ? raw.backups : [];
+          const x = list.find((row) => row?.uuid === process.env.BACKUP_UUID);
+          if (!x) throw new Error('Created/selected backup policy was not returned by Coolify.');
+          if (x.enabled === false) throw new Error('Backup policy is disabled.');
+          if (x.frequency !== '0 2 * * *') throw new Error(`Unexpected backup frequency: ${x.frequency}`);
+          const safe = {
+            uuid: x.uuid,
+            enabled: x.enabled,
+            frequency: x.frequency,
+            save_s3: x.save_s3,
+            dump_all: x.dump_all,
+            databases_to_backup: x.databases_to_backup,
+            database_backup_retention_amount_locally: x.database_backup_retention_amount_locally,
+            database_backup_retention_days_locally: x.database_backup_retention_days_locally,
+            database_backup_retention_max_storage_locally: x.database_backup_retention_max_storage_locally,
+            timeout: x.timeout,
+            last_saved_at: x.last_saved_at,
+          };
+          fs.writeFileSync('/tmp/postgres-backup-policy-sanitized.json', JSON.stringify(safe, null, 2));
+          console.log('Postgres daily backup policy verified in Coolify.');
+          NODE
+
+      - name: Upload database protection evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-coolify-db-protection-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            /tmp/postgres-security-sanitized.json
+            /tmp/postgres-backup-policy-sanitized.json
