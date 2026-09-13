@@ -1,0 +1,32 @@
+name: Mkety Coolify Migration Status
+
+on:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-migration-status.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      TARGET_PREFIX: mkety-db-migrate-ed2a33153991
+    steps:
+      - name: Read sanitized application state
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          PREFIX="$TARGET_PREFIX" node <<'NODE'
+          const raw=require('/tmp/apps.json'); const list=Array.isArray(raw)?raw:(raw.data||[]);
+          const matches=list.filter(x=>String(x.name||'').startsWith(process.env.PREFIX));
+          console.log(JSON.stringify(matches.map(x=>({uuid:x.uuid,name:x.name,status:x.status,git_branch:x.git_branch,git_commit_sha:x.git_commit_sha,build_pack:x.build_pack,connect_to_docker_network:x.connect_to_docker_network})),null,2));
+          NODE
