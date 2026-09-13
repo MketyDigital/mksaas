@@ -6,7 +6,6 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-RUN chmod +x /app/ops/coolify-migration/run.sh
 
 EXPOSE 3000
-CMD ["/app/ops/coolify-migration/run.sh"]
+CMD ["node", "-e", "require('http').createServer((req,res)=>{res.statusCode=200;res.end('ok')}).listen(3000,'0.0.0.0')"]
