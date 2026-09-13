@@ -12,7 +12,7 @@ permissions:
 jobs:
   prove-ca:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     environment: production
     env:
       COOLIFY_URL: https://deploy.mkety.com
@@ -37,12 +37,44 @@ jobs:
           while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
           echo MKETY_CA_DB_PREFLIGHT_OK=true
 
-      - name: Create image-based CA probe
+      - name: Create CA proof executor app
         id: probe
         shell: bash
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
+          cat > /tmp/Dockerfile <<'DOCKER'
+          FROM alpine:3.20
+          RUN apk add --no-cache openssl coreutils ca-certificates
+          CMD ["sleep", "infinity"]
+          DOCKER
+          node <<'NODE' >/tmp/create.json
+          const fs=require('node:fs');
+          process.stdout.write(JSON.stringify({
+            project_uuid: process.env.PROJECT_UUID,
+            server_uuid: process.env.SERVER_UUID,
+            environment_uuid: process.env.ENVIRONMENT_UUID,
+            dockerfile: fs.readFileSync('/tmp/Dockerfile','utf8').toString('base64'),
+            name: `mkety-ca-probe-v7-${process.env.GITHUB_SHA.slice(0,10)}`,
+            description: 'Ephemeral Coolify CA trust proof executor v7',
+            ports_exposes: '3000'
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "CA proof executor create failed HTTP $code"; cat /tmp/create-response.json; exit 20; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Mount host CA and inject task env
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.probe.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-ca-v7-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/ca/coolify-ca.crt",host_path:"/data/coolify/ssl/coolify-ca.crt"}))' >/tmp/storage.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
+          [ "$code" = 201 ] || { echo "CA mount failed HTTP $code"; cat /tmp/storage-response.json; exit 21; }
           cat > /tmp/probe.sh <<'SH'
           set -eu
           test -s /ca/coolify-ca.crt || { echo MKETY_CA_ERROR=missing-ca; exit 2; }
@@ -55,52 +87,23 @@ jobs:
           fi
           grep -q 'Verify return code: 0 (ok)' /tmp/tls.txt || { echo MKETY_CA_ERROR=verify-not-zero; exit 5; }
           printf MKETY_CA_B64=
-          base64 /ca/coolify-ca.crt | tr -d '\n'
+          base64 -w0 /ca/coolify-ca.crt
           printf '\nMKETY_CA_CHAIN_OK=true\n'
-          while true; do sleep 3600; done
           SH
           base64 -w0 /tmp/probe.sh >/tmp/probe.b64
-          node <<'NODE' >/tmp/create.json
-          process.stdout.write(JSON.stringify({
-            project_uuid: process.env.PROJECT_UUID,
-            server_uuid: process.env.SERVER_UUID,
-            environment_uuid: process.env.ENVIRONMENT_UUID,
-            docker_registry_image_name: 'alpine/openssl',
-            docker_registry_image_tag: 'latest',
-            name: `mkety-ca-probe-v7-${process.env.GITHUB_SHA.slice(0,10)}`,
-            description: 'Ephemeral Coolify CA trust probe v7',
-            autogenerate_domain: false,
-            ports_exposes: '3000',
-            start_command: 'sh -c "echo $SCRIPT_B64 | base64 -d | sh"'
-          }));
-          NODE
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerimage")"
-          [ "$code" = 201 ] || { echo "CA probe create failed HTTP $code"; cat /tmp/create-response.json; exit 20; }
-          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
-          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
-
-      - name: Mount host CA and inject endpoint
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.probe.outputs.app_uuid }}
-        run: |
-          set -euo pipefail
-          base="${COOLIFY_URL%/}/api/v1"
-          node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-ca-v7-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/ca/coolify-ca.crt",host_path:"/data/coolify/ssl/coolify-ca.crt"}))' >/tmp/storage.json
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
-          [ "$code" = 201 ] || { echo "CA mount failed HTTP $code"; cat /tmp/storage-response.json; exit 21; }
           put_env() {
             local key="$1" value="$2"
             KEY="$key" VALUE="$value" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json
             code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"
-            [ "$code" = 201 ] || { echo "CA probe env failed for $key HTTP $code"; cat /tmp/env-response.json; exit 22; }
+            [ "$code" = 201 ] || { echo "CA proof env failed for $key HTTP $code"; cat /tmp/env-response.json; exit 22; }
           }
           put_env DB_INTERNAL_HOST "$DB_INTERNAL_HOST"
           put_env DB_INTERNAL_PORT "$DB_INTERNAL_PORT"
           put_env SCRIPT_B64 "$(cat /tmp/probe.b64)"
           echo MKETY_CA_PROBE_CONFIG_OK=true
 
-      - name: Deploy and prove CA chain
+      - name: Deploy executor and run CA proof task
+        id: ca_task
         shell: bash
         env:
           APP_UUID: ${{ steps.probe.outputs.app_uuid }}
@@ -108,26 +111,42 @@ jobs:
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
-          [ "$code" = 200 ] || { echo "CA probe deploy failed HTTP $code"; cat /tmp/deploy.json; exit 23; }
+          [ "$code" = 200 ] || { echo "CA executor deploy failed HTTP $code"; cat /tmp/deploy.json; exit 23; }
           duuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
-          deployed=no
           for i in $(seq 1 180); do
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/deployment.json
             status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"
             echo "deployment_status=$status"
-            case "${status,,}" in finished|success|successful|succeeded|completed) deployed=yes; break;; failed|failure|error|cancelled|canceled) echo "CA probe deployment failed: $status"; cat /tmp/deployment.json; exit 24;; esac
+            case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) cat /tmp/deployment.json; exit 24;; esac
             sleep 5
           done
-          [ "$deployed" = yes ] || { echo 'CA probe deployment timed out before runtime proof'; cat /tmp/deployment.json; exit 25; }
-          found=no
-          for i in $(seq 1 120); do
-            curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs.json || true
-            node -e "let logs='';try{logs=String(require('/tmp/logs.json').logs||'')}catch{};for(const l of logs.split(/\r?\n/)) if(l.includes('MKETY_CA_')) console.log(l);" || true
-            if node -e "process.exit(String(require('/tmp/logs.json').logs||'').includes('MKETY_CA_CHAIN_OK=true')?0:1)" 2>/dev/null; then found=yes; break; fi
-            sleep 3
+          node <<'NODE' >/tmp/task.json
+          process.stdout.write(JSON.stringify({name:'mkety-ca-proof-v7',command:'echo $SCRIPT_B64 | base64 -d | sh',frequency:'0 0 31 2 *',timeout:300,enabled:false}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
+          [ "$code" = 201 ] || { echo "CA proof task create failed HTTP $code"; cat /tmp/task-response.json; exit 25; }
+          task_uuid="$(node -e "const x=require('/tmp/task-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "task_uuid=$task_uuid" >> "$GITHUB_OUTPUT"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute-response.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
+          [ "$code" = 200 ] || { echo "CA proof task execute failed HTTP $code"; cat /tmp/execute-response.txt; exit 26; }
+          ok=no
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
+            node - <<'NODE'
+          const xs=require('/tmp/executions.json'); const e=Array.isArray(xs)?xs[0]:null; if(e) console.log(`task_status=${e.status||''}`);
+          NODE
+            if node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;process.exit(e&&String(e.status).toLowerCase()==='success'?0:1)"; then ok=yes; break; fi
+            if node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;process.exit(e&&['failed','failure','error'].includes(String(e.status).toLowerCase())?0:1)"; then cat /tmp/executions.json; exit 27; fi
+            sleep 5
           done
-          [ "$found" = yes ] || { echo 'CA chain proof missing after successful deployment'; exit 26; }
-          node -e "const fs=require('fs'),m=String(require('/tmp/logs.json').logs||'').match(/MKETY_CA_B64=([A-Za-z0-9+/=]+)/);if(!m)process.exit(1);fs.writeFileSync('/tmp/ca.b64',m[1])"
+          [ "$ok" = yes ] || { echo 'CA proof scheduled task did not complete successfully'; cat /tmp/executions.json; exit 28; }
+          node - <<'NODE'
+          const fs=require('node:fs'); const xs=require('/tmp/executions.json'); const e=Array.isArray(xs)?xs[0]:null; const msg=String(e?.message||'');
+          console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_CA_')).join('\n'));
+          if(!msg.includes('MKETY_CA_CHAIN_OK=true')) process.exit(1);
+          const m=msg.match(/MKETY_CA_B64=([A-Za-z0-9+/=]+)/); if(!m) process.exit(2);
+          fs.writeFileSync('/tmp/ca.b64',m[1]);
+          NODE
           base64 -d /tmp/ca.b64 >/tmp/ca.crt
           openssl x509 -in /tmp/ca.crt -noout -checkend 86400 >/dev/null
           openssl x509 -in /tmp/ca.crt -noout -text | grep -q 'CA:TRUE'
