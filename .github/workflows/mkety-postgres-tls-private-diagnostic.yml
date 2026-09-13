@@ -1,0 +1,87 @@
+name: Mkety Postgres TLS Private Diagnostic
+
+on:
+  push:
+    branches: [ops/precutover-diagnostics-20260913]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve private PostgreSQL URL
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          db_url="$(node -e "const x=require('/tmp/db.json');if(x.is_public!==false||x.enable_ssl!==true||!String(x.status||'').includes('healthy')||!x.internal_db_url)process.exit(2);process.stdout.write(x.internal_db_url)")"
+          echo "::add-mask::$db_url"
+          printf '%s' "$db_url" >/tmp/db-url
+      - name: Create private TLS diagnostic executor
+        id: app
+        run: |
+          set -euo pipefail
+          node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,git_repository:'https://github.com/MketyDigital/mksaas',git_branch:process.env.GITHUB_REF_NAME,git_commit_sha:process.env.GITHUB_SHA,build_pack:'dockerfile',dockerfile_location:'/ops/postgres-tls-diagnostic/Dockerfile',ports_exposes:'3000',name:`mkety-pg-tls-diag-${process.env.GITHUB_SHA.slice(0,10)}`,description:'Ephemeral private PostgreSQL TLS diagnostic',autogenerate_domain:false,connect_to_docker_network:true,instant_deploy:false}));
+          NODE
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/public")"
+          [ "$code" = 201 ] || { echo "Create failed HTTP $code"; exit 2; }
+          app_uuid="$(node -e "const x=require('/tmp/create-response.json');process.stdout.write(x.uuid||'')")"
+          [ -n "$app_uuid" ]
+          echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
+      - name: Inject private DB URL
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          db_url="$(cat /tmp/db-url)"
+          echo "::add-mask::$db_url"
+          KEY=DATABASE_URL VALUE="$db_url" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID/envs")"
+          [ "$code" = 201 ] || { echo "Env injection failed HTTP $code"; exit 3; }
+      - name: Deploy and collect sanitized TLS evidence
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "Deploy failed HTTP $code"; exit 4; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;process.stdout.write(d?.deployment_uuid||'')")"
+          [ -n "$deployment_uuid" ]
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            status="$(node -e "const x=require('/tmp/deployment.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) echo "Deployment failed: $status"; exit 5;; esac
+            sleep 4
+          done
+          for i in $(seq 1 40); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs.json || true
+            if node -e "const x=require('/tmp/logs.json');process.exit(String(x.logs||'').includes('MKETY_PG_TLS_DIAG=done')?0:1)" 2>/dev/null; then break; fi
+            sleep 3
+          done
+          node <<'NODE'
+          const fs=require('node:fs');let s='';try{s=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{};for(const line of s.split(/\r?\n/)){if(line.includes('MKETY_PG_TLS_')) console.log(line.replace(/postgres(?:ql)?:\/\/[^\s]+/g,'postgresql://***'));}
+          NODE
+          node -e "const x=require('/tmp/logs.json');if(!String(x.logs||'').includes('MKETY_PG_TLS_DIAG=done'))process.exit(6)"
+      - name: Delete diagnostic executor
+        if: always() && steps.app.outputs.app_uuid != ''
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
