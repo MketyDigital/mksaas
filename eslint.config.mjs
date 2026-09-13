@@ -58,6 +58,7 @@ const config = typescriptEslint.config(
   },
   {
     settings: {
+      'import/core-modules': ['cloudflare:workers'],
       'import/resolver': {
         typescript: true,
         node: true,
