@@ -1,9 +1,9 @@
 /** @jest-environment node */
 
 const mockClient = Object.assign(jest.fn(), { end: jest.fn() });
-const mockPostgres = jest.fn(() => mockClient);
+const mockPostgres = jest.fn((_connectionString: string, _options: unknown) => mockClient);
 const mockDatabase = { singleton: true };
-const mockDrizzle = jest.fn(() => mockDatabase);
+const mockDrizzle = jest.fn((_client: unknown, _options: unknown) => mockDatabase);
 const mockRuntimeConnectionString = jest.fn();
 
 jest.mock('postgres', () => ({
@@ -22,6 +22,7 @@ jest.mock('./runtime-connection', () => ({
 describe('database singleton runtime connection', () => {
   beforeEach(() => {
     jest.resetModules();
+    delete (globalThis as typeof globalThis & { conn?: unknown }).conn;
     mockPostgres.mockClear();
     mockDrizzle.mockClear();
     mockRuntimeConnectionString.mockReset();
@@ -30,6 +31,7 @@ describe('database singleton runtime connection', () => {
   });
 
   afterEach(() => {
+    delete (globalThis as typeof globalThis & { conn?: unknown }).conn;
     delete process.env.SKIP_ENV_VALIDATION;
     delete process.env.DATABASE_URL;
   });
