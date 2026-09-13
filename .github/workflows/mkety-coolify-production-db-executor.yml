@@ -122,18 +122,11 @@ jobs:
             esac
             code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false")"
             if [ "$code" = '200' ]; then
-              result="$(node <<'NODE'
-              const x=require('/tmp/logs.json'); const text=String(x.logs||'');
-              if(text.includes('MKETY_PRODUCTION_DB_MIGRATION_OK')) process.stdout.write('ok');
-              else if(text.includes('MKETY_PRODUCTION_DB_MIGRATION_FAILED:')) process.stdout.write('failed');
-              else process.stdout.write('pending');
-              NODE
-              )"
-              if [ "$result" = 'ok' ]; then
+              if grep -Fq 'MKETY_PRODUCTION_DB_MIGRATION_OK' /tmp/logs.json; then
                 echo "Production DB migrations, content migrations, seed, and smoke succeeded inside Coolify for $TARGET_SHA."
                 exit 0
               fi
-              if [ "$result" = 'failed' ]; then
+              if grep -Fq 'MKETY_PRODUCTION_DB_MIGRATION_FAILED:' /tmp/logs.json; then
                 echo 'Production DB migration executor reported failure.'
                 exit 6
               fi
