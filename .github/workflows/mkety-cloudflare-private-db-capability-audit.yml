@@ -1,0 +1,46 @@
+name: Mkety Cloudflare Private DB Capability Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-cloudflare-private-db-capability-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Verify private database platform capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'CLOUDFLARE_API_TOKEN unavailable.'; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'CLOUDFLARE_ACCOUNT_ID unavailable.'; exit 1; }
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+          check() {
+            local label="$1" url="$2" out="$3"
+            local code
+            code="$(curl -sS -o "$out" -w '%{http_code}' "${auth[@]}" "$url" || true)"
+            echo "$label HTTP $code"
+            if [ "$code" != '200' ]; then
+              node -e "const x=require(process.argv[1]); const e=Array.isArray(x.errors)?x.errors.map(v=>String(v.code||'')+':'+String(v.message||'')).join('; '):''; if(e) console.log('Cloudflare error: '+e)" "$out" 2>/dev/null || true
+              return 1
+            fi
+            node -e "const x=require(process.argv[1]); const r=x.result; const n=Array.isArray(r)?r.length:(r&&Array.isArray(r.data)?r.data.length:0); console.log('Visible resources: '+n)" "$out"
+          }
+          failed=0
+          check 'Tunnel list' "$base/cfd_tunnel?is_deleted=false&per_page=50" /tmp/tunnels.json || failed=1
+          check 'Workers VPC services list' "$base/connectivity/directory/services?per_page=50" /tmp/vpc.json || failed=1
+          check 'Hyperdrive list' "$base/hyperdrive/configs" /tmp/hyperdrive.json || failed=1
+          [ "$failed" = '0' ] || { echo 'One or more required Cloudflare private-database capabilities are not readable by the current token.'; exit 2; }
+          echo 'Current Cloudflare token can read Tunnel, Workers VPC service, and Hyperdrive resources.'
