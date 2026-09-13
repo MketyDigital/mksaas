@@ -5,8 +5,13 @@ on:
     inputs:
       verified_sha:
         description: Exact Git SHA to migrate
-        required: true
+        required: false
         type: string
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-production-db-executor.yml'
 
 permissions:
   contents: read
@@ -24,15 +29,14 @@ jobs:
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       RELEASE_BRANCH: feat/mkety-public-site-production
+      TARGET_SHA: ${{ inputs.verified_sha || github.sha }}
 
     steps:
       - name: Validate inputs and secrets
         shell: bash
-        env:
-          VERIFIED_SHA: ${{ inputs.verified_sha }}
         run: |
           set -euo pipefail
-          [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'verified_sha must be an exact 40-character Git SHA.'; exit 1; }
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'verified_sha must be an exact 40-character Git SHA.'; exit 1; }
           [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
           [ -n "${DATABASE_URL:-}" ] || { echo 'PRODUCTION_DATABASE_URL is required.'; exit 1; }
           curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
@@ -40,8 +44,6 @@ jobs:
       - name: Create isolated no-domain migration application
         id: app
         shell: bash
-        env:
-          VERIFIED_SHA: ${{ inputs.verified_sha }}
         run: |
           set -euo pipefail
           node <<'NODE' >/tmp/create-app.json
@@ -53,8 +55,8 @@ jobs:
             git_branch:process.env.RELEASE_BRANCH,
             build_pack:'dockerfile',
             dockerfile_location:'/ops/coolify-migration/Dockerfile',
-            name:`mkety-db-migrate-${process.env.VERIFIED_SHA.slice(0,12)}`,
-            description:`Ephemeral exact-SHA production DB migration executor for ${process.env.VERIFIED_SHA}`,
+            name:`mkety-db-migrate-${process.env.TARGET_SHA.slice(0,12)}`,
+            description:`Ephemeral exact-SHA production DB migration executor for ${process.env.TARGET_SHA}`,
             autogenerate_domain:false,
             connect_to_docker_network:true,
             instant_deploy:false
@@ -72,11 +74,10 @@ jobs:
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
-          VERIFIED_SHA: ${{ inputs.verified_sha }}
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          printf '{"git_commit_sha":"%s","autogenerate_domain":false,"connect_to_docker_network":true}' "$VERIFIED_SHA" >/tmp/app-patch.json
+          printf '{"git_commit_sha":"%s","autogenerate_domain":false,"connect_to_docker_network":true}' "$TARGET_SHA" >/tmp/app-patch.json
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/app-patch-response.json -w '%{http_code}' \
             -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
             --data-binary @/tmp/app-patch.json "$base/applications/$APP_UUID")"
@@ -119,7 +120,7 @@ jobs:
             esac
             code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300")"
             if [ "$code" = '200' ] && node -e "const x=require('/tmp/logs.json'); process.exit(String(x.logs||'').includes('MKETY_PRODUCTION_DB_MIGRATION_OK')?0:1)"; then
-              echo 'Production DB migrations, content migrations, seed, and smoke succeeded inside Coolify.'
+              echo "Production DB migrations, content migrations, seed, and smoke succeeded inside Coolify for $TARGET_SHA."
               exit 0
             fi
             sleep 5
