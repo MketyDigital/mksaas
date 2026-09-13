@@ -12,6 +12,7 @@ on:
       - fix/production-db-private-runner
     paths:
       - '.github/workflows/mkety-coolify-production-db-executor.yml'
+      - 'ops/coolify-migration/Dockerfile'
 
 permissions:
   contents: read
@@ -102,7 +103,7 @@ jobs:
           deployment_uuid="$(node -e "const x=require('/tmp/start.json'); if(!x.deployment_uuid) process.exit(1); process.stdout.write(x.deployment_uuid)")"
           echo "deployment_uuid=$deployment_uuid" >> "$GITHUB_OUTPUT"
 
-      - name: Verify migration success marker
+      - name: Verify migration result marker
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
@@ -116,19 +117,31 @@ jobs:
             case "${status,,}" in
               failed|failure|error|cancelled|canceled)
                 echo "Migration deployment failed: $status"
-                node -e "const x=require('/tmp/deployment.json'); console.log(String(x.logs||'').slice(-4000))" || true
                 exit 5
                 ;;
             esac
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300")"
-            if [ "$code" = '200' ] && node -e "const x=require('/tmp/logs.json'); process.exit(String(x.logs||'').includes('MKETY_PRODUCTION_DB_MIGRATION_OK')?0:1)"; then
-              echo "Production DB migrations, content migrations, seed, and smoke succeeded inside Coolify for $TARGET_SHA."
-              exit 0
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false")"
+            if [ "$code" = '200' ]; then
+              result="$(node <<'NODE'
+              const x=require('/tmp/logs.json'); const text=String(x.logs||'');
+              if(text.includes('MKETY_PRODUCTION_DB_MIGRATION_OK')) process.stdout.write('ok');
+              else if(text.includes('MKETY_PRODUCTION_DB_MIGRATION_FAILED:')) process.stdout.write('failed');
+              else process.stdout.write('pending');
+              NODE
+              )"
+              if [ "$result" = 'ok' ]; then
+                echo "Production DB migrations, content migrations, seed, and smoke succeeded inside Coolify for $TARGET_SHA."
+                exit 0
+              fi
+              if [ "$result" = 'failed' ]; then
+                echo 'Production DB migration executor reported failure.'
+                exit 6
+              fi
             fi
             sleep 5
           done
-          echo 'Timed out waiting for migration success marker.'
-          exit 6
+          echo 'Timed out waiting for migration result marker.'
+          exit 7
 
       - name: Delete ephemeral migration application
         if: always() && steps.app.outputs.app_uuid != ''
