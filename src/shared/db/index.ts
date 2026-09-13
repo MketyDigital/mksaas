@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
+import { getRuntimeDatabaseConnectionString } from './runtime-connection';
 import * as schema from './schema';
 
 /**
@@ -20,14 +21,18 @@ const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
 };
 
-const connectionString = process.env.DATABASE_URL;
+let connectionString: string | undefined;
 
-if (!connectionString && !process.env.SKIP_ENV_VALIDATION) {
-  throw new Error('DATABASE_URL environment variable is not set');
+try {
+  connectionString = getRuntimeDatabaseConnectionString();
+} catch (error) {
+  if (!process.env.SKIP_ENV_VALIDATION) {
+    throw error;
+  }
 }
 
 // During build (SKIP_ENV_VALIDATION=true) use a placeholder that is never called at runtime.
-// At runtime DATABASE_URL is always present (validated by env.ts).
+// Runtime execution resolves either the Worker Hyperdrive binding or DATABASE_URL.
 const conn =
   globalForDb.conn ??
   postgres(connectionString ?? 'postgresql://localhost/placeholder', {
