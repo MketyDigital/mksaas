@@ -1,0 +1,60 @@
+name: Mkety Precutover Diagnostics V2
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_HYPERDRIVE_NAME: mkety-production-db
+    steps:
+      - name: Coolify state
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups.json
+          node -e "const fs=require('fs');const db=JSON.parse(fs.readFileSync('/tmp/db.json'));const raw=JSON.parse(fs.readFileSync('/tmp/backups.json'));const list=Array.isArray(raw)?raw:(raw.data||raw.backups||[]);const b=list.find(x=>x.uuid===process.env.BACKUP_UUID);if(!b)throw Error('backup missing');const ex=[...(b.executions||[])].sort((a,z)=>new Date(z.created_at)-new Date(a.created_at))[0];console.log(JSON.stringify({db:{status:db.status,private:db.is_public===false&&!db.public_port,enable_ssl:db.enable_ssl??null},backup:{enabled:b.enabled!==false,save_s3:b.save_s3===true,has_s3_storage_id:Boolean(b.s3_storage_id),local_retention:Number(b.database_backup_retention_amount_locally||0),s3_retention:Number(b.database_backup_retention_amount_s3||0),latest:ex?{status:ex.status,size:Number(ex.size||0),created_at:ex.created_at,s3_uploaded:ex.s3_uploaded===true||ex.s3_uploaded===1}:null}},null,2))"
+
+      - name: R2 direct verification
+        shell: bash
+        run: |
+          set -u
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          endpoint_origin="$(node -e "const u=new URL(process.env.R2_S3_API);process.stdout.write(u.origin)")"
+          endpoint_path="$(node -e "const u=new URL(process.env.R2_S3_API);process.stdout.write(u.pathname||'/')")"
+          echo "R2 endpoint path present: $([ "$endpoint_path" = '/' ] && echo false || echo true)"
+          if aws s3api list-objects-v2 --endpoint-url "$endpoint_origin" --bucket "$R2_BUCKET" --max-items 1000 --output json >/tmp/r2.json 2>/tmp/r2.err; then
+            node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('/tmp/r2.json'));const a=p.Contents||[];const x=[...a].sort((m,n)=>new Date(n.LastModified)-new Date(m.LastModified))[0];console.log(JSON.stringify({object_count:a.length,latest_modified:x?.LastModified||null,latest_size:Number(x?.Size||0)},null,2));if(!x||Number(x.Size||0)<=0||Date.now()-new Date(x.LastModified).getTime()>30*60*60*1000)process.exit(2)"
+          else
+            echo 'R2_DIRECT_CHECK_FAILED'
+            cat /tmp/r2.err
+          fi
+
+      - name: Hyperdrive state
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" -o /tmp/hyperdrives.json
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('/tmp/hyperdrives.json'));if(!p.success||!Array.isArray(p.result))throw Error('list failed');const m=p.result.filter(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME);if(m.length!==1)throw Error('expected exactly one Hyperdrive');const x=m[0];const vpc=Boolean(x.origin?.service_id);console.log(JSON.stringify({name:x.name,id_present:Boolean(x.id),origin_type:vpc?'vpc-service':x.origin?'internet-or-access':'unknown',scheme:x.origin?.scheme||null,port:x.origin?.port||null,sslmode:x.mtls?.sslmode||(vpc?'managed-by-vpc-service':'default-require')},null,2))"
