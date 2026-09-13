@@ -1,0 +1,211 @@
+name: Mkety Provision Private DB Path
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      TUNNEL_NAME: mkety-production-vpc
+      CONNECTOR_APP_NAME: mkety-production-cloudflared
+      VPC_SERVICE_NAME: mkety-production-postgres
+      HYPERDRIVE_NAME: mkety-production-db
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+
+      - name: Resolve private PostgreSQL connection metadata
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE' >/tmp/db.env
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/db.json','utf8'));
+          if(x.is_public !== false) throw new Error('Production PostgreSQL unexpectedly public.');
+          if(x.enable_ssl !== true) throw new Error('Production PostgreSQL TLS is not enabled.');
+          if(!String(x.status||'').includes('healthy')) throw new Error('Production PostgreSQL is not healthy.');
+          const u=new URL(x.internal_db_url);
+          const vals={DB_HOST:u.hostname,DB_PORT:u.port||'5432',DB_NAME:decodeURIComponent(u.pathname.replace(/^\//,'')),DB_USER:decodeURIComponent(u.username),DB_PASSWORD:decodeURIComponent(u.password)};
+          for (const [k,v] of Object.entries(vals)) console.log(`${k}=${v}`);
+          NODE
+          while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "$k=$v" >> "$GITHUB_ENV"
+          done </tmp/db.env
+          echo 'Private PostgreSQL metadata resolved; DB remains private, healthy, and TLS-enabled.'
+
+      - name: Resolve or create dedicated Cloudflare Tunnel
+        id: tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "$cf/cfd_tunnel?is_deleted=false&per_page=100" -o /tmp/tunnels.json
+          TUNNEL_NAME="$TUNNEL_NAME" node <<'NODE' >/tmp/tunnel-count
+          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/tunnels.json','utf8'));const a=(p.result||[]).filter(x=>x.name===process.env.TUNNEL_NAME);console.log(a.length);if(a.length===1) console.log(a[0].id);
+          NODE
+          count="$(sed -n '1p' /tmp/tunnel-count)"
+          if [ "$count" = '0' ]; then
+            TUNNEL_NAME="$TUNNEL_NAME" node <<'NODE' >/tmp/create-tunnel.json
+          process.stdout.write(JSON.stringify({name:process.env.TUNNEL_NAME,config_src:'cloudflare'}));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/tunnel-created.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create-tunnel.json "$cf/cfd_tunnel")"
+            [ "$code" = '200' ] || { echo "Cloudflare Tunnel creation failed with HTTP $code"; cat /tmp/tunnel-created.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{let p=JSON.parse(s);console.error(JSON.stringify({errors:p.errors||[]}))}catch{}})"; exit 2; }
+            tunnel_id="$(node -e "const p=require('/tmp/tunnel-created.json');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
+          elif [ "$count" = '1' ]; then
+            tunnel_id="$(sed -n '2p' /tmp/tunnel-count)"
+          else
+            echo "Expected at most one tunnel named $TUNNEL_NAME; found $count"; exit 3
+          fi
+          echo "tunnel_id=$tunnel_id" >> "$GITHUB_OUTPUT"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/cfd_tunnel/$tunnel_id/token" -o /tmp/tunnel-token.json
+          tunnel_token="$(node -e "const p=require('/tmp/tunnel-token.json');if(!p.success||typeof p.result!=='string')process.exit(1);process.stdout.write(p.result)")"
+          echo "::add-mask::$tunnel_token"
+          printf '%s' "$tunnel_token" >/tmp/tunnel-token
+          chmod 600 /tmp/tunnel-token
+          echo "Dedicated tunnel resolved: $TUNNEL_NAME ($tunnel_id)"
+
+      - name: Ensure private cloudflared connector is running in Coolify network
+        id: connector
+        shell: bash
+        env:
+          TUNNEL_ID: ${{ steps.tunnel.outputs.tunnel_id }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          CONNECTOR_APP_NAME="$CONNECTOR_APP_NAME" node <<'NODE' >/tmp/app-match
+          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));const a=(Array.isArray(p)?p:[]).filter(x=>x.name===process.env.CONNECTOR_APP_NAME);console.log(a.length);if(a.length===1)console.log(a[0].uuid);
+          NODE
+          count="$(sed -n '1p' /tmp/app-match)"
+          created='no'
+          if [ "$count" = '0' ]; then
+            node <<'NODE' >/tmp/create-app.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:process.env.GITHUB_REF_NAME,
+            git_commit_sha:process.env.GITHUB_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/cloudflared-vpc/Dockerfile',
+            ports_exposes:'2000',
+            name:process.env.CONNECTOR_APP_NAME,
+            description:'Persistent Cloudflare Tunnel connector for Mkety private production services',
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-app-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create-app.json "$base/applications/public")"
+            [ "$code" = '201' ] || { echo "Coolify connector creation failed with HTTP $code"; exit 4; }
+            app_uuid="$(node -e "const p=require('/tmp/create-app-response.json');if(!p.uuid)process.exit(1);process.stdout.write(p.uuid)")"
+            created='yes'
+          elif [ "$count" = '1' ]; then
+            app_uuid="$(sed -n '2p' /tmp/app-match)"
+          else
+            echo "Expected at most one connector app named $CONNECTOR_APP_NAME; found $count"; exit 5
+          fi
+          echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
+          if [ "$created" = 'yes' ]; then
+            token="$(cat /tmp/tunnel-token)"
+            KEY='TUNNEL_TOKEN' VALUE="$token" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$app_uuid/envs")"
+            [ "$code" = '201' ] || { echo "Failed to inject tunnel token (HTTP $code)"; exit 6; }
+          fi
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$app_uuid&force=true")"
+          [ "$code" = '200' ] || { echo "Connector deploy failed with HTTP $code"; exit 7; }
+          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          healthy='no'
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/cfd_tunnel/$TUNNEL_ID" -o /tmp/tunnel-state.json
+            status="$(node -e "const p=require('/tmp/tunnel-state.json');process.stdout.write(String(p.result?.status||''))")"
+            if [ "${status,,}" = 'healthy' ]; then healthy='yes'; break; fi
+            sleep 4
+          done
+          [ "$healthy" = 'yes' ] || { echo 'Dedicated Cloudflare Tunnel did not become healthy.'; exit 8; }
+          echo "Persistent private connector is healthy: app=$app_uuid tunnel=$TUNNEL_ID"
+
+      - name: Resolve or create PostgreSQL VPC service
+        id: service
+        shell: bash
+        env:
+          TUNNEL_ID: ${{ steps.tunnel.outputs.tunnel_id }}
+        run: |
+          set -euo pipefail
+          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/connectivity/directory/services?per_page=100" -o /tmp/services.json
+          VPC_SERVICE_NAME="$VPC_SERVICE_NAME" node <<'NODE' >/tmp/service-match
+          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/services.json','utf8'));const a=(p.result||[]).filter(x=>x.name===process.env.VPC_SERVICE_NAME);console.log(a.length);if(a.length===1)console.log(a[0].service_id);
+          NODE
+          count="$(sed -n '1p' /tmp/service-match)"
+          if [ "$count" = '0' ]; then
+            DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" TUNNEL_ID="$TUNNEL_ID" VPC_SERVICE_NAME="$VPC_SERVICE_NAME" node <<'NODE' >/tmp/service-create.json
+          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',host:{hostname:process.env.DB_HOST,resolver_network:{tunnel_id:process.env.TUNNEL_ID}},tcp_port:Number(process.env.DB_PORT||5432),app_protocol:'postgresql',tls_settings:{cert_verification_mode:'verify_ca'}}));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/service-created.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/service-create.json "$cf/connectivity/directory/services")"
+            [ "$code" = '200' ] || { echo "VPC service creation failed with HTTP $code"; cat /tmp/service-created.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{let p=JSON.parse(s);console.error(JSON.stringify({errors:p.errors||[]}))}catch{}})"; exit 9; }
+            service_id="$(node -e "const p=require('/tmp/service-created.json');if(!p.success||!p.result?.service_id)process.exit(1);process.stdout.write(p.result.service_id)")"
+          elif [ "$count" = '1' ]; then
+            service_id="$(sed -n '2p' /tmp/service-match)"
+          else
+            echo "Expected at most one VPC service named $VPC_SERVICE_NAME; found $count"; exit 10
+          fi
+          echo "service_id=$service_id" >> "$GITHUB_OUTPUT"
+          echo "Dedicated PostgreSQL VPC service resolved: $service_id"
+
+      - name: Resolve or create dedicated Hyperdrive
+        id: hyperdrive
+        shell: bash
+        env:
+          SERVICE_ID: ${{ steps.service.outputs.service_id }}
+        run: |
+          set -euo pipefail
+          cf="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/hyperdrive/configs" -o /tmp/hyperdrives.json
+          HYPERDRIVE_NAME="$HYPERDRIVE_NAME" node <<'NODE' >/tmp/hd-match
+          const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('/tmp/hyperdrives.json','utf8'));const a=(p.result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);console.log(a.length);if(a.length===1){console.log(a[0].id);console.log(a[0].origin?.service_id||'');}
+          NODE
+          count="$(sed -n '1p' /tmp/hd-match)"
+          if [ "$count" = '0' ]; then
+            HYPERDRIVE_NAME="$HYPERDRIVE_NAME" SERVICE_ID="$SERVICE_ID" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node <<'NODE' >/tmp/hd-create.json
+          process.stdout.write(JSON.stringify({name:process.env.HYPERDRIVE_NAME,origin:{service_id:process.env.SERVICE_ID,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,scheme:'postgresql'}}));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/hd-created.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/hd-create.json "$cf/hyperdrive/configs")"
+            [ "$code" = '200' ] || { echo "Hyperdrive creation failed with HTTP $code"; cat /tmp/hd-created.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{let p=JSON.parse(s);console.error(JSON.stringify({errors:p.errors||[]}))}catch{}})"; exit 11; }
+            hd_id="$(node -e "const p=require('/tmp/hd-created.json');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
+          elif [ "$count" = '1' ]; then
+            hd_id="$(sed -n '2p' /tmp/hd-match)"
+            existing_service="$(sed -n '3p' /tmp/hd-match)"
+            [ "$existing_service" = "$SERVICE_ID" ] || { echo 'Existing mkety-production-db Hyperdrive points to a different VPC service.'; exit 12; }
+          else
+            echo "Expected exactly zero or one Hyperdrive named $HYPERDRIVE_NAME; found $count"; exit 13
+          fi
+          echo "hyperdrive_id=$hd_id" >> "$GITHUB_OUTPUT"
+          echo "MKETY_PRIVATE_DB_PATH_OK=true"
+          echo "Tunnel: ${{ steps.tunnel.outputs.tunnel_id }}"
+          echo "VPC service: $SERVICE_ID"
+          echo "Hyperdrive: $hd_id"
