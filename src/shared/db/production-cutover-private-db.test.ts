@@ -27,7 +27,7 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('uses: ./.github/workflows/mkety-coolify-production-db-executor.yml');
     expect(workflow).toContain('verified_sha: ${{ inputs.verified_sha }}');
     expect(workflow).toContain('COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}');
-    expect(workflow).toContain('PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}');
+    expect(workflow).not.toContain('PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}');
 
     expect(workflow).toContain('needs: production-db');
     expect(workflow).toContain('runs-on: ubuntu-latest');
