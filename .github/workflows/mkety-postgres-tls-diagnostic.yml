@@ -1,0 +1,54 @@
+name: Mkety Postgres TLS Diagnostic
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Inspect sanitized PostgreSQL TLS metadata and recent SSL errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+            "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+            "$base/databases/$POSTGRES_UUID/logs?lines=250&show_timestamps=true" -o /tmp/logs.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const db = JSON.parse(fs.readFileSync('/tmp/db.json', 'utf8'));
+          const rawLogs = JSON.parse(fs.readFileSync('/tmp/logs.json', 'utf8'));
+          const logs = String(rawLogs?.logs || '');
+          const relevant = logs.split(/\r?\n/)
+            .filter((line) => /ssl|tls|handshake|signature algorithm|could not accept/i.test(line))
+            .slice(-40)
+            .map((line) => line
+              .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, '[redacted-db-url]')
+              .replace(/password=[^\s]+/gi, 'password=[redacted]'));
+
+          console.log(JSON.stringify({
+            image: db.image ?? null,
+            status: db.status ?? null,
+            private: db.is_public === false && !db.public_port,
+            enable_ssl: db.enable_ssl ?? null,
+            ssl_mode: db.ssl_mode ?? null,
+            relevant_ssl_log_lines: relevant,
+          }, null, 2));
+          console.log('MKETY_POSTGRES_TLS_DIAGNOSTIC_OK=true');
+          NODE
