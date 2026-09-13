@@ -1,0 +1,74 @@
+name: Mkety Coolify Redis Security Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-redis-security-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit private Redis persistence and backup safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      REDIS_UUID: i5hrrr4riyslz7hekhu5glkd
+
+    steps:
+      - name: Read and sanitize Redis resource posture
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases/$REDIS_UUID" -o /tmp/redis.json
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases/$REDIS_UUID/storages" -o /tmp/redis-storages.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const db = JSON.parse(fs.readFileSync('/tmp/redis.json','utf8'));
+          const storage = JSON.parse(fs.readFileSync('/tmp/redis-storages.json','utf8'));
+          if (db.uuid !== process.env.REDIS_UUID || db.name !== 'mkety-redis') throw new Error('Unexpected Redis resource.');
+          if (db.is_public !== false) throw new Error('Redis is publicly exposed; refusing silent audit success.');
+          const configCandidates = [db.redis_conf, db.redis_config, db.custom_config, db.config].filter((x) => typeof x === 'string').join('\n');
+          const lower = configCandidates.toLowerCase();
+          const persistent = Array.isArray(storage?.persistent_storages) ? storage.persistent_storages : [];
+          const safe = {
+            uuid: db.uuid,
+            name: db.name,
+            status: db.status,
+            image: db.image,
+            is_public: db.is_public,
+            public_port: db.public_port ?? null,
+            health_check_enabled: db.health_check_enabled,
+            health_check_interval: db.health_check_interval,
+            health_check_timeout: db.health_check_timeout,
+            health_check_retries: db.health_check_retries,
+            persistent_storage_count: persistent.length,
+            persistent_mounts: persistent.map((x) => x.mount_path).filter(Boolean),
+            explicit_appendonly_yes: /(^|\n)\s*appendonly\s+yes\b/m.test(lower),
+            explicit_appendonly_no: /(^|\n)\s*appendonly\s+no\b/m.test(lower),
+            explicit_save_directive_present: /(^|\n)\s*save\s+/m.test(lower),
+            config_field_present: configCandidates.length > 0,
+            limits_memory: db.limits_memory,
+            limits_cpus: db.limits_cpus
+          };
+          fs.writeFileSync('/tmp/redis-security-sanitized.json', JSON.stringify(safe, null, 2));
+          console.log(`Redis private=${!safe.is_public}, healthy=${String(safe.status).includes('healthy')}, persistentMounts=${safe.persistent_storage_count}, explicitAOF=${safe.explicit_appendonly_yes}.`);
+          NODE
+
+      - name: Upload sanitized Redis evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-coolify-redis-security-audit-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/redis-security-sanitized.json
