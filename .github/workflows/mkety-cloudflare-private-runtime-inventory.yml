@@ -1,0 +1,87 @@
+name: Mkety Cloudflare Private Runtime Inventory
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_HYPERDRIVE_NAME: mkety-production-db
+    steps:
+      - name: Validate Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: List sanitized tunnel inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/tunnels.json -w '%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "$url")"
+          echo "Tunnel API HTTP status: $code"
+          HTTP_CODE="$code" node <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/tunnels.json','utf8'));
+          const r=Array.isArray(p.result)?p.result:[];
+          const out={success:p.success===true,http_status:Number(process.env.HTTP_CODE),count:r.length,tunnels:r.map(x=>({id:x.id,name:x.name,status:x.status,created_at:x.created_at,connections:Array.isArray(x.connections)?x.connections.length:null}))};
+          console.log(JSON.stringify(out,null,2));
+          fs.writeFileSync('/tmp/tunnels-sanitized.json',JSON.stringify(out,null,2));
+          NODE
+
+      - name: List sanitized Workers VPC services
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services?per_page=100"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/services.json -w '%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "$url")"
+          echo "VPC Service API HTTP status: $code"
+          HTTP_CODE="$code" node <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/services.json','utf8'));
+          const r=Array.isArray(p.result)?p.result:[];
+          const out={success:p.success===true,http_status:Number(process.env.HTTP_CODE),count:r.length,services:r.map(x=>({id:x.id,name:x.name,type:x.type||x.service_type||null,created_at:x.created_at||null,modified_at:x.modified_at||null,tunnel_id:x.tunnel_id||x.resolver_network?.tunnel_id||x.network?.tunnel_id||null,tcp_port:x.tcp_port||x.port||null,app_protocol:x.app_protocol||null}))};
+          console.log(JSON.stringify(out,null,2));
+          fs.writeFileSync('/tmp/vpc-services-sanitized.json',JSON.stringify(out,null,2));
+          NODE
+
+      - name: List sanitized Hyperdrive inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/hyperdrives.json -w '%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "$url")"
+          echo "Hyperdrive API HTTP status: $code"
+          HTTP_CODE="$code" node <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/hyperdrives.json','utf8'));
+          const r=Array.isArray(p.result)?p.result:[];
+          const target=r.filter(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME);
+          const out={success:p.success===true,http_status:Number(process.env.HTTP_CODE),count:r.length,target_count:target.length,hyperdrives:r.map(x=>({id:x.id,name:x.name,origin_type:x.origin?.service_id?'vpc-service':x.origin?'internet-or-access':'unknown',service_id:x.origin?.service_id||null,scheme:x.origin?.scheme||null,port:x.origin?.port||null}))};
+          console.log(JSON.stringify(out,null,2));
+          fs.writeFileSync('/tmp/hyperdrives-sanitized.json',JSON.stringify(out,null,2));
+          NODE
+
+      - name: Upload sanitized inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-cloudflare-private-runtime-inventory-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            /tmp/tunnels-sanitized.json
+            /tmp/vpc-services-sanitized.json
+            /tmp/hyperdrives-sanitized.json
