@@ -19,9 +19,93 @@ permissions:
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
   RELEASE_BRANCH: feat/mkety-public-site-production
+  MKETY_HYPERDRIVE_NAME: mkety-production-db
 
 jobs:
+  authorize:
+    name: Authorize exact certified production release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Validate manual cutover authorization
+        shell: bash
+        env:
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'verified_sha must be an exact 40-character Git commit SHA.'
+            exit 1
+          fi
+          if [[ $CONFIRMATION != 'CUTOVER MKETY PUBLIC' ]]; then
+            echo 'Production cutover confirmation did not match the required phrase.'
+            exit 1
+          fi
+
+      - name: Verify frozen release head and all blocking gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          encoded_branch="$(node -e "process.stdout.write(encodeURIComponent(process.env.RELEASE_BRANCH))")"
+          branch_response="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$encoded_branch")"
+          BRANCH_RESPONSE="$branch_response" VERIFIED_SHA="$VERIFIED_SHA" node <<'NODE'
+          const payload = JSON.parse(process.env.BRANCH_RESPONSE || '{}');
+          const head = payload?.commit?.sha;
+          if (!head) throw new Error('Could not resolve current release branch head.');
+          if (head !== process.env.VERIFIED_SHA) {
+            throw new Error(`verified_sha is stale: release branch head is ${head}, requested ${process.env.VERIFIED_SHA}.`);
+          }
+          console.log(`Verified exact current release head: ${head}`);
+          NODE
+
+          verify_workflow_success() {
+            local workflow="$1"
+            local label="$2"
+            local response
+            response="$(curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+            RESPONSE="$response" LABEL="$label" node <<'NODE'
+          const payload = JSON.parse(process.env.RESPONSE || '{}');
+          if (!Array.isArray(payload.workflow_runs) || payload.workflow_runs.length === 0) {
+            throw new Error(`No successful ${process.env.LABEL} run exists for the exact verified SHA.`);
+          }
+          console.log(`Verified successful ${process.env.LABEL} evidence for exact SHA.`);
+          NODE
+          }
+
+          verify_workflow_success 'tests.yml' 'tests'
+          verify_workflow_success 'type-check.yml' 'typecheck'
+          verify_workflow_success 'lint.yml' 'lint'
+          verify_workflow_success 'build.yml' 'build'
+          verify_workflow_success 'ci.yml' 'CI'
+          verify_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'
+          verify_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
+          verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
+          verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
+          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+
+  production-db:
+    needs: authorize
+    uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
+    with:
+      verified_sha: ${{ inputs.verified_sha }}
+    secrets:
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+
   cutover:
+    needs: production-db
     name: Verify exact candidate and cut over mkety.com
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -29,7 +113,6 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
       NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
       NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
       MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
@@ -65,7 +148,7 @@ jobs:
             exit 1
           fi
           for variable in \
-            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID PRODUCTION_DATABASE_URL \
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID \
             NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET MKETY_PUBLIC_AI_VISITOR_SECRET; do
             if [ -z "${!variable:-}" ]; then
               echo "$variable is required in the production environment."
@@ -212,16 +295,29 @@ jobs:
           pnpm lint
           pnpx vinext check
 
-      - name: Migrate, seed, and smoke production content database
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      - name: Resolve Mkety production Hyperdrive
+        id: hyperdrive
         shell: bash
         run: |
           set -euo pipefail
-          pnpm db:migrate
-          pnpm db:migrate:mkety-content
-          pnpm db:seed:mkety-content
-          pnpm db:smoke:mkety-content
+          response="$(curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" node <<'NODE' >/tmp/mkety-hyperdrive-id
+          const payload = JSON.parse(process.env.HYPERDRIVES || '{}');
+          if (!payload.success || !Array.isArray(payload.result)) {
+            throw new Error('Could not list Cloudflare Hyperdrive configurations.');
+          }
+          const matches = payload.result.filter((item) => item.name === process.env.MKETY_HYPERDRIVE_NAME);
+          if (matches.length !== 1 || !matches[0]?.id) {
+            throw new Error(`Expected exactly one ${process.env.MKETY_HYPERDRIVE_NAME} Hyperdrive configuration.`);
+          }
+          process.stdout.write(matches[0].id);
+          NODE
+          hyperdrive_id="$(cat /tmp/mkety-hyperdrive-id)"
+          echo "id=$hyperdrive_id" >> "$GITHUB_OUTPUT"
+          echo "Resolved the dedicated $MKETY_HYPERDRIVE_NAME Hyperdrive configuration."
 
       - name: Snapshot Cloudflare routing and enforce isolation
         id: cloudflare
@@ -306,15 +402,19 @@ jobs:
 
       - name: Configure and build isolated production Worker
         shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
         run: |
           set -euo pipefail
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'wrangler.jsonc';
           const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (!process.env.MKETY_HYPERDRIVE_ID) throw new Error('MKETY_DB Hyperdrive id not resolved.');
           config.name = process.env.PRODUCTION_WORKER_NAME;
           config.preview_urls = true;
           config.vars = { ...(config.vars || {}), SKIP_ENV_VALIDATION: 'true' };
+          config.hyperdrive = [{ binding: 'MKETY_DB', id: process.env.MKETY_HYPERDRIVE_ID }];
           delete config.route;
           delete config.routes;
           fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
@@ -336,6 +436,13 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo 'Production preview URL discovered.'
 
+      - name: Remove legacy direct database Worker secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '{"DATABASE_URL":null}' | pnpm exec wrangler secret bulk --name "$PRODUCTION_WORKER_NAME" >/dev/null
+          echo 'Removed legacy DATABASE_URL Worker secret; production DB runtime is Hyperdrive-only.'
+
       - name: Attach production runtime secrets
         shell: bash
         env:
@@ -351,7 +458,6 @@ jobs:
               echo "Attached production runtime secret: $name"
             fi
           }
-          put_secret DATABASE_URL "$PRODUCTION_DATABASE_URL"
           put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
           put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
           put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
@@ -405,6 +511,17 @@ jobs:
           curl -fsS "$PREVIEW_URL/robots.txt" -o /tmp/mkety-preview-robots.txt
           grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' /tmp/mkety-preview-robots.txt || { echo 'Preview robots.txt missing production sitemap declaration.'; exit 1; }
           grep -Fq 'Host: https://mkety.com' /tmp/mkety-preview-robots.txt || { echo 'Preview robots.txt missing production host declaration.'; exit 1; }
+
+          cookie_jar=/tmp/mkety-preview-db-cookies
+          code="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -o /tmp/mkety-preview-db.json -w '%{http_code}' "$PREVIEW_URL/api/public/assistant" || true)"
+          [ "$code" = '200' ] || { echo "Hyperdrive DB-backed preview smoke failed with HTTP $code."; exit 1; }
+          node <<'NODE'
+          const payload = require('/tmp/mkety-preview-db.json');
+          if (!Array.isArray(payload.conversations) || !Array.isArray(payload.messages)) {
+            throw new Error('DB-backed preview response was not the expected public-assistant history shape.');
+          }
+          console.log('Hyperdrive DB-backed preview smoke passed.');
+          NODE
 
       - name: Bind only apex and www Worker routes
         id: route-bind
@@ -572,7 +689,7 @@ jobs:
             echo "- Public Mkety AI primary provider family: \`$PUBLIC_AI_PRIMARY\`"
             echo '- Required exact-SHA workflows: green before cutover.'
             echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; hosted checkout providers are optional/admin-configured.'
-            echo '- Production database: PRODUCTION_DATABASE_URL only; staging database is not mapped.'
+            echo '- Database runtime: MKETY_DB Hyperdrive binding; private production database credentials are not attached to the Worker.'
             echo '- Live route mutation: only mkety.com/* and www.mkety.com/*, with automatic rollback on partial binding failure.'
             echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'
             echo '- Unrelated Worker routes and DNS records were not modified.'

@@ -32,6 +32,7 @@ module.exports = {
     '^.+\\.module\\.(css|sass|scss|less)$': 'identity-obj-proxy',
     '^.+\\.(css|sass|scss|less)$': '<rootDir>/__mocks__/styleMock.js',
     '^.+\\.(jpg|jpeg|png|gif|webp|avif|svg|ttf|woff|woff2)$': '<rootDir>/__mocks__/fileMock.js',
+    '^cloudflare:workers$': '<rootDir>/__mocks__/cloudflare-workers.js',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   transformIgnorePatterns: ['/node_modules/(?!(next-intl|use-intl|next-themes|@heroicons|lucide-react|drizzle-orm)/)'],

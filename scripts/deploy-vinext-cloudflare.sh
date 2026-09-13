@@ -49,6 +49,26 @@ if [ -z "$server_config" ]; then
   exit 1
 fi
 
+# Production cutover injects MKETY_HYPERDRIVE_ID before the framework build.
+# Verify the concrete generated Wrangler config that this wrapper will actually
+# upload still carries that exact binding. Other preview workflows do not set
+# MKETY_HYPERDRIVE_ID and therefore retain their existing behavior.
+if [ -n "${MKETY_HYPERDRIVE_ID:-}" ]; then
+  MKETY_HYPERDRIVE_ID="$MKETY_HYPERDRIVE_ID" node - "$server_config" <<'NODE'
+const fs = require('node:fs');
+const [configPath] = process.argv.slice(2);
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const bindings = Array.isArray(config.hyperdrive) ? config.hyperdrive : [];
+const exact = bindings.filter(
+  (binding) => binding?.binding === 'MKETY_DB' && binding?.id === process.env.MKETY_HYPERDRIVE_ID,
+);
+if (exact.length !== 1) {
+  throw new Error('Generated Worker config lost MKETY_DB Hyperdrive binding.');
+}
+console.log('Verified generated Worker config contains the exact MKETY_DB Hyperdrive binding.');
+NODE
+fi
+
 deploy_env=''
 dry_run='false'
 forward_args=()
