@@ -8,6 +8,7 @@ const mockPostgres = jest.fn().mockReturnValueOnce(firstClient).mockReturnValueO
 const firstDb = { request: 1 };
 const secondDb = { request: 2 };
 const mockDrizzle = jest.fn().mockReturnValueOnce(firstDb).mockReturnValueOnce(secondDb);
+const mockRuntimeConnectionString = jest.fn().mockReturnValue('postgresql://runtime.example/mkety');
 
 jest.mock('postgres', () => ({
   __esModule: true,
@@ -18,14 +19,14 @@ jest.mock('drizzle-orm/postgres-js', () => ({
   drizzle: (...args: unknown[]) => mockDrizzle(...args),
 }));
 
+jest.mock('@/shared/db/runtime-connection', () => ({
+  getRuntimeDatabaseConnectionString: () => mockRuntimeConnectionString(),
+}));
+
 import { withPublicAIRequestDatabase } from './request-database';
 
 describe('Public Mkety AI request database lifecycle', () => {
-  beforeEach(() => {
-    process.env.DATABASE_URL = 'postgresql://example.invalid/mkety';
-  });
-
-  it('uses a fresh database client for each request and closes it afterward', async () => {
+  it('uses the runtime connection resolver for each request and closes the client afterward', async () => {
     const seen: unknown[] = [];
 
     await withPublicAIRequestDatabase(async (database) => {
@@ -36,7 +37,9 @@ describe('Public Mkety AI request database lifecycle', () => {
     });
 
     expect(seen).toEqual([firstDb, secondDb]);
-    expect(mockPostgres).toHaveBeenCalledTimes(2);
+    expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(2);
+    expect(mockPostgres).toHaveBeenNthCalledWith(1, 'postgresql://runtime.example/mkety', { max: 1 });
+    expect(mockPostgres).toHaveBeenNthCalledWith(2, 'postgresql://runtime.example/mkety', { max: 1 });
     expect(firstEnd).toHaveBeenCalledTimes(1);
     expect(secondEnd).toHaveBeenCalledTimes(1);
   });
