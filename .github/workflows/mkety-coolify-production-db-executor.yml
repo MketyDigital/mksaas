@@ -31,6 +31,7 @@ jobs:
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       RELEASE_BRANCH: feat/mkety-public-site-production
+      SOURCE_BRANCH: ${{ github.event_name == 'push' && github.ref_name || 'feat/mkety-public-site-production' }}
       TARGET_SHA: ${{ inputs.verified_sha || github.sha }}
 
     steps:
@@ -54,7 +55,7 @@ jobs:
             server_uuid:process.env.SERVER_UUID,
             environment_uuid:process.env.ENVIRONMENT_UUID,
             git_repository:'https://github.com/MketyDigital/mksaas',
-            git_branch:process.env.RELEASE_BRANCH,
+            git_branch:process.env.SOURCE_BRANCH,
             git_commit_sha:process.env.TARGET_SHA,
             build_pack:'dockerfile',
             dockerfile_location:'/ops/coolify-migration/Dockerfile',
