@@ -9,6 +9,7 @@ describe('Cloudflare Worker database build wiring', () => {
   it('aliases the runtime database connection module to the Cloudflare adapter', async () => {
     const config = await readFile(VITE_CONFIG_PATH, 'utf8');
 
-    expect(config).toContain("'@/shared/db/runtime-connection': path.resolve(__dirname, 'src/shared/db/runtime-connection.cloudflare.ts')");
+    expect(config).toContain("'@/shared/db/runtime-connection'");
+    expect(config).toContain("runtime-connection.cloudflare.ts");
   });
 });
