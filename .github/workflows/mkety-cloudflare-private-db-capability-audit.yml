@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   audit:
+    # Read-only probe: no Cloudflare resources are mutated here.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
