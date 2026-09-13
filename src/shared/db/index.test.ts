@@ -4,15 +4,15 @@ const mockClient = Object.assign(jest.fn(), { end: jest.fn() });
 const mockPostgres = jest.fn(() => mockClient);
 const mockDatabase = { singleton: true };
 const mockDrizzle = jest.fn(() => mockDatabase);
-const mockRuntimeConnectionString = jest.fn<() => string>();
+const mockRuntimeConnectionString = jest.fn();
 
 jest.mock('postgres', () => ({
   __esModule: true,
-  default: (...args: unknown[]) => mockPostgres(...args),
+  default: (connectionString: string, options: unknown) => mockPostgres(connectionString, options),
 }));
 
 jest.mock('drizzle-orm/postgres-js', () => ({
-  drizzle: (...args: unknown[]) => mockDrizzle(...args),
+  drizzle: (client: unknown, options: unknown) => mockDrizzle(client, options),
 }));
 
 jest.mock('./runtime-connection', () => ({
@@ -37,9 +37,9 @@ describe('database singleton runtime connection', () => {
   it('creates the singleton from the runtime database connection resolver', async () => {
     mockRuntimeConnectionString.mockReturnValue('postgresql://runtime.example/mkety');
 
-    const module = await import('./index');
+    const dbModule = await import('./index');
 
-    expect(module.db).toBe(mockDatabase);
+    expect(dbModule.db).toBe(mockDatabase);
     expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(1);
     expect(mockPostgres).toHaveBeenCalledWith('postgresql://runtime.example/mkety', { max: undefined });
   });
