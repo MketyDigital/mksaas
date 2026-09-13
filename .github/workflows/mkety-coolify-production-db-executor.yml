@@ -108,9 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          diagnose_failure() {
+          fetch_logs() {
             curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "$base/applications/$APP_UUID/logs?lines=160&show_timestamps=false" -o /tmp/app-logs.json || true
+          }
+          diagnose_failure() {
+            fetch_logs
             node <<'NODE'
           const fs=require('node:fs');
           let logs='';
@@ -167,7 +170,45 @@ jobs:
             esac
             sleep 3
           done
-          if [ "$ready" != 'yes' ]; then diagnose_failure; echo 'Timed out waiting for production DB migration/seed/smoke completion.'; exit 8; fi
+          if [ "$ready" != 'yes' ]; then diagnose_failure; echo 'Timed out waiting for production DB migration container to become ready.'; exit 8; fi
+
+          sequence_done='no'
+          for i in $(seq 1 60); do
+            fetch_logs
+            if node <<'NODE'
+          const fs=require('node:fs');
+          let logs='';
+          try { logs=String(JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8')).logs||''); } catch {}
+          const required=[
+            'MKETY_DB_STAGE_OK=base-migrate',
+            'MKETY_DB_STAGE_OK=content-migrate',
+            'MKETY_DB_STAGE_OK=content-seed',
+            'MKETY_DB_STAGE_OK=content-smoke',
+            'MKETY_DB_RELEASE_SEQUENCE_OK=true'
+          ];
+          process.exit(required.every((marker)=>logs.includes(marker)) ? 0 : 1);
+          NODE
+            then
+              sequence_done='yes'
+              break
+            fi
+
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/app.json
+            status="$(node -e "const x=require('/tmp/app.json'); process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              exited:*|failed|error)
+                diagnose_failure
+                echo "Production DB migration/seed/smoke failed inside Coolify before completion: $status"
+                exit 9
+                ;;
+            esac
+            sleep 3
+          done
+          if [ "$sequence_done" != 'yes' ]; then
+            diagnose_failure
+            echo 'Migration container became healthy before the full release sequence completed.'
+            exit 10
+          fi
           echo "Production DB migration, content migration, seed, and smoke succeeded for exact SHA $TARGET_SHA."
 
       - name: Delete ephemeral migration host
