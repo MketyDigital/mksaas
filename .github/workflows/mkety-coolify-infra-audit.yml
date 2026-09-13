@@ -1,0 +1,126 @@
+name: Mkety Coolify Infrastructure Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-infra-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Read-only Coolify database and backup audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+
+    steps:
+      - name: Validate secure Coolify endpoint and credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${COOLIFY_URL:-}" ] || [ -z "${COOLIFY_API_TOKEN:-}" ]; then
+            echo 'COOLIFY_URL and COOLIFY_API_TOKEN must be configured as GitHub Actions secrets.'
+            exit 1
+          fi
+          node <<'NODE'
+          const url = new URL(process.env.COOLIFY_URL);
+          if (url.protocol !== 'https:') throw new Error('COOLIFY_URL must use HTTPS.');
+          if (url.username || url.password) throw new Error('COOLIFY_URL must not contain credentials.');
+          console.log(`Coolify HTTPS endpoint validated for host ${url.hostname}.`);
+          NODE
+
+      - name: Query Coolify databases using read-only GET requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases" -o /tmp/coolify-databases.json
+
+          node <<'NODE' > /tmp/coolify-db-index.tsv
+          const fs = require('node:fs');
+          const raw = JSON.parse(fs.readFileSync('/tmp/coolify-databases.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.databases) ? raw.databases : [];
+          if (!Array.isArray(list)) throw new Error('Unexpected Coolify database response.');
+          const pick = (obj, keys) => Object.fromEntries(keys.filter((k) => obj?.[k] !== undefined).map((k) => [k, obj[k]]));
+          const safe = list.map((db) => pick(db, ['uuid', 'name', 'type', 'status', 'description', 'is_public', 'public_port']));
+          fs.writeFileSync('/tmp/coolify-databases-sanitized.json', JSON.stringify(safe, null, 2));
+          for (const db of list) {
+            if (db?.uuid) process.stdout.write(`${db.uuid}\t${String(db.name || '')}\n`);
+          }
+          console.log(`Discovered ${safe.length} Coolify database resource(s).`);
+          NODE
+
+      - name: Audit backup and storage posture without printing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          : > /tmp/coolify-backup-audit.ndjson
+
+          while IFS=$'\t' read -r uuid name; do
+            [ -n "$uuid" ] || continue
+            backups_file="/tmp/backups-$uuid.json"
+            storages_file="/tmp/storages-$uuid.json"
+            backups_code="$(curl --proto '=https' --tlsv1.2 -sS -o "$backups_file" -w '%{http_code}' "${auth[@]}" "$base/databases/$uuid/backups" || true)"
+            storages_code="$(curl --proto '=https' --tlsv1.2 -sS -o "$storages_file" -w '%{http_code}' "${auth[@]}" "$base/databases/$uuid/storages" || true)"
+
+            UUID="$uuid" NAME="$name" BACKUPS_FILE="$backups_file" STORAGES_FILE="$storages_file" BACKUPS_CODE="$backups_code" STORAGES_CODE="$storages_code" node <<'NODE' >> /tmp/coolify-backup-audit.ndjson
+          const fs = require('node:fs');
+          function readJson(path) {
+            try { return JSON.parse(fs.readFileSync(path, 'utf8')); } catch { return null; }
+          }
+          function sanitizeBackup(x) {
+            if (!x || typeof x !== 'object') return null;
+            const keys = ['uuid','enabled','frequency','save_s3','s3_storage_uuid','databases_to_backup','dump_all','database_backup_retention_amount_locally','database_backup_retention_days_locally','database_backup_retention_max_storage_locally','database_backup_retention_amount_s3','database_backup_retention_days_s3','database_backup_retention_max_storage_s3','timeout','last_saved_at','latest_log'];
+            return Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, k === 'latest_log' ? String(x[k]).slice(0, 300) : x[k]]));
+          }
+          function sanitizeStorage(x) {
+            if (!x || typeof x !== 'object') return null;
+            const keys = ['uuid','name','mount_path','host_path','type'];
+            return Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, x[k]]));
+          }
+          const backupRaw = readJson(process.env.BACKUPS_FILE);
+          const backupList = Array.isArray(backupRaw) ? backupRaw : Array.isArray(backupRaw?.data) ? backupRaw.data : Array.isArray(backupRaw?.backups) ? backupRaw.backups : [];
+          const storageRaw = readJson(process.env.STORAGES_FILE) || {};
+          const persistent = Array.isArray(storageRaw.persistent_storages) ? storageRaw.persistent_storages.map(sanitizeStorage).filter(Boolean) : [];
+          const files = Array.isArray(storageRaw.file_storages) ? storageRaw.file_storages.map(sanitizeStorage).filter(Boolean) : [];
+          console.log(JSON.stringify({
+            uuid: process.env.UUID,
+            name: process.env.NAME,
+            backupsHttpStatus: Number(process.env.BACKUPS_CODE),
+            storagesHttpStatus: Number(process.env.STORAGES_CODE),
+            backups: backupList.map(sanitizeBackup).filter(Boolean),
+            persistentStorages: persistent,
+            fileStorages: files,
+          }));
+          NODE
+          done < /tmp/coolify-db-index.tsv
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = fs.readFileSync('/tmp/coolify-backup-audit.ndjson', 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+          fs.writeFileSync('/tmp/coolify-backup-audit-sanitized.json', JSON.stringify(rows, null, 2));
+          console.log(`Backup/storage posture audited for ${rows.length} database resource(s).`);
+          for (const row of rows) {
+            console.log(`- ${row.name || row.uuid}: backups=${row.backups.length}, persistentStorages=${row.persistentStorages.length}, backupHTTP=${row.backupsHttpStatus}, storageHTTP=${row.storagesHttpStatus}`);
+          }
+          NODE
+
+      - name: Upload sanitized Coolify audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-coolify-infra-audit-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            /tmp/coolify-databases-sanitized.json
+            /tmp/coolify-backup-audit-sanitized.json
