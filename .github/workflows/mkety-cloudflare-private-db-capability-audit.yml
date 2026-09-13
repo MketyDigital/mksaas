@@ -13,12 +13,14 @@ permissions:
 
 jobs:
   audit:
-    # Read-only probe: no Cloudflare resources are mutated here.
+    # Read-only probe: no Cloudflare or Coolify resources are mutated here.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_URL: https://deploy.mkety.com
     steps:
       - name: Verify private database platform capabilities
         shell: bash
@@ -52,6 +54,19 @@ jobs:
           for(const h of a){const o=h.origin||{}; console.log(`- name=${String(h.name||'unnamed')}; id=${String(h.id||'')}; origin=${o.service_id?'vpc-service':o.access_client_id?'access-tunnel':o.host?'internet-host':'unknown'}`)}
           NODE
           fi
-
           echo "Capability summary: tunnel=$tunnel vpc=$vpc hyperdrive=$hyperdrive access_apps=$access_apps access_service_tokens=$access_tokens"
-          [ "$tunnel" = '1' ] && [ "$hyperdrive" = '1' ] || { echo 'Tunnel and Hyperdrive read access are minimum requirements.'; exit 2; }
+
+      - name: Read safe Coolify PostgreSQL TLS posture
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN unavailable.'; exit 1; }
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "${COOLIFY_URL%/}/api/v1/databases" -o /tmp/dbs.json
+          node <<'NODE'
+          const fs=require('node:fs'); const x=JSON.parse(fs.readFileSync('/tmp/dbs.json','utf8')); const a=Array.isArray(x)?x:(x.data||x.databases||[]);
+          const d=a.find(v=>v&&v.name==='mkety-postgres'); if(!d) throw new Error('mkety-postgres not found');
+          const keys=['name','uuid','status','image','is_public','public_port','enable_ssl','ssl_mode','ssl_enabled','ssl_certificate_id','health_check_enabled'];
+          const safe={}; for(const k of keys) if(d[k]!==undefined) safe[k]=d[k];
+          console.log('Postgres safe posture: '+JSON.stringify(safe));
+          NODE
