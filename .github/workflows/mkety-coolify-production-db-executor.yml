@@ -96,6 +96,30 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
+          diagnose_failure() {
+            curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/applications/$APP_UUID/logs?lines=160&show_timestamps=false" -o /tmp/app-logs.json || true
+            node <<'NODE'
+          const fs=require('node:fs');
+          let logs='';
+          try { logs=String(JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8')).logs||''); } catch {}
+          const stages=[...logs.matchAll(/MKETY_DB_STAGE=([a-z-]+)/g)].map(m=>m[1]);
+          const oks=new Set([...logs.matchAll(/MKETY_DB_STAGE_OK=([a-z-]+)/g)].map(m=>m[1]));
+          const last=stages.length?stages[stages.length-1]:'unknown';
+          const completed=stages.filter(s=>oks.has(s));
+          let cls='unclassified';
+          if (/EAI_AGAIN|ENOTFOUND|getaddrinfo/i.test(logs)) cls='dns';
+          else if (/ECONNREFUSED|ETIMEDOUT|timeout.*connect/i.test(logs)) cls='network';
+          else if (/password authentication failed|authentication failed|28P01/i.test(logs)) cls='authentication';
+          else if (/ssl|tls|certificate/i.test(logs)) cls='tls';
+          else if (/duplicate key|unique constraint|23505/i.test(logs)) cls='constraint';
+          else if (/does not exist|undefined table|undefined column|42P01|42703/i.test(logs)) cls='schema';
+          else if (/permission denied|42501/i.test(logs)) cls='database-permission';
+          else if (/command not found|ERR_PNPM|pnpm:/i.test(logs)) cls='runtime-command';
+          console.log(`Safe migration diagnostic: last_stage=${last}; completed=${completed.join(',')||'none'}; class=${cls}`);
+          NODE
+          }
+
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
           [ "$code" = '200' ] || { echo "Deploying migration host failed with HTTP $code."; exit 4; }
@@ -107,11 +131,15 @@ jobs:
             deployment_status="$(node -e "const x=require('/tmp/deployment.json'); process.stdout.write(String(x.status||''))")"
             case "${deployment_status,,}" in
               finished|success|successful|succeeded|completed) deployment_done='yes'; break ;;
-              failed|failure|error|cancelled|canceled) echo "Migration-host deployment failed: $deployment_status"; exit 5 ;;
+              failed|failure|error|cancelled|canceled)
+                diagnose_failure
+                echo "Migration-host deployment failed: $deployment_status"
+                exit 5
+                ;;
             esac
             sleep 5
           done
-          [ "$deployment_done" = 'yes' ] || { echo 'Timed out waiting for Coolify migration-host deployment.'; exit 6; }
+          if [ "$deployment_done" != 'yes' ]; then diagnose_failure; echo 'Timed out waiting for Coolify migration-host deployment.'; exit 6; fi
 
           ready='no'
           for i in $(seq 1 60); do
@@ -119,11 +147,15 @@ jobs:
             status="$(node -e "const x=require('/tmp/app.json'); process.stdout.write(String(x.status||''))")"
             case "${status,,}" in
               running:healthy|running:unknown|running) ready='yes'; break ;;
-              exited:*|failed|error) echo "Production DB migration/seed/smoke failed inside Coolify: $status"; exit 7 ;;
+              exited:*|failed|error)
+                diagnose_failure
+                echo "Production DB migration/seed/smoke failed inside Coolify: $status"
+                exit 7
+                ;;
             esac
             sleep 3
           done
-          [ "$ready" = 'yes' ] || { echo 'Timed out waiting for production DB migration/seed/smoke completion.'; exit 8; }
+          if [ "$ready" != 'yes' ]; then diagnose_failure; echo 'Timed out waiting for production DB migration/seed/smoke completion.'; exit 8; fi
           echo "Production DB migration, content migration, seed, and smoke succeeded for exact SHA $TARGET_SHA."
 
       - name: Delete ephemeral migration host
