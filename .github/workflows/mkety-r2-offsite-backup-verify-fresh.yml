@@ -1,0 +1,165 @@
+name: Mkety R2 Offsite Backup Fresh Verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-r2-offsite-backup-verify-fresh.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Trigger and verify a fresh R2 Postgres backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_BUCKET: mkety-production-db-backups
+      COOLIFY_STORAGE_NAME: mkety-r2-production-backups
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      POSTGRES_BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+
+    steps:
+      - name: Validate secrets and derive masked R2 credentials
+        id: creds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in COOLIFY_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "$name is required."; exit 1; }
+          done
+          cf='https://api.cloudflare.com/client/v4'
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$cf/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" -o /tmp/cf-token.json
+          token_id="$(node -e "const x=require('/tmp/cf-token.json'); if(!x.success||x.result?.status!=='active'||!x.result?.id)process.exit(1); process.stdout.write(x.result.id)")"
+          secret_key="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | awk '{print $1}')"
+          echo "::add-mask::$secret_key"
+          echo "access_key=$token_id" >> "$GITHUB_OUTPUT"
+          echo "secret_key=$secret_key" >> "$GITHUB_OUTPUT"
+          echo "endpoint=https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Coolify R2 storage and capture previous execution
+        id: before
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/s3-storages" -o /tmp/storages.json
+          storage_uuid="$(NAME="$COOLIFY_STORAGE_NAME" node <<'NODE'
+          const raw=require('/tmp/storages.json'); const list=Array.isArray(raw)?raw:(raw.data||raw.storages||[]);
+          const x=Array.isArray(list)?list.find(s=>s?.name===process.env.NAME):null;
+          if(!x?.uuid) process.exit(1); process.stdout.write(x.uuid);
+          NODE
+          )"
+          echo "storage_uuid=$storage_uuid" >> "$GITHUB_OUTPUT"
+
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+            "$base/databases/$POSTGRES_UUID/backups/$POSTGRES_BACKUP_UUID/executions" -o /tmp/before.json
+          previous_uuid="$(node <<'NODE'
+          const raw=require('/tmp/before.json'); const list=raw.executions||raw.data||raw||[];
+          const sorted=Array.isArray(list)?[...list].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)):[];
+          if(sorted[0]?.uuid) process.stdout.write(sorted[0].uuid);
+          NODE
+          )"
+          echo "previous_uuid=$previous_uuid" >> "$GITHUB_OUTPUT"
+          echo 'Captured current latest backup execution.'
+
+      - name: Reassert local plus R2 policy and trigger fresh backup
+        shell: bash
+        env:
+          STORAGE_UUID: ${{ steps.before.outputs.storage_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          STORAGE_UUID="$STORAGE_UUID" node <<'NODE' >/tmp/patch.json
+          process.stdout.write(JSON.stringify({
+            enabled:true,
+            save_s3:true,
+            s3_storage_uuid:process.env.STORAGE_UUID,
+            backup_now:true,
+            database_backup_retention_amount_locally:7,
+            database_backup_retention_amount_s3:30,
+            timeout:3600
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/patch-response.json -w '%{http_code}' \
+            -X PATCH "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/patch.json \
+            "$base/databases/$POSTGRES_UUID/backups/$POSTGRES_BACKUP_UUID")"
+          [ "$code" = '200' ] || { echo "Backup trigger failed with HTTP $code."; exit 1; }
+          echo 'Fresh local plus R2 backup requested.'
+
+      - name: Wait for a new successful execution
+        id: fresh
+        shell: bash
+        env:
+          PREVIOUS_UUID: ${{ steps.before.outputs.previous_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          found='no'
+          for i in $(seq 1 75); do
+            curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+              "$base/databases/$POSTGRES_UUID/backups/$POSTGRES_BACKUP_UUID/executions" -o /tmp/current.json
+            read -r uuid status size created <<<"$(PREVIOUS_UUID="$PREVIOUS_UUID" node <<'NODE'
+          const raw=require('/tmp/current.json'); const list=raw.executions||raw.data||raw||[];
+          const sorted=Array.isArray(list)?[...list].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)):[];
+          const x=sorted[0]||{}; process.stdout.write([x.uuid||'',x.status||'',Number(x.size||0),x.created_at||''].join(' '));
+          NODE
+            )"
+            if [ -n "$uuid" ] && [ "$uuid" != "$PREVIOUS_UUID" ]; then
+              case "${status,,}" in
+                success|successful|succeeded|completed)
+                  [ "$size" -gt 0 ] || { echo 'Fresh backup succeeded but reported zero size.'; exit 2; }
+                  echo "fresh_uuid=$uuid" >> "$GITHUB_OUTPUT"
+                  echo "fresh_size=$size" >> "$GITHUB_OUTPUT"
+                  echo "fresh_created=$created" >> "$GITHUB_OUTPUT"
+                  found='yes'; break ;;
+                failed|failure|error)
+                  echo "Fresh backup failed with status=$status"; exit 3 ;;
+              esac
+            fi
+            sleep 4
+          done
+          [ "$found" = 'yes' ] || { echo 'No new successful backup execution appeared before timeout.'; exit 4; }
+          echo 'Fresh Postgres backup execution completed successfully.'
+
+      - name: Verify off-site object exists in R2
+        shell: bash
+        env:
+          R2_ENDPOINT: ${{ steps.creds.outputs.endpoint }}
+          R2_ACCESS_KEY: ${{ steps.creds.outputs.access_key }}
+          R2_SECRET_KEY: ${{ steps.creds.outputs.secret_key }}
+          FRESH_UUID: ${{ steps.fresh.outputs.fresh_uuid }}
+          FRESH_SIZE: ${{ steps.fresh.outputs.fresh_size }}
+          FRESH_CREATED: ${{ steps.fresh.outputs.fresh_created }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$R2_SECRET_KEY"
+          if ! command -v aws >/dev/null 2>&1; then
+            python3 -m pip install --user --quiet awscli
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY" AWS_DEFAULT_REGION=auto \
+            aws s3 ls --recursive --endpoint-url "$R2_ENDPOINT" "s3://$R2_BUCKET/" >/tmp/r2-list.txt
+          count="$(wc -l </tmp/r2-list.txt | tr -d ' ')"
+          [ "$count" -gt 0 ] || { echo 'Fresh backup succeeded locally but R2 still contains no objects.'; exit 5; }
+          OBJECT_COUNT="$count" FRESH_UUID="$FRESH_UUID" FRESH_SIZE="$FRESH_SIZE" FRESH_CREATED="$FRESH_CREATED" node <<'NODE' >/tmp/r2-fresh-verification.json
+          process.stdout.write(JSON.stringify({
+            bucket:process.env.R2_BUCKET,
+            freshExecutionUuid:process.env.FRESH_UUID,
+            backupSize:Number(process.env.FRESH_SIZE||0),
+            createdAt:process.env.FRESH_CREATED,
+            r2ObjectCount:Number(process.env.OBJECT_COUNT||0)
+          },null,2));
+          NODE
+          echo "Verified R2 contains $count backup object(s) after fresh execution."
