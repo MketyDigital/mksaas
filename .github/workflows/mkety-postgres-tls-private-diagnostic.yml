@@ -84,4 +84,5 @@ jobs:
         if: always() && steps.app.outputs.app_uuid != ''
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
-        run: curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+        run: |
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
