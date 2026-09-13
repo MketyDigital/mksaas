@@ -17,7 +17,15 @@ DISABLE_LINTERS:
 # Keep actionlint blocking for workflow syntax/security. The ignored ShellCheck
 # rules are style-only recommendations already covered by the repository's
 # dedicated shell formatting/linting and do not affect workflow correctness.
-ACTION_ACTIONLINT_ARGUMENTS: "-ignore=SC2034 -ignore=SC2129 -ignore=SC2006"
+# PRODUCTION_DATABASE_URL is supplied by the called job's `production`
+# Environment, which actionlint cannot infer for a reusable workflow. Ignore only
+# diagnostics mentioning this one Environment-only secret; do not broaden the
+# reusable-workflow secret interface or dynamically index the secrets context.
+ACTION_ACTIONLINT_ARGUMENTS: >-
+  -ignore=SC2034
+  -ignore=SC2129
+  -ignore=SC2006
+  -ignore=production_database_url
 
 # JSONLint does not understand JSON-with-comments. These files intentionally use
 # JSONC syntax even though their conventional filenames end in .json.
