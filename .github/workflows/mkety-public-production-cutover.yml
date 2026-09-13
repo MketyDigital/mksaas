@@ -21,7 +21,91 @@ env:
   RELEASE_BRANCH: feat/mkety-public-site-production
 
 jobs:
+  authorize:
+    name: Authorize exact certified production release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Validate manual cutover authorization
+        shell: bash
+        env:
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'verified_sha must be an exact 40-character Git commit SHA.'
+            exit 1
+          fi
+          if [[ $CONFIRMATION != 'CUTOVER MKETY PUBLIC' ]]; then
+            echo 'Production cutover confirmation did not match the required phrase.'
+            exit 1
+          fi
+
+      - name: Verify frozen release head and all blocking gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          encoded_branch="$(node -e "process.stdout.write(encodeURIComponent(process.env.RELEASE_BRANCH))")"
+          branch_response="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$encoded_branch")"
+          BRANCH_RESPONSE="$branch_response" VERIFIED_SHA="$VERIFIED_SHA" node <<'NODE'
+          const payload = JSON.parse(process.env.BRANCH_RESPONSE || '{}');
+          const head = payload?.commit?.sha;
+          if (!head) throw new Error('Could not resolve current release branch head.');
+          if (head !== process.env.VERIFIED_SHA) {
+            throw new Error(`verified_sha is stale: release branch head is ${head}, requested ${process.env.VERIFIED_SHA}.`);
+          }
+          console.log(`Verified exact current release head: ${head}`);
+          NODE
+
+          verify_workflow_success() {
+            local workflow="$1"
+            local label="$2"
+            local response
+            response="$(curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+            RESPONSE="$response" LABEL="$label" node <<'NODE'
+          const payload = JSON.parse(process.env.RESPONSE || '{}');
+          if (!Array.isArray(payload.workflow_runs) || payload.workflow_runs.length === 0) {
+            throw new Error(`No successful ${process.env.LABEL} run exists for the exact verified SHA.`);
+          }
+          console.log(`Verified successful ${process.env.LABEL} evidence for exact SHA.`);
+          NODE
+          }
+
+          verify_workflow_success 'tests.yml' 'tests'
+          verify_workflow_success 'type-check.yml' 'typecheck'
+          verify_workflow_success 'lint.yml' 'lint'
+          verify_workflow_success 'build.yml' 'build'
+          verify_workflow_success 'ci.yml' 'CI'
+          verify_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'
+          verify_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
+          verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
+          verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
+          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+
+  production-db:
+    needs: authorize
+    uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
+    with:
+      verified_sha: ${{ inputs.verified_sha }}
+    secrets:
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
   cutover:
+    needs: production-db
     name: Verify exact candidate and cut over mkety.com
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -211,17 +295,6 @@ jobs:
           pnpm type-check
           pnpm lint
           pnpx vinext check
-
-      - name: Migrate, seed, and smoke production content database
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm db:migrate
-          pnpm db:migrate:mkety-content
-          pnpm db:seed:mkety-content
-          pnpm db:smoke:mkety-content
 
       - name: Snapshot Cloudflare routing and enforce isolation
         id: cloudflare
