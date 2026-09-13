@@ -139,7 +139,7 @@ jobs:
           cat >/tmp/task.json <<'JSON'
           {
             "name": "mkety-production-db-release-migration",
-            "command": "pnpm db:migrate && pnpm db:migrate:mkety-content && pnpm db:seed:mkety-content && pnpm db:smoke:mkety-content",
+            "command": "cd /app && pnpm db:migrate && pnpm db:migrate:mkety-content && pnpm db:seed:mkety-content && pnpm db:smoke:mkety-content",
             "frequency": "0 0 1 1 *",
             "timeout": 1800,
             "enabled": true
