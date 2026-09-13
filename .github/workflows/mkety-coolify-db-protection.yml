@@ -2,11 +2,6 @@ name: Mkety Coolify Database Protection
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - fix/production-db-private-runner
-    paths:
-      - '.github/workflows/mkety-coolify-db-protection.yml'
 
 permissions:
   contents: read
@@ -105,7 +100,7 @@ jobs:
               -X POST "${auth[@]}" -H 'Content-Type: application/json' \
               --data-binary @/tmp/backup-create.json \
               "$base/databases/$POSTGRES_UUID/backups")"
-            [ "$code" = '201' ] || { echo "Creating Postgres backup policy failed with HTTP $code."; cat /tmp/backup-created.json; exit 1; }
+            [ "$code" = '201' ] || { echo "Creating Postgres backup policy failed with HTTP $code."; exit 1; }
             created_uuid="$(node -e "const x=require('/tmp/backup-created.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
             echo "backup_uuid=$created_uuid" >> "$GITHUB_OUTPUT"
             echo 'Daily Postgres backup policy created and initial backup requested.'
