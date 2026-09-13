@@ -1,0 +1,217 @@
+name: Mkety Precutover Diagnostics
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify production DB backup, TLS, R2, and Hyperdrive
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_HYPERDRIVE_NAME: mkety-production-db
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in COOLIFY_API_TOKEN R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_S3_API CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!variable:-}" ] || { echo "$variable is required."; exit 1; }
+          done
+          [[ "$COOLIFY_URL" == https://* ]] || { echo 'Coolify must use HTTPS.'; exit 1; }
+          [[ "$R2_S3_API" == https://* ]] || { echo 'R2 S3 endpoint must use HTTPS.'; exit 1; }
+
+      - name: Inspect sanitized Coolify database and backup state
+        id: coolify
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID" -o /tmp/postgres.json
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const db = JSON.parse(fs.readFileSync('/tmp/postgres.json', 'utf8'));
+          const raw = JSON.parse(fs.readFileSync('/tmp/backups.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.backups) ? raw.backups : [];
+          const backup = list.find((item) => item?.uuid === process.env.BACKUP_UUID);
+          if (!backup) throw new Error('Expected production backup policy was not returned by Coolify.');
+
+          const executions = Array.isArray(backup.executions) ? backup.executions : [];
+          const latest = [...executions].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0] || null;
+          const latestCreated = latest ? new Date(latest.created_at || 0).getTime() : NaN;
+          const latestFresh = Number.isFinite(latestCreated) && Date.now() - latestCreated <= 30 * 60 * 60 * 1000;
+          const latestStatus = String(latest?.status || '').toLowerCase();
+          const latestSuccess = ['success', 'successful', 'succeeded', 'completed'].includes(latestStatus);
+
+          const summary = {
+            db: {
+              uuid_matches: db.uuid === process.env.POSTGRES_UUID,
+              name: db.name,
+              status: db.status,
+              private: db.is_public === false && (db.public_port === null || db.public_port === undefined || db.public_port === 0),
+              enable_ssl: db.enable_ssl ?? null,
+            },
+            backup: {
+              uuid_matches: backup.uuid === process.env.BACKUP_UUID,
+              enabled: backup.enabled !== false,
+              save_s3: backup.save_s3 === true,
+              has_s3_storage_id: backup.s3_storage_id !== null && backup.s3_storage_id !== undefined && backup.s3_storage_id !== 0,
+              has_s3_storage_uuid: Boolean(backup.s3_storage_uuid),
+              returned_keys: Object.keys(backup).sort(),
+              local_retention: Number(backup.database_backup_retention_amount_locally || 0),
+              s3_retention: Number(backup.database_backup_retention_amount_s3 || 0),
+              execution_count: executions.length,
+              latest_execution: latest ? {
+                status: latest.status ?? null,
+                size: Number(latest.size || 0),
+                created_at: latest.created_at ?? null,
+                fresh_within_30h: latestFresh,
+                success_status: latestSuccess,
+                returned_keys: Object.keys(latest).sort(),
+              } : null,
+            },
+          };
+
+          fs.writeFileSync('/tmp/coolify-precutover.json', JSON.stringify(summary, null, 2));
+          console.log(JSON.stringify(summary, null, 2));
+
+          const out = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(out, `db_private=${summary.db.private}\n`);
+          fs.appendFileSync(out, `db_healthy=${String(summary.db.status || '').toLowerCase().includes('healthy')}\n`);
+          fs.appendFileSync(out, `db_tls=${summary.db.enable_ssl === true}\n`);
+          fs.appendFileSync(out, `backup_enabled=${summary.backup.enabled}\n`);
+          fs.appendFileSync(out, `backup_save_s3=${summary.backup.save_s3}\n`);
+          fs.appendFileSync(out, `backup_linked=${summary.backup.has_s3_storage_id || summary.backup.has_s3_storage_uuid}\n`);
+          fs.appendFileSync(out, `local_retention_ok=${summary.backup.local_retention >= 7}\n`);
+          fs.appendFileSync(out, `s3_retention_ok=${summary.backup.s3_retention >= 30}\n`);
+          fs.appendFileSync(out, `coolify_execution_ok=${Boolean(latest && latestSuccess && latestFresh && Number(latest.size || 0) > 0)}\n`);
+          NODE
+
+      - name: Verify fresh non-empty R2 backup object
+        id: r2
+        shell: bash
+        run: |
+          set -euo pipefail
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          if ! command -v aws >/dev/null 2>&1; then
+            python3 -m pip install --user --quiet awscli
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          aws s3api list-objects-v2 \
+            --endpoint-url "$R2_S3_API" \
+            --bucket "$R2_BUCKET" \
+            --max-items 1000 \
+            --output json > /tmp/r2-objects.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/r2-objects.json', 'utf8'));
+          const objects = Array.isArray(payload.Contents) ? payload.Contents : [];
+          const latest = [...objects].sort((a, b) => new Date(b.LastModified || 0) - new Date(a.LastModified || 0))[0] || null;
+          const modified = latest ? new Date(latest.LastModified || 0).getTime() : NaN;
+          const fresh = Number.isFinite(modified) && Date.now() - modified <= 30 * 60 * 60 * 1000;
+          const nonEmpty = Number(latest?.Size || 0) > 0;
+          const summary = {
+            bucket: process.env.R2_BUCKET,
+            object_count: objects.length,
+            latest_modified: latest?.LastModified ?? null,
+            latest_size: Number(latest?.Size || 0),
+            fresh_within_30h: fresh,
+            non_empty: nonEmpty,
+          };
+          fs.writeFileSync('/tmp/r2-precutover.json', JSON.stringify(summary, null, 2));
+          console.log(JSON.stringify(summary, null, 2));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `r2_ok=${Boolean(objects.length && fresh && nonEmpty)}\n`);
+          NODE
+
+      - name: Verify dedicated Cloudflare Hyperdrive exists
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(process.env.HYPERDRIVES || '{}');
+          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Could not list Cloudflare Hyperdrive configs.');
+          const matches = payload.result.filter((item) => item?.name === process.env.MKETY_HYPERDRIVE_NAME);
+          const summary = {
+            name: process.env.MKETY_HYPERDRIVE_NAME,
+            match_count: matches.length,
+            has_exact_single_config: matches.length === 1,
+            id_present: Boolean(matches[0]?.id),
+          };
+          fs.writeFileSync('/tmp/hyperdrive-precutover.json', JSON.stringify(summary, null, 2));
+          console.log(JSON.stringify(summary, null, 2));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `hyperdrive_ok=${Boolean(matches.length === 1 && matches[0]?.id)}\n`);
+          NODE
+
+      - name: Enforce precutover gates
+        shell: bash
+        env:
+          DB_PRIVATE: ${{ steps.coolify.outputs.db_private }}
+          DB_HEALTHY: ${{ steps.coolify.outputs.db_healthy }}
+          DB_TLS: ${{ steps.coolify.outputs.db_tls }}
+          BACKUP_ENABLED: ${{ steps.coolify.outputs.backup_enabled }}
+          BACKUP_SAVE_S3: ${{ steps.coolify.outputs.backup_save_s3 }}
+          BACKUP_LINKED: ${{ steps.coolify.outputs.backup_linked }}
+          LOCAL_RETENTION_OK: ${{ steps.coolify.outputs.local_retention_ok }}
+          S3_RETENTION_OK: ${{ steps.coolify.outputs.s3_retention_ok }}
+          COOLIFY_EXECUTION_OK: ${{ steps.coolify.outputs.coolify_execution_ok }}
+          R2_OK: ${{ steps.r2.outputs.r2_ok }}
+          HYPERDRIVE_OK: ${{ steps.hyperdrive.outputs.hyperdrive_ok }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for variable in DB_PRIVATE DB_HEALTHY DB_TLS BACKUP_ENABLED BACKUP_SAVE_S3 BACKUP_LINKED LOCAL_RETENTION_OK S3_RETENTION_OK COOLIFY_EXECUTION_OK R2_OK HYPERDRIVE_OK; do
+            value="${!variable:-false}"
+            printf '%s=%s\n' "$variable" "$value"
+            if [ "$value" != 'true' ]; then failed=1; fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo 'One or more production precutover gates failed.'
+            exit 1
+          fi
+          echo 'All production precutover gates passed.'
+
+      - name: Upload sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-precutover-diagnostics-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            /tmp/coolify-precutover.json
+            /tmp/r2-precutover.json
+            /tmp/hyperdrive-precutover.json
