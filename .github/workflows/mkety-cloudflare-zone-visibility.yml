@@ -1,0 +1,42 @@
+name: Mkety Cloudflare Zone Visibility
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZONE_NAME: mkety.com
+    steps:
+      - name: Inspect target zone visibility safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/target.json -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME&per_page=50")"
+          echo "target_zone_lookup_http=$code"
+          [ "$code" = '200' ] || exit 10
+          ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" ZONE_NAME="$ZONE_NAME" node <<'NODE'
+          const p=require('/tmp/target.json');
+          if(p.success!==true) throw new Error('Cloudflare zone lookup failed');
+          const a=p.result||[];
+          console.log(`target_zone_visible_count=${a.length}`);
+          console.log(`target_zone_active_count=${a.filter(x=>x.status==='active').length}`);
+          console.log(`target_zone_in_configured_account_count=${a.filter(x=>x.account?.id===process.env.ACCOUNT_ID).length}`);
+          console.log(`target_zone_active_in_configured_account_count=${a.filter(x=>x.status==='active'&&x.account?.id===process.env.ACCOUNT_ID).length}`);
+          if(a.length===1) {
+            console.log(`target_zone_status=${a[0].status||'unknown'}`);
+            console.log(`target_zone_account_matches_configured=${a[0].account?.id===process.env.ACCOUNT_ID}`);
+          }
+          NODE
+          echo 'MKETY_ZONE_VISIBILITY_DIAGNOSTIC_OK=true'
