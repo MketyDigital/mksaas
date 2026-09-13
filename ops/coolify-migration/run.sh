@@ -1,19 +1,4 @@
 #!/bin/sh
-set +e
+set -eu
 
-node -e "require('http').createServer((req,res)=>{res.statusCode=200;res.end('ok')}).listen(3000,'0.0.0.0')" &
-health_pid=$!
-
-pnpm db:migrate && \
-pnpm db:migrate:mkety-content && \
-pnpm db:seed:mkety-content && \
-pnpm db:smoke:mkety-content
-status=$?
-
-if [ "$status" -eq 0 ]; then
-  echo 'MKETY_PRODUCTION_DB_MIGRATION_OK'
-else
-  echo "MKETY_PRODUCTION_DB_MIGRATION_FAILED:$status"
-fi
-
-wait "$health_pid"
+exec node -e "require('http').createServer((req,res)=>{res.statusCode=200;res.setHeader('content-type','text/plain');res.end('ok')}).listen(3000,'0.0.0.0')"
