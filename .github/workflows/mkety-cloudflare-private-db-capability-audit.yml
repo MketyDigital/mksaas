@@ -33,15 +33,25 @@ jobs:
             local code
             code="$(curl -sS -o "$out" -w '%{http_code}' "${auth[@]}" "$url" || true)"
             echo "$label HTTP $code"
-            if [ "$code" != '200' ]; then
-              node -e "const x=require(process.argv[1]); const e=Array.isArray(x.errors)?x.errors.map(v=>String(v.code||'')+':'+String(v.message||'')).join('; '):''; if(e) console.log('Cloudflare error: '+e)" "$out" 2>/dev/null || true
-              return 1
-            fi
-            node -e "const x=require(process.argv[1]); const r=x.result; const n=Array.isArray(r)?r.length:(r&&Array.isArray(r.data)?r.data.length:0); console.log('Visible resources: '+n)" "$out"
+            if [ "$code" = '200' ]; then return 0; fi
+            node -e "const x=require(process.argv[1]); const e=Array.isArray(x.errors)?x.errors.map(v=>String(v.code||'')+':'+String(v.message||'')).join('; '):''; if(e) console.log('Cloudflare error: '+e)" "$out" 2>/dev/null || true
+            return 1
           }
-          failed=0
-          check 'Tunnel list' "$base/cfd_tunnel?is_deleted=false&per_page=50" /tmp/tunnels.json || failed=1
-          check 'Workers VPC services list' "$base/connectivity/directory/services?per_page=50" /tmp/vpc.json || failed=1
-          check 'Hyperdrive list' "$base/hyperdrive/configs" /tmp/hyperdrive.json || failed=1
-          [ "$failed" = '0' ] || { echo 'One or more required Cloudflare private-database capabilities are not readable by the current token.'; exit 2; }
-          echo 'Current Cloudflare token can read Tunnel, Workers VPC service, and Hyperdrive resources.'
+
+          tunnel=0; vpc=0; hyperdrive=0; access_apps=0; access_tokens=0
+          check 'Tunnel list' "$base/cfd_tunnel?is_deleted=false&per_page=50" /tmp/tunnels.json && tunnel=1 || true
+          check 'Workers VPC services list' "$base/connectivity/directory/services?per_page=50" /tmp/vpc.json && vpc=1 || true
+          check 'Hyperdrive list' "$base/hyperdrive/configs" /tmp/hyperdrive.json && hyperdrive=1 || true
+          check 'Access applications list' "$base/access/apps?per_page=50" /tmp/access-apps.json && access_apps=1 || true
+          check 'Access service tokens list' "$base/access/service_tokens?per_page=50" /tmp/access-tokens.json && access_tokens=1 || true
+
+          if [ "$hyperdrive" = '1' ]; then
+            node <<'NODE'
+          const fs=require('node:fs'); const x=JSON.parse(fs.readFileSync('/tmp/hyperdrive.json','utf8')); const a=Array.isArray(x.result)?x.result:[];
+          console.log(`Hyperdrive configurations visible: ${a.length}`);
+          for(const h of a){const o=h.origin||{}; console.log(`- name=${String(h.name||'unnamed')}; id=${String(h.id||'')}; origin=${o.service_id?'vpc-service':o.access_client_id?'access-tunnel':o.host?'internet-host':'unknown'}`)}
+          NODE
+          fi
+
+          echo "Capability summary: tunnel=$tunnel vpc=$vpc hyperdrive=$hyperdrive access_apps=$access_apps access_service_tokens=$access_tokens"
+          [ "$tunnel" = '1' ] && [ "$hyperdrive" = '1' ] || { echo 'Tunnel and Hyperdrive read access are minimum requirements.'; exit 2; }
