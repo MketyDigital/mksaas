@@ -43,7 +43,7 @@ jobs:
           [ -n "${DATABASE_URL:-}" ] || { echo 'PRODUCTION_DATABASE_URL is required.'; exit 1; }
           curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
 
-      - name: Create exact-SHA isolated task host
+      - name: Create exact-SHA isolated migration host
         id: app
         shell: bash
         run: |
@@ -60,7 +60,7 @@ jobs:
             dockerfile_location:'/ops/coolify-migration/Dockerfile',
             ports_exposes:'3000',
             name:`mkety-db-migrate-${process.env.TARGET_SHA.slice(0,12)}`,
-            description:`Ephemeral exact-SHA production DB task host for ${process.env.TARGET_SHA}`,
+            description:`Ephemeral exact-SHA production DB migration host for ${process.env.TARGET_SHA}`,
             autogenerate_domain:false,
             connect_to_docker_network:true,
             instant_deploy:false
@@ -70,7 +70,7 @@ jobs:
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
             --data-binary @/tmp/create-app.json "$base/applications/public")"
-          [ "$code" = '201' ] || { echo "Coolify task host creation failed with HTTP $code."; cat /tmp/create-response.json; exit 2; }
+          [ "$code" = '201' ] || { echo "Coolify migration host creation failed with HTTP $code."; exit 2; }
           app_uuid="$(node -e "const x=require('/tmp/create-response.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
           echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
 
@@ -89,8 +89,7 @@ jobs:
             --data-binary @/tmp/db-env.json "$base/applications/$APP_UUID/envs")"
           [ "$code" = '201' ] || { echo "Adding migration database secret failed with HTTP $code."; exit 3; }
 
-      - name: Deploy and wait for healthy task host
-        id: deploy
+      - name: Deploy exact SHA and verify migration success
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
@@ -99,9 +98,8 @@ jobs:
           base="${COOLIFY_URL%/}/api/v1"
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
-          [ "$code" = '200' ] || { echo "Deploying migration task host failed with HTTP $code."; exit 4; }
+          [ "$code" = '200' ] || { echo "Deploying migration host failed with HTTP $code."; exit 4; }
           deployment_uuid="$(node -e "const x=require('/tmp/deploy.json'); const d=Array.isArray(x.deployments)?x.deployments[0]:null; if(!d?.deployment_uuid) process.exit(1); process.stdout.write(d.deployment_uuid)")"
-          echo "deployment_uuid=$deployment_uuid" >> "$GITHUB_OUTPUT"
 
           deployment_done='no'
           for i in $(seq 1 120); do
@@ -109,83 +107,26 @@ jobs:
             deployment_status="$(node -e "const x=require('/tmp/deployment.json'); process.stdout.write(String(x.status||''))")"
             case "${deployment_status,,}" in
               finished|success|successful|succeeded|completed) deployment_done='yes'; break ;;
-              failed|failure|error|cancelled|canceled) echo "Migration task-host deployment failed: $deployment_status"; exit 5 ;;
+              failed|failure|error|cancelled|canceled) echo "Migration-host deployment failed: $deployment_status"; exit 5 ;;
             esac
             sleep 5
           done
-          [ "$deployment_done" = 'yes' ] || { echo 'Timed out waiting for Coolify task-host deployment.'; exit 6; }
+          [ "$deployment_done" = 'yes' ] || { echo 'Timed out waiting for Coolify migration-host deployment.'; exit 6; }
 
           ready='no'
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/app.json
             status="$(node -e "const x=require('/tmp/app.json'); process.stdout.write(String(x.status||''))")"
             case "${status,,}" in
               running:healthy|running:unknown|running) ready='yes'; break ;;
-              exited:*|failed|error) echo "Migration task host failed after completed deployment: $status"; exit 7 ;;
+              exited:*|failed|error) echo "Production DB migration/seed/smoke failed inside Coolify: $status"; exit 7 ;;
             esac
             sleep 3
           done
-          [ "$ready" = 'yes' ] || { echo 'Timed out waiting for migration task host health.'; exit 8; }
-          echo "Migration task host is running at exact SHA $TARGET_SHA."
+          [ "$ready" = 'yes' ] || { echo 'Timed out waiting for production DB migration/seed/smoke completion.'; exit 8; }
+          echo "Production DB migration, content migration, seed, and smoke succeeded for exact SHA $TARGET_SHA."
 
-      - name: Create and execute one-off migration task
-        id: task
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.app.outputs.app_uuid }}
-        run: |
-          set -euo pipefail
-          base="${COOLIFY_URL%/}/api/v1"
-          cat >/tmp/task.json <<'JSON'
-          {
-            "name": "mkety-production-db-release-migration",
-            "command": "cd /app && pnpm db:migrate && pnpm db:migrate:mkety-content && pnpm db:seed:mkety-content && pnpm db:smoke:mkety-content",
-            "frequency": "0 0 1 1 *",
-            "timeout": 1800,
-            "enabled": true
-          }
-          JSON
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-create.json -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
-            --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
-          [ "$code" = '201' ] || { echo "Creating migration task failed with HTTP $code."; cat /tmp/task-create.json; exit 9; }
-          task_uuid="$(node -e "const x=require('/tmp/task-create.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
-          echo "task_uuid=$task_uuid" >> "$GITHUB_OUTPUT"
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-execute.json -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
-          [ "$code" = '200' ] || { echo "Executing migration task failed with HTTP $code."; cat /tmp/task-execute.json; exit 10; }
-          echo 'Production migration task queued inside private Coolify network.'
-
-      - name: Verify one-off migration execution
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.app.outputs.app_uuid }}
-          TASK_UUID: ${{ steps.task.outputs.task_uuid }}
-        run: |
-          set -euo pipefail
-          base="${COOLIFY_URL%/}/api/v1"
-          found='no'
-          for i in $(seq 1 180); do
-            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "$base/applications/$APP_UUID/scheduled-tasks/$TASK_UUID/executions" -o /tmp/executions.json
-            read -r status duration <<<"$(node -e "const x=require('/tmp/executions.json'); const a=Array.isArray(x)?x:(x.data||[]); const e=a[0]||{}; process.stdout.write([String(e.status||''),String(e.duration||0)].join(' '))")"
-            case "${status,,}" in
-              success|successful|succeeded|completed)
-                found='yes'
-                echo "Production DB migration task succeeded (duration=${duration}s) for $TARGET_SHA."
-                break
-                ;;
-              failed|failure|error)
-                echo 'Production DB migration task failed inside Coolify.'
-                exit 11
-                ;;
-            esac
-            sleep 5
-          done
-          [ "$found" = 'yes' ] || { echo 'Timed out waiting for production DB migration task.'; exit 12; }
-
-      - name: Delete ephemeral migration task host
+      - name: Delete ephemeral migration host
         if: always() && steps.app.outputs.app_uuid != ''
         shell: bash
         env:
@@ -193,4 +134,4 @@ jobs:
         run: |
           set +e
           curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null
-          echo 'Ephemeral migration task host cleanup requested.'
+          echo 'Ephemeral migration host cleanup requested.'
