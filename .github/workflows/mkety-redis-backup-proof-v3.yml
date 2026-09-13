@@ -1,0 +1,176 @@
+name: Mkety Redis Backup Proof V3
+
+on:
+  push:
+    branches:
+      - ops/precutover-diagnostics-20260913
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      REDIS_UUID: i5hrrr4riyslz7hekhu5glkd
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve private Redis connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$REDIS_UUID" -o /tmp/redis.json
+          redis_url="$(node -e "const x=require('/tmp/redis.json');if(!x.internal_db_url)process.exit(2);process.stdout.write(x.internal_db_url)")"
+          echo "::add-mask::$redis_url"
+          printf '%s' "$redis_url" > /tmp/redis-url
+          chmod 600 /tmp/redis-url
+          echo MKETY_REDIS_CONNECTION_RESOLVED=true
+
+      - name: Create image-based Redis backup executor
+        id: backup_app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          cat > /tmp/run.sh <<'SH'
+          set -eu
+          apk add --no-cache aws-cli coreutils >/dev/null
+          key="redis/mkety-production-redis-$(date -u +%Y%m%dT%H%M%SZ).rdb"
+          out=/tmp/mkety-redis.rdb
+          case "$REDIS_URL" in rediss://*) redis-cli --tls -u "$REDIS_URL" --rdb "$out" ;; *) redis-cli -u "$REDIS_URL" --rdb "$out" ;; esac
+          bytes="$(wc -c < "$out" | tr -d ' ')"
+          test "$bytes" -gt 0 || { echo MKETY_REDIS_BACKUP_ERROR=empty-snapshot; exit 10; }
+          sha="$(sha256sum "$out" | awk '{print $1}')"
+          echo "MKETY_REDIS_BACKUP_STAGE_OK=snapshot"
+          echo "MKETY_REDIS_BACKUP_KEY=$key"
+          echo "MKETY_REDIS_BACKUP_SNAPSHOT_BYTES=$bytes"
+          echo "MKETY_REDIS_BACKUP_SHA256=$sha"
+          endpoint="$R2_S3_API"
+          case "$endpoint" in */) endpoint="${endpoint%/}" ;; esac
+          aws --endpoint-url "$endpoint" s3 cp "$out" "s3://$R2_BUCKET/$key" >/dev/null
+          echo "MKETY_REDIS_BACKUP_STAGE_OK=upload"
+          aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json
+          remote_bytes="$(node -e "const x=require('/tmp/head.json');process.stdout.write(String(x.ContentLength||0))")"
+          test "$remote_bytes" = "$bytes" || { echo "MKETY_REDIS_BACKUP_ERROR=remote-size-mismatch local=$bytes remote=$remote_bytes"; exit 11; }
+          aws --endpoint-url "$endpoint" s3 cp "s3://$R2_BUCKET/$key" /tmp/redis-verify.rdb >/dev/null
+          remote_sha="$(sha256sum /tmp/redis-verify.rdb | awk '{print $1}')"
+          test "$remote_sha" = "$sha" || { echo MKETY_REDIS_BACKUP_ERROR=sha-mismatch; exit 12; }
+          echo "MKETY_REDIS_BACKUP_REMOTE_BYTES=$remote_bytes"
+          echo "MKETY_REDIS_BACKUP_STAGE_OK=verify"
+          echo "MKETY_REDIS_BACKUP_OK=true"
+          while true; do sleep 3600; done
+          SH
+          START_COMMAND="sh -c $(node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync("/tmp/run.sh","utf8")))')"
+          START_COMMAND="$START_COMMAND" node <<'NODE' >/tmp/create-app.json
+          process.stdout.write(JSON.stringify({
+            project_uuid: process.env.PROJECT_UUID,
+            server_uuid: process.env.SERVER_UUID,
+            environment_uuid: process.env.ENVIRONMENT_UUID,
+            docker_registry_image_name: 'redis',
+            docker_registry_image_tag: '7-alpine',
+            build_pack: 'dockerimage',
+            ports_exposes: '3000',
+            name: `mkety-redis-backup-v3-${process.env.GITHUB_SHA.slice(0,12)}`,
+            description: `Ephemeral private Redis backup proof v3 ${process.env.GITHUB_SHA}`,
+            autogenerate_domain: false,
+            connect_to_docker_network: true,
+            start_command: process.env.START_COMMAND
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create-app.json "$base/applications/dockerimage")"
+          [ "$code" = '201' ] || { echo "Redis backup executor creation failed with HTTP $code."; cat /tmp/create-response.json; exit 2; }
+          app_uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Inject private Redis and R2 settings
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.backup_app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          redis_url="$(cat /tmp/redis-url)"
+          echo "::add-mask::$redis_url"
+          put_env() {
+            local key="$1" value="$2"
+            KEY="$key" VALUE="$value" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"
+            [ "$code" = '201' ] || { echo "Failed to inject $key (HTTP $code)."; cat /tmp/env-response.json; exit 3; }
+          }
+          put_env REDIS_URL "$redis_url"
+          put_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+          put_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+          put_env R2_S3_API "$R2_S3_API"
+          put_env R2_BUCKET "$R2_BUCKET"
+          echo MKETY_REDIS_EXECUTOR_CONFIG_OK=true
+
+      - name: Deploy and prove Redis backup
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.backup_app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = '200' ] || { echo "Redis backup executor deploy failed with HTTP $code."; cat /tmp/deploy.json; exit 4; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          deployed=no
+          for i in $(seq 1 180); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            status="$(node -e "const x=require('/tmp/deployment.json');process.stdout.write(String(x.status||''))")"
+            echo "deployment_status=$status"
+            case "${status,,}" in finished|success|successful|succeeded|completed) deployed=yes; break ;; failed|failure|error|cancelled|canceled) echo "Redis backup executor deployment failed: $status"; exit 5 ;; esac
+            sleep 5
+          done
+          [ "$deployed" = yes ] || { echo 'Redis backup executor deployment timed out before runtime proof'; cat /tmp/deployment.json; exit 6; }
+          ok='no'
+          for i in $(seq 1 180); do
+            curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs.json || true
+            node - <<'NODE'
+          const fs=require('node:fs');let logs='';try{logs=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          for(const line of logs.split(/\r?\n/)){if(line.includes('MKETY_REDIS_')) console.log(line.replace(/redis:\/\/[^\s]+/g,'redis://***'));}
+          NODE
+            if node - <<'NODE'
+          const fs=require('node:fs');let logs='';try{logs=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const required=['MKETY_REDIS_BACKUP_STAGE_OK=snapshot','MKETY_REDIS_BACKUP_STAGE_OK=upload','MKETY_REDIS_BACKUP_STAGE_OK=verify','MKETY_REDIS_BACKUP_OK=true'];
+          process.exit(required.every(m=>logs.includes(m))?0:1);
+          NODE
+            then ok='yes'; break; fi
+            sleep 3
+          done
+          [ "$ok" = 'yes' ] || { echo 'Redis backup did not emit all success markers after successful deployment.'; exit 7; }
+          node - <<'NODE'
+          const fs=require('node:fs');let logs='';try{logs=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const key=(logs.match(/MKETY_REDIS_BACKUP_KEY=([^\s]+)/)||[])[1];
+          const local=(logs.match(/MKETY_REDIS_BACKUP_SNAPSHOT_BYTES=(\d+)/)||[])[1]||'unknown';
+          const remote=(logs.match(/MKETY_REDIS_BACKUP_REMOTE_BYTES=(\d+)/)||[])[1]||'unknown';
+          if(!key) process.exit(1);
+          console.log(`MKETY_REDIS_BACKUP_PROOF_KEY=${key}`);
+          console.log(`Redis backup proof succeeded: snapshot_bytes=${local}; remote_bytes=${remote}`);
+          NODE
+
+      - name: Delete ephemeral Redis backup executor
+        if: always() && steps.backup_app.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.backup_app.outputs.app_uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null
+          echo 'Ephemeral Redis backup executor cleanup requested.'
