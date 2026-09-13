@@ -24,7 +24,7 @@ describe('Coolify production DB executor', () => {
     );
   });
 
-  it('is manual/reusable, exact-SHA gated, HTTPS-only, private-networked, and always cleaned up', async () => {
+  it('is manual/reusable, exact-SHA gated, HTTPS-only, private-networked, always cleaned up, and requires the full migration release marker', async () => {
     const workflow = await read('.github/workflows/mkety-coolify-production-db-executor.yml');
 
     expect(workflow).toContain('workflow_dispatch:');
@@ -35,5 +35,7 @@ describe('Coolify production DB executor', () => {
     expect(workflow).toContain('connect_to_docker_network:true');
     expect(workflow).toContain('if: always()');
     expect(workflow).toContain('RELEASE_BRANCH: feat/mkety-public-site-production');
+    expect(workflow).toContain('MKETY_DB_RELEASE_SEQUENCE_OK=true');
+    expect(workflow).toContain('Migration container became healthy before the full release sequence completed.');
   });
 });
