@@ -1,0 +1,251 @@
+name: Mkety R2 Offsite Backup Bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-r2-offsite-backup-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Bootstrap and verify private R2 Postgres backups
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_BUCKET: mkety-production-db-backups
+      COOLIFY_STORAGE_NAME: mkety-r2-production-backups
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      POSTGRES_BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+
+    steps:
+      - name: Validate required secrets and HTTPS control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in COOLIFY_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "$name is required."; exit 1; }
+          done
+          curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
+          echo 'Secure Coolify endpoint reachable.'
+
+      - name: Verify Cloudflare token and R2 bucket permissions
+        id: cf
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+            "$cf/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" -o /tmp/cf-token.json
+
+          token_id="$(node <<'NODE'
+          const x=require('/tmp/cf-token.json');
+          if (!x.success || x.result?.status !== 'active' || !x.result?.id) process.exit(1);
+          process.stdout.write(x.result.id);
+          NODE
+          )"
+          echo "token_id=$token_id" >> "$GITHUB_OUTPUT"
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/r2-buckets.json -w '%{http_code}' \
+            "${auth[@]}" "$cf/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets?per_page=100")"
+          if [ "$code" != '200' ]; then
+            echo "Existing Cloudflare token cannot list R2 buckets (HTTP $code). No Coolify mutation attempted."
+            exit 2
+          fi
+          echo 'Existing Cloudflare token can access R2 bucket management.'
+
+      - name: Ensure dedicated private R2 bucket exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          exists="$(R2_BUCKET="$R2_BUCKET" node <<'NODE'
+          const x=require('/tmp/r2-buckets.json');
+          const list=x.result?.buckets || x.result || [];
+          process.stdout.write(Array.isArray(list) && list.some(b => b?.name === process.env.R2_BUCKET) ? 'yes' : 'no');
+          NODE
+          )"
+          if [ "$exists" = 'yes' ]; then
+            echo 'Dedicated R2 backup bucket already exists; reusing it.'
+          else
+            payload="$(node -e "process.stdout.write(JSON.stringify({name:process.env.R2_BUCKET}))")"
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/r2-create.json -w '%{http_code}' \
+              -X POST "${auth[@]}" --data "$payload" \
+              "$cf/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets")"
+            if [ "$code" != '200' ] && [ "$code" != '201' ]; then
+              echo "Existing Cloudflare token cannot create the R2 backup bucket (HTTP $code). No Coolify mutation attempted."
+              exit 3
+            fi
+            echo 'Dedicated private R2 backup bucket created.'
+          fi
+
+      - name: Derive and verify S3-compatible R2 object credentials
+        id: r2
+        shell: bash
+        env:
+          TOKEN_ID: ${{ steps.cf.outputs.token_id }}
+        run: |
+          set -euo pipefail
+          access_key="$TOKEN_ID"
+          secret_key="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | awk '{print $1}')"
+          echo "::add-mask::$secret_key"
+          endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          if ! command -v aws >/dev/null 2>&1; then
+            python3 -m pip install --user --quiet awscli
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+
+          probe="mkety-backup-healthcheck/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          printf 'mkety-r2-healthcheck\n' >/tmp/r2-probe.txt
+          AWS_ACCESS_KEY_ID="$access_key" AWS_SECRET_ACCESS_KEY="$secret_key" AWS_DEFAULT_REGION=auto \
+            aws s3api put-object --endpoint-url "$endpoint" --bucket "$R2_BUCKET" --key "$probe" --body /tmp/r2-probe.txt >/dev/null
+          AWS_ACCESS_KEY_ID="$access_key" AWS_SECRET_ACCESS_KEY="$secret_key" AWS_DEFAULT_REGION=auto \
+            aws s3api head-object --endpoint-url "$endpoint" --bucket "$R2_BUCKET" --key "$probe" >/dev/null
+          AWS_ACCESS_KEY_ID="$access_key" AWS_SECRET_ACCESS_KEY="$secret_key" AWS_DEFAULT_REGION=auto \
+            aws s3api delete-object --endpoint-url "$endpoint" --bucket "$R2_BUCKET" --key "$probe" >/dev/null
+
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "access_key=$access_key" >> "$GITHUB_OUTPUT"
+          echo "secret_key=$secret_key" >> "$GITHUB_OUTPUT"
+          echo 'Existing Cloudflare token has verified R2 object read/write access.'
+
+      - name: Ensure R2 storage exists in Coolify
+        id: coolify_storage
+        shell: bash
+        env:
+          R2_ENDPOINT: ${{ steps.r2.outputs.endpoint }}
+          R2_ACCESS_KEY: ${{ steps.r2.outputs.access_key }}
+          R2_SECRET_KEY: ${{ steps.r2.outputs.secret_key }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$R2_SECRET_KEY"
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/s3-storages" -o /tmp/coolify-s3.json
+
+          storage_uuid="$(NAME="$COOLIFY_STORAGE_NAME" node <<'NODE'
+          const raw=require('/tmp/coolify-s3.json');
+          const list=Array.isArray(raw)?raw:(raw.data||raw.storages||[]);
+          const x=Array.isArray(list)?list.find(s=>s?.name===process.env.NAME):null;
+          if(x?.uuid) process.stdout.write(x.uuid);
+          NODE
+          )"
+
+          if [ -z "$storage_uuid" ]; then
+            NAME="$COOLIFY_STORAGE_NAME" ENDPOINT="$R2_ENDPOINT" BUCKET="$R2_BUCKET" KEY="$R2_ACCESS_KEY" SECRET="$R2_SECRET_KEY" node <<'NODE' >/tmp/coolify-s3-create.json
+          const payload={
+            name:process.env.NAME,
+            description:'Private off-site backups for Mkety production PostgreSQL',
+            endpoint:process.env.ENDPOINT,
+            bucket:process.env.BUCKET,
+            region:'auto',
+            key:process.env.KEY,
+            secret:process.env.SECRET,
+            is_usable:true
+          };
+          process.stdout.write(JSON.stringify(payload));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/coolify-s3-created.json -w '%{http_code}' \
+              -X POST "${auth[@]}" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/coolify-s3-create.json "$base/s3-storages")"
+            [ "$code" = '201' ] || { echo "Coolify R2 storage creation failed with HTTP $code."; exit 4; }
+            storage_uuid="$(node -e "const x=require('/tmp/coolify-s3-created.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
+            echo 'R2 destination added to Coolify.'
+          else
+            echo 'Existing Coolify R2 destination found; reusing it.'
+          fi
+          echo "storage_uuid=$storage_uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Enable off-site R2 copy on existing Postgres backup policy
+        shell: bash
+        env:
+          STORAGE_UUID: ${{ steps.coolify_storage.outputs.storage_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+
+          STORAGE_UUID="$STORAGE_UUID" node <<'NODE' >/tmp/backup-patch.json
+          process.stdout.write(JSON.stringify({
+            enabled:true,
+            save_s3:true,
+            s3_storage_uuid:process.env.STORAGE_UUID,
+            backup_now:true,
+            database_backup_retention_amount_locally:7,
+            database_backup_retention_amount_s3:30,
+            timeout:3600
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/backup-patch-response.json -w '%{http_code}' \
+            -X PATCH "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/backup-patch.json \
+            "$base/databases/$POSTGRES_UUID/backups/$POSTGRES_BACKUP_UUID")"
+          [ "$code" = '200' ] || { echo "Enabling R2 backup failed with HTTP $code."; exit 5; }
+          echo 'Postgres schedule now targets both local storage and R2; fresh backup requested.'
+
+      - name: Verify fresh backup execution and R2 object presence
+        shell: bash
+        env:
+          R2_ENDPOINT: ${{ steps.r2.outputs.endpoint }}
+          R2_ACCESS_KEY: ${{ steps.r2.outputs.access_key }}
+          R2_SECRET_KEY: ${{ steps.r2.outputs.secret_key }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$R2_SECRET_KEY"
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+
+          success='no'
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+              "$base/databases/$POSTGRES_UUID/backups/$POSTGRES_BACKUP_UUID/executions" -o /tmp/executions.json
+            status="$(node <<'NODE'
+          const raw=require('/tmp/executions.json');
+          const list=raw.executions||raw.data||raw||[];
+          const sorted=Array.isArray(list)?[...list].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)):[];
+          const x=sorted[0]; if(x) process.stdout.write(String(x.status||''));
+          NODE
+            )"
+            case "${status,,}" in
+              success|successful|succeeded|completed) success='yes'; break ;;
+              failed|failure|error) echo "Fresh backup execution failed with status=$status"; exit 6 ;;
+            esac
+            sleep 4
+          done
+          [ "$success" = 'yes' ] || { echo 'Timed out waiting for fresh Postgres backup execution.'; exit 7; }
+
+          if ! command -v aws >/dev/null 2>&1; then
+            python3 -m pip install --user --quiet awscli
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY" AWS_DEFAULT_REGION=auto \
+            aws s3 ls --recursive --endpoint-url "$R2_ENDPOINT" "s3://$R2_BUCKET/" > /tmp/r2-list.txt
+          count="$(wc -l < /tmp/r2-list.txt | tr -d ' ')"
+          [ "$count" -gt 0 ] || { echo 'Backup execution succeeded but no R2 object is visible.'; exit 8; }
+
+          node <<'NODE' >/tmp/r2-backup-verification-sanitized.json
+          const fs=require('node:fs');
+          const raw=require('/tmp/executions.json');
+          const list=raw.executions||raw.data||raw||[];
+          const sorted=Array.isArray(list)?[...list].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)):[];
+          const x=sorted[0]||{};
+          process.stdout.write(JSON.stringify({
+            bucket:process.env.R2_BUCKET,
+            backupStatus:x.status||null,
+            backupSize:Number(x.size||0),
+            backupCreatedAt:x.created_at||null,
+            r2ObjectCount:Number(process.env.OBJECT_COUNT||0)
+          },null,2));
+          NODE
+          echo "Verified off-site R2 backup objects: $count"
