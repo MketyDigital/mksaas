@@ -1,0 +1,40 @@
+services:
+  mkety-production-runner:
+    image: ghcr.io/actions/actions-runner:2.337.0
+    restart: unless-stopped
+    working_dir: /home/runner
+    entrypoint:
+      - /bin/bash
+      - -lc
+    command: |
+      set -euo pipefail
+      if [ ! -f .runner ]; then
+        : "${RUNNER_URL:?RUNNER_URL is required}"
+        : "${RUNNER_TOKEN:?RUNNER_TOKEN is required for initial registration}"
+        ./config.sh \
+          --unattended \
+          --replace \
+          --url "$RUNNER_URL" \
+          --token "$RUNNER_TOKEN" \
+          --name "${RUNNER_NAME:-mkety-production-oci}" \
+          --labels "${RUNNER_LABELS:-mkety-production}" \
+          --work "${RUNNER_WORKDIR:-_work}"
+      fi
+      exec ./run.sh
+    environment:
+      RUNNER_URL: ${RUNNER_URL}
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      RUNNER_NAME: ${RUNNER_NAME:-mkety-production-oci}
+      RUNNER_LABELS: ${RUNNER_LABELS:-mkety-production}
+      RUNNER_WORKDIR: ${RUNNER_WORKDIR:-_work}
+    volumes:
+      - mkety-production-runner-state:/home/runner
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+
+volumes:
+  mkety-production-runner-state:
