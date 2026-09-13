@@ -1,0 +1,100 @@
+name: Mkety Coolify Deploy Recovery
+
+on:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-deploy-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      TARGET_NAME: mkety-db-migrate-c3ae79dde496
+      TARGET_SHA: c3ae79dde496643164235f92eeff2a2a268f5efb
+
+    steps:
+      - name: Deploy exact existing migration host and execute migration task
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications" -o /tmp/apps.json
+          app_uuid="$(NAME="$TARGET_NAME" SHA="$TARGET_SHA" node <<'NODE'
+          const raw=require('/tmp/apps.json'); const list=Array.isArray(raw)?raw:(raw.data||[]);
+          const x=list.find(v=>v.name===process.env.NAME && v.git_commit_sha===process.env.SHA);
+          if(x?.uuid) process.stdout.write(x.uuid);
+          NODE
+          )"
+          [ -n "$app_uuid" ] || { echo 'Exact migration host not found.'; exit 1; }
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
+            -X POST "${auth[@]}" "$base/deploy?uuid=$app_uuid&force=true")"
+          [ "$code" = '200' ] || { echo "Coolify deploy request failed with HTTP $code."; exit 2; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json'); const d=Array.isArray(x.deployments)?x.deployments[0]:null; if(!d?.deployment_uuid) process.exit(1); process.stdout.write(d.deployment_uuid)")"
+
+          deployed='no'
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            status="$(node -e "const x=require('/tmp/deployment.json'); process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) deployed='yes'; break ;;
+              failed|failure|error|cancelled|canceled) echo "Deployment failed: $status"; exit 3 ;;
+            esac
+            sleep 5
+          done
+          [ "$deployed" = 'yes' ] || { echo 'Timed out waiting for Coolify deployment.'; exit 4; }
+
+          ready='no'
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications/$app_uuid" -o /tmp/app.json
+            status="$(node -e "const x=require('/tmp/app.json'); process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              running:healthy|running:unknown|running) ready='yes'; break ;;
+              exited:*|failed|error) echo "Migration host failed after deployment: $status"; exit 5 ;;
+            esac
+            sleep 3
+          done
+          [ "$ready" = 'yes' ] || { echo 'Migration host did not become runnable.'; exit 6; }
+
+          cat >/tmp/task.json <<'JSON'
+          {
+            "name": "mkety-production-db-release-migration",
+            "command": "pnpm db:migrate && pnpm db:migrate:mkety-content && pnpm db:seed:mkety-content && pnpm db:smoke:mkety-content",
+            "frequency": "0 0 1 1 *",
+            "timeout": 1800,
+            "enabled": true
+          }
+          JSON
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task.json.out -w '%{http_code}' \
+            -X POST "${auth[@]}" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/task.json "$base/applications/$app_uuid/scheduled-tasks")"
+          [ "$code" = '201' ] || { echo "Task creation failed with HTTP $code."; exit 7; }
+          task_uuid="$(node -e "const x=require('/tmp/task.json.out'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute.out -w '%{http_code}' \
+            -X POST "${auth[@]}" "$base/applications/$app_uuid/scheduled-tasks/$task_uuid/execute")"
+          [ "$code" = '200' ] || { echo "Task execution request failed with HTTP $code."; exit 8; }
+
+          ok='no'
+          for i in $(seq 1 360); do
+            curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+              "$base/applications/$app_uuid/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
+            read -r status duration <<<"$(node -e "const x=require('/tmp/executions.json'); const a=Array.isArray(x)?x:(x.data||[]); const e=a[0]||{}; process.stdout.write([String(e.status||''),String(e.duration||0)].join(' '))")"
+            case "${status,,}" in
+              success|successful|succeeded|completed) ok='yes'; echo "Private production migration task succeeded in ${duration}s."; break ;;
+              failed|failure|error) echo 'Private production migration task failed.'; exit 9 ;;
+            esac
+            sleep 5
+          done
+          [ "$ok" = 'yes' ] || { echo 'Timed out waiting for migration task.'; exit 10; }
