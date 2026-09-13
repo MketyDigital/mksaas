@@ -1,0 +1,2 @@
+Trigger current diagnostics-branch workflows after Cloudflare zone-scope update.
+No production application code or frozen release SHA is changed.
