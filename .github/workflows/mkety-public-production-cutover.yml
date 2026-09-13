@@ -103,7 +103,6 @@ jobs:
       verified_sha: ${{ inputs.verified_sha }}
     secrets:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
 
   cutover:
     needs: production-db
