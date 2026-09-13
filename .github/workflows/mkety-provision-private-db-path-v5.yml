@@ -1,0 +1,121 @@
+name: Mkety Provision Private DB Path V5
+
+on:
+  push:
+    branches: [ops/precutover-diagnostics-20260913]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      TUNNEL_ID: 3ced1d56-8418-42e5-830b-f7ce9cd6fde4
+      TUNNEL_NAME: mkety-production-vpc
+      DB_HOSTNAME: db-runtime.mkety.com
+      CA_CERT_NAME: mkety-production-coolify-ca
+      ACCESS_TOKEN_NAME: mkety-production-hyperdrive-ca
+      ACCESS_APP_NAME: mkety-production-postgres
+      ACCESS_POLICY_NAME: mkety-production-hyperdrive-ca-only
+      HYPERDRIVE_NAME: mkety-production-db
+      ZONE_NAME: mkety.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve private PostgreSQL metadata and Cloudflare preflight
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE' >/tmp/db.env
+          const x=require('/tmp/db.json');if(x.is_public!==false||x.enable_ssl!==true||!String(x.status||'').includes('healthy')||!x.internal_db_url)throw new Error('PostgreSQL private/TLS/health preflight failed');const u=new URL(x.internal_db_url);for(const [k,v] of Object.entries({DB_NAME:decodeURIComponent(u.pathname.slice(1)),DB_USER:decodeURIComponent(u.username),DB_PASSWORD:decodeURIComponent(u.password),DB_INTERNAL_HOST:u.hostname,DB_INTERNAL_PORT:u.port||'5432'}))console.log(`${k}=${v}`);
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"; auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID" -o /tmp/t.json
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/tc.json
+          curl -fsS "${auth[@]}" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hd.json
+          curl -fsS "${auth[@]}" "$acct/access/service_tokens?per_page=100" -o /tmp/tokens.json
+          curl -fsS "${auth[@]}" "$acct/access/apps?per_page=100" -o /tmp/apps.json
+          curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME&account.id=$CLOUDFLARE_ACCOUNT_ID&status=active&per_page=50" -o /tmp/zones.json
+          zid="$(node -e "const a=require('/tmp/zones.json').result||[];if(a.length!==1)process.exit(1);process.stdout.write(a[0].id)")"; curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zid/dns_records?name=$DB_HOSTNAME&per_page=100" -o /tmp/dns.json
+          node <<'NODE'
+          const t=require('/tmp/t.json').result;if(!t||t.id!==process.env.TUNNEL_ID||t.name!==process.env.TUNNEL_NAME||String(t.status).toLowerCase()!=='healthy')throw new Error('Tunnel mismatch');const r=(require('/tmp/tc.json').result?.config?.ingress||[]).filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||!String(r[0].service||'').startsWith('tcp://'))throw new Error('Tunnel ingress mismatch');const d=require('/tmp/dns.json').result||[],e=`${process.env.TUNNEL_ID}.cfargotunnel.com`;if(d.length!==1||d[0].type!=='CNAME'||String(d[0].content).toLowerCase()!==e.toLowerCase()||d[0].proxied!==true)throw new Error('DNS mismatch');const h=require('/tmp/hd.json').result||[];for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const x=h.find(v=>v.name===n);if(!x||x.id!==id)throw new Error(`Protected Hyperdrive changed: ${n}`)}if(h.filter(x=>x.name===process.env.HYPERDRIVE_NAME).length!==0)throw new Error('Target Hyperdrive already exists; refusing implicit replace');
+          NODE
+          tc="$(ACCESS_TOKEN_NAME="$ACCESS_TOKEN_NAME" node -e "const a=(require('/tmp/tokens.json').result||[]).filter(x=>x.name===process.env.ACCESS_TOKEN_NAME);if(a.length>1)process.exit(2);process.stdout.write(String(a.length))")"; echo "token_count=$tc" >> "$GITHUB_OUTPUT"; if [ "$tc" = 1 ]; then tid="$(ACCESS_TOKEN_NAME="$ACCESS_TOKEN_NAME" node -e "process.stdout.write((require('/tmp/tokens.json').result||[]).find(x=>x.name===process.env.ACCESS_TOKEN_NAME).id)")"; echo "token_id=$tid" >> "$GITHUB_OUTPUT"; fi
+          aid="$(ACCESS_APP_NAME="$ACCESS_APP_NAME" DB_HOSTNAME="$DB_HOSTNAME" node -e "const a=(require('/tmp/apps.json').result||[]).filter(x=>x.name===process.env.ACCESS_APP_NAME);if(a.length!==1||a[0].domain!==process.env.DB_HOSTNAME)process.exit(2);process.stdout.write(a[0].id)")"; echo "app_id=$aid" >> "$GITHUB_OUTPUT"
+          echo MKETY_V5_PREFLIGHT_OK=true
+
+      - name: Prove Coolify CA validates PostgreSQL
+        id: caprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/create.json
+          const df=`FROM alpine:3.20\nRUN apk add --no-cache openssl\nCMD [\"sh\",\"-c\",\"set -eu; test -s /ca/coolify-ca.crt || { echo MKETY_CA_ERROR=missing-ca; exit 2; }; openssl x509 -in /ca/coolify-ca.crt -noout -checkend 86400 >/dev/null; openssl x509 -in /ca/coolify-ca.crt -noout -text | grep -q 'CA:TRUE' || { echo MKETY_CA_ERROR=not-ca; exit 3; }; if ! openssl s_client -starttls postgres -connect \\\"$DB_INTERNAL_HOST:$DB_INTERNAL_PORT\\\" -CAfile /ca/coolify-ca.crt -verify_return_error </dev/null >/tmp/tls.txt 2>&1; then echo MKETY_CA_ERROR=chain-failed; grep -E 'verify error|Verify return code' /tmp/tls.txt | head -10 || true; exit 4; fi; grep -q 'Verify return code: 0 (ok)' /tmp/tls.txt || { echo MKETY_CA_ERROR=verify-not-zero; exit 5; }; printf 'MKETY_CA_B64='; base64 /ca/coolify-ca.crt | tr -d '\\\\n'; printf '\\\\nMKETY_CA_CHAIN_OK=true\\\\n'; while true; do sleep 3600; done\"]\n`;
+          process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:Buffer.from(df).toString('base64'),build_pack:'dockerfile',name:`mkety-ca-probe-${process.env.GITHUB_SHA.slice(0,10)}`,description:'Ephemeral verified Coolify CA probe',autogenerate_domain:false,ports_exposes:'3000'}));
+          NODE
+          code="$(curl -sS -o /tmp/create-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"; [ "$code" = 201 ] || { echo "CA probe create failed HTTP $code"; cat /tmp/create-r.json; exit 20; }; uuid="$(node -e "const x=require('/tmp/create-r.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"; echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+          node <<'NODE' >/tmp/storage.json
+          process.stdout.write(JSON.stringify({type:'persistent',name:`mkety-ca-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:'/ca/coolify-ca.crt',host_path:'/data/coolify/ssl/coolify-ca.crt'}));
+          NODE
+          code="$(curl -sS -o /tmp/storage-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$uuid/storages")"; [ "$code" = 201 ] || { echo "CA mount failed HTTP $code"; cat /tmp/storage-r.json; exit 21; }
+          for kv in "DB_INTERNAL_HOST=$DB_INTERNAL_HOST" "DB_INTERNAL_PORT=$DB_INTERNAL_PORT"; do k="${kv%%=*}"; v="${kv#*=}"; KEY="$k" VALUE="$v" node -e "process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))" >/tmp/env.json; code="$(curl -sS -o /tmp/env-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$uuid/envs")"; [ "$code" = 201 ] || { echo "CA probe env failed HTTP $code"; exit 22; }; done
+          code="$(curl -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$uuid&force=true")"; [ "$code" = 200 ] || { echo "CA probe deploy failed HTTP $code"; exit 23; }; duuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 90); do curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/d.json; s="$(node -e "process.stdout.write(String(require('/tmp/d.json').status||''))")"; case "${s,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) echo "CA probe deployment failed: $s"; exit 24;; esac; sleep 4; done
+          found=no; for i in $(seq 1 60); do curl -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/logs?lines=200&show_timestamps=false" -o /tmp/logs.json || true; if node -e "process.exit(String(require('/tmp/logs.json').logs||'').includes('MKETY_CA_CHAIN_OK=true')?0:1)" 2>/dev/null; then found=yes; break; fi; sleep 3; done
+          [ "$found" = yes ] || { echo 'CA chain proof missing'; node -e "for(const l of String(require('/tmp/logs.json').logs||'').split(/\r?\n/))if(l.includes('MKETY_CA_ERROR='))console.log(l)" || true; exit 25; }
+          node -e "const fs=require('fs'),m=String(require('/tmp/logs.json').logs||'').match(/MKETY_CA_B64=([A-Za-z0-9+/=]+)/);if(!m)process.exit(1);fs.writeFileSync('/tmp/ca.b64',m[1])"; base64 -d /tmp/ca.b64 >/tmp/ca.crt; openssl x509 -in /tmp/ca.crt -noout -checkend 86400 >/dev/null; openssl x509 -in /tmp/ca.crt -noout -text | grep -q 'CA:TRUE'; echo MKETY_COOLIFY_CA_CHAIN_OK=true
+
+      - name: Register verified CA with Cloudflare
+        id: cacert
+        shell: bash
+        run: |
+          set -euo pipefail; acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"; code="$(curl -sS -o /tmp/certs.json -w '%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/mtls_certificates?per_page=100")"; [ "$code" = 200 ] || { echo "Cloudflare CA inventory failed HTTP $code"; node -e "console.error(JSON.stringify({errors:require('/tmp/certs.json').errors||[]}))"; exit 30; }; count="$(CA_CERT_NAME="$CA_CERT_NAME" node -e "const a=(require('/tmp/certs.json').result||[]).filter(x=>x.name===process.env.CA_CERT_NAME);if(a.length>1)process.exit(2);process.stdout.write(String(a.length))")"; if [ "$count" = 0 ]; then CA_CERT_NAME="$CA_CERT_NAME" node -e "const fs=require('fs');process.stdout.write(JSON.stringify({name:process.env.CA_CERT_NAME,ca:true,certificates:fs.readFileSync('/tmp/ca.crt','utf8')}))" >/tmp/up.json; code="$(curl -sS -o /tmp/up-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/up.json "$acct/mtls_certificates")"; case "$code" in 200|201) ;; *) echo "CA upload failed HTTP $code"; node -e "console.error(JSON.stringify({errors:require('/tmp/up-r.json').errors||[]}))"; exit 31;; esac; cid="$(node -e "const p=require('/tmp/up-r.json');if(!p.success||!p.result?.id||p.result?.ca!==true)process.exit(1);process.stdout.write(p.result.id)")"; else cid="$(CA_CERT_NAME="$CA_CERT_NAME" node -e "const x=(require('/tmp/certs.json').result||[]).find(v=>v.name===process.env.CA_CERT_NAME);if(!x||x.ca!==true)process.exit(1);process.stdout.write(x.id)")"; fi; echo "ca_id=$cid" >> "$GITHUB_OUTPUT"; echo MKETY_CLOUDFLARE_CA_OK=true
+
+      - name: Create or rotate isolated Access token
+        shell: bash
+        env:
+          TOKEN_COUNT: ${{ steps.preflight.outputs.token_count }}
+          TOKEN_ID: ${{ steps.preflight.outputs.token_id }}
+        run: |
+          set -euo pipefail; acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"; if [ "$TOKEN_COUNT" = 0 ]; then printf '{"name":"%s","duration":"8760h"}' "$ACCESS_TOKEN_NAME" >/tmp/t.json; code="$(curl -sS -o /tmp/tr.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/t.json "$acct/access/service_tokens")"; else code="$(curl -sS -o /tmp/tr.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '{}' "$acct/access/service_tokens/$TOKEN_ID/rotate")"; fi; case "$code" in 200|201) ;; *) echo "Access token failed HTTP $code"; exit 40;; esac; node -e "const p=require('/tmp/tr.json');if(!p.success||!p.result?.id||!p.result?.client_id||!p.result?.client_secret)process.exit(1);console.log('ACCESS_TOKEN_ID='+p.result.id);console.log('ACCESS_CLIENT_ID='+p.result.client_id);console.log('ACCESS_CLIENT_SECRET='+p.result.client_secret)" >/tmp/te; while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/te; echo MKETY_ACCESS_TOKEN_V5_OK=true
+
+      - name: Create or verify isolated Access policy
+        shell: bash
+        env:
+          APP_ID: ${{ steps.preflight.outputs.app_id }}
+        run: |
+          set -euo pipefail; acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"; curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/access/apps/$APP_ID/policies?per_page=100" -o /tmp/p.json; c="$(ACCESS_POLICY_NAME="$ACCESS_POLICY_NAME" node -e "const a=(require('/tmp/p.json').result||[]).filter(x=>x.name===process.env.ACCESS_POLICY_NAME);if(a.length>1)process.exit(2);process.stdout.write(String(a.length))")"; if [ "$c" = 0 ]; then node -e "process.stdout.write(JSON.stringify({name:process.env.ACCESS_POLICY_NAME,decision:'non_identity',precedence:2,include:[{service_token:{token_id:process.env.ACCESS_TOKEN_ID}}],exclude:[],require:[]}))" >/tmp/newp.json; code="$(curl -sS -o /tmp/pr.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/newp.json "$acct/access/apps/$APP_ID/policies")"; case "$code" in 200|201) ;; *) echo "Access policy failed HTTP $code"; node -e "console.error(JSON.stringify({errors:require('/tmp/pr.json').errors||[]}))"; exit 50;; esac; else ACCESS_POLICY_NAME="$ACCESS_POLICY_NAME" ACCESS_TOKEN_ID="$ACCESS_TOKEN_ID" node -e "const p=(require('/tmp/p.json').result||[]).find(x=>x.name===process.env.ACCESS_POLICY_NAME),ids=(p.include||[]).map(x=>x.service_token?.token_id).filter(Boolean);if(p.decision!=='non_identity'||ids.length!==1||ids[0]!==process.env.ACCESS_TOKEN_ID)process.exit(1)"; fi; echo MKETY_ACCESS_POLICY_V5_OK=true
+
+      - name: Create and verify mkety-production-db Hyperdrive
+        shell: bash
+        env:
+          CA_CERT_ID: ${{ steps.cacert.outputs.ca_id }}
+        run: |
+          set -euo pipefail; acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"; node -e "process.stdout.write(JSON.stringify({name:process.env.HYPERDRIVE_NAME,origin:{host:process.env.DB_HOSTNAME,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,scheme:'postgres',access_client_id:process.env.ACCESS_CLIENT_ID,access_client_secret:process.env.ACCESS_CLIENT_SECRET},mtls:{ca_certificate_id:process.env.CA_CERT_ID,sslmode:'verify-ca'}}))" >/tmp/newhd.json; code="$(curl -sS -o /tmp/hr.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/newhd.json "$acct/hyperdrive/configs")"; case "$code" in 200|201) ;; *) echo "Hyperdrive create failed HTTP $code"; node -e "console.error(JSON.stringify({errors:require('/tmp/hr.json').errors||[]}))"; exit 60;; esac; curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/hyperdrive/configs?per_page=100" -o /tmp/final.json; node <<'NODE'
+          const h=require('/tmp/final.json').result||[];for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const x=h.find(v=>v.name===n);if(!x||x.id!==id)throw new Error(`Protected Hyperdrive changed: ${n}`)}const a=h.filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(a.length!==1)throw new Error(`Target count ${a.length}`);const x=a[0];if(x.origin?.host!==process.env.DB_HOSTNAME||x.origin?.service_id)throw new Error('Origin mismatch');if(x.mtls?.ca_certificate_id!==process.env.CA_CERT_ID||String(x.mtls?.sslmode||'').toLowerCase()!=='verify-ca')throw new Error('CA mode mismatch');console.log('MKETY_HYPERDRIVE_ID='+x.id);
+          NODE
+          echo MKETY_PRIVATE_DB_PATH_OK=true
+
+      - name: Delete ephemeral CA probe
+        if: always() && steps.caprobe.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.caprobe.outputs.app_uuid }}
+        run: curl -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
