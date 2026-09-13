@@ -41,7 +41,7 @@ jobs:
           [ -n "${DATABASE_URL:-}" ] || { echo 'PRODUCTION_DATABASE_URL is required.'; exit 1; }
           curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
 
-      - name: Create isolated no-domain migration application
+      - name: Create exact-SHA isolated no-domain migration application
         id: app
         shell: bash
         run: |
@@ -53,8 +53,10 @@ jobs:
             environment_uuid:process.env.ENVIRONMENT_UUID,
             git_repository:'https://github.com/MketyDigital/mksaas',
             git_branch:process.env.RELEASE_BRANCH,
+            git_commit_sha:process.env.TARGET_SHA,
             build_pack:'dockerfile',
             dockerfile_location:'/ops/coolify-migration/Dockerfile',
+            ports_exposes:'3000',
             name:`mkety-db-migrate-${process.env.TARGET_SHA.slice(0,12)}`,
             description:`Ephemeral exact-SHA production DB migration executor for ${process.env.TARGET_SHA}`,
             autogenerate_domain:false,
@@ -69,26 +71,22 @@ jobs:
           [ "$code" = '201' ] || { echo "Coolify migration app creation failed with HTTP $code."; cat /tmp/create-response.json; exit 2; }
           app_uuid="$(node -e "const x=require('/tmp/create-response.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
           echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
+          echo 'Exact-SHA ephemeral migration application created.'
 
-      - name: Pin exact SHA and inject private database URL
+      - name: Inject private database URL
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          printf '{"git_commit_sha":"%s","autogenerate_domain":false,"connect_to_docker_network":true}' "$TARGET_SHA" >/tmp/app-patch.json
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/app-patch-response.json -w '%{http_code}' \
-            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
-            --data-binary @/tmp/app-patch.json "$base/applications/$APP_UUID")"
-          [ "$code" = '200' ] || { echo "Pinning migration app SHA failed with HTTP $code."; exit 3; }
           DB="$DATABASE_URL" node <<'NODE' >/tmp/db-env.json
           process.stdout.write(JSON.stringify({key:'DATABASE_URL',value:process.env.DB,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
           NODE
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
             --data-binary @/tmp/db-env.json "$base/applications/$APP_UUID/envs")"
-          [ "$code" = '201' ] || { echo "Adding migration database secret failed with HTTP $code."; exit 4; }
+          [ "$code" = '201' ] || { echo "Adding migration database secret failed with HTTP $code."; cat /tmp/env-response.json; exit 3; }
 
       - name: Deploy migration application
         id: deploy
@@ -100,7 +98,7 @@ jobs:
           base="${COOLIFY_URL%/}/api/v1"
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/start.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/start?force=true&instant_deploy=true")"
-          [ "$code" = '200' ] || { echo "Starting migration app failed with HTTP $code."; cat /tmp/start.json; exit 5; }
+          [ "$code" = '200' ] || { echo "Starting migration app failed with HTTP $code."; cat /tmp/start.json; exit 4; }
           deployment_uuid="$(node -e "const x=require('/tmp/start.json'); if(!x.deployment_uuid) process.exit(1); process.stdout.write(x.deployment_uuid)")"
           echo "deployment_uuid=$deployment_uuid" >> "$GITHUB_OUTPUT"
 
@@ -116,7 +114,11 @@ jobs:
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$DEPLOYMENT_UUID" -o /tmp/deployment.json
             status="$(node -e "const x=require('/tmp/deployment.json'); process.stdout.write(String(x.status||''))")"
             case "${status,,}" in
-              failed|failure|error|cancelled|canceled) echo "Migration deployment failed: $status"; exit 6 ;;
+              failed|failure|error|cancelled|canceled)
+                echo "Migration deployment failed: $status"
+                node -e "const x=require('/tmp/deployment.json'); console.log(String(x.logs||'').slice(-4000))" || true
+                exit 5
+                ;;
             esac
             code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300")"
             if [ "$code" = '200' ] && node -e "const x=require('/tmp/logs.json'); process.exit(String(x.logs||'').includes('MKETY_PRODUCTION_DB_MIGRATION_OK')?0:1)"; then
@@ -126,7 +128,7 @@ jobs:
             sleep 5
           done
           echo 'Timed out waiting for migration success marker.'
-          exit 7
+          exit 6
 
       - name: Delete ephemeral migration application
         if: always() && steps.app.outputs.app_uuid != ''
