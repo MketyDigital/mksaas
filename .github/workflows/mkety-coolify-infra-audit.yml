@@ -17,24 +17,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
-      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
 
     steps:
       - name: Validate secure Coolify endpoint and credentials
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${COOLIFY_URL:-}" ] || [ -z "${COOLIFY_API_TOKEN:-}" ]; then
-            echo 'COOLIFY_URL and COOLIFY_API_TOKEN must be configured as GitHub Actions secrets.'
+          if [ -z "${COOLIFY_API_TOKEN:-}" ]; then
+            echo 'COOLIFY_TOKEN must be configured as a GitHub Actions secret.'
             exit 1
           fi
           node <<'NODE'
           const url = new URL(process.env.COOLIFY_URL);
           if (url.protocol !== 'https:') throw new Error('COOLIFY_URL must use HTTPS.');
           if (url.username || url.password) throw new Error('COOLIFY_URL must not contain credentials.');
+          if (url.hostname !== 'deploy.mkety.com') throw new Error('Unexpected Coolify hostname.');
           console.log(`Coolify HTTPS endpoint validated for host ${url.hostname}.`);
           NODE
+          curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/tmp/coolify-health.json
+          echo 'Coolify public health endpoint is reachable over HTTPS.'
 
       - name: Query Coolify databases using read-only GET requests
         shell: bash
@@ -55,7 +58,7 @@ jobs:
           for (const db of list) {
             if (db?.uuid) process.stdout.write(`${db.uuid}\t${String(db.name || '')}\n`);
           }
-          console.log(`Discovered ${safe.length} Coolify database resource(s).`);
+          console.error(`Discovered ${safe.length} Coolify database resource(s).`);
           NODE
 
       - name: Audit backup and storage posture without printing secrets
@@ -80,8 +83,8 @@ jobs:
           }
           function sanitizeBackup(x) {
             if (!x || typeof x !== 'object') return null;
-            const keys = ['uuid','enabled','frequency','save_s3','s3_storage_uuid','databases_to_backup','dump_all','database_backup_retention_amount_locally','database_backup_retention_days_locally','database_backup_retention_max_storage_locally','database_backup_retention_amount_s3','database_backup_retention_days_s3','database_backup_retention_max_storage_s3','timeout','last_saved_at','latest_log'];
-            return Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, k === 'latest_log' ? String(x[k]).slice(0, 300) : x[k]]));
+            const keys = ['uuid','enabled','frequency','save_s3','s3_storage_uuid','databases_to_backup','dump_all','database_backup_retention_amount_locally','database_backup_retention_days_locally','database_backup_retention_max_storage_locally','database_backup_retention_amount_s3','database_backup_retention_days_s3','database_backup_retention_max_storage_s3','timeout','last_saved_at'];
+            return Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, x[k]]));
           }
           function sanitizeStorage(x) {
             if (!x || typeof x !== 'object') return null;
@@ -107,7 +110,8 @@ jobs:
 
           node <<'NODE'
           const fs = require('node:fs');
-          const rows = fs.readFileSync('/tmp/coolify-backup-audit.ndjson', 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+          const text = fs.readFileSync('/tmp/coolify-backup-audit.ndjson', 'utf8').trim();
+          const rows = text ? text.split('\n').filter(Boolean).map(JSON.parse) : [];
           fs.writeFileSync('/tmp/coolify-backup-audit-sanitized.json', JSON.stringify(rows, null, 2));
           console.log(`Backup/storage posture audited for ${rows.length} database resource(s).`);
           for (const row of rows) {
@@ -122,5 +126,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
+            /tmp/coolify-health.json
             /tmp/coolify-databases-sanitized.json
             /tmp/coolify-backup-audit-sanitized.json
