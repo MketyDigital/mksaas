@@ -16,8 +16,6 @@ on:
     secrets:
       COOLIFY_TOKEN:
         required: true
-      PRODUCTION_DATABASE_URL:
-        required: true
 
 permissions:
   contents: read
