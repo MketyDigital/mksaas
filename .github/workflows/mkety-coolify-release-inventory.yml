@@ -1,0 +1,59 @@
+name: Mkety Coolify Release Inventory
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-release-inventory.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Collect sanitized Coolify topology
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/projects" -o /tmp/projects.json
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/servers" -o /tmp/servers.json
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications" -o /tmp/apps.json
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases/$POSTGRES_UUID" -o /tmp/postgres.json
+
+          node <<'NODE'
+          const fs=require('fs');
+          const projects=require('/tmp/projects.json');
+          const servers=require('/tmp/servers.json');
+          const apps=require('/tmp/apps.json');
+          const db=require('/tmp/postgres.json');
+          const safe={
+            projects:(Array.isArray(projects)?projects:projects.data||[]).map(x=>({id:x.id,uuid:x.uuid,name:x.name,description:x.description||null})),
+            servers:(Array.isArray(servers)?servers:servers.data||[]).map(x=>({id:x.id,uuid:x.uuid,name:x.name,proxy_type:x.proxy_type,status:x.status||null,usable:x.settings?.is_usable,reachable:x.settings?.is_reachable})),
+            applications:(Array.isArray(apps)?apps:apps.data||[]).map(x=>({uuid:x.uuid,name:x.name,status:x.status,git_repository:x.git_repository,git_branch:x.git_branch,build_pack:x.build_pack,environment_id:x.environment_id,destination_id:x.destination_id,base_directory:x.base_directory,docker_compose_location:x.docker_compose_location})),
+            postgres:{uuid:db.uuid,name:db.name,status:db.status,environment_id:db.environment_id,destination_id:db.destination_id,server_id:db.server_id,server_uuid:db.server_uuid,project_uuid:db.project_uuid,environment_uuid:db.environment_uuid,destination_uuid:db.destination_uuid}
+          };
+          fs.writeFileSync('/tmp/topology.json',JSON.stringify(safe,null,2));
+          console.log(JSON.stringify(safe,null,2));
+          NODE
+
+          for project_uuid in $(node -e "const x=require('/tmp/projects.json'); const a=Array.isArray(x)?x:(x.data||[]); console.log(a.map(v=>v.uuid).filter(Boolean).join(' '))"); do
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o "/tmp/env-$project_uuid.json" -w '%{http_code}' "${auth[@]}" "$base/projects/$project_uuid/environments")"
+            if [ "$code" = '200' ]; then
+              PROJECT_UUID="$project_uuid" FILE="/tmp/env-$project_uuid.json" node <<'NODE'
+          const x=require(process.env.FILE); const a=Array.isArray(x)?x:(x.data||[]);
+          console.log(`Environments for ${process.env.PROJECT_UUID}: `+JSON.stringify(a.map(v=>({id:v.id,uuid:v.uuid,name:v.name,description:v.description||null}))));
+          NODE
+            fi
+          done
