@@ -28,7 +28,7 @@ jobs:
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      DATABASE_URL: ${{ secrets[format('PRODUCTION_{0}_URL', 'DATABASE')] }}
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
       PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
