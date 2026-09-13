@@ -17,35 +17,35 @@ jobs:
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      APP_UUID: pqatozdd8n8apza8zj0cmvap
+      TARGET_PREFIX: mkety-db-migrate-41328b8fd1e5
     steps:
-      - name: Read sanitized migration state and log shape
+      - name: Read sanitized current migration state
         shell: bash
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
           auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
-          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications/$APP_UUID" -o /tmp/app.json
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' "${auth[@]}" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false")"
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications" -o /tmp/apps.json
+          app_uuid="$(PREFIX="$TARGET_PREFIX" node <<'NODE'
+          const raw=require('/tmp/apps.json'); const list=Array.isArray(raw)?raw:(raw.data||[]);
+          const x=list.find(v=>String(v.name||'').startsWith(process.env.PREFIX));
+          if(x?.uuid) process.stdout.write(x.uuid);
+          NODE
+          )"
+          [ -n "$app_uuid" ] || { echo 'Current migration app not found (possibly already cleaned up).'; exit 0; }
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications/$app_uuid" -o /tmp/app.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' "${auth[@]}" "$base/applications/$app_uuid/logs?lines=300&show_timestamps=false")"
           CODE="$code" node <<'NODE'
-          const fs=require('fs');
-          const app=require('/tmp/app.json');
-          let raw=null; try{raw=require('/tmp/logs.json')}catch{}
-          const text=typeof raw==='string'?raw:
-            typeof raw?.logs==='string'?raw.logs:
-            typeof raw?.log==='string'?raw.log:
-            typeof raw?.data==='string'?raw.data:
-            Array.isArray(raw)?raw.map(x=>typeof x==='string'?x:(x?.message||x?.log||'')).join('\n'):
-            JSON.stringify(raw||{});
-          const safe={
-            httpStatus:Number(process.env.CODE),
+          const app=require('/tmp/app.json'); let raw=null; try{raw=require('/tmp/logs.json')}catch{}
+          const text=typeof raw?.logs==='string'?raw.logs:JSON.stringify(raw||{});
+          console.log(JSON.stringify({
             appStatus:app.status,
             gitCommitSha:app.git_commit_sha,
-            responseType:Array.isArray(raw)?'array':typeof raw,
-            responseKeys:raw&&typeof raw==='object'&&!Array.isArray(raw)?Object.keys(raw):[],
+            logsHttpStatus:Number(process.env.CODE),
+            logsResponseKeys:raw&&typeof raw==='object'?Object.keys(raw):[],
+            apiMessage:typeof raw?.message==='string'?raw.message:null,
             hasSuccessMarker:text.includes('MKETY_PRODUCTION_DB_MIGRATION_OK'),
-            mentionsMigrationError:/error|failed|exception/i.test(text),
+            hasFailureMarker:text.includes('MKETY_PRODUCTION_DB_MIGRATION_FAILED:'),
             textLength:text.length
-          };
-          console.log(JSON.stringify(safe,null,2));
+          },null,2));
           NODE
