@@ -18,7 +18,7 @@ jobs:
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      TARGET_PREFIX: mkety-db-migrate-71d6d73dec44
+      TARGET_PREFIX: mkety-db-migrate-c3ae79dde496
     steps:
       - name: Read sanitized current migration state
         shell: bash
