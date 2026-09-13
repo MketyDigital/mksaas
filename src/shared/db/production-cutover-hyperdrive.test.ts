@@ -14,6 +14,7 @@ describe('production cutover Hyperdrive runtime binding', () => {
     expect(workflow).toContain("item.name === process.env.MKETY_HYPERDRIVE_NAME");
     expect(workflow).toContain("binding: 'MKETY_DB'");
     expect(workflow).toContain('id: process.env.MKETY_HYPERDRIVE_ID');
+    expect(workflow).toContain('Generated Worker config lost MKETY_DB Hyperdrive binding.');
     expect(workflow).not.toContain('put_secret DATABASE_URL');
     expect(workflow).toContain('Database runtime: MKETY_DB Hyperdrive binding');
   });
