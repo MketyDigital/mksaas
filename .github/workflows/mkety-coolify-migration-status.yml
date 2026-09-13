@@ -18,30 +18,44 @@ jobs:
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      APP_UUID: vbtfxvpm7n0ejkya6pqubfo9
+      TARGET_NAME: mkety-db-migrate-c3ae79dde496
+      TARGET_SHA: c3ae79dde496643164235f92eeff2a2a268f5efb
     steps:
-      - name: Read sanitized deployment state
+      - name: Read sanitized current migration state
         shell: bash
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
           auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
-          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications/$APP_UUID" -o /tmp/app.json
-          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/deployments/applications/$APP_UUID?skip=0&take=5" -o /tmp/deployments.json
-          node <<'NODE'
-          const app=require('/tmp/app.json');
-          const raw=require('/tmp/deployments.json');
-          const list=Array.isArray(raw)?raw:(raw.data||[]);
-          const latest=list[0]||{};
-          const logs=String(latest.logs||'');
-          const safeHints=logs.split(/\r?\n/).filter(line=>/error|failed|failure|exit code|not found|permission|health/i.test(line)).slice(-8).map(line=>line.replace(/https?:\/\/\S+/g,'[url]'));
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/applications" -o /tmp/apps.json
+          app_uuid="$(NAME="$TARGET_NAME" SHA="$TARGET_SHA" node <<'NODE'
+          const raw=require('/tmp/apps.json'); const list=Array.isArray(raw)?raw:(raw.data||[]);
+          const x=list.find(v=>v.name===process.env.NAME && v.git_commit_sha===process.env.SHA);
+          if(x?.uuid) process.stdout.write(x.uuid);
+          NODE
+          )"
+          [ -n "$app_uuid" ] || { echo 'Exact migration app not found.'; exit 0; }
+
+          app_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/app.json -w '%{http_code}' "${auth[@]}" "$base/applications/$app_uuid")"
+          deployments_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deployments.json -w '%{http_code}' "${auth[@]}" "$base/deployments/applications/$app_uuid?skip=0&take=5")"
+          tasks_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/tasks.json -w '%{http_code}' "${auth[@]}" "$base/applications/$app_uuid/scheduled-tasks")"
+
+          APP_CODE="$app_code" DEPLOYMENTS_CODE="$deployments_code" TASKS_CODE="$tasks_code" APP_UUID="$app_uuid" node <<'NODE'
+          const fs=require('fs');
+          const parse=(p)=>{try{return JSON.parse(fs.readFileSync(p,'utf8'))}catch{return null}};
+          const app=parse('/tmp/app.json');
+          const deps=parse('/tmp/deployments.json');
+          const tasks=parse('/tmp/tasks.json');
+          const depList=Array.isArray(deps)?deps:(deps?.data||[]);
+          const taskList=Array.isArray(tasks)?tasks:(tasks?.data||[]);
           console.log(JSON.stringify({
-            appStatus:app.status,
-            gitCommitSha:app.git_commit_sha,
-            deploymentUuid:latest.deployment_uuid||null,
-            deploymentStatus:latest.status||null,
-            deploymentCreatedAt:latest.created_at||null,
-            deploymentUpdatedAt:latest.updated_at||null,
-            safeHints
+            appUuid:process.env.APP_UUID,
+            appHttp:Number(process.env.APP_CODE),
+            appStatus:app?.status||null,
+            gitCommitSha:app?.git_commit_sha||null,
+            deploymentsHttp:Number(process.env.DEPLOYMENTS_CODE),
+            deployments:depList.slice(0,3).map(d=>({uuid:d.deployment_uuid||d.uuid||null,status:d.status||null,created_at:d.created_at||null,updated_at:d.updated_at||null})),
+            tasksHttp:Number(process.env.TASKS_CODE),
+            tasks:taskList.slice(0,5).map(t=>({uuid:t.uuid||null,name:t.name||null,enabled:t.enabled,status:t.status||null,last_run_at:t.last_run_at||null}))
           },null,2));
           NODE
