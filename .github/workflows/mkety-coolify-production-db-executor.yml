@@ -101,17 +101,30 @@ jobs:
           [ "$code" = '200' ] || { echo "Starting migration task host failed with HTTP $code."; exit 4; }
           deployment_uuid="$(node -e "const x=require('/tmp/start.json'); if(!x.deployment_uuid) process.exit(1); process.stdout.write(x.deployment_uuid)")"
           echo "deployment_uuid=$deployment_uuid" >> "$GITHUB_OUTPUT"
-          ready='no'
+
+          deployment_done='no'
           for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            deployment_status="$(node -e "const x=require('/tmp/deployment.json'); process.stdout.write(String(x.status||''))")"
+            case "${deployment_status,,}" in
+              finished|success|successful|succeeded|completed) deployment_done='yes'; break ;;
+              failed|failure|error|cancelled|canceled) echo "Migration task-host deployment failed: $deployment_status"; exit 5 ;;
+            esac
+            sleep 5
+          done
+          [ "$deployment_done" = 'yes' ] || { echo 'Timed out waiting for Coolify task-host deployment.'; exit 6; }
+
+          ready='no'
+          for i in $(seq 1 30); do
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/app.json
             status="$(node -e "const x=require('/tmp/app.json'); process.stdout.write(String(x.status||''))")"
             case "${status,,}" in
               running:healthy|running:unknown|running) ready='yes'; break ;;
-              exited:*|failed|error) echo "Migration task host failed to stay running: $status"; exit 5 ;;
+              exited:*|failed|error) echo "Migration task host failed after completed deployment: $status"; exit 7 ;;
             esac
-            sleep 5
+            sleep 3
           done
-          [ "$ready" = 'yes' ] || { echo 'Timed out waiting for migration task host.'; exit 6; }
+          [ "$ready" = 'yes' ] || { echo 'Timed out waiting for migration task host health.'; exit 8; }
           echo "Migration task host is running at exact SHA $TARGET_SHA."
 
       - name: Create and execute one-off migration task
@@ -134,13 +147,13 @@ jobs:
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-create.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
             --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
-          [ "$code" = '201' ] || { echo "Creating migration task failed with HTTP $code."; cat /tmp/task-create.json; exit 7; }
+          [ "$code" = '201' ] || { echo "Creating migration task failed with HTTP $code."; cat /tmp/task-create.json; exit 9; }
           task_uuid="$(node -e "const x=require('/tmp/task-create.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
           echo "task_uuid=$task_uuid" >> "$GITHUB_OUTPUT"
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-execute.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
-          [ "$code" = '200' ] || { echo "Executing migration task failed with HTTP $code."; cat /tmp/task-execute.json; exit 8; }
+          [ "$code" = '200' ] || { echo "Executing migration task failed with HTTP $code."; cat /tmp/task-execute.json; exit 10; }
           echo 'Production migration task queued inside private Coolify network.'
 
       - name: Verify one-off migration execution
@@ -164,12 +177,12 @@ jobs:
                 ;;
               failed|failure|error)
                 echo 'Production DB migration task failed inside Coolify.'
-                exit 9
+                exit 11
                 ;;
             esac
             sleep 5
           done
-          [ "$found" = 'yes' ] || { echo 'Timed out waiting for production DB migration task.'; exit 10; }
+          [ "$found" = 'yes' ] || { echo 'Timed out waiting for production DB migration task.'; exit 12; }
 
       - name: Delete ephemeral migration task host
         if: always() && steps.app.outputs.app_uuid != ''
