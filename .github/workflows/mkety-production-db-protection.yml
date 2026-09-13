@@ -1,0 +1,192 @@
+name: Mkety Production DB Protection
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify private Postgres and fresh offsite backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+
+    steps:
+      - name: Validate dedicated credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in COOLIFY_API_TOKEN R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_S3_API; do
+            [ -n "${!variable:-}" ] || { echo "$variable is required."; exit 1; }
+          done
+          [[ "$COOLIFY_URL" == https://* ]] || { echo 'Coolify must use HTTPS.'; exit 1; }
+          [[ "$R2_S3_API" == https://* ]] || { echo 'R2 S3 endpoint must use HTTPS.'; exit 1; }
+          curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
+
+      - name: Verify production Postgres remains private and healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID" -o /tmp/postgres.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const db = JSON.parse(fs.readFileSync('/tmp/postgres.json', 'utf8'));
+          if (db.uuid !== process.env.POSTGRES_UUID) throw new Error('Unexpected production Postgres UUID.');
+          if (db.name !== 'mkety-postgres') throw new Error(`Unexpected production database resource: ${db.name || 'unnamed'}`);
+          if (db.is_public !== false) throw new Error('Production Postgres is publicly exposed.');
+          if (db.public_port !== null && db.public_port !== undefined && db.public_port !== 0) {
+            throw new Error('Production Postgres has a public port configured.');
+          }
+          if (!String(db.status || '').toLowerCase().includes('healthy')) {
+            throw new Error(`Production Postgres is not healthy: ${db.status || 'unknown'}`);
+          }
+          fs.writeFileSync('/tmp/postgres-protection.json', JSON.stringify({
+            uuid: db.uuid,
+            name: db.name,
+            status: db.status,
+            image: db.image,
+            is_public: db.is_public,
+            public_port: db.public_port ?? null,
+            enable_ssl: db.enable_ssl ?? null,
+          }, null, 2));
+          console.log('Production Postgres is private and healthy.');
+          NODE
+
+      - name: Verify local plus R2 backup policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = JSON.parse(fs.readFileSync('/tmp/backups.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.backups) ? raw.backups : [];
+          const backup = list.find((item) => item?.uuid === process.env.BACKUP_UUID);
+          if (!backup) throw new Error('Expected production backup policy was not returned by Coolify.');
+          if (backup.enabled === false) throw new Error('Production backup policy is disabled.');
+          if (backup.save_s3 !== true) throw new Error('Production backup policy is not configured for offsite S3/R2 storage.');
+          if (!backup.s3_storage_uuid) throw new Error('Production backup policy has no S3/R2 storage destination.');
+          if (Number(backup.database_backup_retention_amount_locally || 0) < 7) {
+            throw new Error('Local backup retention is below 7 copies.');
+          }
+          if (Number(backup.database_backup_retention_amount_s3 || 0) < 30) {
+            throw new Error('R2 backup retention is below 30 copies.');
+          }
+          fs.writeFileSync('/tmp/backup-policy-protection.json', JSON.stringify({
+            uuid: backup.uuid,
+            enabled: backup.enabled,
+            frequency: backup.frequency,
+            save_s3: backup.save_s3,
+            has_s3_storage: Boolean(backup.s3_storage_uuid),
+            database_backup_retention_amount_locally: backup.database_backup_retention_amount_locally,
+            database_backup_retention_amount_s3: backup.database_backup_retention_amount_s3,
+            last_saved_at: backup.last_saved_at,
+          }, null, 2));
+          console.log('Local and R2 backup policy retention verified.');
+          NODE
+
+      - name: Verify latest Coolify backup execution is fresh and successful
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions" -o /tmp/executions.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = JSON.parse(fs.readFileSync('/tmp/executions.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.executions) ? raw.executions : Array.isArray(raw?.data) ? raw.data : [];
+          const latest = [...list].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
+          if (!latest) throw new Error('No production Postgres backup execution exists.');
+          const status = String(latest.status || '').toLowerCase();
+          if (!['success', 'successful', 'succeeded', 'completed'].includes(status)) {
+            throw new Error(`Latest Postgres backup is not successful: ${latest.status || 'unknown'}`);
+          }
+          if (!(Number(latest.size || 0) > 0)) throw new Error('Latest Postgres backup has zero/unknown size.');
+          const created = new Date(latest.created_at || 0).getTime();
+          if (!Number.isFinite(created) || Date.now() - created > 30 * 60 * 60 * 1000) {
+            throw new Error('Latest Postgres backup is older than 30 hours.');
+          }
+          fs.writeFileSync('/tmp/backup-execution-protection.json', JSON.stringify({
+            uuid: latest.uuid,
+            status: latest.status,
+            size: Number(latest.size || 0),
+            created_at: latest.created_at,
+          }, null, 2));
+          console.log('Latest Coolify backup is successful, non-empty, and fresh.');
+          NODE
+
+      - name: Verify a fresh offsite object exists in R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          if ! command -v aws >/dev/null 2>&1; then
+            python3 -m pip install --user --quiet awscli
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          aws s3api list-objects-v2 \
+            --endpoint-url "$R2_S3_API" \
+            --bucket "$R2_BUCKET" \
+            --max-items 1000 \
+            --output json > /tmp/r2-objects.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/r2-objects.json', 'utf8'));
+          const objects = Array.isArray(payload.Contents) ? payload.Contents : [];
+          if (!objects.length) throw new Error('R2 production backup bucket contains no objects.');
+          const latest = [...objects].sort((a, b) => new Date(b.LastModified || 0) - new Date(a.LastModified || 0))[0];
+          const modified = new Date(latest?.LastModified || 0).getTime();
+          if (!Number.isFinite(modified) || Date.now() - modified > 30 * 60 * 60 * 1000) {
+            throw new Error('Newest R2 backup object is older than 30 hours.');
+          }
+          if (!(Number(latest?.Size || 0) > 0)) throw new Error('Newest R2 backup object is empty.');
+          fs.writeFileSync('/tmp/r2-protection.json', JSON.stringify({
+            bucket: process.env.R2_BUCKET,
+            object_count: objects.length,
+            latest_size: Number(latest.Size || 0),
+            latest_modified: latest.LastModified,
+          }, null, 2));
+          console.log(`R2 offsite backup verified: ${objects.length} object(s), newest object is fresh and non-empty.`);
+          NODE
+
+      - name: Upload sanitized production protection evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-production-db-protection-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            /tmp/postgres-protection.json
+            /tmp/backup-policy-protection.json
+            /tmp/backup-execution-protection.json
+            /tmp/r2-protection.json
