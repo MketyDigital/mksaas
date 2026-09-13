@@ -2,8 +2,8 @@
 
 import { env } from 'cloudflare:workers';
 
-import { getRuntimeDatabaseConnectionString as getCloudflareRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';
 import { getRuntimeDatabaseConnectionString as getNodeRuntimeDatabaseConnectionString } from './runtime-connection';
+import { getRuntimeDatabaseConnectionString as getCloudflareRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';
 
 type TestEnv = {
   MKETY_DB?: { connectionString: string };
