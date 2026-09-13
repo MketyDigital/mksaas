@@ -1,0 +1,106 @@
+name: Mkety Coolify Backup Verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/production-db-private-runner
+    paths:
+      - '.github/workflows/mkety-coolify-backup-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Postgres backup execution and offsite posture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+
+    steps:
+      - name: Validate secure Coolify access
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
+
+      - name: Verify latest Postgres logical backup execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" \
+            "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions" \
+            -o /tmp/postgres-backup-executions.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = JSON.parse(fs.readFileSync('/tmp/postgres-backup-executions.json', 'utf8'));
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.executions) ? raw.executions : Array.isArray(raw?.data) ? raw.data : [];
+          if (!list.length) throw new Error('No Postgres backup execution exists yet.');
+          const sorted = [...list].sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+          const latest = sorted[0];
+          const status = String(latest.status || '').toLowerCase();
+          const safe = {
+            uuid: latest.uuid,
+            filename: latest.filename ? String(latest.filename).split('/').pop() : null,
+            size: Number(latest.size || 0),
+            created_at: latest.created_at,
+            status: latest.status,
+            message: latest.message ? String(latest.message).slice(0, 500) : null,
+          };
+          fs.writeFileSync('/tmp/postgres-backup-latest-sanitized.json', JSON.stringify(safe, null, 2));
+          if (!['success','successful','succeeded','completed'].includes(status)) {
+            throw new Error(`Latest Postgres backup is not successful: ${latest.status || 'unknown'}`);
+          }
+          if (!(Number(latest.size) > 0)) throw new Error('Latest Postgres backup has zero/unknown size.');
+          console.log(`Latest Postgres backup verified: status=${latest.status}, size=${latest.size} bytes.`);
+          NODE
+
+      - name: Audit configured S3-compatible backup destinations
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/s3-storages.json -w '%{http_code}' "${auth[@]}" "$base/s3-storages" || true)"
+          CODE="$code" node <<'NODE'
+          const fs = require('node:fs');
+          const code = Number(process.env.CODE);
+          let raw = null;
+          try { raw = JSON.parse(fs.readFileSync('/tmp/s3-storages.json','utf8')); } catch {}
+          if (code !== 200) {
+            fs.writeFileSync('/tmp/s3-storages-sanitized.json', JSON.stringify({httpStatus: code, readable: false}, null, 2));
+            console.log(`S3 storage inventory endpoint returned HTTP ${code}; no mutation attempted.`);
+            process.exit(0);
+          }
+          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.storages) ? raw.storages : [];
+          const safe = list.map((x) => ({
+            uuid: x.uuid,
+            name: x.name,
+            description: x.description,
+            endpoint: x.endpoint ? (() => { try { return new URL(x.endpoint).host; } catch { return 'configured'; } })() : null,
+            bucket: x.bucket || null,
+            region: x.region || null,
+            is_usable: x.is_usable,
+          }));
+          fs.writeFileSync('/tmp/s3-storages-sanitized.json', JSON.stringify({httpStatus: code, readable: true, storages: safe}, null, 2));
+          console.log(`Configured S3-compatible storage destinations: ${safe.length}.`);
+          NODE
+
+      - name: Upload sanitized backup verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-coolify-backup-verification-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            /tmp/postgres-backup-latest-sanitized.json
+            /tmp/s3-storages-sanitized.json
