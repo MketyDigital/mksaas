@@ -1,0 +1,13 @@
+{
+  "name": "mkety-production-db-migration-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "dotenv": "17.2.3",
+    "drizzle-kit": "0.31.8",
+    "drizzle-orm": "0.45.1",
+    "postgres": "3.4.8",
+    "tsx": "4.21.0"
+  }
+}
