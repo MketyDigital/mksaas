@@ -1,0 +1,148 @@
+name: Mkety Postgres Origin CA Postfailure Audit
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-postgres-origin-ca-postfailure-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      EXPECTED_ZONE: mkety.com
+      EXPECTED_CERT_HOSTNAME: mkety-production-postgres.mkety.com
+    steps:
+      - name: Read database health and recent PostgreSQL logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE'
+          const x=require('/tmp/db.json');
+          console.log('MKETY_PG_AUDIT_HEALTH='+JSON.stringify({status:x.status||null,is_public:x.is_public,enable_ssl:x.enable_ssl,ssl_mode:x.ssl_mode||null}));
+          if(x.is_public!==false || x.enable_ssl!==true || !String(x.status||'').includes('running') || !String(x.status||'').includes('healthy')) process.exit(2);
+          console.log('MKETY_PG_AUDIT_HEALTH_OK=true');
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/logs.json -w '%{http_code}' "${auth[@]}" "$base/databases/$POSTGRES_UUID/logs?lines=300&show_timestamps=true")"
+          echo "MKETY_PG_AUDIT_LOG_HTTP=$code"
+          [ "$code" = 200 ] || exit 3
+          node <<'NODE'
+          const x=require('/tmp/logs.json');
+          const s=String(x.logs||'');
+          const lines=s.split(/\r?\n/).filter(l=>/SSL|certificate|private key|reload|TLS|could not load|signature|key/i.test(l));
+          console.log('MKETY_PG_AUDIT_RELEVANT_LOG_LINES_BEGIN');
+          console.log(lines.slice(-120).join('\n'));
+          console.log('MKETY_PG_AUDIT_RELEVANT_LOG_LINES_END');
+          console.log('MKETY_PG_AUDIT_LOGS_OK=true');
+          NODE
+
+      - name: Inspect Origin CA inventory after revocation request
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$api/zones?name=$EXPECTED_ZONE&account.id=$CLOUDFLARE_ACCOUNT_ID" -o /tmp/zones.json
+          zone_id="$(node -e "const x=require('/tmp/zones.json');if(!x.success||!Array.isArray(x.result)||x.result.length!==1)process.exit(1);process.stdout.write(x.result[0].id)")"
+          curl --proto '=https' --tlsv1.2 -fsS "${auth[@]}" "$api/certificates?zone_id=$zone_id" -o /tmp/certs.json
+          EXPECTED_CERT_HOSTNAME="$EXPECTED_CERT_HOSTNAME" node <<'NODE'
+          const x=require('/tmp/certs.json');
+          if(!x.success||!Array.isArray(x.result)) process.exit(2);
+          const m=x.result.filter(c=>Array.isArray(c.hostnames)&&c.hostnames.includes(process.env.EXPECTED_CERT_HOSTNAME));
+          console.log(`MKETY_PG_AUDIT_ORIGIN_CA_TOTAL=${x.result.length}`);
+          console.log(`MKETY_PG_AUDIT_EXPECTED_CERT_COUNT=${m.length}`);
+          for(const c of m) console.log('MKETY_PG_AUDIT_EXPECTED_CERT='+JSON.stringify({id:c.id||null,request_type:c.request_type||null,expires_on:c.expires_on||null}));
+          console.log('MKETY_PG_AUDIT_ORIGIN_CA_OK=true');
+          NODE
+
+      - name: Create isolated current TLS verifier
+        id: verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE' >/tmp/db.env
+          const x=require('/tmp/db.json'); const u=new URL(x.internal_db_url);
+          console.log('DB_URL='+x.internal_db_url); console.log('DB_HOST='+u.hostname); console.log('DB_PORT='+(u.port||'5432'));
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
+          node <<'NODE' >/tmp/create.json
+          const dockerfile=['FROM alpine:3.20','RUN apk add --no-cache openssl postgresql-client coreutils','CMD ["sleep", "infinity"]',''].join('\n');
+          process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:Buffer.from(dockerfile).toString('base64'),name:`mkety-pg-tls-postfailure-${process.env.GITHUB_SHA.slice(0,10)}`,description:'Ephemeral read-only TLS postfailure verifier',ports_exposes:'3000'}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"
+          [ "$code" = 201 ] || exit 10
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Mount and verify current TLS state
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.verifier.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          host_path="/data/coolify/databases/$POSTGRES_UUID"
+          HOST_PATH="$host_path" node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-pg-tls-postfailure-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/db",host_path:process.env.HOST_PATH}))' >/tmp/storage.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
+          [ "$code" = 201 ] || exit 11
+          cat >/tmp/check.sh <<'SH'
+          set -eu
+          cert=/db/ssl/server.crt; key=/db/ssl/server.key
+          file_fp="$(openssl x509 -in "$cert" -noout -fingerprint -sha256 | sed 's/.*=//')"
+          openssl s_client -starttls postgres -connect "$DB_HOST:$DB_PORT" -showcerts </dev/null >/tmp/tls.txt 2>&1
+          sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' /tmp/tls.txt | sed -n '1,/-----END CERTIFICATE-----/p' >/tmp/leaf.pem
+          served_fp="$(openssl x509 -in /tmp/leaf.pem -noout -fingerprint -sha256 | sed 's/.*=//')"
+          test "$file_fp" = "$served_fp"
+          echo MKETY_PG_AUDIT_FILE_SERVED_MATCH=true
+          printf 'MKETY_PG_AUDIT_CURRENT_SUBJECT='; openssl x509 -in /tmp/leaf.pem -noout -subject -nameopt RFC2253 | sed 's/^subject=//'
+          printf 'MKETY_PG_AUDIT_CURRENT_ISSUER='; openssl x509 -in /tmp/leaf.pem -noout -issuer -nameopt RFC2253 | sed 's/^issuer=//'
+          alg="$(openssl x509 -in /tmp/leaf.pem -noout -text | awk -F': ' '/Public Key Algorithm/{print $2; exit}')"
+          echo "MKETY_PG_AUDIT_CURRENT_KEY_ALG=$alg"
+          echo "MKETY_PG_AUDIT_CERT_STAT=$(stat -c '%a %u:%g' "$cert")"
+          echo "MKETY_PG_AUDIT_KEY_STAT=$(stat -c '%a %u:%g' "$key")"
+          test "$(psql "$DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1;')" = 1
+          echo MKETY_PG_AUDIT_DB_QUERY_OK=true
+          SH
+          base64 -w0 /tmp/check.sh >/tmp/script.b64
+          put_env(){ KEY="$1" VALUE="$2" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json; code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"; [ "$code" = 201 ]; }
+          put_env DB_URL "$DB_URL"; put_env DB_HOST "$DB_HOST"; put_env DB_PORT "$DB_PORT"; put_env SCRIPT_B64 "$(cat /tmp/script.b64)"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"; [ "$code" = 200 ]
+          duuid="$(node -e "const x=require('/tmp/deploy.json');const d=x.deployments?.[0];if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 120); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/d.json; s="$(node -e "process.stdout.write(String(require('/tmp/d.json').status||''))")"; case "${s,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) exit 12;; esac; sleep 3; done
+          node -e 'process.stdout.write(JSON.stringify({name:"mkety-pg-tls-postfailure",command:"echo $SCRIPT_B64 | base64 -d | sh",frequency:"0 0 * * *",timeout:300,enabled:false}))' >/tmp/task.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"; [ "$code" = 201 ]
+          tid="$(node -e "const x=require('/tmp/task-r.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          curl --proto '=https' --tlsv1.2 -fsS -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$tid/execute" >/dev/null
+          for i in $(seq 1 90); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$tid/executions" -o /tmp/e.json; s="$(node -e "const x=require('/tmp/e.json');process.stdout.write(String(x?.[0]?.status||''))")"; case "${s,,}" in success) break;; failed|failure|error) exit 13;; esac; sleep 3; done
+          node - <<'NODE'
+          const x=require('/tmp/e.json');const m=String(x?.[0]?.message||'');console.log(m.split(/\r?\n/).filter(l=>l.includes('MKETY_PG_AUDIT_')).join('\n'));if(!m.includes('MKETY_PG_AUDIT_DB_QUERY_OK=true')||!m.includes('MKETY_PG_AUDIT_FILE_SERVED_MATCH=true'))process.exit(1);
+          NODE
+
+      - name: Cleanup verifier
+        if: always() && steps.verifier.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.verifier.outputs.app_uuid }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+          echo MKETY_PG_AUDIT_CLEANUP_REQUESTED=true
