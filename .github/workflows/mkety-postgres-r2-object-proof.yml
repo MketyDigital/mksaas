@@ -137,17 +137,7 @@ jobs:
             case "${status,,}" in
               success|successful|succeeded|completed) break ;;
               failed|failure|error)
-                node <<'NODE'
-                const x=require('/tmp/executions.json');
-                const e=Array.isArray(x)?x[0]:null;
-                const msg=String(e?.message||'')
-                  .replace(/[A-Za-z0-9+\/=]{20,}/g,'[redacted]')
-                  .replace(/(X-Amz-[^=&\s]+)=([^&\s]+)/gi,'$1=[redacted]')
-                  .slice(0,2000);
-                console.log('MKETY_POSTGRES_R2_TASK_FAILURE_MESSAGE_BEGIN');
-                console.log(msg);
-                console.log('MKETY_POSTGRES_R2_TASK_FAILURE_MESSAGE_END');
-                NODE
+                node -e "const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;const msg=String(e?.message||'').replace(/[A-Za-z0-9+\\/=]{20,}/g,'[redacted]').replace(/(X-Amz-[^=&\\s]+)=([^&\\s]+)/gi,'\$1=[redacted]').slice(0,2000);console.log('MKETY_POSTGRES_R2_TASK_FAILURE_MESSAGE_BEGIN');console.log(msg);console.log('MKETY_POSTGRES_R2_TASK_FAILURE_MESSAGE_END')"
                 exit 10
                 ;;
             esac
