@@ -136,7 +136,15 @@ jobs:
             case "${status,,}" in finished|success|successful|succeeded|completed) break ;; failed|failure|error|cancelled|canceled) echo "Redis backup executor deployment failed: $status"; cat /tmp/deployment.json; exit 5 ;; esac
             sleep 5
           done
-          node -e "process.stdout.write(JSON.stringify({name:'mkety-redis-backup-proof-v4',command:'echo $SCRIPT_B64 | base64 -d | sh',frequency:'0 0 31 2 *',timeout:600,enabled:false}))" >/tmp/task.json
+          node <<'NODE' >/tmp/task.json
+          process.stdout.write(JSON.stringify({
+            name: 'mkety-redis-backup-proof-v4',
+            command: 'echo $SCRIPT_B64 | base64 -d | sh',
+            frequency: '0 0 * * *',
+            timeout: 600,
+            enabled: false
+          }));
+          NODE
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
           [ "$code" = 201 ] || { echo "Redis backup task create failed HTTP $code"; cat /tmp/task-response.json; exit 6; }
           task_uuid="$(node -e "const x=require('/tmp/task-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
