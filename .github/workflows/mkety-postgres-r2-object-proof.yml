@@ -1,0 +1,146 @@
+name: Mkety Postgres R2 Object Proof
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+    steps:
+      - name: Resolve fresh successful backup execution
+        id: execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions" -o /tmp/executions.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=require('/tmp/executions.json');
+          const a=(Array.isArray(x)?x:(x.executions||[])).sort((p,q)=>new Date(q.created_at||0)-new Date(p.created_at||0));
+          const e=a[0];
+          if(!e) throw new Error('No backup execution');
+          const status=String(e.status||'').toLowerCase();
+          const fresh=Date.now()-new Date(e.created_at).getTime()<=30*60*60*1000;
+          if(!['success','successful','succeeded','completed'].includes(status)||!fresh||Number(e.size||0)<=0||!e.filename) throw new Error('Latest execution is not fresh and successful');
+          if(/S3 upload failed/i.test(String(e.message||''))) throw new Error('Latest execution reports S3 upload failure');
+          const basename=String(e.filename).split(/[\\/]/).filter(Boolean).pop();
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`basename_b64=${Buffer.from(basename).toString('base64')}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`expected_size=${Number(e.size)}\n`);
+          console.log(JSON.stringify({status:e.status,created_at:e.created_at,size:Number(e.size),fresh_within_30h:fresh,s3_failure_message:false}));
+          console.log('MKETY_POSTGRES_COOLIFY_BACKUP_OK=true');
+          NODE
+
+      - name: Create isolated R2 verifier
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/create.json
+          const dockerfile=['FROM alpine:3.20','RUN apk add --no-cache aws-cli nodejs coreutils','CMD ["sleep","infinity"]',''].join('\n');
+          process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:Buffer.from(dockerfile).toString('base64'),ports_exposes:'3000',name:`mkety-postgres-r2-verify-${process.env.GITHUB_SHA.slice(0,12)}`,description:`Ephemeral Postgres R2 verifier ${process.env.GITHUB_SHA}`}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"
+          [ "$code" = '201' ] || { cat /tmp/create-response.json; exit 2; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo MKETY_POSTGRES_R2_VERIFIER_CREATED=true
+
+      - name: Inject verifier settings
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+          BASENAME_B64: ${{ steps.execution.outputs.basename_b64 }}
+          EXPECTED_SIZE: ${{ steps.execution.outputs.expected_size }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          cat > /tmp/run.sh <<'SH'
+          set -eu
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" AWS_DEFAULT_REGION=auto AWS_EC2_METADATA_DISABLED=true AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
+          endpoint="${R2_S3_API%/}"
+          aws configure set default.s3.signature_version s3v4
+          aws --region auto --endpoint-url "$endpoint" s3api list-objects-v2 --bucket "$R2_BUCKET" --max-items 1000 --output json >/tmp/list.json
+          basename="$(printf '%s' "$BASENAME_B64" | base64 -d)"
+          BASENAME="$basename" node <<'NODE' >/tmp/key
+          const x=require('/tmp/list.json');
+          const a=x.Contents||[];
+          const m=a.filter(v=>String(v.Key||'').endsWith(process.env.BASENAME));
+          if(m.length!==1){console.error(`expected one object suffix match, found ${m.length}`);process.exit(2)}
+          process.stdout.write(String(m[0].Key));
+          NODE
+          key="$(cat /tmp/key)"
+          aws --region auto --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json
+          remote="$(node -e "process.stdout.write(String(require('/tmp/head.json').ContentLength||0))")"
+          [ "$remote" = "$EXPECTED_SIZE" ] || { echo "MKETY_POSTGRES_R2_ERROR=size-mismatch expected=$EXPECTED_SIZE remote=$remote"; exit 3; }
+          aws --region auto --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" /tmp/backup.bin >/dev/null
+          actual="$(wc -c </tmp/backup.bin | tr -d ' ')"
+          [ "$actual" = "$EXPECTED_SIZE" ] || { echo "MKETY_POSTGRES_R2_ERROR=download-size-mismatch expected=$EXPECTED_SIZE actual=$actual"; exit 4; }
+          echo "MKETY_POSTGRES_R2_BYTES=$actual"
+          sha256sum /tmp/backup.bin | awk '{print "MKETY_POSTGRES_R2_SHA256=" $1}'
+          echo MKETY_POSTGRES_R2_BACKUP_OK=true
+          SH
+          base64 -w0 /tmp/run.sh >/tmp/script.b64
+          put_env(){ local key="$1" value="$2"; KEY="$key" VALUE="$value" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json; code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"; [ "$code" = '201' ] || exit 5; }
+          put_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+          put_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+          put_env R2_S3_API "$R2_S3_API"
+          put_env R2_BUCKET "$R2_BUCKET"
+          put_env BASENAME_B64 "$BASENAME_B64"
+          put_env EXPECTED_SIZE "$EXPECTED_SIZE"
+          put_env SCRIPT_B64 "$(cat /tmp/script.b64)"
+          echo MKETY_POSTGRES_R2_VERIFIER_CONFIG_OK=true
+
+      - name: Deploy verifier and run proof
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = '200' ] || exit 6
+          duuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 180); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/deployment.json; status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"; case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) exit 7;; esac; sleep 5; done
+          node -e "process.stdout.write(JSON.stringify({name:'mkety-postgres-r2-object-proof',command:'echo $SCRIPT_B64 | base64 -d | sh',frequency:'0 0 * * *',timeout:600,enabled:false}))" >/tmp/task.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
+          [ "$code" = '201' ] || exit 8
+          task_uuid="$(node -e "const x=require('/tmp/task-response.json');process.stdout.write(x.uuid||'')")"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
+          [ "$code" = '200' ] || exit 9
+          for i in $(seq 1 120); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json; status="$(node -e "const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;process.stdout.write(String(e?.status||''))")"; case "${status,,}" in success|successful|succeeded|completed) break;; failed|failure|error) node -e "const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;console.log(String(e?.message||'').split(/\r?\n/).filter(l=>l.includes('MKETY_POSTGRES_')||l.includes('expected one object')).join('\n'))"; exit 10;; esac; sleep 5; done
+          node <<'NODE'
+          const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;const msg=String(e?.message||'');
+          console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_POSTGRES_')).join('\n'));
+          if(!msg.includes('MKETY_POSTGRES_R2_BACKUP_OK=true')) process.exit(11);
+          NODE
+
+      - name: Delete isolated verifier
+        if: always() && steps.app.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+          echo MKETY_POSTGRES_R2_VERIFIER_CLEANUP_REQUESTED=true
