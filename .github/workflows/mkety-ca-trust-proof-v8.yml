@@ -124,7 +124,7 @@ jobs:
           process.stdout.write(JSON.stringify({
             name: 'mkety-ca-proof-v8',
             command: 'echo $SCRIPT_B64 | base64 -d | sh',
-            frequency: '0 0 31 2 *',
+            frequency: '0 0 * * *',
             timeout: 300,
             enabled: false
           }));
