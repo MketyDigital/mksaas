@@ -34,9 +34,15 @@ jobs:
           export AWS_EC2_METADATA_DISABLED=true
           export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
           export AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
-          endpoint="${R2_S3_API%/}"
+          endpoint="$(node -e 'const u=new URL(process.env.R2_S3_API); process.stdout.write(u.origin)')"
           endpoint_host="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).host)')"
+          endpoint_path="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).pathname)')"
           echo "R2 endpoint host: $endpoint_host"
+          if [ "$endpoint_path" = "/" ]; then
+            echo MKETY_R2_ENDPOINT_PATH_PRESENT=false
+          else
+            echo MKETY_R2_ENDPOINT_PATH_PRESENT=true
+          fi
           aws configure set default.s3.signature_version s3v4
           sanitize() {
             sed -E 's/[A-Za-z0-9+\/=]{20,}/[redacted]/g' "$1" || true
