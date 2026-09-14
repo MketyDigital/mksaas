@@ -1,0 +1,50 @@
+name: Mkety Coolify R2 Storage Probe
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      R2_BUCKET: mkety-production-db-backups
+    steps:
+      - name: Inspect and validate matching Coolify S3 storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/s3-storages" -o /tmp/storages.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const xs=JSON.parse(fs.readFileSync('/tmp/storages.json','utf8'));
+          const list=Array.isArray(xs)?xs:[];
+          const matches=list.filter(x=>String(x.bucket||'')===process.env.R2_BUCKET);
+          if(matches.length!==1) throw new Error(`Expected one storage for bucket, found ${matches.length}`);
+          const s=matches[0];
+          const u=new URL(String(s.endpoint||''));
+          const out={uuid:s.uuid,name:s.name||null,bucket:s.bucket||null,region:s.region||null,is_usable:s.is_usable===true,endpoint_host:u.host,endpoint_path:u.pathname,endpoint_has_bucket_path:u.pathname.split('/').filter(Boolean).includes(process.env.R2_BUCKET),created_at:s.created_at||null,updated_at:s.updated_at||null};
+          console.log(JSON.stringify(out,null,2));
+          fs.writeFileSync('/tmp/storage-uuid',String(s.uuid));
+          NODE
+          storage_uuid="$(cat /tmp/storage-uuid)"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/validate.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/s3-storages/$storage_uuid/validate")"
+          echo "validate_http_status=$code"
+          VALIDATE_CODE="$code" node <<'NODE'
+          const fs=require('node:fs');
+          let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/validate.json','utf8'))}catch{}
+          const sanitize=s=>String(s||'').replace(/[A-Za-z0-9+\/=]{20,}/g,'[redacted]').slice(0,1200);
+          console.log(JSON.stringify({http_status:Number(process.env.VALIDATE_CODE),valid:x.valid===true,message:sanitize(x.message)},null,2));
+          if(Number(process.env.VALIDATE_CODE)!==200 || x.valid!==true) process.exit(2);
+          console.log('MKETY_COOLIFY_R2_STORAGE_VALID=true');
+          NODE
