@@ -1,0 +1,77 @@
+name: Mkety R2 Reachability Probe
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+    steps:
+      - name: Verify R2 list, put, head, get, and delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$R2_ACCESS_KEY_ID"
+          test -n "$R2_SECRET_ACCESS_KEY"
+          test -n "$R2_S3_API"
+          test -n "$R2_BUCKET"
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          export AWS_EC2_METADATA_DISABLED=true
+          export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
+          export AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
+          endpoint="${R2_S3_API%/}"
+          endpoint_host="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).host)')"
+          echo "R2 endpoint host: $endpoint_host"
+          aws configure set default.s3.signature_version s3v4
+          sanitize() {
+            sed -E 's/[A-Za-z0-9+\/=]{20,}/[redacted]/g' "$1" || true
+          }
+          if ! aws --region auto --endpoint-url "$endpoint" s3api list-objects-v2 --bucket "$R2_BUCKET" --max-items 1 --output json >/tmp/list.json 2>/tmp/list.err; then
+            echo MKETY_R2_PROBE_ERROR=list
+            sanitize /tmp/list.err
+            exit 2
+          fi
+          echo MKETY_R2_LIST_OK=true
+          key="diagnostics/r2-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          printf 'mkety-r2-probe\n' >/tmp/probe.txt
+          if ! aws --region auto --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body /tmp/probe.txt >/tmp/put.json 2>/tmp/put.err; then
+            echo MKETY_R2_PROBE_ERROR=put
+            sanitize /tmp/put.err
+            exit 3
+          fi
+          echo MKETY_R2_PUT_OK=true
+          if ! aws --region auto --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json 2>/tmp/head.err; then
+            echo MKETY_R2_PROBE_ERROR=head
+            sanitize /tmp/head.err
+            exit 4
+          fi
+          echo MKETY_R2_HEAD_OK=true
+          if ! aws --region auto --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" /tmp/probe-downloaded.txt >/tmp/get.json 2>/tmp/get.err; then
+            echo MKETY_R2_PROBE_ERROR=get
+            sanitize /tmp/get.err
+            exit 5
+          fi
+          cmp -s /tmp/probe.txt /tmp/probe-downloaded.txt || { echo MKETY_R2_PROBE_ERROR=content-mismatch; exit 6; }
+          echo MKETY_R2_GET_OK=true
+          if ! aws --region auto --endpoint-url "$endpoint" s3api delete-object --bucket "$R2_BUCKET" --key "$key" >/tmp/delete.json 2>/tmp/delete.err; then
+            echo MKETY_R2_PROBE_ERROR=delete
+            sanitize /tmp/delete.err
+            exit 7
+          fi
+          echo MKETY_R2_DELETE_OK=true
+          echo MKETY_R2_REACHABILITY_OK=true
