@@ -1,0 +1,64 @@
+name: Mkety Postgres Backup State Probe
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+    steps:
+      - name: Inspect sanitized scheduled backup and executions
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/executions.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions")"
+          echo "executions_http_status=$code"
+          [ "$code" = '200' ] || { cat /tmp/executions.json; exit 2; }
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=JSON.parse(fs.readFileSync('/tmp/backups.json','utf8'));
+          const list=Array.isArray(raw)?raw:(raw.data||raw.backups||[]);
+          const p=list.find(x=>x?.uuid===process.env.BACKUP_UUID);
+          if(!p) throw new Error('Expected backup policy missing');
+          const eraw=JSON.parse(fs.readFileSync('/tmp/executions.json','utf8'));
+          const xs=Array.isArray(eraw)?eraw:(eraw.executions||[]);
+          const sorted=[...xs].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+          const sanitize=(s)=>String(s||'').replace(/[A-Za-z0-9+\/=]{20,}/g,'[redacted]').slice(0,1200);
+          const out={
+            policy:{
+              uuid_matches:p.uuid===process.env.BACKUP_UUID,
+              enabled:p.enabled!==false,
+              save_s3:p.save_s3===true,
+              s3_storage_uuid_present:Boolean(p.s3_storage_uuid),
+              frequency:p.frequency||null,
+              local_retention:Number(p.database_backup_retention_amount_locally||0),
+              s3_retention:Number(p.database_backup_retention_amount_s3||0)
+            },
+            execution_count:sorted.length,
+            latest:sorted.slice(0,5).map(e=>({
+              status:e.status??null,
+              created_at:e.created_at??null,
+              size:Number(e.size||0),
+              s3_uploaded:e.s3_uploaded??null,
+              filename_present:Boolean(e.filename),
+              message:sanitize(e.message)
+            }))
+          };
+          console.log(JSON.stringify(out,null,2));
+          console.log('MKETY_POSTGRES_BACKUP_STATE_PROBED=true');
+          NODE
