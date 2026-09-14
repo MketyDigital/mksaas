@@ -1,0 +1,73 @@
+name: Mkety Postgres Backup Now Proof
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-now:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+    steps:
+      - name: Trigger existing backup configuration and verify fresh S3 upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions" -o /tmp/before.json
+          before_latest="$(node -e "const x=require('/tmp/before.json');const a=Array.isArray(x)?x:(x.executions||[]);a.sort((p,q)=>new Date(q.created_at||0)-new Date(p.created_at||0));process.stdout.write(String(a[0]?.created_at||''))")"
+          echo "previous_latest_created_at=$before_latest"
+          printf '{"backup_now":true}' >/tmp/trigger.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/trigger-response.json -w '%{http_code}' -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/trigger.json "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID")"
+          echo "trigger_http_status=$code"
+          [ "$code" = '200' ] || { cat /tmp/trigger-response.json; exit 2; }
+          echo MKETY_POSTGRES_BACKUP_TRIGGERED=true
+          found=no
+          for i in $(seq 1 180); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions" -o /tmp/executions.json
+            node <<'NODE' >/tmp/state.env
+          const fs=require('node:fs');
+          const x=require('/tmp/executions.json');
+          const a=(Array.isArray(x)?x:(x.executions||[])).sort((p,q)=>new Date(q.created_at||0)-new Date(p.created_at||0));
+          const e=a[0]||{};
+          const clean=s=>String(s||'').replace(/[A-Za-z0-9+\/=]{20,}/g,'[redacted]').replace(/\r?\n/g,' ').slice(0,500);
+          console.log(`CREATED_AT=${e.created_at||''}`);
+          console.log(`STATUS=${e.status||''}`);
+          console.log(`S3_UPLOADED=${e.s3_uploaded===true?'true':e.s3_uploaded===false?'false':'null'}`);
+          console.log(`SIZE=${Number(e.size||0)}`);
+          console.log(`FILENAME_PRESENT=${Boolean(e.filename)}`);
+          console.log(`MESSAGE=${clean(e.message)}`);
+          NODE
+            . /tmp/state.env
+            echo "backup_created_at=$CREATED_AT status=$STATUS s3_uploaded=$S3_UPLOADED size=$SIZE filename_present=$FILENAME_PRESENT"
+            if [ -n "$CREATED_AT" ] && [ "$CREATED_AT" != "$before_latest" ]; then
+              case "${STATUS,,}" in
+                success|successful|succeeded|completed)
+                  [ "$S3_UPLOADED" = true ] || { echo "Latest backup completed without successful S3 upload: $MESSAGE"; exit 3; }
+                  [ "$SIZE" -gt 0 ] || { echo 'Latest backup is empty'; exit 4; }
+                  [ "$FILENAME_PRESENT" = true ] || { echo 'Latest backup filename missing'; exit 5; }
+                  found=yes
+                  break
+                  ;;
+                failed|failure|error)
+                  echo "Latest backup failed: $MESSAGE"
+                  exit 6
+                  ;;
+              esac
+            fi
+            sleep 5
+          done
+          [ "$found" = yes ] || { echo 'Timed out waiting for fresh Postgres backup'; exit 7; }
+          echo MKETY_POSTGRES_COOLIFY_BACKUP_OK=true
+          echo MKETY_POSTGRES_R2_BACKUP_OK=true
