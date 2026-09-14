@@ -43,7 +43,8 @@ jobs:
             const e=[...(p.executions||[])].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0))[0];
             const status=String(e?.status||"").toLowerCase();
             const fresh=e&&Date.now()-new Date(e.created_at).getTime()<=30*60*60*1000;
-            if(!e||!["success","successful","succeeded","completed"].includes(status)||!fresh||e.s3_uploaded!==true||Number(e.size||0)<=0||!e.filename) throw new Error("Latest Coolify backup is not a fresh successful S3 upload");
+            const message=String(e?.message||"");
+            if(!e||!["success","successful","succeeded","completed"].includes(status)||!fresh||Number(e.size||0)<=0||!e.filename||/S3 upload failed/i.test(message)) throw new Error("Latest Coolify backup is not a fresh successful backup eligible for exact R2 verification");
             fs.appendFileSync(process.env.GITHUB_OUTPUT,`filename_b64=${Buffer.from(String(e.filename)).toString("base64")}\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT,`coolify_size=${Number(e.size)}\n`);
             console.log(JSON.stringify({status:e.status,size:Number(e.size),created_at:e.created_at,s3_uploaded:e.s3_uploaded,fresh_within_30h:fresh}));
@@ -53,6 +54,7 @@ jobs:
         shell: bash
         env:
           FILENAME_B64: ${{ steps.backup.outputs.filename_b64 }}
+          COOLIFY_SIZE: ${{ steps.backup.outputs.coolify_size }}
         run: |
           set -euo pipefail
           export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
@@ -61,26 +63,15 @@ jobs:
           export AWS_EC2_METADATA_DISABLED=true
           export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
           export AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
-          endpoint="${R2_S3_API%/}"
+          endpoint="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).origin)')"
           endpoint_host="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).host)')"
           echo "R2 endpoint host: $endpoint_host"
           filename="$(printf '%s' "$FILENAME_B64" | base64 -d)"
+          key="${filename#/}"
           echo "::add-mask::$filename"
-          aws configure set default.s3.signature_version s3v4
-          aws --region auto --endpoint-url "$endpoint" s3api list-objects-v2 --bucket "$R2_BUCKET" --max-items 1000 --output json >/tmp/objects.json
-          FILENAME="$filename" node -e '
-            const fs=require("fs");
-            const a=require("/tmp/objects.json").Contents||[];
-            const matches=a.filter(x=>String(x.Key||"").endsWith(process.env.FILENAME));
-            if(matches.length!==1) throw new Error(`Expected exactly one R2 object ending in Coolify filename; found ${matches.length}`);
-            const x=matches[0];
-            const fresh=Date.now()-new Date(x.LastModified).getTime()<=30*60*60*1000;
-            if(!fresh||Number(x.Size||0)<=0) throw new Error("Exact R2 object is stale or empty");
-            fs.writeFileSync("/tmp/object-key",String(x.Key));
-            console.log(JSON.stringify({exact_match:true,size:Number(x.Size),last_modified:x.LastModified,fresh_within_30h:fresh}));
-          '
-          key="$(cat /tmp/object-key)"
           echo "::add-mask::$key"
+          test -n "$key"
+          aws configure set default.s3.signature_version s3v4
           aws --region auto --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" --output json >/tmp/head.json
           aws --region auto --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" /tmp/postgres-backup.bin >/tmp/get.json
           test -s /tmp/postgres-backup.bin
@@ -88,6 +79,7 @@ jobs:
           head_size="$(node -e 'process.stdout.write(String(require("/tmp/head.json").ContentLength||0))')"
           [ "$object_size" -gt 0 ]
           [ "$object_size" = "$head_size" ]
+          [ "$object_size" = "$COOLIFY_SIZE" ]
           sha256sum /tmp/postgres-backup.bin | awk '{print "MKETY_POSTGRES_R2_SHA256=" $1}'
           echo "MKETY_POSTGRES_R2_BYTES=$object_size"
           echo MKETY_POSTGRES_R2_BACKUP_OK=true
