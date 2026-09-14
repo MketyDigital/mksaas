@@ -1,0 +1,60 @@
+name: Mkety Coolify R2 Sync Proof
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: mkety-production-db-backups
+      STORAGE_UUID: o5p5dqqkijve7tsg1dxf1xnb
+    steps:
+      - name: Verify storage shape, sync credentials, and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/s3-storages/$STORAGE_UUID" -o /tmp/before.json
+          node <<'NODE'
+          const s=require('/tmp/before.json');
+          const u=new URL(String(s.endpoint||''));
+          if(s.uuid!==process.env.STORAGE_UUID) throw new Error('Unexpected storage UUID');
+          if(String(s.bucket||'')!==process.env.R2_BUCKET) throw new Error('Unexpected bucket');
+          if(String(s.region||'')!=='auto') throw new Error('Unexpected region');
+          if(u.pathname!=='/' || u.search || u.hash) throw new Error('Unexpected endpoint path/query');
+          console.log(`MKETY_COOLIFY_R2_ENDPOINT_HOST=${u.host}`);
+          console.log('MKETY_COOLIFY_R2_STORAGE_SHAPE_OK=true');
+          NODE
+          KEY="$R2_ACCESS_KEY_ID" SECRET="$R2_SECRET_ACCESS_KEY" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,secret:process.env.SECRET}))' >/tmp/patch.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/patch-response.json -w '%{http_code}' -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/patch.json "$base/s3-storages/$STORAGE_UUID")"
+          [ "$code" = '200' ] || { echo "Coolify R2 credential sync failed HTTP $code"; exit 2; }
+          echo MKETY_COOLIFY_R2_CREDENTIALS_SYNCED=true
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/validate.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/s3-storages/$STORAGE_UUID/validate")"
+          echo "validate_http_status=$code"
+          [ "$code" = '200' ] || { echo MKETY_COOLIFY_R2_ERROR=validate-http; exit 3; }
+          node <<'NODE'
+          const x=require('/tmp/validate.json');
+          const sanitize=s=>String(s||'').replace(/[A-Za-z0-9+\/=]{20,}/g,'[redacted]').slice(0,600);
+          console.log(JSON.stringify({valid:x.valid===true,message:sanitize(x.message)}));
+          if(x.valid!==true) process.exit(4);
+          console.log('MKETY_COOLIFY_R2_STORAGE_VALID=true');
+          NODE
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/s3-storages/$STORAGE_UUID" -o /tmp/after.json
+          node <<'NODE'
+          const s=require('/tmp/after.json');
+          console.log(`MKETY_COOLIFY_R2_STORAGE_USABLE=${s.is_usable===true}`);
+          console.log(`MKETY_COOLIFY_R2_STORAGE_UPDATED_AT=${s.updated_at||''}`);
+          NODE
