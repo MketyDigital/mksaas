@@ -1,0 +1,290 @@
+name: Mkety Postgres Origin CA Rotate
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-postgres-origin-ca-rotate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      ORIGIN_CA_HOSTNAME: mkety-production-postgres.mkety.com
+    steps:
+      - name: Resolve production PostgreSQL connection and verify health
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE' >/tmp/db.env
+          const x=require('/tmp/db.json');
+          if(x.is_public!==false || x.enable_ssl!==true || !x.internal_db_url) process.exit(2);
+          if(!String(x.status||'').includes('running') || !String(x.status||'').includes('healthy')) process.exit(3);
+          const u=new URL(x.internal_db_url);
+          console.log('DB_URL='+x.internal_db_url);
+          console.log('DB_HOST='+u.hostname);
+          console.log('DB_PORT='+(u.port||'5432'));
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
+          echo MKETY_PG_ORIGIN_CA_DB_PREFLIGHT_OK=true
+
+      - name: Create isolated TLS rotator
+        id: rotator
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/create.json
+          const dockerfile=[
+            'FROM alpine:3.20',
+            'RUN apk add --no-cache curl openssl nodejs postgresql17-client coreutils',
+            'CMD ["sleep", "infinity"]',''
+          ].join('\n');
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            dockerfile:Buffer.from(dockerfile).toString('base64'),
+            name:`mkety-pg-origin-ca-rotate-${process.env.GITHUB_SHA.slice(0,10)}`,
+            description:`Ephemeral transactional PostgreSQL Origin CA rotation ${process.env.GITHUB_SHA}`,
+            ports_exposes:'3000'
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "Rotator creation failed HTTP $code"; exit 20; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo MKETY_PG_ORIGIN_CA_ROTATOR_CREATED=true
+
+      - name: Mount production TLS directory and configure rotator
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.rotator.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          host_path="/data/coolify/databases/$POSTGRES_UUID"
+          HOST_PATH="$host_path" node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-pg-origin-ca-rotate-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/db",host_path:process.env.HOST_PATH}))' >/tmp/storage.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
+          [ "$code" = 201 ] || { echo "TLS directory mount failed HTTP $code"; exit 21; }
+
+          cat >/tmp/rotate.sh <<'SH'
+          set -eu
+          ssl=/db/ssl
+          cert="$ssl/server.crt"
+          key="$ssl/server.key"
+          test -f "$cert" && test -f "$key"
+          test "$(stat -c '%a' "$cert")" = 644
+          test "$(stat -c '%u:%g' "$cert")" = '999:999'
+          test "$(stat -c '%a' "$key")" = 600
+          test "$(stat -c '%u:%g' "$key")" = '999:999'
+
+          file_fp="$(openssl x509 -in "$cert" -noout -fingerprint -sha256 | sed 's/.*=//')"
+          openssl s_client -starttls postgres -connect "$DB_HOST:$DB_PORT" -showcerts </dev/null >/tmp/before-handshake.txt 2>&1
+          sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' /tmp/before-handshake.txt | sed -n '1,/-----END CERTIFICATE-----/p' >/tmp/before-leaf.pem
+          served_fp="$(openssl x509 -in /tmp/before-leaf.pem -noout -fingerprint -sha256 | sed 's/.*=//')"
+          test "$file_fp" = "$served_fp"
+          echo MKETY_PG_ORIGIN_CA_CURRENT_FILE_SERVED_MATCH=true
+
+          ts="$(date -u +%Y%m%dT%H%M%SZ)"
+          rollback_dir="$ssl/rollback-before-origin-ca-$ts"
+          mkdir -m 700 "$rollback_dir"
+          cp -p "$cert" "$rollback_dir/server.crt"
+          cp -p "$key" "$rollback_dir/server.key"
+          test -s "$rollback_dir/server.crt" && test -s "$rollback_dir/server.key"
+          echo "MKETY_PG_ORIGIN_CA_ROLLBACK_DIR=$rollback_dir"
+          echo MKETY_PG_ORIGIN_CA_ROLLBACK_SNAPSHOT_OK=true
+
+          cert_id=''
+          installed=0
+          rollback() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ]; then
+              echo "MKETY_PG_ORIGIN_CA_FAILURE_RC=$rc"
+              if [ "$installed" = 1 ]; then
+                cp "$rollback_dir/server.crt" "$ssl/server.crt.rollback-tmp"
+                cp "$rollback_dir/server.key" "$ssl/server.key.rollback-tmp"
+                chown 999:999 "$ssl/server.crt.rollback-tmp" "$ssl/server.key.rollback-tmp"
+                chmod 644 "$ssl/server.crt.rollback-tmp"
+                chmod 600 "$ssl/server.key.rollback-tmp"
+                mv -f "$ssl/server.crt.rollback-tmp" "$cert"
+                mv -f "$ssl/server.key.rollback-tmp" "$key"
+                psql "$DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT pg_reload_conf();' >/dev/null 2>&1 || true
+                echo MKETY_PG_ORIGIN_CA_ROLLBACK_ATTEMPTED=true
+              fi
+              if [ -n "$cert_id" ]; then
+                curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/certificates/$cert_id" >/tmp/revoke.json || true
+                echo MKETY_PG_ORIGIN_CA_FAILED_CERT_REVOKE_REQUESTED=true
+              fi
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          openssl req -new -newkey rsa:2048 -nodes -sha256 \
+            -keyout /tmp/new.key -out /tmp/new.csr \
+            -subj "/CN=$ORIGIN_CA_HOSTNAME" \
+            -addext "subjectAltName=DNS:$ORIGIN_CA_HOSTNAME" >/dev/null 2>&1
+          chmod 600 /tmp/new.key
+          ORIGIN_CA_HOSTNAME="$ORIGIN_CA_HOSTNAME" node <<'NODE' >/tmp/request.json
+          const fs=require('fs');
+          process.stdout.write(JSON.stringify({
+            csr:fs.readFileSync('/tmp/new.csr','utf8'),
+            hostnames:[process.env.ORIGIN_CA_HOSTNAME],
+            request_type:'origin-rsa',
+            requested_validity:365
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/origin.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/request.json 'https://api.cloudflare.com/client/v4/certificates')"
+          [ "$code" = 200 ] || { echo "MKETY_PG_ORIGIN_CA_ISSUE_HTTP=$code"; node -e "const x=require('/tmp/origin.json');console.log('MKETY_PG_ORIGIN_CA_ISSUE_ERRORS='+JSON.stringify(x.errors||[]))"; exit 30; }
+          cert_id="$(node -e "const x=require('/tmp/origin.json');if(!x.success||!x.result?.id||!x.result?.certificate)process.exit(1);process.stdout.write(x.result.id)")"
+          node -e "const x=require('/tmp/origin.json');process.stdout.write(x.result.certificate)" >/tmp/new.crt
+          echo MKETY_PG_ORIGIN_CA_ISSUED=true
+
+          openssl x509 -in /tmp/new.crt -noout >/dev/null
+          cert_pub="$(openssl x509 -in /tmp/new.crt -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          key_pub="$(openssl pkey -in /tmp/new.key -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          test "$cert_pub" = "$key_pub"
+          openssl x509 -in /tmp/new.crt -noout -text | grep -q 'Public Key Algorithm: rsaEncryption'
+          openssl x509 -in /tmp/new.crt -noout -text | grep -q "DNS:$ORIGIN_CA_HOSTNAME"
+          openssl x509 -in /tmp/new.crt -checkend 86400 -noout >/dev/null
+          curl --proto '=https' --tlsv1.2 -fsS 'https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem' -o /tmp/cf-origin-rsa-root.pem
+          openssl verify -CAfile /tmp/cf-origin-rsa-root.pem /tmp/new.crt >/dev/null
+          echo MKETY_PG_ORIGIN_CA_CERT_VALIDATED=true
+
+          cp /tmp/new.crt "$ssl/server.crt.origin-tmp"
+          cp /tmp/new.key "$ssl/server.key.origin-tmp"
+          chown 999:999 "$ssl/server.crt.origin-tmp" "$ssl/server.key.origin-tmp"
+          chmod 644 "$ssl/server.crt.origin-tmp"
+          chmod 600 "$ssl/server.key.origin-tmp"
+          mv -f "$ssl/server.crt.origin-tmp" "$cert"
+          mv -f "$ssl/server.key.origin-tmp" "$key"
+          installed=1
+          echo MKETY_PG_ORIGIN_CA_ATOMIC_INSTALL_OK=true
+
+          reload="$(psql "$DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT pg_reload_conf();')"
+          test "$reload" = t
+          echo MKETY_PG_ORIGIN_CA_RELOAD_OK=true
+          sleep 3
+
+          openssl s_client -starttls postgres -connect "$DB_HOST:$DB_PORT" -showcerts </dev/null >/tmp/after-handshake.txt 2>&1
+          sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' /tmp/after-handshake.txt | sed -n '1,/-----END CERTIFICATE-----/p' >/tmp/after-leaf.pem
+          test -s /tmp/after-leaf.pem
+          after_fp="$(openssl x509 -in /tmp/after-leaf.pem -noout -fingerprint -sha256 | sed 's/.*=//')"
+          new_fp="$(openssl x509 -in /tmp/new.crt -noout -fingerprint -sha256 | sed 's/.*=//')"
+          test "$after_fp" = "$new_fp"
+          openssl verify -CAfile /tmp/cf-origin-rsa-root.pem /tmp/after-leaf.pem >/dev/null
+          openssl x509 -in /tmp/after-leaf.pem -noout -text | grep -q 'Public Key Algorithm: rsaEncryption'
+          test "$(stat -c '%a %u:%g' "$cert")" = '644 999:999'
+          test "$(stat -c '%a %u:%g' "$key")" = '600 999:999'
+          test "$(psql "$DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1;')" = 1
+          echo MKETY_PG_ORIGIN_CA_TLS_VERIFY_OK=true
+          echo MKETY_PG_ORIGIN_CA_DB_QUERY_OK=true
+          echo "MKETY_PG_ORIGIN_CA_CERT_ID=$cert_id"
+          echo MKETY_PG_ORIGIN_CA_ROTATION_OK=true
+          trap - EXIT
+          SH
+          base64 -w0 /tmp/rotate.sh >/tmp/script.b64
+
+          put_env() {
+            KEY="$1" VALUE="$2" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"
+            [ "$code" = 201 ] || { echo "Failed to inject $key HTTP $code"; exit 22; }
+          }
+          put_env DB_URL "$DB_URL"
+          put_env DB_HOST "$DB_HOST"
+          put_env DB_PORT "$DB_PORT"
+          put_env CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"
+          put_env ORIGIN_CA_HOSTNAME "$ORIGIN_CA_HOSTNAME"
+          put_env SCRIPT_B64 "$(cat /tmp/script.b64)"
+          echo MKETY_PG_ORIGIN_CA_ROTATOR_CONFIG_OK=true
+
+      - name: Deploy rotator and execute transactional rotation
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.rotator.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "Rotator deploy failed HTTP $code"; exit 23; }
+          duuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 180); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/deployment.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"
+            case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) echo "Rotator deploy failed: $status"; exit 24;; esac
+            sleep 4
+          done
+          node -e 'process.stdout.write(JSON.stringify({name:"mkety-pg-origin-ca-rotate",command:"echo $SCRIPT_B64 | base64 -d | sh",frequency:"0 0 * * *",timeout:900,enabled:false}))' >/tmp/task.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
+          [ "$code" = 201 ] || { echo "Rotation task create failed HTTP $code"; exit 25; }
+          task_uuid="$(node -e "const x=require('/tmp/task-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
+          [ "$code" = 200 ] || { echo "Rotation task execute failed HTTP $code"; exit 26; }
+          for i in $(seq 1 180); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
+            status="$(node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;process.stdout.write(String(e?.status||''))")"
+            case "${status,,}" in success) break;; failed|failure|error) node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;console.log(String(e?.message||'').split(/\r?\n/).filter(l=>l.includes('MKETY_PG_ORIGIN_CA_')).join('\n'))"; exit 27;; esac
+            sleep 4
+          done
+          node - <<'NODE'
+          const xs=require('/tmp/executions.json'); const e=Array.isArray(xs)?xs[0]:null; const msg=String(e?.message||'');
+          console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_PG_ORIGIN_CA_')).join('\n'));
+          const required=[
+            'MKETY_PG_ORIGIN_CA_CURRENT_FILE_SERVED_MATCH=true',
+            'MKETY_PG_ORIGIN_CA_ROLLBACK_SNAPSHOT_OK=true',
+            'MKETY_PG_ORIGIN_CA_ISSUED=true',
+            'MKETY_PG_ORIGIN_CA_CERT_VALIDATED=true',
+            'MKETY_PG_ORIGIN_CA_ATOMIC_INSTALL_OK=true',
+            'MKETY_PG_ORIGIN_CA_RELOAD_OK=true',
+            'MKETY_PG_ORIGIN_CA_TLS_VERIFY_OK=true',
+            'MKETY_PG_ORIGIN_CA_DB_QUERY_OK=true',
+            'MKETY_PG_ORIGIN_CA_ROTATION_OK=true'
+          ];
+          if(!required.every(m=>msg.includes(m))) process.exit(1);
+          NODE
+
+      - name: Re-verify Coolify database health
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db-after.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/db-after.json').status||''))")"
+            if echo "$status" | grep -q 'running' && echo "$status" | grep -q 'healthy'; then
+              echo MKETY_PG_ORIGIN_CA_COOLIFY_HEALTH_OK=true
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'PostgreSQL did not remain healthy after TLS reload.'
+          exit 28
+
+      - name: Delete ephemeral rotator
+        if: always() && steps.rotator.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.rotator.outputs.app_uuid }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+          echo MKETY_PG_ORIGIN_CA_ROTATOR_CLEANUP_REQUESTED=true
