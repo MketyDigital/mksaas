@@ -53,7 +53,7 @@ jobs:
           node <<'NODE' >/tmp/create.json
           const dockerfile=[
             'FROM alpine:3.20',
-            'RUN apk add --no-cache curl openssl nodejs postgresql17-client coreutils',
+            'RUN apk add --no-cache curl openssl nodejs postgresql-client coreutils',
             'CMD ["sleep", "infinity"]',''
           ].join('\n');
           process.stdout.write(JSON.stringify({
