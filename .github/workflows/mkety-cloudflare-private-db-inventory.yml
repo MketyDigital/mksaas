@@ -1,0 +1,62 @@
+name: Mkety Cloudflare Private DB Inventory
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-cloudflare-private-db-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      EXPECTED_HYPERDRIVE_NAME: mkety-production-db
+    steps:
+      - name: List sanitized Workers VPC and Hyperdrive inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+
+          vpc_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/vpc.json -w '%{http_code}' "${auth[@]}" "$api/connectivity/directory/services?per_page=100")"
+          echo "MKETY_CF_VPC_LIST_HTTP=$vpc_code"
+          if [ "$vpc_code" = 200 ]; then
+            node <<'NODE'
+          const x=require('/tmp/vpc.json');
+          if(!x.success || !Array.isArray(x.result)) process.exit(2);
+          console.log(`MKETY_CF_VPC_LIST_OK=true`);
+          console.log(`MKETY_CF_VPC_SERVICE_COUNT=${x.result.length}`);
+          for(const s of x.result) {
+            const safe={id:s.id||null,name:s.name||null,type:s.type||null,app_protocol:s.app_protocol||s.protocol||null};
+            console.log('MKETY_CF_VPC_SERVICE='+JSON.stringify(safe));
+          }
+          NODE
+          else
+            node -e "const x=require('/tmp/vpc.json'); console.log('MKETY_CF_VPC_LIST_ERRORS='+JSON.stringify(x.errors||[]))"
+          fi
+
+          hd_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/hd.json -w '%{http_code}' "${auth[@]}" "$api/hyperdrive/configs?per_page=100")"
+          echo "MKETY_CF_HYPERDRIVE_LIST_HTTP=$hd_code"
+          [ "$hd_code" = 200 ] || { node -e "const x=require('/tmp/hd.json'); console.log('MKETY_CF_HYPERDRIVE_LIST_ERRORS='+JSON.stringify(x.errors||[]))"; exit 3; }
+          EXPECTED_HYPERDRIVE_NAME="$EXPECTED_HYPERDRIVE_NAME" node <<'NODE'
+          const x=require('/tmp/hd.json');
+          if(!x.success || !Array.isArray(x.result)) process.exit(4);
+          const safe=x.result.map(h=>({id:h.id||null,name:h.name||null,origin_kind:h.origin?.service_id?'vpc-service':h.origin?.access_client_id?'access-tunnel':'internet',service_id:h.origin?.service_id||null,scheme:h.origin?.scheme||null}));
+          console.log('MKETY_CF_HYPERDRIVE_LIST_OK=true');
+          console.log(`MKETY_CF_HYPERDRIVE_COUNT=${safe.length}`);
+          const matches=safe.filter(h=>h.name===process.env.EXPECTED_HYPERDRIVE_NAME);
+          console.log(`MKETY_CF_EXPECTED_HYPERDRIVE_COUNT=${matches.length}`);
+          for(const h of matches) console.log('MKETY_CF_EXPECTED_HYPERDRIVE='+JSON.stringify(h));
+          NODE
