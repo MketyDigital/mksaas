@@ -57,7 +57,7 @@ jobs:
           uuid="$(node -e "const x=require('/tmp/create-r.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
 
-      - name: Configure and execute instrumented rotation
+      - name: Configure and execute restart-backed rotation
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.uuid }}
@@ -70,6 +70,7 @@ jobs:
           cat >/tmp/rotate.sh <<'SH'
           set -eu
           ssl=/db/ssl; cert="$ssl/server.crt"; key="$ssl/server.key"
+          api="${COOLIFY_URL%/}/api/v1"
           test -f "$cert" && test -f "$key"
           file_fp="$(openssl x509 -in "$cert" -noout -fingerprint -sha256 | sed 's/.*=//')"
           openssl s_client -starttls postgres -connect "$DB_HOST:$DB_PORT" -showcerts </dev/null >/tmp/before.txt 2>&1
@@ -77,6 +78,25 @@ jobs:
           served_fp="$(openssl x509 -in /tmp/before.pem -noout -fingerprint -sha256 | sed 's/.*=//')"
           test "$file_fp" = "$served_fp"
           echo MKETY_ROTATE_V2_STAGE=baseline_match
+
+          wait_healthy(){
+            i=0
+            while [ "$i" -lt 90 ]; do
+              code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/db-state.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$api/databases/$POSTGRES_UUID" || true)"
+              if [ "$code" = 200 ]; then
+                status="$(node -e "process.stdout.write(String(require('/tmp/db-state.json').status||''))" 2>/dev/null || true)"
+                case "$status" in *running*healthy*) return 0;; esac
+              fi
+              i=$((i+1)); sleep 2
+            done
+            return 1
+          }
+          restart_db(){
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/restart.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$api/databases/$POSTGRES_UUID/restart" || true)"
+            [ "$code" = 200 ] || return 1
+            sleep 2
+            wait_healthy
+          }
 
           ts="$(date -u +%Y%m%dT%H%M%SZ)"; rollback="$ssl/rollback-before-origin-ca-v2-$ts"
           mkdir -m 700 "$rollback"; cp -p "$cert" "$rollback/server.crt"; cp -p "$key" "$rollback/server.key"
@@ -89,7 +109,7 @@ jobs:
               cp "$rollback/server.crt" "$ssl/server.crt.rb"; cp "$rollback/server.key" "$ssl/server.key.rb"
               chown 999:999 "$ssl/server.crt.rb" "$ssl/server.key.rb"; chmod 644 "$ssl/server.crt.rb"; chmod 600 "$ssl/server.key.rb"
               mv -f "$ssl/server.crt.rb" "$cert"; mv -f "$ssl/server.key.rb" "$key"
-              psql "$DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT pg_reload_conf();' >/dev/null 2>&1 || true
+              if restart_db; then echo MKETY_ROTATE_V2_ROLLBACK_RESTART_OK=true; else echo MKETY_ROTATE_V2_ROLLBACK_RESTART_FAILED=true; fi
               echo MKETY_ROTATE_V2_ROLLBACK_ATTEMPTED=true
             fi
             if [ "$rc" -ne 0 ] && [ -n "$cert_id" ]; then
@@ -118,8 +138,8 @@ jobs:
 
           cp /tmp/new.crt "$ssl/server.crt.tmp"; cp /tmp/new.key "$ssl/server.key.tmp"; chown 999:999 "$ssl/server.crt.tmp" "$ssl/server.key.tmp"; chmod 644 "$ssl/server.crt.tmp"; chmod 600 "$ssl/server.key.tmp"; mv -f "$ssl/server.crt.tmp" "$cert"; mv -f "$ssl/server.key.tmp" "$key"; installed=1
           echo MKETY_ROTATE_V2_STAGE=installed
-          test "$(psql "$DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT pg_reload_conf();')" = t
-          echo MKETY_ROTATE_V2_STAGE=reloaded
+          restart_db || exit 40
+          echo MKETY_ROTATE_V2_STAGE=restart_healthy
           sleep 3
 
           set +e
@@ -127,7 +147,7 @@ jobs:
           sclient_rc=$?
           set -e
           echo "MKETY_ROTATE_V2_SCLIENT_RC=$sclient_rc"
-          [ "$sclient_rc" = 0 ] || { tail -n 20 /tmp/after.txt | sed 's/^/MKETY_ROTATE_V2_SCLIENT_ERROR=/' ; exit 41; }
+          [ "$sclient_rc" = 0 ] || exit 41
           echo MKETY_ROTATE_V2_STAGE=sclient_ok
           sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' /tmp/after.txt | sed -n '1,/-----END CERTIFICATE-----/p' >/tmp/after.pem
           bytes="$(wc -c </tmp/after.pem | tr -d ' ')"; echo "MKETY_ROTATE_V2_AFTER_LEAF_BYTES=$bytes"; test "$bytes" -gt 0
@@ -149,15 +169,15 @@ jobs:
           SH
           base64 -w0 /tmp/rotate.sh >/tmp/script.b64
           put_env(){ KEY="$1" VALUE="$2" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json; code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"; [ "$code" = 201 ]; }
-          put_env DB_URL "$DB_URL"; put_env DB_HOST "$DB_HOST"; put_env DB_PORT "$DB_PORT"; put_env CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"; put_env ORIGIN_CA_HOSTNAME "$ORIGIN_CA_HOSTNAME"; put_env SCRIPT_B64 "$(cat /tmp/script.b64)"
+          put_env DB_URL "$DB_URL"; put_env DB_HOST "$DB_HOST"; put_env DB_PORT "$DB_PORT"; put_env COOLIFY_URL "$COOLIFY_URL"; put_env COOLIFY_API_TOKEN "$COOLIFY_API_TOKEN"; put_env POSTGRES_UUID "$POSTGRES_UUID"; put_env CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"; put_env ORIGIN_CA_HOSTNAME "$ORIGIN_CA_HOSTNAME"; put_env SCRIPT_B64 "$(cat /tmp/script.b64)"
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"; [ "$code" = 200 ]
           duuid="$(node -e "const x=require('/tmp/deploy.json');const d=x.deployments?.[0];if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
           for i in $(seq 1 180); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/d.json; s="$(node -e "process.stdout.write(String(require('/tmp/d.json').status||''))")"; case "${s,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) exit 12;; esac; sleep 3; done
-          node -e 'process.stdout.write(JSON.stringify({name:"mkety-pg-origin-ca-v2",command:"echo $SCRIPT_B64 | base64 -d | sh",frequency:"0 0 * * *",timeout:900,enabled:false}))' >/tmp/task.json
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"; [ "$code" = 201 ]
-          tid="$(node -e "const x=require('/tmp/task.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          node -e 'process.stdout.write(JSON.stringify({name:"mkety-pg-origin-ca-v2",command:"echo $SCRIPT_B64 | base64 -d | sh",frequency:"0 0 * * *",timeout:1200,enabled:false}))' >/tmp/task-body.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-r.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task-body.json "$base/applications/$APP_UUID/scheduled-tasks")"; [ "$code" = 201 ]
+          tid="$(node -e "const x=require('/tmp/task-r.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
           curl --proto '=https' --tlsv1.2 -fsS -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$tid/execute" >/dev/null
-          for i in $(seq 1 180); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$tid/executions" -o /tmp/e.json; s="$(node -e "const x=require('/tmp/e.json');process.stdout.write(String(x?.[0]?.status||''))")"; case "${s,,}" in success|failed|failure|error) break;; esac; sleep 3; done
+          for i in $(seq 1 240); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$tid/executions" -o /tmp/e.json; s="$(node -e "const x=require('/tmp/e.json');process.stdout.write(String(x?.[0]?.status||''))")"; case "${s,,}" in success|failed|failure|error) break;; esac; sleep 3; done
           node - <<'NODE'
           const x=require('/tmp/e.json');const m=String(x?.[0]?.message||'');console.log(m.split(/\r?\n/).filter(l=>l.includes('MKETY_ROTATE_V2_')).join('\n'));if(!m.includes('MKETY_ROTATE_V2_OK=true'))process.exit(1);
           NODE
