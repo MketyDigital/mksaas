@@ -1,0 +1,140 @@
+name: Mkety Postgres SSL Host Inventory
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-postgres-ssl-host-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Create isolated host-file inspector
+        id: inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/create.json
+          const dockerfile=[
+            'FROM alpine:3.20',
+            'RUN apk add --no-cache openssl coreutils findutils',
+            'CMD ["sleep", "infinity"]',''
+          ].join('\n');
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            dockerfile:Buffer.from(dockerfile).toString('base64'),
+            name:`mkety-pg-ssl-host-inventory-${process.env.GITHUB_SHA.slice(0,10)}`,
+            description:`Ephemeral read-only-behavior Postgres SSL host inventory ${process.env.GITHUB_SHA}`,
+            ports_exposes:'3000'
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "Inspector create failed HTTP $code"; exit 20; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo MKETY_PG_SSL_INSPECTOR_CREATED=true
+
+      - name: Mount exact database host directory and inject inspector
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.inspector.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          host_path="/data/coolify/databases/$POSTGRES_UUID"
+          node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-pg-ssl-host-inventory-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/inspect/db",host_path:process.env.HOST_PATH}))' HOST_PATH="$host_path" >/dev/null 2>&1 || true
+          HOST_PATH="$host_path" node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-pg-ssl-host-inventory-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/inspect/db",host_path:process.env.HOST_PATH}))' >/tmp/storage.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
+          [ "$code" = 201 ] || { echo "Host directory mount failed HTTP $code"; cat /tmp/storage-response.json; exit 21; }
+          cat >/tmp/inspect.sh <<'SH'
+          set -eu
+          root=/inspect/db
+          test -d "$root"
+          echo MKETY_PG_SSL_HOST_DIR_PRESENT=true
+          find "$root" -maxdepth 3 -type f -printf '%P|%m|%u|%g|%s\n' | sort | while IFS='|' read -r rel mode owner group bytes; do
+            case "$rel" in
+              *password*|*secret*|*.env|*credentials*) continue ;;
+            esac
+            echo "MKETY_PG_HOST_FILE={\"path\":\"$rel\",\"mode\":\"$mode\",\"owner\":\"$owner\",\"group\":\"$group\",\"bytes\":$bytes}"
+          done
+          cert="$root/ssl/server.crt"
+          key="$root/ssl/server.key"
+          test -f "$cert" && test -f "$key"
+          echo MKETY_PG_SSL_SERVER_CERT_PATH_OK=true
+          echo MKETY_PG_SSL_SERVER_KEY_PATH_OK=true
+          printf 'MKETY_PG_SSL_CERT_SUBJECT='; openssl x509 -in "$cert" -noout -subject -nameopt RFC2253 | sed 's/^subject=//'
+          printf 'MKETY_PG_SSL_CERT_ISSUER='; openssl x509 -in "$cert" -noout -issuer -nameopt RFC2253 | sed 's/^issuer=//'
+          cert_pub="$(openssl x509 -in "$cert" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          key_pub="$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          test "$cert_pub" = "$key_pub"
+          echo MKETY_PG_SSL_CERT_KEY_MATCH=true
+          stat -c 'MKETY_PG_SSL_CERT_STAT=mode=%a uid=%u gid=%g bytes=%s' "$cert"
+          stat -c 'MKETY_PG_SSL_KEY_STAT=mode=%a uid=%u gid=%g bytes=%s' "$key"
+          echo MKETY_PG_SSL_HOST_INVENTORY_OK=true
+          SH
+          base64 -w0 /tmp/inspect.sh >/tmp/script.b64
+          KEY=SCRIPT_B64 VALUE="$(cat /tmp/script.b64)" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"
+          [ "$code" = 201 ] || exit 22
+          echo MKETY_PG_SSL_INSPECTOR_CONFIG_OK=true
+
+      - name: Deploy and run host inventory
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.inspector.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || exit 23
+          duuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 150); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/deployment.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"
+            case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) exit 24;; esac
+            sleep 4
+          done
+          node -e 'process.stdout.write(JSON.stringify({name:"mkety-pg-ssl-host-inventory",command:"echo $SCRIPT_B64 | base64 -d | sh",frequency:"0 0 * * *",timeout:300,enabled:false}))' >/tmp/task.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
+          [ "$code" = 201 ] || exit 25
+          task_uuid="$(node -e "const x=require('/tmp/task-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
+          [ "$code" = 200 ] || exit 26
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
+            status="$(node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;process.stdout.write(String(e?.status||''))")"
+            case "${status,,}" in success) break;; failed|failure|error) cat /tmp/executions.json; exit 27;; esac
+            sleep 4
+          done
+          node - <<'NODE'
+          const xs=require('/tmp/executions.json'); const e=Array.isArray(xs)?xs[0]:null; const msg=String(e?.message||'');
+          console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_PG_')).join('\n'));
+          if(!msg.includes('MKETY_PG_SSL_HOST_INVENTORY_OK=true')) process.exit(1);
+          NODE
+
+      - name: Delete ephemeral inspector
+        if: always() && steps.inspector.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.inspector.outputs.app_uuid }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+          echo MKETY_PG_SSL_INSPECTOR_CLEANUP_REQUESTED=true
