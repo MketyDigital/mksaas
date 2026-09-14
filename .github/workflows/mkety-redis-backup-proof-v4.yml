@@ -3,7 +3,7 @@ name: Mkety Redis Backup Proof V4
 on:
   push:
     branches:
-      - ops/precutover-diagnostics-20260913
+      - ops/redis-auth-diagnostic-20260914
   workflow_dispatch:
 
 permissions:
@@ -34,11 +34,12 @@ jobs:
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
           curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$REDIS_UUID" -o /tmp/redis.json
-          redis_url="$(node -e "const x=require('/tmp/redis.json');if(!x.internal_db_url)process.exit(2);process.stdout.write(x.internal_db_url)")"
+          redis_url="$(node -e "const x=require('/tmp/redis.json');if(!x.internal_db_url)process.exit(2);const u=new URL(x.internal_db_url);u.username='default';process.stdout.write(u.toString())")"
           echo "::add-mask::$redis_url"
           printf '%s' "$redis_url" > /tmp/redis-url
           chmod 600 /tmp/redis-url
           echo MKETY_REDIS_CONNECTION_RESOLVED=true
+          echo MKETY_REDIS_USERNAME_PATCHED_TO_DEFAULT=true
 
       - name: Create Redis proof executor app
         id: backup_app
@@ -90,8 +91,7 @@ jobs:
           echo "MKETY_REDIS_BACKUP_KEY=$key"
           echo "MKETY_REDIS_BACKUP_SNAPSHOT_BYTES=$bytes"
           echo "MKETY_REDIS_BACKUP_SHA256=$sha"
-          endpoint="$R2_S3_API"
-          case "$endpoint" in */) endpoint="${endpoint%/}" ;; esac
+          endpoint="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).origin)')"
           aws --endpoint-url "$endpoint" s3 cp "$out" "s3://$R2_BUCKET/$key" >/dev/null
           echo "MKETY_REDIS_BACKUP_STAGE_OK=upload"
           aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json
