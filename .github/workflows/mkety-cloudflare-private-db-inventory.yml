@@ -39,7 +39,7 @@ jobs:
           console.log(`MKETY_CF_VPC_LIST_OK=true`);
           console.log(`MKETY_CF_VPC_SERVICE_COUNT=${x.result.length}`);
           for(const s of x.result) {
-            const safe={id:s.id||null,name:s.name||null,type:s.type||null,app_protocol:s.app_protocol||s.protocol||null};
+            const safe={service_id:s.service_id||null,name:s.name||null,type:s.type||null,app_protocol:s.app_protocol||s.protocol||null,tcp_port:s.tcp_port||null,tls_mode:s.tls_settings?.cert_verification_mode||'verify_full'};
             console.log('MKETY_CF_VPC_SERVICE='+JSON.stringify(safe));
           }
           NODE
