@@ -1,0 +1,155 @@
+name: Mkety Postgres TLS Profile
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-postgres-tls-profile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Resolve private PostgreSQL endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node - <<'NODE' >/tmp/db.env
+          const x=require('/tmp/db.json');
+          if(x.is_public!==false || x.enable_ssl!==true || !x.internal_db_url) process.exit(2);
+          const u=new URL(x.internal_db_url);
+          console.log('DB_INTERNAL_HOST='+u.hostname);
+          console.log('DB_INTERNAL_PORT='+(u.port||'5432'));
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
+          echo MKETY_PG_TLS_PREFLIGHT_OK=true
+
+      - name: Create private TLS profiler
+        id: profiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/create.json
+          const dockerfile=[
+            'FROM alpine:3.20',
+            'RUN apk add --no-cache openssl coreutils ca-certificates',
+            'CMD ["sleep", "infinity"]',''
+          ].join('\n');
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            dockerfile:Buffer.from(dockerfile).toString('base64'),
+            name:`mkety-pg-tls-profile-${process.env.GITHUB_SHA.slice(0,10)}`,
+            description:`Ephemeral PostgreSQL TLS profile ${process.env.GITHUB_SHA}`,
+            ports_exposes:'3000'
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "Profiler create failed HTTP $code"; exit 20; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo MKETY_PG_TLS_PROFILER_CREATED=true
+
+      - name: Mount CA and inject profile script
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.profiler.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node -e 'process.stdout.write(JSON.stringify({type:"persistent",name:`mkety-pg-tls-ca-${process.env.GITHUB_SHA.slice(0,10)}`,mount_path:"/ca/coolify-ca.crt",host_path:"/data/coolify/ssl/coolify-ca.crt"}))' >/tmp/storage.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
+          [ "$code" = 201 ] || { echo "CA mount failed HTTP $code"; exit 21; }
+          cat >/tmp/profile.sh <<'SH'
+          set -eu
+          target="$DB_INTERNAL_HOST:$DB_INTERNAL_PORT"
+          openssl s_client -starttls postgres -connect "$target" -showcerts -CAfile /ca/coolify-ca.crt -verify_return_error </dev/null >/tmp/handshake.txt 2>&1
+          sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' /tmp/handshake.txt | sed -n '1,/-----END CERTIFICATE-----/p' >/tmp/leaf.pem
+          test -s /tmp/leaf.pem
+          echo MKETY_PG_TLS_CHAIN_OK=true
+          printf 'MKETY_PG_TLS_SUBJECT='; openssl x509 -in /tmp/leaf.pem -noout -subject -nameopt RFC2253 | sed 's/^subject=//'
+          printf 'MKETY_PG_TLS_ISSUER='; openssl x509 -in /tmp/leaf.pem -noout -issuer -nameopt RFC2253 | sed 's/^issuer=//'
+          printf 'MKETY_PG_TLS_SERIAL='; openssl x509 -in /tmp/leaf.pem -noout -serial | sed 's/^serial=//'
+          printf 'MKETY_PG_TLS_NOT_BEFORE='; openssl x509 -in /tmp/leaf.pem -noout -startdate | sed 's/^notBefore=//'
+          printf 'MKETY_PG_TLS_NOT_AFTER='; openssl x509 -in /tmp/leaf.pem -noout -enddate | sed 's/^notAfter=//'
+          printf 'MKETY_PG_TLS_FINGERPRINT='; openssl x509 -in /tmp/leaf.pem -noout -fingerprint -sha256 | sed 's/^sha256 Fingerprint=//I'
+          openssl x509 -in /tmp/leaf.pem -noout -text | awk '/Public Key Algorithm:/{print "MKETY_PG_TLS_PUBLIC_KEY_ALG=" $0; exit}' | sed 's/.*MKETY_PG_TLS_PUBLIC_KEY_ALG= *//; s/^/MKETY_PG_TLS_PUBLIC_KEY_ALG=/'
+          openssl x509 -in /tmp/leaf.pem -noout -text | awk '/Signature Algorithm:/{print "MKETY_PG_TLS_SIGNATURE_ALG=" $0; exit}' | sed 's/.*MKETY_PG_TLS_SIGNATURE_ALG= *//; s/^/MKETY_PG_TLS_SIGNATURE_ALG=/'
+          protocol="$(grep -E '^ *Protocol *:' /tmp/handshake.txt | tail -1 | sed 's/.*: *//')"
+          cipher="$(grep -E '^ *Cipher *:' /tmp/handshake.txt | tail -1 | sed 's/.*: *//')"
+          echo "MKETY_PG_TLS_PROTOCOL=${protocol:-unknown}"
+          echo "MKETY_PG_TLS_CIPHER=${cipher:-unknown}"
+          grep -q 'Verify return code: 0 (ok)' /tmp/handshake.txt
+          echo MKETY_PG_TLS_VERIFY_OK=true
+          SH
+          base64 -w0 /tmp/profile.sh >/tmp/profile.b64
+          put_env() {
+            KEY="$1" VALUE="$2" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$base/applications/$APP_UUID/envs")"
+            [ "$code" = 201 ] || exit 22
+          }
+          put_env DB_INTERNAL_HOST "$DB_INTERNAL_HOST"
+          put_env DB_INTERNAL_PORT "$DB_INTERNAL_PORT"
+          put_env SCRIPT_B64 "$(cat /tmp/profile.b64)"
+          echo MKETY_PG_TLS_PROFILE_CONFIG_OK=true
+
+      - name: Deploy and run TLS profile
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.profiler.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || exit 23
+          duuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 150); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$duuid" -o /tmp/deployment.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"
+            case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) exit 24;; esac
+            sleep 4
+          done
+          node -e 'process.stdout.write(JSON.stringify({name:"mkety-pg-tls-profile",command:"echo $SCRIPT_B64 | base64 -d | sh",frequency:"0 0 * * *",timeout:300,enabled:false}))' >/tmp/task.json
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/task.json "$base/applications/$APP_UUID/scheduled-tasks")"
+          [ "$code" = 201 ] || exit 25
+          task_uuid="$(node -e "const x=require('/tmp/task-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
+          [ "$code" = 200 ] || exit 26
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
+            status="$(node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;process.stdout.write(String(e?.status||''))")"
+            case "${status,,}" in success) break;; failed|failure|error) cat /tmp/executions.json; exit 27;; esac
+            sleep 4
+          done
+          node - <<'NODE'
+          const xs=require('/tmp/executions.json'); const e=Array.isArray(xs)?xs[0]:null; const msg=String(e?.message||'');
+          console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_PG_TLS_')).join('\n'));
+          if(!msg.includes('MKETY_PG_TLS_CHAIN_OK=true') || !msg.includes('MKETY_PG_TLS_VERIFY_OK=true')) process.exit(1);
+          NODE
+
+      - name: Delete ephemeral profiler
+        if: always() && steps.profiler.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.profiler.outputs.app_uuid }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+          echo MKETY_PG_TLS_PROFILER_CLEANUP_REQUESTED=true
