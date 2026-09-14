@@ -1,0 +1,64 @@
+name: Mkety Origin CA Permission Probe
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-origin-ca-permission-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      EXPECTED_ZONE: mkety.com
+      EXPECTED_CERT_HOSTNAME: mkety-production-postgres.mkety.com
+    steps:
+      - name: Resolve zone and inspect Origin CA inventory read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/zones.json -w '%{http_code}' "${auth[@]}" "$api/zones?name=$EXPECTED_ZONE&account.id=$CLOUDFLARE_ACCOUNT_ID")"
+          [ "$code" = 200 ] || { echo "Zone lookup failed HTTP $code"; exit 2; }
+          zone_id="$(node - <<'NODE'
+          const x=require('/tmp/zones.json');
+          if(!x.success || !Array.isArray(x.result) || x.result.length!==1) process.exit(2);
+          process.stdout.write(x.result[0].id);
+          NODE
+          )"
+          echo "MKETY_ORIGIN_CA_ZONE_OK=true"
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/certs.json -w '%{http_code}' "${auth[@]}" "$api/certificates?zone_id=$zone_id")"
+          echo "MKETY_ORIGIN_CA_LIST_HTTP=$code"
+          if [ "$code" != 200 ]; then
+            node -e "const x=require('/tmp/certs.json'); console.log('MKETY_ORIGIN_CA_LIST_ERRORS='+JSON.stringify(x.errors||[]))"
+            exit 3
+          fi
+          EXPECTED_CERT_HOSTNAME="$EXPECTED_CERT_HOSTNAME" node <<'NODE'
+          const x=require('/tmp/certs.json');
+          if(!x.success || !Array.isArray(x.result)) process.exit(2);
+          const matches=x.result.filter(c=>Array.isArray(c.hostnames)&&c.hostnames.includes(process.env.EXPECTED_CERT_HOSTNAME));
+          console.log(`MKETY_ORIGIN_CA_CERT_COUNT=${x.result.length}`);
+          console.log(`MKETY_ORIGIN_CA_EXPECTED_HOSTNAME_COUNT=${matches.length}`);
+          for(const c of matches){
+            console.log('MKETY_ORIGIN_CA_EXPECTED_CERT='+JSON.stringify({id:c.id||null,request_type:c.request_type||null,expires_on:c.expires_on||null,hostnames:c.hostnames||[]}));
+          }
+          if(matches.length>1){
+            console.error('Refusing future issuance: duplicate Origin CA certificates already cover expected hostname.');
+            process.exit(4);
+          }
+          console.log('MKETY_ORIGIN_CA_LIST_OK=true');
+          NODE
