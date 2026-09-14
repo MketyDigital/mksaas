@@ -53,7 +53,9 @@ jobs:
           export AWS_EC2_METADATA_DISABLED=true
           export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
           export AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
-          endpoint="${R2_S3_API%/}"
+          endpoint="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).origin)')"
+          endpoint_path="$(node -e 'process.stdout.write(new URL(process.env.R2_S3_API).pathname)')"
+          echo "MKETY_R2_SECRET_ENDPOINT_PATH=$endpoint_path"
           aws configure set default.s3.signature_version s3v4
           aws --region auto --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json
           remote="$(node -e "process.stdout.write(String(require('/tmp/head.json').ContentLength||0))")"
