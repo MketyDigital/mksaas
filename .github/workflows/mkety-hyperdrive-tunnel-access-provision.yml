@@ -1,0 +1,168 @@
+name: Mkety Hyperdrive Tunnel Access Provision
+
+on:
+  push:
+    branches: [ops/redis-auth-diagnostic-20260914]
+    paths:
+      - .github/workflows/mkety-hyperdrive-tunnel-access-provision.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      TUNNEL_ID: 3ced1d56-8418-42e5-830b-f7ce9cd6fde4
+      TUNNEL_NAME: mkety-production-vpc
+      DB_HOSTNAME: db-runtime.mkety.com
+      ZONE_NAME: mkety.com
+      CA_CERT_NAME: mkety-production-coolify-ca
+      ACCESS_TOKEN_NAME: mkety-production-hyperdrive-ca
+      ACCESS_APP_NAME: mkety-production-postgres
+      ACCESS_POLICY_NAME: mkety-production-hyperdrive-ca-only
+      HYPERDRIVE_NAME: mkety-production-db
+    steps:
+      - name: Validate private database and Cloudflare isolation
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf="https://api.cloudflare.com/client/v4"
+          acct="$cf/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE' >/tmp/db.env
+          const x=require('/tmp/db.json');
+          if(x.is_public!==false) throw new Error('PostgreSQL must remain private');
+          if(x.enable_ssl!==true) throw new Error('PostgreSQL SSL must be enabled');
+          if(!String(x.status||'').toLowerCase().includes('healthy')) throw new Error('PostgreSQL is not healthy');
+          if(!x.internal_db_url) throw new Error('Missing internal DB URL');
+          const u=new URL(x.internal_db_url);
+          const vals={DB_NAME:decodeURIComponent(u.pathname.slice(1)),DB_USER:decodeURIComponent(u.username),DB_PASSWORD:decodeURIComponent(u.password),DB_INTERNAL_HOST:u.hostname,DB_INTERNAL_PORT:u.port||'5432'};
+          for(const [k,v] of Object.entries(vals)){ if(!v) throw new Error(`Missing ${k}`); console.log(`${k}=${v}`); }
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
+
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID" -o /tmp/tunnel.json
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/tunnel-config.json
+          curl -fsS "${auth[@]}" "$acct/access/apps?per_page=100" -o /tmp/apps.json
+          curl -fsS "${auth[@]}" "$acct/access/service_tokens?per_page=100" -o /tmp/tokens.json
+          curl -fsS "${auth[@]}" "$acct/mtls_certificates?per_page=100" -o /tmp/certs.json
+          curl -fsS "${auth[@]}" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hyperdrives.json
+          curl -fsS "${auth[@]}" "$cf/zones?name=$ZONE_NAME&account.id=$CLOUDFLARE_ACCOUNT_ID&status=active&per_page=50" -o /tmp/zones.json
+
+          ZONE_ID="$(node -e "const a=require('/tmp/zones.json').result||[]; if(a.length!==1) process.exit(2); process.stdout.write(a[0].id)")"
+          echo "ZONE_ID=$ZONE_ID" >> "$GITHUB_ENV"
+          curl -fsS "${auth[@]}" "$cf/zones/$ZONE_ID/dns_records?name=$DB_HOSTNAME&per_page=100" -o /tmp/dns.json
+
+          node <<'NODE'
+          const t=require('/tmp/tunnel.json').result;
+          if(!t||t.id!==process.env.TUNNEL_ID||t.name!==process.env.TUNNEL_NAME||String(t.status||'').toLowerCase()!=='healthy') throw new Error('Tunnel identity/health mismatch');
+          const ingress=require('/tmp/tunnel-config.json').result?.config?.ingress||[];
+          const routes=ingress.filter(x=>x.hostname===process.env.DB_HOSTNAME);
+          if(routes.length!==1||!String(routes[0].service||'').startsWith('tcp://')) throw new Error('Tunnel DB ingress mismatch');
+          const dns=require('/tmp/dns.json').result||[];
+          const expected=`${process.env.TUNNEL_ID}.cfargotunnel.com`;
+          if(dns.length!==1||dns[0].type!=='CNAME'||String(dns[0].content||'').toLowerCase()!==expected.toLowerCase()||dns[0].proxied!==true) throw new Error('DB tunnel DNS mismatch');
+          const apps=(require('/tmp/apps.json').result||[]).filter(x=>x.name===process.env.ACCESS_APP_NAME);
+          if(apps.length!==1||apps[0].domain!==process.env.DB_HOSTNAME) throw new Error('Access application mismatch');
+          console.log(`ACCESS_APP_ID=${apps[0].id}`);
+          const certs=(require('/tmp/certs.json').result||[]).filter(x=>x.name===process.env.CA_CERT_NAME);
+          if(certs.length!==1||certs[0].ca!==true) throw new Error('Verified Coolify CA registration missing or ambiguous');
+          console.log(`CA_CERT_ID=${certs[0].id}`);
+          const tokens=(require('/tmp/tokens.json').result||[]).filter(x=>x.name===process.env.ACCESS_TOKEN_NAME);
+          if(tokens.length>1) throw new Error('Duplicate Access service tokens');
+          console.log(`TOKEN_COUNT=${tokens.length}`);
+          if(tokens.length===1) console.log(`TOKEN_ID=${tokens[0].id}`);
+          const h=require('/tmp/hyperdrives.json').result||[];
+          if(h.filter(x=>x.name===process.env.HYPERDRIVE_NAME).length!==0) throw new Error('Target Hyperdrive already exists; refusing duplicate');
+          for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const x=h.find(v=>v.name===n); if(!x||x.id!==id) throw new Error(`Protected Hyperdrive changed: ${n}`);}
+          NODE
+          node <<'NODE' >/tmp/preflight.env
+          const apps=(require('/tmp/apps.json').result||[]).filter(x=>x.name===process.env.ACCESS_APP_NAME);
+          const certs=(require('/tmp/certs.json').result||[]).filter(x=>x.name===process.env.CA_CERT_NAME);
+          const tokens=(require('/tmp/tokens.json').result||[]).filter(x=>x.name===process.env.ACCESS_TOKEN_NAME);
+          console.log(`ACCESS_APP_ID=${apps[0].id}`);
+          console.log(`CA_CERT_ID=${certs[0].id}`);
+          console.log(`TOKEN_COUNT=${tokens.length}`);
+          if(tokens.length===1) console.log(`TOKEN_ID=${tokens[0].id}`);
+          NODE
+          cat /tmp/preflight.env >> "$GITHUB_ENV"
+          echo MKETY_TUNNEL_ACCESS_PREFLIGHT_OK=true
+
+      - name: Create or rotate isolated Access service token
+        shell: bash
+        run: |
+          set -euo pipefail
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          if [ "$TOKEN_COUNT" = "0" ]; then
+            node -e "process.stdout.write(JSON.stringify({name:process.env.ACCESS_TOKEN_NAME,duration:'8760h'}))" >/tmp/token-request.json
+            code="$(curl -sS -o /tmp/token-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/token-request.json "$acct/access/service_tokens")"
+          else
+            code="$(curl -sS -o /tmp/token-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '{}' "$acct/access/service_tokens/$TOKEN_ID/rotate")"
+          fi
+          case "$code" in 200|201) ;; *) echo "Access token operation failed HTTP $code"; node -e "console.error(JSON.stringify(require('/tmp/token-response.json').errors||[]))"; exit 20;; esac
+          node <<'NODE' >/tmp/token.env
+          const r=require('/tmp/token-response.json');
+          if(!r.success||!r.result?.id||!r.result?.client_id||!r.result?.client_secret) throw new Error('Access token response incomplete');
+          console.log(`ACCESS_TOKEN_ID=${r.result.id}`);
+          console.log(`ACCESS_CLIENT_ID=${r.result.client_id}`);
+          console.log(`ACCESS_CLIENT_SECRET=${r.result.client_secret}`);
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/token.env
+          echo MKETY_ACCESS_TOKEN_OK=true
+
+      - name: Enforce isolated Access policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/access/apps/$ACCESS_APP_ID/policies?per_page=100" -o /tmp/policies.json
+          count="$(node -e "const a=(require('/tmp/policies.json').result||[]).filter(x=>x.name===process.env.ACCESS_POLICY_NAME); if(a.length>1) process.exit(2); process.stdout.write(String(a.length))")"
+          if [ "$count" = "0" ]; then
+            node -e "process.stdout.write(JSON.stringify({name:process.env.ACCESS_POLICY_NAME,decision:'non_identity',precedence:2,include:[{service_token:{token_id:process.env.ACCESS_TOKEN_ID}}],exclude:[],require:[]}))" >/tmp/policy-request.json
+            code="$(curl -sS -o /tmp/policy-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/policy-request.json "$acct/access/apps/$ACCESS_APP_ID/policies")"
+            case "$code" in 200|201) ;; *) echo "Access policy create failed HTTP $code"; node -e "console.error(JSON.stringify(require('/tmp/policy-response.json').errors||[]))"; exit 30;; esac
+          else
+            node -e "const p=(require('/tmp/policies.json').result||[]).find(x=>x.name===process.env.ACCESS_POLICY_NAME); const ids=(p.include||[]).map(x=>x.service_token?.token_id).filter(Boolean); if(p.decision!=='non_identity'||ids.length!==1||ids[0]!==process.env.ACCESS_TOKEN_ID) throw new Error('Existing Access policy does not exclusively require expected service token')"
+          fi
+          echo MKETY_ACCESS_POLICY_OK=true
+
+      - name: Create verified private Hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          node <<'NODE' >/tmp/hyperdrive-request.json
+          process.stdout.write(JSON.stringify({
+            name:process.env.HYPERDRIVE_NAME,
+            origin:{host:process.env.DB_HOSTNAME,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,scheme:'postgres',access_client_id:process.env.ACCESS_CLIENT_ID,access_client_secret:process.env.ACCESS_CLIENT_SECRET},
+            caching:{disabled:true},
+            mtls:{ca_certificate_id:process.env.CA_CERT_ID,sslmode:'verify-ca'}
+          }));
+          NODE
+          code="$(curl -sS -o /tmp/hyperdrive-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/hyperdrive-request.json "$acct/hyperdrive/configs")"
+          case "$code" in 200|201) ;; *) echo "Hyperdrive create failed HTTP $code"; node -e "console.error(JSON.stringify(require('/tmp/hyperdrive-response.json').errors||[]))"; exit 40;; esac
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hyperdrives-final.json
+          node <<'NODE'
+          const h=require('/tmp/hyperdrives-final.json').result||[];
+          const a=h.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(a.length!==1) throw new Error(`Expected exactly one target Hyperdrive, found ${a.length}`);
+          const x=a[0];
+          if(x.origin?.host!==process.env.DB_HOSTNAME||x.origin?.service_id) throw new Error('Hyperdrive origin is not Tunnel+Access');
+          if(x.mtls?.ca_certificate_id!==process.env.CA_CERT_ID||String(x.mtls?.sslmode||'').toLowerCase()!=='verify-ca') throw new Error('Hyperdrive CA verification mismatch');
+          if(x.caching?.disabled!==true) throw new Error('Hyperdrive caching must be disabled');
+          for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const v=h.find(z=>z.name===n); if(!v||v.id!==id) throw new Error(`Protected Hyperdrive changed: ${n}`);}
+          console.log(`MKETY_HYPERDRIVE_ID=${x.id}`);
+          NODE
+          echo MKETY_HYPERDRIVE_TUNNEL_ACCESS_OK=true
