@@ -1,4 +1,4 @@
-name: Mkety Redis Runtime Auth Backup Proof
+name: Mkety Redis Credential Drift Inventory
 
 on:
   push:
@@ -10,261 +10,140 @@ permissions:
   contents: read
 
 jobs:
-  prove:
+  inventory:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     environment: production
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
-      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       REDIS_UUID: i5hrrr4riyslz7hekhu5glkd
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_S3_API: ${{ secrets.R2_S3_API }}
-      R2_BUCKET: mkety-production-db-backups
     steps:
-      - name: Resolve Redis runtime credential without logging secrets
+      - name: Inspect Redis control-plane versus running-state metadata
         shell: bash
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          curl --proto '=https' --tlsv1.2 -fsS \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H 'Accept: application/json' \
-            "$base/databases/$REDIS_UUID" -o /tmp/redis.json
-          curl --proto '=https' --tlsv1.2 -fsS \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H 'Accept: application/json' \
-            "$base/databases/$REDIS_UUID/envs" -o /tmp/redis-envs.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$REDIS_UUID" -o /tmp/redis.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$REDIS_UUID/envs" -o /tmp/redis-envs.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/databases/$REDIS_UUID/storages" -o /tmp/redis-storages.json
           node <<'NODE'
-          const fs = require('node:fs');
-          const db = JSON.parse(fs.readFileSync('/tmp/redis.json', 'utf8'));
-          const envs = JSON.parse(fs.readFileSync('/tmp/redis-envs.json', 'utf8'));
-          if (!Array.isArray(envs)) throw new Error('Coolify Redis env response was not an array');
-          if (!db.internal_db_url) throw new Error('Coolify Redis internal_db_url is missing');
-          const active = envs.filter(x => x && x.is_preview !== true);
-          const get = (key) => {
-            const e = active.find(x => String(x.key || '').toUpperCase() === key);
-            if (!e) return null;
-            const value = e.real_value ?? e.value ?? null;
-            return value === null || value === undefined ? null : String(value);
+          const fs=require('node:fs');
+          const crypto=require('node:crypto');
+          const db=JSON.parse(fs.readFileSync('/tmp/redis.json','utf8'));
+          const envs=JSON.parse(fs.readFileSync('/tmp/redis-envs.json','utf8'));
+          const storages=JSON.parse(fs.readFileSync('/tmp/redis-storages.json','utf8'));
+          const active=Array.isArray(envs)?envs.filter(x=>x&&x.is_preview!==true):[];
+          const get=(key)=>{const e=active.find(x=>String(x.key||'').toUpperCase()===key); const v=e?.real_value??e?.value??null; return v==null?null:String(v)};
+          const pass=get('REDIS_PASSWORD');
+          const user=get('REDIS_USERNAME')||'default';
+          if(!db.internal_db_url || !pass) throw new Error('Redis stored connection metadata is incomplete');
+          const u=new URL(db.internal_db_url);
+          const storedPass=decodeURIComponent(u.password||'');
+          const storedUser=decodeURIComponent(u.username||'');
+          const persistent=Array.isArray(storages?.persistent_storages)?storages.persistent_storages:[];
+          const files=Array.isArray(storages?.file_storages)?storages.file_storages:[];
+          const summary={
+            status:db.status||null,
+            is_public:db.is_public===true,
+            created_at:db.created_at||null,
+            updated_at:db.updated_at||null,
+            started_at:db.started_at||null,
+            last_online_at:db.last_online_at||null,
+            last_restart_at:db.last_restart_at||null,
+            last_restart_type:db.last_restart_type||null,
+            restart_count:Number(db.restart_count||0),
+            config_hash_present:Boolean(db.config_hash),
+            redis_conf_present:Boolean(db.redis_conf),
+            stored_password_matches_env:storedPass===pass,
+            stored_username_matches_env:!storedUser||storedUser===user,
+            username_is_default:user==='default',
+            persistent_storage_count:persistent.length,
+            persistent_storages:persistent.map(s=>({uuid:s.uuid||null,name:s.name||null,mount_path:s.mount_path||null,host_path_present:Boolean(s.host_path),backup_schedule_present:Boolean(s.backup||s.storage_backup||s.backup_schedule)})),
+            file_storage_count:files.length
           };
-          const password = get('REDIS_PASSWORD');
-          const username = get('REDIS_USERNAME') || 'default';
-          console.log(JSON.stringify({
-            redis_status: db.status || null,
-            is_public: db.is_public === true,
-            env_keys: active.map(x => String(x.key || '')).filter(Boolean).sort(),
-            redis_password_present: Boolean(password),
-            redis_username_present: Boolean(get('REDIS_USERNAME'))
-          }, null, 2));
-          if (!password) throw new Error('REDIS_PASSWORD is not available from Coolify database runtime envs');
-          const u = new URL(db.internal_db_url);
-          const storedPassword = decodeURIComponent(u.password || '');
-          const storedUsername = decodeURIComponent(u.username || '');
-          const passwordMatches = storedPassword === password;
-          const usernameMatches = !storedUsername || storedUsername === username;
-          u.username = username;
-          u.password = password;
-          fs.writeFileSync('/tmp/redis-url', u.toString(), {mode: 0o600});
-          console.log(`MKETY_REDIS_INTERNAL_PASSWORD_MATCHES_RUNTIME=${passwordMatches}`);
-          console.log(`MKETY_REDIS_INTERNAL_USERNAME_MATCHES_RUNTIME=${usernameMatches}`);
-          console.log('MKETY_REDIS_RUNTIME_CREDENTIAL_RESOLVED=true');
+          console.log(JSON.stringify(summary,null,2));
+          fs.writeFileSync('/tmp/redis-control-plane-sanitized.json',JSON.stringify(summary,null,2));
+          // Keep only an in-run fingerprint for equality checks; never print it.
+          fs.writeFileSync('/tmp/stored-pass.sha256',crypto.createHash('sha256').update(pass).digest('hex'));
           NODE
-          redis_url="$(cat /tmp/redis-url)"
-          echo "::add-mask::$redis_url"
 
-      - name: Create isolated Redis proof executor
-        id: executor
+      - name: Inventory Mkety production application Redis credential candidates
         shell: bash
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          node <<'NODE' >/tmp/create-app.json
-          const dockerfile = [
-            'FROM redis:7-alpine',
-            'RUN apk add --no-cache aws-cli coreutils nodejs',
-            'CMD ["sleep", "infinity"]',
-            ''
-          ].join('\n');
-          process.stdout.write(JSON.stringify({
-            project_uuid: process.env.PROJECT_UUID,
-            server_uuid: process.env.SERVER_UUID,
-            environment_uuid: process.env.ENVIRONMENT_UUID,
-            dockerfile: Buffer.from(dockerfile, 'utf8').toString('base64'),
-            ports_exposes: '3000',
-            name: `mkety-redis-runtime-proof-${process.env.GITHUB_SHA.slice(0,12)}`,
-            description: `Ephemeral Redis runtime credential + R2 restore proof ${process.env.GITHUB_SHA}`
-          }));
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/projects/$PROJECT_UUID/$ENVIRONMENT_UUID" -o /tmp/environment.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/applications" -o /tmp/applications.json
+          env_id="$(node -e "const x=require('/tmp/environment.json');if(!x.id)process.exit(1);process.stdout.write(String(x.id))")"
+          ENV_ID="$env_id" node <<'NODE' >/tmp/app-uuids
+          const apps=require('/tmp/applications.json');
+          const id=Number(process.env.ENV_ID);
+          for(const a of (Array.isArray(apps)?apps:[])) if(Number(a.environment_id)===id && a.uuid) console.log(a.uuid);
           NODE
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H 'Content-Type: application/json' --data-binary @/tmp/create-app.json \
-            "$base/applications/dockerfile")"
-          [ "$code" = '201' ] || { echo "Executor creation failed with HTTP $code"; cat /tmp/create-response.json; exit 2; }
-          app_uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
-          echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
-          echo MKETY_REDIS_EXECUTOR_CREATED=true
-
-      - name: Inject Redis and R2 proof settings
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.executor.outputs.app_uuid }}
-        run: |
-          set -euo pipefail
-          base="${COOLIFY_URL%/}/api/v1"
-          redis_url="$(cat /tmp/redis-url)"
-          echo "::add-mask::$redis_url"
-          cat > /tmp/run.sh <<'SH'
-          set -eu
-          key="redis/mkety-production-redis-runtime-proof-$(date -u +%Y%m%dT%H%M%SZ).rdb"
-          out=/tmp/mkety-redis.rdb
-          case "$REDIS_URL" in
-            rediss://*) source_keys="$(redis-cli --tls -u "$REDIS_URL" DBSIZE | tr -d '\r')"; redis-cli --tls -u "$REDIS_URL" --rdb "$out" ;;
-            *) source_keys="$(redis-cli -u "$REDIS_URL" DBSIZE | tr -d '\r')"; redis-cli -u "$REDIS_URL" --rdb "$out" ;;
-          esac
-          case "$source_keys" in ''|*[!0-9]*) echo MKETY_REDIS_BACKUP_ERROR=invalid-source-dbsize; exit 9 ;; esac
-          echo MKETY_REDIS_RUNTIME_AUTH_OK=true
-          bytes="$(wc -c < "$out" | tr -d ' ')"
-          test "$bytes" -gt 0 || { echo MKETY_REDIS_BACKUP_ERROR=empty-snapshot; exit 10; }
-          sha="$(sha256sum "$out" | awk '{print $1}')"
-          echo MKETY_REDIS_BACKUP_STAGE_OK=snapshot
-          echo "MKETY_REDIS_BACKUP_KEY=$key"
-          echo "MKETY_REDIS_BACKUP_SNAPSHOT_BYTES=$bytes"
-          endpoint="$R2_S3_API"
-          case "$endpoint" in */) endpoint="${endpoint%/}" ;; esac
-          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-          export AWS_DEFAULT_REGION=auto
-          export AWS_EC2_METADATA_DISABLED=true
-          export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
-          export AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
-          aws --region auto --endpoint-url "$endpoint" s3 cp "$out" "s3://$R2_BUCKET/$key" >/dev/null
-          echo MKETY_REDIS_BACKUP_STAGE_OK=upload
-          aws --region auto --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json
-          remote_bytes="$(node -e "const x=require('/tmp/head.json');process.stdout.write(String(x.ContentLength||0))")"
-          test "$remote_bytes" = "$bytes" || { echo "MKETY_REDIS_BACKUP_ERROR=remote-size-mismatch local=$bytes remote=$remote_bytes"; exit 11; }
-          mkdir -p /tmp/restore
-          aws --region auto --endpoint-url "$endpoint" s3 cp "s3://$R2_BUCKET/$key" /tmp/restore/dump.rdb >/dev/null
-          remote_sha="$(sha256sum /tmp/restore/dump.rdb | awk '{print $1}')"
-          test "$remote_sha" = "$sha" || { echo MKETY_REDIS_BACKUP_ERROR=sha-mismatch; exit 12; }
-          redis-server --port 6380 --bind 127.0.0.1 --protected-mode no --appendonly no --save '' --dir /tmp/restore --dbfilename dump.rdb --daemonize yes
-          ready=no
-          for i in $(seq 1 30); do
-            if redis-cli -h 127.0.0.1 -p 6380 PING 2>/dev/null | grep -qx PONG; then ready=yes; break; fi
-            sleep 1
-          done
-          [ "$ready" = yes ] || { echo MKETY_REDIS_BACKUP_ERROR=restore-server-not-ready; exit 13; }
-          restored_keys="$(redis-cli -h 127.0.0.1 -p 6380 DBSIZE | tr -d '\r')"
-          test "$restored_keys" = "$source_keys" || { echo "MKETY_REDIS_BACKUP_ERROR=restore-dbsize-mismatch source=$source_keys restored=$restored_keys"; exit 14; }
-          echo "MKETY_REDIS_BACKUP_REMOTE_BYTES=$remote_bytes"
-          echo "MKETY_REDIS_BACKUP_SOURCE_KEYS=$source_keys"
-          echo "MKETY_REDIS_BACKUP_RESTORED_KEYS=$restored_keys"
-          echo MKETY_REDIS_BACKUP_STAGE_OK=download
-          echo MKETY_REDIS_BACKUP_STAGE_OK=restore
-          echo MKETY_REDIS_BACKUP_OK=true
-          SH
-          base64 -w0 /tmp/run.sh >/tmp/run.b64
-          put_env() {
-            local key="$1" value="$2"
-            KEY="$key" VALUE="$value" node -e 'process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))' >/tmp/env.json
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
-              -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              -H 'Content-Type: application/json' --data-binary @/tmp/env.json \
-              "$base/applications/$APP_UUID/envs")"
-            [ "$code" = '201' ] || { echo "Failed to inject $key (HTTP $code)"; exit 3; }
+          : >/tmp/app-candidates.ndjson
+          app_count=0
+          while IFS= read -r uuid; do
+            [ -n "$uuid" ] || continue
+            app_count=$((app_count+1))
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/applications/$uuid/envs" -o "/tmp/app-env-$uuid.json"
+            APP_UUID="$uuid" node <<'NODE' >>/tmp/app-candidates.ndjson
+          const fs=require('node:fs');
+          const envs=JSON.parse(fs.readFileSync(`/tmp/app-env-${process.env.APP_UUID}.json`,'utf8'));
+          const active=Array.isArray(envs)?envs.filter(x=>x&&x.is_preview!==true&&x.is_runtime!==false):[];
+          for(const e of active){
+            const key=String(e.key||'');
+            if(!/(REDIS|CACHE)/i.test(key)) continue;
+            const value=e.real_value??e.value??null;
+            if(value==null) continue;
+            console.log(JSON.stringify({scope:'application',resource:process.env.APP_UUID,key,value:String(value)}));
           }
-          put_env REDIS_URL "$redis_url"
-          put_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
-          put_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
-          put_env R2_S3_API "$R2_S3_API"
-          put_env R2_BUCKET "$R2_BUCKET"
-          put_env SCRIPT_B64 "$(cat /tmp/run.b64)"
-          echo MKETY_REDIS_EXECUTOR_CONFIG_OK=true
-
-      - name: Deploy executor and execute proof
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.executor.outputs.app_uuid }}
-        run: |
-          set -euo pipefail
-          base="${COOLIFY_URL%/}/api/v1"
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "$base/deploy?uuid=$APP_UUID&force=true")"
-          [ "$code" = '200' ] || { echo "Executor deploy failed with HTTP $code"; cat /tmp/deploy.json; exit 4; }
-          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
-          finished=no
-          for i in $(seq 1 180); do
-            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
-            status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"
-            echo "deployment_status=$status"
-            case "${status,,}" in
-              finished|success|successful|succeeded|completed) finished=yes; break ;;
-              failed|failure|error|cancelled|canceled) echo "Executor deployment failed: $status"; exit 5 ;;
-            esac
-            sleep 5
-          done
-          [ "$finished" = yes ] || { echo 'Executor deployment timed out'; exit 5; }
-          node <<'NODE' >/tmp/task.json
-          process.stdout.write(JSON.stringify({
-            name: 'mkety-redis-runtime-auth-backup-proof',
-            command: 'echo $SCRIPT_B64 | base64 -d | sh',
-            frequency: '0 0 * * *',
-            timeout: 600,
-            enabled: false
-          }));
           NODE
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/task-response.json -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H 'Content-Type: application/json' --data-binary @/tmp/task.json \
-            "$base/applications/$APP_UUID/scheduled-tasks")"
-          [ "$code" = '201' ] || { echo "Proof task create failed HTTP $code"; cat /tmp/task-response.json; exit 6; }
-          task_uuid="$(node -e "const x=require('/tmp/task-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute-response.txt -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
-          [ "$code" = '200' ] || { echo "Proof task execute failed HTTP $code"; cat /tmp/execute-response.txt; exit 7; }
-          completed=no
-          for i in $(seq 1 150); do
-            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
-            status="$(node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;process.stdout.write(String(e?.status||''))")"
-            echo "task_status=$status"
-            case "${status,,}" in
-              success|successful|succeeded|completed) completed=yes; break ;;
-              failed|failure|error) node -e "const xs=require('/tmp/executions.json');const e=Array.isArray(xs)?xs[0]:null;console.log(String(e?.message||'').split(/\\r?\\n/).filter(l=>l.includes('MKETY_REDIS_')||l.includes('WRONGPASS')).join('\\n'))"; exit 8 ;;
-            esac
-            sleep 5
-          done
-          [ "$completed" = yes ] || { echo 'Redis proof task timed out'; exit 9; }
-          node <<'NODE'
-          const xs=require('/tmp/executions.json');
-          const e=Array.isArray(xs)?xs[0]:null;
-          const msg=String(e?.message||'');
-          console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_REDIS_')).join('\n'));
-          const required=[
-            'MKETY_REDIS_RUNTIME_AUTH_OK=true',
-            'MKETY_REDIS_BACKUP_STAGE_OK=snapshot',
-            'MKETY_REDIS_BACKUP_STAGE_OK=upload',
-            'MKETY_REDIS_BACKUP_STAGE_OK=download',
-            'MKETY_REDIS_BACKUP_STAGE_OK=restore',
-            'MKETY_REDIS_BACKUP_OK=true'
-          ];
-          if(!required.every(m=>msg.includes(m))) process.exit(1);
+          done </tmp/app-uuids
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/projects/$PROJECT_UUID/envs" -o /tmp/project-envs.json || echo '[]' >/tmp/project-envs.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "$base/projects/$PROJECT_UUID/environments/$ENVIRONMENT_UUID/envs" -o /tmp/environment-envs.json || echo '[]' >/tmp/environment-envs.json
+          APP_COUNT="$app_count" node <<'NODE'
+          const fs=require('node:fs');
+          const crypto=require('node:crypto');
+          const storedHash=fs.readFileSync('/tmp/stored-pass.sha256','utf8').trim();
+          let rows=[];
+          const addShared=(file,scope)=>{let xs=[];try{xs=JSON.parse(fs.readFileSync(file,'utf8'))}catch{};for(const e of (Array.isArray(xs)?xs:[])){const key=String(e?.key||'');if(!/(REDIS|CACHE)/i.test(key))continue;const value=e?.real_value??e?.value??null;if(value!=null)rows.push({scope,resource:scope,key,value:String(value)})}};
+          if(fs.existsSync('/tmp/app-candidates.ndjson')) for(const line of fs.readFileSync('/tmp/app-candidates.ndjson','utf8').split(/\r?\n/).filter(Boolean)){try{rows.push(JSON.parse(line))}catch{}}
+          addShared('/tmp/project-envs.json','project-shared');
+          addShared('/tmp/environment-envs.json','environment-shared');
+          const candidates=[];
+          const seen=new Set();
+          const add=(label,url)=>{try{const u=new URL(url);if(!/^rediss?:$/.test(u.protocol)||!u.hostname)return;const pass=decodeURIComponent(u.password||'');if(!pass)return;const sig=crypto.createHash('sha256').update(`${u.protocol}//${u.username}:${pass}@${u.hostname}:${u.port||'6379'}/${u.pathname}`).digest('hex');if(seen.has(sig))return;seen.add(sig);candidates.push({label,url,password_differs_from_stored:crypto.createHash('sha256').update(pass).digest('hex')!==storedHash})}catch{}};
+          for(const r of rows){const v=String(r.value||'').trim();if(/^rediss?:\/\//i.test(v))add(`${r.scope}:${r.resource}:${r.key}`,v)}
+          // Also pair REDIS_PASSWORD with a Redis URL/host from the same resource when possible.
+          const groups=new Map();
+          for(const r of rows){const k=`${r.scope}:${r.resource}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r)}
+          const db=JSON.parse(fs.readFileSync('/tmp/redis.json','utf8')); const baseUrl=new URL(db.internal_db_url);
+          for(const [group,items] of groups){
+            const p=items.find(x=>String(x.key).toUpperCase()==='REDIS_PASSWORD'); if(!p)continue;
+            const user=String(items.find(x=>String(x.key).toUpperCase()==='REDIS_USERNAME')?.value||'default');
+            const host=String(items.find(x=>String(x.key).toUpperCase()==='REDIS_HOST')?.value||baseUrl.hostname);
+            const port=String(items.find(x=>String(x.key).toUpperCase()==='REDIS_PORT')?.value||baseUrl.port||'6379');
+            const u=new URL(baseUrl.toString());u.hostname=host;u.port=port;u.username=user;u.password=String(p.value);add(`${group}:REDIS_PASSWORD`,u.toString());
+          }
+          const alt=candidates.filter(x=>x.password_differs_from_stored);
+          const safe={production_application_count:Number(process.env.APP_COUNT||0),redis_related_env_entry_count:rows.length,credential_candidate_count:candidates.length,alternate_password_candidate_count:alt.length,candidate_sources:candidates.map(x=>({label:x.label,password_differs_from_stored:x.password_differs_from_stored}))};
+          console.log(JSON.stringify(safe,null,2));
+          fs.writeFileSync('/tmp/redis-app-candidates-sanitized.json',JSON.stringify(safe,null,2));
+          // Secret-bearing candidate URLs are kept only as a masked workflow artifact on the runner, never uploaded/logged.
+          fs.writeFileSync('/tmp/redis-candidates.json',JSON.stringify(candidates.map(({label,url})=>({label,url}))),{mode:0o600});
+          console.log(`MKETY_REDIS_ALTERNATE_CREDENTIAL_CANDIDATES=${alt.length}`);
           NODE
 
-      - name: Delete isolated Redis proof executor
-        if: always() && steps.executor.outputs.app_uuid != ''
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.executor.outputs.app_uuid }}
-        run: |
-          set +e
-          curl --proto '=https' --tlsv1.2 -sS -X DELETE \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null
-          echo 'Ephemeral Redis proof executor cleanup requested.'
+      - name: Upload sanitized drift inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-redis-credential-drift-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            /tmp/redis-control-plane-sanitized.json
+            /tmp/redis-app-candidates-sanitized.json
