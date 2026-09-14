@@ -131,7 +131,28 @@ jobs:
           task_uuid="$(node -e "const x=require('/tmp/task-response.json');process.stdout.write(x.uuid||'')")"
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/execute.txt -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/execute")"
           [ "$code" = '200' ] || exit 9
-          for i in $(seq 1 120); do curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json; status="$(node -e "const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;process.stdout.write(String(e?.status||''))")"; case "${status,,}" in success|successful|succeeded|completed) break;; failed|failure|error) node -e "const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;console.log(String(e?.message||'').split(/\r?\n/).filter(l=>l.includes('MKETY_POSTGRES_')||l.includes('expected one object')).join('\n'))"; exit 10;; esac; sleep 5; done
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/scheduled-tasks/$task_uuid/executions" -o /tmp/executions.json
+            status="$(node -e "const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;process.stdout.write(String(e?.status||''))")"
+            case "${status,,}" in
+              success|successful|succeeded|completed) break ;;
+              failed|failure|error)
+                node <<'NODE'
+                const x=require('/tmp/executions.json');
+                const e=Array.isArray(x)?x[0]:null;
+                const msg=String(e?.message||'')
+                  .replace(/[A-Za-z0-9+\/=]{20,}/g,'[redacted]')
+                  .replace(/(X-Amz-[^=&\s]+)=([^&\s]+)/gi,'$1=[redacted]')
+                  .slice(0,2000);
+                console.log('MKETY_POSTGRES_R2_TASK_FAILURE_MESSAGE_BEGIN');
+                console.log(msg);
+                console.log('MKETY_POSTGRES_R2_TASK_FAILURE_MESSAGE_END');
+                NODE
+                exit 10
+                ;;
+            esac
+            sleep 5
+          done
           node <<'NODE'
           const x=require('/tmp/executions.json');const e=Array.isArray(x)?x[0]:null;const msg=String(e?.message||'');
           console.log(msg.split(/\r?\n/).filter(l=>l.includes('MKETY_POSTGRES_')).join('\n'));
