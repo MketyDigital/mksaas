@@ -1,0 +1,66 @@
+name: Mkety Postgres R2 Exact Key Proof
+
+on:
+  push:
+    branches: [ops/redis-auth-diagnostic-20260914]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_S3_API: ${{ secrets.R2_S3_API }}
+      R2_BUCKET: mkety-production-db-backups
+    steps:
+      - name: Resolve exact key and verify object
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID/executions" -o /tmp/executions.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=require('/tmp/executions.json');
+          const a=(Array.isArray(x)?x:(x.executions||[])).sort((p,q)=>new Date(q.created_at||0)-new Date(p.created_at||0));
+          const e=a[0];
+          if(!e) throw new Error('No backup execution');
+          const status=String(e.status||'').toLowerCase();
+          const fresh=Date.now()-new Date(e.created_at).getTime()<=30*60*60*1000;
+          if(!['success','successful','succeeded','completed'].includes(status)||!fresh||Number(e.size||0)<=0||!e.filename) throw new Error('Latest backup is not fresh and successful');
+          if(/S3 upload failed/i.test(String(e.message||''))) throw new Error('Latest backup reports S3 upload failure');
+          fs.writeFileSync('/tmp/key',String(e.filename).replace(/^\/+/,''));
+          fs.writeFileSync('/tmp/size',String(Number(e.size)));
+          console.log(JSON.stringify({status:e.status,created_at:e.created_at,size:Number(e.size),fresh_within_30h:fresh}));
+          console.log('MKETY_POSTGRES_COOLIFY_BACKUP_OK=true');
+          NODE
+          key="$(cat /tmp/key)"
+          expected="$(cat /tmp/size)"
+          echo "::add-mask::$key"
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          export AWS_EC2_METADATA_DISABLED=true
+          export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
+          export AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
+          endpoint="${R2_S3_API%/}"
+          aws configure set default.s3.signature_version s3v4
+          aws --region auto --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/tmp/head.json
+          remote="$(node -e "process.stdout.write(String(require('/tmp/head.json').ContentLength||0))")"
+          [ "$remote" = "$expected" ] || { echo "size mismatch expected=$expected remote=$remote"; exit 3; }
+          aws --region auto --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" /tmp/backup.bin >/dev/null
+          actual="$(wc -c </tmp/backup.bin | tr -d ' ')"
+          [ "$actual" = "$expected" ] || { echo "download mismatch expected=$expected actual=$actual"; exit 4; }
+          echo "MKETY_POSTGRES_R2_BYTES=$actual"
+          sha256sum /tmp/backup.bin | awk '{print "MKETY_POSTGRES_R2_SHA256=" $1}'
+          echo MKETY_POSTGRES_R2_BACKUP_OK=true
