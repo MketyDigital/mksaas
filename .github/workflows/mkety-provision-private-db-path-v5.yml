@@ -2,7 +2,7 @@ name: Mkety Provision Private DB Path V5
 
 on:
   push:
-    branches: [ops/precutover-diagnostics-20260913]
+    branches: [ops/redis-auth-diagnostic-20260914]
   workflow_dispatch:
 
 permissions:
