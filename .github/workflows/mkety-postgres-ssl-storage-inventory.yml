@@ -1,0 +1,72 @@
+name: Mkety Postgres SSL Storage Inventory
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - '.github/workflows/mkety-postgres-ssl-storage-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Read sanitized database and storage metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json')
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/db.json -w '%{http_code}' "${auth[@]}" "$base/databases/$POSTGRES_UUID")"
+          [ "$code" = 200 ] || { echo "Database read failed HTTP $code"; exit 2; }
+          node <<'NODE'
+          const x=require('/tmp/db.json');
+          const safe={
+            uuid:x.uuid||null,
+            name:x.name||null,
+            image:x.image||x.docker_image||null,
+            status:x.status||null,
+            is_public:x.is_public,
+            enable_ssl:x.enable_ssl,
+            ssl_mode:x.ssl_mode||null,
+            postgres_user:x.postgres_user?'<configured>':null,
+            postgres_db:x.postgres_db||null,
+            ports_exposes:x.ports_exposes||null,
+            custom_docker_run_options:x.custom_docker_run_options||null
+          };
+          console.log('MKETY_PG_DB_SAFE='+JSON.stringify(safe));
+          if(x.is_public!==false || x.enable_ssl!==true) process.exit(3);
+          console.log('MKETY_PG_DB_PREFLIGHT_OK=true');
+          NODE
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storages.json -w '%{http_code}' "${auth[@]}" "$base/databases/$POSTGRES_UUID/storages")"
+          [ "$code" = 200 ] || { echo "Database storage read failed HTTP $code"; cat /tmp/storages.json; exit 4; }
+          node <<'NODE'
+          const x=require('/tmp/storages.json');
+          const arr=Array.isArray(x)?x:(Array.isArray(x.result)?x.result:[]);
+          console.log(`MKETY_PG_STORAGE_COUNT=${arr.length}`);
+          for(const s of arr){
+            const safe={
+              uuid:s.uuid||null,
+              name:s.name||null,
+              type:s.type||null,
+              mount_path:s.mount_path||null,
+              host_path:s.host_path||null,
+              file_name:s.file_name||null,
+              content_present:!!s.content
+            };
+            console.log('MKETY_PG_STORAGE='+JSON.stringify(safe));
+          }
+          console.log('MKETY_PG_STORAGE_INVENTORY_OK=true');
+          NODE
