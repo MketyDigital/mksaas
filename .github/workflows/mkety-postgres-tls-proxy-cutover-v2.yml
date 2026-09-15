@@ -204,7 +204,21 @@ jobs:
           set -euo pipefail
           cf="https://api.cloudflare.com/client/v4"; acct="$cf/accounts/$CLOUDFLARE_ACCOUNT_ID"; auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
           tunnel_changed=no
-          rollback(){ rc=$?; if [ "$rc" -ne 0 ] && [ "$tunnel_changed" = yes ];then echo 'Restoring exact prior tunnel config'; c="$(curl -sS -o /tmp/rb.json -w '%{http_code}' -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/tunnel-restore.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"; [ "$c" = 200 ] && echo MKETY_DB_TUNNEL_ROLLBACK_OK=true || echo "MKETY_DB_TUNNEL_ROLLBACK_FAILED_HTTP=$c";fi;exit "$rc"; }
+          hyperdrive_id=''
+          rollback(){
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ -n "$hyperdrive_id" ]; then
+              echo 'Deleting newly created target Hyperdrive'
+              c="$(curl -sS -o /tmp/hd-rb.json -w '%{http_code}' -X DELETE "${auth[@]}" "$acct/hyperdrive/configs/$hyperdrive_id")"
+              case "$c" in 200|204) echo MKETY_HYPERDRIVE_ROLLBACK_OK=true;; *) echo "MKETY_HYPERDRIVE_ROLLBACK_FAILED_HTTP=$c";; esac
+            fi
+            if [ "$rc" -ne 0 ] && [ "$tunnel_changed" = yes ]; then
+              echo 'Restoring exact prior tunnel config'
+              c="$(curl -sS -o /tmp/rb.json -w '%{http_code}' -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/tunnel-restore.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"
+              [ "$c" = 200 ] && echo MKETY_DB_TUNNEL_ROLLBACK_OK=true || echo "MKETY_DB_TUNNEL_ROLLBACK_FAILED_HTTP=$c"
+            fi
+            exit "$rc"
+          }
           trap rollback EXIT
           PROXY_NAME="$PROXY_NAME" node <<'NODE'
           const fs=require('fs'),o=require('/tmp/tunnel-before.json'),cfg=structuredClone(o.result.config),m=[];cfg.ingress.forEach((x,i)=>{if(x.hostname===process.env.DB_HOSTNAME)m.push(i)});if(m.length!==1)throw new Error('DB ingress count changed');cfg.ingress[m[0]].service=`tcp://${process.env.PROXY_NAME}:6432`;fs.writeFileSync('/tmp/tunnel-new.json',JSON.stringify({config:cfg}));fs.writeFileSync('/tmp/tunnel-restore.json',JSON.stringify({config:o.result.config}));
@@ -230,10 +244,13 @@ jobs:
 
           ACCESS_CLIENT_ID="$ACCESS_CLIENT_ID" ACCESS_CLIENT_SECRET="$ACCESS_CLIENT_SECRET" node -e "process.stdout.write(JSON.stringify({name:process.env.HYPERDRIVE_NAME,origin:{host:process.env.DB_HOSTNAME,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,scheme:'postgres',access_client_id:process.env.ACCESS_CLIENT_ID,access_client_secret:process.env.ACCESS_CLIENT_SECRET},caching:{disabled:true},mtls:{ca_certificate_id:process.env.ROOT_CA_ID,sslmode:'verify-ca'}}))" >/tmp/hd.json
           code="$(curl -sS -o /tmp/hdresp.json -w '%{http_code}' -X POST "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/hd.json "$acct/hyperdrive/configs")"; case "$code" in 200|201);;*) echo "Hyperdrive create failed HTTP $code";node -e "console.error(JSON.stringify(require('/tmp/hdresp.json').errors||[]))";exit 52;;esac
+          hyperdrive_id="$(node -e "const r=require('/tmp/hdresp.json');if(!r.success||!r.result?.id)process.exit(2);process.stdout.write(r.result.id)")"
+          echo "::add-mask::$hyperdrive_id"
           curl -fsS "${auth[@]}" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hd-final.json
           node <<'NODE'
-          const h=require('/tmp/hd-final.json').result||[],a=h.filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(a.length!==1)throw new Error(`Target count ${a.length}`);const x=a[0];if(x.origin?.host!==process.env.DB_HOSTNAME||x.origin?.service_id)throw new Error('Origin mismatch');if(x.mtls?.ca_certificate_id!==process.env.ROOT_CA_ID||String(x.mtls?.sslmode||'').toLowerCase()!=='verify-ca')throw new Error('TLS mode mismatch');if(x.caching?.disabled!==true)throw new Error('Caching not disabled');for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const v=h.find(z=>z.name===n);if(!v||v.id!==id)throw new Error(`Protected Hyperdrive changed: ${n}`)}console.log(`MKETY_HYPERDRIVE_ID=${x.id}`);
+          const before=require('/tmp/hd-before.json').result||[],h=require('/tmp/hd-final.json').result||[],a=h.filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(a.length!==1)throw new Error(`Target count ${a.length}`);const x=a[0];if(x.origin?.host!==process.env.DB_HOSTNAME||x.origin?.service_id)throw new Error('Origin mismatch');if(x.mtls?.ca_certificate_id!==process.env.ROOT_CA_ID||String(x.mtls?.sslmode||'').toLowerCase()!=='verify-ca')throw new Error('TLS mode mismatch');if(x.caching?.disabled!==true)throw new Error('Caching not disabled');const pairs=z=>z.filter(v=>v.name!==process.env.HYPERDRIVE_NAME).map(v=>[v.name,v.id]).sort((p,q)=>JSON.stringify(p).localeCompare(JSON.stringify(q)));if(JSON.stringify(pairs(before))!==JSON.stringify(pairs(h)))throw new Error('Unrelated Hyperdrive set changed');for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const v=h.find(z=>z.name===n);if(!v||v.id!==id)throw new Error(`Protected Hyperdrive changed: ${n}`)}console.log(`MKETY_HYPERDRIVE_ID=${x.id}`);
           NODE
+          echo MKETY_UNRELATED_HYPERDRIVES_UNCHANGED=true
           echo MKETY_HYPERDRIVE_TLS_PROXY_OK=true
           trap - EXIT
 
@@ -246,10 +263,13 @@ jobs:
           node -e "const x=require('/tmp/db-final.json');if(x.is_public!==false||x.enable_ssl!==true||!String(x.status||'').toLowerCase().includes('healthy'))throw new Error('DB final check failed')"
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/t-final.json
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/hyperdrive/configs?per_page=100" -o /tmp/h-final.json
-          PROXY_NAME="$PROXY_NAME" node -e "const r=(require('/tmp/t-final.json').result?.config?.ingress||[]).filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||r[0].service!==('tcp://'+process.env.PROXY_NAME+':6432'))throw new Error('Final tunnel route mismatch');const h=(require('/tmp/h-final.json').result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(h.length!==1)throw new Error('Final Hyperdrive count mismatch')"
+          PROXY_NAME="$PROXY_NAME" node <<'NODE'
+          const before=require('/tmp/hd-before.json').result||[],r=(require('/tmp/t-final.json').result?.config?.ingress||[]).filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||r[0].service!==('tcp://'+process.env.PROXY_NAME+':6432'))throw new Error('Final tunnel route mismatch');const all=require('/tmp/h-final.json').result||[],h=all.filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(h.length!==1)throw new Error('Final Hyperdrive count mismatch');const x=h[0];if(x.origin?.host!==process.env.DB_HOSTNAME||x.origin?.service_id)throw new Error('Final Hyperdrive origin mismatch');if(x.mtls?.ca_certificate_id!==process.env.ROOT_CA_ID||String(x.mtls?.sslmode||'').toLowerCase()!=='verify-ca')throw new Error('Final Hyperdrive TLS mismatch');if(x.caching?.disabled!==true)throw new Error('Final Hyperdrive caching mismatch');const pairs=z=>z.filter(v=>v.name!==process.env.HYPERDRIVE_NAME).map(v=>[v.name,v.id]).sort((p,q)=>JSON.stringify(p).localeCompare(JSON.stringify(q)));if(JSON.stringify(pairs(before))!==JSON.stringify(pairs(all)))throw new Error('Final unrelated Hyperdrive set changed');
+          NODE
           echo MKETY_PRODUCTION_DB_PRIVATE=true
           echo MKETY_PRODUCTION_TLS_VERIFIED=true
           echo MKETY_PRODUCTION_HYPERDRIVE_READY=true
+          echo MKETY_PRODUCTION_UNRELATED_HYPERDRIVES_UNCHANGED=true
 
       - name: Clean failed proxy attempt
         if: failure() && steps.proxy.outputs.app_uuid != ''
