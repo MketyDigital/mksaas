@@ -28,10 +28,10 @@ jobs:
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
       PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
       RELEASE_BRANCH: feat/mkety-public-site-production
       TARGET_SHA: ${{ inputs.verified_sha }}
 
@@ -42,7 +42,7 @@ jobs:
           ref: ${{ env.RELEASE_BRANCH }}
           fetch-depth: 1
 
-      - name: Validate exact release SHA and secrets
+      - name: Validate exact release SHA and resolve private database URL
         shell: bash
         run: |
           set -euo pipefail
@@ -50,8 +50,26 @@ jobs:
           release_sha="$(git rev-parse HEAD)"
           [ "$release_sha" = "$TARGET_SHA" ] || { echo "verified_sha does not equal frozen release branch head."; exit 1; }
           [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
-          [ -n "${DATABASE_URL:-}" ] || { echo 'PRODUCTION_DATABASE_URL is required.'; exit 1; }
-          curl --proto '=https' --tlsv1.2 -fsS "${COOLIFY_URL%/}/api/v1/health" >/dev/null
+
+          cool="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS "$cool/health" >/dev/null
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$cool/databases/$POSTGRES_UUID" -o /tmp/production-db.json
+
+          DATABASE_URL="$(node <<'NODE'
+          const db = require('/tmp/production-db.json');
+          const healthy = String(db.status || '').toLowerCase().includes('healthy');
+          if (db.is_public !== false || db.enable_ssl !== true || !healthy || !db.internal_db_url) {
+            throw new Error('Private PostgreSQL preflight failed');
+          }
+          process.stdout.write(String(db.internal_db_url));
+          NODE
+          )"
+          [ -n "$DATABASE_URL" ] || { echo 'Private PostgreSQL URL resolution failed.'; exit 1; }
+          echo "::add-mask::$DATABASE_URL"
+          echo "DATABASE_URL=$DATABASE_URL" >> "$GITHUB_ENV"
+          echo 'MKETY_PRIVATE_DB_RESOLVED=true'
 
       - name: Create exact-SHA isolated migration host
         id: app
