@@ -49,6 +49,12 @@ describe('Coolify production DB executor', () => {
     expect(workflow).toContain('Migration container became healthy before the full release sequence completed.');
   });
 
+  it('retains enough Coolify runtime logs to verify all migration release markers together', async () => {
+    const workflow = await read('.github/workflows/mkety-coolify-production-db-executor.yml');
+
+    expect(workflow).toContain('logs?lines=1000&show_timestamps=false');
+  });
+
   it('captures failed Coolify deployment logs before the ephemeral migration host is deleted', async () => {
     const workflow = await read('.github/workflows/mkety-coolify-production-db-executor.yml');
 
