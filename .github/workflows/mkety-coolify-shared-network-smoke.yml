@@ -1,0 +1,157 @@
+name: Mkety Coolify Shared Network Smoke
+
+on:
+  push:
+    branches:
+      - ops/redis-auth-diagnostic-20260914
+    paths:
+      - .github/workflows/mkety-coolify-shared-network-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      SERVER_NAME: mkety-net-smoke-server
+      INTERNAL_NAME: mkety-net-smoke-server
+      CLIENT_NAME: mkety-net-smoke-client
+    steps:
+      - name: Create isolated shared-network server
+        id: server
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          cat >/tmp/server.Dockerfile <<'DOCKER'
+          FROM alpine:3.24
+          RUN apk add --no-cache busybox-extras
+          EXPOSE 18080
+          CMD ["sh","-c","while true; do echo mkety-network-ok | nc -l -p 18080; done"]
+          DOCKER
+          B64="$(base64 -w0 /tmp/server.Dockerfile)"
+          B64="$B64" node <<'NODE' >/tmp/server.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            dockerfile:process.env.B64,
+            build_pack:'dockerfile',
+            name:process.env.SERVER_NAME,
+            description:'Ephemeral Mkety shared-network server smoke',
+            autogenerate_domain:false,
+            ports_exposes:'18080',
+            connect_to_docker_network:true,
+            is_consistent_container_name_enabled:true,
+            custom_internal_name:process.env.INTERNAL_NAME
+          }));
+          NODE
+          code="$(curl -sS -o /tmp/server-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/server.json "$cool/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "server create HTTP $code"; cat /tmp/server-response.json; exit 20; }
+          uuid="$(node -e "const x=require('/tmp/server-response.json'); if(!x.uuid) process.exit(2); process.stdout.write(x.uuid)")"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+          code="$(curl -sS -o /tmp/server-deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deploy?uuid=$uuid&force=true")"
+          [ "$code" = 200 ] || { echo "server deploy HTTP $code"; exit 21; }
+          dep="$(node -e "const d=(require('/tmp/server-deploy.json').deployments||[])[0]; if(!d?.deployment_uuid) process.exit(2); process.stdout.write(d.deployment_uuid)")"
+          ok=no
+          for i in $(seq 1 100); do
+            curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deployments/$dep" -o /tmp/state.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/state.json').status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) ok=yes; break ;;
+              failed|failure|error|cancelled|canceled) echo "server deployment failed: $status"; exit 22 ;;
+            esac
+            sleep 3
+          done
+          [ "$ok" = yes ] || { echo 'server deployment timeout'; exit 23; }
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$uuid" -o /tmp/server-meta.json
+          INTERNAL_NAME="$INTERNAL_NAME" node <<'NODE'
+          const x=require('/tmp/server-meta.json');
+          if(x.connect_to_docker_network!==true) throw new Error('server not connected to predefined network');
+          if(x.custom_internal_name!==process.env.INTERNAL_NAME) throw new Error('custom internal name not retained');
+          console.log('MKETY_SHARED_SERVER_CONFIG_OK=true');
+          NODE
+
+      - name: Create isolated shared-network client and prove DNS plus TCP
+        id: client
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          cat >/tmp/client.Dockerfile <<'DOCKER'
+          FROM alpine:3.24
+          RUN apk add --no-cache busybox-extras
+          CMD ["sh","-c","set -eu; getent hosts $INTERNAL_NAME; out=$(printf ping | nc -w 10 $INTERNAL_NAME 18080); test \"$out\" = mkety-network-ok; echo MKETY_SHARED_NETWORK_DNS_TCP_OK=true; sleep 3600"]
+          DOCKER
+          B64="$(base64 -w0 /tmp/client.Dockerfile)"
+          B64="$B64" node <<'NODE' >/tmp/client.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            dockerfile:process.env.B64,
+            build_pack:'dockerfile',
+            name:process.env.CLIENT_NAME,
+            description:'Ephemeral Mkety shared-network client smoke',
+            autogenerate_domain:false,
+            connect_to_docker_network:true
+          }));
+          NODE
+          code="$(curl -sS -o /tmp/client-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/client.json "$cool/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "client create HTTP $code"; cat /tmp/client-response.json; exit 30; }
+          uuid="$(node -e "const x=require('/tmp/client-response.json'); if(!x.uuid) process.exit(2); process.stdout.write(x.uuid)")"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+          add_env(){
+            KEY="$1" VALUE="$2" node -e "process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))" >/tmp/env.json
+            c="$(curl -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$cool/applications/$uuid/envs")"
+            [ "$c" = 201 ] || { echo "env create HTTP $c"; exit 31; }
+          }
+          add_env INTERNAL_NAME "$INTERNAL_NAME"
+          code="$(curl -sS -o /tmp/client-deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deploy?uuid=$uuid&force=true")"
+          [ "$code" = 200 ] || { echo "client deploy HTTP $code"; exit 32; }
+          dep="$(node -e "const d=(require('/tmp/client-deploy.json').deployments||[])[0]; if(!d?.deployment_uuid) process.exit(2); process.stdout.write(d.deployment_uuid)")"
+          ok=no
+          for i in $(seq 1 100); do
+            curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deployments/$dep" -o /tmp/client-state.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/client-state.json').status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) ok=yes; break ;;
+              failed|failure|error|cancelled|canceled) echo "client deployment failed: $status"; exit 33 ;;
+            esac
+            sleep 3
+          done
+          [ "$ok" = yes ] || { echo 'client deployment timeout'; exit 34; }
+          found=no
+          for i in $(seq 1 40); do
+            curl -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$uuid/logs?lines=100&show_timestamps=false" -o /tmp/client-logs.json || true
+            logs="$(node -e "process.stdout.write(String(require('/tmp/client-logs.json').logs||''))" 2>/dev/null || true)"
+            if printf '%s' "$logs" | grep -q 'MKETY_SHARED_NETWORK_DNS_TCP_OK=true'; then found=yes; break; fi
+            sleep 3
+          done
+          [ "$found" = yes ] || { echo 'shared-network DNS/TCP marker missing'; exit 35; }
+          echo MKETY_COOLIFY_SHARED_NETWORK_OK=true
+
+      - name: Delete client
+        if: always()
+        shell: bash
+        env:
+          UUID: ${{ steps.client.outputs.uuid }}
+        run: |
+          if [ -n "${UUID:-}" ]; then curl -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$UUID" >/dev/null || true; fi
+
+      - name: Delete server
+        if: always()
+        shell: bash
+        env:
+          UUID: ${{ steps.server.outputs.uuid }}
+        run: |
+          if [ -n "${UUID:-}" ]; then curl -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$UUID" >/dev/null || true; fi
