@@ -36,6 +36,17 @@ describe('migration baseline', () => {
     expectUniqueContiguous(readMigrationNames('migrations'));
   });
 
+  it('guards the Supabase-only RLS helper hardening when the function is absent', () => {
+    const migration = fs.readFileSync(
+      path.join(process.cwd(), 'migrations/0008_harden_rls_auto_enable.sql'),
+      'utf8',
+    );
+
+    expect(migration).toContain("to_regprocedure('public.rls_auto_enable()')");
+    expect(migration).toContain('IF');
+    expect(migration).toContain('IS NOT NULL');
+  });
+
   it('keeps the Drizzle journal aligned with SQL order and a current latest snapshot', () => {
     const migrations = readMigrationNames('src/shared/db/migrations');
     const expectedTags = migrations.map((name) => name.replace(/\.sql$/, ''));
