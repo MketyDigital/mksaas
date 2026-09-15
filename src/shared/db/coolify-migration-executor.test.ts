@@ -48,4 +48,14 @@ describe('Coolify production DB executor', () => {
     expect(workflow).toContain('MKETY_DB_RELEASE_SEQUENCE_OK=true');
     expect(workflow).toContain('Migration container became healthy before the full release sequence completed.');
   });
+
+  it('captures failed Coolify deployment logs before the ephemeral migration host is deleted', async () => {
+    const workflow = await read('.github/workflows/mkety-coolify-production-db-executor.yml');
+
+    expect(workflow).toContain('deployment.logs');
+    expect(workflow).toContain('Safe Coolify deployment diagnostic:');
+    expect(workflow.indexOf('Safe Coolify deployment diagnostic:')).toBeLessThan(
+      workflow.indexOf('Delete ephemeral migration host'),
+    );
+  });
 });
