@@ -1,0 +1,262 @@
+name: Mkety PostgreSQL TLS Proxy Cutover V2
+
+on:
+  push:
+    branches: [ops/redis-auth-diagnostic-20260914]
+    paths:
+      - .github/workflows/mkety-postgres-tls-proxy-cutover-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      TUNNEL_ID: 3ced1d56-8418-42e5-830b-f7ce9cd6fde4
+      TUNNEL_NAME: mkety-production-vpc
+      DB_HOSTNAME: db-runtime.mkety.com
+      ZONE_NAME: mkety.com
+      PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+      ORIGIN_ROOT_NAME: mkety-production-origin-ca-root
+      ACCESS_TOKEN_NAME: mkety-production-hyperdrive-ca
+      ACCESS_APP_NAME: mkety-production-postgres
+      ACCESS_POLICY_NAME: mkety-production-hyperdrive-ca-only
+      HYPERDRIVE_NAME: mkety-production-db
+      PGB_IMAGE: pgbouncer/pgbouncer:1.25.2-20260911
+      PGB_BIN: /opt/pgbouncer/pgbouncer
+
+    steps:
+      - name: Preflight and snapshot exact production state
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          cf="https://api.cloudflare.com/client/v4"
+          acct="$cf/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications" -o /tmp/coolify-apps.json
+          node <<'NODE' >/tmp/db.env
+          const d=require('/tmp/db.json');
+          if(d.is_public!==false||d.enable_ssl!==true||!String(d.status||'').toLowerCase().includes('healthy')||!d.internal_db_url) throw new Error('Private PostgreSQL preflight failed');
+          const u=new URL(d.internal_db_url), vals={DB_NAME:decodeURIComponent(u.pathname.slice(1)),DB_USER:decodeURIComponent(u.username),DB_PASSWORD:decodeURIComponent(u.password),DB_INTERNAL_HOST:u.hostname,DB_INTERNAL_PORT:u.port||'5432'};
+          for(const [k,v] of Object.entries(vals)){if(!v)throw new Error(`Missing ${k}`);console.log(`${k}=${v}`)}
+          const raw=require('/tmp/coolify-apps.json'), apps=Array.isArray(raw)?raw:(raw.data||raw.result||[]), p=apps.filter(x=>x.name===process.env.PROXY_NAME && !x.deleted_at);
+          if(p.length) throw new Error(`Proxy app collision (${p.length})`);
+          NODE
+          while IFS='=' read -r k v; do echo "::add-mask::$v"; echo "$k=$v" >> "$GITHUB_ENV"; done </tmp/db.env
+
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID" -o /tmp/tunnel.json
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/tunnel-before.json
+          curl -fsS "${auth[@]}" "$acct/access/apps?per_page=100" -o /tmp/access-apps.json
+          curl -fsS "${auth[@]}" "$acct/access/service_tokens?per_page=100" -o /tmp/tokens.json
+          curl -fsS "${auth[@]}" "$acct/mtls_certificates?per_page=100" -o /tmp/mtls.json
+          curl -fsS "${auth[@]}" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hd-before.json
+          curl -fsS "${auth[@]}" "$cf/zones?name=$ZONE_NAME&account.id=$CLOUDFLARE_ACCOUNT_ID&status=active&per_page=50" -o /tmp/zones.json
+          ZONE_ID="$(node -e "const a=require('/tmp/zones.json').result||[];if(a.length!==1)process.exit(2);process.stdout.write(a[0].id)")"
+          echo "ZONE_ID=$ZONE_ID" >> "$GITHUB_ENV"
+          curl -fsS "${auth[@]}" "$cf/zones/$ZONE_ID/dns_records?name=$DB_HOSTNAME&per_page=100" -o /tmp/dns.json
+
+          node <<'NODE' >/tmp/cf.env
+          const t=require('/tmp/tunnel.json').result;
+          if(!t||t.id!==process.env.TUNNEL_ID||t.name!==process.env.TUNNEL_NAME||String(t.status||'').toLowerCase()!=='healthy')throw new Error('Tunnel mismatch');
+          const cfg=require('/tmp/tunnel-before.json').result?.config;if(!cfg||!Array.isArray(cfg.ingress))throw new Error('Tunnel config missing');
+          const r=cfg.ingress.filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||!String(r[0].service||'').startsWith('tcp://'))throw new Error('DB ingress mismatch');
+          const dns=require('/tmp/dns.json').result||[], expected=`${process.env.TUNNEL_ID}.cfargotunnel.com`;if(dns.length!==1||dns[0].type!=='CNAME'||String(dns[0].content||'').toLowerCase()!==expected.toLowerCase()||dns[0].proxied!==true)throw new Error('DNS mismatch');
+          const apps=(require('/tmp/access-apps.json').result||[]).filter(x=>x.name===process.env.ACCESS_APP_NAME);if(apps.length!==1||apps[0].domain!==process.env.DB_HOSTNAME)throw new Error('Access app mismatch');console.log(`ACCESS_APP_ID=${apps[0].id}`);
+          const toks=(require('/tmp/tokens.json').result||[]).filter(x=>x.name===process.env.ACCESS_TOKEN_NAME);if(toks.length>1)throw new Error('Duplicate service token');console.log(`TOKEN_COUNT=${toks.length}`);if(toks.length===1)console.log(`TOKEN_ID=${toks[0].id}`);
+          const roots=(require('/tmp/mtls.json').result||[]).filter(x=>x.name===process.env.ORIGIN_ROOT_NAME);if(roots.length>1)throw new Error('Duplicate Origin root registrations');if(roots.length===1){if(roots[0].ca!==true)throw new Error('Origin root registration is not CA');console.log(`ROOT_CA_ID=${roots[0].id}`)}
+          const h=require('/tmp/hd-before.json').result||[];if(h.filter(x=>x.name===process.env.HYPERDRIVE_NAME).length)throw new Error('Target Hyperdrive already exists');
+          for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const x=h.find(v=>v.name===n);if(!x||x.id!==id)throw new Error(`Protected Hyperdrive changed: ${n}`)}
+          NODE
+          cat /tmp/cf.env >> "$GITHUB_ENV"
+          echo MKETY_V2_PREFLIGHT_OK=true
+
+      - name: Issue Cloudflare-compatible RSA leaf and ensure trusted root registration
+        id: cert
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf="https://api.cloudflare.com/client/v4"; acct="$cf/accounts/$CLOUDFLARE_ACCOUNT_ID"; auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          curl -fsS https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem -o /tmp/origin-root.pem
+          openssl x509 -in /tmp/origin-root.pem -noout -checkend 86400 >/dev/null
+          openssl genrsa -out /tmp/proxy.key 2048 >/dev/null 2>&1
+          openssl req -new -key /tmp/proxy.key -out /tmp/proxy.csr -subj "/CN=$DB_HOSTNAME" -addext "subjectAltName=DNS:$DB_HOSTNAME"
+          DB_HOSTNAME="$DB_HOSTNAME" node -e "const fs=require('fs');process.stdout.write(JSON.stringify({csr:fs.readFileSync('/tmp/proxy.csr','utf8'),hostnames:[process.env.DB_HOSTNAME],request_type:'origin-rsa',requested_validity:365}))" >/tmp/origin-request.json
+          code="$(curl -sS -o /tmp/origin-response.json -w '%{http_code}' -X POST "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/origin-request.json "$cf/certificates")"
+          [ "$code" = 200 ] || { echo "Origin CA issue failed HTTP $code"; node -e "console.error(JSON.stringify(require('/tmp/origin-response.json').errors||[]))"; exit 20; }
+          node -e "const fs=require('fs'),r=require('/tmp/origin-response.json');if(!r.success||!r.result?.id||!r.result?.certificate)process.exit(2);fs.writeFileSync('/tmp/proxy.crt',r.result.certificate);fs.writeFileSync('/tmp/origin-cert-id',r.result.id)"
+          ORIGIN_CERT_ID="$(cat /tmp/origin-cert-id)"; echo "origin_cert_id=$ORIGIN_CERT_ID" >> "$GITHUB_OUTPUT"
+          openssl verify -CAfile /tmp/origin-root.pem /tmp/proxy.crt
+          openssl x509 -in /tmp/proxy.crt -noout -checkhost "$DB_HOSTNAME" >/dev/null
+          openssl x509 -in /tmp/proxy.crt -noout -text | grep -q 'Public Key Algorithm: rsaEncryption'
+          openssl pkey -in /tmp/proxy.key -pubout -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1 >/tmp/key.sha
+          openssl x509 -in /tmp/proxy.crt -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1 >/tmp/cert.sha
+          cmp -s /tmp/key.sha /tmp/cert.sha
+          if [ -z "${ROOT_CA_ID:-}" ]; then
+            ORIGIN_ROOT_NAME="$ORIGIN_ROOT_NAME" node -e "const fs=require('fs');process.stdout.write(JSON.stringify({name:process.env.ORIGIN_ROOT_NAME,ca:true,certificates:fs.readFileSync('/tmp/origin-root.pem','utf8')}))" >/tmp/root.json
+            code="$(curl -sS -o /tmp/root-response.json -w '%{http_code}' -X POST "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/root.json "$acct/mtls_certificates")"; case "$code" in 200|201);;*) echo "Root upload failed HTTP $code"; exit 21;; esac
+            ROOT_CA_ID="$(node -e "const r=require('/tmp/root-response.json');if(!r.success||!r.result?.id||r.result.ca!==true)process.exit(2);process.stdout.write(r.result.id)")"; echo "ROOT_CA_ID=$ROOT_CA_ID" >> "$GITHUB_ENV"
+          fi
+          echo MKETY_V2_RSA_LEAF_OK=true
+          echo MKETY_V2_ORIGIN_ROOT_OK=true
+
+      - name: Deploy and independently prove private PgBouncer proxy
+        id: proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          DB_NAME="$DB_NAME" DB_INTERNAL_HOST="$DB_INTERNAL_HOST" DB_INTERNAL_PORT="$DB_INTERNAL_PORT" node <<'NODE' >/tmp/pgbouncer.ini
+          const e=process.env;if(!/^[A-Za-z0-9_.-]+$/.test(e.DB_NAME)||!/^[A-Za-z0-9_.-]+$/.test(e.DB_INTERNAL_HOST)||!/^[0-9]+$/.test(e.DB_INTERNAL_PORT))throw new Error('Unexpected DB metadata');process.stdout.write(`[databases]\n${e.DB_NAME} = host=${e.DB_INTERNAL_HOST} port=${e.DB_INTERNAL_PORT} dbname=${e.DB_NAME}\n\n[pgbouncer]\nlisten_addr = 0.0.0.0\nlisten_port = 6432\nauth_type = plain\nauth_file = /run/mkety/userlist.txt\npool_mode = session\nmax_client_conn = 100\ndefault_pool_size = 20\nclient_tls_sslmode = require\nclient_tls_cert_file = /run/mkety/server.crt\nclient_tls_key_file = /run/mkety/server.key\nclient_tls_protocols = secure\nserver_tls_sslmode = verify-ca\nserver_tls_ca_file = /etc/mkety/coolify-ca.crt\nserver_tls_protocols = secure\nserver_connect_timeout = 10\nquery_timeout = 60\n`);
+          NODE
+          DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node -e "const q=s=>JSON.stringify(String(s));process.stdout.write(q(process.env.DB_USER)+' '+q(process.env.DB_PASSWORD)+'\n')" >/tmp/userlist.txt
+          for f in pgbouncer.ini userlist.txt proxy.crt proxy.key origin-root.pem; do base64 -w0 "/tmp/$f" > "/tmp/$f.b64"; done
+
+          cat >/tmp/Dockerfile <<'DOCKER'
+          FROM pgbouncer/pgbouncer:1.25.2-20260911
+          USER root
+          RUN apk add --no-cache openssl postgresql-client su-exec && addgroup -S mkety && adduser -S -G mkety mkety && test -x /opt/pgbouncer/pgbouncer
+          RUN cat > /mkety-entrypoint.sh <<'SH'
+          #!/bin/sh
+          set -eu
+          umask 077
+          test -x /opt/pgbouncer/pgbouncer
+          mkdir -p /run/mkety
+          printf '%s' "$PGBOUNCER_CONFIG_B64" | base64 -d > /run/mkety/pgbouncer.ini
+          printf '%s' "$PGBOUNCER_USERLIST_B64" | base64 -d > /run/mkety/userlist.txt
+          printf '%s' "$ORIGIN_CERT_B64" | base64 -d > /run/mkety/server.crt
+          printf '%s' "$ORIGIN_KEY_B64" | base64 -d > /run/mkety/server.key
+          printf '%s' "$ORIGIN_ROOT_B64" | base64 -d > /run/mkety/origin-root.pem
+          chmod 600 /run/mkety/server.key /run/mkety/userlist.txt /run/mkety/pgbouncer.ini
+          chmod 644 /run/mkety/server.crt /run/mkety/origin-root.pem
+          chown -R mkety:mkety /run/mkety
+          test -s /etc/mkety/coolify-ca.crt
+          openssl verify -CAfile /run/mkety/origin-root.pem /run/mkety/server.crt >/dev/null
+          openssl x509 -in /run/mkety/server.crt -noout -checkhost "$DB_HOSTNAME" >/dev/null
+          PGPASSWORD="$DB_PASSWORD" psql "host=$DB_INTERNAL_HOST port=$DB_INTERNAL_PORT dbname=$DB_NAME user=$DB_USER sslmode=verify-ca sslrootcert=/etc/mkety/coolify-ca.crt connect_timeout=10" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' | grep -qx 1
+          echo MKETY_PGBOUNCER_UPSTREAM_VERIFY_OK=true
+          su-exec mkety /opt/pgbouncer/pgbouncer /run/mkety/pgbouncer.ini &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' TERM INT EXIT
+          ready=no
+          for i in $(seq 1 30); do
+            if openssl s_client -starttls postgres -connect 127.0.0.1:6432 -CAfile /run/mkety/origin-root.pem -verify_return_error -verify_hostname "$DB_HOSTNAME" </dev/null >/tmp/tls.txt 2>&1; then ready=yes; break; fi
+            kill -0 "$pid" 2>/dev/null || { cat /tmp/tls.txt >&2 || true; exit 31; }
+            sleep 1
+          done
+          [ "$ready" = yes ] || { cat /tmp/tls.txt >&2 || true; exit 32; }
+          grep -q 'Verify return code: 0 (ok)' /tmp/tls.txt
+          echo MKETY_PGBOUNCER_CLIENT_TLS_OK=true
+          PGPASSWORD="$DB_PASSWORD" psql "host=$DB_HOSTNAME hostaddr=127.0.0.1 port=6432 dbname=$DB_NAME user=$DB_USER sslmode=verify-full sslrootcert=/run/mkety/origin-root.pem connect_timeout=10" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' | grep -qx 1
+          echo MKETY_PGBOUNCER_QUERY_OK=true
+          echo MKETY_PGBOUNCER_READY=true
+          trap - TERM INT EXIT
+          wait "$pid"
+          SH
+          RUN chmod 755 /mkety-entrypoint.sh
+          EXPOSE 6432
+          ENTRYPOINT ["/mkety-entrypoint.sh"]
+          DOCKER
+
+          DOCKER_B64="$(base64 -w0 /tmp/Dockerfile)"; DOCKER_B64="$DOCKER_B64" node -e "process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:process.env.DOCKER_B64,build_pack:'dockerfile',name:process.env.PROXY_NAME,description:'Private PostgreSQL TLS compatibility proxy for Mkety Hyperdrive',autogenerate_domain:false,ports_exposes:'6432'}))" >/tmp/app.json
+          code="$(curl -sS -o /tmp/app-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/app.json "$cool/applications/dockerfile")"; [ "$code" = 201 ] || { echo "Proxy app create failed HTTP $code"; cat /tmp/app-response.json; exit 40; }
+          APP_UUID="$(node -e "const r=require('/tmp/app-response.json');if(!r.uuid)process.exit(2);process.stdout.write(r.uuid)")"; echo "app_uuid=$APP_UUID" >> "$GITHUB_OUTPUT"; echo "PROXY_UUID=$APP_UUID" >> "$GITHUB_ENV"
+          node -e "process.stdout.write(JSON.stringify({type:'persistent',name:'mkety-pgbouncer-coolify-ca',mount_path:'/etc/mkety/coolify-ca.crt',host_path:'/data/coolify/ssl/coolify-ca.crt'}))" >/tmp/storage.json
+          code="$(curl -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$cool/applications/$APP_UUID/storages")"; [ "$code" = 201 ] || { echo "CA mount failed HTTP $code"; exit 41; }
+
+          add_env(){ KEY="$1" VALUE="$2" node -e "process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))" >/tmp/env.json; c="$(curl -sS -o /tmp/env-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$cool/applications/$APP_UUID/envs")"; [ "$c" = 201 ] || { echo "Env create failed for $1 HTTP $c"; exit 42; }; }
+          add_env PGBOUNCER_CONFIG_B64 "$(cat /tmp/pgbouncer.ini.b64)"
+          add_env PGBOUNCER_USERLIST_B64 "$(cat /tmp/userlist.txt.b64)"
+          add_env ORIGIN_CERT_B64 "$(cat /tmp/proxy.crt.b64)"
+          add_env ORIGIN_KEY_B64 "$(cat /tmp/proxy.key.b64)"
+          add_env ORIGIN_ROOT_B64 "$(cat /tmp/origin-root.pem.b64)"
+          add_env DB_NAME "$DB_NAME"; add_env DB_USER "$DB_USER"; add_env DB_PASSWORD "$DB_PASSWORD"; add_env DB_INTERNAL_HOST "$DB_INTERNAL_HOST"; add_env DB_INTERNAL_PORT "$DB_INTERNAL_PORT"; add_env DB_HOSTNAME "$DB_HOSTNAME"
+
+          code="$(curl -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deploy?uuid=$APP_UUID&force=true")"; [ "$code" = 200 ] || { echo "Deploy request failed HTTP $code"; cat /tmp/deploy.json; exit 43; }
+          DEPLOY_UUID="$(node -e "const x=require('/tmp/deploy.json'),d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(2);process.stdout.write(d.deployment_uuid)")"
+          finished=no; for i in $(seq 1 120); do curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deployments/$DEPLOY_UUID" -o /tmp/ds.json; s="$(node -e "process.stdout.write(String(require('/tmp/ds.json').status||''))")"; case "${s,,}" in finished|success|successful|succeeded|completed) finished=yes;break;;failed|failure|error|cancelled|canceled) echo "Proxy deployment failed: $s"; node -e "const x=require('/tmp/ds.json');for(const k of ['status','message'])if(x[k])console.log(k+'='+String(x[k]).slice(0,1000))";exit 44;;esac;sleep 3;done; [ "$finished" = yes ] || { echo 'Proxy deploy timeout'; exit 45; }
+          ready=no; for i in $(seq 1 80); do curl -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$APP_UUID/logs?lines=400&show_timestamps=false" -o /tmp/logs.json || true; logs="$(node -e "process.stdout.write(String(require('/tmp/logs.json').logs||''))" 2>/dev/null || true)"; if printf '%s' "$logs" | grep -q 'MKETY_PGBOUNCER_READY=true';then ready=yes;break;fi; if printf '%s' "$logs" | grep -Eq 'FATAL|ERROR|not found|No such file';then printf '%s\n' "$logs" | grep -E 'MKETY_|FATAL|ERROR|not found|No such file' | tail -50;exit 46;fi;sleep 3;done
+          [ "$ready" = yes ] || { echo 'Readiness proof missing'; node -e "const l=String(require('/tmp/logs.json').logs||'');for(const x of l.split(/\r?\n/))if(/MKETY_|FATAL|ERROR|not found|No such file/i.test(x))console.log(x)" || true; curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$APP_UUID" -o /tmp/app-final.json || true; node -e "const x=require('/tmp/app-final.json');console.log('APP_STATUS='+String(x.status||''));" || true; exit 47; }
+          node -e "const l=String(require('/tmp/logs.json').logs||'');for(const m of ['MKETY_PGBOUNCER_UPSTREAM_VERIFY_OK=true','MKETY_PGBOUNCER_CLIENT_TLS_OK=true','MKETY_PGBOUNCER_QUERY_OK=true','MKETY_PGBOUNCER_READY=true'])if(!l.includes(m))throw new Error('Missing '+m)"
+          echo MKETY_PRIVATE_TLS_PROXY_OK=true
+
+      - name: Switch only DB tunnel ingress and create verified Hyperdrive
+        id: cutover
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf="https://api.cloudflare.com/client/v4"; acct="$cf/accounts/$CLOUDFLARE_ACCOUNT_ID"; auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          tunnel_changed=no
+          rollback(){ rc=$?; if [ "$rc" -ne 0 ] && [ "$tunnel_changed" = yes ];then echo 'Restoring exact prior tunnel config'; c="$(curl -sS -o /tmp/rb.json -w '%{http_code}' -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/tunnel-restore.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"; [ "$c" = 200 ] && echo MKETY_DB_TUNNEL_ROLLBACK_OK=true || echo "MKETY_DB_TUNNEL_ROLLBACK_FAILED_HTTP=$c";fi;exit "$rc"; }
+          trap rollback EXIT
+          PROXY_UUID="$PROXY_UUID" node <<'NODE'
+          const fs=require('fs'),o=require('/tmp/tunnel-before.json'),cfg=structuredClone(o.result.config),m=[];cfg.ingress.forEach((x,i)=>{if(x.hostname===process.env.DB_HOSTNAME)m.push(i)});if(m.length!==1)throw new Error('DB ingress count changed');cfg.ingress[m[0]].service=`tcp://${process.env.PROXY_UUID}:6432`;fs.writeFileSync('/tmp/tunnel-new.json',JSON.stringify({config:cfg}));fs.writeFileSync('/tmp/tunnel-restore.json',JSON.stringify({config:o.result.config}));
+          NODE
+          code="$(curl -sS -o /tmp/tunresp.json -w '%{http_code}' -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/tunnel-new.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"; [ "$code" = 200 ] || { echo "Tunnel update failed HTTP $code";exit 50; }; tunnel_changed=yes
+          curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/tunnel-after.json
+          PROXY_UUID="$PROXY_UUID" node <<'NODE'
+          const b=require('/tmp/tunnel-before.json').result.config.ingress,a=require('/tmp/tunnel-after.json').result.config.ingress;if(a.length!==b.length)throw new Error('Ingress count changed');let n=0;for(let i=0;i<a.length;i++){if(b[i].hostname===process.env.DB_HOSTNAME){if(a[i].service!==`tcp://${process.env.PROXY_UUID}:6432`)throw new Error('DB route mismatch');const x={...b[i]},y={...a[i]};delete x.service;delete y.service;if(JSON.stringify(x)!==JSON.stringify(y))throw new Error('DB ingress metadata changed');n++}else if(JSON.stringify(a[i])!==JSON.stringify(b[i]))throw new Error(`Unrelated ingress changed ${i}`)}if(n!==1)throw new Error('Expected one DB route change');
+          NODE
+          echo MKETY_DB_TUNNEL_PROXY_ROUTE_OK=true
+          sleep 8
+
+          curl -fsS "${auth[@]}" "$acct/access/service_tokens?per_page=100" -o /tmp/toks.json
+          TOKEN_ID="$(node -e "const a=(require('/tmp/toks.json').result||[]).filter(x=>x.name===process.env.ACCESS_TOKEN_NAME);if(a.length!==1)process.exit(2);process.stdout.write(a[0].id)")"
+          code="$(curl -sS -o /tmp/tokresp.json -w '%{http_code}' -X POST "${auth[@]}" -H 'Content-Type: application/json' --data '{}' "$acct/access/service_tokens/$TOKEN_ID/rotate")"; case "$code" in 200|201);;*) echo "Token rotate failed HTTP $code";exit 51;;esac
+          node <<'NODE' >/tmp/tok.env
+          const r=require('/tmp/tokresp.json');if(!r.success||!r.result?.id||!r.result?.client_id||!r.result?.client_secret)throw new Error('Token rotate incomplete');console.log(`ACCESS_TOKEN_ID=${r.result.id}`);console.log(`ACCESS_CLIENT_ID=${r.result.client_id}`);console.log(`ACCESS_CLIENT_SECRET=${r.result.client_secret}`);
+          NODE
+          while IFS='=' read -r k v;do echo "::add-mask::$v";export "$k=$v";done </tmp/tok.env
+          curl -fsS "${auth[@]}" "$acct/access/apps/$ACCESS_APP_ID/policies?per_page=100" -o /tmp/pols.json
+          ACCESS_TOKEN_ID="$ACCESS_TOKEN_ID" node -e "const a=(require('/tmp/pols.json').result||[]).filter(x=>x.name===process.env.ACCESS_POLICY_NAME);if(a.length!==1)throw new Error('Access policy missing/duplicate');const p=a[0],ids=(p.include||[]).map(x=>x.service_token?.token_id).filter(Boolean);if(p.decision!=='non_identity'||ids.length!==1||ids[0]!==process.env.ACCESS_TOKEN_ID)throw new Error('Access policy mismatch after rotation')"
+          echo MKETY_PROXY_ACCESS_OK=true
+
+          ACCESS_CLIENT_ID="$ACCESS_CLIENT_ID" ACCESS_CLIENT_SECRET="$ACCESS_CLIENT_SECRET" node -e "process.stdout.write(JSON.stringify({name:process.env.HYPERDRIVE_NAME,origin:{host:process.env.DB_HOSTNAME,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,scheme:'postgres',access_client_id:process.env.ACCESS_CLIENT_ID,access_client_secret:process.env.ACCESS_CLIENT_SECRET},caching:{disabled:true},mtls:{ca_certificate_id:process.env.ROOT_CA_ID,sslmode:'verify-ca'}}))" >/tmp/hd.json
+          code="$(curl -sS -o /tmp/hdresp.json -w '%{http_code}' -X POST "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/hd.json "$acct/hyperdrive/configs")"; case "$code" in 200|201);;*) echo "Hyperdrive create failed HTTP $code";node -e "console.error(JSON.stringify(require('/tmp/hdresp.json').errors||[]))";exit 52;;esac
+          curl -fsS "${auth[@]}" "$acct/hyperdrive/configs?per_page=100" -o /tmp/hd-final.json
+          node <<'NODE'
+          const h=require('/tmp/hd-final.json').result||[],a=h.filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(a.length!==1)throw new Error(`Target count ${a.length}`);const x=a[0];if(x.origin?.host!==process.env.DB_HOSTNAME||x.origin?.service_id)throw new Error('Origin mismatch');if(x.mtls?.ca_certificate_id!==process.env.ROOT_CA_ID||String(x.mtls?.sslmode||'').toLowerCase()!=='verify-ca')throw new Error('TLS mode mismatch');if(x.caching?.disabled!==true)throw new Error('Caching not disabled');for(const [n,id] of [['mklms-fresh','bb7c9f70c2fe402080c22e06d0c0f305'],['mklms-mkety-academy-cached','6d6c69493e404097907fb8e7719d09a2'],['mklms-mkety-academy-fresh','c6033fd6696444ea97c7c2c93707b3bc'],['mklms-public-cache','14a4baf3773d41c88e4600967ab3b68d']]){const v=h.find(z=>z.name===n);if(!v||v.id!==id)throw new Error(`Protected Hyperdrive changed: ${n}`)}console.log(`MKETY_HYPERDRIVE_ID=${x.id}`);
+          NODE
+          echo MKETY_HYPERDRIVE_TLS_PROXY_OK=true
+          trap - EXIT
+
+      - name: Final private database and Hyperdrive verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"; acct="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/databases/$POSTGRES_UUID" -o /tmp/db-final.json
+          node -e "const x=require('/tmp/db-final.json');if(x.is_public!==false||x.enable_ssl!==true||!String(x.status||'').toLowerCase().includes('healthy'))throw new Error('DB final check failed')"
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/t-final.json
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/hyperdrive/configs?per_page=100" -o /tmp/h-final.json
+          PROXY_UUID="$PROXY_UUID" node -e "const r=(require('/tmp/t-final.json').result?.config?.ingress||[]).filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||r[0].service!==('tcp://'+process.env.PROXY_UUID+':6432'))throw new Error('Final tunnel route mismatch');const h=(require('/tmp/h-final.json').result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(h.length!==1)throw new Error('Final Hyperdrive count mismatch')"
+          echo MKETY_PRODUCTION_DB_PRIVATE=true
+          echo MKETY_PRODUCTION_TLS_VERIFIED=true
+          echo MKETY_PRODUCTION_HYPERDRIVE_READY=true
+
+      - name: Clean failed proxy attempt
+        if: failure() && steps.proxy.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.proxy.outputs.app_uuid }}
+          ORIGIN_CERT_ID: ${{ steps.cert.outputs.origin_cert_id }}
+        run: |
+          set +e
+          curl -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null
+          if [ -n "$ORIGIN_CERT_ID" ];then curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/certificates/$ORIGIN_CERT_ID" >/dev/null;fi
+          echo MKETY_FAILED_PROXY_CLEANUP_ATTEMPTED=true
