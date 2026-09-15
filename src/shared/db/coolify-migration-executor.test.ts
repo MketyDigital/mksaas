@@ -21,7 +21,7 @@ describe('Coolify production DB executor', () => {
     expect(dockerfile).not.toContain('pnpm install --frozen-lockfile');
     expect(dockerfile).toContain('USER node');
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual(
-      ['dotenv', 'drizzle-kit', 'drizzle-orm', 'pino', 'postgres', 'tsx'].sort(),
+      ['dotenv', 'drizzle-kit', 'drizzle-orm', 'pino', 'postgres', 'tsx', 'zod'].sort(),
     );
   });
 
