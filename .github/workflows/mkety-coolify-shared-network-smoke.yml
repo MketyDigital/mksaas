@@ -76,8 +76,10 @@ jobs:
           curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$uuid" -o /tmp/server-meta.json
           INTERNAL_NAME="$INTERNAL_NAME" node <<'NODE'
           const x=require('/tmp/server-meta.json');
-          if(x.connect_to_docker_network!==true) throw new Error('server not connected to predefined network');
-          if(x.custom_internal_name!==process.env.INTERNAL_NAME) throw new Error('custom internal name not retained');
+          const s=x.settings||{};
+          if(s.connect_to_docker_network!==true) throw new Error('server not connected to predefined network');
+          if(s.custom_internal_name!==process.env.INTERNAL_NAME) throw new Error('custom internal name not retained');
+          if(s.is_consistent_container_name_enabled!==true) throw new Error('consistent container name not enabled');
           console.log('MKETY_SHARED_SERVER_CONFIG_OK=true');
           NODE
 
