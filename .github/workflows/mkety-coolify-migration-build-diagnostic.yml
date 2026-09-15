@@ -107,6 +107,25 @@ jobs:
           [ "$code" = '200' ] || { echo "Deploying migration verification host failed with HTTP $code."; exit 4; }
           DEPLOYMENT_UUID="$(node -e "const x=require('/tmp/deploy.json'); const d=Array.isArray(x.deployments)?x.deployments[0]:null; if(!d?.deployment_uuid) process.exit(1); process.stdout.write(d.deployment_uuid)")"
 
+          print_deployment_failure() {
+            DB="$DATABASE_URL" TOKEN="$COOLIFY_API_TOKEN" node <<'NODE'
+          const fs=require('node:fs');
+          let x={};
+          try { x=JSON.parse(fs.readFileSync('/tmp/deployment.json','utf8')); } catch {}
+          let logs=String(x.logs||'');
+          for (const secret of [process.env.DB, process.env.TOKEN]) {
+            if (secret) logs=logs.split(secret).join('***');
+          }
+          logs=logs
+            .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi,'postgresql://***@')
+            .replace(/Authorization:\s*Bearer\s+[^\s]+/gi,'Authorization: Bearer ***')
+            .replace(/(password|token|secret)=([^\s]+)/gi,'$1=***');
+          console.log('----- SANITIZED COOLIFY DEPLOYMENT FAILURE TAIL -----');
+          console.log(logs.split(/\r?\n/).slice(-260).join('\n'));
+          console.log('----- END SANITIZED COOLIFY DEPLOYMENT FAILURE TAIL -----');
+          NODE
+          }
+
           deployment_ok='no'
           last_status='unknown'
           for i in $(seq 1 150); do
@@ -122,13 +141,18 @@ jobs:
             case "${last_status,,}" in
               finished|success|successful|succeeded|completed) deployment_ok='yes'; break ;;
               failed|failure|error|cancelled|canceled)
+                print_deployment_failure
                 echo "Migration verification deployment failed: $last_status"
                 exit 5
                 ;;
             esac
             sleep 3
           done
-          [ "$deployment_ok" = 'yes' ] || { echo "Migration verification deployment did not complete successfully; last_status=$last_status"; exit 6; }
+          if [ "$deployment_ok" != 'yes' ]; then
+            print_deployment_failure
+            echo "Migration verification deployment did not complete successfully; last_status=$last_status"
+            exit 6
+          fi
           echo 'MKETY_DIAG_DEPLOYMENT_OK=true'
 
           sequence_ok='no'
