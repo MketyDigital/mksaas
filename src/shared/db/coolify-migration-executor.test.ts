@@ -28,6 +28,8 @@ describe('Coolify production DB executor', () => {
   it('is manual/reusable, exact-SHA gated, HTTPS-only, private-networked, resolves the private DB URL from Coolify, always cleans up, and requires the full migration release marker', async () => {
     const workflow = await read('.github/workflows/mkety-coolify-production-db-executor.yml');
 
+    // The reusable executor must derive the private runtime URL itself instead of
+    // relying on environment-secret propagation across a workflow_call boundary.
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toContain('workflow_call:');
     expect(workflow).not.toContain("push:\n");
