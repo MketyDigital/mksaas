@@ -14,14 +14,19 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     environment: production
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      DEPLOYMENT_UUID: fnip2sggynlojfoqnthol3cq
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      RELEASE_BRANCH: feat/mkety-public-site-production
+      TARGET_SHA: e99a2b14753ebdb546085720dd967f7751e0bd2e
     steps:
-      - name: Retrieve sanitized failed Coolify deployment logs
+      - name: Reproduce migration deployment and capture sanitized Coolify build logs
         shell: bash
         run: |
           set -euo pipefail
@@ -29,30 +34,115 @@ jobs:
           echo "::add-mask::$COOLIFY_API_TOKEN"
           base="${COOLIFY_URL%/}/api/v1"
 
-          code='000'
-          for i in $(seq 1 30); do
-            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deployment.json -w '%{http_code}' \
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/databases/$POSTGRES_UUID" -o /tmp/production-db.json
+
+          DATABASE_URL="$(node <<'NODE'
+          const db = require('/tmp/production-db.json');
+          const healthy = String(db.status || '').toLowerCase().includes('healthy');
+          if (db.is_public !== false || db.enable_ssl !== true || !healthy || !db.internal_db_url) {
+            throw new Error('Private PostgreSQL preflight failed');
+          }
+          process.stdout.write(String(db.internal_db_url));
+          NODE
+          )"
+          echo "::add-mask::$DATABASE_URL"
+
+          TARGET_SHA="$TARGET_SHA" PROJECT_UUID="$PROJECT_UUID" ENVIRONMENT_UUID="$ENVIRONMENT_UUID" SERVER_UUID="$SERVER_UUID" RELEASE_BRANCH="$RELEASE_BRANCH" GITHUB_RUN_ID="$GITHUB_RUN_ID" node <<'NODE' >/tmp/create-app.json
+          process.stdout.write(JSON.stringify({
+            project_uuid: process.env.PROJECT_UUID,
+            server_uuid: process.env.SERVER_UUID,
+            environment_uuid: process.env.ENVIRONMENT_UUID,
+            git_repository: 'https://github.com/MketyDigital/mksaas',
+            git_branch: process.env.RELEASE_BRANCH,
+            git_commit_sha: process.env.TARGET_SHA,
+            build_pack: 'dockerfile',
+            dockerfile_location: '/ops/coolify-migration/Dockerfile',
+            ports_exposes: '3000',
+            name: `mkety-db-build-diag-${process.env.GITHUB_RUN_ID}`,
+            description: `Diagnostics-only migration build reproduction for ${process.env.TARGET_SHA}`,
+            autogenerate_domain: false,
+            connect_to_docker_network: true,
+            instant_deploy: false
+          }));
+          NODE
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/create-app.json "$base/applications/public")"
+          [ "$code" = '201' ] || { echo "MKETY_DIAG_CREATE_HTTP=$code"; cat /tmp/create-response.json; exit 2; }
+          APP_UUID="$(node -e "const x=require('/tmp/create-response.json'); if(!x.uuid) process.exit(1); process.stdout.write(x.uuid)")"
+          echo "MKETY_DIAG_APP_UUID=$APP_UUID"
+
+          cleanup() {
+            for i in $(seq 1 8); do
+              cleanup_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup.json -w '%{http_code}' \
+                -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                "$base/applications/$APP_UUID" || true)"
+              if [ "$cleanup_code" = '200' ] || [ "$cleanup_code" = '204' ] || [ "$cleanup_code" = '404' ]; then
+                echo 'MKETY_DIAG_EPHEMERAL_APP_CLEANED=true'
+                return 0
+              fi
+              sleep 2
+            done
+            echo "MKETY_DIAG_CLEANUP_LAST_HTTP=$cleanup_code"
+          }
+          trap cleanup EXIT
+
+          DB="$DATABASE_URL" node <<'NODE' >/tmp/db-env.json
+          process.stdout.write(JSON.stringify({key:'DATABASE_URL',value:process.env.DB,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/db-env.json "$base/applications/$APP_UUID/envs")"
+          [ "$code" = '201' ] || { echo "MKETY_DIAG_ENV_HTTP=$code"; exit 3; }
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = '200' ] || { echo "MKETY_DIAG_DEPLOY_HTTP=$code"; cat /tmp/deploy.json; exit 4; }
+          DEPLOYMENT_UUID="$(node -e "const x=require('/tmp/deploy.json'); const d=Array.isArray(x.deployments)?x.deployments[0]:null; if(!d?.deployment_uuid) process.exit(1); process.stdout.write(d.deployment_uuid)")"
+          echo "MKETY_DIAG_DEPLOYMENT_UUID=$DEPLOYMENT_UUID"
+
+          terminal='false'
+          fetch_code='000'
+          for i in $(seq 1 120); do
+            fetch_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deployment.json -w '%{http_code}' \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "$base/deployments/$DEPLOYMENT_UUID" || true)"
-            if [ "$code" = '200' ]; then
-              break
+            if [ "$fetch_code" != '200' ]; then
+              echo "MKETY_DIAG_DEPLOYMENT_FETCH_HTTP=$fetch_code"
+              sleep 3
+              continue
             fi
-            echo "MKETY_DIAG_DEPLOYMENT_FETCH_HTTP=$code"
-            sleep 2
+            status="$(node -e "const x=require('/tmp/deployment.json'); process.stdout.write(String(x.status||''))")"
+            echo "MKETY_DIAG_DEPLOYMENT_STATUS_POLL=$status"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed|failed|failure|error|cancelled|canceled)
+                terminal='true'
+                break
+                ;;
+            esac
+            sleep 3
           done
-          [ "$code" = '200' ] || { echo "Unable to retrieve deployment record after retries; last HTTP=$code"; exit 2; }
 
-          TOKEN="$COOLIFY_API_TOKEN" node <<'NODE'
+          if [ "$fetch_code" != '200' ]; then
+            echo "Unable to retrieve deployment record; last HTTP=$fetch_code"
+            exit 5
+          fi
+
+          DB="$DATABASE_URL" TOKEN="$COOLIFY_API_TOKEN" node <<'NODE'
           const fs=require('node:fs');
           const x=JSON.parse(fs.readFileSync('/tmp/deployment.json','utf8'));
           let logs=String(x.logs||'');
-          const token=process.env.TOKEN;
-          if (token) logs=logs.split(token).join('***');
+          for (const secret of [process.env.DB, process.env.TOKEN]) {
+            if (secret) logs=logs.split(secret).join('***');
+          }
           logs=logs
             .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi,'postgresql://***@')
             .replace(/Authorization:\s*Bearer\s+[^\s]+/gi,'Authorization: Bearer ***')
             .replace(/(password|token|secret)=([^\s]+)/gi,'$1=***');
-          const lines=logs.split(/\r?\n/).slice(-260);
+          const lines=logs.split(/\r?\n/).slice(-300);
           console.log(`MKETY_DIAG_DEPLOYMENT_STATUS=${String(x.status||'unknown')}`);
           console.log(`MKETY_DIAG_COMMIT=${String(x.commit||'unknown')}`);
           console.log('----- SANITIZED COOLIFY DEPLOYMENT LOG TAIL -----');
@@ -60,3 +150,5 @@ jobs:
           console.log('----- END SANITIZED COOLIFY DEPLOYMENT LOG TAIL -----');
           console.log('MKETY_DIAG_DEPLOYMENT_LOG_CAPTURED=true');
           NODE
+
+          echo "MKETY_DIAG_TERMINAL_STATUS_SEEN=$terminal"
