@@ -128,7 +128,25 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "$base/applications/$APP_UUID/logs?lines=160&show_timestamps=false" -o /tmp/app-logs.json || true
           }
+          print_deployment_diagnostic() {
+            node <<'NODE'
+          const fs=require('node:fs');
+          let deployment={};
+          try { deployment=JSON.parse(fs.readFileSync('/tmp/deployment.json','utf8')); } catch {}
+          const raw=String(deployment.logs||'');
+          const safe=raw
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .slice(-120)
+            .join('\n')
+            .replace(/postgres(?:ql)?:\/\/[^\s]+/gi,'postgresql://***')
+            .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi,'Bearer ***');
+          console.log('Safe Coolify deployment diagnostic:');
+          console.log(safe||'(no deployment logs returned)');
+          NODE
+          }
           diagnose_failure() {
+            print_deployment_diagnostic
             fetch_logs
             node <<'NODE'
           const fs=require('node:fs');
