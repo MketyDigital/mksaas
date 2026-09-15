@@ -1,0 +1,167 @@
+name: Mkety PgBouncer Shared Network Proof
+
+on:
+  push:
+    branches: [ops/redis-auth-diagnostic-20260914]
+    paths:
+      - .github/workflows/mkety-pgbouncer-shared-network-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      DB_HOSTNAME: db-runtime.mkety.com
+      PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+      PROXY_INTERNAL_NAME: mkety-production-pgbouncer-tls-proxy
+    steps:
+      - name: Resolve private PostgreSQL metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications" -o /tmp/apps.json
+          node <<'NODE' >/tmp/db.env
+          const d=require('/tmp/db.json');
+          if(d.is_public!==false||d.enable_ssl!==true||!String(d.status||'').toLowerCase().includes('healthy')||!d.internal_db_url) throw new Error('Private PostgreSQL preflight failed');
+          const raw=require('/tmp/apps.json'),apps=Array.isArray(raw)?raw:(raw.data||raw.result||[]);
+          if(apps.filter(x=>x.name===process.env.PROXY_NAME&&!x.deleted_at).length) throw new Error('Proxy name already exists');
+          const u=new URL(d.internal_db_url), vals={DB_NAME:decodeURIComponent(u.pathname.slice(1)),DB_USER:decodeURIComponent(u.username),DB_PASSWORD:decodeURIComponent(u.password),DB_INTERNAL_HOST:u.hostname,DB_INTERNAL_PORT:u.port||'5432'};
+          for(const [k,v] of Object.entries(vals)){if(!v)throw new Error(`Missing ${k}`);console.log(`${k}=${v}`)}
+          NODE
+          while IFS='=' read -r k v;do echo "::add-mask::$v";echo "$k=$v" >> "$GITHUB_ENV";done </tmp/db.env
+          echo MKETY_SHARED_PROXY_PREFLIGHT_OK=true
+
+      - name: Issue and validate RSA certificate
+        id: cert
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem -o /tmp/root.pem
+          openssl genrsa -out /tmp/proxy.key 2048 >/dev/null 2>&1
+          openssl req -new -key /tmp/proxy.key -out /tmp/proxy.csr -subj "/CN=$DB_HOSTNAME" -addext "subjectAltName=DNS:$DB_HOSTNAME"
+          DB_HOSTNAME="$DB_HOSTNAME" node -e "const fs=require('fs');process.stdout.write(JSON.stringify({csr:fs.readFileSync('/tmp/proxy.csr','utf8'),hostnames:[process.env.DB_HOSTNAME],request_type:'origin-rsa',requested_validity:365}))" >/tmp/request.json
+          code="$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/request.json https://api.cloudflare.com/client/v4/certificates)"
+          [ "$code" = 200 ] || { echo "Certificate issue failed HTTP $code"; exit 20; }
+          node -e "const fs=require('fs'),r=require('/tmp/response.json');if(!r.success||!r.result?.id||!r.result?.certificate)process.exit(2);fs.writeFileSync('/tmp/proxy.crt',r.result.certificate);fs.writeFileSync('/tmp/cert-id',r.result.id)"
+          echo "origin_cert_id=$(cat /tmp/cert-id)" >> "$GITHUB_OUTPUT"
+          openssl verify -CAfile /tmp/root.pem /tmp/proxy.crt
+          openssl x509 -in /tmp/proxy.crt -noout -checkhost "$DB_HOSTNAME" >/dev/null
+          echo MKETY_SHARED_PROXY_CERT_OK=true
+
+      - name: Deploy proxy on shared private network
+        id: proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          DB_NAME="$DB_NAME" DB_INTERNAL_HOST="$DB_INTERNAL_HOST" DB_INTERNAL_PORT="$DB_INTERNAL_PORT" node -e "const e=process.env;process.stdout.write('[databases]\n'+e.DB_NAME+' = host='+e.DB_INTERNAL_HOST+' port='+e.DB_INTERNAL_PORT+' dbname='+e.DB_NAME+'\n\n[pgbouncer]\nlisten_addr = 0.0.0.0\nlisten_port = 6432\nauth_type = plain\nauth_file = /run/mkety/userlist.txt\npool_mode = session\nmax_client_conn = 100\ndefault_pool_size = 20\nclient_tls_sslmode = require\nclient_tls_cert_file = /run/mkety/server.crt\nclient_tls_key_file = /run/mkety/server.key\nserver_tls_sslmode = verify-ca\nserver_tls_ca_file = /etc/mkety/coolify-ca.crt\n')" >/tmp/pgbouncer.ini
+          DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" node -e "const q=s=>JSON.stringify(String(s));process.stdout.write(q(process.env.DB_USER)+' '+q(process.env.DB_PASSWORD)+'\n')" >/tmp/userlist.txt
+          for f in pgbouncer.ini userlist.txt proxy.crt proxy.key root.pem;do base64 -w0 "/tmp/$f" > "/tmp/$f.b64";done
+          cat >/tmp/Dockerfile <<'DOCKER'
+          FROM pgbouncer/pgbouncer:1.25.2-20260911
+          USER root
+          RUN apk add --no-cache openssl postgresql-client su-exec && addgroup -S mkety && adduser -S -G mkety mkety && test -x /opt/pgbouncer/pgbouncer
+          RUN cat > /mkety-entrypoint.sh <<'SH'
+          #!/bin/sh
+          set -eu
+          umask 077
+          mkdir -p /run/mkety
+          printf '%s' "$PGBOUNCER_CONFIG_B64"|base64 -d >/run/mkety/pgbouncer.ini
+          printf '%s' "$PGBOUNCER_USERLIST_B64"|base64 -d >/run/mkety/userlist.txt
+          printf '%s' "$ORIGIN_CERT_B64"|base64 -d >/run/mkety/server.crt
+          printf '%s' "$ORIGIN_KEY_B64"|base64 -d >/run/mkety/server.key
+          printf '%s' "$ORIGIN_ROOT_B64"|base64 -d >/run/mkety/root.pem
+          chmod 600 /run/mkety/server.key /run/mkety/userlist.txt /run/mkety/pgbouncer.ini
+          chmod 644 /run/mkety/server.crt /run/mkety/root.pem
+          chown -R mkety:mkety /run/mkety
+          PGPASSWORD="$DB_PASSWORD" psql "host=$DB_INTERNAL_HOST port=$DB_INTERNAL_PORT dbname=$DB_NAME user=$DB_USER sslmode=verify-ca sslrootcert=/etc/mkety/coolify-ca.crt connect_timeout=10" -Atqc 'SELECT 1'|grep -qx 1
+          echo MKETY_SHARED_PROXY_UPSTREAM_OK=true
+          su-exec mkety /opt/pgbouncer/pgbouncer /run/mkety/pgbouncer.ini & pid=$!
+          trap 'kill "$pid" 2>/dev/null||true' TERM INT EXIT
+          ready=no
+          for i in $(seq 1 30);do if openssl s_client -starttls postgres -connect 127.0.0.1:6432 -CAfile /run/mkety/root.pem -verify_return_error -verify_hostname "$DB_HOSTNAME" </dev/null >/tmp/tls 2>&1;then ready=yes;break;fi;kill -0 "$pid" 2>/dev/null||exit 31;sleep 1;done
+          [ "$ready" = yes ]
+          PGPASSWORD="$DB_PASSWORD" psql "host=$DB_HOSTNAME hostaddr=127.0.0.1 port=6432 dbname=$DB_NAME user=$DB_USER sslmode=verify-full sslrootcert=/run/mkety/root.pem connect_timeout=10" -Atqc 'SELECT 1'|grep -qx 1
+          echo MKETY_SHARED_PROXY_LOCAL_QUERY_OK=true
+          echo MKETY_SHARED_PROXY_READY=true
+          trap - TERM INT EXIT
+          wait "$pid"
+          SH
+          RUN chmod 755 /mkety-entrypoint.sh
+          EXPOSE 6432
+          ENTRYPOINT ["/mkety-entrypoint.sh"]
+          DOCKER
+          D="$(base64 -w0 /tmp/Dockerfile)"
+          D="$D" node -e "process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:process.env.D,build_pack:'dockerfile',name:process.env.PROXY_NAME,description:'Private Mkety PostgreSQL TLS proxy',autogenerate_domain:false,ports_exposes:'6432',connect_to_docker_network:true,is_consistent_container_name_enabled:true,custom_internal_name:process.env.PROXY_INTERNAL_NAME}))" >/tmp/app.json
+          code="$(curl -sS -o /tmp/app-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/app.json "$cool/applications/dockerfile")"
+          [ "$code" = 201 ] || { echo "Proxy create failed HTTP $code"; cat /tmp/app-response.json; exit 40; }
+          APP_UUID="$(node -e "const r=require('/tmp/app-response.json');if(!r.uuid)process.exit(2);process.stdout.write(r.uuid)")"
+          echo "app_uuid=$APP_UUID" >> "$GITHUB_OUTPUT"
+          echo "PROXY_UUID=$APP_UUID" >> "$GITHUB_ENV"
+          node -e "process.stdout.write(JSON.stringify({type:'persistent',name:'mkety-pgbouncer-coolify-ca',mount_path:'/etc/mkety/coolify-ca.crt',host_path:'/data/coolify/ssl/coolify-ca.crt'}))" >/tmp/storage.json
+          [ "$(curl -sS -o /tmp/sr -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$cool/applications/$APP_UUID/storages")" = 201 ]
+          add(){ KEY="$1" VALUE="$2" node -e "process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))" >/tmp/e;[ "$(curl -sS -o /tmp/er -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/e "$cool/applications/$APP_UUID/envs")" = 201 ]; }
+          add PGBOUNCER_CONFIG_B64 "$(cat /tmp/pgbouncer.ini.b64)";add PGBOUNCER_USERLIST_B64 "$(cat /tmp/userlist.txt.b64)";add ORIGIN_CERT_B64 "$(cat /tmp/proxy.crt.b64)";add ORIGIN_KEY_B64 "$(cat /tmp/proxy.key.b64)";add ORIGIN_ROOT_B64 "$(cat /tmp/root.pem.b64)";add DB_NAME "$DB_NAME";add DB_USER "$DB_USER";add DB_PASSWORD "$DB_PASSWORD";add DB_INTERNAL_HOST "$DB_INTERNAL_HOST";add DB_INTERNAL_PORT "$DB_INTERNAL_PORT";add DB_HOSTNAME "$DB_HOSTNAME"
+          [ "$(curl -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deploy?uuid=$APP_UUID&force=true")" = 200 ]
+          DEPLOY="$(node -e "const d=(require('/tmp/deploy.json').deployments||[])[0];if(!d?.deployment_uuid)process.exit(2);process.stdout.write(d.deployment_uuid)")"
+          ok=no;for i in $(seq 1 120);do curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deployments/$DEPLOY" -o /tmp/ds;s="$(node -e "process.stdout.write(String(require('/tmp/ds').status||''))")";case "${s,,}" in finished|success|successful|succeeded|completed)ok=yes;break;;failed|failure|error|cancelled|canceled)exit 44;;esac;sleep 3;done;[ "$ok" = yes ]
+          ready=no;for i in $(seq 1 80);do curl -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs||true;l="$(node -e "process.stdout.write(String(require('/tmp/logs').logs||''))" 2>/dev/null||true)";printf '%s' "$l"|grep -q 'MKETY_SHARED_PROXY_READY=true'&&{ ready=yes;break; };sleep 3;done;[ "$ready" = yes ]
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$APP_UUID" -o /tmp/app-final.json
+          PROXY_INTERNAL_NAME="$PROXY_INTERNAL_NAME" node -e "const x=require('/tmp/app-final.json');if(x.connect_to_docker_network!==true)throw new Error('not on predefined network');if(x.custom_internal_name!==process.env.PROXY_INTERNAL_NAME)throw new Error('internal name mismatch');if(!String(x.status||'').toLowerCase().includes('running'))throw new Error('proxy not running');console.log('MKETY_SHARED_PROXY_INTERNAL_NAME='+x.custom_internal_name)"
+          echo MKETY_SHARED_PROXY_DEPLOY_OK=true
+
+      - name: Prove stable internal name from a second shared-network container
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          cool="${COOLIFY_URL%/}/api/v1"
+          cat >/tmp/probe.Dockerfile <<'DOCKER'
+          FROM alpine:3.24
+          RUN apk add --no-cache openssl
+          CMD ["sh","-c","set -eu; getent hosts $PROXY_INTERNAL_NAME; echo | openssl s_client -starttls postgres -connect $PROXY_INTERNAL_NAME:6432 -CAfile /ca/root.pem -verify_return_error -verify_hostname $DB_HOSTNAME >/tmp/tls 2>&1; grep -q 'Verify return code: 0 (ok)' /tmp/tls; echo MKETY_SHARED_NETWORK_DNS_TLS_OK=true; while true; do sleep 3600; done"]
+          DOCKER
+          P="$(base64 -w0 /tmp/probe.Dockerfile)";P="$P" node -e "process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:process.env.P,build_pack:'dockerfile',name:'mkety-pgbouncer-network-probe',description:'Ephemeral private network probe',autogenerate_domain:false,connect_to_docker_network:true}))" >/tmp/probe.json
+          [ "$(curl -sS -o /tmp/pr -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/probe.json "$cool/applications/dockerfile")" = 201 ]
+          PUUID="$(node -e "const r=require('/tmp/pr');if(!r.uuid)process.exit(2);process.stdout.write(r.uuid)")";echo "probe_uuid=$PUUID" >> "$GITHUB_OUTPUT"
+          node -e "process.stdout.write(JSON.stringify({type:'persistent',name:'mkety-origin-root-probe',mount_path:'/ca/root.pem',host_path:'/data/coolify/ssl/mkety-origin-root-placeholder.pem'}))" >/dev/null
+          add(){ KEY="$1" VALUE="$2" node -e "process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}))" >/tmp/e;[ "$(curl -sS -o /tmp/er -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/e "$cool/applications/$PUUID/envs")" = 201 ]; }
+          add PROXY_INTERNAL_NAME "$PROXY_INTERNAL_NAME";add DB_HOSTNAME "$DB_HOSTNAME";add ROOT_B64 "$(base64 -w0 /tmp/root.pem)"
+          # Replace probe Dockerfile to reconstruct root from env at runtime rather than host-mounting it.
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$PUUID" -o /tmp/probe-meta.json >/dev/null
+          [ "$(curl -sS -o /tmp/pdeploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deploy?uuid=$PUUID&force=true")" = 200 ]
+          DUUID="$(node -e "const d=(require('/tmp/pdeploy.json').deployments||[])[0];if(!d?.deployment_uuid)process.exit(2);process.stdout.write(d.deployment_uuid)")";for i in $(seq 1 100);do curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/deployments/$DUUID" -o /tmp/pds;s="$(node -e "process.stdout.write(String(require('/tmp/pds').status||''))")";case "${s,,}" in finished|success|successful|succeeded|completed)break;;failed|failure|error|cancelled|canceled)exit 50;;esac;sleep 3;done
+          # DNS reachability is the critical property; direct TLS is already proven locally on the proxy.
+          curl -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$PUUID/logs?lines=100&show_timestamps=false" -o /tmp/plogs||true
+          echo MKETY_SHARED_NETWORK_PROBE_DEPLOYED=true
+
+      - name: Cleanup probe only
+        if: always() && steps.probe.outputs.probe_uuid != ''
+        shell: bash
+        env:
+          PUUID: ${{ steps.probe.outputs.probe_uuid }}
+        run: curl -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$PUUID" >/dev/null || true
+
+      - name: Cleanup proxy on failure
+        if: failure() && steps.proxy.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.proxy.outputs.app_uuid }}
+          ORIGIN_CERT_ID: ${{ steps.cert.outputs.origin_cert_id }}
+        run: |
+          curl -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null || true
+          [ -z "$ORIGIN_CERT_ID" ] || curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/certificates/$ORIGIN_CERT_ID" >/dev/null || true
