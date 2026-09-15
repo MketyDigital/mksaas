@@ -173,9 +173,11 @@ jobs:
           ENTRYPOINT ["/mkety-entrypoint.sh"]
           DOCKER
 
-          DOCKER_B64="$(base64 -w0 /tmp/Dockerfile)"; DOCKER_B64="$DOCKER_B64" node -e "process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:process.env.DOCKER_B64,build_pack:'dockerfile',name:process.env.PROXY_NAME,description:'Private PostgreSQL TLS compatibility proxy for Mkety Hyperdrive',autogenerate_domain:false,ports_exposes:'6432'}))" >/tmp/app.json
+          DOCKER_B64="$(base64 -w0 /tmp/Dockerfile)"; DOCKER_B64="$DOCKER_B64" node -e "process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,dockerfile:process.env.DOCKER_B64,build_pack:'dockerfile',name:process.env.PROXY_NAME,description:'Private PostgreSQL TLS compatibility proxy for Mkety Hyperdrive',autogenerate_domain:false,ports_exposes:'6432',connect_to_docker_network:true,is_consistent_container_name_enabled:true,custom_internal_name:process.env.PROXY_NAME}))" >/tmp/app.json
           code="$(curl -sS -o /tmp/app-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/app.json "$cool/applications/dockerfile")"; [ "$code" = 201 ] || { echo "Proxy app create failed HTTP $code"; cat /tmp/app-response.json; exit 40; }
           APP_UUID="$(node -e "const r=require('/tmp/app-response.json');if(!r.uuid)process.exit(2);process.stdout.write(r.uuid)")"; echo "app_uuid=$APP_UUID" >> "$GITHUB_OUTPUT"; echo "PROXY_UUID=$APP_UUID" >> "$GITHUB_ENV"
+          curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$cool/applications/$APP_UUID" -o /tmp/app-meta.json
+          PROXY_NAME="$PROXY_NAME" node -e "const x=require('/tmp/app-meta.json'),s=x.settings||{};if(s.connect_to_docker_network!==true||s.is_consistent_container_name_enabled!==true||s.custom_internal_name!==process.env.PROXY_NAME)throw new Error('Proxy shared-network settings mismatch');console.log('MKETY_PROXY_SHARED_NETWORK_CONFIG_OK=true')"
           node -e "process.stdout.write(JSON.stringify({type:'persistent',name:'mkety-pgbouncer-coolify-ca',mount_path:'/etc/mkety/coolify-ca.crt',host_path:'/data/coolify/ssl/coolify-ca.crt'}))" >/tmp/storage.json
           code="$(curl -sS -o /tmp/storage-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/storage.json "$cool/applications/$APP_UUID/storages")"; [ "$code" = 201 ] || { echo "CA mount failed HTTP $code"; exit 41; }
 
@@ -204,13 +206,13 @@ jobs:
           tunnel_changed=no
           rollback(){ rc=$?; if [ "$rc" -ne 0 ] && [ "$tunnel_changed" = yes ];then echo 'Restoring exact prior tunnel config'; c="$(curl -sS -o /tmp/rb.json -w '%{http_code}' -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/tunnel-restore.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"; [ "$c" = 200 ] && echo MKETY_DB_TUNNEL_ROLLBACK_OK=true || echo "MKETY_DB_TUNNEL_ROLLBACK_FAILED_HTTP=$c";fi;exit "$rc"; }
           trap rollback EXIT
-          PROXY_UUID="$PROXY_UUID" node <<'NODE'
-          const fs=require('fs'),o=require('/tmp/tunnel-before.json'),cfg=structuredClone(o.result.config),m=[];cfg.ingress.forEach((x,i)=>{if(x.hostname===process.env.DB_HOSTNAME)m.push(i)});if(m.length!==1)throw new Error('DB ingress count changed');cfg.ingress[m[0]].service=`tcp://${process.env.PROXY_UUID}:6432`;fs.writeFileSync('/tmp/tunnel-new.json',JSON.stringify({config:cfg}));fs.writeFileSync('/tmp/tunnel-restore.json',JSON.stringify({config:o.result.config}));
+          PROXY_NAME="$PROXY_NAME" node <<'NODE'
+          const fs=require('fs'),o=require('/tmp/tunnel-before.json'),cfg=structuredClone(o.result.config),m=[];cfg.ingress.forEach((x,i)=>{if(x.hostname===process.env.DB_HOSTNAME)m.push(i)});if(m.length!==1)throw new Error('DB ingress count changed');cfg.ingress[m[0]].service=`tcp://${process.env.PROXY_NAME}:6432`;fs.writeFileSync('/tmp/tunnel-new.json',JSON.stringify({config:cfg}));fs.writeFileSync('/tmp/tunnel-restore.json',JSON.stringify({config:o.result.config}));
           NODE
           code="$(curl -sS -o /tmp/tunresp.json -w '%{http_code}' -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @/tmp/tunnel-new.json "$acct/cfd_tunnel/$TUNNEL_ID/configurations")"; [ "$code" = 200 ] || { echo "Tunnel update failed HTTP $code";exit 50; }; tunnel_changed=yes
           curl -fsS "${auth[@]}" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/tunnel-after.json
-          PROXY_UUID="$PROXY_UUID" node <<'NODE'
-          const b=require('/tmp/tunnel-before.json').result.config.ingress,a=require('/tmp/tunnel-after.json').result.config.ingress;if(a.length!==b.length)throw new Error('Ingress count changed');let n=0;for(let i=0;i<a.length;i++){if(b[i].hostname===process.env.DB_HOSTNAME){if(a[i].service!==`tcp://${process.env.PROXY_UUID}:6432`)throw new Error('DB route mismatch');const x={...b[i]},y={...a[i]};delete x.service;delete y.service;if(JSON.stringify(x)!==JSON.stringify(y))throw new Error('DB ingress metadata changed');n++}else if(JSON.stringify(a[i])!==JSON.stringify(b[i]))throw new Error(`Unrelated ingress changed ${i}`)}if(n!==1)throw new Error('Expected one DB route change');
+          PROXY_NAME="$PROXY_NAME" node <<'NODE'
+          const b=require('/tmp/tunnel-before.json').result.config.ingress,a=require('/tmp/tunnel-after.json').result.config.ingress;if(a.length!==b.length)throw new Error('Ingress count changed');let n=0;for(let i=0;i<a.length;i++){if(b[i].hostname===process.env.DB_HOSTNAME){if(a[i].service!==`tcp://${process.env.PROXY_NAME}:6432`)throw new Error('DB route mismatch');const x={...b[i]},y={...a[i]};delete x.service;delete y.service;if(JSON.stringify(x)!==JSON.stringify(y))throw new Error('DB ingress metadata changed');n++}else if(JSON.stringify(a[i])!==JSON.stringify(b[i]))throw new Error(`Unrelated ingress changed ${i}`)}if(n!==1)throw new Error('Expected one DB route change');
           NODE
           echo MKETY_DB_TUNNEL_PROXY_ROUTE_OK=true
           sleep 8
@@ -244,7 +246,7 @@ jobs:
           node -e "const x=require('/tmp/db-final.json');if(x.is_public!==false||x.enable_ssl!==true||!String(x.status||'').toLowerCase().includes('healthy'))throw new Error('DB final check failed')"
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/cfd_tunnel/$TUNNEL_ID/configurations" -o /tmp/t-final.json
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$acct/hyperdrive/configs?per_page=100" -o /tmp/h-final.json
-          PROXY_UUID="$PROXY_UUID" node -e "const r=(require('/tmp/t-final.json').result?.config?.ingress||[]).filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||r[0].service!==('tcp://'+process.env.PROXY_UUID+':6432'))throw new Error('Final tunnel route mismatch');const h=(require('/tmp/h-final.json').result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(h.length!==1)throw new Error('Final Hyperdrive count mismatch')"
+          PROXY_NAME="$PROXY_NAME" node -e "const r=(require('/tmp/t-final.json').result?.config?.ingress||[]).filter(x=>x.hostname===process.env.DB_HOSTNAME);if(r.length!==1||r[0].service!==('tcp://'+process.env.PROXY_NAME+':6432'))throw new Error('Final tunnel route mismatch');const h=(require('/tmp/h-final.json').result||[]).filter(x=>x.name===process.env.HYPERDRIVE_NAME);if(h.length!==1)throw new Error('Final Hyperdrive count mismatch')"
           echo MKETY_PRODUCTION_DB_PRIVATE=true
           echo MKETY_PRODUCTION_TLS_VERIFIED=true
           echo MKETY_PRODUCTION_HYPERDRIVE_READY=true
