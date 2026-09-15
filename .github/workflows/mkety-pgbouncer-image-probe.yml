@@ -15,18 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Validate pinned PgBouncer image and required runtime tools
+      - name: Locate pinned PgBouncer binary and validate wrapper dependencies
         shell: bash
         run: |
           set -euo pipefail
           image='pgbouncer/pgbouncer:1.25.2-20260911'
           docker pull "$image"
-          docker run --rm --entrypoint /bin/sh "$image" -c 'cat /etc/os-release; command -v pgbouncer; command -v apk; pgbouncer --version'
-          cat >/tmp/Dockerfile <<'DOCKER'
+          docker inspect --format 'ENTRYPOINT={{json .Config.Entrypoint}} CMD={{json .Config.Cmd}}' "$image"
+          docker run --rm --entrypoint /bin/sh "$image" -c 'set -eu; cat /etc/os-release; echo PATH=$PATH; command -v apk; find / -xdev -type f -name pgbouncer -perm -111 2>/dev/null | head -20'
+          PGB_PATH="$(docker run --rm --entrypoint /bin/sh "$image" -c 'find / -xdev -type f -name pgbouncer -perm -111 2>/dev/null | head -1')"
+          [ -n "$PGB_PATH" ] || { echo 'PgBouncer binary not found'; exit 2; }
+          echo "MKETY_PGBOUNCER_BINARY_PATH=$PGB_PATH"
+          PGB_PATH="$PGB_PATH" docker run --rm --entrypoint /bin/sh -e PGB_PATH="$PGB_PATH" "$image" -c '"$PGB_PATH" --version'
+          cat >/tmp/Dockerfile <<DOCKER
           FROM pgbouncer/pgbouncer:1.25.2-20260911
           USER root
           RUN apk add --no-cache openssl postgresql-client su-exec && addgroup -S mkety && adduser -S -G mkety mkety
-          RUN command -v pgbouncer && command -v psql && command -v openssl && command -v su-exec && pgbouncer --version && psql --version
+          RUN test -x "$PGB_PATH" && command -v psql && command -v openssl && command -v su-exec && "$PGB_PATH" --version && psql --version
           DOCKER
           docker build --no-cache -t mkety-pgbouncer-probe -f /tmp/Dockerfile /tmp
           docker run --rm --entrypoint /bin/sh mkety-pgbouncer-probe -c 'id; getent passwd mkety; echo MKETY_PGBOUNCER_IMAGE_PROBE_OK=true'
