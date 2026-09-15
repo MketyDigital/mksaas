@@ -126,7 +126,7 @@ jobs:
           base="${COOLIFY_URL%/}/api/v1"
           fetch_logs() {
             curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "$base/applications/$APP_UUID/logs?lines=160&show_timestamps=false" -o /tmp/app-logs.json || true
+              "$base/applications/$APP_UUID/logs?lines=1000&show_timestamps=false" -o /tmp/app-logs.json || true
           }
           print_deployment_diagnostic() {
             node <<'NODE'
