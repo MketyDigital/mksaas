@@ -25,11 +25,8 @@ describe('Coolify production DB executor', () => {
     );
   });
 
-  it('is manual/reusable, exact-SHA gated, HTTPS-only, private-networked, environment-secret scoped, always cleaned up, and requires the full migration release marker', async () => {
-    const [workflow, megaLinter] = await Promise.all([
-      read('.github/workflows/mkety-coolify-production-db-executor.yml'),
-      read('.mega-linter.yml'),
-    ]);
+  it('is manual/reusable, exact-SHA gated, HTTPS-only, private-networked, resolves the private DB URL from Coolify, always cleans up, and requires the full migration release marker', async () => {
+    const workflow = await read('.github/workflows/mkety-coolify-production-db-executor.yml');
 
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toContain('workflow_call:');
@@ -39,10 +36,13 @@ describe('Coolify production DB executor', () => {
     expect(workflow).toContain('connect_to_docker_network:true');
     expect(workflow).toContain('if: always()');
     expect(workflow).toContain('RELEASE_BRANCH: feat/mkety-public-site-production');
-    expect(workflow).toContain('DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}');
-    expect(workflow).not.toContain("secrets[format('PRODUCTION_{0}_URL', 'DATABASE')]");
-    expect(workflow).not.toContain('PRODUCTION_DATABASE_URL:\n        required: true');
-    expect(megaLinter).toContain('-ignore=production_database_url');
+    expect(workflow).toContain('POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8');
+    expect(workflow).toContain('$cool/databases/$POSTGRES_UUID');
+    expect(workflow).toContain('Private PostgreSQL preflight failed');
+    expect(workflow).toContain('internal_db_url');
+    expect(workflow).toContain('DATABASE_URL=$DATABASE_URL');
+    expect(workflow).not.toContain('DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}');
+    expect(workflow).not.toContain('PRODUCTION_DATABASE_URL is required.');
     expect(workflow).toContain('MKETY_DB_RELEASE_SEQUENCE_OK=true');
     expect(workflow).toContain('Migration container became healthy before the full release sequence completed.');
   });
