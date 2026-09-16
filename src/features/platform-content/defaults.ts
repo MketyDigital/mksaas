@@ -291,7 +291,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
     ctaLabel: 'Start Enterprise Project',
-    ctaHref: '/enterprise',
+    ctaHref: '/enterprise/checkout',
     features: [
       'Custom implementation',
       'Enterprise support',
