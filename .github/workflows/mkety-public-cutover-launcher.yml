@@ -1,4 +1,5 @@
 name: Mkety Public Cutover Launcher
+# Trigger hardened route-safe production cutover for the frozen certified release.
 
 on:
   push:
