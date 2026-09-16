@@ -1,154 +1,19 @@
 name: Mkety Public Cutover Launcher
-# One-shot control-plane repair. This workflow never dispatches production.
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/mkety-public-cutover-launcher.yml'
+  workflow_dispatch:
 
 permissions:
-  actions: read
-  contents: write
+  contents: read
 
 jobs:
-  repair:
-    name: Repair cutover workflow validation and preview readiness
+  notice:
+    name: Production cutover launcher notice
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - name: Patch workflow-only blockers
+      - name: Explain deployment control plane
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          fetch_file() {
-            local path="$1"
-            local output="$2"
-            curl -fsS \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/$path?ref=main" > "$output"
-          }
-
-          put_file() {
-            local path="$1"
-            local payload="$2"
-            local response="$3"
-            local code
-            code="$(curl -sS -o "$response" -w '%{http_code}' \
-              -X PUT \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              -H 'Content-Type: application/json' \
-              --data-binary @"$payload" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/$path")"
-            if [ "$code" != '200' ]; then
-              echo "Failed to update $path with HTTP $code."
-              cat "$response"
-              exit 1
-            fi
-          }
-
-          cutover_path='.github/workflows/mkety-public-production-cutover.yml'
-          diagnostic_path='.github/workflows/mkety-production-preview-diagnostic.yml'
-          fetch_file "$cutover_path" /tmp/cutover.json
-          fetch_file "$diagnostic_path" /tmp/diagnostic.json
-
-          python3 <<'PY'
-          import base64
-          import json
-          from pathlib import Path
-
-          def decode(path):
-              payload = json.loads(Path(path).read_text())
-              return payload, base64.b64decode(payload['content']).decode()
-
-          cutover_payload, cutover = decode('/tmp/cutover.json')
-          marker = 'Preview readiness attempt $attempt/12'
-          anchor = "          set -euo pipefail\n          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)\n"
-          if marker not in cutover:
-              if cutover.count(anchor) != 1:
-                  raise SystemExit(f'Expected exactly one production preview smoke anchor; found {cutover.count(anchor)}.')
-              readiness_lines = [
-                  '          set -euo pipefail',
-                  '          preview_ready=0',
-                  '          for attempt in $(seq 1 12); do',
-                  '            readiness_body=/tmp/mkety-preview-readiness.html',
-                  '            readiness_code="$(curl -L -sS --connect-timeout 10 --max-time 20 -o "$readiness_body" -w \'%{http_code}\' "$PREVIEW_URL/" || true)"',
-                  '            echo "Preview readiness attempt $attempt/12: HTTP $readiness_code"',
-                  '            if [ "$readiness_code" = \'200\' ] && grep -Fqi \'https://mkety.com\' "$readiness_body"; then',
-                  '              preview_ready=1',
-                  '              break',
-                  '            fi',
-                  '            sleep 5',
-                  '          done',
-                  '          if [ "$preview_ready" != \'1\' ]; then',
-                  '            echo \'Production Worker preview did not become ready within the bounded readiness window.\'',
-                  '            exit 1',
-                  '          fi',
-                  '',
-                  '          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)',
-                  '',
-              ]
-              cutover = cutover.replace(anchor, '\n'.join(readiness_lines), 1)
-
-          required = [
-              marker,
-              'Disable temporary workers.dev and preview URLs before routing',
-              'Bind only apex and www Worker routes',
-              'Run production acceptance and rollback on failure',
-          ]
-          missing = [item for item in required if item not in cutover]
-          if missing:
-              raise SystemExit('Cutover safety marker(s) missing: ' + ', '.join(missing))
-
-          cutover_body = {
-              'message': 'fix(release): add bounded production preview readiness',
-              'content': base64.b64encode(cutover.encode()).decode(),
-              'sha': cutover_payload['sha'],
-              'branch': 'main',
-          }
-          Path('/tmp/cutover-update.json').write_text(json.dumps(cutover_body))
-
-          diagnostic_payload, diagnostic = decode('/tmp/diagnostic.json')
-          old_sitemap = "            grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' \"$robots\" && pass 'robots production sitemap declaration' || fail 'robots missing production sitemap declaration'"
-          new_sitemap = "\n".join([
-              "            if grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' \"$robots\"; then",
-              "              pass 'robots production sitemap declaration'",
-              "            else",
-              "              fail 'robots missing production sitemap declaration'",
-              "            fi",
-          ])
-          old_host = "            grep -Fq 'Host: https://mkety.com' \"$robots\" && pass 'robots production host declaration' || fail 'robots missing production host declaration'"
-          new_host = "\n".join([
-              "            if grep -Fq 'Host: https://mkety.com' \"$robots\"; then",
-              "              pass 'robots production host declaration'",
-              "            else",
-              "              fail 'robots missing production host declaration'",
-              "            fi",
-          ])
-          if old_sitemap in diagnostic:
-              diagnostic = diagnostic.replace(old_sitemap, new_sitemap, 1)
-          if old_host in diagnostic:
-              diagnostic = diagnostic.replace(old_host, new_host, 1)
-          if '&& pass \'robots production sitemap declaration\' || fail' in diagnostic or '&& pass \'robots production host declaration\' || fail' in diagnostic:
-              raise SystemExit('SC2015 robot checks remain in preview diagnostic.')
-
-          diagnostic_body = {
-              'message': 'fix(release): make preview diagnostic shell checks explicit',
-              'content': base64.b64encode(diagnostic.encode()).decode(),
-              'sha': diagnostic_payload['sha'],
-              'branch': 'main',
-          }
-          Path('/tmp/diagnostic-update.json').write_text(json.dumps(diagnostic_body))
-          PY
-
-          put_file "$cutover_path" /tmp/cutover-update.json /tmp/cutover-response.json
-          put_file "$diagnostic_path" /tmp/diagnostic-update.json /tmp/diagnostic-response.json
-          echo 'Control-plane workflow repairs committed; no production dispatch was performed.'
+          echo 'Production cutover is intentionally dispatched only through the certified cutover workflow after exact-SHA gates pass.'
+          echo 'This launcher performs no mutation and cannot bind production routes.'
