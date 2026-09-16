@@ -412,6 +412,7 @@ jobs:
           const config = JSON.parse(fs.readFileSync(path, 'utf8'));
           if (!process.env.MKETY_HYPERDRIVE_ID) throw new Error('MKETY_DB Hyperdrive id not resolved.');
           config.name = process.env.PRODUCTION_WORKER_NAME;
+          config.workers_dev = true;
           config.preview_urls = true;
           config.vars = { ...(config.vars || {}), SKIP_ENV_VALIDATION: 'true' };
           config.hyperdrive = [{ binding: 'MKETY_DB', id: process.env.MKETY_HYPERDRIVE_ID }];
@@ -521,6 +522,34 @@ jobs:
             throw new Error('DB-backed preview response was not the expected public-assistant history shape.');
           }
           console.log('Hyperdrive DB-backed preview smoke passed.');
+          NODE
+
+      - name: Disable temporary workers.dev and preview URLs before routing
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"enabled":false,"previews_enabled":false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          RESPONSE="$response" node <<'NODE'
+          const payload = JSON.parse(process.env.RESPONSE || '{}');
+          if (!payload.success || payload.result?.enabled !== false || payload.result?.previews_enabled !== false) {
+            throw new Error('Failed to disable temporary production workers.dev and preview URLs.');
+          }
+          NODE
+          verify="$(curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          VERIFY="$verify" node <<'NODE'
+          const payload = JSON.parse(process.env.VERIFY || '{}');
+          if (!payload.success || payload.result?.enabled !== false || payload.result?.previews_enabled !== false) {
+            throw new Error('Temporary production preview exposure is still enabled.');
+          }
+          console.log('Temporary workers.dev and preview URLs disabled before production routing.');
           NODE
 
       - name: Bind only apex and www Worker routes
