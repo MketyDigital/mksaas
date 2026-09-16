@@ -1,8 +1,8 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
+import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
 import type { Database } from './index';
-import { getRuntimeDatabaseConnectionString } from './runtime-connection';
 import * as schema from './schema';
 
 export async function withRequestDatabase<T>(work: (database: Database) => Promise<T>): Promise<T> {
