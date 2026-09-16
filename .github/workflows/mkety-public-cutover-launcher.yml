@@ -1,5 +1,5 @@
 name: Mkety Public Cutover Launcher
-# Trigger hardened route-safe production cutover for the frozen certified release.
+# One-shot control-plane repair. This workflow never dispatches production.
 
 on:
   push:
@@ -9,160 +9,146 @@ on:
       - '.github/workflows/mkety-public-cutover-launcher.yml'
 
 permissions:
-  actions: write
+  actions: read
   contents: write
 
 jobs:
-  launch:
-    name: Patch readiness and dispatch certified Mkety cutover
+  repair:
+    name: Repair cutover workflow validation and preview readiness
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      CERTIFIED_SHA: d79701a05b278517eaa6d1df46e2f636345777b1
-      RELEASE_BRANCH: feat/mkety-public-site-production
     steps:
-      - name: Verify frozen certified release branch
+      - name: Patch workflow-only blockers
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          encoded_branch="$(node -e "process.stdout.write(encodeURIComponent(process.env.RELEASE_BRANCH))")"
-          response="$(curl -fsS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$encoded_branch")"
-          RESPONSE="$response" node <<'NODE'
-          const payload = JSON.parse(process.env.RESPONSE || '{}');
-          const actual = payload?.commit?.sha;
-          if (actual !== process.env.CERTIFIED_SHA) {
-            throw new Error(`Release branch moved: expected ${process.env.CERTIFIED_SHA}, got ${actual || 'unknown'}.`);
+
+          fetch_file() {
+            local path="$1"
+            local output="$2"
+            curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/$path?ref=main" > "$output"
           }
-          console.log(`Certified release remains frozen at ${actual}.`);
-          NODE
 
-      - name: Patch bounded production Worker preview readiness
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          api="https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml?ref=main"
-          curl -fsS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "$api" > /tmp/cutover.json
-
-          python3 <<'PY'
-          import base64, json
-          from pathlib import Path
-
-          payload = json.loads(Path('/tmp/cutover.json').read_text())
-          original = base64.b64decode(payload['content']).decode()
-          marker = 'Preview readiness attempt $attempt/12'
-          smoke_step = '      - name: Smoke production Worker preview before routing\n'
-          if smoke_step not in original:
-              raise SystemExit('Production preview smoke step not found.')
-
-          if marker not in original:
-              before, after = original.split(smoke_step, 1)
-              anchor = '          set -euo pipefail\n          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)\n'
-              if after.count(anchor) != 1:
-                  raise SystemExit(f'Expected exactly one smoke anchor after preview step; found {after.count(anchor)}.')
-              readiness = '''          set -euo pipefail
-
-          # Runtime secret writes can publish a fresh Worker version immediately before smoke.
-          # Wait for the isolated preview to become reachable before strict content and DB assertions.
-          preview_ready=0
-          for attempt in $(seq 1 12); do
-            readiness_body=/tmp/mkety-preview-readiness.html
-            readiness_code="$(curl -L -sS --connect-timeout 10 --max-time 20 -o "$readiness_body" -w '%{http_code}' "$PREVIEW_URL/" || true)"
-            echo "Preview readiness attempt $attempt/12: HTTP $readiness_code"
-            if [ "$readiness_code" = '200' ] && grep -Fqi 'https://mkety.com' "$readiness_body"; then
-              preview_ready=1
-              break
-            fi
-            sleep 5
-          done
-          [ "$preview_ready" = '1' ] || { echo 'Production Worker preview did not become ready within the bounded readiness window.'; exit 1; }
-
-          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
-'''
-              after = after.replace(anchor, readiness, 1)
-              updated = before + smoke_step + after
-              body = {
-                  'message': 'fix(release): wait for production Worker preview readiness',
-                  'content': base64.b64encode(updated.encode()).decode(),
-                  'sha': payload['sha'],
-                  'branch': 'main',
-              }
-              Path('/tmp/update.json').write_text(json.dumps(body))
-              Path('/tmp/state').write_text('changed')
-          else:
-              Path('/tmp/state').write_text('unchanged')
-          PY
-
-          if [ "$(cat /tmp/state)" = 'changed' ]; then
-            code="$(curl -sS -o /tmp/update-response.json -w '%{http_code}' \
+          put_file() {
+            local path="$1"
+            local payload="$2"
+            local response="$3"
+            local code
+            code="$(curl -sS -o "$response" -w '%{http_code}' \
               -X PUT \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H 'Accept: application/vnd.github+json' \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
               -H 'Content-Type: application/json' \
-              --data-binary @/tmp/update.json \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml")"
+              --data-binary @"$payload" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/$path")"
             if [ "$code" != '200' ]; then
-              echo "Cutover workflow readiness patch failed with HTTP $code."
-              cat /tmp/update-response.json
+              echo "Failed to update $path with HTTP $code."
+              cat "$response"
               exit 1
             fi
-          fi
+          }
 
-          sleep 3
-          verify="$(curl -fsS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "$api")"
-          VERIFY="$verify" python3 <<'PY'
-          import base64, json, os
-          payload = json.loads(os.environ['VERIFY'])
-          text = base64.b64decode(payload['content']).decode()
+          cutover_path='.github/workflows/mkety-public-production-cutover.yml'
+          diagnostic_path='.github/workflows/mkety-production-preview-diagnostic.yml'
+          fetch_file "$cutover_path" /tmp/cutover.json
+          fetch_file "$diagnostic_path" /tmp/diagnostic.json
+
+          python3 <<'PY'
+          import base64
+          import json
+          from pathlib import Path
+
+          def decode(path):
+              payload = json.loads(Path(path).read_text())
+              return payload, base64.b64decode(payload['content']).decode()
+
+          cutover_payload, cutover = decode('/tmp/cutover.json')
+          marker = 'Preview readiness attempt $attempt/12'
+          anchor = "          set -euo pipefail\n          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)\n"
+          if marker not in cutover:
+              if cutover.count(anchor) != 1:
+                  raise SystemExit(f'Expected exactly one production preview smoke anchor; found {cutover.count(anchor)}.')
+              readiness_lines = [
+                  '          set -euo pipefail',
+                  '          preview_ready=0',
+                  '          for attempt in $(seq 1 12); do',
+                  '            readiness_body=/tmp/mkety-preview-readiness.html',
+                  '            readiness_code="$(curl -L -sS --connect-timeout 10 --max-time 20 -o "$readiness_body" -w \'%{http_code}\' "$PREVIEW_URL/" || true)"',
+                  '            echo "Preview readiness attempt $attempt/12: HTTP $readiness_code"',
+                  '            if [ "$readiness_code" = \'200\' ] && grep -Fqi \'https://mkety.com\' "$readiness_body"; then',
+                  '              preview_ready=1',
+                  '              break',
+                  '            fi',
+                  '            sleep 5',
+                  '          done',
+                  '          if [ "$preview_ready" != \'1\' ]; then',
+                  '            echo \'Production Worker preview did not become ready within the bounded readiness window.\'',
+                  '            exit 1',
+                  '          fi',
+                  '',
+                  '          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)',
+                  '',
+              ]
+              cutover = cutover.replace(anchor, '\n'.join(readiness_lines), 1)
+
           required = [
-              'Preview readiness attempt $attempt/12',
-              'Smoke production Worker preview before routing',
+              marker,
               'Disable temporary workers.dev and preview URLs before routing',
               'Bind only apex and www Worker routes',
               'Run production acceptance and rollback on failure',
           ]
-          missing = [marker for marker in required if marker not in text]
+          missing = [item for item in required if item not in cutover]
           if missing:
-              raise SystemExit('Missing required cutover markers: ' + ', '.join(missing))
-          print('Verified durable readiness gate and route-safety stages on main.')
+              raise SystemExit('Cutover safety marker(s) missing: ' + ', '.join(missing))
+
+          cutover_body = {
+              'message': 'fix(release): add bounded production preview readiness',
+              'content': base64.b64encode(cutover.encode()).decode(),
+              'sha': cutover_payload['sha'],
+              'branch': 'main',
+          }
+          Path('/tmp/cutover-update.json').write_text(json.dumps(cutover_body))
+
+          diagnostic_payload, diagnostic = decode('/tmp/diagnostic.json')
+          old_sitemap = "            grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' \"$robots\" && pass 'robots production sitemap declaration' || fail 'robots missing production sitemap declaration'"
+          new_sitemap = "\n".join([
+              "            if grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' \"$robots\"; then",
+              "              pass 'robots production sitemap declaration'",
+              "            else",
+              "              fail 'robots missing production sitemap declaration'",
+              "            fi",
+          ])
+          old_host = "            grep -Fq 'Host: https://mkety.com' \"$robots\" && pass 'robots production host declaration' || fail 'robots missing production host declaration'"
+          new_host = "\n".join([
+              "            if grep -Fq 'Host: https://mkety.com' \"$robots\"; then",
+              "              pass 'robots production host declaration'",
+              "            else",
+              "              fail 'robots missing production host declaration'",
+              "            fi",
+          ])
+          if old_sitemap in diagnostic:
+              diagnostic = diagnostic.replace(old_sitemap, new_sitemap, 1)
+          if old_host in diagnostic:
+              diagnostic = diagnostic.replace(old_host, new_host, 1)
+          if '&& pass \'robots production sitemap declaration\' || fail' in diagnostic or '&& pass \'robots production host declaration\' || fail' in diagnostic:
+              raise SystemExit('SC2015 robot checks remain in preview diagnostic.')
+
+          diagnostic_body = {
+              'message': 'fix(release): make preview diagnostic shell checks explicit',
+              'content': base64.b64encode(diagnostic.encode()).decode(),
+              'sha': diagnostic_payload['sha'],
+              'branch': 'main',
+          }
+          Path('/tmp/diagnostic-update.json').write_text(json.dumps(diagnostic_body))
           PY
 
-      - name: Dispatch certified production cutover
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cat > /tmp/dispatch.json <<EOF
-          {"ref":"main","inputs":{"verified_sha":"$CERTIFIED_SHA","confirmation":"CUTOVER MKETY PUBLIC"}}
-          EOF
-          code="$(curl -sS -o /tmp/dispatch-response.txt -w '%{http_code}' \
-            -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/dispatch.json \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/mkety-public-production-cutover.yml/dispatches")"
-          if [ "$code" != '204' ]; then
-            echo "Cutover dispatch failed with HTTP $code."
-            cat /tmp/dispatch-response.txt
-            exit 1
-          fi
-          echo "Dispatched certified production cutover for $CERTIFIED_SHA."
+          put_file "$cutover_path" /tmp/cutover-update.json /tmp/cutover-response.json
+          put_file "$diagnostic_path" /tmp/diagnostic-update.json /tmp/diagnostic-response.json
+          echo 'Control-plane workflow repairs committed; no production dispatch was performed.'
