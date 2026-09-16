@@ -486,6 +486,22 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
+          preview_ready=0
+          for attempt in $(seq 1 12); do
+            readiness_body=/tmp/mkety-preview-readiness.html
+            readiness_code="$(curl -L -sS --connect-timeout 10 --max-time 20 -o "$readiness_body" -w '%{http_code}' "$PREVIEW_URL/" || true)"
+            echo "Preview readiness attempt $attempt/12: HTTP $readiness_code"
+            if [ "$readiness_code" = '200' ] && grep -Fqi 'https://mkety.com' "$readiness_body"; then
+              preview_ready=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$preview_ready" != '1' ]; then
+            echo 'Production Worker preview did not become ready within the bounded readiness window.'
+            exit 1
+          fi
+
           html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
           for route in "${html_routes[@]}"; do
             body=/tmp/mkety-preview.html
