@@ -1,0 +1,82 @@
+name: Mkety Public Cutover Launcher
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-cutover-launcher.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  launch:
+    name: Dispatch one certified public cutover
+    if: >-
+      github.event.before == '887386a2f6f70074b71253ad8518182a5631d454' &&
+      github.event.head_commit.message == 'chore(release): launch certified Mkety public cutover'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout launcher control plane
+        uses: actions/checkout@v4
+
+      - name: Verify one-shot release invariants
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CERTIFIED_SHA: d79701a05b278517eaa6d1df46e2f636345777b1
+          RELEASE_BRANCH: feat/mkety-public-site-production
+        run: |
+          set -euo pipefail
+          encoded_branch="$(node -e "process.stdout.write(encodeURIComponent(process.env.RELEASE_BRANCH))")"
+          branch_response="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$encoded_branch")"
+          BRANCH_RESPONSE="$branch_response" CERTIFIED_SHA="$CERTIFIED_SHA" node <<'NODE'
+          const payload = JSON.parse(process.env.BRANCH_RESPONSE || '{}');
+          if (payload?.commit?.sha !== process.env.CERTIFIED_SHA) {
+            throw new Error(`Release branch moved: expected ${process.env.CERTIFIED_SHA}, got ${payload?.commit?.sha || 'unknown'}.`);
+          }
+          console.log(`Release branch remains frozen at certified SHA ${process.env.CERTIFIED_SHA}.`);
+          NODE
+
+          grep -Fq 'config.workers_dev = true;' .github/workflows/mkety-public-production-cutover.yml
+          grep -Fq 'Disable temporary workers.dev and preview URLs before routing' .github/workflows/mkety-public-production-cutover.yml
+          grep -Fq '"enabled":false,"previews_enabled":false' .github/workflows/mkety-public-production-cutover.yml
+          echo 'Corrected cutover workflow is present on the launcher control-plane ref.'
+
+      - name: Dispatch corrected cutover against certified SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CERTIFIED_SHA: d79701a05b278517eaa6d1df46e2f636345777b1
+        run: |
+          set -euo pipefail
+          node <<'NODE' >/tmp/mkety-cutover-dispatch.json
+          process.stdout.write(JSON.stringify({
+            ref: 'main',
+            inputs: {
+              verified_sha: process.env.CERTIFIED_SHA,
+              confirmation: 'CUTOVER MKETY PUBLIC'
+            }
+          }));
+          NODE
+          code="$(curl -sS -o /tmp/mkety-cutover-dispatch-response.txt -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/mkety-cutover-dispatch.json \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/mkety-public-production-cutover.yml/dispatches")"
+          if [ "$code" != '204' ]; then
+            echo "Cutover dispatch failed with HTTP $code."
+            cat /tmp/mkety-cutover-dispatch-response.txt
+            exit 1
+          fi
+          echo "Dispatched corrected Mkety public cutover for certified SHA $CERTIFIED_SHA."
