@@ -120,9 +120,17 @@ jobs:
             else
               pass "HTML $route quarantine wording"
             fi
-            canonical="$(grep -Eio '<link[^>]+rel=["'"']canonical["'"'][^>]*>' "$body" | head -n 1 || true)"
+            canonical="$(grep -Eio '<link[^>]+canonical[^>]*>' "$body" | head -n 1 || true)"
             note "route=$route canonical=${canonical:-missing}"
-            if grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body"; then
+            BODY="$body" node <<'NODE'
+          const fs = require('node:fs');
+          const html = fs.readFileSync(process.env.BODY, 'utf8');
+          const links = html.match(/<link\b[^>]*>/gi) || [];
+          const ok = links.some((tag) => /\brel=["']canonical["']/i.test(tag) && /\bhref=["']https:\/\/mkety\.com(?:[\/"'])/i.test(tag));
+          process.exit(ok ? 0 : 1);
+          NODE
+            canonical_rc=$?
+            if [ "$canonical_rc" -eq 0 ]; then
               pass "HTML $route canonical"
             else
               fail "HTML $route missing mkety.com canonical"
