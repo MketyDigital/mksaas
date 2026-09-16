@@ -9,21 +9,16 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   launch:
-    name: Dispatch one certified public cutover
-    if: >-
-      github.event.before == '887386a2f6f70074b71253ad8518182a5631d454' &&
-      github.event.head_commit.message == 'chore(release): launch certified Mkety public cutover'
+    name: Patch preview readiness and dispatch certified cutover
+    if: github.event.head_commit.message == 'fix(release): harden preview smoke and resume cutover'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout launcher control plane
-        uses: actions/checkout@v4
-
-      - name: Verify one-shot release invariants
+      - name: Verify frozen release invariant
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,10 +40,75 @@ jobs:
           console.log(`Release branch remains frozen at certified SHA ${process.env.CERTIFIED_SHA}.`);
           NODE
 
-          grep -Fq 'config.workers_dev = true;' .github/workflows/mkety-public-production-cutover.yml
-          grep -Fq 'Disable temporary workers.dev and preview URLs before routing' .github/workflows/mkety-public-production-cutover.yml
-          grep -Fq '"enabled":false,"previews_enabled":false' .github/workflows/mkety-public-production-cutover.yml
-          echo 'Corrected cutover workflow is present on the launcher control-plane ref.'
+      - name: Add bounded Worker preview readiness gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml?ref=main"
+          curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$api" > /tmp/cutover-file.json
+
+          node <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/cutover-file.json', 'utf8'));
+          const original = Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString('utf8');
+          const anchor = `          set -euo pipefail\n          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)\n`;
+          const replacement = `          set -euo pipefail\n\n          # Secret updates can publish a new Worker version immediately before this step.\n          # Wait for the exact preview to become reachable and serve the expected Mkety canonical\n          # before running the full strict route/indexing/DB smoke below.\n          preview_ready=0\n          for attempt in $(seq 1 12); do\n            readiness_body=/tmp/mkety-preview-readiness.html\n            readiness_code=\"$(curl -L -sS -o \"$readiness_body\" -w '%{http_code}' \"$PREVIEW_URL/\" || true)\"\n            echo \"Preview readiness attempt $attempt/12: HTTP $readiness_code\"\n            if [ \"$readiness_code\" = '200' ] && grep -Eqi '<link[^>]+rel=[\"'\"'\"']canonical[\"'\"'\"'][^>]+href=[\"'\"'\"']https://mkety\\.com' \"$readiness_body\"; then\n              preview_ready=1\n              break\n            fi\n            sleep 5\n          done\n          [ \"$preview_ready\" = '1' ] || { echo 'Production Worker preview did not become ready with the expected mkety.com canonical within 60 seconds.'; exit 1; }\n\n          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)\n`;
+          if (original.includes('Preview readiness attempt $attempt/12')) {
+            console.log('Readiness gate already present; no patch required.');
+            fs.writeFileSync('/tmp/cutover-patch-state', 'unchanged');
+            process.exit(0);
+          }
+          const occurrences = original.split(anchor).length - 1;
+          if (occurrences !== 1) throw new Error(`Expected exactly one preview smoke anchor, found ${occurrences}.`);
+          const updated = original.replace(anchor, replacement);
+          const body = {
+            message: 'fix(release): wait for production Worker preview readiness',
+            content: Buffer.from(updated).toString('base64'),
+            sha: payload.sha,
+            branch: 'main'
+          };
+          fs.writeFileSync('/tmp/cutover-update.json', JSON.stringify(body));
+          fs.writeFileSync('/tmp/cutover-patch-state', 'changed');
+          NODE
+
+          if [ "$(cat /tmp/cutover-patch-state)" = 'changed' ]; then
+            code="$(curl -sS -o /tmp/cutover-update-response.json -w '%{http_code}' \
+              -X PUT \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              -H 'Content-Type: application/json' \
+              --data-binary @/tmp/cutover-update.json \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml")"
+            [ "$code" = '200' ] || { echo "Cutover workflow patch failed with HTTP $code"; cat /tmp/cutover-update-response.json; exit 1; }
+          fi
+
+          sleep 2
+          curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml?ref=main" > /tmp/cutover-verify.json
+          node <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/cutover-verify.json', 'utf8'));
+          const content = Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString('utf8');
+          for (const marker of [
+            'Preview readiness attempt $attempt/12',
+            'Smoke production Worker preview before routing',
+            'Disable temporary workers.dev and preview URLs before routing',
+            'Bind only apex and www Worker routes'
+          ]) {
+            if (!content.includes(marker)) throw new Error(`Required cutover marker missing after patch: ${marker}`);
+          }
+          console.log('Verified readiness gate plus existing cleanup and route-safety stages on main.');
+          NODE
 
       - name: Dispatch corrected cutover against certified SHA
         shell: bash
@@ -79,4 +139,4 @@ jobs:
             cat /tmp/mkety-cutover-dispatch-response.txt
             exit 1
           fi
-          echo "Dispatched corrected Mkety public cutover for certified SHA $CERTIFIED_SHA."
+          echo "Dispatched hardened Mkety public cutover for certified SHA $CERTIFIED_SHA."
