@@ -9,11 +9,11 @@ on:
 
 permissions:
   actions: write
-  contents: write
+  contents: read
 
 jobs:
   launch:
-    name: Harden preview smoke and dispatch certified cutover
+    name: Dispatch certified Mkety public cutover
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -41,79 +41,33 @@ jobs:
           console.log(`Certified release remains frozen at ${actual}.`);
           NODE
 
-      - name: Add bounded production Worker preview readiness gate
+      - name: Verify route-safe production cutover workflow
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          api="https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml?ref=main"
-          curl -fsS \
+          response="$(curl -fsS \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "$api" > /tmp/file.json
-
-          python3 <<'PY'
-          import base64, json
-          from pathlib import Path
-
-          payload = json.loads(Path('/tmp/file.json').read_text())
-          original = base64.b64decode(payload['content']).decode()
-          marker = 'Preview readiness attempt $attempt/12'
-          anchor = '          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)\n'
-          readiness = '''          # Runtime secret updates can publish a fresh Worker version immediately before smoke.\n          # Wait only for preview reachability; the strict route/content/DB checks below remain unchanged.\n          preview_ready=0\n          for attempt in $(seq 1 12); do\n            readiness_body=/tmp/mkety-preview-readiness.html\n            readiness_code="$(curl -L -sS -o "$readiness_body" -w '%{http_code}' "$PREVIEW_URL/" || true)"\n            echo "Preview readiness attempt $attempt/12: HTTP $readiness_code"\n            if [ "$readiness_code" = '200' ] && grep -Fqi 'https://mkety.com' "$readiness_body"; then\n              preview_ready=1\n              break\n            fi\n            sleep 5\n          done\n          [ "$preview_ready" = '1' ] || { echo 'Production Worker preview did not become ready within 60 seconds.'; exit 1; }\n\n'''
-          if marker not in original:
-              if original.count(anchor) != 1:
-                  raise SystemExit(f'Expected one preview-smoke anchor; found {original.count(anchor)}.')
-              updated = original.replace(anchor, readiness + anchor, 1)
-              body = {
-                  'message': 'fix(release): wait for production Worker preview readiness',
-                  'content': base64.b64encode(updated.encode()).decode(),
-                  'sha': payload['sha'],
-                  'branch': 'main',
-              }
-              Path('/tmp/update.json').write_text(json.dumps(body))
-              Path('/tmp/patch-state').write_text('changed')
-          else:
-              Path('/tmp/patch-state').write_text('unchanged')
-          PY
-
-          if [ "$(cat /tmp/patch-state)" = 'changed' ]; then
-            code="$(curl -sS -o /tmp/update-response.json -w '%{http_code}' \
-              -X PUT \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              -H 'Content-Type: application/json' \
-              --data-binary @/tmp/update.json \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml")"
-            if [ "$code" != '200' ]; then
-              echo "Production cutover workflow update failed with HTTP $code."
-              cat /tmp/update-response.json
-              exit 1
-            fi
-          fi
-
-          verify="$(curl -fsS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "$api")"
-          VERIFY="$verify" python3 <<'PY'
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/mkety-public-production-cutover.yml?ref=main")"
+          RESPONSE="$response" python3 <<'PY'
           import base64, json, os
-          payload = json.loads(os.environ['VERIFY'])
+          payload = json.loads(os.environ['RESPONSE'])
           text = base64.b64decode(payload['content']).decode()
           required = [
-              'Preview readiness attempt $attempt/12',
               'Smoke production Worker preview before routing',
               'Disable temporary workers.dev and preview URLs before routing',
               'Bind only apex and www Worker routes',
+              'Run production acceptance and rollback on failure',
+              'MKETY_PUBLIC_AZURE_OPENAI_API_KEY',
+              'MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT',
           ]
-          missing = [x for x in required if x not in text]
+          missing = [marker for marker in required if marker not in text]
           if missing:
-              raise SystemExit('Missing required cutover markers: ' + ', '.join(missing))
-          print('Verified readiness gate and all route-safety stages.')
+              raise SystemExit('Missing required cutover safety markers: ' + ', '.join(missing))
+          print('Verified current production cutover safety and Azure secret-wiring markers.')
           PY
 
       - name: Dispatch one certified production cutover
