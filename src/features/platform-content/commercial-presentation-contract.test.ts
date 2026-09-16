@@ -46,7 +46,7 @@ describe('Mkety documented public commercial presentation', () => {
       name: 'Enterprise',
       priceLabel: 'Custom',
       highlighted: false,
-      ctaHref: '/enterprise',
+      ctaHref: '/enterprise/checkout',
     });
 
     const obsoletePlanIdentities = new Set(['growth', 'pro', 'business']);
