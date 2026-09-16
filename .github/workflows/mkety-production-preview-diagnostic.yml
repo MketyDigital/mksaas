@@ -1,0 +1,209 @@
+name: Mkety Production Preview Diagnostic
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/mkety-production-preview-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PRODUCTION_WORKER_NAME: mkety-platform
+  VERIFIED_SHA: d79701a05b278517eaa6d1df46e2f636345777b1
+
+jobs:
+  preview-diagnostic:
+    name: Diagnose isolated production Worker preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Validate prerequisites and enforce route isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zones="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=mkety.com&status=active")"
+          ZONES="$zones" node <<'NODE' >/tmp/zone-id
+          const payload = JSON.parse(process.env.ZONES || '{}');
+          if (!payload.success || !Array.isArray(payload.result) || payload.result.length !== 1) {
+            throw new Error('Expected exactly one active mkety.com Cloudflare zone.');
+          }
+          process.stdout.write(payload.result[0].id);
+          NODE
+          zone_id="$(cat /tmp/zone-id)"
+          routes="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          ROUTES="$routes" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
+          const payload = JSON.parse(process.env.ROUTES || '{}');
+          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Could not read Cloudflare Worker routes.');
+          const workerRoutes = payload.result.filter((route) => route.script === process.env.WORKER);
+          if (workerRoutes.length) {
+            throw new Error(`Diagnostic refuses to proceed because ${process.env.WORKER} is already bound to live route(s): ${workerRoutes.map(r => r.pattern).join(', ')}`);
+          }
+          console.log('Route isolation confirmed: production Worker has no live routes.');
+          NODE
+
+      - name: Enable temporary workers.dev access and resolve URL
+        id: preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          account_subdomain="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          ACCOUNT_SUBDOMAIN="$account_subdomain" node <<'NODE' >/tmp/workers-subdomain
+          const payload = JSON.parse(process.env.ACCOUNT_SUBDOMAIN || '{}');
+          const subdomain = payload?.result?.subdomain;
+          if (!payload.success || !subdomain) throw new Error('Could not resolve account workers.dev subdomain.');
+          process.stdout.write(subdomain);
+          NODE
+          subdomain="$(cat /tmp/workers-subdomain)"
+
+          response="$(curl -fsS -X POST "${auth[@]}" \
+            --data '{"enabled":true,"previews_enabled":true}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          RESPONSE="$response" node <<'NODE'
+          const payload = JSON.parse(process.env.RESPONSE || '{}');
+          if (!payload.success || payload.result?.enabled !== true || payload.result?.previews_enabled !== true) {
+            throw new Error('Failed to enable temporary workers.dev access for diagnostic.');
+          }
+          NODE
+          preview_url="https://${PRODUCTION_WORKER_NAME}.${subdomain}.workers.dev"
+          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+          echo 'Temporary production Worker preview enabled.'
+          sleep 3
+
+      - name: Run explicit preview smoke and persist first failure
+        id: smoke
+        shell: bash
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+        run: |
+          set +e
+          report=/tmp/preview-smoke-report.txt
+          : > "$report"
+          printf 'Mkety production preview diagnostic\nVerified application SHA: %s\nWorker: %s\n\n' "$VERIFIED_SHA" "$PRODUCTION_WORKER_NAME" >> "$report"
+          first_failure=''
+          failures=0
+
+          fail() {
+            failures=$((failures + 1))
+            if [ -z "$first_failure" ]; then first_failure="$1"; fi
+            printf 'FAIL: %s\n' "$1" | tee -a "$report"
+          }
+          pass() { printf 'PASS: %s\n' "$1" | tee -a "$report"; }
+          note() { printf 'INFO: %s\n' "$1" | tee -a "$report"; }
+
+          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
+          for route in "${html_routes[@]}"; do
+            body="/tmp/mkety-preview$(echo "$route" | tr '/' '_').html"
+            headers="${body}.headers"
+            note "HTML route $route"
+            metrics="$(curl -L -sS -D "$headers" -o "$body" -w '%{http_code}|%{url_effective}|%{content_type}' "$PREVIEW_URL$route" 2>>"$report")"
+            curl_rc=$?
+            IFS='|' read -r code effective content_type <<<"$metrics"
+            note "route=$route curl_rc=$curl_rc http=${code:-none} effective_url=${effective:-none} content_type=${content_type:-none}"
+            if [ "$curl_rc" -ne 0 ]; then fail "HTML $route curl exit $curl_rc"; continue; fi
+            if [ "$code" != '200' ]; then fail "HTML $route HTTP ${code:-none}"; continue; fi
+            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
+              match="$(grep -Eio 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body" | head -n 1)"
+              fail "HTML $route quarantined/internal wording matched: $match"
+            else
+              pass "HTML $route quarantine wording"
+            fi
+            canonical="$(grep -Eio '<link[^>]+rel=["'"']canonical["'"'][^>]*>' "$body" | head -n 1 || true)"
+            note "route=$route canonical=${canonical:-missing}"
+            if grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body"; then
+              pass "HTML $route canonical"
+            else
+              fail "HTML $route missing mkety.com canonical"
+            fi
+          done
+
+          note 'sitemap.xml'
+          sitemap=/tmp/mkety-preview-sitemap.xml
+          sm_metrics="$(curl -sS -o "$sitemap" -w '%{http_code}|%{url_effective}|%{content_type}' "$PREVIEW_URL/sitemap.xml" 2>>"$report")"
+          sm_rc=$?
+          IFS='|' read -r sm_code sm_effective sm_type <<<"$sm_metrics"
+          note "sitemap curl_rc=$sm_rc http=${sm_code:-none} effective_url=${sm_effective:-none} content_type=${sm_type:-none}"
+          if [ "$sm_rc" -ne 0 ] || [ "$sm_code" != '200' ]; then
+            fail "sitemap request failed curl_rc=$sm_rc HTTP ${sm_code:-none}"
+          else
+            for path in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact; do
+              expected="https://mkety.com${path}"
+              if grep -Fq "<loc>$expected</loc>" "$sitemap"; then pass "sitemap contains $expected"; else fail "sitemap missing $expected"; fi
+            done
+          fi
+
+          note 'robots.txt'
+          robots=/tmp/mkety-preview-robots.txt
+          rb_metrics="$(curl -sS -o "$robots" -w '%{http_code}|%{url_effective}|%{content_type}' "$PREVIEW_URL/robots.txt" 2>>"$report")"
+          rb_rc=$?
+          IFS='|' read -r rb_code rb_effective rb_type <<<"$rb_metrics"
+          note "robots curl_rc=$rb_rc http=${rb_code:-none} effective_url=${rb_effective:-none} content_type=${rb_type:-none}"
+          if [ "$rb_rc" -ne 0 ] || [ "$rb_code" != '200' ]; then
+            fail "robots request failed curl_rc=$rb_rc HTTP ${rb_code:-none}"
+          else
+            grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' "$robots" && pass 'robots production sitemap declaration' || fail 'robots missing production sitemap declaration'
+            grep -Fq 'Host: https://mkety.com' "$robots" && pass 'robots production host declaration' || fail 'robots missing production host declaration'
+          fi
+
+          note 'DB-backed /api/public/assistant'
+          cookie_jar=/tmp/mkety-preview-db-cookies
+          db_metrics="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -o /tmp/mkety-preview-db.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PREVIEW_URL/api/public/assistant" 2>>"$report")"
+          db_rc=$?
+          IFS='|' read -r db_code db_effective db_type <<<"$db_metrics"
+          note "assistant curl_rc=$db_rc http=${db_code:-none} effective_url=${db_effective:-none} content_type=${db_type:-none}"
+          if [ "$db_rc" -ne 0 ] || [ "$db_code" != '200' ]; then
+            fail "assistant request failed curl_rc=$db_rc HTTP ${db_code:-none}"
+          else
+            node <<'NODE' >>"$report" 2>&1
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/mkety-preview-db.json', 'utf8'));
+          if (!Array.isArray(payload.conversations) || !Array.isArray(payload.messages)) {
+            throw new Error('DB-backed preview response was not the expected public-assistant history shape.');
+          }
+          console.log('PASS: assistant DB-backed response shape');
+          NODE
+            node_rc=$?
+            if [ "$node_rc" -ne 0 ]; then fail 'assistant DB-backed response shape'; else pass 'assistant DB-backed parser'; fi
+          fi
+
+          printf '\nSUMMARY failures=%s\nFIRST_FAILURE=%s\n' "$failures" "${first_failure:-NONE}" | tee -a "$report"
+          if [ "$failures" -ne 0 ]; then exit 1; fi
+
+      - name: Disable temporary workers.dev and preview URLs
+        if: ${{ always() && steps.preview.outcome != 'skipped' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"enabled":false,"previews_enabled":false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          RESPONSE="$response" node <<'NODE'
+          const payload = JSON.parse(process.env.RESPONSE || '{}');
+          if (!payload.success || payload.result?.enabled !== false || payload.result?.previews_enabled !== false) {
+            throw new Error('Failed to disable temporary production workers.dev and preview URLs.');
+          }
+          console.log('Temporary production Worker preview disabled.');
+          NODE
+
+      - name: Upload sanitized preview diagnostic report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-production-preview-diagnostic-${{ env.VERIFIED_SHA }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: /tmp/preview-smoke-report.txt
