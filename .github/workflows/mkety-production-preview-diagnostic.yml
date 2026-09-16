@@ -161,8 +161,16 @@ jobs:
           if [ "$rb_rc" -ne 0 ] || [ "$rb_code" != '200' ]; then
             fail "robots request failed curl_rc=$rb_rc HTTP ${rb_code:-none}"
           else
-            grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' "$robots" && pass 'robots production sitemap declaration' || fail 'robots missing production sitemap declaration'
-            grep -Fq 'Host: https://mkety.com' "$robots" && pass 'robots production host declaration' || fail 'robots missing production host declaration'
+            if grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' "$robots"; then
+              pass 'robots production sitemap declaration'
+            else
+              fail 'robots missing production sitemap declaration'
+            fi
+            if grep -Fq 'Host: https://mkety.com' "$robots"; then
+              pass 'robots production host declaration'
+            else
+              fail 'robots missing production host declaration'
+            fi
           fi
 
           note 'DB-backed /api/public/assistant'
