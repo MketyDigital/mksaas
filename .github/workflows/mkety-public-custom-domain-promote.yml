@@ -10,15 +10,272 @@ on:
 permissions:
   contents: read
 
+env:
+  VERIFIED_SHA: 8ef16bd1802499331d5d8ea9e43db2b0f8da6bcd
+  PRODUCTION_WORKER_NAME: mkety-platform
+  MKETY_HYPERDRIVE_NAME: mkety-production-db
+  SKIP_ENV_VALIDATION: 'true'
+
 jobs:
-  validate:
-    name: Validate custom-domain promotion control plane
+  promote:
+    name: Promote verified Mkety Worker with Custom Domains
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
+      NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
+      MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+      MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_PUBLIC_GEMINI_API_KEY: ${{ secrets.MKETY_PUBLIC_GEMINI_API_KEY }}
+      MKETY_PUBLIC_VERTEX_PROJECT_ID: ${{ secrets.MKETY_PUBLIC_VERTEX_PROJECT_ID }}
+      MKETY_PUBLIC_VERTEX_LOCATION: ${{ secrets.MKETY_PUBLIC_VERTEX_LOCATION }}
+      MKETY_PUBLIC_VERTEX_ACCESS_TOKEN: ${{ secrets.MKETY_PUBLIC_VERTEX_ACCESS_TOKEN }}
+      MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN: ${{ secrets.MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID: ${{ secrets.MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID }}
+      MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY: ${{ secrets.MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY }}
+      MKETY_PUBLIC_BEDROCK_SESSION_TOKEN: ${{ secrets.MKETY_PUBLIC_BEDROCK_SESSION_TOKEN }}
+      MKETY_PUBLIC_BEDROCK_REGION: ${{ secrets.MKETY_PUBLIC_BEDROCK_REGION }}
     steps:
-      - name: Confirm workflow parser and safe staging state
+      - name: Validate required production secrets
         shell: bash
         run: |
           set -euo pipefail
-          echo 'PASS custom-domain promotion workflow parses correctly.'
-          echo 'No Cloudflare API call is made by this validation commit.'
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET MKETY_PUBLIC_AI_VISITOR_SECRET; do
+            [ -n "${!variable:-}" ] || { echo "$variable is required."; exit 1; }
+          done
+          [ "${#MKETY_PUBLIC_AI_VISITOR_SECRET}" -ge 32 ] || { echo 'Public AI visitor secret is too short.'; exit 1; }
+
+      - name: Read-only edge preflight and rollback snapshot
+        id: edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          curl -fsS "${auth[@]}" "$api/zones?name=mkety.com&account.id=$CLOUDFLARE_ACCOUNT_ID" >/tmp/zones.json
+          zone_id="$(node -e "const p=require('/tmp/zones.json');if(!p.success||!Array.isArray(p.result)||p.result.length!==1)process.exit(1);process.stdout.write(p.result[0].id)")"
+          echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=mkety.com" >/tmp/root.json
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=www.mkety.com" >/tmp/www.json
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/workers/routes" >/tmp/routes.json
+          curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/tmp/domains.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const root=require('/tmp/root.json'),www=require('/tmp/www.json'),routes=require('/tmp/routes.json'),domains=require('/tmp/domains.json');
+          for(const p of [root,www,routes,domains]) if(!p.success||!Array.isArray(p.result)) throw new Error('Cloudflare preflight lookup failed');
+          const target=new Set(['mkety.com/*','www.mkety.com/*']);
+          if(routes.result.some(r=>target.has(r.pattern))) throw new Error('Apex/www Worker Route exists; refusing Custom Domain promotion');
+          if([...root.result,...www.result].some(r=>r.type==='CNAME')) throw new Error('Apex/www CNAME blocks Custom Domain promotion');
+          for(const host of ['mkety.com','www.mkety.com']){
+            const d=domains.result.find(x=>x.hostname===host);
+            if(d&&d.service!==process.env.PRODUCTION_WORKER_NAME) throw new Error(`${host} belongs to another Worker`);
+          }
+          fs.writeFileSync('/tmp/dns-backup.json',JSON.stringify({root:root.result,www:www.result}));
+          fs.writeFileSync('/tmp/routes-before.json',JSON.stringify(routes.result.map(r=>({pattern:r.pattern,script:r.script||null}))));
+          console.log('PASS read-only edge preflight; no apex/www Worker Routes and no CNAME blocker');
+          NODE
+
+      - name: Checkout exact certified public application
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERIFIED_SHA }}
+          fetch-depth: 1
+
+      - name: Assert exact certified SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
+          echo "PASS certified SHA $VERIFIED_SHA"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve production Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" node -e "const p=JSON.parse(process.env.HYPERDRIVES||'{}'),m=(p.result||[]).filter(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME);if(!p.success||m.length!==1||!m[0].id)process.exit(1);process.stdout.write(m[0].id)" >/tmp/hyperdrive-id
+          echo "id=$(cat /tmp/hyperdrive-id)" >> "$GITHUB_OUTPUT"
+          echo 'PASS production Hyperdrive resolved'
+
+      - name: Build and dry-run route-free production Worker
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const p='wrangler.jsonc',c=JSON.parse(fs.readFileSync(p,'utf8'));
+          c.name=process.env.PRODUCTION_WORKER_NAME;
+          c.workers_dev=true;
+          c.preview_urls=true;
+          c.vars={...(c.vars||{}),SKIP_ENV_VALIDATION:'true'};
+          c.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          delete c.route; delete c.routes;
+          fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');
+          NODE
+          pnpx vinext check
+          pnpm build
+          CANDIDATE_WORKER_NAME="$PRODUCTION_WORKER_NAME" MKETY_HYPERDRIVE_ID="$MKETY_HYPERDRIVE_ID" pnpm run deploy --dry-run
+
+      - name: Deploy certified Worker without public hostname binding
+        id: deploy
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_WORKER_NAME="$PRODUCTION_WORKER_NAME" MKETY_HYPERDRIVE_ID="$MKETY_HYPERDRIVE_ID" pnpm run deploy 2>&1 | tee /tmp/deploy.log
+          url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/deploy.log | tail -n 1 || true)"
+          if [ -z "$url" ]; then
+            response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+            subdomain="$(ACCOUNT="$response" node -e "const p=JSON.parse(process.env.ACCOUNT||'{}');if(!p.success||!p.result?.subdomain)process.exit(1);process.stdout.write(p.result.subdomain)")"
+            url="https://${PRODUCTION_WORKER_NAME}.${subdomain}.workers.dev"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo 'PASS certified Worker deployed route-free'
+
+      - name: Attach production runtime secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          providers=()
+          [ -n "${MKETY_PUBLIC_OPENAI_API_KEY:-}" ] && providers+=(openai)
+          if [ -n "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}" ]; then providers+=(azure-openai); fi
+          [ -n "${MKETY_PUBLIC_GEMINI_API_KEY:-}" ] && providers+=(gemini)
+          if [ -n "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_LOCATION:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}" ]; then providers+=(vertex); fi
+          [ -n "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}" ] && providers+=(cloudflare-ai)
+          if [ -n "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}" ] && [ -n "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}" ]; then providers+=(bedrock); fi
+          [ "${#providers[@]}" -gt 0 ] || { echo 'No Public AI provider configured.'; exit 1; }
+          primary="${providers[0]}"; fallback=''
+          [ "${#providers[@]}" -le 1 ] || fallback="$(IFS=,; echo "${providers[*]:1}")"
+          put_secret(){ if [ -n "$2" ]; then printf '%s' "$2" | pnpm exec wrangler secret put "$1" --name "$PRODUCTION_WORKER_NAME" >/dev/null; fi; }
+          put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
+          put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
+          put_secret MKETY_PUBLIC_AI_ENABLED 'true'
+          put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
+          put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER "$primary"
+          put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS "$fallback"
+          put_secret MKETY_PUBLIC_OPENAI_API_KEY "${MKETY_PUBLIC_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}"
+          put_secret MKETY_PUBLIC_GEMINI_API_KEY "${MKETY_PUBLIC_GEMINI_API_KEY:-}"
+          put_secret MKETY_PUBLIC_VERTEX_PROJECT_ID "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}"
+          put_secret MKETY_PUBLIC_VERTEX_LOCATION "${MKETY_PUBLIC_VERTEX_LOCATION:-}"
+          put_secret MKETY_PUBLIC_VERTEX_ACCESS_TOKEN "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          put_secret MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID "${MKETY_PUBLIC_BEDROCK_ACCESS_KEY_ID:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_SESSION_TOKEN "${MKETY_PUBLIC_BEDROCK_SESSION_TOKEN:-}"
+          put_secret MKETY_PUBLIC_BEDROCK_REGION "${MKETY_PUBLIC_BEDROCK_REGION:-}"
+          echo "PASS production runtime configuration attached; Public AI providers=${#providers[@]}"
+
+      - name: Smoke Worker before any public hostname mutation
+        shell: bash
+        env:
+          BASE: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact /robots.txt /sitemap.xml /api/public/assistant)
+          for route in "${routes[@]}"; do
+            code=000
+            for attempt in $(seq 1 12); do
+              code="$(curl -L -sS --connect-timeout 10 --max-time 25 -o /tmp/body -w '%{http_code}' "$BASE$route" || true)"
+              [ "$code" = 200 ] && break
+              sleep 4
+            done
+            echo "route-free $route HTTP $code"
+            [ "$code" = 200 ] || exit 1
+          done
+          echo 'PASS every launch route is healthy before Custom Domain attachment'
+
+      - name: Attach Custom Domains, verify live site, rollback on failure
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.edge.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          : >/tmp/created-domain-ids
+          rollback(){
+            set +e
+            while read -r id; do [ -z "$id" ] || curl -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$id" >/dev/null; done </tmp/created-domain-ids
+            sleep 3
+            DNS_BACKUP="$(cat /tmp/dns-backup.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
+          const {execFileSync}=require('node:child_process');
+          const backup=JSON.parse(process.env.DNS_BACKUP||'{}');
+          for(const r of [...(backup.root||[]),...(backup.www||[])].filter(x=>['A','AAAA','CNAME'].includes(x.type))){
+            const url=`https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records?type=${encodeURIComponent(r.type)}&name=${encodeURIComponent(r.name)}&content=${encodeURIComponent(r.content)}`;
+            const q=JSON.parse(execFileSync('curl',['-fsS','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json',url],{encoding:'utf8'}));
+            if(Array.isArray(q.result)&&q.result.length) continue;
+            const body=JSON.stringify({type:r.type,name:r.name,content:r.content,ttl:r.ttl||1,proxied:Boolean(r.proxied)});
+            execFileSync('curl',['-fsS','-X','POST','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json','--data',body,`https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records`],{stdio:'ignore'});
+          }
+          NODE
+            echo 'ROLLBACK completed for Custom Domains created by this run.'
+          }
+          trap rollback ERR
+          for host in mkety.com www.mkety.com; do
+            domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            existing="$(DOMAINS="$domains" HOST="$host" node -e "const p=JSON.parse(process.env.DOMAINS||'{}'),d=(p.result||[]).find(x=>x.hostname===process.env.HOST);if(d&&d.service!==process.env.PRODUCTION_WORKER_NAME)process.exit(2);if(d)process.stdout.write(d.id)")" || status=$?
+            [ "${status:-0}" != 2 ] || { echo "$host belongs to another Worker"; false; }
+            if [ -n "$existing" ]; then echo "$host already attached to production Worker"; continue; fi
+            body="$(HOST="$host" ZONE_ID="$ZONE_ID" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.PRODUCTION_WORKER_NAME,zone_id:process.env.ZONE_ID}))")"
+            response="$(curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            id="$(RESPONSE="$response" node -e "const p=JSON.parse(process.env.RESPONSE||'{}');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
+            echo "$id" >>/tmp/created-domain-ids
+            echo "PASS attached $host as Worker Custom Domain"
+          done
+          code=000
+          for attempt in $(seq 1 60); do
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -o /tmp/root -w '%{http_code}' https://mkety.com/ || true)"
+            [ "$code" = 200 ] && break
+            echo "apex readiness attempt $attempt HTTP $code"
+            sleep 5
+          done
+          [ "$code" = 200 ]
+          routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact /robots.txt /sitemap.xml /api/public/assistant)
+          for route in "${routes[@]}"; do
+            code="$(curl -L -sS --connect-timeout 10 --max-time 25 -o /tmp/live -w '%{http_code}' "https://mkety.com$route" || true)"
+            echo "live $route HTTP $code"
+            [ "$code" = 200 ]
+          done
+          headers="$(curl -sSI --connect-timeout 10 --max-time 25 'https://www.mkety.com/pricing?source=promotion')"
+          status="$(printf '%s' "$headers" | awk 'toupper($1) ~ /^HTTP\// {code=$2} END{print code}')"
+          location="$(printf '%s' "$headers" | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/,"");sub(/^location:[[:space:]]*/,"");print;exit}')"
+          echo "www redirect HTTP $status -> $location"
+          [ "$status" = 308 ]
+          [ "$location" = 'https://mkety.com/pricing?source=promotion' ]
+          trap - ERR
+          echo 'PASS live Custom Domain acceptance'
+
+      - name: Verify unrelated Worker Routes remain unchanged
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.edge.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          routes="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes")"
+          ROUTES="$routes" BEFORE="$(cat /tmp/routes-before.json)" node -e "const p=JSON.parse(process.env.ROUTES||'{}'),b=JSON.parse(process.env.BEFORE||'[]'),n=(p.result||[]).map(r=>({pattern:r.pattern,script:r.script||null}));if(!p.success||JSON.stringify(n)!==JSON.stringify(b))process.exit(1);console.log('PASS Worker Routes unchanged; unrelated routes preserved')"
