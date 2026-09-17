@@ -195,8 +195,8 @@ jobs:
 
           # Diagnostic-only route: created in the runner before the Vinext build and never committed
           # as a product endpoint. It returns only stage booleans and sanitized error identity.
-          mkdir -p src/app/api/_diagnostics/runtime-db
-          cat >src/app/api/_diagnostics/runtime-db/route.ts <<'TS'
+          mkdir -p src/app/api/runtime-db-diagnostic
+          cat >src/app/api/runtime-db-diagnostic/route.ts <<'TS'
           import { sql } from 'drizzle-orm';
           import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
           import { db } from '@/shared/db';
@@ -292,7 +292,7 @@ jobs:
           timeout 50s pnpm exec wrangler tail "$APP_WORKER_NAME" --format json > /tmp/app-tail.raw 2>&1 &
           tail_pid=$!
           sleep 7
-          routes=(/robots.txt /sitemap.xml /api/_diagnostics/runtime-db /api/health / /platform /api/public/assistant)
+          routes=(/robots.txt /sitemap.xml /api/runtime-db-diagnostic /api/health / /platform /api/public/assistant)
           assistant_code='000'
           runtime_code='000'
           for route in "${routes[@]}"; do
@@ -300,7 +300,7 @@ jobs:
             code="$(curl -sS -L --connect-timeout 10 --max-time 25 -D "/tmp/${safe}.headers" -o "/tmp/${safe}.body" -w '%{http_code}' "$APP_URL$route" || true)"
             printf 'route %s HTTP %s\n' "$route" "$code" | tee -a "$report"
             if [ "$route" = '/api/public/assistant' ]; then assistant_code="$code"; fi
-            if [ "$route" = '/api/_diagnostics/runtime-db' ]; then runtime_code="$code"; fi
+            if [ "$route" = '/api/runtime-db-diagnostic' ]; then runtime_code="$code"; fi
           done
           sleep 10
           kill "$tail_pid" 2>/dev/null || true
@@ -331,7 +331,7 @@ jobs:
           }
           console.log('mkety-tail '+JSON.stringify(events.slice(0,20)));
           const outputs = [
-            ['/tmp/_api__diagnostics_runtime-db.body','RUNTIME_DB_DIAGNOSTIC '],
+            ['/tmp/_api_runtime-db-diagnostic.body','RUNTIME_DB_DIAGNOSTIC '],
             ['/tmp/_api_health.body','MKETY_HEALTH_BODY '],
             ['/tmp/_.body','mkety-root-body '],
             ['/tmp/_api_public_assistant.body','mkety-assistant-body '],
