@@ -9,10 +9,11 @@ const WORKFLOW_PATH = path.resolve(
 );
 
 describe('production runtime deep diagnostic', () => {
-  it('probes database resolution and both app database wrappers inside the Vinext bundle', async () => {
+  it('probes database resolution and both app database wrappers through a routable Vinext endpoint', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
-    expect(workflow).toContain('/api/_diagnostics/runtime-db');
+    expect(workflow).toContain('/api/runtime-db-diagnostic');
+    expect(workflow).not.toContain('/api/_diagnostics/runtime-db');
     expect(workflow).toContain('runtime-resolver');
     expect(workflow).toContain('request-database');
     expect(workflow).toContain('singleton-database');
