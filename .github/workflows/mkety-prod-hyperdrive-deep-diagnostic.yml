@@ -196,9 +196,10 @@ jobs:
           NODE
 
           # Diagnostic-only route: created in the runner before the Vinext build and never committed
-          # as a product endpoint. It returns only stage booleans and sanitized error identity.
+          # as a product endpoint. It returns only safe stage booleans and sanitized error identity.
           mkdir -p src/app/api/runtime-db-diagnostic
           cat >src/app/api/runtime-db-diagnostic/route.ts <<'TS'
+          import { env } from 'cloudflare:workers';
           import { sql } from 'drizzle-orm';
           import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
           import { db } from '@/shared/db';
@@ -206,7 +207,9 @@ jobs:
 
           type Stage = {
             ok: boolean;
-            stage: 'runtime-resolver' | 'request-database' | 'singleton-database';
+            stage: 'cloudflare-binding' | 'runtime-resolver' | 'request-database' | 'singleton-database';
+            hasBinding?: boolean;
+            hasConnectionString?: boolean;
             name?: string;
             code?: string | null;
           };
@@ -224,6 +227,20 @@ jobs:
 
           export async function GET() {
             const stages: Stage[] = [];
+
+            const binding = env.MKETY_DB;
+            const hasBinding = Boolean(binding);
+            const hasConnectionString =
+              typeof binding?.connectionString === 'string' && binding.connectionString.length > 0;
+            stages.push({
+              ok: hasBinding && hasConnectionString,
+              stage: 'cloudflare-binding',
+              hasBinding,
+              hasConnectionString,
+            });
+            if (!hasBinding || !hasConnectionString) {
+              return Response.json({ ok: false, stages }, { status: 500 });
+            }
 
             try {
               const connectionString = getRuntimeDatabaseConnectionString();
