@@ -3,8 +3,8 @@
 **Updated:** 2026-09-18  
 **Current workstream:** Public-site production cutover/runtime repair  
 **Status:** IN PROGRESS  
-**Branch:** `fix/vinext-runtime-db-absolute-rewrite`  
-**Pull request:** #51
+**Branch:** `fix/vinext-runtime-db-transform`  
+**Pull request:** #54
 
 ## Requested outcome
 
@@ -29,12 +29,13 @@ finish public site
 - PR #48 proved the explicit Cloudflare resolver succeeds while the normal runtime import fails in the same deployed request.
 - PR #49 added the exact resolver through wrapped Next config; production still executed the Node resolver.
 - PR #50 added an `enforce: 'pre'` exact-id Vite `resolveId` interceptor; production still executed the Node resolver.
+- PR #51 redirected the exact absolute Node resolver path during Vite resolution; production still executed the Node resolver.
 
 ## Latest production evidence
 
-PR #50 merged to `main` as `367f7364648c2f22ef18dab8585e98e0153aee2e`.
+PR #51 merged to `main` as `0268c4c488d66c4cd30cc4b7947644ce98b9eee3`.
 
-Production deep diagnostic run: `35287557537`.
+Production deep diagnostic run: `35288341373`.
 
 Confirmed on that exact SHA:
 
@@ -50,39 +51,37 @@ Confirmed on that exact SHA:
 - Public Assistant returned its handled 503;
 - static `/robots.txt` and `/sitemap.xml` remained 200.
 
-Therefore Hyperdrive, binding visibility, direct SQL, the Cloudflare resolver implementation, and Worker build/deploy are healthy. The blocker remains the emitted Vinext module path used by the normal runtime resolver import.
+The exact-alias and exact-absolute-path resolution approaches therefore had no production effect. Do not add another alias/resolveId variant.
 
-## Current repair: PR #51
+## Current repair: PR #54
 
-The working hypothesis is now narrower: Vinext may rewrite `@/shared/db/runtime-connection` to the absolute Node resolver file before Mkety's exact alias-string interceptor sees it.
+PR #54 moves from pre-resolution routing to post-selection transformation. If Vinext selects `src/shared/db/runtime-connection.ts` anyway, the Vite Worker build transforms that selected module so it re-exports the Cloudflare resolver. Plain Node scripts continue to execute the unmodified Node resolver because they do not run through Vite.
 
 ### TDD evidence
 
-Test-only commit `131da54787bd84512eb368ee4a1d99dd4bbbda2b` added a regression that invokes the actual Mkety Vite plugin with the absolute path:
-
-`src/shared/db/runtime-connection.ts`
+Test-only commit `de97c20e6656ffb486b18b02753bcdce68bbf868` added a regression that invokes the actual Mkety Vite plugin transform hook with the selected Node resolver module.
 
 Valid red phase:
 
-- expected resolution: `src/shared/db/runtime-connection.cloudflare.ts`;
-- received: empty string;
+- expected transformed source to contain `runtime-connection.cloudflare`;
+- received empty transform output;
 - the new test failed;
-- the other 723 tests passed;
+- the other 724 tests passed;
 - build, lint, and type-check passed.
 
-Implementation commit `b426ed3c85f5945a8b7c0899b156872277a8efde`:
+Implementation commit `158a1c51b921d1c8252e2be1396bcd8d4e891359`:
 
-- defines the exact absolute Node resolver path inside `vite.config.ts`;
-- keeps the existing exact alias interceptor;
-- additionally redirects that exact absolute Node resolver path to `runtime-connection.cloudflare.ts`;
-- strips query/hash suffixes before comparing the absolute source path;
-- changes only Vite/Cloudflare build-time resolution;
-- does not alter Node migrations/scripts/tests, schema, credentials, bindings, domain routes, or product behavior.
+- adds a Vite `transform` hook for exactly `src/shared/db/runtime-connection.ts`;
+- strips query/hash suffixes before comparing module ids;
+- transforms only that selected Worker-build module;
+- re-exports `getRuntimeDatabaseConnectionString` from `./runtime-connection.cloudflare`;
+- leaves the source Node resolver file unchanged for migrations, seeds, smoke tooling, and other plain Node execution;
+- does not change schema, credentials, bindings, domain routes, or product behavior.
 
-Verification on implementation head `b426ed3c85f5945a8b7c0899b156872277a8efde`:
+Verification on implementation head `158a1c51b921d1c8252e2be1396bcd8d4e891359`:
 
-- combined CI: green;
-- standalone tests: green, including the formerly red absolute-path regression;
+- combined CI: green, including the formerly red transform regression;
+- standalone tests: green;
 - lint: green;
 - type-check: green;
 - build: green;
@@ -102,12 +101,12 @@ Fresh verification is required on the final PR head containing this handoff upda
 
 ## Exact next steps
 
-1. Require the full final-head gate on PR #51: tests, lint, type-check, build, Cloudflare/Vinext smoke, PR validation, MegaLinter, and required checks.
-2. Merge #51 only with an exact-head guard.
+1. Require the full final-head gate on PR #54: tests, lint, type-check, build, Cloudflare/Vinext smoke, PR validation, MegaLinter, and required checks.
+2. Merge #54 only with an exact-head guard.
 3. Read the production deep diagnostic on the resulting exact `main` SHA.
 4. Stop at the first failing stage:
    - if `runtime-resolver` passes, continue through `request-database` and `singleton-database`;
-   - if it still fails, inspect/instrument the emitted Vinext module graph rather than adding further aliases;
+   - if it still fails, instrument/inspect Vinext's generated bundle and child-environment plugin graph; do not add another alias variant;
    - if all DB stages pass, isolate remaining health/public-page/Public Assistant/auth/payment failures separately.
 5. Run the complete public release/cutover gate across public pages, auth entry points, Public AI, and Enterprise checkout/payment entry points.
 6. Cut over `mkety.com` / `www.mkety.com` only after that full gate is green.
