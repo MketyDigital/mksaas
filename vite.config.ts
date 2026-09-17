@@ -6,6 +6,10 @@ import { imagesOptimizer } from '@vinext/cloudflare/images/images-optimizer';
 import vinext from 'vinext';
 import { defineConfig, type Plugin } from 'vite';
 
+const runtimeConnectionNodePath = fileURLToPath(
+  new URL('./src/shared/db/runtime-connection.ts', import.meta.url)
+);
+
 const runtimeConnectionAlias = {
   find: '@/shared/db/runtime-connection',
   replacement: fileURLToPath(
@@ -18,7 +22,12 @@ function prioritizeRuntimeConnectionAlias(): Plugin {
     name: 'mkety-runtime-connection-alias-precedence',
     enforce: 'pre',
     resolveId(source) {
-      if (source === runtimeConnectionAlias.find) {
+      const sourceWithoutQuery = source.split(/[?#]/, 1)[0];
+
+      if (
+        source === runtimeConnectionAlias.find ||
+        sourceWithoutQuery === runtimeConnectionNodePath
+      ) {
         return runtimeConnectionAlias.replacement;
       }
 
