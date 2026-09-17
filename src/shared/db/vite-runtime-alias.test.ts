@@ -98,6 +98,45 @@ describe('Cloudflare Worker database build wiring', () => {
     );
   });
 
+  it('redirects Vinext absolute Node resolver paths to the Cloudflare adapter', async () => {
+    const absoluteNodeResolver = path.resolve(
+      process.cwd(),
+      'src/shared/db/runtime-connection.ts',
+    );
+    const script = `
+      import { resolveConfig } from 'vite';
+      (async () => {
+        const source = ${JSON.stringify(absoluteNodeResolver)};
+        const config = await resolveConfig(
+          { configFile: ${JSON.stringify(VITE_CONFIG_PATH)}, logLevel: 'silent' },
+          'build',
+        );
+        const plugin = config.plugins.find(
+          (candidate) => candidate.name === 'mkety-runtime-connection-alias-precedence',
+        );
+        const handler = plugin?.resolveId;
+        const hook = typeof handler === 'function' ? handler : handler?.handler;
+        const result = typeof hook === 'function'
+          ? await hook.call({}, source, undefined, {})
+          : null;
+        const resolvedId = typeof result === 'string' ? result : result?.id ?? '';
+        process.stdout.write(resolvedId);
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+      cwd: process.cwd(),
+      env: process.env,
+      maxBuffer: 1024 * 1024,
+    });
+
+    expect(stdout.trim().replaceAll('\\\\', '/')).toMatch(
+      /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
+    );
+  });
+
   it('exposes the exact Cloudflare resolver through Next webpack alias capture used by Vinext', async () => {
     const script = `
       import { pathToFileURL } from 'node:url';
