@@ -25,7 +25,7 @@ describe('production runtime deep diagnostic', () => {
     expect(workflow).toContain('hasBinding');
     expect(workflow).toContain('hasConnectionString');
     expect(workflow).toContain('explicit-cloudflare-resolver');
-    expect(workflow).toContain('runtime-adapter-identity');
+    // The diagnostic may reveal only the adapter class, never connection details.\n    expect(workflow).toContain('runtime-adapter-identity');
     expect(workflow).toContain('aliasedRuntimeConnectionAdapterKind');
     expect(workflow).toContain('runtime-resolver');
     expect(workflow).toContain('request-database');
