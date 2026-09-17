@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - '.github/workflows/mkety-public-assistant-prod-debug.yml'
+      - 'scripts/public-assistant-production-diagnostic.ts'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ env:
 
 jobs:
   diagnose:
-    name: Capture sanitized Public AI runtime failure
+    name: Capture and enforce Public AI production health
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -92,5 +94,6 @@ jobs:
           let body=''; try{body=fs.readFileSync('/tmp/assistant.body','utf8')}catch{}
           console.log('SANITIZED_ASSISTANT_BODY '+redact(body));
           console.log('SANITIZED_WORKER_EVENTS '+JSON.stringify(events.slice(0,20)));
-          if(process.env.HTTP_CODE==='200') console.log('Assistant unexpectedly healthy during diagnostic.');
           NODE
+
+          HTTP_CODE="$code" pnpm exec tsx -e "import { evaluateHttpProbe } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluateHttpProbe(process.env.HTTP_CODE ?? ''); console.log('PUBLIC_ASSISTANT_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
