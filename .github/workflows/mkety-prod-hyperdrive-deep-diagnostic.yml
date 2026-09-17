@@ -1,0 +1,274 @@
+name: Mkety Production Hyperdrive Deep Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-prod-hyperdrive-deep-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERIFIED_SHA: 8ef16bd1802499331d5d8ea9e43db2b0f8da6bcd
+  MKETY_HYPERDRIVE_NAME: mkety-production-db
+  PROBE_WORKER_NAME: mkety-hyperdrive-probe
+  APP_WORKER_NAME: mkety-platform-prodtrace
+  SKIP_ENV_VALIDATION: 'true'
+
+jobs:
+  diagnose:
+    name: Probe Hyperdrive and capture sanitized Worker exception
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+    steps:
+      - name: Guard production routes and resolve Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?required}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?required}"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zones="$(curl -fsS "${auth[@]}" 'https://api.cloudflare.com/client/v4/zones?name=mkety.com&status=active')"
+          ZONES="$zones" node <<'NODE' >/tmp/zone-id
+          const p=JSON.parse(process.env.ZONES||'{}');
+          if(!p.success||!Array.isArray(p.result)||p.result.length!==1) throw new Error('Expected one active mkety.com zone');
+          process.stdout.write(p.result[0].id);
+          NODE
+          routes="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$(cat /tmp/zone-id)/workers/routes")"
+          ROUTES="$routes" node <<'NODE'
+          const p=JSON.parse(process.env.ROUTES||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Could not read Worker routes');
+          const target=new Set(['mkety.com/*','www.mkety.com/*']);
+          if(p.result.some(r=>target.has(r.pattern))) throw new Error('Refusing diagnostic while Mkety apex/www Worker routes exist');
+          console.log('PASS apex/www remain unbound');
+          NODE
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" node <<'NODE' >/tmp/hyperdrive-id
+          const p=JSON.parse(process.env.HYPERDRIVES||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Could not list Hyperdrive configs');
+          const m=p.result.filter(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME);
+          if(m.length!==1||!m[0]?.id) throw new Error('Expected exactly one Mkety production Hyperdrive');
+          const x=m[0];
+          const origin=x.origin||{};
+          const summary={
+            nameMatches:true,
+            hasOrigin:Boolean(x.origin),
+            hasDatabase:Boolean(origin.database),
+            hasHostOrService:Boolean(origin.host||origin.service_id),
+            hasUser:Boolean(origin.user||origin.service_id),
+            scheme:origin.scheme||'vpc-service',
+            sslmode:origin.mtls?.sslmode||'managed-by-vpc-service',
+            modified:Boolean(x.modified_on),
+            restarted:Boolean(x.restarted_on)
+          };
+          console.log('Hyperdrive metadata '+JSON.stringify(summary));
+          process.stdout.write(x.id);
+          NODE
+          echo "id=$(tail -c 64 /tmp/hyperdrive-id | tr -d '\n')" >> "$GITHUB_OUTPUT"
+          # Re-resolve the id without mixing the sanitized summary written to stdout above.
+          HYPERDRIVES="$response" node <<'NODE' >/tmp/hyperdrive-id-clean
+          const p=JSON.parse(process.env.HYPERDRIVES||'{}');
+          const m=p.result.filter(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME);
+          process.stdout.write(m[0].id);
+          NODE
+          echo "id=$(cat /tmp/hyperdrive-id-clean)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact certified app SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERIFIED_SHA }}
+          fetch-depth: 1
+
+      - name: Assert exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
+          echo "PASS exact app SHA $VERIFIED_SHA"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy direct Hyperdrive SELECT 1 probe
+        id: probe
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .diag
+          cat >.diag/hyperdrive-probe.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(_request, env) {
+              if (!env.MKETY_DB?.connectionString) {
+                return Response.json({ok:false,stage:'binding',kind:'missing_binding'},{status:500});
+              }
+              let sql;
+              try {
+                sql = postgres(env.MKETY_DB.connectionString, {
+                  max: 1,
+                  connect_timeout: 10,
+                  idle_timeout: 5,
+                  prepare: false,
+                });
+                const rows = await sql`select 1::int as ok`;
+                return Response.json({ok:rows?.[0]?.ok===1,stage:'query'},{status:rows?.[0]?.ok===1?200:500});
+              } catch (error) {
+                const name = typeof error?.name === 'string' ? error.name : 'Error';
+                const code = typeof error?.code === 'string' ? error.code : null;
+                console.error(JSON.stringify({stage:'query',name,code}));
+                return Response.json({ok:false,stage:'query',name,code},{status:500});
+              } finally {
+                if (sql) await sql.end({timeout:1}).catch(()=>{});
+              }
+            }
+          };
+          JS
+          cat >.diag/wrangler-probe.jsonc <<JSON
+          {
+            "name": "$PROBE_WORKER_NAME",
+            "main": "./hyperdrive-probe.mjs",
+            "compatibility_date": "2026-09-06",
+            "compatibility_flags": ["nodejs_compat"],
+            "workers_dev": true,
+            "preview_urls": true,
+            "observability": {"enabled": true},
+            "hyperdrive": [{"binding":"MKETY_DB","id":"$MKETY_HYPERDRIVE_ID"}]
+          }
+          JSON
+          pnpm exec wrangler deploy --config .diag/wrangler-probe.jsonc >/tmp/probe-deploy.log 2>&1
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          ACCOUNT="$account" node <<'NODE' >/tmp/subdomain
+          const p=JSON.parse(process.env.ACCOUNT||'{}');
+          if(!p.success||!p.result?.subdomain) throw new Error('No workers.dev account subdomain');
+          process.stdout.write(p.result.subdomain);
+          NODE
+          echo "url=https://${PROBE_WORKER_NAME}.$(cat /tmp/subdomain).workers.dev" >> "$GITHUB_OUTPUT"
+          echo 'PASS direct Hyperdrive probe deployed route-free'
+
+      - name: Execute direct Hyperdrive query probe
+        shell: bash
+        env:
+          PROBE_URL: ${{ steps.probe.outputs.url }}
+        run: |
+          set -euo pipefail
+          report=/tmp/mkety-hyperdrive-deep.txt
+          : >"$report"
+          code='000'
+          for attempt in 1 2 3 4 5 6; do
+            code="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/probe.json -w '%{http_code}' "$PROBE_URL/" || true)"
+            if [ "$code" != '000' ]; then break; fi
+            sleep 2
+          done
+          printf 'direct-hyperdrive HTTP %s\n' "$code" | tee -a "$report"
+          node <<'NODE' | tee -a "$report"
+          const fs=require('node:fs');
+          let x={}; try{x=JSON.parse(fs.readFileSync('/tmp/probe.json','utf8'))}catch{}
+          const safe={ok:x.ok===true,stage:typeof x.stage==='string'?x.stage:null,kind:typeof x.kind==='string'?x.kind:null,name:typeof x.name==='string'?x.name:null,code:typeof x.code==='string'?x.code:null};
+          console.log('direct-hyperdrive result '+JSON.stringify(safe));
+          NODE
+
+      - name: Build and deploy exact Mkety app with production Hyperdrive
+        id: app
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const p='wrangler.jsonc';
+          const c=JSON.parse(fs.readFileSync(p,'utf8'));
+          c.name=process.env.APP_WORKER_NAME;
+          c.workers_dev=true;
+          c.preview_urls=true;
+          c.vars={...(c.vars||{}),SKIP_ENV_VALIDATION:'true'};
+          c.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          delete c.route; delete c.routes;
+          fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');
+          NODE
+          pnpm build
+          CANDIDATE_WORKER_NAME="$APP_WORKER_NAME" MKETY_HYPERDRIVE_ID="$MKETY_HYPERDRIVE_ID" pnpm run deploy >/tmp/app-deploy.log 2>&1
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          ACCOUNT="$account" node <<'NODE' >/tmp/subdomain-app
+          const p=JSON.parse(process.env.ACCOUNT||'{}'); process.stdout.write(p.result.subdomain);
+          NODE
+          echo "url=https://${APP_WORKER_NAME}.$(cat /tmp/subdomain-app).workers.dev" >> "$GITHUB_OUTPUT"
+          printf '%s' 'true' | pnpm exec wrangler secret put MKETY_PUBLIC_AI_ENABLED --name "$APP_WORKER_NAME" >/dev/null
+          if [ -n "${MKETY_PUBLIC_AI_VISITOR_SECRET:-}" ]; then
+            printf '%s' "$MKETY_PUBLIC_AI_VISITOR_SECRET" | pnpm exec wrangler secret put MKETY_PUBLIC_AI_VISITOR_SECRET --name "$APP_WORKER_NAME" >/dev/null
+          fi
+          echo 'PASS exact Mkety app deployed route-free with production Hyperdrive'
+
+      - name: Tail sanitized runtime exception while requesting root
+        shell: bash
+        env:
+          APP_URL: ${{ steps.app.outputs.url }}
+        run: |
+          set -euo pipefail
+          report=/tmp/mkety-hyperdrive-deep.txt
+          timeout 40s pnpm exec wrangler tail "$APP_WORKER_NAME" --format json --status error > /tmp/app-tail.raw 2>&1 &
+          tail_pid=$!
+          sleep 6
+          code="$(curl -sS -L --connect-timeout 10 --max-time 25 -o /tmp/app-root.html -w '%{http_code}' "$APP_URL/" || true)"
+          printf 'mkety-root HTTP %s\n' "$code" | tee -a "$report"
+          sleep 8
+          kill "$tail_pid" 2>/dev/null || true
+          wait "$tail_pid" 2>/dev/null || true
+          node <<'NODE' | tee -a "$report"
+          const fs=require('node:fs');
+          const raw=fs.existsSync('/tmp/app-tail.raw')?fs.readFileSync('/tmp/app-tail.raw','utf8'):'';
+          const out=[];
+          for(const line of raw.split(/\r?\n/)){
+            let x; try{x=JSON.parse(line)}catch{continue}
+            for(const e of Array.isArray(x.exceptions)?x.exceptions:[]){
+              const name=typeof e?.name==='string'?e.name:'Error';
+              let msg=typeof e?.message==='string'?e.message:'';
+              msg=msg.replace(/postgres(?:ql)?:\/\/\S+/gi,'[redacted-db-url]')
+                     .replace(/https?:\/\/\S+/gi,'[redacted-url]')
+                     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g,'[redacted-ip]')
+                     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted-email]')
+                     .slice(0,400);
+              out.push({name,message:msg});
+            }
+          }
+          console.log('mkety-tail '+JSON.stringify(out.slice(0,5)));
+          NODE
+
+      - name: Cleanup diagnostic Workers
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          for worker in "$PROBE_WORKER_NAME" "$APP_WORKER_NAME"; do
+            curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '{"enabled":false,"previews_enabled":false}' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$worker/subdomain" >/dev/null
+            curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$worker" >/dev/null
+          done
+          echo 'Cleanup attempted for both route-free diagnostic Workers'
+
+      - name: Upload sanitized diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-hyperdrive-deep-${{ env.VERIFIED_SHA }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: /tmp/mkety-hyperdrive-deep.txt
