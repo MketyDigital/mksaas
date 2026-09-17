@@ -33,6 +33,18 @@ function prioritizeRuntimeConnectionAlias(): Plugin {
 
       return null;
     },
+    transform(_code, id) {
+      const idWithoutQuery = id.split(/[?#]/, 1)[0];
+
+      if (idWithoutQuery !== runtimeConnectionNodePath) {
+        return null;
+      }
+
+      return {
+        code: "export { getRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';",
+        map: null,
+      };
+    },
     configResolved(config) {
       const aliases = config.resolve.alias;
       const existingIndex = aliases.findIndex(
