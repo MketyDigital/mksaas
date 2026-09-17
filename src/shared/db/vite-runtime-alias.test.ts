@@ -62,7 +62,12 @@ describe('Cloudflare Worker database build wiring', () => {
       const config = module.default;
       const initial = { resolve: { alias: {} } };
       const resolved = typeof config.webpack === 'function'
-        ? config.webpack(initial, { dev: false, isServer: true, nextRuntime: 'nodejs' })
+        ? config.webpack(initial, {
+            dev: false,
+            dir: process.cwd(),
+            isServer: true,
+            nextRuntime: 'nodejs',
+          })
         : initial;
       process.stdout.write(String(resolved?.resolve?.alias?.[${JSON.stringify(RUNTIME_CONNECTION_ID)}] ?? ''));
     `;
