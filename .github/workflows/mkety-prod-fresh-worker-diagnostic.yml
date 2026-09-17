@@ -1,5 +1,6 @@
 name: Mkety Fresh Production Worker Diagnostic
 
+# Diagnostic control-plane workflow only. It checks out VERIFIED_SHA below.
 on:
   push:
     branches: [main]
