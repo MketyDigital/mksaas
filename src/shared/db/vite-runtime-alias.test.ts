@@ -1,12 +1,16 @@
 /** @jest-environment node */
 
+import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
+const execFileAsync = promisify(execFile);
 const VITE_CONFIG_PATH = path.resolve(process.cwd(), 'vite.config.ts');
 const WRANGLER_CONFIG_PATH = path.resolve(process.cwd(), 'wrangler.jsonc');
 const DB_INDEX_PATH = path.resolve(process.cwd(), 'src/shared/db/index.ts');
 const DB_REQUEST_PATH = path.resolve(process.cwd(), 'src/shared/db/request.ts');
+const RUNTIME_CONNECTION_ID = '@/shared/db/runtime-connection';
 
 describe('Cloudflare Worker database build wiring', () => {
   it('aliases the runtime database connection module to the Cloudflare adapter', async () => {
@@ -14,6 +18,40 @@ describe('Cloudflare Worker database build wiring', () => {
 
     expect(config).toContain("'@/shared/db/runtime-connection'");
     expect(config).toContain('runtime-connection.cloudflare.ts');
+  });
+
+  it('resolves the runtime database module to the Cloudflare adapter before generic tsconfig aliases', async () => {
+    const script = `
+      import { resolveConfig } from 'vite';
+      (async () => {
+        const id = ${JSON.stringify(RUNTIME_CONNECTION_ID)};
+        const config = await resolveConfig(
+          { configFile: ${JSON.stringify(VITE_CONFIG_PATH)}, logLevel: 'silent' },
+          'build',
+        );
+        const matches = (find, value) => {
+          if (find instanceof RegExp) {
+            find.lastIndex = 0;
+            return find.test(value);
+          }
+          return value === find || value.startsWith(find + '/');
+        };
+        const firstMatch = config.resolve.alias.find((alias) => matches(alias.find, id));
+        process.stdout.write(firstMatch?.replacement ?? '');
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+      cwd: process.cwd(),
+      env: process.env,
+      maxBuffer: 1024 * 1024,
+    });
+
+    expect(stdout.trim().replaceAll('\\', '/')).toMatch(
+      /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
+    );
   });
 
   it('routes runtime database consumers through the aliased module', async () => {
