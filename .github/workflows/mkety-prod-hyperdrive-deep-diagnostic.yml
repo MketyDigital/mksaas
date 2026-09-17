@@ -206,7 +206,7 @@ jobs:
           import {
             getRuntimeDatabaseConnectionString as getExplicitCloudflareRuntimeDatabaseConnectionString,
           } from '@/shared/db/runtime-connection.cloudflare';
-          import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
+          import {\n            getRuntimeDatabaseConnectionString,\n            runtimeConnectionAdapterKind as aliasedRuntimeConnectionAdapterKind,\n          } from '@/shared/db/runtime-connection';
 
           type Stage = {
             ok: boolean;
