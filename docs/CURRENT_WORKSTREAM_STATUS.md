@@ -3,8 +3,8 @@
 **Updated:** 2026-09-17  
 **Current workstream:** Public-site production cutover/runtime repair  
 **Status:** IN PROGRESS  
-**Branch:** `fix/public-cutover-runtime-and-handoff`  
-**Pull request:** #41
+**Branch:** `fix/public-runtime-root-cause-probe`  
+**Pull request:** #42
 
 ## Requested outcome
 
@@ -23,45 +23,65 @@ finish public site
 → resume app.mkety.com development
 ```
 
-## Current blocker
+## Proven production state
 
-The production Public Assistant endpoint has returned HTTP 503 with the generic temporary-unavailable response. Earlier production diagnostics were not reliable evidence because the direct Hyperdrive probe returned HTTP 404 without failing the workflow, and an older diagnostic tested a pinned stale application SHA rather than the current commit.
+PR #41 merged to `main` as `c42108625dc62e51fda7fab4873c7ada31581650` and replaced the earlier false-green diagnostics with fail-closed checks.
 
-Root cause is not yet proven. Do not guess at Hyperdrive, postgres options, migrations, RLS, or application queries until the hardened diagnostic produces evidence.
+Fresh production diagnostics from that exact SHA proved:
 
-## Changes in PR #41
+- the apex/www Worker route guard passes; the replacement is not yet bound to `mkety.com/*` or `www.mkety.com/*`;
+- production Hyperdrive `mkety-production-db` resolves successfully;
+- a route-free Worker using the same Public Assistant postgres client shape, `postgres(connectionString, { max: 1 })`, executes `SELECT 1` successfully and returns HTTP 200;
+- the current Mkety Vinext application builds and deploys successfully with that same production Hyperdrive binding;
+- `/robots.txt` and `/sitemap.xml` return HTTP 200 on the current route-free app;
+- `/api/health`, `/`, and `/platform` return HTTP 500;
+- `/api/public/assistant` returns the handled HTTP 503 temporary-unavailable response;
+- the same Public Assistant 503 reproduces on the existing `mkety-platform` Worker and on a freshly built Worker from the exact current SHA.
 
-- Added a tested fail-closed HTTP probe evaluator.
-- Hardened the Public Assistant production debug workflow so non-200 health fails the workflow after sanitized evidence is printed.
-- Reworked the deep Hyperdrive diagnostic to test the current triggering commit instead of a stale pinned SHA.
-- Aligned the direct Hyperdrive postgres client options with `withPublicAIRequestDatabase`: `{ max: 1 }`.
-- Removed diagnostic-only postgres behavior such as `prepare: false` that did not match the application path.
-- Made the direct `SELECT 1` result a hard gate.
-- Made the deployed route-free application's `/api/public/assistant` response a hard gate.
-- Preserved the pre-cutover domain-route guard and cleanup of temporary diagnostic Workers.
-- Added the mandatory feature-agent handoff protocol.
+This rules out basic Hyperdrive/Postgres connectivity and a merely stale deployed Worker. The remaining fault is higher in the Mkety/Vinext application runtime.
 
-## Verification so far
+## Current diagnostic: PR #42
 
-The first test-only commit intentionally referenced a missing diagnostic helper. GitHub CI then failed on lint/type-check while build remained green, establishing the red phase for the new contract. Jest did not catch the missing module in that isolated commit, so lint/type-check provided the concrete failing signal.
+PR #42 narrows the fault inside the actual Vinext bundle without adding a permanent product endpoint.
 
-Implementation and workflow hardening are now on the branch. Fresh CI must be green before merge.
+Its workflow creates a diagnostic-only `/api/_diagnostics/runtime-db` route in the GitHub runner before `pnpm build`. The route is therefore present only in the temporary route-free diagnostic Worker and is not committed as an application endpoint.
 
-## Production state
+The route checks these stages in order while returning only booleans plus sanitized error name/code:
 
-- Legacy public site must remain live until the replacement passes the release gate.
-- Do not bind `mkety.com/*` or `www.mkety.com/*` to the new Worker while the Public Assistant/runtime blocker remains unresolved.
+1. `runtime-resolver`: whether `getRuntimeDatabaseConnectionString()` can see the Worker runtime database binding inside the built Vinext application.
+2. `request-database`: whether `withPublicAIRequestDatabase()` can execute `SELECT 1` inside that bundle.
+3. `singleton-database`: whether the normal shared `db` singleton can execute `SELECT 1` inside that bundle.
+
+The workflow also captures sanitized `/api/health`, root, and Public Assistant response bodies and fails closed after evidence collection.
+
+## TDD evidence for PR #42
+
+An initial diagnostic contract test was mistakenly placed under `scripts/`, which the repository Jest config does not collect because its roots are `src/`. That unexecuted duplicate was removed.
+
+The contract test was moved to `src/shared/db/public-runtime-deep-diagnostic.test.ts`. On commit `1ac8ab3`, the main Test job then failed exactly because `/api/_diagnostics/runtime-db` and the required runtime-stage markers did not yet exist: **1 failed, 155 passed; 1 failed, 715 passed**. This is the red phase.
+
+The workflow implementation was added only after that confirmed failure. Fresh branch CI must now prove the green phase before PR #42 is merged.
+
+## Production safety
+
+- The legacy public site remains live until the replacement passes the release gate.
+- Do not bind `mkety.com/*` or `www.mkety.com/*` while the application runtime blocker remains unresolved.
+- PR #42 does not change public product behavior and does not add a permanent diagnostic API route.
+- Temporary diagnostic Workers remain route-free and are cleaned up by the workflow.
 - No production cutover is claimed yet.
 
 ## Exact next steps
 
-1. Run and inspect PR #41 CI: lint, type-check, tests, and build must pass.
-2. Fix any branch-level regression without changing production behavior unnecessarily.
-3. Merge the hardened diagnostic only after verification.
-4. Run the hardened production diagnostic on `main` and capture the sanitized direct-DB and actual-app results.
-5. Identify the proven failing boundary: Hyperdrive connectivity, postgres/runtime integration, schema/migration state, or Public Assistant application query/runtime.
-6. Fix the proven root cause test-first and re-run production verification.
-7. Run the public release/cutover gate across the required public routes, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
-8. Cut over `mkety.com` / `www.mkety.com` only after the gate is green.
-9. Update `MKETY_DEVELOPMENT_CONTINUATION.md` and this file to record the production cutover.
-10. Resume app-side work by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
+1. Verify PR #42 lint, type-check, tests, build, and PR validation are green after the diagnostic implementation.
+2. Merge PR #42 only after fresh verification.
+3. Run the hardened deep diagnostic on `main` and inspect `RUNTIME_DB_DIAGNOSTIC` evidence.
+4. Branch on the proven stage:
+   - resolver fails → fix Cloudflare/Vinext runtime binding resolution or alias wiring;
+   - request DB fails → fix request-scoped postgres/Drizzle integration;
+   - singleton DB fails → fix singleton initialization/runtime lifecycle;
+   - all three pass → continue upward into schema/query/Public Assistant or other shared dynamic-runtime code.
+5. Implement the proven root-cause fix test-first and re-run the production diagnostic.
+6. When dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
+7. Cut over `mkety.com` / `www.mkety.com` only after that gate is green and the cutover workflow's required authorization conditions are satisfied.
+8. Update `MKETY_DEVELOPMENT_CONTINUATION.md` and this file with immutable cutover evidence.
+9. Resume app-side development by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
