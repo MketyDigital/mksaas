@@ -192,6 +192,67 @@ jobs:
           delete c.route; delete c.routes;
           fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');
           NODE
+
+          # Diagnostic-only route: created in the runner before the Vinext build and never committed
+          # as a product endpoint. It returns only stage booleans and sanitized error identity.
+          mkdir -p src/app/api/_diagnostics/runtime-db
+          cat >src/app/api/_diagnostics/runtime-db/route.ts <<'TS'
+          import { sql } from 'drizzle-orm';
+          import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
+          import { db } from '@/shared/db';
+          import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
+
+          type Stage = {
+            ok: boolean;
+            stage: 'runtime-resolver' | 'request-database' | 'singleton-database';
+            name?: string;
+            code?: string | null;
+          };
+
+          function failure(stage: Stage['stage'], error: unknown): Stage {
+            const normalized = error instanceof Error ? error : new Error(String(error));
+            const code = (normalized as Error & { code?: unknown }).code;
+            return {
+              ok: false,
+              stage,
+              name: normalized.name,
+              code: typeof code === 'string' ? code : null,
+            };
+          }
+
+          export async function GET() {
+            const stages: Stage[] = [];
+
+            try {
+              const connectionString = getRuntimeDatabaseConnectionString();
+              stages.push({ ok: connectionString.length > 0, stage: 'runtime-resolver' });
+            } catch (error) {
+              stages.push(failure('runtime-resolver', error));
+              return Response.json({ ok: false, stages }, { status: 500 });
+            }
+
+            try {
+              await withPublicAIRequestDatabase(async (database) => {
+                await database.execute(sql`select 1`);
+              });
+              stages.push({ ok: true, stage: 'request-database' });
+            } catch (error) {
+              stages.push(failure('request-database', error));
+              return Response.json({ ok: false, stages }, { status: 500 });
+            }
+
+            try {
+              await db.execute(sql`select 1`);
+              stages.push({ ok: true, stage: 'singleton-database' });
+            } catch (error) {
+              stages.push(failure('singleton-database', error));
+              return Response.json({ ok: false, stages }, { status: 500 });
+            }
+
+            return Response.json({ ok: true, stages });
+          }
+          TS
+
           pnpm build
           CANDIDATE_WORKER_NAME="$APP_WORKER_NAME" MKETY_HYPERDRIVE_ID="$MKETY_HYPERDRIVE_ID" pnpm run deploy 2>&1 | tee /tmp/app-deploy.log
           url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/app-deploy.log | tail -n 1 || true)"
@@ -231,13 +292,15 @@ jobs:
           timeout 50s pnpm exec wrangler tail "$APP_WORKER_NAME" --format json > /tmp/app-tail.raw 2>&1 &
           tail_pid=$!
           sleep 7
-          routes=(/robots.txt /sitemap.xml /api/health / /platform /api/public/assistant)
+          routes=(/robots.txt /sitemap.xml /api/_diagnostics/runtime-db /api/health / /platform /api/public/assistant)
           assistant_code='000'
+          runtime_code='000'
           for route in "${routes[@]}"; do
             safe="$(printf '%s' "$route" | tr '/?' '__')"
             code="$(curl -sS -L --connect-timeout 10 --max-time 25 -D "/tmp/${safe}.headers" -o "/tmp/${safe}.body" -w '%{http_code}' "$APP_URL$route" || true)"
             printf 'route %s HTTP %s\n' "$route" "$code" | tee -a "$report"
             if [ "$route" = '/api/public/assistant' ]; then assistant_code="$code"; fi
+            if [ "$route" = '/api/_diagnostics/runtime-db' ]; then runtime_code="$code"; fi
           done
           sleep 10
           kill "$tail_pid" 2>/dev/null || true
@@ -251,7 +314,7 @@ jobs:
             .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g,'[redacted-ip]')
             .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted-email]')
             .replace(/(password|secret|token|authorization|connectionstring)\s*[:=]\s*[^\s,;]+/gi,'$1=[redacted]')
-            .slice(0,700);
+            .slice(0,1200);
           const raw=fs.existsSync('/tmp/app-tail.raw')?fs.readFileSync('/tmp/app-tail.raw','utf8'):'';
           const events=[];
           for(const line of raw.split(/\r?\n/)){
@@ -267,15 +330,21 @@ jobs:
             if(Object.keys(item).length) events.push(item);
           }
           console.log('mkety-tail '+JSON.stringify(events.slice(0,20)));
-          for(const path of ['/tmp/_.body','/tmp/_api_public_assistant.body']){
+          const outputs = [
+            ['/tmp/_api__diagnostics_runtime-db.body','RUNTIME_DB_DIAGNOSTIC '],
+            ['/tmp/_api_health.body','MKETY_HEALTH_BODY '],
+            ['/tmp/_.body','mkety-root-body '],
+            ['/tmp/_api_public_assistant.body','mkety-assistant-body '],
+          ];
+          for(const [path,label] of outputs){
             if(fs.existsSync(path)){
               const body=fs.readFileSync(path,'utf8').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
-              console.log(path.includes('assistant')?'mkety-assistant-body ':'mkety-root-body ', JSON.stringify(redact(body)));
+              console.log(label+JSON.stringify(redact(body)));
             }
           }
           NODE
 
-          HTTP_CODE="$assistant_code" pnpm exec tsx -e "import { evaluateHttpProbe } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluateHttpProbe(process.env.HTTP_CODE ?? ''); console.log('ROUTE_PUBLIC_ASSISTANT_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
+          RUNTIME_HTTP_CODE="$runtime_code" ASSISTANT_HTTP_CODE="$assistant_code" pnpm exec tsx -e "import { evaluateHttpProbe } from './scripts/public-assistant-production-diagnostic.ts'; const runtime=evaluateHttpProbe(process.env.RUNTIME_HTTP_CODE ?? ''); const assistant=evaluateHttpProbe(process.env.ASSISTANT_HTTP_CODE ?? ''); console.log('ROUTE_RUNTIME_DB_HEALTH '+JSON.stringify(runtime)); console.log('ROUTE_PUBLIC_ASSISTANT_HEALTH '+JSON.stringify(assistant)); if(!runtime.ok || !assistant.ok) process.exit(1);"
 
       - name: Cleanup diagnostic Workers
         if: ${{ always() }}
