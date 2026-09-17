@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const VITE_CONFIG_PATH = path.resolve(process.cwd(), 'vite.config.ts');
+const NEXT_CONFIG_PATH = path.resolve(process.cwd(), 'next.config.mjs');
 const WRANGLER_CONFIG_PATH = path.resolve(process.cwd(), 'wrangler.jsonc');
 const DB_INDEX_PATH = path.resolve(process.cwd(), 'src/shared/db/index.ts');
 const DB_REQUEST_PATH = path.resolve(process.cwd(), 'src/shared/db/request.ts');
@@ -48,6 +49,32 @@ describe('Cloudflare Worker database build wiring', () => {
       env: process.env,
       maxBuffer: 1024 * 1024,
     });
+
+    expect(stdout.trim().replaceAll('\\', '/')).toMatch(
+      /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
+    );
+  });
+
+  it('exposes the exact Cloudflare resolver through Next webpack alias capture used by Vinext', async () => {
+    const script = `
+      import { pathToFileURL } from 'node:url';
+      const module = await import(pathToFileURL(${JSON.stringify(NEXT_CONFIG_PATH)}).href);
+      const config = module.default;
+      const initial = { resolve: { alias: {} } };
+      const resolved = typeof config.webpack === 'function'
+        ? config.webpack(initial, { dev: false, isServer: true, nextRuntime: 'nodejs' })
+        : initial;
+      process.stdout.write(String(resolved?.resolve?.alias?.[${JSON.stringify(RUNTIME_CONNECTION_ID)}] ?? ''));
+    `;
+    const { stdout } = await execFileAsync(
+      'node',
+      ['--input-type=module', '--eval', script],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        maxBuffer: 1024 * 1024,
+      },
+    );
 
     expect(stdout.trim().replaceAll('\\', '/')).toMatch(
       /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
