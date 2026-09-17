@@ -3,8 +3,8 @@
 **Updated:** 2026-09-17  
 **Current workstream:** Public-site production cutover/runtime repair  
 **Status:** IN PROGRESS  
-**Branch:** `fix/cloudflare-same-zone-fetch`  
-**Pull request:** #45
+**Branch:** `fix/cloudflare-runtime-binding-diagnostic`  
+**Pull request:** #46
 
 ## Requested outcome
 
@@ -29,85 +29,95 @@ The public Mkety site and substantial Platform foundations already exist in `mks
 - PR #42 added a CI-only in-bundle diagnostic for the Cloudflare runtime database resolver, Public Assistant request-scoped database, and shared singleton database.
 - PR #43 corrected that temporary diagnostic from the private/non-routable `_diagnostics` segment to the routable CI-only `/api/runtime-db-diagnostic` endpoint.
 - PR #44 made direct-Hyperdrive readiness structural rather than status-code-only so transient generic Worker responses are retried and only the probe handler's expected JSON can end readiness.
+- PR #45 added `global_fetch_strictly_public` alongside `nodejs_compat` after production emitted Cloudflare error 1042 on dynamic Vinext requests. The exact implementation head passed combined CI, standalone tests, lint, type-check, build, and Cloudflare/Vinext smoke before merge.
 - The repository has a mandatory feature-agent handoff protocol and this canonical current-workstream file. Material work is not considered complete without current status, verification, blockers, and exact next steps.
 
-## Proven production state
+## Latest production evidence
 
-Production deep-diagnostic run `35276918465` tested `main` SHA `14ab59325cd39432c543e63a1a770be74271ef45` and established that:
+Production deep-diagnostic run `35277639490` tested `main` SHA `2a3bb15c9f5d8b22b9955b75267dc1fcb7754f77` after PR #45.
 
-- the apex/www Worker route safety guard passes; the replacement remains intentionally unbound from `mkety.com/*` and `www.mkety.com/*`;
-- production Hyperdrive `mkety-production-db` resolves correctly;
-- the direct route-free probe reached its structured handler response and successfully executed `SELECT 1` using the same Public Assistant postgres shape, `postgres(connectionString, { max: 1 })`;
-- the freshly built Mkety Vinext Worker serves static metadata routes such as `/robots.txt` and `/sitemap.xml`;
-- dynamic request paths produced Cloudflare runtime failures, including Cloudflare error code **1042** on `/api/health` and `/`;
-- `/api/runtime-db-diagnostic` returned HTTP 500 before it could provide structured stage evidence;
-- `/platform` returned HTTP 500;
-- `/api/public/assistant` continued to return its handled HTTP 503 temporary-unavailable response.
+It established:
 
-This means Hyperdrive connectivity itself is no longer the leading blocker. The failure is in the Cloudflare/Vinext dynamic runtime path, and the public cutover remains blocked.
+- apex/www Worker routes remain intentionally unbound;
+- production Hyperdrive resolves correctly;
+- the direct route-free Hyperdrive probe returned its expected structured handler response and successfully executed `SELECT 1` using `postgres(connectionString, { max: 1 })`;
+- the prior Cloudflare 1042 symptom did not reappear in this run;
+- static `/robots.txt` and `/sitemap.xml` returned HTTP 200;
+- `/api/runtime-db-diagnostic` returned a structured HTTP 500 body identifying the first failing stage as `runtime-resolver`;
+- the diagnostic body was `{"ok":false,"stages":[{"ok":false,"stage":"runtime-resolver","name":"Error","code":null}]}`;
+- `request-database` and `singleton-database` were never reached;
+- `/api/health`, `/`, and `/platform` still returned HTTP 500;
+- `/api/public/assistant` still returned its handled HTTP 503 temporary-unavailable response.
 
-## Latest root-cause evidence
+The direct Hyperdrive query succeeding while the in-bundle resolver fails means the current blocker is specifically inside the Vinext/Cloudflare application binding-resolution path, before a postgres client is constructed.
 
-Cloudflare documents error code **1042** as a Worker attempting to fetch another Worker on the same zone without the `global_fetch_strictly_public` compatibility flag.
+## Current external/runtime guidance
 
-The Mkety `wrangler.jsonc` used by Vinext had only:
+Current Cloudflare Workers documentation supports importing bindings with:
 
-```json
-"compatibility_flags": ["nodejs_compat"]
+```ts
+import { env } from 'cloudflare:workers';
 ```
 
-and the repository contained no `global_fetch_strictly_public` setting.
+Current Vinext Cloudflare documentation also explicitly recommends that same API in route handlers, server components, and server actions. Therefore the product resolver is not being changed merely because binding access failed once in Mkety; the deployed application needs one more safe observation to distinguish whether the `MKETY_DB` binding is absent inside the route environment or present without a usable `connectionString`.
 
-This directly matches the observed Cloudflare error and is now the bounded runtime repair being tested. It is not considered fixed until the updated configuration passes repository verification and the production diagnostic proves that error 1042 has disappeared.
+The current `resolveDatabaseConnectionString()` helper itself is a simple selector: Hyperdrive connection string first, `DATABASE_URL` second, otherwise it throws `Error('No database connection string is available')`.
 
-## Current repair: PR #45
+## Current repair: PR #46
 
-PR #45 adds the Cloudflare compatibility flag required for same-zone public Worker fetches while preserving `nodejs_compat`:
+PR #46 extends only the temporary CI-built `/api/runtime-db-diagnostic` endpoint with a stage before `runtime-resolver`:
 
-```json
-"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"]
+```text
+cloudflare-binding
+→ runtime-resolver
+→ request-database
+→ singleton-database
 ```
+
+The new `cloudflare-binding` stage exposes only safe booleans:
+
+- `hasBinding`
+- `hasConnectionString`
+
+No binding object, connection string, credentials, secrets, hostnames, or database contents are returned.
 
 ### TDD evidence
 
-The regression was added first in `src/shared/db/vite-runtime-alias.test.ts` and requires the Wrangler configuration to contain both compatibility flags.
+The collected regression was committed first on `22b28c7ed07ecfc453fdd63d83648943106068d4`.
 
-On red-phase commit `2b27114bfcc7da93eddfae4544ae137797488aef`:
+Red phase:
 
-- the collected **Test** job failed;
+- combined CI **Test** job failed;
 - **Lint** passed;
 - **Type-check** passed;
-- the intended failure was the missing `global_fetch_strictly_public` compatibility flag.
+- **Build** passed;
+- intended failure: the workflow did not yet contain the required `cloudflare-binding`, `hasBinding`, and `hasConnectionString` diagnostic contract.
 
-The implementation then changes only the compatibility flag configuration before fresh green verification.
-
-## Secondary diagnostic observation
-
-The production deep diagnostic currently runs `wrangler secret put` after deploying the temporary application Worker. Wrangler secret updates create/deploy a new Worker version, so the diagnostic can experience additional propagation churn after the initial code deployment. This is separate from Cloudflare 1042 and should be cleaned up only if it remains relevant after the 1042 repair is verified.
+Implementation commit `863c36657e9a7a4413dd59dffcca7ba13e4feaec` adds that CI-only stage. Fresh green verification is required before merge.
 
 ## Production safety
 
-- The legacy/publicly reachable site remains in place while replacement verification is incomplete.
+- The currently reachable public site remains untouched while replacement verification is incomplete.
 - Do not bind `mkety.com/*` or `www.mkety.com/*` while the runtime blocker remains unresolved.
-- Diagnostic routes are created only in the CI runner before build; no permanent diagnostic product endpoint is added.
+- `/api/runtime-db-diagnostic` is created only inside the GitHub Actions runner before the temporary Vinext build; it is not a permanent product route.
 - Temporary diagnostic Workers remain route-free and cleanup is attempted on every workflow outcome.
-- Diagnostic output must remain sanitized; never log connection strings, credentials, secrets, tokens, or raw sensitive database data.
+- Diagnostic output must remain sanitized; never log connection strings, credentials, secrets, tokens, raw binding values, or database data.
 - No production cutover is claimed yet.
 
 ## Exact next steps
 
-1. Require fresh PR #45 tests, lint, type-check, build, and Cloudflare/Vinext smoke to pass on the implementation head.
-2. Merge PR #45 only after that fresh green evidence.
-3. Re-run the deep production diagnostic on the resulting `main` SHA.
-4. Confirm Cloudflare error 1042 is eliminated and the direct Hyperdrive probe remains healthy.
-5. Inspect `/api/runtime-db-diagnostic` and branch on its first structured failing stage:
-   - `runtime-resolver` fails → fix Cloudflare/Vinext binding resolution or generated-config preservation;
-   - `request-database` fails → fix request-scoped postgres/Drizzle integration;
-   - `singleton-database` fails → fix singleton initialization/runtime lifecycle;
-   - all three pass → continue upward into the shared dynamic runtime, health-route post-DB behavior, schema/query logic, and Public Assistant persistence/provider logic.
-6. If 1042 persists after the source Wrangler flag is present, verify whether Vinext's generated Worker config dropped that compatibility flag and fix the generation/deployment path test-first.
-7. Implement any remaining proven product-runtime fix test-first and re-run production diagnostics.
-8. Once dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
+1. Require fresh PR #46 tests, lint, type-check, build, and Cloudflare/Vinext smoke to pass on the implementation head.
+2. Merge PR #46 only after fresh green evidence.
+3. Run the production deep diagnostic on the resulting `main` SHA.
+4. Read the new `cloudflare-binding` stage:
+   - `hasBinding=false` → the generated/deployed Vinext route environment is not receiving `MKETY_DB`; inspect/fix generated Worker binding propagation test-first.
+   - `hasBinding=true` and `hasConnectionString=false` → Hyperdrive binding exists but the expected connection-string property is unavailable in this environment; verify current Hyperdrive binding shape/runtime semantics and fix the adapter test-first.
+   - both true but `runtime-resolver` fails → inspect resolver module/alias/runtime execution directly; do not touch request/singleton DB yet.
+   - binding and resolver pass → continue to `request-database`, then `singleton-database` based on the first failing stage.
+5. Implement only the proven root-cause product fix with a failing regression first.
+6. Re-run the production diagnostic until the entire database stage chain passes.
+7. Then isolate any remaining `/api/health`, public-page, and Public Assistant failures one layer at a time.
+8. When dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
 9. Cut over `mkety.com` / `www.mkety.com` only after the full gate is green and required authorization conditions are satisfied.
-10. Record immutable cutover evidence in this file and `MKETY_DEVELOPMENT_CONTINUATION.md`.
+10. Record immutable cutover evidence here and in `MKETY_DEVELOPMENT_CONTINUATION.md`.
 11. Resume app-side development by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
