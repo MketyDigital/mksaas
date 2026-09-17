@@ -3,16 +3,12 @@
 **Updated:** 2026-09-17  
 **Current workstream:** Public-site production cutover/runtime repair  
 **Status:** IN PROGRESS  
-**Branch:** `fix/public-runtime-root-cause-probe`  
-**Pull request:** #42
+**Branch:** `fix/hyperdrive-probe-readiness`  
+**Pull request:** #44
 
 ## Requested outcome
 
 Finish the `mkety.com` public-site production cutover safely, then resume authenticated `app.mkety.com` development from the existing roadmap rather than rebuilding completed work.
-
-## Already present
-
-The public Mkety site and substantial Platform foundations already exist in `mksaas`, including the public assistant, authentication/workspace infrastructure, enterprise checkout/payment routes, AI/agent foundations, automation/workflow foundations, deployment-related surfaces, tenant/admin routes, and Cloudflare/Vinext deployment infrastructure.
 
 The intended milestone sequence remains:
 
@@ -23,65 +19,82 @@ finish public site
 → resume app.mkety.com development
 ```
 
+## Already present
+
+The public Mkety site and substantial Platform foundations already exist in `mksaas`, including Public Assistant, authentication/workspace infrastructure, enterprise checkout/payment routes, AI/agent foundations, automation/workflow foundations, deployment-related surfaces, tenant/admin routes, and Cloudflare/Vinext deployment infrastructure.
+
+## Completed cutover-repair work
+
+- PR #41 hardened the production diagnostic so failed/non-200 probes cannot be reported as successful and the diagnostic tests the current commit instead of a stale SHA.
+- PR #42 added a CI-only in-bundle diagnostic for the Cloudflare runtime database resolver, Public Assistant request-scoped database, and shared singleton database.
+- PR #43 corrected that temporary diagnostic from the private/non-routable `_diagnostics` segment to the routable CI-only `/api/runtime-db-diagnostic` endpoint. Its core CI, lint, type-check, build, and Cloudflare/Vinext smoke gates were green before merge.
+- The repository now has a mandatory feature-agent handoff protocol and this canonical current-workstream file. Material work is not considered complete without current status, verification, blockers, and exact next steps.
+
 ## Proven production state
 
-PR #41 merged to `main` as `c42108625dc62e51fda7fab4873c7ada31581650` and replaced the earlier false-green diagnostics with fail-closed checks.
+Production diagnostics have established that:
 
-Fresh production diagnostics from that exact SHA proved:
+- the apex/www Worker route safety guard passes; the replacement is still intentionally unbound from `mkety.com/*` and `www.mkety.com/*`;
+- production Hyperdrive `mkety-production-db` resolves to the diagnostic Worker;
+- a prior route-free direct probe using the same Public Assistant postgres shape, `postgres(connectionString, { max: 1 })`, successfully executed `SELECT 1`;
+- a freshly built Mkety Vinext Worker serves static metadata routes such as `/robots.txt` and `/sitemap.xml` but dynamic routes `/api/health`, `/`, and `/platform` returned HTTP 500;
+- `/api/public/assistant` returned its handled HTTP 503 temporary-unavailable response on both the existing Worker and a freshly built Worker from the tested SHA.
 
-- the apex/www Worker route guard passes; the replacement is not yet bound to `mkety.com/*` or `www.mkety.com/*`;
-- production Hyperdrive `mkety-production-db` resolves successfully;
-- a route-free Worker using the same Public Assistant postgres client shape, `postgres(connectionString, { max: 1 })`, executes `SELECT 1` successfully and returns HTTP 200;
-- the current Mkety Vinext application builds and deploys successfully with that same production Hyperdrive binding;
-- `/robots.txt` and `/sitemap.xml` return HTTP 200 on the current route-free app;
-- `/api/health`, `/`, and `/platform` return HTTP 500;
-- `/api/public/assistant` returns the handled HTTP 503 temporary-unavailable response;
-- the same Public Assistant 503 reproduces on the existing `mkety-platform` Worker and on a freshly built Worker from the exact current SHA.
+This means the public cutover remains blocked and no apex/www route should be bound yet.
 
-This rules out basic Hyperdrive/Postgres connectivity and a merely stale deployed Worker. The remaining fault is higher in the Mkety/Vinext application runtime.
+## Latest diagnostic finding
 
-## Current diagnostic: PR #42
+After PR #43 merged, production deep-diagnostic run `35276154954` tested `main` SHA `18e7b5185caab0a5eed1f19600df861459afa53a`.
 
-PR #42 narrows the fault inside the actual Vinext bundle without adding a permanent product endpoint.
+The run stopped before the in-bundle diagnostic because the newly deployed direct Hyperdrive probe's **first** request returned a generic HTTP 500 whose body did not contain the probe handler's expected structured fields (`ok`, `stage`, error identity). The workflow incorrectly treated any HTTP 500 as proof that the probe was ready and failed immediately.
 
-Its workflow creates a diagnostic-only `/api/_diagnostics/runtime-db` route in the GitHub runner before `pnpm build`. The route is therefore present only in the temporary route-free diagnostic Worker and is not committed as an application endpoint.
+This is a diagnostic readiness/propagation defect, not sufficient evidence of a new database failure. An earlier run of the same temporary Worker required a readiness retry before returning its structured successful `SELECT 1` result.
 
-The route checks these stages in order while returning only booleans plus sanitized error name/code:
+## Current repair: PR #44
 
-1. `runtime-resolver`: whether `getRuntimeDatabaseConnectionString()` can see the Worker runtime database binding inside the built Vinext application.
-2. `request-database`: whether `withPublicAIRequestDatabase()` can execute `SELECT 1` inside that bundle.
-3. `singleton-database`: whether the normal shared `db` singleton can execute `SELECT 1` inside that bundle.
+PR #44 makes direct-probe readiness structural rather than status-code-only.
 
-The workflow also captures sanitized `/api/health`, root, and Public Assistant response bodies and fails closed after evidence collection.
+Expected behavior:
 
-## TDD evidence for PR #42
+1. Generic/unstructured 404/500/startup responses are **not ready** and are retried.
+2. A structured `{ ok: false, stage: 'binding' | 'query', ... }` HTTP 500 is a real probe result: stop retrying and fail closed with sanitized evidence.
+3. A structured `{ ok: true, stage: 'query' }` HTTP 200 is healthy and allows the workflow to proceed to the Vinext in-bundle diagnostic.
 
-An initial diagnostic contract test was mistakenly placed under `scripts/`, which the repository Jest config does not collect because its roots are `src/`. That unexecuted duplicate was removed.
+### TDD evidence
 
-The contract test was moved to `src/shared/db/public-runtime-deep-diagnostic.test.ts`. On commit `1ac8ab3`, the main Test job then failed exactly because `/api/_diagnostics/runtime-db` and the required runtime-stage markers did not yet exist: **1 failed, 155 passed; 1 failed, 715 passed**. This is the red phase.
+The collected regression test was added first under `src/shared/db/public-runtime-deep-diagnostic.test.ts`.
 
-The workflow implementation was added only after that confirmed failure. Fresh branch CI must now prove the green phase before PR #42 is merged.
+On red-phase commit `3377c2c3d777a053c6c419b7a3c952fd2bd2c978`:
+
+- the main **Test** job failed;
+- **Type-check** failed;
+- **Lint** passed;
+- the intended failure was the missing `evaluateStructuredProbe` contract.
+
+Implementation commits add the minimal structured probe evaluator and update the production workflow to retry until the response is genuinely from the diagnostic handler.
 
 ## Production safety
 
-- The legacy public site remains live until the replacement passes the release gate.
-- Do not bind `mkety.com/*` or `www.mkety.com/*` while the application runtime blocker remains unresolved.
-- PR #42 does not change public product behavior and does not add a permanent diagnostic API route.
-- Temporary diagnostic Workers remain route-free and are cleaned up by the workflow.
+- The legacy/publicly reachable site remains in place while replacement verification is incomplete.
+- Do not bind `mkety.com/*` or `www.mkety.com/*` while the runtime blocker remains unresolved.
+- Diagnostic routes are created only in the CI runner before build; no permanent diagnostic product endpoint is added.
+- Temporary diagnostic Workers remain route-free and cleanup is attempted on every workflow outcome.
+- Diagnostic output must remain sanitized; never log connection strings, credentials, secrets, tokens, or raw sensitive database data.
 - No production cutover is claimed yet.
 
 ## Exact next steps
 
-1. Verify PR #42 lint, type-check, tests, build, and PR validation are green after the diagnostic implementation.
-2. Merge PR #42 only after fresh verification.
-3. Run the hardened deep diagnostic on `main` and inspect `RUNTIME_DB_DIAGNOSTIC` evidence.
-4. Branch on the proven stage:
-   - resolver fails → fix Cloudflare/Vinext runtime binding resolution or alias wiring;
-   - request DB fails → fix request-scoped postgres/Drizzle integration;
-   - singleton DB fails → fix singleton initialization/runtime lifecycle;
-   - all three pass → continue upward into schema/query/Public Assistant or other shared dynamic-runtime code.
-5. Implement the proven root-cause fix test-first and re-run the production diagnostic.
-6. When dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
-7. Cut over `mkety.com` / `www.mkety.com` only after that gate is green and the cutover workflow's required authorization conditions are satisfied.
-8. Update `MKETY_DEVELOPMENT_CONTINUATION.md` and this file with immutable cutover evidence.
-9. Resume app-side development by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
+1. Require fresh PR #44 tests, lint, type-check, build, and Cloudflare/Vinext smoke to pass on the implementation head.
+2. Merge PR #44 only after that fresh green evidence.
+3. Run the hardened deep diagnostic on the resulting `main` SHA.
+4. Confirm the direct Hyperdrive probe reaches a structured result; if it reports a real structured database failure, fix that proven failure test-first.
+5. If direct Hyperdrive is healthy, inspect `/api/runtime-db-diagnostic` and branch on its first failing stage:
+   - `runtime-resolver` fails → fix Cloudflare/Vinext binding resolution or alias wiring;
+   - `request-database` fails → fix request-scoped postgres/Drizzle integration;
+   - `singleton-database` fails → fix singleton initialization/runtime lifecycle;
+   - all three pass → continue upward into shared dynamic-runtime, schema/query, Public Assistant persistence/provider logic.
+6. Implement the proven root-cause product fix test-first and re-run production diagnostics.
+7. Once dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
+8. Cut over `mkety.com` / `www.mkety.com` only after the full gate is green and required authorization conditions are satisfied.
+9. Record immutable cutover evidence in this file and `MKETY_DEVELOPMENT_CONTINUATION.md`.
+10. Resume app-side development by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
