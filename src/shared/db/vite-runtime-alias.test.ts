@@ -50,7 +50,50 @@ describe('Cloudflare Worker database build wiring', () => {
       maxBuffer: 1024 * 1024,
     });
 
-    expect(stdout.trim().replaceAll('\\', '/')).toMatch(
+    expect(stdout.trim().replaceAll('\\\\', '/')).toMatch(
+      /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
+    );
+  });
+
+  it('intercepts the runtime database module in a pre-resolution Vite resolveId hook', async () => {
+    const script = `
+      import { resolveConfig } from 'vite';
+      (async () => {
+        const id = ${JSON.stringify(RUNTIME_CONNECTION_ID)};
+        const config = await resolveConfig(
+          { configFile: ${JSON.stringify(VITE_CONFIG_PATH)}, logLevel: 'silent' },
+          'build',
+        );
+        const plugin = config.plugins.find(
+          (candidate) => candidate.name === 'mkety-runtime-connection-alias-precedence',
+        );
+        const handler = plugin?.resolveId;
+        const hook = typeof handler === 'function' ? handler : handler?.handler;
+        const result = typeof hook === 'function'
+          ? await hook.call({} , id, undefined, {})
+          : null;
+        const resolvedId = typeof result === 'string' ? result : result?.id ?? '';
+        process.stdout.write(JSON.stringify({
+          enforce: plugin?.enforce ?? null,
+          resolvedId,
+        }));
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+      cwd: process.cwd(),
+      env: process.env,
+      maxBuffer: 1024 * 1024,
+    });
+    const result = JSON.parse(stdout.trim()) as {
+      enforce: string | null;
+      resolvedId: string;
+    };
+
+    expect(result.enforce).toBe('pre');
+    expect(result.resolvedId.replaceAll('\\\\', '/')).toMatch(
       /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
     );
   });
@@ -81,7 +124,7 @@ describe('Cloudflare Worker database build wiring', () => {
       },
     );
 
-    expect(stdout.trim().replaceAll('\\', '/')).toMatch(
+    expect(stdout.trim().replaceAll('\\\\', '/')).toMatch(
       /\/src\/shared\/db\/runtime-connection\.cloudflare\.ts$/,
     );
   });
