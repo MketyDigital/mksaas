@@ -11,15 +11,20 @@ const WORKFLOW_PATH = path.resolve(
 );
 
 describe('production runtime deep diagnostic', () => {
-  it('probes Cloudflare binding visibility before database resolution and wrappers', async () => {
+  it('compares the explicit Cloudflare resolver with the aliased resolver before database wrappers', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
     expect(workflow).toContain('/api/runtime-db-diagnostic');
     expect(workflow).not.toContain('/api/_diagnostics/runtime-db');
     expect(workflow).toContain("import { env } from 'cloudflare:workers'");
+    expect(workflow).toContain(
+      "from '@/shared/db/runtime-connection.cloudflare'",
+    );
+    expect(workflow).toContain('getExplicitCloudflareRuntimeDatabaseConnectionString');
     expect(workflow).toContain("stage: 'cloudflare-binding'");
     expect(workflow).toContain('hasBinding');
     expect(workflow).toContain('hasConnectionString');
+    expect(workflow).toContain('explicit-cloudflare-resolver');
     expect(workflow).toContain('runtime-resolver');
     expect(workflow).toContain('request-database');
     expect(workflow).toContain('singleton-database');

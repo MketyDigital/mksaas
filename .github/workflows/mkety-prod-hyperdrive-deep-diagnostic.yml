@@ -203,11 +203,19 @@ jobs:
           import { sql } from 'drizzle-orm';
           import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
           import { db } from '@/shared/db';
+          import {
+            getRuntimeDatabaseConnectionString as getExplicitCloudflareRuntimeDatabaseConnectionString,
+          } from '@/shared/db/runtime-connection.cloudflare';
           import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
 
           type Stage = {
             ok: boolean;
-            stage: 'cloudflare-binding' | 'runtime-resolver' | 'request-database' | 'singleton-database';
+            stage:
+              | 'cloudflare-binding'
+              | 'explicit-cloudflare-resolver'
+              | 'runtime-resolver'
+              | 'request-database'
+              | 'singleton-database';
             hasBinding?: boolean;
             hasConnectionString?: boolean;
             name?: string;
@@ -239,6 +247,17 @@ jobs:
               hasConnectionString,
             });
             if (!hasBinding || !hasConnectionString) {
+              return Response.json({ ok: false, stages }, { status: 500 });
+            }
+
+            try {
+              const connectionString = getExplicitCloudflareRuntimeDatabaseConnectionString();
+              stages.push({
+                ok: connectionString.length > 0,
+                stage: 'explicit-cloudflare-resolver',
+              });
+            } catch (error) {
+              stages.push(failure('explicit-cloudflare-resolver', error));
               return Response.json({ ok: false, stages }, { status: 500 });
             }
 
