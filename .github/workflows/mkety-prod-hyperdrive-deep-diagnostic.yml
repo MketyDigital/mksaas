@@ -157,10 +157,12 @@ jobs:
           report=/tmp/mkety-hyperdrive-deep.txt
           : >"$report"
           code='000'
+          probe_ready='false'
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             code="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/probe.json -w '%{http_code}' "$PROBE_URL/" || true)"
             printf 'probe readiness attempt %s HTTP %s\n' "$attempt" "$code" | tee -a "$report"
-            if [ "$code" = '200' ] || [ "$code" = '500' ]; then
+            probe_ready="$(HTTP_CODE="$code" pnpm exec tsx -e "import fs from 'node:fs'; import { evaluateStructuredProbe } from './scripts/public-assistant-production-diagnostic.ts'; let body=''; try { body=fs.readFileSync('/tmp/probe.json','utf8'); } catch {} const result=evaluateStructuredProbe(process.env.HTTP_CODE ?? '', body); process.stdout.write(result.ready ? 'true' : 'false');" 2>/dev/null || true)"
+            if [ "$probe_ready" = 'true' ]; then
               break
             fi
             sleep 5
@@ -171,7 +173,7 @@ jobs:
           const safe={ok:x.ok===true,stage:typeof x.stage==='string'?x.stage:null,kind:typeof x.kind==='string'?x.kind:null,name:typeof x.name==='string'?x.name:null,code:typeof x.code==='string'?x.code:null};
           console.log('direct-hyperdrive result '+JSON.stringify(safe));
           NODE
-          HTTP_CODE="$code" pnpm exec tsx -e "import { evaluateHttpProbe } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluateHttpProbe(process.env.HTTP_CODE ?? ''); console.log('DIRECT_HYPERDRIVE_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
+          HTTP_CODE="$code" pnpm exec tsx -e "import fs from 'node:fs'; import { evaluateStructuredProbe } from './scripts/public-assistant-production-diagnostic.ts'; let body=''; try { body=fs.readFileSync('/tmp/probe.json','utf8'); } catch {} const result=evaluateStructuredProbe(process.env.HTTP_CODE ?? '', body); console.log('DIRECT_HYPERDRIVE_HEALTH '+JSON.stringify(result)); if(!result.ready || !result.ok) process.exit(1);"
 
       - name: Build and deploy current Mkety app with production Hyperdrive
         id: app
