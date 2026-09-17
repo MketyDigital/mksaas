@@ -137,6 +137,48 @@ describe('Cloudflare Worker database build wiring', () => {
     );
   });
 
+  it('rewrites the selected Node runtime resolver to the Cloudflare resolver during Vite transform', async () => {
+    const absoluteNodeResolver = path.resolve(
+      process.cwd(),
+      'src/shared/db/runtime-connection.ts',
+    );
+    const originalSource = await readFile(absoluteNodeResolver, 'utf8');
+    const script = `
+      import { resolveConfig } from 'vite';
+      (async () => {
+        const config = await resolveConfig(
+          { configFile: ${JSON.stringify(VITE_CONFIG_PATH)}, logLevel: 'silent' },
+          'build',
+        );
+        const plugin = config.plugins.find(
+          (candidate) => candidate.name === 'mkety-runtime-connection-alias-precedence',
+        );
+        const handler = plugin?.transform;
+        const hook = typeof handler === 'function' ? handler : handler?.handler;
+        const result = typeof hook === 'function'
+          ? await hook.call(
+              {},
+              ${JSON.stringify(originalSource)},
+              ${JSON.stringify(absoluteNodeResolver)},
+              {},
+            )
+          : null;
+        const code = typeof result === 'string' ? result : result?.code ?? '';
+        process.stdout.write(code);
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+      cwd: process.cwd(),
+      env: process.env,
+      maxBuffer: 1024 * 1024,
+    });
+
+    expect(stdout).toContain('runtime-connection.cloudflare');
+  });
+
   it('exposes the exact Cloudflare resolver through Next webpack alias capture used by Vinext', async () => {
     const script = `
       import { pathToFileURL } from 'node:url';
