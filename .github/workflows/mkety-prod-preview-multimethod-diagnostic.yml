@@ -1,0 +1,139 @@
+name: Mkety Production Preview Multimethod Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-prod-preview-multimethod-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_WORKER_NAME: mkety-platform
+  VERIFIED_APP_SHA: 8ef16bd1802499331d5d8ea9e43db2b0f8da6bcd
+
+jobs:
+  diagnose:
+    name: Diagnose route-free production Worker by Cloudflare state
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Validate route isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?required}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?required}"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zones="$(curl -fsS "${auth[@]}" 'https://api.cloudflare.com/client/v4/zones?name=mkety.com&status=active')"
+          ZONES="$zones" node <<'NODE' >/tmp/zone-id
+          const p=JSON.parse(process.env.ZONES||'{}');
+          if(!p.success||!Array.isArray(p.result)||p.result.length!==1) throw new Error('Expected one active mkety.com zone');
+          process.stdout.write(p.result[0].id);
+          NODE
+          zone_id="$(cat /tmp/zone-id)"
+          routes="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          ROUTES="$routes" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
+          const p=JSON.parse(process.env.ROUTES||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Could not read Worker routes');
+          const mine=p.result.filter(r=>r.script===process.env.WORKER);
+          if(mine.length) throw new Error('Diagnostic refuses to run because production Worker already has live routes');
+          console.log('PASS route isolation: production Worker has zero live routes');
+          NODE
+
+      - name: Resolve Cloudflare Worker URLs and enable temporary access
+        id: cf
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          account="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          ACCOUNT="$account" node <<'NODE' >/tmp/account-subdomain
+          const p=JSON.parse(process.env.ACCOUNT||'{}');
+          if(!p.success||!p.result?.subdomain) throw new Error('No account workers.dev subdomain');
+          process.stdout.write(p.result.subdomain);
+          NODE
+          subdomain="$(cat /tmp/account-subdomain)"
+          enable="$(curl -fsS -X POST "${auth[@]}" --data '{"enabled":true,"previews_enabled":true}' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          ENABLE="$enable" node <<'NODE'
+          const p=JSON.parse(process.env.ENABLE||'{}');
+          if(!p.success||p.result?.enabled!==true||p.result?.previews_enabled!==true) throw new Error('Could not enable temporary workers.dev and previews');
+          console.log('PASS Cloudflare API reports workers.dev=true previews=true');
+          NODE
+          verify="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          VERIFY="$verify" node <<'NODE'
+          const p=JSON.parse(process.env.VERIFY||'{}');
+          if(!p.success||p.result?.enabled!==true||p.result?.previews_enabled!==true) throw new Error('Cloudflare subdomain state did not persist');
+          console.log('PASS Cloudflare GET confirms temporary preview state');
+          NODE
+          stable="https://${PRODUCTION_WORKER_NAME}.${subdomain}.workers.dev"
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
+          printf 'stable_url=%s\n' "$stable" >/tmp/cf-preview-state.txt
+
+      - name: Probe stable workers.dev URL with sanitized telemetry
+        shell: bash
+        env:
+          BASE: ${{ steps.cf.outputs.stable }}
+        run: |
+          set +e
+          report=/tmp/mkety-preview-multimethod.txt
+          : >"$report"
+          printf 'verified_app_sha=%s\nworker=%s\n' "$VERIFIED_APP_SHA" "$PRODUCTION_WORKER_NAME" >>"$report"
+          probe() {
+            path="$1"
+            body=/tmp/probe-body
+            headers=/tmp/probe-headers
+            metrics="$(curl -L -sS --connect-timeout 10 --max-time 25 -D "$headers" -o "$body" -w '%{http_code}|%{url_effective}|%{content_type}|%{remote_ip}|%{time_connect}|%{time_starttransfer}' "$BASE$path" 2>/tmp/probe-error)"
+            rc=$?
+            IFS='|' read -r code effective ctype remote connect start <<<"$metrics"
+            printf 'path=%s curl_rc=%s http=%s effective=%s type=%s remote=%s connect=%s ttfb=%s\n' "$path" "$rc" "${code:-none}" "${effective:-none}" "${ctype:-none}" "${remote:-none}" "${connect:-none}" "${start:-none}" | tee -a "$report"
+            if [ -s /tmp/probe-error ]; then sed -E 's/(Authorization: Bearer )[A-Za-z0-9._-]+/\1[REDACTED]/g' /tmp/probe-error | head -n 4 | sed 's/^/curl_error=/' >>"$report"; fi
+            if [ -f "$headers" ]; then
+              grep -Eai '^(HTTP/|location:|content-type:|server:|cf-ray:)' "$headers" | tr -d '\r' | sed 's/^/header=/' >>"$report" || true
+            fi
+            if [ "$path" = '/' ] && [ -s "$body" ]; then
+              if grep -Fqi 'https://mkety.com' "$body"; then echo 'root_marker=present' >>"$report"; else echo 'root_marker=missing' >>"$report"; fi
+            fi
+            if [ "$path" = '/api/public/assistant' ] && [ -s "$body" ]; then
+              BODY="$body" node <<'NODE' >>"$report" 2>&1
+          const fs=require('node:fs');
+          try {
+            const p=JSON.parse(fs.readFileSync(process.env.BODY,'utf8'));
+            console.log(`assistant_json=true conversations_array=${Array.isArray(p.conversations)} messages_array=${Array.isArray(p.messages)} keys=${Object.keys(p).sort().join(',')}`);
+          } catch { console.log('assistant_json=false'); }
+          NODE
+            fi
+          }
+          for p in / /platform /pricing /robots.txt /sitemap.xml /api/public/assistant; do probe "$p"; done
+          cat /tmp/cf-preview-state.txt >>"$report"
+          echo '--- diagnostic report ---'
+          cat "$report"
+
+      - name: Disable temporary workers.dev and preview URLs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '{"enabled":false,"previews_enabled":false}' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/subdomain")"
+          RESPONSE="$response" node <<'NODE'
+          const p=JSON.parse(process.env.RESPONSE||'{}');
+          if(!p.success||p.result?.enabled!==false||p.result?.previews_enabled!==false) throw new Error('Failed to disable temporary preview exposure');
+          console.log('PASS cleanup: workers.dev=false previews=false');
+          NODE
+
+      - name: Upload sanitized diagnostic
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-prod-preview-multimethod-${{ env.VERIFIED_APP_SHA }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            /tmp/mkety-preview-multimethod.txt
+            /tmp/cf-preview-state.txt
