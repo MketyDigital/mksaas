@@ -206,18 +206,23 @@ jobs:
           import {
             getRuntimeDatabaseConnectionString as getExplicitCloudflareRuntimeDatabaseConnectionString,
           } from '@/shared/db/runtime-connection.cloudflare';
-          import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
+          import {
+            getRuntimeDatabaseConnectionString,
+            runtimeConnectionAdapterKind as aliasedRuntimeConnectionAdapterKind,
+          } from '@/shared/db/runtime-connection';
 
           type Stage = {
             ok: boolean;
             stage:
               | 'cloudflare-binding'
               | 'explicit-cloudflare-resolver'
+              | 'runtime-adapter-identity'
               | 'runtime-resolver'
               | 'request-database'
               | 'singleton-database';
             hasBinding?: boolean;
             hasConnectionString?: boolean;
+            adapterKind?: 'node' | 'cloudflare';
             name?: string;
             code?: string | null;
           };
@@ -260,6 +265,12 @@ jobs:
               stages.push(failure('explicit-cloudflare-resolver', error));
               return Response.json({ ok: false, stages }, { status: 500 });
             }
+
+            stages.push({
+              ok: true,
+              stage: 'runtime-adapter-identity',
+              adapterKind: aliasedRuntimeConnectionAdapterKind,
+            });
 
             try {
               const connectionString = getRuntimeDatabaseConnectionString();
