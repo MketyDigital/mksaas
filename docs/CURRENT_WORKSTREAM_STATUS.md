@@ -3,8 +3,8 @@
 **Updated:** 2026-09-17  
 **Current workstream:** Public-site production cutover/runtime repair  
 **Status:** IN PROGRESS  
-**Branch:** `fix/hyperdrive-probe-readiness`  
-**Pull request:** #44
+**Branch:** `fix/cloudflare-same-zone-fetch`  
+**Pull request:** #45
 
 ## Requested outcome
 
@@ -27,51 +27,63 @@ The public Mkety site and substantial Platform foundations already exist in `mks
 
 - PR #41 hardened the production diagnostic so failed/non-200 probes cannot be reported as successful and the diagnostic tests the current commit instead of a stale SHA.
 - PR #42 added a CI-only in-bundle diagnostic for the Cloudflare runtime database resolver, Public Assistant request-scoped database, and shared singleton database.
-- PR #43 corrected that temporary diagnostic from the private/non-routable `_diagnostics` segment to the routable CI-only `/api/runtime-db-diagnostic` endpoint. Its core CI, lint, type-check, build, and Cloudflare/Vinext smoke gates were green before merge.
-- The repository now has a mandatory feature-agent handoff protocol and this canonical current-workstream file. Material work is not considered complete without current status, verification, blockers, and exact next steps.
+- PR #43 corrected that temporary diagnostic from the private/non-routable `_diagnostics` segment to the routable CI-only `/api/runtime-db-diagnostic` endpoint.
+- PR #44 made direct-Hyperdrive readiness structural rather than status-code-only so transient generic Worker responses are retried and only the probe handler's expected JSON can end readiness.
+- The repository has a mandatory feature-agent handoff protocol and this canonical current-workstream file. Material work is not considered complete without current status, verification, blockers, and exact next steps.
 
 ## Proven production state
 
-Production diagnostics have established that:
+Production deep-diagnostic run `35276918465` tested `main` SHA `14ab59325cd39432c543e63a1a770be74271ef45` and established that:
 
-- the apex/www Worker route safety guard passes; the replacement is still intentionally unbound from `mkety.com/*` and `www.mkety.com/*`;
-- production Hyperdrive `mkety-production-db` resolves to the diagnostic Worker;
-- a prior route-free direct probe using the same Public Assistant postgres shape, `postgres(connectionString, { max: 1 })`, successfully executed `SELECT 1`;
-- a freshly built Mkety Vinext Worker serves static metadata routes such as `/robots.txt` and `/sitemap.xml` but dynamic routes `/api/health`, `/`, and `/platform` returned HTTP 500;
-- `/api/public/assistant` returned its handled HTTP 503 temporary-unavailable response on both the existing Worker and a freshly built Worker from the tested SHA.
+- the apex/www Worker route safety guard passes; the replacement remains intentionally unbound from `mkety.com/*` and `www.mkety.com/*`;
+- production Hyperdrive `mkety-production-db` resolves correctly;
+- the direct route-free probe reached its structured handler response and successfully executed `SELECT 1` using the same Public Assistant postgres shape, `postgres(connectionString, { max: 1 })`;
+- the freshly built Mkety Vinext Worker serves static metadata routes such as `/robots.txt` and `/sitemap.xml`;
+- dynamic request paths produced Cloudflare runtime failures, including Cloudflare error code **1042** on `/api/health` and `/`;
+- `/api/runtime-db-diagnostic` returned HTTP 500 before it could provide structured stage evidence;
+- `/platform` returned HTTP 500;
+- `/api/public/assistant` continued to return its handled HTTP 503 temporary-unavailable response.
 
-This means the public cutover remains blocked and no apex/www route should be bound yet.
+This means Hyperdrive connectivity itself is no longer the leading blocker. The failure is in the Cloudflare/Vinext dynamic runtime path, and the public cutover remains blocked.
 
-## Latest diagnostic finding
+## Latest root-cause evidence
 
-After PR #43 merged, production deep-diagnostic run `35276154954` tested `main` SHA `18e7b5185caab0a5eed1f19600df861459afa53a`.
+Cloudflare documents error code **1042** as a Worker attempting to fetch another Worker on the same zone without the `global_fetch_strictly_public` compatibility flag.
 
-The run stopped before the in-bundle diagnostic because the newly deployed direct Hyperdrive probe's **first** request returned a generic HTTP 500 whose body did not contain the probe handler's expected structured fields (`ok`, `stage`, error identity). The workflow incorrectly treated any HTTP 500 as proof that the probe was ready and failed immediately.
+The Mkety `wrangler.jsonc` used by Vinext had only:
 
-This is a diagnostic readiness/propagation defect, not sufficient evidence of a new database failure. An earlier run of the same temporary Worker required a readiness retry before returning its structured successful `SELECT 1` result.
+```json
+"compatibility_flags": ["nodejs_compat"]
+```
 
-## Current repair: PR #44
+and the repository contained no `global_fetch_strictly_public` setting.
 
-PR #44 makes direct-probe readiness structural rather than status-code-only.
+This directly matches the observed Cloudflare error and is now the bounded runtime repair being tested. It is not considered fixed until the updated configuration passes repository verification and the production diagnostic proves that error 1042 has disappeared.
 
-Expected behavior:
+## Current repair: PR #45
 
-1. Generic/unstructured 404/500/startup responses are **not ready** and are retried.
-2. A structured `{ ok: false, stage: 'binding' | 'query', ... }` HTTP 500 is a real probe result: stop retrying and fail closed with sanitized evidence.
-3. A structured `{ ok: true, stage: 'query' }` HTTP 200 is healthy and allows the workflow to proceed to the Vinext in-bundle diagnostic.
+PR #45 adds the Cloudflare compatibility flag required for same-zone public Worker fetches while preserving `nodejs_compat`:
+
+```json
+"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"]
+```
 
 ### TDD evidence
 
-The collected regression test was added first under `src/shared/db/public-runtime-deep-diagnostic.test.ts`.
+The regression was added first in `src/shared/db/vite-runtime-alias.test.ts` and requires the Wrangler configuration to contain both compatibility flags.
 
-On red-phase commit `3377c2c3d777a053c6c419b7a3c952fd2bd2c978`:
+On red-phase commit `2b27114bfcc7da93eddfae4544ae137797488aef`:
 
-- the main **Test** job failed;
-- **Type-check** failed;
+- the collected **Test** job failed;
 - **Lint** passed;
-- the intended failure was the missing `evaluateStructuredProbe` contract.
+- **Type-check** passed;
+- the intended failure was the missing `global_fetch_strictly_public` compatibility flag.
 
-Implementation commits add the minimal structured probe evaluator and update the production workflow to retry until the response is genuinely from the diagnostic handler.
+The implementation then changes only the compatibility flag configuration before fresh green verification.
+
+## Secondary diagnostic observation
+
+The production deep diagnostic currently runs `wrangler secret put` after deploying the temporary application Worker. Wrangler secret updates create/deploy a new Worker version, so the diagnostic can experience additional propagation churn after the initial code deployment. This is separate from Cloudflare 1042 and should be cleaned up only if it remains relevant after the 1042 repair is verified.
 
 ## Production safety
 
@@ -84,17 +96,18 @@ Implementation commits add the minimal structured probe evaluator and update the
 
 ## Exact next steps
 
-1. Require fresh PR #44 tests, lint, type-check, build, and Cloudflare/Vinext smoke to pass on the implementation head.
-2. Merge PR #44 only after that fresh green evidence.
-3. Run the hardened deep diagnostic on the resulting `main` SHA.
-4. Confirm the direct Hyperdrive probe reaches a structured result; if it reports a real structured database failure, fix that proven failure test-first.
-5. If direct Hyperdrive is healthy, inspect `/api/runtime-db-diagnostic` and branch on its first failing stage:
-   - `runtime-resolver` fails → fix Cloudflare/Vinext binding resolution or alias wiring;
+1. Require fresh PR #45 tests, lint, type-check, build, and Cloudflare/Vinext smoke to pass on the implementation head.
+2. Merge PR #45 only after that fresh green evidence.
+3. Re-run the deep production diagnostic on the resulting `main` SHA.
+4. Confirm Cloudflare error 1042 is eliminated and the direct Hyperdrive probe remains healthy.
+5. Inspect `/api/runtime-db-diagnostic` and branch on its first structured failing stage:
+   - `runtime-resolver` fails → fix Cloudflare/Vinext binding resolution or generated-config preservation;
    - `request-database` fails → fix request-scoped postgres/Drizzle integration;
    - `singleton-database` fails → fix singleton initialization/runtime lifecycle;
-   - all three pass → continue upward into shared dynamic-runtime, schema/query, Public Assistant persistence/provider logic.
-6. Implement the proven root-cause product fix test-first and re-run production diagnostics.
-7. Once dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
-8. Cut over `mkety.com` / `www.mkety.com` only after the full gate is green and required authorization conditions are satisfied.
-9. Record immutable cutover evidence in this file and `MKETY_DEVELOPMENT_CONTINUATION.md`.
-10. Resume app-side development by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
+   - all three pass → continue upward into the shared dynamic runtime, health-route post-DB behavior, schema/query logic, and Public Assistant persistence/provider logic.
+6. If 1042 persists after the source Wrangler flag is present, verify whether Vinext's generated Worker config dropped that compatibility flag and fix the generation/deployment path test-first.
+7. Implement any remaining proven product-runtime fix test-first and re-run production diagnostics.
+8. Once dynamic routes and Public Assistant are healthy, run the complete public release/cutover gate across required public pages, Auth entry points, Public AI, and Enterprise checkout/payment entry points.
+9. Cut over `mkety.com` / `www.mkety.com` only after the full gate is green and required authorization conditions are satisfied.
+10. Record immutable cutover evidence in this file and `MKETY_DEVELOPMENT_CONTINUATION.md`.
+11. Resume app-side development by reconciling stale PR #35, then Entitlements #22, then Usage/Credits #23, followed by the remaining Platform roadmap.
