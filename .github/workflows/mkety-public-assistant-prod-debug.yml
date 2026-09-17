@@ -1,0 +1,96 @@
+name: Mkety Public Assistant Production Debug
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-assistant-prod-debug.yml'
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_WORKER_NAME: mkety-platform
+
+jobs:
+  diagnose:
+    name: Capture sanitized Public AI runtime failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Validate read-only diagnostic credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?required}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?required}"
+
+      - name: Checkout tooling only
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve existing workers.dev URL
+        id: worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(ACCOUNT="$response" node -e "const p=JSON.parse(process.env.ACCOUNT||'{}');if(!p.success||!p.result?.subdomain)process.exit(1);process.stdout.write(p.result.subdomain)")"
+          echo "url=https://${PRODUCTION_WORKER_NAME}.${subdomain}.workers.dev" >> "$GITHUB_OUTPUT"
+
+      - name: Reproduce assistant GET while tailing Worker
+        shell: bash
+        env:
+          BASE: ${{ steps.worker.outputs.url }}
+        run: |
+          set -euo pipefail
+          : >/tmp/tail.raw
+          timeout 45s pnpm exec wrangler tail "$PRODUCTION_WORKER_NAME" --format json > /tmp/tail.raw 2>&1 &
+          tail_pid=$!
+          sleep 7
+          code="$(curl -sS --connect-timeout 10 --max-time 25 -D /tmp/assistant.headers -o /tmp/assistant.body -w '%{http_code}' "$BASE/api/public/assistant" || true)"
+          echo "assistant GET HTTP $code"
+          sleep 10
+          kill "$tail_pid" 2>/dev/null || true
+          wait "$tail_pid" 2>/dev/null || true
+          HTTP_CODE="$code" node <<'NODE'
+          const fs=require('node:fs');
+          const redact=(value)=>String(value??'')
+            .replace(/postgres(?:ql)?:\/\/\S+/gi,'[redacted-db-url]')
+            .replace(/https?:\/\/\S+/gi,'[redacted-url]')
+            .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g,'[redacted-ip]')
+            .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted-email]')
+            .replace(/(password|secret|token|authorization|connectionstring)\s*[:=]\s*[^\s,;]+/gi,'$1=[redacted]')
+            .slice(0,700);
+          const raw=fs.existsSync('/tmp/tail.raw')?fs.readFileSync('/tmp/tail.raw','utf8'):'';
+          const events=[];
+          for(const line of raw.split(/\r?\n/)){
+            let x; try{x=JSON.parse(line)}catch{continue}
+            const event={outcome:typeof x.outcome==='string'?x.outcome:undefined};
+            const exceptions=Array.isArray(x.exceptions)?x.exceptions:[];
+            const logs=Array.isArray(x.logs)?x.logs:[];
+            if(exceptions.length) event.exceptions=exceptions.slice(0,4).map(e=>({name:redact(e?.name),message:redact(e?.message)}));
+            if(logs.length) event.logs=logs.slice(0,8).map(l=>({level:redact(l?.level),message:redact(Array.isArray(l?.message)?l.message.join(' '):l?.message)}));
+            if(event.outcome||event.exceptions||event.logs) events.push(event);
+          }
+          let body=''; try{body=fs.readFileSync('/tmp/assistant.body','utf8')}catch{}
+          console.log('SANITIZED_ASSISTANT_BODY '+redact(body));
+          console.log('SANITIZED_WORKER_EVENTS '+JSON.stringify(events.slice(0,20)));
+          if(process.env.HTTP_CODE==='200') console.log('Assistant unexpectedly healthy during diagnostic.');
+          NODE
