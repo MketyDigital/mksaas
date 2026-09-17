@@ -60,7 +60,7 @@ describe('Cloudflare Worker database build wiring', () => {
       import { pathToFileURL } from 'node:url';
       const module = await import(pathToFileURL(${JSON.stringify(NEXT_CONFIG_PATH)}).href);
       const config = module.default;
-      const initial = { resolve: { alias: {} } };
+      const initial = { context: process.cwd(), resolve: { alias: {} } };
       const resolved = typeof config.webpack === 'function'
         ? config.webpack(initial, {
             dev: false,
