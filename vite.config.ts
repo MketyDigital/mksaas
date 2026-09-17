@@ -16,6 +16,14 @@ const runtimeConnectionAlias = {
 function prioritizeRuntimeConnectionAlias(): Plugin {
   return {
     name: 'mkety-runtime-connection-alias-precedence',
+    enforce: 'pre',
+    resolveId(source) {
+      if (source === runtimeConnectionAlias.find) {
+        return runtimeConnectionAlias.replacement;
+      }
+
+      return null;
+    },
     configResolved(config) {
       const aliases = config.resolve.alias;
       const existingIndex = aliases.findIndex(
