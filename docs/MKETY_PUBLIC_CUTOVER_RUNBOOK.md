@@ -24,8 +24,9 @@ Production cutover is blocked until all of the following are true:
 12. Public AI correctly states the canonical public commercial matrix and Academy/Trading domains, does not present removed plans, and refuses private repository/source disclosure.
 13. BOTH Enterprise payment gateways are configured and safely verified: NOWPayments and Selar.
 14. Enterprise checkout remains non-entitling/non-provisioning until verified provider confirmation.
-15. Read-only production preflight records current `mkety.com`/`www.mkety.com` DNS and Worker route state and preserves unrelated routes, especially `learn.starpipsforex.com/* -> mklms`.
-16. No production DNS/route mutation is performed from an unverified commit.
+15. Read-only production preflight records current `mkety.com`/`www.mkety.com` DNS, Worker Custom Domain, and Worker Route state and preserves unrelated routes, especially `learn.starpipsforex.com/* -> mklms`.
+16. `mkety.com/*` and `www.mkety.com/*` Worker Routes are absent; apex/www production promotion uses Worker Custom Domains only.
+17. No production DNS/domain mutation is performed from an unverified commit.
 
 ## Required Public Mkety AI secrets
 
@@ -91,7 +92,8 @@ Before mutation, record:
 - accessible Cloudflare zone;
 - root `mkety.com` DNS/proxy state;
 - `www.mkety.com` DNS/proxy state;
-- existing Worker route patterns/scripts;
+- existing Worker Custom Domains and ownership;
+- existing Worker route patterns/scripts, which must remain unchanged;
 - current public response behavior;
 - candidate Worker URL and exact candidate SHA;
 - unrelated route evidence including `learn.starpipsforex.com/* -> mklms`.
@@ -106,10 +108,11 @@ Do not log Cloudflare tokens, database URLs, AI credentials, payment credentials
 4. Deploy the generated server Worker using the verified vinext server config, never an asset-only deployment.
 5. Attach production `DATABASE_URL`, dedicated Public Mkety AI secrets, `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET`, and `SELAR_ENTERPRISE_CHECKOUT_URL`.
 6. Confirm Worker deployment succeeds before adding domain traffic.
-7. Bind `mkety.com` to the verified production Worker using the least-invasive mechanism compatible with the current zone state.
-8. Configure `www.mkety.com` to redirect canonically to `https://mkety.com`.
-9. Preserve `app.mkety.com`, `api.mkety.com`, `origin.mkety.com`, `academy.mkety.com`, `trade.mkety.com`, `*.mkety.app`, `learn.starpipsforex.com/* -> mklms`, and unrelated DNS/Worker resources.
-10. Verify SSL/public HTTP behavior and run the production acceptance matrix.
+7. Attach `mkety.com` and `www.mkety.com` to the verified production Worker through Cloudflare Worker Custom Domains.
+8. Do not create or update apex/www Worker Routes; verify the complete Worker Route set remains unchanged before and after attachment.
+9. Verify `www.mkety.com` redirects canonically to `https://mkety.com` through the application behavior.
+10. Preserve `app.mkety.com`, `api.mkety.com`, `origin.mkety.com`, `academy.mkety.com`, `trade.mkety.com`, `*.mkety.app`, `learn.starpipsforex.com/* -> mklms`, and unrelated DNS/Worker resources.
+11. Verify SSL/public HTTP behavior and run the production acceptance matrix.
 
 ## Production acceptance matrix
 
@@ -161,9 +164,9 @@ Also verify:
 Rollback is triggered by systemic 5xx/404 errors, broken canonical routing, database/runtime failure, public AI privacy/grounding failure, payment-safety failure, or another launch-critical acceptance failure.
 
 1. Stop further production mutations.
-2. Restore exact pre-cutover root and `www` DNS/Worker route configuration.
-3. Confirm the previous public surface responds again.
-4. Remove/disable only the new production binding introduced by this cutover; do not delete unrelated Workers/DNS records.
+2. Delete only Worker Custom Domains created by the failed cutover; never remove a target Custom Domain that pre-existed the run.
+3. Restore any missing pre-cutover apex/www A, AAAA, or CNAME DNS records and verify Worker Routes remain unchanged.
+4. Confirm the previous public surface responds again; do not delete unrelated Workers, Custom Domains, Worker Routes, or DNS records.
 5. Leave the isolated candidate Worker intact for diagnosis unless security requires disabling it.
 6. Record failed production Worker version/SHA and acceptance failure.
 7. Fix and repeat exact-SHA candidate verification before another production attempt.
