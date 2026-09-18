@@ -58,3 +58,10 @@ Production remains protected and non-executable. A later slice must define expli
 ## Next slice
 
 After this kernel is verified, implement one isolated non-production provider adapter/candidate environment with real external verification before exposing any customer-facing deployment action.
+
+
+## Fail-closed transition and timeout guarantees
+
+Lifecycle persistence is part of the execution safety boundary. The kernel must confirm the queued record actually transitions to running before calling the provider. It must confirm running transitions to completed before returning success. Failed provider execution may only transition a running record to failed.
+
+Provider calls are time-bounded by the kernel. The default maximum execution duration is 60 seconds unless a positive finite override is supplied by trusted server-side orchestration. Timeout failures are sanitized exactly like other provider failures.
