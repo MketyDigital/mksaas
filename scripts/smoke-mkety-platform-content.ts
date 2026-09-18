@@ -7,7 +7,8 @@
 
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
-import { defaultPricingPlans, defaultWorkspaceSection } from '../src/features/platform-content/defaults';
+import { defaultAppExperience } from '../src/features/platform-app-experience/defaults';
+import { defaultPricingPlans } from '../src/features/platform-content/defaults';
 import { db } from '../src/shared/db/node';
 import {
   platformAppControlCenterModules,
@@ -272,8 +273,8 @@ async function main() {
   assertSmoke(workspaces.some((workspace) => workspace.workspaceKey === 'trading'), 'app experience should keep Trading visible');
   assertSmoke(
     workspaces.map((workspace) => workspace.workspaceKey).join(',') ===
-      defaultWorkspaceSection.items.map((workspace) => workspace.key).join(','),
-    'published workspace ordering should match the public workspace contract',
+      defaultAppExperience.workspaces.map((workspace) => workspace.key).join(','),
+    'published workspace ordering should match the app workspace contract',
   );
 
   const controlCenterModules = await db.query.platformAppControlCenterModules.findMany({
