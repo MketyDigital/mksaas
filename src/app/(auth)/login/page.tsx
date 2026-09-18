@@ -8,6 +8,7 @@ import { auth } from '@/shared/lib/auth';
 export const metadata = {
   title: 'Sign In | Mkety',
   description: 'Sign in to your Mkety workspace',
+  robots: { index: false, follow: false },
 };
 
 export const dynamic = 'force-dynamic';
@@ -27,15 +28,15 @@ export default async function LoginPage({ searchParams: _searchParams }: LoginPa
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background via-background to-muted/30 p-4 relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-secondary/10 rounded-full blur-3xl" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-background via-background to-muted/30 p-4">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-secondary/10 blur-3xl" />
       </div>
-      <div className="w-full max-w-md relative z-10">
-        <div className="text-center mb-8">
-          <img src="https://www.mkety.com/logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
-          <h1 className="text-3xl font-bold brand-gradient-text mb-2">Welcome to Mkety</h1>
+      <div className="relative z-10 w-full max-w-md">
+        <div className="mb-8 text-center">
+          <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
+          <h1 className="mb-2 text-3xl font-bold tracking-tight">Welcome to Mkety</h1>
           <p className="text-muted-foreground">Sign in to your workspace</p>
         </div>
         <LoginForm />
