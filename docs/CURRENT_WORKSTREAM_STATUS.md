@@ -306,3 +306,75 @@ Usage/Credits current-main reconstruction PR #73, exact head `3cf6419824ddd4f58c
 No production database mutation has been run from PR #73. The repository migration chain is now prepared through `0013_lively_magma.sql`, with Usage/Credits still separated from Wallet and from the Billing financial ledger.
 
 Next after PR #73 merges: continue the authenticated Platform roadmap from the current post-Usage/Credits main. Wallet remains a later, separate commercial/accounting projection and must not become stored-value or a second financial ledger.
+
+
+## Wallet read-model slice
+
+After Entitlements and Usage/Credits merged, the active app workstream moved to Wallet.
+
+Branch `feat/wallet-read-model` implements the first Wallet slice as a read-only tenant account view. It deliberately does not create a new wallet table or financial ledger.
+
+Architecture:
+- Billing remains the only monetary ledger and source of subscription/billing-period/settlement truth.
+- Usage/Credits remains the separate non-monetary product-credit ledger.
+- Wallet composes both read models but never treats product credits as cash.
+- no withdrawals, transfers, FX, stored-value funding, payment-provider calls, or balance mutation are introduced.
+- tenant Wallet route: `/t/{tenant}/wallet`.
+- runtime reads use the Cloudflare database gateway.
+
+No database migration is required for this Wallet slice.
+
+Next: verify the exact Wallet head with tests, type-check, lint, build, Vinext, migration baseline, workspace smoke, PR validation and MegaLinter; then record immutable verification evidence before merge.
+
+
+## Wallet verification evidence
+
+Wallet PR #74 implementation head `0ffbcd7216591a2bfe4a9deeb748685a524c6858` passed:
+- Build `35314114841`;
+- Lint `35314114675`;
+- Typecheck `35314114736`;
+- CI `35314114653`;
+- Cloudflare Vinext Smoke `35314114632`;
+- full tests/coverage `35314114614`;
+- Pull Request Validation `35314114611`;
+- MegaLinter `35314114745`;
+- PR-level validation `35314111695`.
+
+The public candidate deployment job `35314114685` was correctly skipped because Wallet is authenticated app work, not a public-site release.
+
+No database migration or production database mutation is part of this Wallet slice. Wallet remains read-only and derives monetary information from the existing Billing ledger/state while displaying Usage/Credits separately as non-cash product credits.
+
+After Wallet merges, the next architecture workstream is Deployments/Cloud. Inspect current repository state first and implement the smallest missing foundation slice rather than recreating existing deployment code.
+
+
+## Wallet pre-merge security correction
+
+Wallet PR #74 was fully green on its initial implementation, but focused review found two correctness issues before merge:
+
+1. the Wallet page called `auth()` without enforcing the result, while the tenant layout itself does not reject unauthenticated/non-member access;
+2. the Wallet settlement list queried all tenant settlements although the UI/design describes verified/applied payment records.
+
+The branch now:
+- uses `requireTenantMembership(tenantSlug)` before any Wallet read;
+- adds a reusable explicit tenant-membership guard in `src/shared/lib/permissions.ts`;
+- filters Wallet settlements to Billing records with status `applied`;
+- adds regression coverage locking both contracts.
+
+Wallet remains read-only: no new table/migration, no cash/stored-value balance, no withdrawal/transfer/FX, no payment-provider call, and no second financial ledger.
+
+
+## Wallet exact verification evidence
+
+Corrected Wallet PR #74 passed its full required gate set on head `e6a49adb82c63dfa087fa42bf3585ce5f068b5e6`:
+
+- Typecheck `35320741465`;
+- full tests/coverage `35320741436`;
+- Cloudflare Vinext Smoke `35320741401`;
+- Lint `35320741408`;
+- Build `35320741447`;
+- CI `35320741527`;
+- Pull Request Validation `35320741387`;
+- MegaLinter `35320741378`;
+- CodeQL / PR-level validation `35320738336`.
+
+Security/correctness checks included explicit tenant-membership enforcement before Wallet reads and applied-only Billing settlement display.

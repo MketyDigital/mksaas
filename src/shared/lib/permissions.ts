@@ -88,6 +88,25 @@ export async function getAllTenantPermissionsForUser(userId: string, database: D
   return result;
 }
 
+
+export async function requireTenantMembership(tenantSlug: string): Promise<{ userId: string; email: string }> {
+  const session = await auth();
+  if (!session?.user?.id || !session?.user?.email) redirect('/login');
+  const tenant = await getTenantBySlug(tenantSlug);
+  if (!tenant) redirect('/login');
+
+  const membership = await db.query.tenantMemberships.findFirst({
+    where: and(
+      eq(schema.tenantMemberships.tenantId, tenant.id),
+      eq(schema.tenantMemberships.userId, session.user.id),
+    ),
+    columns: { id: true },
+  });
+
+  if (!membership) redirect(`/t/${tenantSlug}?error=unauthorized`);
+  return { userId: session.user.id, email: session.user.email };
+}
+
 export async function hasPermission(tenantSlug: string, permissionKey: string): Promise<boolean> {
   const session = await auth();
   if (!session?.user?.id) return false;
