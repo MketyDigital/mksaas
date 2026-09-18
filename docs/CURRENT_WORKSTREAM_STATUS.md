@@ -487,3 +487,30 @@ Branch `feat/deploy-cloudflare-candidate-adapter` adds:
 - same-repository GitHub preview-environment workflow that deploys a fixture Worker, externally smokes its marker, and verifies cleanup.
 
 Still excluded: customer-facing deployment action, arbitrary repository/source fetching, provider bindings/secrets, DNS/custom domains, `*.mkety.app`, production execution and rollback execution.
+
+
+## Cloudflare Deploy candidate adapter exact verification evidence
+
+Deployments/Cloud candidate adapter PR #77 exact implementation head `c6ba480098fd5e66c768ea0a00a92c3d7b22fad5` passed:
+
+- isolated Cloudflare candidate deploy / external workers.dev smoke / verified cleanup `35382218226`;
+- Typecheck `35382218151`;
+- Lint `35382218206`;
+- Build `35382218169`;
+- Cloudflare Vinext Smoke `35382218248`;
+- full tests/coverage `35382218166`;
+- CI `35382218177`;
+- Pull Request Validation `35382218143`;
+- MegaLinter `35382218311`;
+- CodeQL / PR-level validation `35382214335`.
+
+The verified candidate path is intentionally isolated:
+- Worker names are restricted to the `mkety-deploy-candidate-*` namespace;
+- execution is blocked for protected or production environments;
+- only trusted, size-bounded module artifacts are accepted;
+- no Worker bindings or customer secrets are uploaded;
+- workers.dev is enabled only for the candidate Worker, with Preview URLs disabled;
+- no `mkety.com`, `www.mkety.com`, custom domain, DNS, route, OCI, Coolify, or production Worker mutation exists in this adapter;
+- the workflow proved the candidate marker externally and then proved exact Worker deletion.
+
+This slice still exposes no customer-facing deploy action and does not enable production execution. The next Deployments/Cloud step must add an authorized non-production invocation path and audit/approval boundary before any user-triggered provider execution is exposed.
