@@ -917,3 +917,27 @@ Focused review added two fail-closed guarantees before any real provider adapter
 - provider execution is bounded by a default 60-second timeout, with invalid timeout configuration rejected before a deployment record is created.
 
 Provider failures and timeouts remain sanitized, protected/production environments remain non-executable, and no real Cloudflare/OCI/Coolify/DNS mutation is enabled.
+
+
+## Deploy execution kernel exact verification evidence
+
+Deploy provider-neutral execution kernel PR #76 hardened implementation head `72071d1e67fb7e658b2425eea989b55da3b4320e` passed:
+
+- Typecheck `35368192278`;
+- full tests/coverage `35368192320`;
+- Lint `35368192308`;
+- Platform Core Workspaces Smoke `35368192159`;
+- Build `35368192344`;
+- Cloudflare Vinext Smoke `35368192427`;
+- CI `35368192142`;
+- Pull Request Validation `35368192199`;
+- MegaLinter `35368192327`;
+- CodeQL / PR-level validation `35368187791`.
+
+Pre-merge hardening verified:
+- `queued -> running` and `running -> completed` transitions must persist successfully or execution fails closed;
+- provider execution is bounded by a default 60-second timeout;
+- invalid timeout configuration is rejected before persistence/provider execution;
+- provider failures/timeouts are sanitized;
+- protected and production environments remain non-executable;
+- no real provider adapter, credential, DNS/custom-domain mutation, public URL provisioning, or production deployment action is included.
