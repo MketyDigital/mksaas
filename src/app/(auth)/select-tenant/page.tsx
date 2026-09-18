@@ -1,4 +1,4 @@
-import { Building2, Plus, Sparkles } from 'lucide-react';
+import { Building2, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -8,7 +8,8 @@ import { getAllRoles } from '@/shared/lib/rbac';
 
 export const metadata = {
   title: 'Select Organization | Mkety',
-  description: 'Choose an organization to access',
+  description: 'Choose a Mkety workspace to access',
+  robots: { index: false, follow: false },
 };
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,7 @@ export default async function SelectTenantPage() {
           <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-amber-500/10 mb-4">
             <Building2 className="h-8 w-8 text-amber-500" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">No Organizations Yet</h1>
+          <h1 className="text-2xl font-bold mb-2">Create your first workspace</h1>
           <p className="text-muted-foreground mb-6">
             You&apos;re signed in as <strong>{session.user.email}</strong>. Create your first workspace or ask an organization admin to invite you.
           </p>
@@ -47,11 +48,9 @@ export default async function SelectTenantPage() {
     <div className="min-h-screen flex items-center justify-center bg-primary/5 p-4 relative overflow-hidden">
       <div className="w-full max-w-md relative">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-primary shadow-lg mb-4">
-            <Sparkles className="h-8 w-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold brand-gradient-text">Select Organization</h1>
-          <p className="text-muted-foreground mt-2">Choose which workspace to access</p>
+          <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
+          <h1 className="text-3xl font-bold tracking-tight">Choose your workspace</h1>
+          <p className="mt-2 text-muted-foreground">Select the Mkety organization you want to open.</p>
         </div>
 
         <Card className="border shadow-xl bg-card">
