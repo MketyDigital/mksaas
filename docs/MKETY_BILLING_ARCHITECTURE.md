@@ -2,87 +2,81 @@
 
 ## Status
 
-This is the authoritative architectural decision for the next shared Platform billing milestone. Implementation begins only after the current Auth → migration/runtime → Webhooks → cleansing baseline is promoted.
+Mkety Billing in `MketyDigital/mksaas` is the authoritative billing architecture and implementation boundary for Mkety Platform.
 
-Recommended implementation sequence:
+The implemented domain sequence is:
 
 ```text
 Billing → Entitlements → Usage/Credits
 ```
 
-## Reuse the managed-hosting billing subsystem
+Historical external billing implementations may explain why some security rules exist, but they are no longer an implementation dependency or source of truth.
 
-Mkety must reuse the verified external managed-hosting billing Worker/provider contract maintained in `MketyDigital/mklms` rather than copying or rebuilding legacy payment-provider routes inside `mksaas`.
+## Ownership
 
-Before implementing billing in `mksaas`, audit the then-current `mklms` implementation and documentation. `mklms` remains the source of truth for that reusable managed-hosting billing contract; this document records the Platform integration rule.
+MKSaaS owns:
 
-Reference areas currently expected in `mklms`:
+- plan identities and immutable plan versions;
+- tenant subscriptions and billing periods;
+- checkout attempts;
+- verified settlements;
+- append-only monetary ledger entries;
+- renewal policy and renewal attempts;
+- authorized manual adjustments;
+- the Billing state consumed by Entitlements.
 
-```text
-workers/billing/
-docs/deployment/external-managed-hosting-billing.md
-src/app/api/managed-hosting/settlement/route.ts
-```
-
-Exact paths may evolve and must be reverified when implementation starts.
+Payment providers are adapters only. They do not own subscription truth, entitlement truth, or tenant authorization.
 
 ## Provider boundary
 
-Payment-provider handling remains centralized outside customer deployments. Existing managed customers must not be forced to rotate provider credentials solely because Mkety Platform adopts the shared billing control plane.
+Provider integrations must remain behind the MKSaaS Billing gateway/service boundary.
 
-Where the current reusable contract still uses NOWPayments, preserve the existing provider secret names unless the source-of-truth implementation has deliberately migrated them:
+Current provider rules include:
 
-```text
-NOWPAYMENTS_API_KEY
-NOWPAYMENTS_IPN_SECRET
-```
-
-Provider credentials are infrastructure secrets and must never be exposed to tenant UI, logs, source control, or CMS-editable content.
-
-## Tenant/customer isolation
-
-Each managed customer/tenant must have its own installation/tenant identity and settlement-authentication secret. Customer database passwords must not be stored in the billing Worker.
-
-The initial external customer registry may be replaced by Mkety tenant/database-backed configuration during Platform integration, but isolation must remain explicit and fail closed.
+- provider credentials remain server-side infrastructure secrets;
+- browser success/return pages are never proof of payment;
+- provider callbacks must fail closed when verification is missing or invalid;
+- NOWPayments automatic settlement accepts only a final verified `finished` state;
+- non-final states such as `confirmed`, `sending`, or `partially_paid` must not settle a billing period;
+- settlement must be idempotent;
+- provider-specific state must normalize into the shared MKSaaS settlement contract before monetary state changes.
 
 ## Settlement contract
 
-The billing integration must preserve these invariants:
-
-1. Provider webhooks/IPNs are cryptographically verified and fail closed.
-2. Only final successful provider payment state is eligible for automatic settlement; for the current NOWPayments contract this is `finished` unless the source-of-truth provider contract changes.
-3. Customer/tenant settlement callbacks are signed per tenant/customer.
-4. Settlement is idempotent.
-5. Billing ledger mutation occurs behind a Mkety-owned service boundary rather than directly from public routes or CMS content.
-6. Manual/offline billing overrides remain possible for managed products with appropriate authorization and auditability.
-7. Existing managed installations remain compatible during control-plane migration.
-
-## Mkety Platform ownership
-
-`mksaas` will own Platform-facing billing domain concepts such as plans, subscriptions, ledger-visible state, entitlements and usage/credits. The external payment/managed-hosting subsystem is a provider/infrastructure integration, not the source of truth for tenant authorization.
-
-The intended boundary is:
+The authoritative settlement flow is:
 
 ```text
-Payment provider / managed-hosting billing Worker
-            ↓ signed/idempotent settlement contract
-Mkety Billing domain
-            ↓
+Payment provider
+      ↓ verified provider adapter
+MKSaaS Billing gateway boundary
+      ↓ normalized/idempotent settlement
+MKSaaS Billing domain + ledger
+      ↓
 Entitlements
-            ↓
-Usage / Credits enforcement and reporting
+      ↓
+Usage / Credits enforcement
 ```
 
-Entitlement checks must not depend on presentation-layer pricing content. Public pricing/CMS records may describe offers, but they cannot mutate ledger balances, entitlement enforcement, settlement secrets, provider credentials or tenant isolation rules.
+Billing ledger mutation occurs only behind Mkety-owned service/repository boundaries. Public routes, CMS content, pricing presentation, browser redirects, and provider payloads cannot directly grant access.
 
-## Implementation gate
+## Tenant isolation
 
-Before Billing implementation starts:
+Every billing operation must be tenant-scoped. Subscription, billing-period, checkout, settlement, and ledger relationships must be validated against Mkety-owned database state before mutation.
 
-- Auth must be promoted and provider-neutral session/authorization boundaries must be stable.
-- Migration/runtime baseline must be clean.
-- Automation Webhooks must be promoted or explicitly isolated from billing migration numbering.
-- stale template/payment documentation must be cleansed.
-- the current `mklms` billing contract must be re-audited rather than copied from historical notes.
+Provider credentials and verification secrets must never be exposed to tenant UI, logs, source control, or CMS-editable content.
 
-This document supersedes the intent of stale PR #3 (`docs: reuse external managed-hosting billing contract`).
+## Commercial presentation boundary
+
+Public pricing/CMS records describe offers. They do not define authoritative money, settlement, entitlement, or tenant-access state.
+
+Fixed prices used for checkout must resolve from authoritative MKSaaS billing records or a server-owned commercial mapping, never from customer-editable request amounts.
+
+Enterprise negotiated payments remain a separate controlled commercial flow and must not be used as a shortcut around self-service Billing invariants.
+
+## Rule for future work
+
+All new Mkety Platform billing, checkout, settlement, renewal, entitlement-integration, and payment-provider work must extend the MKSaaS Billing implementation directly.
+
+Do not route future Platform billing implementation through a legacy external repository or treat an external customer application as the source of truth.
+
+Security behavior learned from historical systems may be retained as an invariant only when it is represented and tested inside MKSaaS.
