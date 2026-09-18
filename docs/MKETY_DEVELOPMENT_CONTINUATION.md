@@ -1,7 +1,7 @@
 # Mkety Development Continuation Roadmap
 
-**Status:** ACTIVE OPERATIONAL HANDOFF  
-**Updated:** 2026-09-08  
+**Status:** ACTIVE OPERATIONAL HANDOFF — PUBLIC MILESTONE PRODUCTION / APP WORK RESUMED  
+**Updated:** 2026-09-18  
 **Repository:** `MketyDigital/mksaas`  
 **Current public-site branch:** `feat/mkety-public-site-production`  
 **Base:** `main` at `95b6759dc45120f2276ad2129b1bc3918bed99ab`
@@ -159,7 +159,7 @@ Cloudflare remains the production edge/runtime target. Do not introduce Vercel.
 
 ### 5.1 Public website/CMS foundation
 
-**STATUS: IMPLEMENTED FOUNDATION / NOT PRODUCTION-READY**
+**STATUS: PRODUCTION / PUBLIC TESTING**
 
 Already present on `main`:
 
@@ -232,7 +232,7 @@ Known blockers discovered during September 8 audit:
 
 ### 5.3 app.mkety.com Platform stack
 
-**STATUS: DEVELOPMENT PAUSED AS TOP PRIORITY UNTIL PUBLIC SITE IS LIVE**
+**STATUS: ACTIVE — PUBLIC SITE IS LIVE; RESUME PLATFORM PROMOTION/DEVELOPMENT**
 
 Current internally developed stack remains:
 
@@ -684,8 +684,8 @@ When starting a new Mkety session:
 ### Current exact next action
 
 ```text
-PUBLIC-01 — Freeze the public route/information architecture,
-then PUBLIC-02 — remove legacy template metadata/branding from public surfaces.
+APP continuation — reconcile stale draft PR #35 against current main,
+then Entitlements #22, then Usage/Credits #23.
 ```
 
 The detailed task-level implementation plan for this milestone lives at:
@@ -700,3 +700,35 @@ docs/superpowers/plans/2026-09-08-mkety-public-site-production.md
 Cutover run `35307191844` passed authorization, production DB migration, exact-SHA quality checks, Hyperdrive resolution, Worker deploy/secrets, preview smoke, Custom Domain attachment, live route/canonical/sitemap/robots checks, and the semantic `www.mkety.com -> https://mkety.com/` 308 redirect check. Final acceptance then failed in the Public AI assertion and automatically rolled back the newly attached Custom Domains/restored prior A records.
 
 The production acceptance contract had drifted from the already-certified candidate contract: it required `trade.mkety.com` in a new Trading buyer answer, while candidate certification explicitly rejects direct `trade.mkety.com` handoff for new buyers and requires Enterprise-first Trading sales. Branch `release/align-live-ai-acceptance-2e871fe` makes live acceptance identical to the certified boundary: canonical plans/prices, Academy production destination, Enterprise-first Trading sales, removed-plan rejection, and private-source/internal-engineering rejection. Launcher generation is `worker-custom-domains-v7`.
+
+
+## 13. Public milestone completion — immutable production handoff
+
+`mkety.com` is now **PRODUCTION / PUBLIC TESTING**.
+
+Successful production evidence:
+
+```text
+Certified application SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73
+Cutover launcher/main SHA: 4811e4b22c5a457857122ed01b8910546ca658df
+Production cutover run: 35309531966
+Worker: mkety-platform
+Database runtime: MKETY_DB Hyperdrive (mkety-production-db)
+Domains: mkety.com + www.mkety.com Worker Custom Domains
+www canonical redirect: HTTP 308 -> https://mkety.com/
+```
+
+The successful run passed production DB migration/seed/smoke, exact-SHA quality checks, Hyperdrive resolution, Worker build/deploy, removal of legacy direct DB secret, runtime-secret attachment, preview smoke, Custom Domain attachment, public routes, canonical metadata, sitemap, robots, NOWPayments fail-closed webhook behavior and live Public Mkety AI commercial/privacy boundaries.
+
+Rollback evidence is immutable in Actions artifacts `10533230861` (pre-mutation) and `10532738152` (Custom Domain rollback evidence).
+
+The public-site milestone no longer blocks authenticated Platform development. Resume from current `main`; do not revive historical public-site tasks merely because older sections below retain their original implementation-order record.
+
+### Next authenticated Platform order
+
+1. Reconcile stale draft PR #35 (`fix: make RLS helper hardening portable to private Postgres`) with current `main`.
+2. Entitlements #22.
+3. Usage/Credits #23.
+4. Continue the current app roadmap under `app.mkety.com`.
+
+For PR #35, preserve the intended RLS/private-Postgres hardening but do not blindly merge its historical head.

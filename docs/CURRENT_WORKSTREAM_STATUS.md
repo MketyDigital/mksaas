@@ -1,10 +1,10 @@
 # Mkety Current Workstream Status
 
 **Updated:** 2026-09-18  
-**Current workstream:** Public-site production cutover through Cloudflare Worker Custom Domains  
-**Status:** IN PROGRESS — certified candidate green; DB migration now passes; latest cutover stopped safely on an over-broad public-copy smoke before hostname mutation  
-**Branch:** `release/coolify-env-upsert-cutover-2e871fe`  
-**Pull request:** #64
+**Current workstream:** `app.mkety.com` continuation after successful public-site production cutover  
+**Status:** PRODUCTION — `mkety.com` and `www.mkety.com` live on the exact certified Cloudflare Worker; app work may resume  
+**Production application SHA:** `2e871fe5ba51585886713c2cb79544e68dc20b73`  
+**Successful cutover run:** `35309531966`
 
 ## Requested outcome
 
@@ -159,9 +159,9 @@ NOWPayments remains the required production cutover payment check. Hosted checko
 
 As of this update:
 
-- no successful public production cutover has occurred;
-- no apex/www Worker Route has been created by the cutover workstream;
-- no apex/www Worker Custom Domain has yet been attached by these cutover attempts;
+- public production cutover is successful and externally accepted;
+- no apex/www Worker Route was created by the cutover workstream;
+- `mkety.com` and `www.mkety.com` are attached to `mkety-platform` as Worker Custom Domains;
 - both failed ephemeral migration hosts were cleaned up;
 - private PostgreSQL remained healthy, private, and SSL-enabled;
 - the certified application payload remains exactly `2e871fe5...`;
@@ -177,15 +177,11 @@ PR #65 narrowed that check to actual internal repository references such as `git
 
 ## Exact next steps
 
-1. Require PR #64 exact final head green for tests, CI, lint, type-check, build, Vinext smoke, PR validation, and MegaLinter.
-2. Merge PR #64 only with the exact-head guard.
-3. Verify `worker-custom-domains-v2` launcher dispatches the guarded production cutover for exact SHA `2e871fe5...`.
-4. Require the private DB executor to complete migrations/seed/content smoke.
-5. Require production Worker deploy/Hyperdrive smoke to pass.
-6. Require Worker Custom Domain attachment for `mkety.com` and `www.mkety.com`, with apex/www Worker Routes absent and unrelated routes unchanged.
-7. Require live route/canonical/sitemap/robots/www redirect/NOWPayments/Public AI acceptance and persisted rollback evidence.
-8. Immediately update this file and `docs/MKETY_DEVELOPMENT_CONTINUATION.md` with immutable production evidence.
-9. Move directly to app work: reconcile stale draft PR #35, then Entitlements #22, Usage/Credits #23, then the remaining Platform/app roadmap.
+1. Reconcile stale draft PR #35 (`fix: make RLS helper hardening portable to private Postgres`) against current `main`; preserve intent, do not blindly merge stale code.
+2. Run the full required gates on the reconciled exact head and merge only when current-main compatible.
+3. Continue Entitlements #22.
+4. Continue Usage/Credits #23.
+5. Continue the remaining authenticated Platform/app roadmap under `app.mkety.com`.
 
 ## Feature-agent handoff rule
 
@@ -213,3 +209,28 @@ The workflow rolled back the Custom Domains and restored the pre-cutover A recor
 Cutover run `35307191844` passed authorization, production DB migration, exact-SHA quality checks, Hyperdrive resolution, Worker deploy/secrets, preview smoke, Custom Domain attachment, live route/canonical/sitemap/robots checks, and the semantic `www.mkety.com -> https://mkety.com/` 308 redirect check. Final acceptance then failed in the Public AI assertion and automatically rolled back the newly attached Custom Domains/restored prior A records.
 
 The production acceptance contract had drifted from the already-certified candidate contract: it required `trade.mkety.com` in a new Trading buyer answer, while candidate certification explicitly rejects direct `trade.mkety.com` handoff for new buyers and requires Enterprise-first Trading sales. Branch `release/align-live-ai-acceptance-2e871fe` makes live acceptance identical to the certified boundary: canonical plans/prices, Academy production destination, Enterprise-first Trading sales, removed-plan rejection, and private-source/internal-engineering rejection. Launcher generation is `worker-custom-domains-v7`.
+
+
+## Successful public production cutover — immutable evidence
+
+Production cutover completed successfully on 2026-09-18.
+
+- certified application SHA: `2e871fe5ba51585886713c2cb79544e68dc20b73`;
+- release branch: `feat/mkety-public-site-production`, pinned to that exact SHA;
+- launcher/main merge SHA: `4811e4b22c5a457857122ed01b8910546ca658df`;
+- successful production cutover run: `35309531966`;
+- runtime: Cloudflare Worker `mkety-platform`;
+- database runtime: `MKETY_DB` Hyperdrive via `mkety-production-db`; private production `DATABASE_URL` was used only by the isolated migration executor and is not attached to the Worker;
+- public bindings: `mkety.com` and `www.mkety.com` Worker Custom Domains;
+- apex/www Worker Routes: absent; unrelated Worker Routes preserved;
+- `www.mkety.com`: verified HTTP 308 to canonical `https://mkety.com/`;
+- public route acceptance: passed;
+- canonical metadata, sitemap and robots: passed;
+- NOWPayments: read-only credential check passed and invalid-signature webhook failed closed with HTTP 400;
+- Public Mkety AI: live commercial grounding, Academy destination, Enterprise-first Trading sales, removed-plan rejection and private-source boundary passed;
+- auth entry points remain the public Sign In / Get Started handoff into the Platform; public-site production did not require replacing Mkety/ZITADEL auth;
+- rollback evidence artifacts:
+  - pre-mutation artifact `10533230861` (`mkety-public-cutover-pre-mutation-2e871fe...`);
+  - Custom Domain rollback artifact `10532738152` (`mkety-public-cutover-custom-domain-2e871fe...`).
+
+The public-site cutover milestone is complete. Do not reopen public release work unless production monitoring finds a real regression. The active workstream is now authenticated Platform/app development.
