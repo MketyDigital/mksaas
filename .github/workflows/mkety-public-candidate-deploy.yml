@@ -128,7 +128,9 @@ jobs:
         run: |
           pnpm db:migrate:mkety-content
           pnpm db:seed:mkety-content
+          pnpm db:seed:billing-catalog
           pnpm db:smoke:mkety-content
+          pnpm db:smoke:billing-catalog
 
       - name: Require operational Enterprise payment gateway
         id: enterprise-payment
