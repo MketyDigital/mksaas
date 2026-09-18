@@ -37,10 +37,14 @@ export interface DeploymentExecutionRecord {
 
 export interface DeploymentExecutionRepository {
   createQueued(context: DeploymentExecutionContext, provider: DeploymentProviderId): Promise<DeploymentExecutionRecord>;
-  markRunning(deploymentId: string, provider: DeploymentProviderId, startedAt: Date): Promise<void>;
+  markRunning(deploymentId: string, provider: DeploymentProviderId, startedAt: Date): Promise<boolean>;
   markCompleted(
     deploymentId: string,
     input: { providerDeploymentRef?: string | null; completedAt: Date },
-  ): Promise<void>;
-  markFailed(deploymentId: string, completedAt: Date): Promise<void>;
+  ): Promise<boolean>;
+  markFailed(deploymentId: string, completedAt: Date): Promise<boolean>;
+}
+
+export interface DeploymentExecutionOptions {
+  timeoutMs?: number;
 }
