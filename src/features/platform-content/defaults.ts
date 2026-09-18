@@ -405,7 +405,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Projects and workspaces',
     excerpt: 'How Mkety organizes work around focused spaces.',
     bodyMarkdown:
-      '# Projects and workspaces\n\nProjects organize the work you are building. AI Workspace focuses on agents and AI applications, Automation Workspace focuses on workflows and integrations, and Deploy Workspace focuses on publishing websites, applications, APIs, portals, and serverless workloads. Mkety One combines Starter with all three self-service Workspaces.',
+      '# Projects and workspaces\n\nProjects organize the work you are building. AI Workspace focuses on agents and AI applications, Automation Workspace focuses on workflows and integrations, and Deploy Workspace focuses on organizing applications and environments, release configuration, and deployment history. Mkety One combines Starter with all three self-service Workspaces.',
     sortOrder: 10,
   },
   {
@@ -439,7 +439,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     categoryKey: 'workspaces',
     slug: 'deploy-workspace',
     title: 'Deploy Workspace',
-    excerpt: 'Publish websites, lightweight apps, APIs, portals, and serverless workloads.',
+    excerpt: 'Organize applications and environments, release configuration, and deployment history.',
     bodyMarkdown:
       '# Deploy Workspace\n\nDeploy Workspace gives teams one place to organize applications and environments, manage release configuration, and review deployment history across Mkety projects.',
     sortOrder: 30,
