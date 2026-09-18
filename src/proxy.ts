@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { getCanonicalMketyPublicUrl } from '@/features/platform-content/public-host-routing';
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { customDomains, tenants } from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
