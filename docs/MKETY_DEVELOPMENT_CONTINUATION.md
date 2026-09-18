@@ -1033,3 +1033,16 @@ MKSaaS Billing is the authoritative billing implementation. Any remaining self-s
 Enterprise negotiated-payment links remain a separate valid operational flow and are not a substitute for self-service subscription checkout.
 
 After self-service Billing checkout is verified, resume APP-07 Deployments/Cloud from the merged Cloudflare candidate-adapter state with an authorized, audited, non-production customer invocation path. Production deployment, DNS/custom domains, OCI/Coolify mutation, and rollback execution remain out of scope until their later explicit safety gates.
+## Self-service Billing checkpoint
+
+The next production-readiness priority after PR #79 has been implemented on PR #80.
+
+MKSaaS Billing is now the authoritative Platform billing implementation. Historical references that told future work to source Platform billing from `mklms` were removed from MKSaaS. The `mklms` repository remains an independent live Enterprise Mkety product and was not changed or deployed as part of this Platform work.
+
+PR #80 implements fixed-price self-service checkout for Starter, AI Workspace, Automation Workspace, Deploy Workspace, and Mkety One. It keeps authoritative prices server-side in integer minor units, preserves immutable plan versions, creates subscriptions in `pending_payment`, creates provider invoices from MKSaaS, verifies NOWPayments callbacks, binds signed provider amount/currency to the exact Mkety checkout and billing period, and applies only verified final settlements through the existing idempotent Billing repository/service. Entitlements become reachable only from qualifying Billing subscription state; browser return URLs never grant access.
+
+Plan selection is preserved across public pricing, account creation/sign-in, tenant selection, and first-workspace creation into authenticated tenant checkout. Enterprise custom payment links remain separate.
+
+The staging candidate and production migration-host release sequences now seed and smoke the canonical Billing catalog. The standalone staging database check also independently seeds the catalog before smoking it, avoiding false positives from shared staging state.
+
+Once PR #80 is merged and promoted, continue APP-07 Deployments/Cloud with the authorized/audited non-production customer invocation path. Do not broaden that slice into production provider mutation, DNS/custom-domain execution, OCI/Coolify mutation, or rollback execution.
