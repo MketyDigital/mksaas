@@ -1,6 +1,7 @@
 export type BillingInterval = 'monthly' | 'yearly' | 'one_time' | 'custom';
 
 export type SubscriptionStatus =
+  | 'pending_payment'
   | 'trialing'
   | 'active'
   | 'past_due'
