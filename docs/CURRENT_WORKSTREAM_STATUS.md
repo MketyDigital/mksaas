@@ -284,3 +284,25 @@ Current-main adaptation:
 - Usage/Credits database reads/writes use `@/shared/db/cloudflare`, matching the production Worker runtime;
 - current schema exports are preserved while adding the four Usage/Credits schema modules;
 - no wallet, purchased packs, overage billing, provider-cost accounting or payment-provider coupling is introduced.
+
+
+## Entitlements and Usage/Credits verification evidence
+
+Entitlements current-main reconstruction PR #72 passed its full required gate set and merged as `19dc6f89a0a7ee17cc7f3bc43189e2e864f5d602`.
+
+Usage/Credits current-main reconstruction PR #73, exact head `3cf6419824ddd4f58cca38398b81d3701df3157b`, is verified green on:
+- Migration Baseline `35313143927`;
+- Platform Core Workspaces Smoke `35313143828`;
+- Build `35313143803`;
+- Typecheck `35313143605`;
+- Lint `35313143726`;
+- CI `35313143693`;
+- Cloudflare Vinext Smoke `35313144012`;
+- Pull Request Validation `35313143881`;
+- full tests/coverage `35313143824`;
+- MegaLinter `35313143813`;
+- PR-level validation `35313142418`.
+
+No production database mutation has been run from PR #73. The repository migration chain is now prepared through `0013_lively_magma.sql`, with Usage/Credits still separated from Wallet and from the Billing financial ledger.
+
+Next after PR #73 merges: continue the authenticated Platform roadmap from the current post-Usage/Credits main. Wallet remains a later, separate commercial/accounting projection and must not become stored-value or a second financial ledger.
