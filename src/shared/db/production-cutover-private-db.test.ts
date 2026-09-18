@@ -76,7 +76,7 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('mkety-public-production-cutover.yml');
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
-    expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v3');
+    expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v4');
   });
 
   it('upserts and verifies the Coolify migration secret without blindly replaying creates', async () => {
