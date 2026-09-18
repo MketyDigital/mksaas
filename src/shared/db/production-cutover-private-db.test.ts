@@ -10,7 +10,7 @@ const CERTIFY_LAUNCHER_PATH = path.resolve(
 );
 
 describe('production cutover private database gate', () => {
-  it('authorizes the exact certified release before private DB mutation and route cutover', async () => {
+  it('authorizes the exact certified release before private DB mutation and Custom Domain cutover', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
     expect(workflow).toContain('authorize:');
