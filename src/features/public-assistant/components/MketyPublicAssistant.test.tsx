@@ -17,7 +17,10 @@ describe('MketyPublicAssistant', () => {
   it('renders one centered Mkety AI command surface without provider or model controls', () => {
     render(<MketyPublicAssistant />);
 
-    expect(screen.getByRole('button', { name: /ask mkety ai/i })).toHaveAttribute('data-surface', 'mkety-ai-command');
+    const launcher = screen.getByRole('button', { name: /ask mkety ai/i });
+    expect(launcher).toHaveAttribute('data-surface', 'mkety-ai-command');
+    expect(launcher).toHaveClass('bg-transparent');
+    expect(launcher).toHaveClass('max-w-[560px]');
     expect(screen.queryByText(/openai|gemini|bedrock|vertex|model selector/i)).not.toBeInTheDocument();
   });
 
@@ -32,6 +35,32 @@ describe('MketyPublicAssistant', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /conversation history/i }));
     expect(screen.getByRole('button', { name: /clear history/i })).toBeInTheDocument();
+  });
+
+  it('renders assistant markdown and bare Mkety routes as clean human-facing content', async () => {
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        conversations: [],
+        activeConversationId: '11111111-1111-4111-8111-111111111111',
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '**Choose the plan that fits.**\n\n- Compare options\n- Start small\n\nSee /pricing for details.',
+          },
+        ],
+      }),
+    });
+
+    render(<MketyPublicAssistant />);
+    fireEvent.click(screen.getByRole('button', { name: /ask mkety ai/i }));
+
+    expect(await screen.findByText('Choose the plan that fits.')).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*Choose/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /view pricing/i })).toHaveAttribute('href', '/pricing');
+    expect(screen.queryByText('/pricing')).not.toBeInTheDocument();
   });
 
   it('sends only the visitor question and conversation id to the public endpoint', async () => {
