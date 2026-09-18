@@ -245,7 +245,7 @@ After all acceptance gates pass:
 - Bind `www.mkety.com/*` to the same Worker.
 - Application routing returns the existing canonical 308 redirect from `www.mkety.com` to `mkety.com`.
 - Preserve current proxied root/www DNS records unless the Cloudflare route mechanism requires a separately reviewed change.
-- Preserve unrelated Cloudflare routes, especially `learn.starpipsforex.com/* -> mklms`.
+- Preserve unrelated Cloudflare routes, including unrelated legacy learning routes.
 - Keep the pre-cutover production snapshot as the rollback reference.
 
 ## Security Requirements
