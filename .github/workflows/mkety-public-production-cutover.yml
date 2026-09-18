@@ -674,8 +674,14 @@ jobs:
             fi
             remove_conflicting_origin_records "$host"
             body="$(HOST="$host" ZONE_ID="$ZONE_ID" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.PRODUCTION_WORKER_NAME,zone_id:process.env.ZONE_ID,zone_name:'mkety.com'}))")"
-            response="$(curl -sS -X PUT "${auth[@]}" --data "$body" -w '\n%{http_code}' "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
-            status="${response##*
+            attach_body=/tmp/mkety-domain-attach.json
+            status="$(curl -sS -o "$attach_body" -w '%{http_code}' -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            response="$(cat "$attach_body")"
+            if [ "$status" != '200' ]; then
+              echo "Cloudflare Custom Domain attach failed for $host with HTTP $status."
+              PAYLOAD="$response" node -e "const p=JSON.parse(process.env.PAYLOAD||'{}'); for (const e of p.errors||[]) console.error('Cloudflare error '+e.code+': '+e.message);"
+              false
+            fi
             id="$(RESPONSE="$response" node -e "const p=JSON.parse(process.env.RESPONSE||'{}');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
             HOST="$host" NEW_ID="$id" node <<'NODE'
           const fs = require('node:fs');
