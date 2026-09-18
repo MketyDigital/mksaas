@@ -832,3 +832,20 @@ The branch now:
 - adds regression coverage locking both contracts.
 
 Wallet remains read-only: no new table/migration, no cash/stored-value balance, no withdrawal/transfer/FX, no payment-provider call, and no second financial ledger.
+
+
+## Wallet exact verification evidence
+
+Corrected Wallet PR #74 passed its full required gate set on head `e6a49adb82c63dfa087fa42bf3585ce5f068b5e6`:
+
+- Typecheck `35320741465`;
+- full tests/coverage `35320741436`;
+- Cloudflare Vinext Smoke `35320741401`;
+- Lint `35320741408`;
+- Build `35320741447`;
+- CI `35320741527`;
+- Pull Request Validation `35320741387`;
+- MegaLinter `35320741378`;
+- CodeQL / PR-level validation `35320738336`.
+
+Security/correctness checks included explicit tenant-membership enforcement before Wallet reads and applied-only Billing settlement display.
