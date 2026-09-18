@@ -10,6 +10,7 @@ const VITE_CONFIG_PATH = path.resolve(process.cwd(), 'vite.config.ts');
 const NEXT_CONFIG_PATH = path.resolve(process.cwd(), 'next.config.mjs');
 const WRANGLER_CONFIG_PATH = path.resolve(process.cwd(), 'wrangler.jsonc');
 const DB_INDEX_PATH = path.resolve(process.cwd(), 'src/shared/db/index.ts');
+const DB_CLOUDFLARE_PATH = path.resolve(process.cwd(), 'src/shared/db/cloudflare.ts');
 const DB_REQUEST_PATH = path.resolve(process.cwd(), 'src/shared/db/request.ts');
 const PUBLIC_AI_REQUEST_DB_PATH = path.resolve(
   process.cwd(),
