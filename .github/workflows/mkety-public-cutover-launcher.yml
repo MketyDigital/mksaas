@@ -32,17 +32,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          publish_status() {
-            local state="$1"
-            local description="$2"
-            STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/release-status.json
+          publish_context() {
+            local context="$1"
+            local state="$2"
+            local description="$3"
+            CONTEXT="$context" STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/release-status.json
           process.stdout.write(JSON.stringify({
             state: process.env.STATE,
-            context: 'mkety/release-orchestrator',
+            context: process.env.CONTEXT,
             description: String(process.env.DESCRIPTION || '').slice(0, 140),
           }));
           NODE
             curl -fsS               -X POST               -H "Authorization: Bearer $GH_TOKEN"               -H 'Accept: application/vnd.github+json'               -H 'X-GitHub-Api-Version: 2022-11-28'               -H 'Content-Type: application/json'               --data @/tmp/release-status.json               "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$VERIFIED_SHA" >/dev/null
+          }
+
+          publish_status() {
+            publish_context 'mkety/release-orchestrator' "$1" "$2"
           }
 
           on_error() {
@@ -75,25 +80,29 @@ jobs:
 
           dispatch_certification() {
             local workflow="$1"
+            local context="$2"
             local code
+            publish_context "$context" pending "Dispatching exact-SHA certification workflow."
             code="$(curl -sS -o /tmp/cert-dispatch.json -w '%{http_code}'               -X POST               -H "Authorization: Bearer $GH_TOKEN"               -H 'Accept: application/vnd.github+json'               -H 'X-GitHub-Api-Version: 2022-11-28'               -H 'Content-Type: application/json'               --data "$(node -e 'process.stdout.write(JSON.stringify({ref:process.env.CERT_BRANCH}))')"               "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/dispatches")"
             if [ "$code" != '204' ]; then
               echo "Certification dispatch failed for $workflow with HTTP $code."
               cat /tmp/cert-dispatch.json
+              publish_context "$context" failure "Certification workflow dispatch failed."
               return 1
             fi
             echo "Dispatched $workflow on $CERT_BRANCH."
           }
 
-          dispatch_certification 'mkety-content-db-smoke.yml'
-          dispatch_certification 'mkety-public-ai-runtime-diagnostic.yml'
-          dispatch_certification 'mkety-production-preflight.yml'
-          dispatch_certification 'mkety-public-candidate-deploy.yml'
+          dispatch_certification 'mkety-content-db-smoke.yml' 'mkety/cert-content-db'
+          dispatch_certification 'mkety-public-ai-runtime-diagnostic.yml' 'mkety/cert-public-ai'
+          dispatch_certification 'mkety-production-preflight.yml' 'mkety/cert-preflight'
+          dispatch_certification 'mkety-public-candidate-deploy.yml' 'mkety/cert-candidate'
           publish_status pending "Certification workflows dispatched; waiting for exact-SHA success."
 
           wait_for_workflow_success() {
             local workflow="$1"
             local label="$2"
+            local context="$3"
             local attempt response status conclusion
 
             for attempt in $(seq 1 40); do
@@ -103,11 +112,13 @@ jobs:
               conclusion="$(RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); const runs=Array.isArray(x.workflow_runs)?x.workflow_runs:[]; const exact=runs.find(r=>r.head_sha===process.env.VERIFIED_SHA); process.stdout.write(exact?.conclusion||'')")"
 
               if [ "$status" = 'completed' ] && [ "$conclusion" = 'success' ]; then
+                publish_context "$context" success "$label certification passed."
                 echo "Certified $label for $VERIFIED_SHA."
                 return 0
               fi
 
               if [ "$status" = 'completed' ] && [ -n "$conclusion" ] && [ "$conclusion" != 'success' ]; then
+                publish_context "$context" failure "$label certification ended with $conclusion."
                 echo "$label completed with non-success conclusion: $conclusion"
                 return 1
               fi
@@ -116,14 +127,15 @@ jobs:
               sleep 15
             done
 
+            publish_context "$context" failure "$label certification timed out."
             echo "Timed out waiting for $label certification."
             return 1
           }
 
-          wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
-          wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
-          wait_for_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
-          wait_for_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+          wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke' 'mkety/cert-content-db'
+          wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic' 'mkety/cert-public-ai'
+          wait_for_workflow_success 'mkety-production-preflight.yml' 'production routing preflight' 'mkety/cert-preflight'
+          wait_for_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate' 'mkety/cert-candidate'
           publish_status pending "Exact-SHA certification passed; dispatching guarded production cutover."
 
           node <<'NODE' >/tmp/cutover-dispatch.json
