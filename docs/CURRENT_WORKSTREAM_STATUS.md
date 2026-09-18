@@ -398,3 +398,24 @@ Branch `feat/deploy-foundation-current-main` implements the smallest missing bac
 Explicitly not implemented in this slice: Cloudflare/OCI/Coolify provider calls, credentials, DNS/custom domains, public preview/production URLs, deployment triggers, production infrastructure mutation, or rollback execution.
 
 Verification must include migration baseline / `drizzle-kit check`, full tests, type-check, lint, build, Vinext smoke, PR validation, and MegaLinter before merge.
+
+
+## Deploy foundation exact verification evidence
+
+Deployments/Cloud foundation PR #75 implementation head `ed3fdd853e606a66874bb2eef33a3e1bda10a03e` passed:
+
+- Migration Baseline / Drizzle consistency `35322339405`;
+- Platform Core Workspaces Smoke `35322339400`;
+- Lint `35322339373`;
+- Typecheck `35322339384`;
+- Build `35322339468`;
+- Cloudflare Vinext Smoke `35322339408`;
+- CI `35322339444`;
+- Pull Request Validation `35322339438`;
+- full tests/coverage `35322339426`;
+- MegaLinter `35322339425`;
+- CodeQL / PR-level validation `35322338062`.
+
+Migration `0014_deploy_foundation.sql`, its journal entry, and `0014_snapshot.json` passed the repository migration baseline and `drizzle-kit check`.
+
+No deployment provider, DNS, custom-domain, public URL, credential, production execution, or rollback mutation is enabled by this slice. The next Deployments/Cloud batch must introduce provider execution only behind an explicit provider boundary, approvals/audit, bounded failure handling, and rollback design.
