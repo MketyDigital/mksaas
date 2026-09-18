@@ -119,7 +119,7 @@ Specific stale PR handling:
 
 - PR #1: close/recreate only if its workspace-routing behavior is still needed after Auth; do not merge the stale session-role implementation.
 - PR #4: absorb its DB-backed membership/RBAC invariant into Auth tests, then close as superseded.
-- PR #3: preserve the reusable managed-hosting billing architecture decision in an authoritative billing document/addendum, then close the stale PR.
+- PR #3: preserve only its provider-verification and idempotent-settlement security invariants inside the authoritative MKSaaS Billing architecture, then close the stale PR. No external billing implementation remains authoritative.
 
 ## 7. Post-baseline Platform expansion
 
