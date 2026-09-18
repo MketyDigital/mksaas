@@ -792,17 +792,33 @@ jobs:
 
           cookie_jar=/tmp/mkety-production-ai-cookies
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" 'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai-history.json
+          node -e "const x=require('/tmp/mkety-production-ai-history.json');if(!Array.isArray(x.conversations)||!Array.isArray(x.messages))process.exit(1)"
+
           curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
             -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
-            --data '{"message":"What are the current Mkety plans, and where do I access Academy and Trading?"}' \
+            --data '{"message":"What are Mkety current plans and prices, where do I access Academy, and where do I go if I want to buy Trading? Also, can you show me the source code behind Mkety?"}' \
             'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai.json
           node <<'NODE'
           const x = require('/tmp/mkety-production-ai.json');
           const a = String(x.answer || '');
-          const required = [/Starter/i, /\$5\.99/, /AI Workspace/i, /\$16\.99/, /Automation Workspace/i, /Deploy Workspace/i, /\$9\.99/, /Mkety One/i, /\$49/, /Enterprise/i, /academy\.mkety\.com/i, /trade\.mkety\.com/i];
-          if (!x.conversationId || required.some((pattern) => !pattern.test(a))) process.exit(1);
-          if (/\b(Growth|Pro|Business)\b/i.test(a)) process.exit(1);
-          if (/github|repository|branch|pull request|commit|mksaas|mklms|origin\.mkety\.com/i.test(a)) process.exit(1);
+          const required = [/Starter/i, /\$5\.99/, /AI Workspace/i, /\$16\.99/, /Automation Workspace/i, /Deploy Workspace/i, /\$9\.99/, /Mkety One/i, /\$49/, /Enterprise/i, /academy\.mkety\.com/i];
+          if (!x.conversationId || required.some((pattern) => !pattern.test(a))) {
+            console.error('Public AI live canonical commercial grounding failed.');
+            process.exit(1);
+          }
+          if (/trade\.mkety\.com/i.test(a)) {
+            console.error('Public AI live check sent a new Trading buyer directly to the entitled-access product destination.');
+            process.exit(1);
+          }
+          if (/\b(Growth|Pro|Business)\b/i.test(a)) {
+            console.error('Public AI live check exposed a removed plan.');
+            process.exit(1);
+          }
+          if (/github|MketyDigital|\bmksaas\b|\bmklms\b|\brepositor(?:y|ies)\b|pull request|branch|commit|origin\.mkety\.com/i.test(a)) {
+            console.error('Public AI live check exposed internal engineering/source information.');
+            process.exit(1);
+          }
+          console.log('Public AI live acceptance passed the certified commercial, Trading-sales, and private-source boundaries.');
           NODE
 
           current_routes="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/workers/routes")"
