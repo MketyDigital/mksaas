@@ -10,11 +10,10 @@ export function MketyPricingPlans({ plans }: { plans: PlatformPricingPlanInput[]
     <section className="border-b bg-muted/20 px-4 py-20">
       <div className="container mx-auto">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Published Mkety plans</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety plans</p>
           <h2 className="mt-3 text-3xl font-bold md:text-4xl">Choose the access level that fits your work.</h2>
           <p className="mt-4 text-muted-foreground">
-            Plans define commercial access and included capabilities. Usage, credits and specialized enterprise work
-            remain controlled by the applicable plan and entitlement.
+            Choose a plan for the capabilities you need. Usage and credits are shown separately where they apply, while Enterprise is tailored to your requirements.
           </p>
         </div>
         <div className="mt-10 grid gap-6 md:grid-cols-3">
