@@ -29,7 +29,7 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
       <div className="container mx-auto flex min-h-16 items-center justify-between gap-3 px-4">
         <Link href="/" className="flex shrink-0 items-center" aria-label={settings.brandName}>
           <img
-            src={settings.logoUrl ?? 'https://www.mkety.com/logo.png'}
+            src={settings.logoUrl ?? '/mkety-logo.png'}
             alt={settings.brandName}
             className="h-8 w-auto max-w-[8.5rem] object-contain sm:h-9"
           />
