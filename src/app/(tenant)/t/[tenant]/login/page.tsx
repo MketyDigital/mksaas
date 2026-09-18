@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+
 import { redirect } from 'next/navigation';
 
 import { TenantLoginForm } from '@/features/auth/components/TenantLoginForm';
@@ -18,6 +18,7 @@ export async function generateMetadata({ params }: TenantLoginPageProps) {
   return {
     title: `Sign In | ${tenant?.name || tenantSlug} - Mkety Platform`,
     description: `Sign in to access ${tenant?.name || tenantSlug} on Mkety Platform`,
+    robots: { index: false, follow: false },
   };
 }
 
@@ -53,9 +54,7 @@ export default async function TenantLoginPage({ params, searchParams }: TenantLo
       return (
         <div className="min-h-screen flex items-center justify-center bg-amber-500/5 p-4">
           <div className="text-center max-w-md">
-            <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-amber-500/10 mb-4">
-              <Sparkles className="h-8 w-8 text-amber-500" />
-            </div>
+            <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-9 w-auto" />
             <h1 className="text-2xl font-bold mb-2">Access Required</h1>
             <p className="text-muted-foreground mb-4">
               You&apos;re signed in as <strong>{session.user.email}</strong>, but you don&apos;t have access to{' '}
@@ -72,10 +71,8 @@ export default async function TenantLoginPage({ params, searchParams }: TenantLo
     <div className="min-h-screen flex items-center justify-center bg-primary/5 p-4 relative overflow-hidden">
       <div className="w-full max-w-md relative">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-primary shadow-lg mb-4">
-            <Sparkles className="h-8 w-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold brand-gradient-text">{tenant.name}</h1>
+          <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
+          <h1 className="text-3xl font-bold tracking-tight">{tenant.name}</h1>
           <p className="text-muted-foreground mt-2">Sign in to access your workspace</p>
         </div>
         <TenantLoginForm tenantSlug={tenantSlug} tenantName={tenant.name} initialEmail={emailParam ?? ''} />
