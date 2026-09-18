@@ -308,7 +308,7 @@ Delete diagnostics and one-off bootstrap files that are no longer part of the su
 
 - [ ] **Step 4: Preserve useful stale-PR architecture before closure**
 
-Carry PR #3's managed-hosting billing decision into an authoritative billing architecture note; confirm PR #4's DB-backed membership invariant is in Auth tests; confirm PR #1 has no unique behavior worth preserving.
+Record the provider-verification and idempotent-settlement invariants directly in the authoritative MKSaaS Billing architecture; confirm PR #4's DB-backed membership invariant is in Auth tests; confirm PR #1 has no unique behavior worth preserving.
 
 - [ ] **Step 5: Close superseded PRs**
 
