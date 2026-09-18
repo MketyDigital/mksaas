@@ -546,10 +546,20 @@ jobs:
               echo "Production preview exposed quarantined/internal wording on $route."
               exit 1
             fi
-            grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body" || {
+            BODY="$body" node <<'NODE' || {
               echo "Production preview missing mkety.com canonical link on $route."
               exit 1
             }
+            const fs = require('node:fs');
+            const html = fs.readFileSync(process.env.BODY, 'utf8');
+            const links = html.match(/<link\b[^>]*>/gi) || [];
+            const ok = links.some(
+              (tag) =>
+                /\brel=["']canonical["']/i.test(tag) &&
+                /\bhref=["']https:\/\/mkety\.com(?:[\/"'])/i.test(tag),
+            );
+            process.exit(ok ? 0 : 1);
+            NODE
           done
 
           curl -fsS "$PREVIEW_URL/sitemap.xml" -o /tmp/mkety-preview-sitemap.xml
@@ -744,10 +754,20 @@ jobs:
               echo "Production route exposed quarantined/internal wording: $route"
               false
             fi
-            grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body" || {
+            BODY="$body" node <<'NODE' || {
               echo "Production route missing mkety.com canonical link: $route"
               false
             }
+            const fs = require('node:fs');
+            const html = fs.readFileSync(process.env.BODY, 'utf8');
+            const links = html.match(/<link\b[^>]*>/gi) || [];
+            const ok = links.some(
+              (tag) =>
+                /\brel=["']canonical["']/i.test(tag) &&
+                /\bhref=["']https:\/\/mkety\.com(?:[\/"'])/i.test(tag),
+            );
+            process.exit(ok ? 0 : 1);
+            NODE
           done
 
           curl -fsS 'https://mkety.com/sitemap.xml' -o /tmp/mkety-production-sitemap.xml
