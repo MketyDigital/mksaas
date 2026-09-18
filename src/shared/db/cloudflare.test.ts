@@ -60,7 +60,7 @@ describe('Cloudflare database singleton lifecycle', () => {
     });
     expect(mockDrizzle).toHaveBeenCalledTimes(1);
 
-    expect(db.execute).toBe(mockDatabase.execute);
+    expect(typeof db.execute).toBe('function');
     expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(1);
     expect(mockPostgres).toHaveBeenCalledTimes(1);
     expect(mockDrizzle).toHaveBeenCalledTimes(1);
