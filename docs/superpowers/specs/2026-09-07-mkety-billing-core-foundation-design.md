@@ -20,7 +20,7 @@ Build a globally standard, provider-neutral Billing core that:
 - supports Selar and NOWPayments as equal first-class gateway capabilities;
 - supports recurring/automatic renewal where the selected gateway/payment method reliably supports it;
 - falls back to renewal invoice/checkout or authorized manual settlement where automatic renewal is unavailable;
-- preserves hardened managed-hosting settlement behavior from `MketyDigital/mklms`;
+- preserves hardened settlement behavior directly in the MKSaaS Billing contract;
 - gives the future Entitlements subsystem one stable Mkety-owned source of truth.
 
 ## Non-goals for this milestone
@@ -76,18 +76,19 @@ The existing enterprise checkout supports two gateway choices:
 
 The live implementation records `selar` or `nowpayments` as the payment provider. The legacy NOWPayments route contains useful capability but must not be copied directly because it can accept callbacks when the signature secret is absent and treats non-final states such as `confirmed` and `sending` as completed.
 
-### `MketyDigital/mklms` main
+### MKSaaS Billing security baseline
 
-The reusable managed-hosting billing Worker is the hardened provider contract to preserve:
+The provider contract is preserved directly in MKSaaS:
 
-- signed/fresh invoice requests;
+- signed/verified provider interactions;
 - mandatory provider webhook verification;
 - fail closed when secrets/signatures are missing;
 - NOWPayments automatic settlement only on final `finished` state;
-- per-installation signed settlement callbacks;
-- idempotent customer-side settlement;
-- no customer database passwords in the billing Worker;
-- manual/offline operational fallback remains available.
+- idempotent settlement application;
+- no provider credential exposure to tenant-facing surfaces;
+- authorized manual/offline operational fallback remains available.
+
+Historical external implementations are not a dependency or source of truth.
 
 ## Core domain model
 
@@ -302,7 +303,7 @@ Recurring behavior is capability-driven because supported payment methods may di
 
 First-class crypto checkout provider.
 
-Use the hardened contract from `mklms` as the security baseline:
+Use the hardened MKSaaS Billing contract as the security baseline:
 
 - signature is mandatory;
 - missing secrets fail closed;
