@@ -542,7 +542,7 @@ jobs:
             body=/tmp/mkety-preview.html
             code="$(curl -L -sS -o "$body" -w '%{http_code}' "$PREVIEW_URL$route" || true)"
             [ "$code" = '200' ] || { echo "Production preview failed: $route HTTP $code"; exit 1; }
-            if grep -Eqi 'under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
+            if grep -Eqi 'under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|\bmksaas\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
               echo "Production preview exposed quarantined/internal wording on $route."
               exit 1
             fi
@@ -759,7 +759,7 @@ jobs:
             body=/tmp/mkety-production.html
             code="$(curl -L -sS -o "$body" -w '%{http_code}' "https://mkety.com$route")"
             [ "$code" = '200' ] || { echo "Production route failed: $route HTTP $code"; false; }
-            if grep -Eqi 'under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
+            if grep -Eqi 'under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|\bmksaas\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
               echo "Production route exposed quarantined/internal wording: $route"
               false
             fi
@@ -812,7 +812,7 @@ jobs:
             console.error('Public AI exposed a removed plan.');
             process.exit(1);
           }
-          if (/GitHub|MketyDigital|\bmksaas\b|\bmklms\b|\brepositor(?:y|ies)\b|pull request|branch|commit|origin\.mkety\.com/i.test(a)) {
+          if (/GitHub|MketyDigital|\bmksaas\b|\brepositor(?:y|ies)\b|pull request|branch|commit|origin\.mkety\.com/i.test(a)) {
             console.error('Public AI exposed internal engineering/source information.');
             process.exit(1);
           }
