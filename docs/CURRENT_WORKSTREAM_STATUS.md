@@ -3,8 +3,8 @@
 **Updated:** 2026-09-18  
 **Current workstream:** Public-site production cutover/runtime repair  
 **Status:** IN PROGRESS  
-**Branch:** `diagnose/runtime-adapter-identity-v2`  
-**Pull request:** #53
+**Branch:** `fix/cloudflare-db-source-split`  
+**Pull request:** #55
 
 ## Requested outcome
 
@@ -17,74 +17,110 @@ finish public site
 → resume app.mkety.com development
 ```
 
-## Latest production evidence
+## Production root cause now proven
 
-PR #51 merged to `main` as `0268c4c488d66c4cd30cc4b7947644ce98b9eee3`.
+PR #53 merged to `main` as `02b8348d1a5e39b8bf3e4b3ab28c0be1b84e6ed5`.
 
-Production deep diagnostic run `35288341373` on that exact SHA confirmed:
+Production deep diagnostic run `35288947489` on that exact SHA established:
 
-- apex/www Worker routes remain intentionally unbound;
-- production Hyperdrive resolves;
-- direct route-free Hyperdrive `SELECT 1` passes;
-- the Mkety Vinext Worker builds and deploys with production `MKETY_DB`;
-- `cloudflare-binding` passes;
-- `explicit-cloudflare-resolver` passes;
-- normal `runtime-resolver` still fails with a sanitized generic `Error`;
-- `/api/health`, `/`, and `/platform` remain HTTP 500;
-- Public Assistant remains fail-closed at HTTP 503.
+- apex/www Worker routes remained intentionally unbound;
+- production Hyperdrive resolved;
+- direct route-free Hyperdrive `SELECT 1` passed;
+- the Mkety Vinext Worker built and deployed with production `MKETY_DB`;
+- `cloudflare-binding` passed;
+- `explicit-cloudflare-resolver` passed;
+- `runtime-adapter-identity` reported **`adapterKind: "node"`** for the normal `@/shared/db/runtime-connection` import;
+- the aliased `runtime-resolver` then failed with a sanitized generic `Error`;
+- `/api/health`, `/`, and `/platform` remained HTTP 500;
+- Public Assistant remained fail-closed at HTTP 503.
 
-Therefore PR #51's absolute emitted-path rewrite did not change the production resolver boundary.
+This ends alias-precedence experimentation. The deployed Vinext module graph is proven to select the Node adapter through the generic resolver path even after the prior Vite/Next/absolute-path alias repairs.
 
-## Current diagnostic: PR #53
+## Current repair: PR #55
 
-PR #53 is a conflict-free rebuild of the adapter-identity discriminator on top of PR #51's merged `main`.
+PR #55 replaces the fragile runtime alias dependency with an explicit source boundary.
 
-It adds a safe literal identity to both runtime adapters:
+### Runtime split
 
-- Node adapter: `runtimeConnectionAdapterKind = 'node'`;
-- Cloudflare adapter: `runtimeConnectionAdapterKind = 'cloudflare'`.
+Node/tooling side:
 
-The temporary CI-only production route imports that constant through the same `@/shared/db/runtime-connection` module used by application database consumers and reports only the adapter kind before invoking the resolver.
+- generic `src/shared/db/index.ts` remains Node-safe and resolves through `DATABASE_URL`;
+- `src/shared/db/node.ts` is the explicit Node singleton for CLI utilities;
+- seed/content-smoke scripts use the Node entry;
+- Node migrations/seeding must never load `cloudflare:workers`.
+
+Cloudflare Worker side:
+
+- `src/shared/db/cloudflare.ts` is the Hyperdrive-backed singleton;
+- shared request-scoped DB uses `runtime-connection.cloudflare` directly;
+- Public Assistant request DB uses `runtime-connection.cloudflare` directly;
+- high-impact Worker/public entry points now use `db/cloudflare`, including health, proxy/custom-domain routing, auth repository/permissions/tenant reads, public CMS loaders, app-experience loaders, and Enterprise order persistence;
+- the production diagnostic now tests the explicit Cloudflare resolver, request-scoped DB, and Cloudflare singleton directly instead of re-testing the already-proven broken alias.
 
 ### TDD evidence
 
-Test-only commit `713488981b39f226b95260b37a8991944fc47645` required:
+Test-only commit `6caf83a2bdac67c4302547f8091929c264e294e2` required Worker DB gateways to use the explicit Cloudflare adapter.
 
-- `runtime-adapter-identity`;
-- `aliasedRuntimeConnectionAdapterKind`.
+Valid red phase:
 
-Valid red on current `main`:
-
-- the new assertion failed specifically because `runtime-adapter-identity` was absent;
+- `src/shared/db/vite-runtime-alias.test.ts` failed specifically because `src/shared/db/index.ts` still imported `@/shared/db/runtime-connection`;
 - the other 723 tests passed;
 - lint, type-check, and build passed.
 
-Implementation commits:
+The implementation then exposed an important Node-tooling regression: making the generic singleton Cloudflare-specific caused the content DB workflow to fail with `ERR_UNSUPPORTED_ESM_URL_SCHEME` for `cloudflare:`.
 
-- `dcc5705ba5480816b15a19f9399e2702a9cdcaa0`: Node adapter identity;
-- `2ebd548a22475aaa7643c0af6ed34efc491bf85e`: Cloudflare adapter identity;
-- `168dc0f1a9b68388d0cb7ba02bd221b300875790`: CI-only identity stage in the production diagnostic.
+That finding changed the source split to the current correct architecture:
 
-No credentials, connection strings, raw bindings, secrets, tokens, or database data are exposed.
+- generic DB remains Node-safe;
+- Worker consumers opt into `db/cloudflare` or the Cloudflare request resolver explicitly;
+- the Node content smoke was rewritten to validate the seeded production contract directly through `db/node` instead of importing Worker-only loaders.
+
+### Current verification
+
+Current code head: `b12213069efb832872304a10c96edbdabe0d3169`.
+
+Green on that head so far:
+
+- standalone lint;
+- standalone type-check;
+- standalone build;
+- Cloudflare/Vinext build and deployment-packaging smoke;
+- Mkety Content DB Smoke: migrations, CMS migrations, seeding, and Node-native content contract smoke all green.
+
+Still required before merge:
+
+- standalone tests/coverage;
+- combined CI completion;
+- PR validation completion;
+- MegaLinter;
+- any remaining required checks.
 
 ## Production safety
 
-- Do not bind `mkety.com/*` or `www.mkety.com/*` until the complete public release gate is green.
-- `/api/runtime-db-diagnostic` remains CI-only.
+- `mkety.com/*` and `www.mkety.com/*` remain intentionally unbound.
+- Do not cut over while any runtime or release-gate blocker remains.
+- `/api/runtime-db-diagnostic` is CI-only.
 - Temporary diagnostic Workers remain route-free and are cleaned up after runs.
-- Diagnostic output must stay sanitized.
+- Diagnostic output must remain sanitized.
 - No production cutover is claimed yet.
 
 ## Exact next steps
 
-1. Require the full final-head gate on PR #53.
-2. Merge #53 only with an exact-head guard.
-3. Read the production deep diagnostic on the resulting exact `main` SHA.
-4. Use `runtime-adapter-identity` as the decision boundary:
-   - `node`: stop alias experiments and explicitly wire Cloudflare server consumers to the Cloudflare resolver while preserving Node/Coolify imports for scripts and migrations;
-   - `cloudflare`: module identity is correct, so inspect the emitted Cloudflare adapter execution/binding access.
-5. Once `runtime-resolver` passes, continue through `request-database` and `singleton-database`.
-6. When the DB chain is healthy, verify `/api/health`, `/`, `/platform`, Public Assistant, auth entry points, and Enterprise checkout/payment entry points.
-7. Cut over `mkety.com` / `www.mkety.com` only after the full public gate is green.
-8. Record immutable cutover evidence here and in `MKETY_DEVELOPMENT_CONTINUATION.md`.
-9. Move immediately to app work: reconcile PR #35, then Entitlements #22, Usage/Credits #23, and the remaining Platform roadmap.
+1. Require the remaining PR #55 gates to pass on the current code head.
+2. Verify the final PR head differs only by this handoff if no code changes follow; otherwise rerun the full affected gate.
+3. Merge PR #55 only with an exact-head guard.
+4. Read the production deep diagnostic on the exact merge SHA.
+5. Require the DB stage ladder to pass:
+   - `cloudflare-binding`;
+   - `explicit-cloudflare-resolver`;
+   - `request-database`;
+   - `singleton-database`.
+6. If the DB chain passes, verify `/api/health`, `/`, `/platform`, Public Assistant, login/auth entry points, and Enterprise checkout/payment entry points.
+7. Run the complete public release/cutover gate across the required public routes and transactional entry points.
+8. Bind `mkety.com/*` and `www.mkety.com/*` only after the complete gate is green.
+9. Record immutable cutover evidence here and in `MKETY_DEVELOPMENT_CONTINUATION.md`.
+10. Move immediately to app work: reconcile stale PR #35, then Entitlements #22, Usage/Credits #23, and the remaining Platform roadmap.
+
+## Feature-agent handoff rule
+
+Every material feature/runtime/deploy PR must update this status and its feature handoff with: requested outcome, prior state, changes made, verification evidence, production/environment changes, blockers/risks, and exact next steps. No feature may be marked complete, verified, production, or merge-ready without that update.

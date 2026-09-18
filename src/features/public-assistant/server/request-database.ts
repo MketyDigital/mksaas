@@ -2,7 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 import type { Database } from '@/shared/db';
-import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
+import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection.cloudflare';
 import * as schema from '@/shared/db/schema';
 
 export async function withPublicAIRequestDatabase<T>(work: (database: Database) => Promise<T>): Promise<T> {

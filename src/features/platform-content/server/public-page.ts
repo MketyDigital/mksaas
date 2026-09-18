@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
 
 import { normalizePublicPageSalesLinks } from '../commercial-routing';

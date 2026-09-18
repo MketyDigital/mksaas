@@ -5,7 +5,7 @@
  * Run with: pnpm db:seed
  */
 
-import { db } from '../src/shared/db';
+import { db } from '../src/shared/db/node';
 import * as schema from '../src/shared/db/schema';
 
 async function main() {

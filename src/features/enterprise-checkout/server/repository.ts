@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { platformEnterpriseOrders } from '@/shared/db/schema';
 import type {
   NewPlatformEnterpriseOrder,

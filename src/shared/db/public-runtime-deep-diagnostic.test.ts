@@ -11,7 +11,7 @@ const WORKFLOW_PATH = path.resolve(
 );
 
 describe('production runtime deep diagnostic', () => {
-  it('compares the explicit Cloudflare resolver with the aliased resolver before database wrappers', async () => {
+  it('verifies the explicit Cloudflare resolver plus request and singleton database gateways', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
     expect(workflow).toContain('/api/runtime-db-diagnostic');
@@ -25,9 +25,9 @@ describe('production runtime deep diagnostic', () => {
     expect(workflow).toContain('hasBinding');
     expect(workflow).toContain('hasConnectionString');
     expect(workflow).toContain('explicit-cloudflare-resolver');
-    expect(workflow).toContain('runtime-adapter-identity');
-    expect(workflow).toContain('aliasedRuntimeConnectionAdapterKind');
-    expect(workflow).toContain('runtime-resolver');
+    expect(workflow).toContain("from '@/shared/db/cloudflare'");
+    expect(workflow).not.toContain('runtime-adapter-identity');
+    expect(workflow).not.toContain('aliasedRuntimeConnectionAdapterKind');
     expect(workflow).toContain('request-database');
     expect(workflow).toContain('singleton-database');
     expect(workflow).toContain('RUNTIME_DB_DIAGNOSTIC');

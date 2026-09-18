@@ -15,7 +15,7 @@ const mockAuthFn = jest.fn<Promise<AuthResult>, []>();
 const mockGetTenantBySlugFn = jest.fn<Promise<MockTenant | undefined>, [string]>();
 
 // Mock dependencies before importing the module
-jest.mock('@/shared/db', () => ({
+jest.mock('@/shared/db/cloudflare', () => ({
   db: {
     query: {
       tenantMemberships: { findFirst: jest.fn(), findMany: jest.fn() },
@@ -41,7 +41,7 @@ jest.mock('next/navigation', () => ({
   }),
 }));
 
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 
 import {
   getAllTenantPermissionsForUser,

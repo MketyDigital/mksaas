@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { cache } from 'react';
 
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { tenants } from '@/shared/db/schema';
 
 /** Get the underlying cause message from a Drizzle or database error */

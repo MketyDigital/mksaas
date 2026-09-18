@@ -1,7 +1,8 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { type Database, db } from '@/shared/db';
+import type { Database } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import * as schema from '@/shared/db/schema';
 import type { Role } from '@/shared/db/schema/roles';
 import { auth } from '@/shared/lib/auth';

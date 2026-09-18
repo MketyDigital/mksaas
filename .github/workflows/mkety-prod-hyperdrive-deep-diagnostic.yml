@@ -202,27 +202,20 @@ jobs:
           import { env } from 'cloudflare:workers';
           import { sql } from 'drizzle-orm';
           import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
-          import { db } from '@/shared/db';
+          import { db } from '@/shared/db/cloudflare';
           import {
             getRuntimeDatabaseConnectionString as getExplicitCloudflareRuntimeDatabaseConnectionString,
           } from '@/shared/db/runtime-connection.cloudflare';
-          import {
-            getRuntimeDatabaseConnectionString,
-            runtimeConnectionAdapterKind as aliasedRuntimeConnectionAdapterKind,
-          } from '@/shared/db/runtime-connection';
 
           type Stage = {
             ok: boolean;
             stage:
               | 'cloudflare-binding'
               | 'explicit-cloudflare-resolver'
-              | 'runtime-adapter-identity'
-              | 'runtime-resolver'
               | 'request-database'
               | 'singleton-database';
             hasBinding?: boolean;
             hasConnectionString?: boolean;
-            adapterKind?: 'node' | 'cloudflare';
             name?: string;
             code?: string | null;
           };
@@ -263,20 +256,6 @@ jobs:
               });
             } catch (error) {
               stages.push(failure('explicit-cloudflare-resolver', error));
-              return Response.json({ ok: false, stages }, { status: 500 });
-            }
-
-            stages.push({
-              ok: true,
-              stage: 'runtime-adapter-identity',
-              adapterKind: aliasedRuntimeConnectionAdapterKind,
-            });
-
-            try {
-              const connectionString = getRuntimeDatabaseConnectionString();
-              stages.push({ ok: connectionString.length > 0, stage: 'runtime-resolver' });
-            } catch (error) {
-              stages.push(failure('runtime-resolver', error));
               return Response.json({ ok: false, stages }, { status: 500 });
             }
 

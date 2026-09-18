@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import {
   platformAppControlCenterModules,
   platformAppDashboardSettings,
