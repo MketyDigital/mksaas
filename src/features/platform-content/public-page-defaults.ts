@@ -86,7 +86,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'deploy',
             title: 'Deploy Workspace',
             description:
-              'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
+              'Organize applications and environments, manage release configuration, and review deployment history.',
             href: '/app',
           },
           {
