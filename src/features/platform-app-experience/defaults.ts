@@ -18,6 +18,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       href: '/app/ai',
       iconKey: 'sparkles',
       enabled: true,
+      requiresEntitlement: 'workspace.ai',
       sortOrder: 10,
     },
     {
@@ -27,6 +28,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       href: '/app/automation',
       iconKey: 'workflow',
       enabled: true,
+      requiresEntitlement: 'workspace.automation',
       sortOrder: 20,
     },
     {
@@ -36,6 +38,7 @@ export const defaultAppExperience: AppExperienceDefaultsInput = {
       href: '/app/deploy',
       iconKey: 'rocket',
       enabled: true,
+      requiresEntitlement: 'workspace.deploy',
       sortOrder: 30,
     },
     {
