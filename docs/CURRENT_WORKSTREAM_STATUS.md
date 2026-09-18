@@ -117,7 +117,7 @@ The regression requires:
 - transient Coolify transport errors to be retried;
 - the one-time cutover launcher generation to be `worker-custom-domains-v1`.
 
-A dedicated temporary evidence PR #63 runs the exact test-only commit so its red can be recorded without implementation commits cancelling the test run.
+Dedicated temporary evidence PR #63 ran the exact test-only commit and was closed without merge after recording a valid red. Combined CI run `35302062777` produced: Type-check green, Lint green, Build green, Test failure. The test summary was 1 failed / 156 passed suites and 3 failed / 727 passed tests (730 total). The three failures were exactly the new Custom Domain API assertion, launcher generation assertion, and Coolify PATCH/retry assertion.
 
 Implementation commits currently include:
 
@@ -143,15 +143,14 @@ As of this update:
 
 ## Remaining gate
 
-1. Record the exact red result for test-only commit `03582d...` from PR #63, then close PR #63 without merge.
-2. Finish PR #62 documentation and verify its exact final head.
-3. Mark PR #62 ready for review and require tests, CI, lint, type-check, build, Vinext smoke, PR validation, and MegaLinter green on that exact head.
-4. Merge PR #62 only with the exact-head guard.
-5. Confirm merge-time launcher generation `worker-custom-domains-v1` dispatches `mkety-public-production-cutover.yml` with:
+1. Verify PR #62 exact final documentation head.
+2. Mark PR #62 ready for review and require tests, CI, lint, type-check, build, Vinext smoke, PR validation, and MegaLinter green on that exact head.
+3. Merge PR #62 only with the exact-head guard.
+4. Confirm merge-time launcher generation `worker-custom-domains-v1` dispatches `mkety-public-production-cutover.yml` with:
    - `verified_sha = 2e871fe5ba51585886713c2cb79544e68dc20b73`;
    - confirmation `CUTOVER MKETY PUBLIC`.
-6. Require the private DB executor to complete migration/content seed/smoke successfully.
-7. Require Custom Domain attachment and live acceptance to pass, with:
+5. Require the private DB executor to complete migration/content seed/smoke successfully.
+6. Require Custom Domain attachment and live acceptance to pass, with:
    - `mkety.com` and `www.mkety.com` attached to the exact Worker;
    - Worker Routes unchanged;
    - canonical www→apex behavior;
@@ -159,8 +158,8 @@ As of this update:
    - NOWPayments fail-closed verification;
    - Public AI commercial grounding/privacy boundary;
    - persisted rollback artifacts.
-8. Immediately update this file and `docs/MKETY_DEVELOPMENT_CONTINUATION.md` with immutable production evidence.
-9. Move directly to app work: reconcile stale draft PR #35, then Entitlements #22, Usage/Credits #23, then the remaining Platform roadmap.
+7. Immediately update this file and `docs/MKETY_DEVELOPMENT_CONTINUATION.md` with immutable production evidence.
+8. Move directly to app work: reconcile stale draft PR #35, then Entitlements #22, Usage/Credits #23, then the remaining Platform roadmap.
 
 ## Feature-agent handoff rule
 
