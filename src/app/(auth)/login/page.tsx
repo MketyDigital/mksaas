@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams: _searchParams }: LoginPa
       </div>
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <img src="/mkety-brand.svg" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
+          <img src="https://www.mkety.com/logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
           <h1 className="text-3xl font-bold brand-gradient-text mb-2">Welcome to Mkety</h1>
           <p className="text-muted-foreground">Sign in to your workspace</p>
         </div>
