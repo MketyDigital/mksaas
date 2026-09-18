@@ -4,29 +4,28 @@ import postgres from 'postgres';
 import { getRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';
 import * as schema from './schema';
 
-const globalForCloudflareDb = globalThis as unknown as {
-  cloudflareConn: postgres.Sql | undefined;
-};
-
-let connectionString: string | undefined;
-
-try {
-  connectionString = getRuntimeDatabaseConnectionString();
-} catch (error) {
-  if (!process.env.SKIP_ENV_VALIDATION) {
-    throw error;
-  }
+function createCloudflareDatabase() {
+  const connectionString = getRuntimeDatabaseConnectionString();
+  const conn = postgres(connectionString, { max: undefined });
+  return drizzle(conn, { schema });
 }
 
-const conn =
-  globalForCloudflareDb.cloudflareConn ??
-  postgres(connectionString ?? 'postgresql://localhost/placeholder', {
-    max: connectionString ? undefined : 0,
-  });
+type CloudflareDatabase = ReturnType<typeof createCloudflareDatabase>;
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForCloudflareDb.cloudflareConn = conn;
+let singletonDatabase: CloudflareDatabase | undefined;
+
+export function getCloudflareDatabase(): CloudflareDatabase {
+  singletonDatabase ??= createCloudflareDatabase();
+  return singletonDatabase;
 }
 
-export const db = drizzle(conn, { schema });
-export type Database = typeof db;
+export const db = new Proxy({} as CloudflareDatabase, {
+  get(_target, property) {
+    const database = getCloudflareDatabase();
+    const value = Reflect.get(database as object, property, database);
+
+    return typeof value === 'function' ? value.bind(database) : value;
+  },
+});
+
+export type Database = CloudflareDatabase;
