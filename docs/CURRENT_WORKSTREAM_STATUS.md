@@ -470,3 +470,20 @@ Pre-merge hardening verified:
 - provider failures/timeouts are sanitized;
 - protected and production environments remain non-executable;
 - no real provider adapter, credential, DNS/custom-domain mutation, public URL provisioning, or production deployment action is included.
+
+
+## Cloudflare Deploy candidate adapter
+
+Deploy provider-neutral execution kernel PR #76 merged as `3900bd7d1efe7ac9ac5868b8dec8314c8aecb945`. The next Deployments/Cloud slice is the first real provider adapter, limited to isolated Cloudflare `workers.dev` candidates.
+
+Branch `feat/deploy-cloudflare-candidate-adapter` adds:
+- trusted server-side module artifact contract with strict module/count/source-size limits;
+- candidate Worker names restricted to `mkety-deploy-candidate-*`;
+- real Cloudflare Workers Script API transport;
+- explicit workers.dev enablement with Preview URLs disabled;
+- workers.dev URL derivation;
+- exact candidate deletion;
+- provider/transport tests;
+- same-repository GitHub preview-environment workflow that deploys a fixture Worker, externally smokes its marker, and verifies cleanup.
+
+Still excluded: customer-facing deployment action, arbitrary repository/source fetching, provider bindings/secrets, DNS/custom domains, `*.mkety.app`, production execution and rollback execution.
