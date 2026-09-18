@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
+import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -25,12 +26,13 @@ export async function POST(request: Request) {
 
   const contentType = request.headers.get('content-type') || '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { name?: string; slug?: string; description?: string })
-    : (Object.fromEntries(await request.formData()) as { name?: string; slug?: string; description?: string });
+    ? ((await request.json().catch(() => ({}))) as { name?: string; slug?: string; description?: string; plan?: string })
+    : (Object.fromEntries(await request.formData()) as { name?: string; slug?: string; description?: string; plan?: string });
 
   const name = String(body.name || '').trim();
   const slug = slugify(String(body.slug || name));
   const description = String(body.description || '').trim();
+  const planKey = body.plan && isSelfServiceBillingPlanKey(String(body.plan)) ? String(body.plan) : null;
 
   if (!name || !slug) return NextResponse.json({ success: false, error: 'Workspace name and slug are required.' }, { status: 400 });
 
@@ -70,6 +72,10 @@ export async function POST(request: Request) {
     return created;
   });
 
-  if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(`/t/${tenant.slug}`, request.url), 303);
-  return NextResponse.json({ success: true, data: tenant, redirectTo: `/t/${tenant.slug}` });
+  const redirectTo = planKey
+    ? `/t/${tenant.slug}/billing/checkout?plan=${encodeURIComponent(planKey)}`
+    : `/t/${tenant.slug}`;
+
+  if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(redirectTo, request.url), 303);
+  return NextResponse.json({ success: true, data: tenant, redirectTo });
 }
