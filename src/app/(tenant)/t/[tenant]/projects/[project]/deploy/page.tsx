@@ -1,3 +1,5 @@
+import { DeployFoundationPanel } from '@/features/deploy/components/DeployFoundationPanel';
+import { getDeployFoundationState } from '@/features/deploy/server/queries';
 import { requireProjectAccess } from '@/features/projects/server/access';
 import { DeployWorkspaceOverview } from '@/features/projects/workspaces/DeployWorkspaceOverview';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
@@ -13,6 +15,8 @@ export default async function DeployWorkspacePage({ params }: { params: Promise<
     return <div className="p-8">{access.reason}</div>;
   }
 
+  const deployState = await getDeployFoundationState(access.tenant.id, access.project.id);
+
   return (
     <WorkspaceShell
       projectName={access.project.name}
@@ -20,7 +24,15 @@ export default async function DeployWorkspacePage({ params }: { params: Promise<
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('deploy')}
     >
-      <DeployWorkspaceOverview projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
+      <div className="space-y-6">
+        <DeployWorkspaceOverview projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
+        <DeployFoundationPanel
+          canManage={access.canManage}
+          projectSlug={access.project.slug}
+          state={deployState}
+          tenantSlug={access.tenant.slug}
+        />
+      </div>
     </WorkspaceShell>
   );
 }

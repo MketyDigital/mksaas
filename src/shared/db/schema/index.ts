@@ -18,6 +18,7 @@ export * from './billing-settlements';
 export * from './billing-subscriptions';
 export * from './credit-ledger-entries';
 export * from './departments';
+export * from './deployments';
 export * from './domains';
 export * from './embeddings';
 export * from './files';

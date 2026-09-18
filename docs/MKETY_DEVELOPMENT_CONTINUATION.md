@@ -684,8 +684,8 @@ When starting a new Mkety session:
 ### Current exact next action
 
 ```text
-APP continuation — reconcile stale draft PR #35 against current main,
-then Entitlements #22, then Usage/Credits #23.
+APP-07 Deployments/Cloud — verify and merge the metadata-only Deploy foundation
+(applications, environments, deployment history), then design provider execution separately.
 ```
 
 The detailed task-level implementation plan for this milestone lives at:
@@ -849,3 +849,44 @@ Corrected Wallet PR #74 passed its full required gate set on head `e6a49adb82c63
 - CodeQL / PR-level validation `35320738336`.
 
 Security/correctness checks included explicit tenant-membership enforcement before Wallet reads and applied-only Billing settlement display.
+
+
+## Deployments/Cloud foundation
+
+Wallet APP-06 merged as `10abc1e269444e26f32865e2f128a6c9c69757b4`. The active app workstream is now APP-07 Deployments/Cloud.
+
+Branch `feat/deploy-foundation-current-main` implements the smallest missing backend foundation without enabling infrastructure mutation:
+
+- `deploy_applications` — tenant/project-scoped logical web/API/service records;
+- `deploy_environments` — tenant/project/application-scoped development, preview, staging, and protected production metadata;
+- `deployments` — read-oriented deployment history and release/provider references;
+- migration `0014_deploy_foundation.sql` plus Drizzle journal/snapshot;
+- manager/admin-only creation of application and environment metadata;
+- tenant/project-scoped reads through the existing project access boundary;
+- Deploy Workspace lists applications, environments, and deployment history;
+- production environments are metadata-only and marked protected.
+
+Explicitly not implemented in this slice: Cloudflare/OCI/Coolify provider calls, credentials, DNS/custom domains, public preview/production URLs, deployment triggers, production infrastructure mutation, or rollback execution.
+
+Verification must include migration baseline / `drizzle-kit check`, full tests, type-check, lint, build, Vinext smoke, PR validation, and MegaLinter before merge.
+
+
+## Deploy foundation exact verification evidence
+
+Deployments/Cloud foundation PR #75 implementation head `ed3fdd853e606a66874bb2eef33a3e1bda10a03e` passed:
+
+- Migration Baseline / Drizzle consistency `35322339405`;
+- Platform Core Workspaces Smoke `35322339400`;
+- Lint `35322339373`;
+- Typecheck `35322339384`;
+- Build `35322339468`;
+- Cloudflare Vinext Smoke `35322339408`;
+- CI `35322339444`;
+- Pull Request Validation `35322339438`;
+- full tests/coverage `35322339426`;
+- MegaLinter `35322339425`;
+- CodeQL / PR-level validation `35322338062`.
+
+Migration `0014_deploy_foundation.sql`, its journal entry, and `0014_snapshot.json` passed the repository migration baseline and `drizzle-kit check`.
+
+No deployment provider, DNS, custom-domain, public URL, credential, production execution, or rollback mutation is enabled by this slice. The next Deployments/Cloud batch must introduce provider execution only behind an explicit provider boundary, approvals/audit, bounded failure handling, and rollback design.

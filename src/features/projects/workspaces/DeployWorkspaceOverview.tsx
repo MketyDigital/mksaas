@@ -1,4 +1,4 @@
-type DeployCapabilityStatus = 'planned' | 'protected';
+type DeployCapabilityStatus = 'foundation' | 'planned' | 'protected';
 
 type DeployWorkspaceCapability = {
   key: 'apps' | 'environments' | 'deployments' | 'domains' | 'previews' | 'production';
@@ -20,22 +20,22 @@ export function buildDeployWorkspaceCapabilities(_options: BuildDeployWorkspaceC
       key: 'apps',
       title: 'Apps & websites',
       description: 'Prepare the project surface for web apps, websites, APIs, portals, and customer-facing products.',
-      status: 'planned',
-      statusLabel: 'Planned',
+      status: 'foundation',
+      statusLabel: 'Foundation',
     },
     {
       key: 'environments',
       title: 'Environments',
       description: 'Model development, preview, staging, and production environments before provider automation is enabled.',
-      status: 'planned',
-      statusLabel: 'Planned',
+      status: 'foundation',
+      statusLabel: 'Foundation',
     },
     {
       key: 'deployments',
       title: 'Deployments',
       description: 'Reserve deployment history, status, logs, rollback notes, and release metadata for future infrastructure runs.',
-      status: 'planned',
-      statusLabel: 'Planned',
+      status: 'foundation',
+      statusLabel: 'Foundation',
     },
     {
       key: 'domains',
@@ -93,9 +93,7 @@ export function DeployWorkspaceOverview({ projectSlug, tenantSlug }: BuildDeploy
       </div>
 
       <p className="mt-5 text-xs leading-5 text-muted-foreground">
-        Deploy automation remains intentionally inactive in this branch. The next backend slice should add app records,
-        environments, deployment records, domain ownership checks, provider credential boundaries, approvals, and audit logs
-        before any real infrastructure changes can run.
+        App, environment, and deployment-history records now provide the Deploy data foundation. Infrastructure automation remains inactive: domain ownership checks, provider credentials, approvals, audit logs, and rollback controls must exist before real provider changes can run.
       </p>
     </section>
   );
