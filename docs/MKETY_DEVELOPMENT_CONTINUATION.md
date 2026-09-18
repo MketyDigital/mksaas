@@ -732,3 +732,12 @@ The public-site milestone no longer blocks authenticated Platform development. R
 4. Continue the current app roadmap under `app.mkety.com`.
 
 For PR #35, preserve the intended RLS/private-Postgres hardening but do not blindly merge its historical head.
+
+
+## RLS helper portability reconciliation
+
+Historical draft PR #35 is superseded by current `main`. Its intended migration behavior is already present in `migrations/0008_harden_rls_auto_enable.sql`: the optional `public.rls_auto_enable()` helper is detected with `to_regprocedure`, and Supabase-only `anon` / `authenticated` revokes are conditional so private PostgreSQL does not fail when those objects are absent.
+
+The only still-missing part from PR #35 was its regression coverage. Branch `fix/rls-auto-enable-portable-current-main` adds `src/shared/db/rls-auto-enable-migration.test.ts` against the current implementation. No production database mutation is performed by this reconciliation branch; it only locks the already-shipped portable migration behavior with tests.
+
+Next after this reconciliation: Entitlements #22, then Usage/Credits #23.
