@@ -546,7 +546,7 @@ jobs:
               echo "Production preview exposed quarantined/internal wording on $route."
               exit 1
             fi
-            grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body" || {
+            BODY="$body" node -e "const fs=require('node:fs');const html=fs.readFileSync(process.env.BODY,'utf8');const links=html.match(/<link\\b[^>]*>/gi)||[];process.exit(links.some((tag)=>/\\brel=[\\\"']canonical[\\\"']/i.test(tag)&&/\\bhref=[\\\"']https:\\/\\/mkety\\.com(?:[\\/\\\"'])/i.test(tag))?0:1)" || {
               echo "Production preview missing mkety.com canonical link on $route."
               exit 1
             }
@@ -744,7 +744,7 @@ jobs:
               echo "Production route exposed quarantined/internal wording: $route"
               false
             fi
-            grep -Eqi '<link[^>]+rel=["'"']canonical["'"'][^>]+href=["'"']https://mkety\.com' "$body" || {
+            BODY="$body" node -e "const fs=require('node:fs');const html=fs.readFileSync(process.env.BODY,'utf8');const links=html.match(/<link\\b[^>]*>/gi)||[];process.exit(links.some((tag)=>/\\brel=[\\\"']canonical[\\\"']/i.test(tag)&&/\\bhref=[\\\"']https:\\/\\/mkety\\.com(?:[\\/\\\"'])/i.test(tag))?0:1)" || {
               echo "Production route missing mkety.com canonical link: $route"
               false
             }

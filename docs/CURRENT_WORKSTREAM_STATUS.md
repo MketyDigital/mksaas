@@ -173,7 +173,7 @@ Cutover run `35304048710` passed authorization, production DB migration/seed/smo
 
 The Worker preview returned HTTP 200. The pre-domain smoke then rejected `/` because its quarantine regex treated any occurrence of the word `GitHub` as internal wording. The public homepage legitimately advertises GitHub integration, so this was an over-broad smoke rule rather than a runtime failure. Custom Domain attachment was skipped; production hostnames remain unchanged.
 
-Branch `release/fix-public-copy-smoke-2e871fe` narrows that check to actual internal repository references such as `github.com/MketyDigital` while continuing to block `MketyDigital`, `mksaas`, `mklms`, private origin hostnames, and stale runtime/template wording. Launcher generation is bumped to `worker-custom-domains-v3` for one clean retry.
+PR #65 narrowed that check to actual internal repository references such as `github.com/MketyDigital` while continuing to block `MketyDigital`, `mksaas`, `mklms`, private origin hostnames, and stale runtime/template wording. Its v3 cutover progressed further: the preview returned HTTP 200 and passed the wording sweep, but the canonical smoke falsely required `rel="canonical"` to appear before `href` in the `<link>` tag. HTML attribute order is not significant. Branch `release/fix-canonical-smoke-2e871fe` reuses the repo's existing order-independent canonical-link parser and bumps the launcher to `worker-custom-domains-v4` for one clean retry.
 
 ## Exact next steps
 
