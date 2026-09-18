@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { platformPages } from '@/shared/db/schema/platform-content';
 
 const PUBLISHED = 'published' as const;
