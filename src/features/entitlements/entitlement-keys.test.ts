@@ -1,8 +1,13 @@
 import { ENTITLEMENT_KEYS, isEntitlementKey } from './entitlement-keys';
 
 describe('entitlement keys', () => {
-  it('includes the existing enterprise trading workspace capability', () => {
-    expect(ENTITLEMENT_KEYS).toContain('workspace.trading.enterprise');
+  it('includes canonical paid workspace capabilities', () => {
+    expect(ENTITLEMENT_KEYS).toEqual(expect.arrayContaining([
+      'workspace.ai',
+      'workspace.automation',
+      'workspace.deploy',
+      'workspace.trading.enterprise',
+    ]));
   });
 
   it('contains no duplicate canonical keys', () => {
