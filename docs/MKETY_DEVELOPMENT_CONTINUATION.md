@@ -750,3 +750,34 @@ Entitlements #22 is being rebuilt from its entitlement-only delta on top of the 
 The reconstruction preserves deny-by-default semantics, plan-version grants, tenant deny/grant overrides, backend authorization enforcement, and workspace filtering. Runtime database reads are adapted to the current Cloudflare gateway. Migration ordering remains `0012` after the current `0011_billing_core_foundation`.
 
 After Entitlements verification/merge, continue to Usage/Credits #23.
+
+
+## Usage/Credits current-main reconstruction
+
+Usage/Credits #23 is being rebuilt from its feature-only delta on top of the merged Entitlements current main. Do not merge the historical stacked branch directly.
+
+The reconstruction preserves the separate product-credit ledger, idempotent/concurrency-safe mutations, Billing-derived recurring allowances, and workflow execution enforcement. Runtime database access is adapted to the current Cloudflare gateway. Migration ordering remains `0013` immediately after Entitlements `0012`.
+
+After Usage/Credits verification/merge, continue the remaining authenticated Platform roadmap; Wallet remains a separate later slice and must not become a second financial ledger.
+
+
+## Entitlements and Usage/Credits verification evidence
+
+Entitlements current-main reconstruction PR #72 passed its full required gate set and merged as `19dc6f89a0a7ee17cc7f3bc43189e2e864f5d602`.
+
+Usage/Credits current-main reconstruction PR #73, exact head `3cf6419824ddd4f58cca38398b81d3701df3157b`, is verified green on:
+- Migration Baseline `35313143927`;
+- Platform Core Workspaces Smoke `35313143828`;
+- Build `35313143803`;
+- Typecheck `35313143605`;
+- Lint `35313143726`;
+- CI `35313143693`;
+- Cloudflare Vinext Smoke `35313144012`;
+- Pull Request Validation `35313143881`;
+- full tests/coverage `35313143824`;
+- MegaLinter `35313143813`;
+- PR-level validation `35313142418`.
+
+No production database mutation has been run from PR #73. The repository migration chain is now prepared through `0013_lively_magma.sql`, with Usage/Credits still separated from Wallet and from the Billing financial ledger.
+
+Next after PR #73 merges: continue the authenticated Platform roadmap from the current post-Usage/Credits main. Wallet remains a later, separate commercial/accounting projection and must not become stored-value or a second financial ledger.
