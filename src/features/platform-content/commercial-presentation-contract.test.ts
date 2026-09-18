@@ -46,7 +46,7 @@ describe('Mkety documented public commercial presentation', () => {
       name: 'Enterprise',
       priceLabel: 'Custom',
       highlighted: false,
-      ctaHref: '/enterprise/checkout',
+      ctaHref: '/contact',
     });
 
     const obsoletePlanIdentities = new Set(['growth', 'pro', 'business']);
@@ -76,7 +76,7 @@ describe('Mkety documented public commercial presentation', () => {
     expect(workspaceByKey.get('deploy')).toMatchObject({
       title: 'Deploy Workspace',
       description:
-        'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
+        'Organize deployment-ready applications and environments, manage release configuration, and track deployment history.',
     });
     expect(workspaceByKey.get('trading')).toMatchObject({
       title: 'Trading Workspace',

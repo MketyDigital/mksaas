@@ -23,6 +23,9 @@ describe('Mkety public indexing controls', () => {
     expect(serialized).toContain('/api/');
     expect(serialized).toContain('/admin/');
     expect(serialized).toContain('/create-workspace');
+    expect(serialized).toContain('/login');
+    expect(serialized).toContain('/signup');
+    expect(serialized).toContain('/payment/');
     expect(serialized).toContain('/app/');
   });
 });

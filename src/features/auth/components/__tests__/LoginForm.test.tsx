@@ -14,18 +14,18 @@ describe('LoginForm', () => {
     mockUseAuth.mockReturnValue({ login: mockLogin, logout: jest.fn(), user: null, isLoading: false, isAuthenticated: false, refresh: jest.fn() });
   });
 
-  it('renders the Mkety/ZITADEL sign-in action', () => {
+  it('renders the Mkety sign-in action', () => {
     renderWithProviders(<LoginForm />);
 
-    expect(screen.getByText('Sign in')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /continue with zitadel/i })).toBeInTheDocument();
+    expect(screen.getByText('Sign in to Mkety')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /continue to mkety/i })).toBeInTheDocument();
   });
 
   it('initiates Mkety login with the tenant-selection callback', async () => {
     const user = userEvent.setup();
     renderWithProviders(<LoginForm />);
 
-    await user.click(screen.getByRole('button', { name: /continue with zitadel/i }));
+    await user.click(screen.getByRole('button', { name: /continue to mkety/i }));
 
     expect(mockLogin).toHaveBeenCalledWith('/select-tenant');
   });
@@ -33,7 +33,7 @@ describe('LoginForm', () => {
   it('shows a provider-neutral authentication message', () => {
     renderWithProviders(<LoginForm />);
 
-    expect(screen.getByText(/authentication is managed by mkety/i)).toBeInTheDocument();
+    expect(screen.getByText(/protected by mkety/i)).toBeInTheDocument();
     expect(screen.queryByText(/auth0/i)).not.toBeInTheDocument();
   });
 
@@ -42,7 +42,7 @@ describe('LoginForm', () => {
     mockLogin.mockRejectedValue(new Error('failed'));
     renderWithProviders(<LoginForm />);
 
-    await user.click(screen.getByRole('button', { name: /continue with zitadel/i }));
+    await user.click(screen.getByRole('button', { name: /continue to mkety/i }));
 
     await waitFor(() => expect(screen.getByText(/failed to initiate sign in/i)).toBeInTheDocument());
   });

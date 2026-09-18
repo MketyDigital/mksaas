@@ -46,7 +46,7 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail: _initial
           disabled={busy}
           aria-busy={busy}
         >
-          {busy ? 'Signing in...' : 'Continue with ZITADEL'}
+          {busy ? 'Signing in...' : 'Continue to Mkety'}
         </Button>
         <p className="text-xs text-center text-muted-foreground mt-4">
           By signing in, you agree to access {tenantName}&apos;s workspace.

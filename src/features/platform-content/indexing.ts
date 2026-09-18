@@ -18,7 +18,7 @@ export function getMketyRobotsPolicy(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/api/', '/admin/', '/create-workspace', '/app/', '/t/'],
+        disallow: ['/api/', '/admin/', '/app/', '/t/', '/login', '/signup', '/select-tenant', '/create-workspace', '/payment/'],
       },
     ],
     sitemap: `${MKETY_PUBLIC_ORIGIN}/sitemap.xml`,

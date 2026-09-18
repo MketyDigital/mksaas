@@ -51,7 +51,7 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
               </div>
               <CardTitle>Enterprise Payments</CardTitle>
               <CardDescription>
-                Create exact-amount NOWPayments or Selar links for agreed quotes, deposits, milestones, and balances.
+                Create exact-amount customer payment links for agreed quotes, deposits, milestones, and balances.
               </CardDescription>
             </CardHeader>
           </Card>

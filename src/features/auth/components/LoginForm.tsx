@@ -8,9 +8,10 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Form
 
 interface LoginFormProps {
   initialEmail?: string;
+  mode?: 'signin' | 'signup';
 }
 
-export const LoginForm = ({ initialEmail: _initialEmail = '' }: LoginFormProps) => {
+export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin' }: LoginFormProps) => {
   const { login, isLoading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -31,8 +32,12 @@ export const LoginForm = ({ initialEmail: _initialEmail = '' }: LoginFormProps) 
   return (
     <Card className="w-full border shadow-xl bg-card backdrop-blur-sm">
       <CardHeader className="space-y-1 text-center pb-6">
-        <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
-        <CardDescription>Continue securely with Mkety authentication</CardDescription>
+        <CardTitle className="text-2xl font-bold">{mode === 'signup' ? 'Create your Mkety account' : 'Sign in to Mkety'}</CardTitle>
+        <CardDescription>
+          {mode === 'signup'
+            ? 'Create your account securely and continue to your first workspace.'
+            : 'Continue securely to your Mkety workspace.'}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <FormGlobalError visible={!!serverError} id="login-server-error">
@@ -46,10 +51,16 @@ export const LoginForm = ({ initialEmail: _initialEmail = '' }: LoginFormProps) 
           aria-busy={busy}
         >
           <Lock className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" />
-          {busy ? 'Signing in...' : 'Continue with ZITADEL'}
+          {busy
+            ? mode === 'signup'
+              ? 'Creating account...'
+              : 'Signing in...'
+            : mode === 'signup'
+              ? 'Create Mkety account'
+              : 'Continue to Mkety'}
         </Button>
         <p className="text-xs text-center text-muted-foreground pt-2">
-          Authentication is managed by Mkety. ZITADEL is the current identity-provider adapter.
+          Your account is protected by Mkety&apos;s secure sign-in system.
         </p>
       </CardContent>
     </Card>

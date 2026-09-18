@@ -29,6 +29,9 @@ permissions:
 jobs:
   smoke:
     name: Migrate, seed, and smoke-test Mkety content DB
+    concurrency:
+      group: mkety-staging-content-db
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

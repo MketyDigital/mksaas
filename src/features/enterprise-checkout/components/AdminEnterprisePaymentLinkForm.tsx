@@ -56,7 +56,7 @@ export function AdminEnterprisePaymentLinkForm({ tenant }: AdminEnterprisePaymen
         <h2 className="text-xl font-semibold">Issue negotiated payment link</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Enter only the amount agreed with the customer. For deposits or milestones, issue one link per installment
-          amount.
+          amount. Create the link, copy it, and send it to the customer. Fulfilment remains separate until payment is verified.
         </p>
       </div>
 
@@ -126,23 +126,23 @@ export function AdminEnterprisePaymentLinkForm({ tenant }: AdminEnterprisePaymen
       </label>
 
       <fieldset>
-        <legend className="text-sm font-medium">Gateway</legend>
+        <legend className="text-sm font-medium">Customer payment method</legend>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <button
             type="button"
             onClick={() => setProvider('nowpayments')}
             className={`rounded-xl border p-4 text-left ${provider === 'nowpayments' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
-            <span className="font-semibold">NOWPayments</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Crypto hosted invoice.</span>
+            <span className="font-semibold">Crypto checkout</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Create a secure crypto payment link.</span>
           </button>
           <button
             type="button"
             onClick={() => setProvider('selar')}
             className={`rounded-xl border p-4 text-left ${provider === 'selar' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
-            <span className="font-semibold">Selar</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Card/local hosted checkout.</span>
+            <span className="font-semibold">Card / local checkout</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Create a secure card or local payment link.</span>
           </button>
         </div>
       </fieldset>

@@ -13,12 +13,12 @@ DELETE FROM "saas_template"."platform_pricing_plans" WHERE "key" = 'growth';
 INSERT INTO "saas_template"."platform_pricing_plans"
   ("key", "name", "price_label", "billing_label", "description", "highlighted", "cta_label", "cta_href", "sort_order", "status", "updated_at")
 VALUES
-  ('starter', 'Starter', '$5.99', '/ month', 'A simple entry plan for individuals getting started with Mkety projects and core platform access.', false, 'Choose Starter', '/create-workspace', 10, 'published', now()),
-  ('ai-workspace', 'AI Workspace', '$16.99', '/ month', 'For building, testing, publishing, and operating AI agents and AI-powered applications.', false, 'Choose AI Workspace', '/create-workspace', 20, 'published', now()),
-  ('automation-workspace', 'Automation Workspace', '$16.99', '/ month', 'For building repeatable workflows, integrations, triggers, actions, and business automations.', false, 'Choose Automation Workspace', '/create-workspace', 30, 'published', now()),
-  ('deploy-workspace', 'Deploy Workspace', '$9.99', '/ month', 'For publishing websites, lightweight applications, APIs, portals, and serverless workloads.', false, 'Choose Deploy Workspace', '/create-workspace', 40, 'published', now()),
-  ('mkety-one', 'Mkety One', '$49', '/ month', 'The complete self-service Mkety bundle: Starter plus AI, Automation, and Deploy Workspaces.', true, 'Choose Mkety One', '/create-workspace', 50, 'published', now()),
-  ('enterprise', 'Enterprise', 'Custom', NULL, 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.', false, 'Start Enterprise Project', '/enterprise/checkout', 60, 'published', now())
+  ('starter', 'Starter', '$5.99', '/ month', 'A simple entry plan for individuals getting started with Mkety projects and core platform access.', false, 'Get Started', '/signup', 10, 'published', now()),
+  ('ai-workspace', 'AI Workspace', '$16.99', '/ month', 'For building, testing, publishing, and operating AI agents and AI-powered applications.', false, 'Get Started', '/signup', 20, 'published', now()),
+  ('automation-workspace', 'Automation Workspace', '$16.99', '/ month', 'For building repeatable workflows, integrations, triggers, actions, and business automations.', false, 'Get Started', '/signup', 30, 'published', now()),
+  ('deploy-workspace', 'Deploy Workspace', '$9.99', '/ month', 'For organizing deployment-ready applications and environments, managing release configuration, and tracking deployment history.', false, 'Get Started', '/signup', 40, 'published', now()),
+  ('mkety-one', 'Mkety One', '$49', '/ month', 'The complete self-service Mkety bundle: Starter plus AI, Automation, and Deploy Workspaces.', true, 'Get Started', '/signup', 50, 'published', now()),
+  ('enterprise', 'Enterprise', 'Custom', NULL, 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.', false, 'Talk to Mkety Enterprise', '/contact', 60, 'published', now())
 ON CONFLICT ("key") DO UPDATE SET
   "name" = EXCLUDED."name",
   "price_label" = EXCLUDED."price_label",
@@ -29,12 +29,14 @@ ON CONFLICT ("key") DO UPDATE SET
   "cta_href" = EXCLUDED."cta_href",
   "sort_order" = EXCLUDED."sort_order",
   "status" = 'published',
-  "updated_at" = now();
+  "updated_at" = now()
+WHERE "platform_pricing_plans"."updated_by" IS NULL;
 
 DELETE FROM "saas_template"."platform_pricing_features"
 WHERE "plan_id" IN (
   SELECT "id" FROM "saas_template"."platform_pricing_plans"
   WHERE "key" IN ('starter','ai-workspace','automation-workspace','deploy-workspace','mkety-one','enterprise')
+    AND "updated_by" IS NULL
 );
 
 INSERT INTO "saas_template"."platform_pricing_features" ("plan_id", "label", "sort_order", "enabled")
@@ -55,11 +57,10 @@ JOIN (VALUES
   ('automation-workspace', 'Conditions and transformations', 20),
   ('automation-workspace', 'Webhooks', 30),
   ('automation-workspace', 'Run history', 40),
-  ('deploy-workspace', 'Website and app deploys', 0),
-  ('deploy-workspace', 'API and portal deploys', 10),
-  ('deploy-workspace', 'Preview and production environments', 20),
-  ('deploy-workspace', 'Domains', 30),
-  ('deploy-workspace', 'Deployment history', 40),
+  ('deploy-workspace', 'Application and environment management', 0),
+  ('deploy-workspace', 'Release configuration', 10),
+  ('deploy-workspace', 'Deployment history', 20),
+  ('deploy-workspace', 'Project-scoped deployment records', 30),
   ('mkety-one', 'Starter included', 0),
   ('mkety-one', 'AI Workspace included', 10),
   ('mkety-one', 'Automation Workspace included', 20),
@@ -69,7 +70,8 @@ JOIN (VALUES
   ('enterprise', 'Enterprise support', 10),
   ('enterprise', 'Trading infrastructure options', 20),
   ('enterprise', 'Managed integrations and delivery', 30)
-) AS f("key", "label", "sort_order") ON p."key" = f."key";
+) AS f("key", "label", "sort_order") ON p."key" = f."key"
+WHERE p."updated_by" IS NULL;
 
 -- Untouched seed records have no actor identity. Refresh only those records so launch
 -- copy and docs are rebuilt from the current production-safe defaults by the seeder.

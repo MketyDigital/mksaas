@@ -7,48 +7,44 @@ order: 2
 
 # First Login
 
-Mkety owns the application authentication and session boundary. Your organization may use different identity-provider sign-in methods behind that boundary; ZITADEL is the initial provider adapter used by the Platform.
+Mkety provides a secure sign-in experience for your Platform account and organization access.
 
 ## Sign in
 
-1. Open your Mkety Platform URL.
+1. Open the Mkety Platform.
 2. Select **Sign in**.
-3. Complete the sign-in method offered by your organization's configured identity provider.
-4. Complete MFA or other provider checks when required.
-5. After the provider callback is verified, Mkety creates its own application session and redirects you back to the Platform.
+3. Complete the secure sign-in steps shown to you.
+4. Complete any additional verification requested for your account.
+5. Mkety returns you to the Platform after sign-in is confirmed.
 
-Provider access tokens are not Mkety application sessions. Tenant access is resolved from current Mkety membership data after sign-in.
-
-If the expected sign-in option is missing or your provider rejects the request, contact your Mkety administrator or your organization's IT team.
+If the expected sign-in option is missing or access is rejected, contact your Mkety administrator or your organization’s IT team.
 
 ## Organization selection
 
-If your current Mkety membership gives you access to more than one organization, the organization-selection screen lists those memberships after sign-in.
+If your Mkety account has access to more than one organization, choose the organization you want to work in after sign-in.
 
-- Choose the organization you want to work in.
-- If you have exactly one current membership, Mkety may route you directly into it.
-- If you no longer belong to an organization, stale session role data does not grant access; current database membership is authoritative.
+- If you have one organization, Mkety may open it automatically.
+- If you have several, choose the appropriate workspace.
+- Access always follows your current Mkety organization membership and permissions.
 
 ## First dashboard experience
 
-After authentication and organization selection, the surfaces you can open depend on your current permissions and membership. You may see project workspaces, administration, profile/settings, AI/Automation capabilities, or other enabled Platform areas.
+The areas you can open depend on your current plan, organization membership, and permissions. You may see projects, AI, Automation, Deploy, SolutionHub, usage, billing, administration, profile, and other enabled Mkety capabilities.
 
-Some areas can be intentionally unavailable or enterprise-gated. Visibility in the interface does not bypass backend authorization.
+Some areas may require a different plan, organization permission, or Enterprise access.
 
 ## Useful first steps
 
 1. Complete your profile and preferences.
 2. Confirm you are working in the correct organization.
-3. Explore the project workspace hub and the capabilities available to your role.
-4. Use the documentation for the area you are configuring.
+3. Explore the workspaces available to you.
+4. Review the relevant Mkety documentation.
 5. Sign out when using a shared device.
 
-## Security and sessions
+## Account security
 
-- **Mkety-owned session** — After successful provider authentication, Mkety issues its own opaque application session; only the hash is persisted server-side.
-- **Current authorization** — Tenant roles and permissions are resolved from current Mkety membership/permission data rather than trusted from provider claims or stale session caches.
-- **Password and MFA** — Credential recovery and MFA configuration are handled by the configured external identity provider or your organization's SSO administrator.
-- **Sign out** — Signing out revokes the Mkety server-side session and clears the application session cookie. Provider-level logout behavior depends on the configured adapter.
-- **Session expiry** — Expired or revoked Mkety sessions fail closed and require authentication again.
-
-For the architectural source of truth, see `docs/MKETY_AUTH_SOURCE_OF_TRUTH.md`.
+- Keep your sign-in and recovery details private.
+- Use additional account verification when available.
+- Never share passwords, API keys, payment credentials, or other sensitive information in public support conversations.
+- Sign out from shared devices when you finish.
+- If you believe your account access is compromised, contact Mkety support promptly.

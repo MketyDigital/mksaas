@@ -1,4 +1,4 @@
-import { Grid3X3, Sparkles } from 'lucide-react';
+import { Grid3X3, Layers3 } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -39,7 +39,7 @@ export function MketyPublicPage({ page, settings, navigation, footerGroups, feat
                     <Grid3X3 className="h-5 w-5" />
                   </span>
                   <span className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Mkety public surface
+                    Mkety experience
                   </span>
                 </div>
                 <p className="mt-8 text-sm font-semibold">{page.eyebrow}</p>
@@ -93,7 +93,7 @@ export function MketyPublicPage({ page, settings, navigation, footerGroups, feat
                         <CardHeader>
                           <div className="mb-5 flex items-start justify-between gap-3">
                             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                              <Sparkles className="h-4 w-4" />
+                              <Layers3 className="h-4 w-4" />
                             </span>
                             {item.badge && (
                               <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">

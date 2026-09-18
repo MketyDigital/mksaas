@@ -73,21 +73,21 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'AI Workspace',
             description:
               'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
-            href: '/app/ai',
+            href: '/app',
           },
           {
             key: 'automation',
             title: 'Automation Workspace',
             description:
               'Create workflows from triggers, actions, conditions, webhooks, transformations, and agent steps.',
-            href: '/app/automation',
+            href: '/app',
           },
           {
             key: 'deploy',
             title: 'Deploy Workspace',
             description:
-              'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
-            href: '/app/deploy',
+              'Organize applications and environments, manage release configuration, and review deployment history.',
+            href: '/app',
           },
           {
             key: 'trading',
@@ -133,7 +133,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Complete solution patterns combining multiple Mkety capabilities.',
           },
         ],
-        cta: { label: 'Get Started', href: '/create-workspace' },
+        cta: { label: 'Get Started', href: '/signup' },
       },
     ],
   },
