@@ -11,6 +11,11 @@ const NEXT_CONFIG_PATH = path.resolve(process.cwd(), 'next.config.mjs');
 const WRANGLER_CONFIG_PATH = path.resolve(process.cwd(), 'wrangler.jsonc');
 const DB_INDEX_PATH = path.resolve(process.cwd(), 'src/shared/db/index.ts');
 const DB_REQUEST_PATH = path.resolve(process.cwd(), 'src/shared/db/request.ts');
+const PUBLIC_AI_REQUEST_DB_PATH = path.resolve(
+  process.cwd(),
+  'src/features/public-assistant/server/request-database.ts',
+);
+const NODE_DB_PATH = path.resolve(process.cwd(), 'src/shared/db/node.ts');
 const RUNTIME_CONNECTION_ID = '@/shared/db/runtime-connection';
 
 describe('Cloudflare Worker database build wiring', () => {
@@ -169,15 +174,23 @@ describe('Cloudflare Worker database build wiring', () => {
   });
 
   it('routes Worker database gateways directly through the Cloudflare adapter', async () => {
-    const [dbIndex, requestDatabase] = await Promise.all([
+    const [dbIndex, requestDatabase, publicAIRequestDatabase, nodeDatabase] = await Promise.all([
       readFile(DB_INDEX_PATH, 'utf8'),
       readFile(DB_REQUEST_PATH, 'utf8'),
+      readFile(PUBLIC_AI_REQUEST_DB_PATH, 'utf8'),
+      readFile(NODE_DB_PATH, 'utf8'),
     ]);
 
     expect(dbIndex).toContain("from '@/shared/db/runtime-connection.cloudflare'");
     expect(requestDatabase).toContain("from '@/shared/db/runtime-connection.cloudflare'");
+    expect(publicAIRequestDatabase).toContain(
+      "from '@/shared/db/runtime-connection.cloudflare'",
+    );
     expect(dbIndex).not.toContain("from '@/shared/db/runtime-connection'");
     expect(requestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
+    expect(publicAIRequestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
+    expect(nodeDatabase).toContain("from './runtime-connection'");
+    expect(nodeDatabase).not.toContain('runtime-connection.cloudflare');
   });
 
   it('allows Vinext Worker fetches to public Workers on the same Cloudflare zone', async () => {
