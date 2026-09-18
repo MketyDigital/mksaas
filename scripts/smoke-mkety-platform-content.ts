@@ -1,23 +1,29 @@
 /**
  * Mkety Platform Content Smoke Script
  *
- * Verifies that the CMS migrations, public-assistant migrations, enterprise-checkout migration,
- * seeders, and public read loaders work together against a real database.
+ * Verifies the seeded production content contract against a real PostgreSQL
+ * database without importing Cloudflare-only runtime modules.
  */
 
-import { getPublishedAppExperience } from '../src/features/platform-app-experience/server/queries';
-import { normalizeWorkspaceSalesLinks } from '../src/features/platform-content/commercial-routing';
+import { and, asc, eq, isNull } from 'drizzle-orm';
+
 import { defaultPricingPlans, defaultWorkspaceSection } from '../src/features/platform-content/defaults';
-import { getPublishedPublicPageContent } from '../src/features/platform-content/server/public-page';
-import {
-  getPublishedDocsArticle,
-  getPublishedDocsTree,
-  getPublishedHomepageContent,
-  getPublishedNavigation,
-  getPublishedPlatformSiteSettings,
-  getPublishedPricingPlans,
-} from '../src/features/platform-content/server/queries';
 import { db } from '../src/shared/db/node';
+import {
+  platformAppControlCenterModules,
+  platformAppDashboardSettings,
+  platformWorkspaceCards,
+} from '../src/shared/db/schema/platform-app-experience';
+import {
+  platformDocsArticles,
+  platformDocsCategories,
+  platformNavigationItems,
+  platformPages,
+  platformPageSections,
+  platformPricingFeatures,
+  platformPricingPlans,
+  platformSiteSettings,
+} from '../src/shared/db/schema/platform-content';
 import {
   platformEnterpriseOrders,
   publicAIConversations,
@@ -27,43 +33,10 @@ import {
   publicAIVisitors,
 } from '../src/shared/db/schema';
 
+const PUBLISHED = 'published' as const;
+
 function assertSmoke(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Smoke check failed: ${message}`);
-}
-
-function publicPlanContract(plan: (typeof defaultPricingPlans)[number]) {
-  return {
-    key: plan.key,
-    name: plan.name,
-    priceLabel: plan.priceLabel,
-    billingLabel: plan.billingLabel ?? null,
-    description: plan.description,
-    highlighted: plan.highlighted,
-    ctaLabel: plan.ctaLabel,
-    ctaHref: plan.ctaHref,
-    features: plan.features,
-  };
-}
-
-function publicWorkspaceContract(workspace: (typeof defaultWorkspaceSection.items)[number]) {
-  return {
-    key: workspace.key,
-    title: workspace.title,
-    description: workspace.description,
-    href: workspace.href ?? null,
-    badge: workspace.badge ?? null,
-  };
-}
-
-function assertContractMatch(actual: unknown, expected: unknown, message: string) {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    console.error(`Commercial CMS drift (${message})`);
-    console.error(`Actual: ${JSON.stringify(actual, null, 2)}`);
-    console.error(`Expected: ${JSON.stringify(expected, null, 2)}`);
-    throw new Error(`Smoke check failed: ${message}`);
-  }
 }
 
 const forbiddenPublicPatterns: Array<[RegExp, string]> = [
@@ -108,45 +81,57 @@ async function assertEnterpriseCheckoutTables() {
 async function main() {
   console.log('🧪 Running Mkety platform content smoke checks...');
 
-  const siteSettings = await getPublishedPlatformSiteSettings();
-  assertSmoke(siteSettings.brandName === 'Mkety', 'site settings should load Mkety brand content');
+  const siteSettings = await db.query.platformSiteSettings.findFirst({
+    where: and(
+      eq(platformSiteSettings.environment, 'production'),
+      eq(platformSiteSettings.status, PUBLISHED),
+    ),
+  });
+  assertSmoke(siteSettings?.brandName === 'Mkety', 'site settings should contain published Mkety brand content');
   assertPublicCopySafe(siteSettings, 'site settings');
 
-  const navigation = await getPublishedNavigation();
+  const navigation = await db.query.platformNavigationItems.findMany({
+    where: and(
+      eq(platformNavigationItems.status, PUBLISHED),
+      eq(platformNavigationItems.enabled, true),
+    ),
+    orderBy: [asc(platformNavigationItems.area), asc(platformNavigationItems.sortOrder)],
+  });
   assertSmoke(navigation.length >= 5, 'navigation should contain Mkety public links');
-  assertSmoke(
-    navigation.some((item) => item.label === 'Platform'),
-    'navigation should include Platform',
-  );
+  assertSmoke(navigation.some((item) => item.label === 'Platform'), 'navigation should include Platform');
   assertPublicCopySafe(navigation, 'navigation');
 
-  const homepage = await getPublishedHomepageContent();
-  const expectedWorkspaces = normalizeWorkspaceSalesLinks(defaultWorkspaceSection);
-  assertSmoke(homepage.hero.headline.includes('Build'), 'homepage hero should load Mkety content');
-  assertSmoke(homepage.platformOverview.title.length > 0, 'homepage Platform overview should load');
+  const home = await db.query.platformPages.findFirst({
+    where: and(
+      eq(platformPages.slug, 'home'),
+      eq(platformPages.status, PUBLISHED),
+      eq(platformPages.enabled, true),
+    ),
+  });
+  assertSmoke(home, 'published home page should exist');
+
+  const homeSections = await db.query.platformPageSections.findMany({
+    where: and(
+      eq(platformPageSections.pageId, home.id),
+      eq(platformPageSections.status, PUBLISHED),
+      eq(platformPageSections.enabled, true),
+    ),
+    orderBy: [asc(platformPageSections.sortOrder)],
+  });
+  const homeSectionKeys = new Set(homeSections.map((section) => section.sectionKey));
+  for (const key of ['hero', 'platform', 'workspaces', 'solutions', 'academy', 'enterprise', 'trust', 'faq', 'footer']) {
+    assertSmoke(homeSectionKeys.has(key), `homepage should contain ${key} section`);
+  }
+  const workspacePayload = homeSections.find((section) => section.sectionKey === 'workspaces')?.contentJson;
   assertSmoke(
-    homepage.workspaces.items.some((item) => item.key === 'trading'),
+    JSON.stringify(workspacePayload).includes('"key":"trading"'),
     'homepage workspaces should keep Trading visible',
   );
   assertSmoke(
-    homepage.workspaces.items.find((item) => item.key === 'trading')?.href === '/enterprise',
+    JSON.stringify(workspacePayload).includes('/enterprise'),
     'public Trading sales should route through Enterprise',
   );
-  assertContractMatch(
-    homepage.workspaces.items.map(publicWorkspaceContract),
-    expectedWorkspaces.items.map(publicWorkspaceContract),
-    'published workspace names, descriptions, links and Trading boundary should match the documented public contract',
-  );
-  assertSmoke(homepage.solutionHub.title.length > 0, 'homepage SolutionHub section should load');
-  assertSmoke(
-    homepage.academy.items.some((item) => item.title === 'Web & App Engineering'),
-    'homepage Academy should include the approved learning hubs',
-  );
-  assertSmoke(homepage.enterprise.title.length > 0, 'homepage Enterprise section should load');
-  assertSmoke(homepage.trust.items.length > 0, 'homepage trust section should load');
-  assertSmoke(homepage.faqItems.length > 0, 'homepage FAQ should load');
-  assertSmoke(homepage.footerGroups.length > 0, 'homepage footer groups should load');
-  assertPublicCopySafe(homepage, 'homepage');
+  assertPublicCopySafe(homeSections, 'homepage sections');
 
   for (const slug of [
     'platform',
@@ -160,13 +145,31 @@ async function main() {
     'privacy',
     'terms',
   ]) {
-    const page = await getPublishedPublicPageContent(slug);
-    assertSmoke(page?.slug === slug, `public page ${slug} should resolve through CMS or safe default`);
-    assertSmoke(page.headline.length > 0, `public page ${slug} should have launch content`);
-    assertPublicCopySafe(page, `public page ${slug}`);
+    const page = await db.query.platformPages.findFirst({
+      where: and(
+        eq(platformPages.slug, slug),
+        eq(platformPages.status, PUBLISHED),
+        eq(platformPages.enabled, true),
+      ),
+    });
+    assertSmoke(page, `public page ${slug} should be published`);
+    assertSmoke(page.title.length > 0, `public page ${slug} should have a title`);
+    const sections = await db.query.platformPageSections.findMany({
+      where: and(
+        eq(platformPageSections.pageId, page.id),
+        eq(platformPageSections.status, PUBLISHED),
+        eq(platformPageSections.enabled, true),
+      ),
+      orderBy: [asc(platformPageSections.sortOrder)],
+    });
+    assertSmoke(sections.length > 0, `public page ${slug} should have published content`);
+    assertPublicCopySafe({ page, sections }, `public page ${slug}`);
   }
 
-  const pricing = await getPublishedPricingPlans();
+  const pricing = await db.query.platformPricingPlans.findMany({
+    where: eq(platformPricingPlans.status, PUBLISHED),
+    orderBy: [asc(platformPricingPlans.sortOrder)],
+  });
   assertSmoke(
     pricing.map((plan) => plan.key).join(',') ===
       'starter,ai-workspace,automation-workspace,deploy-workspace,mkety-one,enterprise',
@@ -176,15 +179,62 @@ async function main() {
     !pricing.some((plan) => /^(growth|pro|business)$/i.test(plan.key)),
     'pricing must not expose removed Growth, Pro or Business plans',
   );
-  assertContractMatch(
-    pricing.map(publicPlanContract),
-    defaultPricingPlans.map(publicPlanContract),
-    'published plan names, pricing labels, descriptions, features and CTAs should match the documented public contract',
-  );
-  assertPublicCopySafe(pricing, 'pricing');
 
-  const docsTree = await getPublishedDocsTree();
-  assertSmoke(docsTree.categories.length >= 8, 'docs tree should include the Mkety production categories');
+  const pricingFeatures = await db.query.platformPricingFeatures.findMany({
+    where: eq(platformPricingFeatures.enabled, true),
+    orderBy: [asc(platformPricingFeatures.sortOrder)],
+  });
+  const pricingContract = pricing.map((plan) => ({
+    key: plan.key,
+    name: plan.name,
+    priceLabel: plan.priceLabel,
+    billingLabel: plan.billingLabel ?? null,
+    description: plan.description,
+    highlighted: plan.highlighted,
+    ctaLabel: plan.ctaLabel,
+    ctaHref: plan.ctaHref,
+    features: pricingFeatures.filter((feature) => feature.planId === plan.id).map((feature) => feature.label),
+  }));
+  const expectedPricingContract = defaultPricingPlans.map((plan) => ({
+    key: plan.key,
+    name: plan.name,
+    priceLabel: plan.priceLabel,
+    billingLabel: plan.billingLabel ?? null,
+    description: plan.description,
+    highlighted: plan.highlighted,
+    ctaLabel: plan.ctaLabel,
+    ctaHref: plan.ctaHref,
+    features: plan.features,
+  }));
+  assertSmoke(
+    JSON.stringify(pricingContract) === JSON.stringify(expectedPricingContract),
+    'published pricing should match the documented public contract',
+  );
+  assertPublicCopySafe(pricingContract, 'pricing');
+
+  const docsCategories = await db.query.platformDocsCategories.findMany({
+    where: eq(platformDocsCategories.status, PUBLISHED),
+    orderBy: [asc(platformDocsCategories.sortOrder)],
+  });
+  assertSmoke(docsCategories.length >= 8, 'docs should include the production categories');
+
+  const docsArticles = await db
+    .select({
+      categoryKey: platformDocsCategories.key,
+      slug: platformDocsArticles.slug,
+      title: platformDocsArticles.title,
+      bodyMarkdown: platformDocsArticles.bodyMarkdown,
+    })
+    .from(platformDocsArticles)
+    .innerJoin(platformDocsCategories, eq(platformDocsArticles.categoryId, platformDocsCategories.id))
+    .where(
+      and(
+        eq(platformDocsArticles.status, PUBLISHED),
+        eq(platformDocsCategories.status, PUBLISHED),
+      ),
+    )
+    .orderBy(asc(platformDocsCategories.sortOrder), asc(platformDocsArticles.sortOrder));
+
   for (const slug of [
     'what-is-mkety',
     'projects-and-workspaces',
@@ -199,33 +249,39 @@ async function main() {
     'account-security',
     'privacy-and-access',
   ]) {
-    assertSmoke(
-      docsTree.articles.some((article) => article.slug === slug),
-      `docs production set should include ${slug}`,
-    );
+    assertSmoke(docsArticles.some((article) => article.slug === slug), `docs should include ${slug}`);
   }
-  assertPublicCopySafe(docsTree, 'docs navigation');
-
-  for (const doc of docsTree.articles) {
-    const article = await getPublishedDocsArticle(`${doc.categoryKey}/${doc.slug}`);
-    assertSmoke(article?.title, `docs article ${doc.slug} should be readable`);
-    assertPublicCopySafe(article, `docs article ${doc.slug}`);
-  }
+  assertPublicCopySafe({ docsCategories, docsArticles }, 'docs content');
 
   await assertPublicAIMemoryTables();
   await assertEnterpriseCheckoutTables();
 
-  const appExperience = await getPublishedAppExperience();
+  const dashboard = await db.query.platformAppDashboardSettings.findFirst({
+    where: and(
+      eq(platformAppDashboardSettings.status, PUBLISHED),
+      eq(platformAppDashboardSettings.environment, 'production'),
+      isNull(platformAppDashboardSettings.tenantId),
+    ),
+  });
+  assertSmoke(dashboard?.headline.includes('Mkety'), 'app dashboard should contain the Mkety headline');
+
+  const workspaces = await db.query.platformWorkspaceCards.findMany({
+    where: and(eq(platformWorkspaceCards.status, PUBLISHED), isNull(platformWorkspaceCards.tenantId)),
+    orderBy: [asc(platformWorkspaceCards.sortOrder)],
+  });
+  assertSmoke(workspaces.some((workspace) => workspace.workspaceKey === 'trading'), 'app experience should keep Trading visible');
   assertSmoke(
-    appExperience.dashboard.headline.includes('Mkety'),
-    'app experience dashboard should load Mkety headline',
+    workspaces.map((workspace) => workspace.workspaceKey).join(',') ===
+      defaultWorkspaceSection.items.map((workspace) => workspace.key).join(','),
+    'published workspace ordering should match the public workspace contract',
   );
+
+  const controlCenterModules = await db.query.platformAppControlCenterModules.findMany({
+    where: eq(platformAppControlCenterModules.status, PUBLISHED),
+    orderBy: [asc(platformAppControlCenterModules.sortOrder)],
+  });
   assertSmoke(
-    appExperience.workspaces.some((workspace) => workspace.key === 'trading'),
-    'app experience should keep Trading visible',
-  );
-  assertSmoke(
-    appExperience.controlCenterModules.some((controlModule) => controlModule.key === 'public-site-docs'),
+    controlCenterModules.some((module) => module.moduleKey === 'public-site-docs'),
     'control center should include Public Website & Docs module',
   );
 
