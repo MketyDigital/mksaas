@@ -75,18 +75,18 @@ export function validateCloudflareCandidateArtifact(artifact: CloudflareCandidat
 
   const names = new Set<string>();
   let totalBytes = 0;
-  for (const module of artifact.modules) {
+  for (const candidateModule of artifact.modules) {
     if (
-      !module.name ||
-      module.name.startsWith('/') ||
-      module.name.includes('..') ||
-      !/^[A-Za-z0-9._/-]+$/.test(module.name)
+      !candidateModule.name ||
+      candidateModule.name.startsWith('/') ||
+      candidateModule.name.includes('..') ||
+      !/^[A-Za-z0-9._/-]+$/.test(candidateModule.name)
     ) {
       throw new Error('Cloudflare candidate artifact contains an invalid module name.');
     }
-    if (names.has(module.name)) throw new Error('Cloudflare candidate artifact contains duplicate module names.');
-    names.add(module.name);
-    totalBytes += new TextEncoder().encode(module.source).byteLength;
+    if (names.has(candidateModule.name)) throw new Error('Cloudflare candidate artifact contains duplicate module names.');
+    names.add(candidateModule.name);
+    totalBytes += new TextEncoder().encode(candidateModule.source).byteLength;
   }
 
   if (!names.has(artifact.mainModule)) {
