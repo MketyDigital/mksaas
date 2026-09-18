@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
+import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection.cloudflare';
 import * as schema from './schema';
 
 /**
