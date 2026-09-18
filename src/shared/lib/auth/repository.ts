@@ -1,6 +1,7 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
 
-import { type Database, db } from '@/shared/db';
+import type { Database } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { tenantMemberships, users } from '@/shared/db/schema/auth';
 import { authLoginTransactions, authSessions, externalIdentities } from '@/shared/db/schema/mkety-auth';
 
