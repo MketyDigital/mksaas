@@ -7,6 +7,7 @@ import { auth } from '@/shared/lib/auth';
 export const metadata = {
   title: 'Create Account | Mkety',
   description: 'Create your Mkety account and start your first workspace.',
+  robots: { index: false, follow: false },
 };
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ export default async function SignupPage() {
       </div>
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
-          <img src="https://www.mkety.com/logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
+          <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
           <h1 className="mb-2 text-3xl font-bold tracking-tight">Start with Mkety</h1>
           <p className="text-muted-foreground">Create your account, then set up your first workspace.</p>
         </div>
