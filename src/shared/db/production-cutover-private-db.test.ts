@@ -76,16 +76,23 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('mkety-public-production-cutover.yml');
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
-    expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v1');
+    expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v2');
   });
 
-  it('updates the Coolify migration secret idempotently and retries transient transport failures', async () => {
+  it('upserts and verifies the Coolify migration secret without blindly replaying creates', async () => {
     const workflow = await readFile(PRIVATE_DB_EXECUTOR_PATH, 'utf8');
 
+    expect(workflow).toContain('List current migration environment');
+    expect(workflow).toContain('create_database_env');
+    expect(workflow).toContain('update_database_env');
+    expect(workflow).toContain('verify_database_env');
+    expect(workflow).toContain('-X POST');
     expect(workflow).toContain('-X PATCH');
     expect(workflow).toContain('--retry 4');
     expect(workflow).toContain('--retry-all-errors');
     expect(workflow).toContain('--retry-delay 2');
+    expect(workflow).toContain('for attempt in $(seq 1 5)');
+    expect(workflow).toContain('Database secret exists after uncertain create response');
     expect(workflow).toContain('$base/applications/$APP_UUID/envs');
   });
 });
