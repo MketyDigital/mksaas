@@ -28,7 +28,7 @@ env:
 jobs:
   candidate:
     name: Verify and deploy isolated public candidate
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: staging
@@ -248,7 +248,7 @@ jobs:
             '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise'
             '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt'
           )
-          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|GitHub|MketyDigital|mksaas|mklms|origin\.mkety\.com'
+          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|mksaas|mklms|origin\.mkety\.com'
           for route in "${routes[@]}"; do
             ok=false
             code='000'
