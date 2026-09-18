@@ -816,3 +816,19 @@ The public candidate deployment job `35314114685` was correctly skipped because 
 No database migration or production database mutation is part of this Wallet slice. Wallet remains read-only and derives monetary information from the existing Billing ledger/state while displaying Usage/Credits separately as non-cash product credits.
 
 After Wallet merges, the next architecture workstream is Deployments/Cloud. Inspect current repository state first and implement the smallest missing foundation slice rather than recreating existing deployment code.
+
+
+## Wallet pre-merge security correction
+
+Wallet PR #74 was fully green on its initial implementation, but focused review found two correctness issues before merge:
+
+1. the Wallet page called `auth()` without enforcing the result, while the tenant layout itself does not reject unauthenticated/non-member access;
+2. the Wallet settlement list queried all tenant settlements although the UI/design describes verified/applied payment records.
+
+The branch now:
+- uses `requireTenantMembership(tenantSlug)` before any Wallet read;
+- adds a reusable explicit tenant-membership guard in `src/shared/lib/permissions.ts`;
+- filters Wallet settlements to Billing records with status `applied`;
+- adds regression coverage locking both contracts.
+
+Wallet remains read-only: no new table/migration, no cash/stored-value balance, no withdrawal/transfer/FX, no payment-provider call, and no second financial ledger.
