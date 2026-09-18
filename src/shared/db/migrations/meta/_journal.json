@@ -99,6 +99,13 @@
       "when": 1788825882154,
       "tag": "0013_lively_magma",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789700000000,
+      "tag": "0014_deploy_foundation",
+      "breakpoints": true
     }
   ]
 }
