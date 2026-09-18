@@ -2,6 +2,7 @@ import { Building2, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { auth } from '@/shared/lib/auth';
 import { getAllRoles } from '@/shared/lib/rbac';
@@ -14,10 +15,17 @@ export const metadata = {
 
 export const dynamic = 'force-dynamic';
 
-export default async function SelectTenantPage() {
+interface SelectTenantPageProps {
+  searchParams: Promise<{ plan?: string }>;
+}
+
+export default async function SelectTenantPage({ searchParams }: SelectTenantPageProps) {
+  const query = await searchParams;
+  const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
+
   const session = await auth();
 
-  if (!session?.user) redirect('/login');
+  if (!session?.user) redirect(planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login');
 
   const userRoles = await getAllRoles();
   const tenantSlugs = Object.keys(userRoles);
@@ -33,7 +41,7 @@ export default async function SelectTenantPage() {
           <p className="text-muted-foreground mb-6">
             You&apos;re signed in as <strong>{session.user.email}</strong>. Create your first workspace or ask an organization admin to invite you.
           </p>
-          <Link href="/create-workspace" className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+          <Link href={planKey ? `/create-workspace?plan=${encodeURIComponent(planKey)}` : '/create-workspace'} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
             <Plus className="h-4 w-4" />
             Create workspace
           </Link>
@@ -42,7 +50,13 @@ export default async function SelectTenantPage() {
     );
   }
 
-  if (tenantSlugs.length === 1) redirect(`/t/${tenantSlugs[0]}`);
+  if (tenantSlugs.length === 1) {
+    redirect(
+      planKey
+        ? `/t/${tenantSlugs[0]}/billing/checkout?plan=${encodeURIComponent(planKey)}`
+        : `/t/${tenantSlugs[0]}`,
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-primary/5 p-4 relative overflow-hidden">
@@ -62,7 +76,7 @@ export default async function SelectTenantPage() {
             {tenantSlugs.map((slug) => {
               const role = userRoles[slug];
               return (
-                <Link key={slug} href={`/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
+                <Link key={slug} href={planKey ? `/t/${slug}/billing/checkout?plan=${encodeURIComponent(planKey)}` : `/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Building2 className="h-5 w-5" /></div>
                     <div>
@@ -74,7 +88,7 @@ export default async function SelectTenantPage() {
                 </Link>
               );
             })}
-            <Link href="/create-workspace" className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm font-medium hover:bg-muted/40">
+            <Link href={planKey ? `/create-workspace?plan=${encodeURIComponent(planKey)}` : '/create-workspace'} className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm font-medium hover:bg-muted/40">
               <Plus className="h-4 w-4" /> Create another workspace
             </Link>
           </CardContent>
