@@ -1,9 +1,7 @@
 'use client';
 
 import { Bot, History, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 interface PublicConversationSummary {
   id: string;
@@ -40,7 +38,90 @@ export function formatPublicAssistantContent(content: string) {
   let formatted = content.trim().replace(/\n{3,}/g, '\n\n');
 
   for (const [route, label] of Object.entries(publicRouteLabels)) {
-    const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\const suggestedPrompts = [');
+    const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\function renderInlineAssistantText(text: string, keyPrefix: string): ReactNode[] {
+  const tokenPattern = /(\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*)/g;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+
+    if (match[2] && match[3]) {
+      const href = match[3];
+      const safeHref = href.startsWith('/') || href.startsWith('https://') ? href : undefined;
+      nodes.push(
+        safeHref ? (
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={safeHref}
+            className="font-medium text-violet-600 underline decoration-violet-400/40 underline-offset-2 hover:text-violet-500"
+            target={safeHref.startsWith('https://') ? '_blank' : undefined}
+            rel={safeHref.startsWith('https://') ? 'noreferrer' : undefined}
+          >
+            {match[2]}
+          </a>
+        ) : (
+          match[2]
+        ),
+      );
+    } else if (match[4]) {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-foreground">
+          {match[4]}
+        </strong>,
+      );
+    }
+
+    cursor = tokenPattern.lastIndex;
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+function renderPublicAssistantContent(content: string): ReactNode {
+  const normalized = formatPublicAssistantContent(content);
+  const blocks = normalized.split(/\n\s*\n/).filter(Boolean);
+
+  return blocks.map((block, blockIndex) => {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const unordered = lines.length > 0 && lines.every((line) => /^[-*]\s+/.test(line));
+    const ordered = lines.length > 0 && lines.every((line) => /^\d+[.)]\s+/.test(line));
+
+    if (unordered) {
+      return (
+        <ul key={`block-${blockIndex}`} className="my-2 list-disc space-y-1.5 pl-5 marker:text-muted-foreground">
+          {lines.map((line, lineIndex) => (
+            <li key={`item-${blockIndex}-${lineIndex}`} className="pl-0.5">
+              {renderInlineAssistantText(line.replace(/^[-*]\s+/, ''), `u-${blockIndex}-${lineIndex}`)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    if (ordered) {
+      return (
+        <ol key={`block-${blockIndex}`} className="my-2 list-decimal space-y-1.5 pl-5 marker:text-muted-foreground">
+          {lines.map((line, lineIndex) => (
+            <li key={`item-${blockIndex}-${lineIndex}`} className="pl-0.5">
+              {renderInlineAssistantText(line.replace(/^\d+[.)]\s+/, ''), `o-${blockIndex}-${lineIndex}`)}
+            </li>
+          ))}
+        </ol>
+      );
+    }
+
+    const paragraph = lines.join(' ').replace(/^#{1,6}\s+/, '');
+    return (
+      <p key={`block-${blockIndex}`} className="mb-2 last:mb-0">
+        {renderInlineAssistantText(paragraph, `p-${blockIndex}`)}
+      </p>
+    );
+  });
+}
+const suggestedPrompts = [');
     formatted = formatted.replace(
       new RegExp(`(?<!\\]\\()${escaped}(?=\\s|[.,;:!?)]|$)`, 'gi'),
       `[${label}](${route})`,
@@ -322,38 +403,9 @@ export function MketyPublicAssistant() {
                   <div
                     className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'whitespace-pre-wrap bg-gradient-to-br from-violet-600 to-violet-500 text-white' : 'bg-muted/70 text-foreground'}`}
                   >
-                    {message.role === 'assistant' ? (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                          strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-                          ul: ({ children }) => <ul className="my-2 list-disc space-y-1.5 pl-5 marker:text-muted-foreground">{children}</ul>,
-                          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1.5 pl-5 marker:text-muted-foreground">{children}</ol>,
-                          li: ({ children }) => <li className="pl-0.5">{children}</li>,
-                          a: ({ href, children }) => (
-                            <a
-                              href={href}
-                              className="font-medium text-violet-600 underline decoration-violet-400/40 underline-offset-2 hover:text-violet-500"
-                              target={href?.startsWith('http') ? '_blank' : undefined}
-                              rel={href?.startsWith('http') ? 'noreferrer' : undefined}
-                            >
-                              {children}
-                            </a>
-                          ),
-                          h1: ({ children }) => <h3 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
-                          h2: ({ children }) => <h3 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
-                          h3: ({ children }) => <h3 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
-                          code: ({ children }) => (
-                            <code className="rounded bg-background/70 px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
-                          ),
-                        }}
-                      >
-                        {formatPublicAssistantContent(message.content)}
-                      </ReactMarkdown>
-                    ) : (
-                      message.content
-                    )}
+                    {message.role === 'assistant'
+                      ? renderPublicAssistantContent(message.content)
+                      : message.content}
                   </div>
                 </div>
               ))}
