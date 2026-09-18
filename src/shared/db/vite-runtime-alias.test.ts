@@ -17,6 +17,14 @@ const PUBLIC_AI_REQUEST_DB_PATH = path.resolve(
   'src/features/public-assistant/server/request-database.ts',
 );
 const NODE_DB_PATH = path.resolve(process.cwd(), 'src/shared/db/node.ts');
+const PUBLIC_CHROME_PATH = path.resolve(
+  process.cwd(),
+  'src/features/platform-content/server/public-chrome.ts',
+);
+const PUBLIC_PAGE_QUERY_PATH = path.resolve(
+  process.cwd(),
+  'src/features/platform-content/server/public-page-query.ts',
+);
 const RUNTIME_CONNECTION_ID = '@/shared/db/runtime-connection';
 
 describe('Cloudflare Worker database build wiring', () => {
@@ -195,6 +203,18 @@ describe('Cloudflare Worker database build wiring', () => {
     expect(publicAIRequestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
     expect(nodeDatabase).toContain("from './runtime-connection'");
     expect(nodeDatabase).not.toContain('runtime-connection.cloudflare');
+  });
+
+  it('keeps public route loaders on the explicit Cloudflare database', async () => {
+    const [publicChrome, publicPageQuery] = await Promise.all([
+      readFile(PUBLIC_CHROME_PATH, 'utf8'),
+      readFile(PUBLIC_PAGE_QUERY_PATH, 'utf8'),
+    ]);
+
+    expect(publicChrome).toContain("from '@/shared/db/cloudflare'");
+    expect(publicPageQuery).toContain("from '@/shared/db/cloudflare'");
+    expect(publicChrome).not.toContain("from '@/shared/db'");
+    expect(publicPageQuery).not.toContain("from '@/shared/db'");
   });
 
   it('allows Vinext Worker fetches to public Workers on the same Cloudflare zone', async () => {
