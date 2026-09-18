@@ -1,4 +1,4 @@
-import { executeDeployment, DeploymentExecutionError } from './service';
+import { DeploymentExecutionError, executeDeployment } from './service';
 import type {
   DeploymentExecutionContext,
   DeploymentExecutionRepository,
@@ -81,16 +81,26 @@ describe('Deploy execution kernel', () => {
     );
   });
 
-  it.each([
-    [{ protected: true }, 'protected environment'],
-    [{ kind: 'production' }, 'production environment'],
-  ])('rejects %s before persistence or provider execution', async (environment) => {
+  it('rejects protected environments before persistence or provider execution', async () => {
     const storage = repository();
     const adapter = provider();
 
-    await expect(executeDeployment(storage, adapter, context(environment))).rejects.toThrow(
-      'Protected deployment environments cannot be executed yet.',
-    );
+    await expect(
+      executeDeployment(storage, adapter, context({ protected: true })),
+    ).rejects.toThrow('Protected deployment environments cannot be executed yet.');
+
+    expect(storage.createQueued).not.toHaveBeenCalled();
+    expect(storage.markRunning).not.toHaveBeenCalled();
+    expect(adapter.deploy).not.toHaveBeenCalled();
+  });
+
+  it('rejects production environments before persistence or provider execution', async () => {
+    const storage = repository();
+    const adapter = provider();
+
+    await expect(
+      executeDeployment(storage, adapter, context({ kind: 'production' })),
+    ).rejects.toThrow('Protected deployment environments cannot be executed yet.');
 
     expect(storage.createQueued).not.toHaveBeenCalled();
     expect(storage.markRunning).not.toHaveBeenCalled();
