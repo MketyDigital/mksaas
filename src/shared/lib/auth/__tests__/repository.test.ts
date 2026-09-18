@@ -1,6 +1,6 @@
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 
-jest.mock('@/shared/db', () => ({
+jest.mock('@/shared/db/cloudflare', () => ({
   db: {
     query: {
       externalIdentities: { findFirst: jest.fn() },
