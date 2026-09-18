@@ -199,3 +199,10 @@ Cutover run `35305522201` passed production DB migration, exact-SHA quality chec
 The pre-mutation artifact from that run proves the conflict source: both `mkety.com` and `www.mkety.com` still had two proxied A records pointing to `64.29.17.1` and `216.198.79.1`. Mail and verification records (MX/TXT/CAA) are unrelated and must be preserved.
 
 Branch `release/resolve-custom-domain-dns-conflict-2e871fe` removes only pre-existing A/AAAA origin records immediately before each Custom Domain attach, preserves all non-origin DNS records, includes `zone_name` in the attach request, surfaces Cloudflare API errors, and relies on the existing rollback snapshot to restore removed A/AAAA records if attachment or live acceptance fails. Launcher generation is `worker-custom-domains-v5`.
+
+
+## Live acceptance redirect normalization
+
+Cutover run `35306492667` successfully attached both `mkety.com` and `www.mkety.com` as Worker Custom Domains after removing only the stale apex/www A records. Live `mkety.com` readiness returned HTTP 200. The run then failed only because the acceptance script compared the raw `Location` header from the required www 308 redirect to one exact serialization.
+
+The workflow rolled back the Custom Domains and restored the pre-cutover A records, returning traffic to the previous site. Branch `release/robust-www-redirect-acceptance-2e871fe` keeps the 308 requirement but validates the redirect target semantically as HTTPS + hostname `mkety.com` + root path + no query/hash. Launcher generation is `worker-custom-domains-v6`.
