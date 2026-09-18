@@ -76,7 +76,7 @@ describe('Mkety documented public commercial presentation', () => {
     expect(workspaceByKey.get('deploy')).toMatchObject({
       title: 'Deploy Workspace',
       description:
-        'Organize applications and environments, manage release configuration, and review deployment history.',
+        'Organize deployment-ready applications and environments, manage release configuration, and track deployment history.',
     });
     expect(workspaceByKey.get('trading')).toMatchObject({
       title: 'Trading Workspace',
