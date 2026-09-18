@@ -319,7 +319,7 @@ jobs:
           echo "id=$hyperdrive_id" >> "$GITHUB_OUTPUT"
           echo "Resolved the dedicated $MKETY_HYPERDRIVE_NAME Hyperdrive configuration."
 
-      - name: Snapshot Cloudflare routing and enforce isolation
+      - name: Snapshot Cloudflare Custom Domains, DNS, and Worker Routes
         id: cloudflare
         shell: bash
         run: |
@@ -335,25 +335,52 @@ jobs:
           NODE
           zone_id="$(cat /tmp/zone-id)"
           echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+
           routes="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          domains="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          root_dns="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=mkety.com")"
+          www_dns="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=www.mkety.com")"
           printf '%s' "$routes" > /tmp/mkety-routes-before.json
-          ROUTES="$routes" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
-          const payload = JSON.parse(process.env.ROUTES || '{}');
-          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Could not read Cloudflare Worker routes.');
-          const exactPatterns = new Set(['mkety.com/*', 'www.mkety.com/*']);
-          const workerRoutes = payload.result.filter((route) => route.script === process.env.WORKER);
-          if (workerRoutes.length > 0) {
-            throw new Error(`Production Worker ${process.env.WORKER} is already bound to live route(s); refusing an initial cutover that could bypass preview verification.`);
+          printf '%s' "$domains" > /tmp/mkety-domains-before.json
+          ROOT_DNS="$root_dns" WWW_DNS="$www_dns" node <<'NODE' > /tmp/mkety-dns-before.json
+          const root = JSON.parse(process.env.ROOT_DNS || '{}');
+          const www = JSON.parse(process.env.WWW_DNS || '{}');
+          if (!root.success || !www.success || !Array.isArray(root.result) || !Array.isArray(www.result)) {
+            throw new Error('Could not snapshot apex/www DNS records.');
           }
-          const protectedRoutes = payload.result.filter((route) => !exactPatterns.has(route.pattern));
-          console.log(`Preserving ${protectedRoutes.length} unrelated Worker route(s).`);
-          for (const pattern of exactPatterns) {
-            const existing = payload.result.find((route) => route.pattern === pattern);
-            console.log(`${pattern}: ${existing ? `currently ${existing.script || 'route-only'}` : 'no existing Worker route'}`);
-          }
+          process.stdout.write(JSON.stringify({root: root.result, www: www.result}, null, 2));
           NODE
 
-      - name: Prepare rollback snapshot before any route mutation
+          ROUTES="$routes" DOMAINS="$domains" ROOT_DNS="$root_dns" WWW_DNS="$www_dns" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
+          const routes = JSON.parse(process.env.ROUTES || '{}');
+          const domains = JSON.parse(process.env.DOMAINS || '{}');
+          const root = JSON.parse(process.env.ROOT_DNS || '{}');
+          const www = JSON.parse(process.env.WWW_DNS || '{}');
+          for (const payload of [routes, domains, root, www]) {
+            if (!payload.success || !Array.isArray(payload.result)) throw new Error('Cloudflare preflight lookup failed.');
+          }
+          const targetPatterns = new Set(['mkety.com/*', 'www.mkety.com/*']);
+          if (routes.result.some((route) => targetPatterns.has(route.pattern))) {
+            throw new Error('Apex/www Worker Route exists; Custom Domain cutover requires both target Worker Routes to remain unbound.');
+          }
+          const workerRoutes = routes.result.filter((route) => route.script === process.env.WORKER);
+          if (workerRoutes.length > 0) {
+            throw new Error(`Production Worker ${process.env.WORKER} is already bound to live Worker Route(s); refusing initial Custom Domain cutover.`);
+          }
+          for (const host of ['mkety.com', 'www.mkety.com']) {
+            const existing = domains.result.find((domain) => domain.hostname === host);
+            if (existing && existing.service !== process.env.WORKER) {
+              throw new Error(`${host} is already attached as a Custom Domain to another Worker.`);
+            }
+          }
+          const dns = [...root.result, ...www.result];
+          if (dns.some((record) => record.type === 'CNAME')) {
+            throw new Error('Apex/www CNAME record blocks safe Worker Custom Domain promotion.');
+          }
+          console.log('Cloudflare preflight passed: target Worker Routes are absent and Custom Domain ownership is safe.');
+          NODE
+
+      - name: Prepare Custom Domain rollback snapshot before mutation
         shell: bash
         env:
           ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
@@ -362,31 +389,37 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const fs = require('node:fs');
-          const payload = JSON.parse(fs.readFileSync('/tmp/mkety-routes-before.json', 'utf8'));
-          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid route snapshot.');
-          const patterns = ['mkety.com/*', 'www.mkety.com/*'];
-          const snapshot = patterns.map((pattern) => {
-            const route = payload.result.find((item) => item.pattern === pattern);
-            return route ? { pattern, existed: true, id: route.id, script: route.script ?? null } : { pattern, existed: false };
+          const payload = JSON.parse(fs.readFileSync('/tmp/mkety-domains-before.json', 'utf8'));
+          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid Custom Domain snapshot.');
+          const hosts = ['mkety.com', 'www.mkety.com'];
+          const snapshot = hosts.map((hostname) => {
+            const domain = payload.result.find((item) => item.hostname === hostname);
+            return domain
+              ? {hostname, existed: true, id: domain.id, service: domain.service ?? null}
+              : {hostname, existed: false};
           });
           fs.writeFileSync('/tmp/mkety-cutover-rollback.json', JSON.stringify(snapshot, null, 2));
           NODE
           cat > /tmp/ROLLBACK.md <<EOF
-          # Mkety public cutover rollback
+          # Mkety public Custom Domain cutover rollback
 
           Verified SHA: $VERIFIED_SHA
           Cloudflare zone ID: $ZONE_ID
           Production Worker: $PRODUCTION_WORKER_NAME
 
-          The attached mkety-routes-before.json is the complete pre-cutover Worker-route snapshot.
-          The attached mkety-cutover-rollback.json records the exact prior state of only mkety.com/* and www.mkety.com/*.
+          The attached mkety-domains-before.json records pre-cutover Worker Custom Domains.
+          The attached mkety-dns-before.json records apex/www DNS state.
+          The attached mkety-routes-before.json records Worker Routes, which this cutover must not mutate.
+          The attached mkety-cutover-rollback.json records whether each target Custom Domain pre-existed.
 
           Rollback rule:
-          - If a target route existed before cutover, PUT that route ID back to its recorded prior script (or null route-only state).
-          - If a target route did not exist before cutover, DELETE the route created for that target pattern.
-          - Do not alter any other Worker route or DNS record.
+          - Delete only Custom Domains created by this cutover.
+          - Never delete a target Custom Domain that existed before the run.
+          - Restore any missing pre-cutover apex/www A, AAAA, or CNAME DNS records.
+          - Worker Routes are read-only evidence and must remain byte-for-byte equivalent by pattern/script.
+          - Do not alter unrelated Worker routes or unrelated DNS records.
 
-          The cutover workflow performs this rollback automatically if either target route binding fails or live acceptance fails after route binding.
+          The cutover workflow performs this rollback automatically on Custom Domain attachment or live-acceptance failure.
           EOF
 
       - name: Persist pre-mutation rollback evidence
@@ -397,6 +430,8 @@ jobs:
           retention-days: 30
           path: |
             /tmp/mkety-routes-before.json
+            /tmp/mkety-domains-before.json
+            /tmp/mkety-dns-before.json
             /tmp/mkety-cutover-rollback.json
             /tmp/ROLLBACK.md
 
@@ -423,7 +458,7 @@ jobs:
           pnpm build
           pnpm run deploy --dry-run
 
-      - name: Deploy production Worker without domain routes
+      - name: Deploy production Worker without public hostname binding
         id: deploy
         shell: bash
         run: |
@@ -480,7 +515,7 @@ jobs:
           put_secret MKETY_PUBLIC_BEDROCK_SESSION_TOKEN "${MKETY_PUBLIC_BEDROCK_SESSION_TOKEN:-}"
           put_secret MKETY_PUBLIC_BEDROCK_REGION "${MKETY_PUBLIC_BEDROCK_REGION:-}"
 
-      - name: Smoke production Worker preview before routing
+      - name: Smoke production Worker preview before Custom Domain attachment
         shell: bash
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
@@ -540,7 +575,7 @@ jobs:
           console.log('Hyperdrive DB-backed preview smoke passed.');
           NODE
 
-      - name: Disable temporary workers.dev and preview URLs before routing
+      - name: Disable temporary workers.dev and preview URLs before Custom Domain attachment
         if: ${{ always() }}
         shell: bash
         run: |
@@ -568,74 +603,92 @@ jobs:
           console.log('Temporary workers.dev and preview URLs disabled before production routing.');
           NODE
 
-      - name: Bind only apex and www Worker routes
-        id: route-bind
+      - name: Attach apex and www as Worker Custom Domains
+        id: domain-bind
         shell: bash
         env:
           ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
         run: |
           set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
 
-          rollback_route_bind() {
+          restore_dns() {
+            DNS_BACKUP="$(cat /tmp/mkety-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
+          const {execFileSync} = require('node:child_process');
+          const backup = JSON.parse(process.env.DNS_BACKUP || '{}');
+          for (const record of [...(backup.root || []), ...(backup.www || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
+            const query = `https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records?type=${encodeURIComponent(record.type)}&name=${encodeURIComponent(record.name)}&content=${encodeURIComponent(record.content)}`;
+            const current = JSON.parse(execFileSync('curl', ['-fsS','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json',query], {encoding:'utf8'}));
+            if (Array.isArray(current.result) && current.result.length) continue;
+            const body = JSON.stringify({type:record.type,name:record.name,content:record.content,ttl:record.ttl || 1,proxied:Boolean(record.proxied)});
+            execFileSync('curl', ['-fsS','-X','POST','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json','--data',body,`https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records`], {stdio:'ignore'});
+          }
+          NODE
+          }
+
+          rollback_custom_domains() {
             local original_status="${1:-1}"
             set +e
-            echo 'A target route binding failed; restoring exact pre-cutover apex/www Worker routes.'
+            echo 'Custom Domain attachment failed; removing only domains created by this run and restoring prior DNS.'
             node -e "const x=require('/tmp/mkety-cutover-rollback.json'); for(const r of x) console.log(JSON.stringify(r));" | while IFS= read -r row; do
-              pattern="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).pattern)")"
               existed="$(ROW="$row" node -e "process.stdout.write(String(JSON.parse(process.env.ROW).existed))")"
-              if [ "$existed" = 'true' ]; then
-                route_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).id)")"
-                script="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).script||'')")"
-                restore_body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]||null}))" "$pattern" "$script")"
-                curl -fsS -X PUT "${auth[@]}" --data "$restore_body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$route_id" >/dev/null || echo "Rollback warning: could not restore $pattern automatically."
-              else
-                new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
-                if [ -n "$new_id" ]; then
-                  curl -fsS -X DELETE "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$new_id" >/dev/null || echo "Rollback warning: could not delete newly created $pattern automatically."
-                fi
+              new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
+              if [ "$existed" != 'true' ] && [ -n "$new_id" ]; then
+                curl -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$new_id" >/dev/null || true
               fi
             done
+            restore_dns || true
             exit "$original_status"
           }
-          trap 'status=$?; rollback_route_bind "$status"' ERR
+          trap 'status=$?; rollback_custom_domains "$status"' ERR
 
-          bind_pattern() {
-            local pattern="$1"
-            local route_id response body new_id
-            route_id="$(PATTERN="$pattern" node -e "const x=require('/tmp/mkety-routes-before.json'); const r=x.result.find(v=>v.pattern===process.env.PATTERN); if(r?.id) process.stdout.write(r.id)")"
-            body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]}))" "$pattern" "$PRODUCTION_WORKER_NAME")"
-            if [ -n "$route_id" ]; then
-              response="$(curl -fsS -X PUT "${auth[@]}" --data "$body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$route_id")"
-            else
-              response="$(curl -fsS -X POST "${auth[@]}" --data "$body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes")"
-              new_id="$(RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); if(!x.success||!x.result?.id) process.exit(1); process.stdout.write(x.result.id)")"
-              PATTERN="$pattern" NEW_ID="$new_id" node <<'NODE'
+          for host in mkety.com www.mkety.com; do
+            domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            existing="$(DOMAINS="$domains" HOST="$host" node -e "const p=JSON.parse(process.env.DOMAINS||'{}'),d=(p.result||[]).find(x=>x.hostname===process.env.HOST);if(d&&d.service!==process.env.PRODUCTION_WORKER_NAME)process.exit(2);if(d)process.stdout.write(d.id)")" || status=$?
+            [ "${status:-0}" != '2' ] || { echo "$host belongs to another Worker"; false; }
+            if [ -n "$existing" ]; then
+              echo "$host already attached to the production Worker; preserving existing Custom Domain."
+              continue
+            fi
+            body="$(HOST="$host" ZONE_ID="$ZONE_ID" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.PRODUCTION_WORKER_NAME,zone_id:process.env.ZONE_ID}))")"
+            response="$(curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            id="$(RESPONSE="$response" node -e "const p=JSON.parse(process.env.RESPONSE||'{}');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
+            HOST="$host" NEW_ID="$id" node <<'NODE'
           const fs = require('node:fs');
           const path = '/tmp/mkety-cutover-rollback.json';
           const snapshot = JSON.parse(fs.readFileSync(path, 'utf8'));
-          const row = snapshot.find((item) => item.pattern === process.env.PATTERN);
-          if (!row) throw new Error(`Rollback snapshot missing ${process.env.PATTERN}.`);
+          const row = snapshot.find((item) => item.hostname === process.env.HOST);
+          if (!row) throw new Error(`Rollback snapshot missing ${process.env.HOST}.`);
           row.newId = process.env.NEW_ID;
           fs.writeFileSync(path, JSON.stringify(snapshot, null, 2));
           NODE
-            fi
-            RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); if(!x.success) process.exit(1)"
-            echo "Bound $pattern to verified production Worker."
-          }
+            echo "Attached $host as a Worker Custom Domain."
+          done
 
-          bind_pattern 'mkety.com/*'
-          bind_pattern 'www.mkety.com/*'
+          current_routes="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/workers/routes")"
+          CURRENT="$current_routes" BEFORE="$(cat /tmp/mkety-routes-before.json)" node <<'NODE'
+          const current = JSON.parse(process.env.CURRENT || '{}');
+          const before = JSON.parse(process.env.BEFORE || '{}');
+          const normalize = (payload) => (payload.result || []).map((r) => ({pattern:r.pattern,script:r.script || null})).sort((a,b) => a.pattern.localeCompare(b.pattern));
+          if (!current.success || !before.success || JSON.stringify(normalize(current)) !== JSON.stringify(normalize(before))) {
+            throw new Error('Worker Routes changed during Custom Domain cutover.');
+          }
+          console.log('Verify unrelated Worker Routes remain unchanged: PASS');
+          NODE
+
           trap - ERR
           echo 'bound=true' >> "$GITHUB_OUTPUT"
 
-      - name: Persist route-bind rollback evidence
+      - name: Persist Custom Domain rollback evidence
         uses: actions/upload-artifact@v4
         with:
-          name: mkety-public-cutover-route-bind-${{ inputs.verified_sha }}
+          name: mkety-public-cutover-custom-domain-${{ inputs.verified_sha }}
           if-no-files-found: error
           retention-days: 30
           path: |
+            /tmp/mkety-domains-before.json
+            /tmp/mkety-dns-before.json
             /tmp/mkety-cutover-rollback.json
             /tmp/ROLLBACK.md
 
@@ -645,26 +698,42 @@ jobs:
           ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
         run: |
           set -euo pipefail
-          rollback_routes() {
-            echo 'Production acceptance failed; restoring exact pre-cutover apex/www Worker routes.'
-            auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          restore_dns() {
+            DNS_BACKUP="$(cat /tmp/mkety-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
+          const {execFileSync} = require('node:child_process');
+          const backup = JSON.parse(process.env.DNS_BACKUP || '{}');
+          for (const record of [...(backup.root || []), ...(backup.www || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
+            const query = `https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records?type=${encodeURIComponent(record.type)}&name=${encodeURIComponent(record.name)}&content=${encodeURIComponent(record.content)}`;
+            const current = JSON.parse(execFileSync('curl', ['-fsS','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json',query], {encoding:'utf8'}));
+            if (Array.isArray(current.result) && current.result.length) continue;
+            const body = JSON.stringify({type:record.type,name:record.name,content:record.content,ttl:record.ttl || 1,proxied:Boolean(record.proxied)});
+            execFileSync('curl', ['-fsS','-X','POST','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json','--data',body,`https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records`], {stdio:'ignore'});
+          }
+          NODE
+          }
+          rollback_custom_domains() {
+            echo 'Production acceptance failed; removing only Custom Domains created by this run and restoring prior DNS.'
             node -e "const x=require('/tmp/mkety-cutover-rollback.json'); for(const r of x) console.log(JSON.stringify(r));" | while IFS= read -r row; do
-              pattern="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).pattern)")"
               existed="$(ROW="$row" node -e "process.stdout.write(String(JSON.parse(process.env.ROW).existed))")"
-              if [ "$existed" = 'true' ]; then
-                route_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).id)")"
-                script="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).script||'')")"
-                body="$(node -e "process.stdout.write(JSON.stringify({pattern:process.argv[1],script:process.argv[2]||null}))" "$pattern" "$script")"
-                curl -fsS -X PUT "${auth[@]}" --data "$body" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$route_id" >/dev/null
-              else
-                new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
-                if [ -n "$new_id" ]; then
-                  curl -fsS -X DELETE "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes/$new_id" >/dev/null
-                fi
+              new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
+              if [ "$existed" != 'true' ] && [ -n "$new_id" ]; then
+                curl -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$new_id" >/dev/null || true
               fi
             done
+            restore_dns || true
           }
-          trap 'rollback_routes' ERR
+          trap 'rollback_custom_domains' ERR
+
+          production_ready=0
+          for attempt in $(seq 1 60); do
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -o /tmp/mkety-production-root.html -w '%{http_code}' 'https://mkety.com/' || true)"
+            echo "Custom Domain readiness attempt $attempt/60: HTTP $code"
+            if [ "$code" = '200' ]; then production_ready=1; break; fi
+            sleep 5
+          done
+          [ "$production_ready" = '1' ] || { echo 'mkety.com Custom Domain did not become ready in the bounded window.'; false; }
 
           html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
           for route in "${html_routes[@]}"; do
@@ -717,8 +786,18 @@ jobs:
           if (/github|repository|branch|pull request|commit|mksaas|mklms|origin\.mkety\.com/i.test(a)) process.exit(1);
           NODE
 
+          current_routes="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/workers/routes")"
+          CURRENT="$current_routes" BEFORE="$(cat /tmp/mkety-routes-before.json)" node <<'NODE'
+          const current = JSON.parse(process.env.CURRENT || '{}');
+          const before = JSON.parse(process.env.BEFORE || '{}');
+          const normalize = (payload) => (payload.result || []).map((r) => ({pattern:r.pattern,script:r.script || null})).sort((a,b) => a.pattern.localeCompare(b.pattern));
+          if (!current.success || !before.success || JSON.stringify(normalize(current)) !== JSON.stringify(normalize(before))) {
+            throw new Error('Worker Routes changed during production acceptance.');
+          }
+          NODE
+
           trap - ERR
-          echo 'Production acceptance passed. Apex/www routing retained on the exact verified Worker.'
+          echo 'Production acceptance passed. Apex/www Worker Custom Domains retained on the exact verified Worker.'
 
       - name: Publish cutover evidence and rollback instructions
         env:
@@ -735,12 +814,12 @@ jobs:
             echo '- Required exact-SHA workflows: green before cutover.'
             echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; hosted checkout providers are optional/admin-configured.'
             echo '- Database runtime: MKETY_DB Hyperdrive binding; private production database credentials are not attached to the Worker.'
-            echo '- Live route mutation: only mkety.com/* and www.mkety.com/*, with automatic rollback on partial binding failure.'
+            echo '- Live hostname mutation: only mkety.com and www.mkety.com Worker Custom Domains, with automatic rollback on partial attachment failure.'
             echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'
-            echo '- Unrelated Worker routes and DNS records were not modified.'
+            echo '- Apex/www Worker Routes remained unbound; unrelated Worker Routes were unchanged.'
             echo
             echo '### Rollback'
-            echo 'Download the pre-mutation rollback artifact from this run. Restore the recorded prior script for any target route that existed; delete only a target route created by this cutover if it did not exist before. Do not alter any unrelated Worker route or DNS record.'
+            echo 'Download the pre-mutation rollback artifact from this run. Delete only Custom Domains created by this cutover and restore any missing pre-cutover apex/www DNS records. Worker Routes must remain unchanged.'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Mkety public production SHA: $VERIFIED_SHA"
           echo 'Production cutover acceptance complete with rollback evidence persisted.'
