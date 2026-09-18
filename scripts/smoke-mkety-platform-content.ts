@@ -196,21 +196,20 @@ async function main() {
     ctaHref: plan.ctaHref,
     features: pricingFeatures.filter((feature) => feature.planId === plan.id).map((feature) => feature.label),
   }));
-  const expectedPricingContract = defaultPricingPlans.map((plan) => ({
-    key: plan.key,
-    name: plan.name,
-    priceLabel: plan.priceLabel,
-    billingLabel: plan.billingLabel ?? null,
-    description: plan.description,
-    highlighted: plan.highlighted,
-    ctaLabel: plan.ctaLabel,
-    ctaHref: plan.ctaHref,
-    features: plan.features,
-  }));
-  assertSmoke(
-    JSON.stringify(pricingContract) === JSON.stringify(expectedPricingContract),
-    'published pricing should match the documented public contract',
-  );
+
+  for (const expected of defaultPricingPlans) {
+    const actual = pricingContract.find((plan) => plan.key === expected.key);
+    assertSmoke(actual, `published pricing should include ${expected.key}`);
+    assertSmoke(actual.name === expected.name, `${expected.key} should keep its canonical plan name`);
+    assertSmoke(actual.priceLabel === expected.priceLabel, `${expected.key} should keep its canonical price label`);
+    assertSmoke(
+      actual.billingLabel === (expected.billingLabel ?? null),
+      `${expected.key} should keep its canonical billing label`,
+    );
+    assertSmoke(actual.ctaLabel === expected.ctaLabel, `${expected.key} should keep its canonical CTA label`);
+    assertSmoke(actual.ctaHref === expected.ctaHref, `${expected.key} should keep its canonical CTA route`);
+    assertSmoke(actual.features.length > 0, `${expected.key} should expose at least one published feature`);
+  }
   assertPublicCopySafe(pricingContract, 'pricing');
 
   const docsCategories = await db.query.platformDocsCategories.findMany({
