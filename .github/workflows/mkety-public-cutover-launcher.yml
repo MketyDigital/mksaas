@@ -21,7 +21,7 @@ jobs:
   dispatch:
     name: Dispatch guarded production cutover
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Verify certified release branch and dispatch cutover
         shell: bash
@@ -51,6 +51,40 @@ jobs:
           }
           console.log(`Release branch pinned to certified SHA: ${release.commit.sha}`);
           NODE
+
+          wait_for_workflow_success() {
+            local workflow="$1"
+            local label="$2"
+            local attempt response status conclusion
+
+            for attempt in $(seq 1 40); do
+              response="$(curl -fsS                 -H "Authorization: Bearer $GH_TOKEN"                 -H 'Accept: application/vnd.github+json'                 -H 'X-GitHub-Api-Version: 2022-11-28'                 "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&per_page=20")"
+
+              status="$(RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); const runs=Array.isArray(x.workflow_runs)?x.workflow_runs:[]; const exact=runs.find(r=>r.head_sha===process.env.VERIFIED_SHA); process.stdout.write(exact?.status||'missing')")"
+              conclusion="$(RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}'); const runs=Array.isArray(x.workflow_runs)?x.workflow_runs:[]; const exact=runs.find(r=>r.head_sha===process.env.VERIFIED_SHA); process.stdout.write(exact?.conclusion||'')")"
+
+              if [ "$status" = 'completed' ] && [ "$conclusion" = 'success' ]; then
+                echo "Certified $label for $VERIFIED_SHA."
+                return 0
+              fi
+
+              if [ "$status" = 'completed' ] && [ -n "$conclusion" ] && [ "$conclusion" != 'success' ]; then
+                echo "$label completed with non-success conclusion: $conclusion"
+                return 1
+              fi
+
+              echo "Waiting for $label certification (status=$status, attempt=$attempt/40)..."
+              sleep 15
+            done
+
+            echo "Timed out waiting for $label certification."
+            return 1
+          }
+
+          wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
+          wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
+          wait_for_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
+          wait_for_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
 
           node <<'NODE' >/tmp/cutover-dispatch.json
           process.stdout.write(JSON.stringify({
