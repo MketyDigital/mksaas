@@ -540,6 +540,7 @@ Implemented and verified:
 - made the commercial-content repair migration CMS-safe so replaying the root content migrations does not overwrite admin-managed pricing rows;
 - preserved Enterprise as Custom: protected administration can issue exact negotiated USD payment links while public customers cannot choose or create arbitrary Enterprise amounts;
 - repaired the stale public-candidate workflow gate that had been hard-coded to historical PR #24, so current same-repository public PRs receive real isolated candidate verification without exposing staging secrets to forks.
+- serialized the standalone content-DB smoke and public-candidate staging jobs with one shared concurrency group after exact-head verification exposed a real race where both jobs could delete/reseed the same staging CMS rows simultaneously.
 
 Exact implementation-head verification:
 - Typecheck `35393687292`;
