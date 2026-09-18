@@ -118,7 +118,12 @@ const cloudflareBillingSummarySource: BillingSummarySource = {
         rawReference: billingSettlements.rawReference,
       })
       .from(billingSettlements)
-      .where(eq(billingSettlements.tenantId, tenantId))
+      .where(
+        and(
+          eq(billingSettlements.tenantId, tenantId),
+          eq(billingSettlements.status, 'applied'),
+        ),
+      )
       .orderBy(desc(billingSettlements.occurredAt))
       .limit(10);
   },
