@@ -1,6 +1,11 @@
 import { canTransitionSubscription } from './subscription-lifecycle';
 
 describe('canTransitionSubscription', () => {
+  it('keeps unpaid subscriptions outside active access until verified payment', () => {
+    expect(canTransitionSubscription('pending_payment', 'active')).toBe(true);
+    expect(canTransitionSubscription('pending_payment', 'trialing')).toBe(false);
+  });
+
   it('allows a trialing subscription to become active', () => {
     expect(canTransitionSubscription('trialing', 'active')).toBe(true);
   });
