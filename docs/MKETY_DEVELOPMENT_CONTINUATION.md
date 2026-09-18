@@ -985,3 +985,20 @@ The verified candidate path is intentionally isolated:
 - the workflow proved the candidate marker externally and then proved exact Worker deletion.
 
 This slice still exposes no customer-facing deploy action and does not enable production execution. The next Deployments/Cloud step must add an authorized non-production invocation path and audit/approval boundary before any user-triggered provider execution is exposed.
+
+
+## Deploy request/approval boundary
+
+After the isolated Cloudflare candidate adapter merged, the next Deployments/Cloud slice adds an auditable non-production approval boundary without exposing provider execution.
+
+Branch `feat/deploy-approval-boundary` adds:
+- migration `0015_deployment_requests.sql` and Drizzle metadata;
+- tenant/project/application/environment-scoped deployment requests;
+- project admin/manager request creation for non-production environments only;
+- duplicate pending-request rejection per environment;
+- `platform:deployments` review authority for approve/reject;
+- requester/reviewer identity, timestamps, refs, review notes and request status;
+- requester status visibility in Deploy;
+- pending approval queue inside the existing Deployments & Domains Platform Control module.
+
+Approval is deliberately audit-only. Neither request nor review actions call the execution kernel, Cloudflare adapter, DNS/custom domains, production deployment, provider credentials, or rollback. The next execution-facing slice requires a trusted project artifact pipeline and an exact approved-request-to-execution handoff.
