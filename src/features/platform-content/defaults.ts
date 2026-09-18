@@ -45,7 +45,7 @@ export const defaultHeroSection: PlatformHeroSectionInput = {
   headline: 'Build, automate, deploy, and operate with Mkety.',
   subheadline:
     'Create AI agents, workflows, applications, websites, integrations, business systems, and learning experiences from one connected platform.',
-  primaryCta: { label: 'Get Started', href: '/create-workspace' },
+  primaryCta: { label: 'Get Started', href: '/signup' },
   secondaryCta: { label: 'Explore Docs', href: '/docs' },
   previewItems: [
     { label: 'AI', description: 'Agents, knowledge, tools, models, runs, versions, and publishing.' },
@@ -224,7 +224,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'A simple entry plan for individuals getting started with Mkety projects and core platform access.',
     highlighted: false,
     ctaLabel: 'Choose Starter',
-    ctaHref: '/create-workspace',
+    ctaHref: '/signup',
     features: ['Project workspace', 'Core platform access', 'SolutionHub discovery', 'Usage and credits visibility'],
   },
   {
@@ -235,7 +235,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For building, testing, publishing, and operating AI agents and AI-powered applications.',
     highlighted: false,
     ctaLabel: 'Choose AI Workspace',
-    ctaHref: '/create-workspace',
+    ctaHref: '/signup',
     features: ['AI agents', 'Knowledge connections', 'Model selection', 'Tools and runs', 'Versions and publishing'],
   },
   {
@@ -246,7 +246,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For building repeatable workflows, integrations, triggers, actions, and business automations.',
     highlighted: false,
     ctaLabel: 'Choose Automation Workspace',
-    ctaHref: '/create-workspace',
+    ctaHref: '/signup',
     features: ['Workflow builder', 'Triggers and actions', 'Conditions and transformations', 'Webhooks', 'Run history'],
   },
   {
@@ -257,7 +257,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For publishing websites, lightweight applications, APIs, portals, and serverless workloads.',
     highlighted: false,
     ctaLabel: 'Choose Deploy Workspace',
-    ctaHref: '/create-workspace',
+    ctaHref: '/signup',
     features: [
       'Website and app deploys',
       'API and portal deploys',
@@ -274,7 +274,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'The complete self-service Mkety bundle: Starter plus AI, Automation, and Deploy Workspaces.',
     highlighted: true,
     ctaLabel: 'Choose Mkety One',
-    ctaHref: '/create-workspace',
+    ctaHref: '/signup',
     features: [
       'Starter included',
       'AI Workspace included',
@@ -290,8 +290,8 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description:
       'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
-    ctaLabel: 'Start Enterprise Project',
-    ctaHref: '/enterprise/checkout',
+    ctaLabel: 'Talk to Mkety Enterprise',
+    ctaHref: '/contact',
     features: [
       'Custom implementation',
       'Enterprise support',
