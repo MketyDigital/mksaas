@@ -514,3 +514,67 @@ The verified candidate path is intentionally isolated:
 - the workflow proved the candidate marker externally and then proved exact Worker deletion.
 
 This slice still exposes no customer-facing deploy action and does not enable production execution. The next Deployments/Cloud step must add an authorized non-production invocation path and audit/approval boundary before any user-triggered provider execution is exposed.
+
+## Public production-readiness hardening before Deploy continuation
+
+Before continuing the next customer-triggered Deployments/Cloud slice, PR #79 (`feat/public-production-readiness`) performed a focused production-readiness audit of Mkety public, authentication, onboarding, SEO, commercial-routing, and Enterprise-payment surfaces.
+
+Exact implementation head verified before this handoff update:
+
+`5bae8019b2deca6630bcfb2fb14fee5a52144ed2`
+
+PR:
+
+`#79 — feat: harden Mkety public production experience`
+
+Implemented and verified:
+- restored the exact legacy Mkety logo through a Mkety-owned route and used it across public/auth/onboarding surfaces;
+- added a real Mkety signup entry and polished sign-in, organization selection, first-workspace setup, and tenant sign-in;
+- kept customer-facing authentication provider-neutral and marked private auth/onboarding/payment routes non-indexable;
+- fixed public homepage mobile overflow/truncation and removed template/development language and placeholder branding;
+- aligned all public Deploy wording with the currently implemented application/environment/release-configuration/deployment-history foundation, without claiming unimplemented publishing/serverless/domain execution;
+- restored the Academy **At Our Hubs** visual cards using the established legacy visual reference set;
+- repaired public workspace CTAs that incorrectly targeted nonexistent `/app/ai`, `/app/automation`, and `/app/deploy` routes; public workspace entry now uses the valid authenticated `/app` gateway;
+- added Mkety favicon/app manifest, 1200×630 social card, Open Graph/Twitter metadata, canonical metadata, JSON-LD Organization/WebSite data, sitemap/robots hardening, and private-route indexing exclusions;
+- removed residual SaaS-template landing copy;
+- made the commercial-content repair migration CMS-safe so replaying the root content migrations does not overwrite admin-managed pricing rows;
+- preserved Enterprise as Custom: protected administration can issue exact negotiated USD payment links while public customers cannot choose or create arbitrary Enterprise amounts;
+- repaired the stale public-candidate workflow gate that had been hard-coded to historical PR #24, so current same-repository public PRs receive real isolated candidate verification without exposing staging secrets to forks.
+
+Exact implementation-head verification:
+- Typecheck `35393687292`;
+- Lint `35393687288`;
+- Build `35393687466`;
+- Cloudflare Vinext Smoke `35393687350`;
+- Platform Core Workspaces Smoke `35393687472`;
+- Migration Baseline `35393687347`;
+- CI `35393687252`;
+- Content DB Smoke `35393687399`;
+- full tests/coverage `35393687368`;
+- Pull Request Validation `35393687423`;
+- MegaLinter `35393687372`;
+- isolated Public Candidate Deploy / external acceptance `35393687516`.
+
+Candidate evidence from run `35393687516`:
+- candidate URL: `https://mkety-public-candidate.dry-glitter-7e16.workers.dev`;
+- all required public routes, sitemap, and robots returned HTTP 200 in the external smoke;
+- NOWPayments API credentials were accepted by the live API without creating an invoice or payment;
+- Enterprise safety smoke confirmed customer-set amounts remain blocked, invalid webhook signatures fail closed, and payment confirmation remains separate from access/entitlement grants;
+- Public Mkety AI passed real-provider support, restored-memory, New Chat isolation, canonical commercial grounding, Academy destination, Enterprise-first Trading sales, and private-source boundary checks;
+- the pull-request candidate workflow checked GitHub's generated PR merge ref `8b065ce3f7edd477c346234290348321cc417bc6`; the implementation branch head verified above remains `5bae8019b2deca6630bcfb2fb14fee5a52144ed2`.
+
+### Commercial readiness finding
+
+Enterprise negotiated payments are operational through the protected admin-issued exact-amount flow.
+
+Fixed-price self-service plans are **not yet fully purchasable**. The shared Billing domain exists, but its live NOWPayments and Selar `createCheckout` adapters intentionally remain disabled. Public Starter, AI Workspace, Automation Workspace, Deploy Workspace, and Mkety One CTAs therefore route honestly through account onboarding rather than pretending a purchase has completed.
+
+The next production-readiness slice must integrate the existing verified Mkety shared billing-service contract from the managed-hosting billing Worker rather than inventing a parallel checkout architecture. Only after verified settlement flows into Mkety Billing/Entitlements should fixed-price plans be described as live self-service purchases.
+
+No production DNS/custom-domain mutation, production Deploy execution, OCI/Coolify mutation, or customer infrastructure provisioning was introduced by PR #79.
+
+### Exact next order
+
+1. Merge PR #79 after the documentation-only successor head remains green.
+2. Implement live fixed-price self-service Billing checkout by reusing the approved shared Mkety billing-service contract and preserving verified/idempotent settlement boundaries.
+3. Then resume APP-07 Deployments/Cloud from the already-verified Cloudflare candidate-adapter state: add an authorized non-production customer invocation path with explicit audit/approval boundaries before any production execution work.
