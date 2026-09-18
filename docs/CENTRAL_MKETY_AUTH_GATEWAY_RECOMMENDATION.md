@@ -105,7 +105,7 @@ The same gateway can later issue stable Mkety access contracts for:
 - Mkety Platform
 - Mkety Academy
 - Trading
-- mklms
+- customer applications
 - future standalone enterprise/customer applications
 - selected internal Mkety services
 
