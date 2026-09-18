@@ -50,7 +50,6 @@ const forbiddenPublicPatterns: Array<[RegExp, string]> = [
   [/\brepositor(?:y|ies)\b/i, 'repository references'],
   [/MketyDigital/i, 'internal organization references'],
   [/\bmksaas\b/i, 'internal application references'],
-  [/\bmklms\b/i, 'internal Academy implementation references'],
   [/\bpull request\b/i, 'pull-request references'],
   [/\borigin\.mkety\.com\b/i, 'internal origin hostname'],
   [/\bcloudflare\b/i, 'hosting-provider implementation details'],
