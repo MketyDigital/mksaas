@@ -18,6 +18,26 @@ function minorUnitsToUsd(amountMinor: bigint): number {
   return Number(amountMinor) / 100;
 }
 
+function usdValueToMinorUnits(value: unknown): bigint {
+  const normalized =
+    typeof value === 'number'
+      ? value.toFixed(2)
+      : typeof value === 'string'
+        ? value.trim()
+        : '';
+
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
+  if (!match) throw new Error('NOWPayments returned an invalid USD amount.');
+
+  const fractional = (match[2] ?? '').padEnd(2, '0');
+  return BigInt(match[1]) * 100n + BigInt(fractional || '0');
+}
+
+export function parseMketyBillingOrderId(orderId: string): string | null {
+  const match = /^MKBILL-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(orderId);
+  return match?.[1] ?? null;
+}
+
 export interface CreateNowPaymentsBillingAdapterOptions {
   apiKey?: string;
   ipnSecret?: string;
@@ -93,6 +113,61 @@ export function createNowPaymentsBillingAdapter(
 
     normalizeSettlement: normalizeNowPaymentsSettlement,
   };
+}
+
+export function buildNowPaymentsSettlementForCheckout(
+  event: VerifiedGatewayEvent,
+  context: {
+    subscriptionId: string;
+    billingPeriodId: string;
+    amountExpectedMinor: bigint;
+    currency: string;
+  },
+  occurredAt: Date = new Date(),
+): NormalizedSettlement {
+  if (!event.payload || typeof event.payload !== 'object' || Array.isArray(event.payload)) {
+    throw new Error('NOWPayments settlement payload must be an object.');
+  }
+
+  const payload = event.payload as Record<string, unknown>;
+  if (payload.paymentStatus !== 'finished') {
+    throw new Error('NOWPayments settlement requires final finished payment status.');
+  }
+
+  const providerPayload = payload.providerPayload;
+  if (!providerPayload || typeof providerPayload !== 'object' || Array.isArray(providerPayload)) {
+    throw new Error('NOWPayments settlement is missing the verified provider payload.');
+  }
+
+  const raw = providerPayload as Record<string, unknown>;
+  const currency = String(raw.price_currency ?? '').toUpperCase();
+  const amountPaidMinor = usdValueToMinorUnits(raw.price_amount);
+
+  if (currency !== context.currency) {
+    throw new Error('NOWPayments settlement currency does not match the Mkety billing period.');
+  }
+  if (amountPaidMinor !== context.amountExpectedMinor) {
+    throw new Error('NOWPayments settlement amount does not match the Mkety billing period.');
+  }
+
+  const enrichedEvent: VerifiedGatewayEvent = {
+    ...event,
+    payload: {
+      verified: true,
+      eventId: String(payload.eventId ?? ''),
+      paymentId: String(payload.paymentId ?? ''),
+      paymentStatus: 'finished',
+      subscriptionId: context.subscriptionId,
+      billingPeriodId: context.billingPeriodId,
+      amountExpectedMinor: context.amountExpectedMinor.toString(),
+      currencyExpected: context.currency,
+      amountPaidMinor: amountPaidMinor.toString(),
+      currencyPaid: currency,
+      occurredAt: occurredAt.toISOString(),
+    },
+  };
+
+  return normalizeNowPaymentsSettlement(enrichedEvent);
 }
 
 export function normalizeNowPaymentsSettlement(event: VerifiedGatewayEvent): NormalizedSettlement {
