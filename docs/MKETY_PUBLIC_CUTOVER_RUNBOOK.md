@@ -22,7 +22,7 @@ Production cutover is blocked until all of the following are true:
 10. At least one dedicated `MKETY_PUBLIC_*` AI provider is configured and returns a real grounded answer.
 11. Public AI same-browser memory, restored history and New Chat isolation pass.
 12. Public AI correctly states the canonical public commercial matrix and Academy/Trading domains, does not present removed plans, and refuses private repository/source disclosure.
-13. BOTH Enterprise payment gateways are configured and safely verified: NOWPayments and Selar.
+13. NOWPayments production credentials are configured and safely verified; hosted checkout providers such as Selar are optional and are governed by the admin/payment-provider catalog.
 14. Enterprise checkout remains non-entitling/non-provisioning until verified provider confirmation.
 15. Read-only production preflight records current `mkety.com`/`www.mkety.com` DNS, Worker Custom Domain, and Worker Route state and preserves unrelated routes, especially `learn.starpipsforex.com/* -> mklms`.
 16. `mkety.com/*` and `www.mkety.com/*` Worker Routes are absent; apex/www production promotion uses Worker Custom Domains only.
@@ -39,27 +39,19 @@ Supported provider credential sets remain code-controlled. Visitors do not selec
 
 ## Required Enterprise payment configuration
 
-Public production requires BOTH gateways.
-
-NOWPayments:
+NOWPayments is the production cutover prerequisite:
 
 ```text
 NOWPAYMENTS_API_KEY
 NOWPAYMENTS_IPN_SECRET
 ```
 
-Selar:
-
-```text
-SELAR_ENTERPRISE_CHECKOUT_URL
-```
-
-`SELAR_ENTERPRISE_CHECKOUT_URL` must be HTTPS.
+Hosted checkout providers such as Selar are optional and must be configured through the admin/payment-provider catalog rather than hard-coded as a cutover prerequisite.
 
 Candidate verification must remain non-charging:
 
-- NOWPayments: exercise configured Worker webhook verification/fail-closed behavior and adapter tests; do not create a real provider invoice solely for CI.
-- Selar: create/reuse a synthetic hosted checkout order, validate the redirect host, and prove payment remains pending/unconfirmed.
+- NOWPayments: exercise the configured Worker webhook verification/fail-closed behavior and adapter tests; do not create a real provider invoice solely for CI.
+- Any enabled hosted checkout provider must validate its redirect host and remain non-entitling until verified provider confirmation.
 - Never grant subscriptions, entitlements, credits, wallet funds, tenant access or infrastructure from browser return/success.
 
 ## Public commercial acceptance
@@ -103,11 +95,11 @@ Do not log Cloudflare tokens, database URLs, AI credentials, payment credentials
 ## Production deployment sequence
 
 1. Re-run the complete quality gate on the exact candidate SHA.
-2. Re-run the isolated candidate deployment including public-content, Public AI and both-payment-gateway smoke checks.
+2. Re-run the isolated candidate deployment including public-content, Public AI and Enterprise payment-safety smoke checks.
 3. Re-run read-only routing preflight and record rollback state.
 4. Deploy the generated server Worker using the verified vinext server config, never an asset-only deployment.
-5. Attach production `DATABASE_URL`, dedicated Public Mkety AI secrets, `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET`, and `SELAR_ENTERPRISE_CHECKOUT_URL`.
-6. Confirm Worker deployment succeeds before adding domain traffic.
+5. Run production migrations/seed/smoke from the ephemeral private-DB executor, then attach only the `MKETY_DB` Hyperdrive binding plus dedicated Public Mkety AI and NOWPayments secrets to the Worker; never attach the private production `DATABASE_URL` to the Worker.
+6. Confirm Worker deployment and Hyperdrive-backed smoke succeed before adding domain traffic.
 7. Attach `mkety.com` and `www.mkety.com` to the verified production Worker through Cloudflare Worker Custom Domains.
 8. Do not create or update apex/www Worker Routes; verify the complete Worker Route set remains unchanged before and after attachment.
 9. Verify `www.mkety.com` redirects canonically to `https://mkety.com` through the application behavior.
@@ -153,7 +145,7 @@ Also verify:
 - New Chat creates a distinct conversation;
 - no tenant/private AI data is required;
 - no model/provider selector is exposed;
-- both Enterprise gateways are configured and candidate-verified;
+- NOWPayments is configured and candidate-verified; any enabled hosted checkout provider remains governed by the admin/payment-provider catalog;
 - Enterprise orders remain pending until verified payment confirmation;
 - no stale template branding is public;
 - no public CTA routes to an internal origin hostname;
@@ -177,5 +169,5 @@ After production is verified:
 
 1. Update `docs/MKETY_DEVELOPMENT_CONTINUATION.md` with production SHA, Worker/version evidence, DB evidence, Public AI status and both payment-gateway status.
 2. Keep `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md` current when product/pricing/domain policy changes.
-3. Resume the paused Platform stack only in the established order:
-   Auth #16 → Webhooks #15 → Billing #21 → Entitlements #22 → Usage/Credits #23 → Wallet → remaining Platform work.
+3. Resume app work in the current established order:
+   reconcile stale draft PR #35 → Entitlements #22 → Usage/Credits #23 → remaining Platform/app roadmap.
