@@ -3,7 +3,7 @@ import { Coins, CreditCard, ReceiptText, WalletCards } from 'lucide-react';
 import { getTenantWalletSummary } from '@/features/wallet/server/summary';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { PageHeader } from '@/shared/components/ui/page-header';
-import { auth } from '@/shared/lib/auth';
+import { requireTenantMembership } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface WalletPageProps {
@@ -24,7 +24,7 @@ function formatDate(value: Date | null): string {
 export default async function WalletPage({ params }: WalletPageProps) {
   const { tenant: tenantSlug } = await params;
   const tenant = await getTenantBySlug(tenantSlug);
-  await auth();
+  await requireTenantMembership(tenantSlug);
 
   const wallet = tenant?.id ? await getTenantWalletSummary(tenant.id) : null;
   const billing = wallet?.billing;
