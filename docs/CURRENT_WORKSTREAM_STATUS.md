@@ -190,3 +190,12 @@ PR #65 narrowed that check to actual internal repository references such as `git
 ## Feature-agent handoff rule
 
 Every material feature/runtime/deploy/migration PR must update this status and its relevant handoff with requested outcome, previous state, changes made, status, exact verification evidence, production/environment/DB changes, blockers/risks, exact next steps, and PR/issues/run IDs. No feature may be called complete, production, verified, or merge-ready until that handoff is current.
+
+
+## Custom Domain DNS conflict resolution
+
+Cutover run `35305522201` passed production DB migration, exact-SHA quality checks, Hyperdrive resolution, Worker deployment, runtime secrets, preview smoke, canonical checks, sitemap/robots, and DB-backed preview verification. It then failed at the first Worker Custom Domain attach with Cloudflare HTTP 409.
+
+The pre-mutation artifact from that run proves the conflict source: both `mkety.com` and `www.mkety.com` still had two proxied A records pointing to `64.29.17.1` and `216.198.79.1`. Mail and verification records (MX/TXT/CAA) are unrelated and must be preserved.
+
+Branch `release/resolve-custom-domain-dns-conflict-2e871fe` removes only pre-existing A/AAAA origin records immediately before each Custom Domain attach, preserves all non-origin DNS records, includes `zone_name` in the attach request, surfaces Cloudflare API errors, and relies on the existing rollback snapshot to restore removed A/AAAA records if attachment or live acceptance fails. Launcher generation is `worker-custom-domains-v5`.
