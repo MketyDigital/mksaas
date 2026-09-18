@@ -781,7 +781,7 @@ jobs:
           headers="$(mktemp)"
           www_code="$(curl -sS -D "$headers" -o /dev/null -w '%{http_code}' 'https://www.mkety.com/')"
           [ "$www_code" = '308' ] || { echo "www canonical redirect expected 308, got $www_code"; false; }
-          grep -Eqi '^location: https://mkety\.com/?\r?$' "$headers" || { echo 'www 308 Location is not canonical apex.'; false; }
+          WWW_HEADERS="$headers" node -e "const fs=require('node:fs');const h=fs.readFileSync(process.env.WWW_HEADERS,'utf8');const m=h.match(/^location:\s*(.+)$/im);if(!m){console.error('www 308 response has no Location header.');process.exit(1)};const u=new URL(m[1].trim());if(u.protocol!=='https:'||u.hostname!=='mkety.com'||u.pathname!=='/'||u.search||u.hash){console.error('www 308 Location is not canonical apex: '+u.toString());process.exit(1)};console.log('www canonical redirect target: '+u.toString())"
 
           webhook_code="$(curl -sS -o /tmp/mkety-production-webhook.json -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' \
