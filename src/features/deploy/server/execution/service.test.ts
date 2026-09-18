@@ -155,9 +155,11 @@ describe('Deploy execution kernel', () => {
       adapter.deploy.mockImplementation(() => new Promise(() => undefined));
 
       const execution = executeDeployment(storage, adapter, context(), { timeoutMs: 100 });
-      await jest.advanceTimersByTimeAsync(100);
+      const rejection = expect(execution).rejects.toThrow('Deployment provider execution timed out.');
 
-      await expect(execution).rejects.toThrow('Deployment provider execution timed out.');
+      await jest.advanceTimersByTimeAsync(100);
+      await rejection;
+
       expect(storage.markFailed).toHaveBeenCalledWith('deployment-1', expect.any(Date));
     } finally {
       jest.useRealTimers();
