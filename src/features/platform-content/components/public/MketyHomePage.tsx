@@ -213,7 +213,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
             <div className="mb-3 flex items-center justify-between rounded-2xl border bg-background/80 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-                <span className="text-xs font-semibold uppercase tracking-[0.18em]">Mkety Console</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em]">Mkety Platform</span>
               </div>
               <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
                 Connected platform
@@ -227,10 +227,10 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
                 </div>
                 <p className="mt-3 text-xl font-bold">Build. Automate. Deploy. Operate.</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Platform capabilities become connected surfaces instead of disconnected tools.
+                  Build and manage connected digital work from one Mkety experience.
                 </p>
                 <div className="mt-8 grid grid-cols-2 gap-2">
-                  {['AI', 'Flow', 'Deploy', 'Solutions'].map((label) => (
+                  {['AI', 'Automation', 'Deploy', 'Solutions'].map((label) => (
                     <div key={label} className="rounded-2xl border bg-card p-3 text-xs font-semibold">
                       {label}
                     </div>
