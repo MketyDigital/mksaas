@@ -77,6 +77,12 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
     expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v7');
+    expect(workflow).toContain('CERT_BRANCH: certify/a250ce1');
+    expect(workflow).toContain('dispatch_certification');
+    expect(workflow).toContain("dispatch_certification 'mkety-content-db-smoke.yml'");
+    expect(workflow).toContain("dispatch_certification 'mkety-public-ai-runtime-diagnostic.yml'");
+    expect(workflow).toContain("dispatch_certification 'mkety-production-preflight.yml'");
+    expect(workflow).toContain("dispatch_certification 'mkety-public-candidate-deploy.yml'");
     expect(workflow).toContain('wait_for_workflow_success');
     expect(workflow).toContain("wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'");
     expect(workflow).toContain("wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'");
