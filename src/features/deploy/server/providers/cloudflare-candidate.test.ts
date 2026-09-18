@@ -1,12 +1,13 @@
 /** @jest-environment node */
 
+import type { DeploymentExecutionContext } from '@/features/deploy/server/execution/types';
+
 import {
-  createCloudflareCandidateAdapter,
-  deriveCloudflareCandidateWorkerName,
   type CloudflareCandidateArtifactSource,
   type CloudflareCandidateTransport,
+  createCloudflareCandidateAdapter,
+  deriveCloudflareCandidateWorkerName,
 } from './cloudflare-candidate';
-import type { DeploymentExecutionContext } from '@/features/deploy/server/execution/types';
 
 function context(
   environment: Partial<DeploymentExecutionContext['environment']> = {},
