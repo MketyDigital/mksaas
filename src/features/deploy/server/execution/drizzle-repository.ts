@@ -34,32 +34,43 @@ export const drizzleDeploymentExecutionRepository: DeploymentExecutionRepository
 
   markRunning(deploymentId, provider, startedAt) {
     return withRequestDatabase(async (db) => {
-      await db
+      const rows = await db
         .update(deployments)
         .set({ status: 'running', provider, startedAt })
-        .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'queued')));
+        .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'queued')))
+        .returning({ id: deployments.id });
+      return rows.length === 1;
     });
   },
 
   markCompleted(deploymentId, input) {
     return withRequestDatabase(async (db) => {
-      await db
+      const rows = await db
         .update(deployments)
         .set({
           status: 'completed',
           providerDeploymentRef: input.providerDeploymentRef ?? null,
           completedAt: input.completedAt,
         })
-        .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'running')));
+        .where(and(eq(deployments.id, deploymentId), eq(deployments.status, 'running')))
+        .returning({ id: deployments.id });
+      return rows.length === 1;
     });
   },
 
   markFailed(deploymentId, completedAt) {
     return withRequestDatabase(async (db) => {
-      await db
+      const rows = await db
         .update(deployments)
         .set({ status: 'failed', completedAt })
-        .where(eq(deployments.id, deploymentId));
+        .where(
+          and(
+            eq(deployments.id, deploymentId),
+            eq(deployments.status, 'running'),
+          ),
+        )
+        .returning({ id: deployments.id });
+      return rows.length === 1;
     });
   },
 };
