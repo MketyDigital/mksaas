@@ -21,15 +21,15 @@ const basePayload = {
 
 describe('NOWPayments Billing adapter', () => {
   it('creates a fixed-price Mkety invoice using the checkout identity', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      async json() {
+        return {
           id: 12345,
           invoice_url: 'https://nowpayments.io/payment/?iid=12345',
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    );
+        };
+      },
+    } as Response);
 
     const adapter = createNowPaymentsBillingAdapter({
       apiKey: 'test-api-key',
