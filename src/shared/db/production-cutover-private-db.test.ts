@@ -36,7 +36,17 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('needs: production-db');
     expect(workflow).toContain('runs-on: ubuntu-latest');
     expect(workflow).not.toContain('Migrate, seed, and smoke production content database');
-    expect(workflow).not.toContain('pnpm db:migrate\n');
+    expect(workflow).not.toContain('pnpm db:migrate\\n');
+
+    // Production promotion uses Cloudflare Worker Custom Domains, never apex/www Worker Routes.
+    expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
+    expect(workflow).toContain('Attach apex and www as Worker Custom Domains');
+    expect(workflow).toContain('for host in mkety.com www.mkety.com');
+    expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
+    expect(workflow).toContain('Verify unrelated Worker Routes remain unchanged');
+    expect(workflow).not.toContain('Bind only apex and www Worker routes');
+    expect(workflow).not.toContain("bind_pattern 'mkety.com/*'");
+    expect(workflow).not.toContain("bind_pattern 'www.mkety.com/*'");
   });
 
   it('pins candidate certification to the exact current public release SHA', async () => {
