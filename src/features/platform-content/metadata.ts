@@ -37,12 +37,26 @@ export function buildMketyMetadata({ settings, path, title, description }: Build
   const publicPath = normalizePublicPath(path);
   const canonical = new URL(publicPath, MKETY_PUBLIC_ORIGIN).toString();
   const socialImage = getSocialImage(settings);
+  const icon = settings.faviconUrl?.startsWith('https://')
+    ? settings.faviconUrl
+    : settings.logoUrl?.startsWith('https://')
+      ? settings.logoUrl
+      : undefined;
 
   return {
     metadataBase: new URL(MKETY_PUBLIC_ORIGIN),
     applicationName: 'Mkety',
     title: resolvedTitle,
     description: resolvedDescription,
+    ...(icon
+      ? {
+          icons: {
+            icon,
+            shortcut: icon,
+            apple: icon,
+          },
+        }
+      : {}),
     alternates: {
       canonical,
     },
