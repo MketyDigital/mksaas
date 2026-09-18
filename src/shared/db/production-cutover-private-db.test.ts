@@ -8,6 +8,10 @@ const CERTIFY_LAUNCHER_PATH = path.resolve(
   process.cwd(),
   '.github/workflows/mkety-certify-candidate-launcher.yml',
 );
+const CUTOVER_LAUNCHER_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-public-cutover-launcher.yml',
+);
 
 describe('production cutover private database gate', () => {
   it('authorizes the exact certified release before private DB mutation and route cutover', async () => {
@@ -48,5 +52,16 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain("dispatch 'mkety-public-ai-runtime-diagnostic.yml'");
     expect(workflow).toContain("dispatch 'mkety-production-preflight.yml'");
     expect(workflow).toContain("dispatch 'mkety-public-candidate-deploy.yml'");
+  });
+
+  it('dispatches the guarded production cutover for the exact certified SHA', async () => {
+    const workflow = await readFile(CUTOVER_LAUNCHER_PATH, 'utf8');
+
+    expect(workflow).toContain('VERIFIED_SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73');
+    expect(workflow).toContain('CONFIRMATION: CUTOVER MKETY PUBLIC');
+    expect(workflow).toContain('actions: write');
+    expect(workflow).toContain('mkety-public-production-cutover.yml');
+    expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
+    expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
   });
 });
