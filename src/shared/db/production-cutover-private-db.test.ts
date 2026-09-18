@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const WORKFLOW_PATH = path.resolve(process.cwd(), '.github/workflows/mkety-public-production-cutover.yml');
+const CERTIFY_LAUNCHER_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-certify-candidate-launcher.yml',
+);
 
 describe('production cutover private database gate', () => {
   it('authorizes the exact certified release before private DB mutation and route cutover', async () => {
@@ -33,5 +37,16 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('runs-on: ubuntu-latest');
     expect(workflow).not.toContain('Migrate, seed, and smoke production content database');
     expect(workflow).not.toContain('pnpm db:migrate\n');
+  });
+
+  it('pins candidate certification to the exact current public release SHA', async () => {
+    const workflow = await readFile(CERTIFY_LAUNCHER_PATH, 'utf8');
+
+    expect(workflow).toContain('CANDIDATE_SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73');
+    expect(workflow).toContain('CERT_BRANCH: certify/2e871fe');
+    expect(workflow).toContain("dispatch 'mkety-content-db-smoke.yml'");
+    expect(workflow).toContain("dispatch 'mkety-public-ai-runtime-diagnostic.yml'");
+    expect(workflow).toContain("dispatch 'mkety-production-preflight.yml'");
+    expect(workflow).toContain("dispatch 'mkety-public-candidate-deploy.yml'");
   });
 });
