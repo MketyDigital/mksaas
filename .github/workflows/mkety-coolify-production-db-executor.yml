@@ -109,14 +109,100 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
+          endpoint="$base/applications/$APP_UUID/envs"
+
           DB="$DATABASE_URL" node <<'NODE' >/tmp/db-env.json
-          process.stdout.write(JSON.stringify({key:'DATABASE_URL',value:process.env.DB,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          process.stdout.write(JSON.stringify({
+            key:'DATABASE_URL',
+            value:process.env.DB,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:true
+          }));
           NODE
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
-            --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 60 \
-            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
-            --data-binary @/tmp/db-env.json "$base/applications/$APP_UUID/envs")"
-          [ "$code" = '201' ] || { echo "Updating migration database secret failed with HTTP $code."; exit 3; }
+
+          list_database_env() {
+            curl --proto '=https' --tlsv1.2 -fsS \
+              --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 60 \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$endpoint" -o /tmp/env-list.json
+          }
+
+          database_env_exists() {
+            node <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/env-list.json', 'utf8'));
+          if (!Array.isArray(payload)) process.exit(2);
+          process.exit(payload.some((item) => item?.key === 'DATABASE_URL') ? 0 : 1);
+          NODE
+          }
+
+          update_database_env() {
+            local code
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
+              --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 60 \
+              -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/db-env.json "$endpoint")"
+            [ "$code" = '201' ] || {
+              echo "Updating existing migration database secret failed with HTTP $code."
+              return 1
+            }
+          }
+
+          create_database_env() {
+            local attempt code curl_status
+            for attempt in $(seq 1 5); do
+              echo "Create DATABASE_URL attempt $attempt/5."
+              set +e
+              code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
+                --connect-timeout 10 --max-time 60 \
+                -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+                --data-binary @/tmp/db-env.json "$endpoint")"
+              curl_status=$?
+              set -e
+
+              if [ "$curl_status" -eq 0 ] && [ "$code" = '201' ]; then
+                return 0
+              fi
+
+              # A POST response can be lost after Coolify commits the create. Re-read first;
+              # only replay the create if the key is still absent.
+              if list_database_env && database_env_exists; then
+                echo 'Database secret exists after uncertain create response; treating create as committed.'
+                return 0
+              fi
+
+              echo "DATABASE_URL create not confirmed (curl=$curl_status HTTP=${code:-000}); retrying after verification."
+              sleep 2
+            done
+            return 1
+          }
+
+          verify_database_env() {
+            list_database_env || return 1
+            if ! database_env_exists; then
+              echo 'DATABASE_URL was not present after Coolify environment upsert.'
+              return 1
+            fi
+            echo 'Verified DATABASE_URL exists on the ephemeral migration host.'
+          }
+
+          echo 'List current migration environment.'
+          list_database_env
+
+          if database_env_exists; then
+            echo 'DATABASE_URL already exists; updating it idempotently.'
+            update_database_env || exit 3
+          else
+            echo 'DATABASE_URL is absent; creating it with read-after-write recovery.'
+            create_database_env || {
+              echo 'Creating migration database secret could not be confirmed.'
+              exit 3
+            }
+          fi
+
+          verify_database_env || exit 3
 
       - name: Deploy exact SHA and verify migration success
         shell: bash
