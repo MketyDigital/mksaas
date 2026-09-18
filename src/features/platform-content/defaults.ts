@@ -53,7 +53,7 @@ export const defaultHeroSection: PlatformHeroSectionInput = {
   previewItems: [
     { label: 'AI', description: 'Agents, knowledge, tools, models, runs, versions, and publishing.' },
     { label: 'Automation', description: 'Triggers, workflows, actions, conditions, webhooks, and run history.' },
-    { label: 'Deploy', description: 'Apps, websites, APIs, domains, previews, production, and operations.' },
+    { label: 'Deploy', description: 'Applications, environments, release configuration, and deployment history.' },
     { label: 'SolutionHub', description: 'Ready-made solutions, templates, blueprints, and enterprise options.' },
   ],
 };
@@ -101,7 +101,7 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       key: 'deploy',
       title: 'Deploy Workspace',
       description:
-        'Publish websites, lightweight applications, APIs, portals, and serverless workloads with domains and deployment history.',
+        'Organize deployment-ready applications and environments, manage release configuration, and track deployment history.',
       href: '/app/deploy',
     },
     {
@@ -201,7 +201,7 @@ export const defaultTrustSection: PlatformTrustSectionInput = {
     {
       key: 'access',
       title: 'Secure access',
-      description: 'Account and workspace access is protected with server-side authorization controls.',
+      description: 'Account and workspace access is protected with secure permissions and organization-level access controls.',
     },
     {
       key: 'privacy',
@@ -262,11 +262,10 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     ctaLabel: 'Choose Deploy Workspace',
     ctaHref: '/signup',
     features: [
-      'Website and app deploys',
-      'API and portal deploys',
-      'Preview and production environments',
-      'Domains',
+      'Application and environment management',
+      'Release configuration',
       'Deployment history',
+      'Project-scoped deployment records',
     ],
   },
   {
@@ -442,7 +441,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Deploy Workspace',
     excerpt: 'Publish websites, lightweight apps, APIs, portals, and serverless workloads.',
     bodyMarkdown:
-      '# Deploy Workspace\n\nDeploy Workspace is for publishing websites, lightweight applications, APIs, portals, and serverless workloads with previews, production environments, domains, and deployment history.',
+      '# Deploy Workspace\n\nDeploy Workspace gives teams one place to organize applications and environments, manage release configuration, and review deployment history across Mkety projects.',
     sortOrder: 30,
   },
   {
