@@ -44,7 +44,7 @@ Reference `docs/superpowers/specs/2026-09-06-platform-baseline-sequencing-design
 
 - [ ] **Step 3: Review for contradiction**
 
-Verify the added section does not redefine Mkety Platform, Academy, Trading, mklms, or the protected legacy `mkety` repository rules.
+Verify the added section does not redefine Mkety Platform, Academy, Trading, customer applications, or the protected legacy `mkety` repository rules.
 
 - [ ] **Step 4: Commit**
 
