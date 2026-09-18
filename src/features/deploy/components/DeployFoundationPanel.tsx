@@ -1,4 +1,5 @@
 import { createDeployApplication, createDeployEnvironment } from '@/features/deploy/actions';
+import { createDeploymentRequest } from '@/features/deploy/request-actions';
 import type { DeployFoundationState } from '@/features/deploy/server/queries';
 
 interface DeployFoundationPanelProps {
@@ -16,6 +17,9 @@ export function DeployFoundationPanel({
 }: DeployFoundationPanelProps) {
   const applicationNameById = new Map(state.applications.map((application) => [application.id, application.name]));
   const environmentNameById = new Map(state.environments.map((environment) => [environment.id, environment.name]));
+  const requestableEnvironments = state.environments.filter(
+    (environment) => !environment.protected && environment.kind !== 'production',
+  );
 
   return (
     <div className="space-y-6">
@@ -74,6 +78,46 @@ export function DeployFoundationPanel({
             </button>
           </form>
         </div>
+      )}
+
+      {canManage && (
+        <form action={createDeploymentRequest} className="space-y-3 rounded-2xl border border-primary/20 bg-primary/[0.02] p-5">
+          <div>
+            <h3 className="font-semibold">Request non-production deployment</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Creates an auditable approval request only. Approval does not execute Cloudflare yet.
+            </p>
+          </div>
+          <input name="tenantSlug" type="hidden" value={tenantSlug} />
+          <input name="projectSlug" type="hidden" value={projectSlug} />
+          <div className="grid gap-3 md:grid-cols-3">
+            <select className="rounded-md border bg-background px-3 py-2 text-sm" name="environmentId" required>
+              <option value="">Choose non-production environment</option>
+              {requestableEnvironments.map((environment) => (
+                <option key={environment.id} value={environment.id}>
+                  {applicationNameById.get(environment.applicationId) ?? 'Application'} · {environment.name}
+                </option>
+              ))}
+            </select>
+            <input
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+              name="sourceRef"
+              placeholder="Source ref (optional)"
+            />
+            <input
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+              name="releaseRef"
+              placeholder="Release ref (optional)"
+            />
+          </div>
+          <button
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={requestableEnvironments.length === 0}
+            type="submit"
+          >
+            Request approval
+          </button>
+        </form>
       )}
 
       <section className="grid gap-4 lg:grid-cols-2" aria-label="Deploy foundation records">
