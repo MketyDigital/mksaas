@@ -1,3 +1,5 @@
+export {};
+
 /** @jest-environment node */
 
 const mockClient = Object.assign(jest.fn(), { end: jest.fn() });
