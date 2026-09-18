@@ -750,3 +750,12 @@ Entitlements #22 is being rebuilt from its entitlement-only delta on top of the 
 The reconstruction preserves deny-by-default semantics, plan-version grants, tenant deny/grant overrides, backend authorization enforcement, and workspace filtering. Runtime database reads are adapted to the current Cloudflare gateway. Migration ordering remains `0012` after the current `0011_billing_core_foundation`.
 
 After Entitlements verification/merge, continue to Usage/Credits #23.
+
+
+## Usage/Credits current-main reconstruction
+
+Usage/Credits #23 is being rebuilt from its feature-only delta on top of the merged Entitlements current main. Do not merge the historical stacked branch directly.
+
+The reconstruction preserves the separate product-credit ledger, idempotent/concurrency-safe mutations, Billing-derived recurring allowances, and workflow execution enforcement. Runtime database access is adapted to the current Cloudflare gateway. Migration ordering remains `0013` immediately after Entitlements `0012`.
+
+After Usage/Credits verification/merge, continue the remaining authenticated Platform roadmap; Wallet remains a separate later slice and must not become a second financial ledger.

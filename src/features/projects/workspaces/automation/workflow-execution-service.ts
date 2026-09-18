@@ -1,3 +1,6 @@
+import { requireEntitlement } from '@/features/entitlements/server/authorization';
+import { consumeCredits } from '@/features/usage-credits/server/service';
+
 import type { AutomationWorkflowDependencyReadiness } from './agent-dependency-readiness';
 import type { AutomationExecutionResult } from './internal-execution-kernel';
 
@@ -42,6 +45,20 @@ export async function executeAutomationWorkflowRun(input: ExecutionInput, depend
 
   try {
     if (input.onRunCreated) await input.onRunCreated(run.id);
+    await requireEntitlement({
+      tenantId: workflow.tenantId,
+      entitlement: 'workspace.workflows',
+    });
+    await consumeCredits({
+      tenantId: workflow.tenantId,
+      meter: 'workflow.execution',
+      quantity: 1n,
+      credits: 1n,
+      idempotencyKey: `workflow-run:${run.id}:execution`,
+      source: 'automation_workflow_run',
+      projectId: workflow.projectId,
+      workspaceKey: 'automation',
+    });
     await dependencies.updateRun(run.id, { status: 'running' }, workflow);
     const execution = await dependencies.executeDefinition({
       context: { tenantId: workflow.tenantId, projectId: workflow.projectId, workflowId: workflow.id, triggerType },

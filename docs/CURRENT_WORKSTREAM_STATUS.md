@@ -262,3 +262,25 @@ Current-main adaptation:
 - Entitlements database reads use `@/shared/db/cloudflare`, matching the production Worker runtime gateway.
 - Workspace query integration is applied on top of the current Cloudflare-aware Platform query file.
 - Usage/Credits remains out of scope and follows after Entitlements.
+
+
+## Usage/Credits #23 current-main reconstruction
+
+Historical draft PR #23 is stacked on the obsolete Entitlements branch. Its Usage/Credits-only delta is being reconstructed on `feat/usage-credits-current-main` from the merged Entitlements main.
+
+Preserved scope:
+- stable Usage/Credits meter keys and bigint credit domain;
+- plan-version recurring credit allowances;
+- tenant credit-account projection;
+- immutable usage events;
+- append-only credit ledger;
+- transactional/idempotent grants, usage recording and credit consumption;
+- concurrent debit protection;
+- recurring grants derived from Billing plan-version/current-period state;
+- workflow execution enforcement: require `workspace.workflows`, consume one `workflow.execution` credit, then execute;
+- migration `0013` and Drizzle metadata.
+
+Current-main adaptation:
+- Usage/Credits database reads/writes use `@/shared/db/cloudflare`, matching the production Worker runtime;
+- current schema exports are preserved while adding the four Usage/Credits schema modules;
+- no wallet, purchased packs, overage billing, provider-cost accounting or payment-provider coupling is introduced.
