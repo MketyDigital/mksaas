@@ -75,6 +75,7 @@ jobs:
         run: |
           set -o pipefail
           pnpm db:smoke:mkety-content 2>&1 | tee /tmp/mkety-content-db-smoke.log
+          pnpm db:smoke:billing-catalog 2>&1 | tee /tmp/mkety-billing-catalog-smoke.log
 
       - name: Upload content DB smoke diagnostics
         if: always()
