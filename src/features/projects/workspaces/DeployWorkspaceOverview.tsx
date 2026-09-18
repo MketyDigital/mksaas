@@ -26,35 +26,35 @@ export function buildDeployWorkspaceCapabilities(_options: BuildDeployWorkspaceC
     {
       key: 'environments',
       title: 'Environments',
-      description: 'Model development, preview, staging, and production environments before provider automation is enabled.',
+      description: 'Organize development, preview, staging, and production environments with clear release boundaries.',
       status: 'foundation',
       statusLabel: 'Foundation',
     },
     {
       key: 'deployments',
       title: 'Deployments',
-      description: 'Reserve deployment history, status, logs, rollback notes, and release metadata for future infrastructure runs.',
+      description: 'Review deployment history, status, release details, and recovery information in one place.',
       status: 'foundation',
       statusLabel: 'Foundation',
     },
     {
       key: 'domains',
       title: 'Domains',
-      description: 'Prepare domain mapping for mkety.app previews, custom domains, DNS checks, SSL state, and ownership verification.',
+      description: 'Connect Mkety-managed and custom domains with verification and security status.',
       status: 'protected',
       statusLabel: 'Protected',
     },
     {
       key: 'previews',
       title: 'Previews',
-      description: 'Expose preview-deployment planning without provisioning public preview URLs until routing rules are implemented.',
+      description: 'Prepare isolated preview releases before promoting changes to production.',
       status: 'planned',
       statusLabel: 'Planned',
     },
     {
       key: 'production',
       title: 'Production',
-      description: 'Keep production release controls protected until approvals, audit logs, provider credentials, and rollback safety exist.',
+      description: 'Production releases remain protected until the required approval and recovery controls are available.',
       status: 'protected',
       statusLabel: 'Protected',
     },
@@ -73,8 +73,7 @@ export function DeployWorkspaceOverview({ projectSlug, tenantSlug }: BuildDeploy
             Prepare apps, environments, and releases safely
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            This overview exposes the Mkety deployment product surface while keeping Cloudflare, OCI, DNS, preview routing,
-            production releases, and provider automation behind planned or protected states.
+            Organize applications, environments, release history, previews, domains, and production controls from one Mkety workspace.
           </p>
         </div>
         <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">Infrastructure protected</span>
@@ -93,7 +92,7 @@ export function DeployWorkspaceOverview({ projectSlug, tenantSlug }: BuildDeploy
       </div>
 
       <p className="mt-5 text-xs leading-5 text-muted-foreground">
-        App, environment, and deployment-history records provide the Deploy data foundation. A provider-neutral execution kernel now exists internally for bounded non-production lifecycle handling, but no real provider adapter or customer-facing deploy action is enabled. Provider credentials, production approvals, domain ownership, audit controls, and rollback must exist before real infrastructure changes can run.
+        Deploy is being enabled progressively. Available controls are shown directly in the workspace, while protected release actions stay unavailable until they meet Mkety’s production-safety requirements.
       </p>
     </section>
   );
