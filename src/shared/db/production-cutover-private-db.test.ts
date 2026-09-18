@@ -12,9 +12,13 @@ const CUTOVER_LAUNCHER_PATH = path.resolve(
   process.cwd(),
   '.github/workflows/mkety-public-cutover-launcher.yml',
 );
+const PRIVATE_DB_EXECUTOR_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-coolify-production-db-executor.yml',
+);
 
 describe('production cutover private database gate', () => {
-  it('authorizes the exact certified release before private DB mutation and route cutover', async () => {
+  it('authorizes the exact certified release before private DB mutation and Custom Domain cutover', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
     expect(workflow).toContain('authorize:');
@@ -41,6 +45,15 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('runs-on: ubuntu-latest');
     expect(workflow).not.toContain('Migrate, seed, and smoke production content database');
     expect(workflow).not.toContain('pnpm db:migrate\n');
+
+    expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
+    expect(workflow).toContain('Attach apex and www as Worker Custom Domains');
+    expect(workflow).toContain('for host in mkety.com www.mkety.com');
+    expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
+    expect(workflow).toContain('Verify unrelated Worker Routes remain unchanged');
+    expect(workflow).not.toContain('Bind only apex and www Worker routes');
+    expect(workflow).not.toContain("bind_pattern 'mkety.com/*'");
+    expect(workflow).not.toContain("bind_pattern 'www.mkety.com/*'");
   });
 
   it('pins candidate certification to the exact current public release SHA', async () => {
@@ -63,5 +76,16 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('mkety-public-production-cutover.yml');
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
+    expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v1');
+  });
+
+  it('updates the Coolify migration secret idempotently and retries transient transport failures', async () => {
+    const workflow = await readFile(PRIVATE_DB_EXECUTOR_PATH, 'utf8');
+
+    expect(workflow).toContain('-X PATCH');
+    expect(workflow).toContain('--retry 4');
+    expect(workflow).toContain('--retry-all-errors');
+    expect(workflow).toContain('--retry-delay 2');
+    expect(workflow).toContain('$base/applications/$APP_UUID/envs');
   });
 });
