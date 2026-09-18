@@ -27,14 +27,69 @@ function context(overrides: Partial<DeploymentExecutionContext['environment']> =
     sourceRef: 'main',
     requestedByUserId: 'user-1',
   };
-}
+
+  it('fails closed before provider execution when queued -> running does not transition', async () => {
+    const storage = repository();
+    const adapter = provider();
+    storage.markRunning.mockResolvedValue(false);
+
+    await expect(executeDeployment(storage, adapter, context())).rejects.toThrow(
+      'Deployment lifecycle could not enter running state.',
+    );
+
+    expect(adapter.deploy).not.toHaveBeenCalled();
+    expect(storage.markCompleted).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when running -> completed does not transition', async () => {
+    const storage = repository();
+    const adapter = provider();
+    storage.markCompleted.mockResolvedValue(false);
+
+    await expect(executeDeployment(storage, adapter, context())).rejects.toThrow(
+      'Deployment lifecycle could not enter completed state.',
+    );
+
+    expect(storage.markFailed).toHaveBeenCalledWith('deployment-1', expect.any(Date));
+  });
+
+  it('bounds provider execution duration and sanitizes timeout failure', async () => {
+    jest.useFakeTimers();
+    try {
+      const storage = repository();
+      const adapter = provider();
+      adapter.deploy.mockImplementation(() => new Promise(() => undefined));
+
+      const execution = executeDeployment(storage, adapter, context(), { timeoutMs: 100 });
+      await jest.advanceTimersByTimeAsync(100);
+
+      await expect(execution).rejects.toThrow('Deployment provider execution timed out.');
+      expect(storage.markFailed).toHaveBeenCalledWith('deployment-1', expect.any(Date));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('rejects invalid provider timeout before creating a deployment record', async () => {
+    const storage = repository();
+    const adapter = provider();
+
+    await expect(
+      executeDeployment(storage, adapter, context(), { timeoutMs: 0 }),
+    ).rejects.toThrow('Deployment provider timeout must be a positive finite number.');
+
+    expect(storage.createQueued).not.toHaveBeenCalled();
+    expect(adapter.deploy).not.toHaveBeenCalled();
+  });
+
+});
 
 function repository(): jest.Mocked<DeploymentExecutionRepository> {
   return {
     createQueued: jest.fn().mockResolvedValue({ id: 'deployment-1' }),
-    markRunning: jest.fn().mockResolvedValue(undefined),
-    markCompleted: jest.fn().mockResolvedValue(undefined),
-    markFailed: jest.fn().mockResolvedValue(undefined),
+    markRunning: jest.fn().mockResolvedValue(true),
+    markCompleted: jest.fn().mockResolvedValue(true),
+    markFailed: jest.fn().mockResolvedValue(true),
   };
 }
 
