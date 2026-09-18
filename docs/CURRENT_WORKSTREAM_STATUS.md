@@ -2,7 +2,7 @@
 
 **Updated:** 2026-09-18  
 **Current workstream:** Public-site production cutover through Cloudflare Worker Custom Domains  
-**Status:** IN PROGRESS — certified candidate green; first cutover attempt stopped before hostname mutation; reconciliation PR #62 under verification  
+**Status:** IN PROGRESS — certified candidate green; first cutover attempt stopped before hostname mutation; reconciliation PR #62 ready for exact-head verification  
 **Branch:** `release/custom-domain-cutover-reconcile-2e871fe`  
 **Pull request:** #62
 
@@ -127,7 +127,7 @@ Implementation commits currently include:
 - `1f071cd0330b6cbef27b10a7bdbc3b31073aaad4` — remove the stale alternate promoter;
 - `f6feb2c64460f331e563b4fe890914ecf6e78bfa` — update the production cutover runbook for Custom Domains.
 
-The Coolify environment update now uses bounded retries with `--retry 4 --retry-all-errors --retry-delay 2`, plus connect/overall timeouts, while retaining exact-SHA/private-DB guards.
+The Coolify environment update now uses bounded retries with `--retry 4 --retry-all-errors --retry-delay 2`, plus connect/overall timeouts, while retaining exact-SHA/private-DB guards. This matches the current Coolify Update Env contract (`PATCH /applications/{uuid}/envs`). The Custom Domain implementation matches Cloudflare's Worker Domains attach contract (`PUT /accounts/{account_id}/workers/domains`) and keeps apex/www Worker Routes absent.
 
 ## Production/environment/DB state
 
