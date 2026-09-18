@@ -890,3 +890,54 @@ Deployments/Cloud foundation PR #75 implementation head `ed3fdd853e606a66874bb2e
 Migration `0014_deploy_foundation.sql`, its journal entry, and `0014_snapshot.json` passed the repository migration baseline and `drizzle-kit check`.
 
 No deployment provider, DNS, custom-domain, public URL, credential, production execution, or rollback mutation is enabled by this slice. The next Deployments/Cloud batch must introduce provider execution only behind an explicit provider boundary, approvals/audit, bounded failure handling, and rollback design.
+
+
+## Deploy provider-neutral execution kernel
+
+After Deploy foundation PR #75 merged as `41b0d40d75c7889da4d6aaa522714b141dbc69b0`, the next bounded Deployments/Cloud slice is the internal execution kernel.
+
+Branch `feat/deploy-execution-kernel` adds:
+- provider-neutral deployment adapter and repository contracts;
+- queued -> running -> completed/failed lifecycle orchestration;
+- request-scoped Drizzle lifecycle persistence through the existing `deployments` table;
+- hard rejection of protected or production environments before persistence/provider execution;
+- sanitized provider failures with no raw provider error leakage;
+- focused tests using an injected fake provider.
+
+No real Cloudflare/OCI/Coolify adapter is registered. No customer-facing deploy action, provider credential, DNS/custom-domain mutation, public URL provisioning, production execution, or rollback execution is introduced.
+
+Next after this kernel verifies/merges: implement one isolated non-production provider adapter/candidate environment with explicit credential boundaries and real external verification before exposing a customer deployment control.
+
+
+## Deploy execution kernel pre-merge hardening
+
+Focused review added two fail-closed guarantees before any real provider adapter can be introduced:
+
+- deployment lifecycle transitions are verified atomically; provider execution does not proceed if `queued -> running` fails, and completion fails closed if `running -> completed` cannot be recorded;
+- provider execution is bounded by a default 60-second timeout, with invalid timeout configuration rejected before a deployment record is created.
+
+Provider failures and timeouts remain sanitized, protected/production environments remain non-executable, and no real Cloudflare/OCI/Coolify/DNS mutation is enabled.
+
+
+## Deploy execution kernel exact verification evidence
+
+Deploy provider-neutral execution kernel PR #76 hardened implementation head `72071d1e67fb7e658b2425eea989b55da3b4320e` passed:
+
+- Typecheck `35368192278`;
+- full tests/coverage `35368192320`;
+- Lint `35368192308`;
+- Platform Core Workspaces Smoke `35368192159`;
+- Build `35368192344`;
+- Cloudflare Vinext Smoke `35368192427`;
+- CI `35368192142`;
+- Pull Request Validation `35368192199`;
+- MegaLinter `35368192327`;
+- CodeQL / PR-level validation `35368187791`.
+
+Pre-merge hardening verified:
+- `queued -> running` and `running -> completed` transitions must persist successfully or execution fails closed;
+- provider execution is bounded by a default 60-second timeout;
+- invalid timeout configuration is rejected before persistence/provider execution;
+- provider failures/timeouts are sanitized;
+- protected and production environments remain non-executable;
+- no real provider adapter, credential, DNS/custom-domain mutation, public URL provisioning, or production deployment action is included.
