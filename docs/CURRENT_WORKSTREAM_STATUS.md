@@ -531,3 +531,33 @@ Branch `feat/deploy-approval-boundary` adds:
 - pending approval queue inside the existing Deployments & Domains Platform Control module.
 
 Approval is deliberately audit-only. Neither request nor review actions call the execution kernel, Cloudflare adapter, DNS/custom domains, production deployment, provider credentials, or rollback. The next execution-facing slice requires a trusted project artifact pipeline and an exact approved-request-to-execution handoff.
+
+
+## Deploy approval boundary exact verification evidence
+
+Deploy request/approval PR #78 implementation head `19307c44a33908f4abe654b371ad591a3c3756fa` passed:
+
+- Migration Baseline / Drizzle consistency `35383931595`;
+- Content DB migrate/seed/smoke `35383931578`;
+- Platform Core Workspaces Smoke `35383931562`;
+- Typecheck `35383931630`;
+- Lint `35383931511`;
+- Build `35383931590`;
+- Cloudflare Vinext Smoke `35383931598`;
+- full tests/coverage `35383931707`;
+- CI `35383931588`;
+- Pull Request Validation `35383931658`;
+- MegaLinter `35383931527`;
+- CodeQL / PR-level validation `35383927635`.
+
+Migration `0015_deployment_requests.sql`, its journal entry and `0015_snapshot.json` passed `drizzle-kit check` and were applied successfully by Content DB smoke.
+
+Safety boundary verified:
+- only project admin/manager can create requests;
+- protected/production environments are rejected before request persistence;
+- approval/rejection requires `platform:deployments`;
+- only pending requests can transition;
+- requester/reviewer identities, refs, notes and timestamps remain auditable;
+- approval does not call `executeDeployment`, the Cloudflare adapter, DNS/custom domains, provider credentials, production execution or rollback.
+
+Next Deployments/Cloud work must establish a trusted project artifact pipeline and exact approved-request-to-execution binding before any approved request can invoke the provider.
