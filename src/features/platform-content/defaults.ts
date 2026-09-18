@@ -89,20 +89,20 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       title: 'AI Workspace',
       description:
         'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
-      href: '/app/ai',
+      href: '/app',
     },
     {
       key: 'automation',
       title: 'Automation Workspace',
       description: 'Create workflows from triggers, actions, conditions, webhooks, transformations, and agent steps.',
-      href: '/app/automation',
+      href: '/app',
     },
     {
       key: 'deploy',
       title: 'Deploy Workspace',
       description:
         'Organize deployment-ready applications and environments, manage release configuration, and track deployment history.',
-      href: '/app/deploy',
+      href: '/app',
     },
     {
       key: 'trading',
