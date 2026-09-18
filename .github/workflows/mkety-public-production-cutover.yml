@@ -15,6 +15,7 @@ on:
 permissions:
   actions: read
   contents: read
+  statuses: write
 
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
@@ -856,3 +857,48 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Mkety public production SHA: $VERIFIED_SHA"
           echo 'Production cutover acceptance complete with rollback evidence persisted.'
+
+
+  report:
+    name: Publish production cutover result
+    if: always()
+    needs:
+      - authorize
+      - production-db
+      - cutover
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+      contents: read
+    steps:
+      - name: Publish exact release status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
+          AUTHORIZE_RESULT: ${{ needs.authorize.result }}
+          DB_RESULT: ${{ needs.production-db.result }}
+          CUTOVER_RESULT: ${{ needs.cutover.result }}
+        run: |
+          set -euo pipefail
+          state='failure'
+          description="authorize=$AUTHORIZE_RESULT db=$DB_RESULT cutover=$CUTOVER_RESULT"
+          if [[ "$AUTHORIZE_RESULT" == 'success' && "$DB_RESULT" == 'success' && "$CUTOVER_RESULT" == 'success' ]]; then
+            state='success'
+            description='Production DB migration and Mkety public cutover completed successfully.'
+          fi
+
+          STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/production-status.json
+          process.stdout.write(JSON.stringify({
+            state: process.env.STATE,
+            context: 'mkety/production-cutover',
+            description: String(process.env.DESCRIPTION || '').slice(0, 140),
+          }));
+          NODE
+
+          curl -fsS             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28'             -H 'Content-Type: application/json'             --data @/tmp/production-status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$VERIFIED_SHA" >/dev/null
+
+          if [[ "$state" != 'success' ]]; then
+            echo "Production cutover did not complete successfully: $description"
+            exit 1
+          fi
