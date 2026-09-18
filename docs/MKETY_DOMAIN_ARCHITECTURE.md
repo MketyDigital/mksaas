@@ -81,5 +81,5 @@ The UI may show status, verification state, and operational controls. The underl
 - Do not introduce extra domains casually.
 - Do not put customer deployments under `mkety.com` or `app.mkety.com`.
 - Do not treat `origin.mkety.com` as a customer-facing route.
-- Do not make Trading, Academy, mklms, or enterprise products depend directly on raw ZITADEL claims when the Auth Gateway contract is implemented.
+- Do not make Trading, Academy, customer applications, or enterprise products depend directly on raw ZITADEL claims when the Auth Gateway contract is implemented.
 - Keep Cloudflare + OCI as the target production architecture.
