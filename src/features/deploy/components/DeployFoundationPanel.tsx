@@ -156,6 +156,25 @@ export function DeployFoundationPanel({
         </div>
       </section>
 
+      <section className="rounded-2xl border bg-card p-5" aria-labelledby="deployment-requests-heading">
+        <div>
+          <h3 className="font-semibold" id="deployment-requests-heading">Deployment requests</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Approval status only. Approved requests still do not execute a provider in this slice.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          {state.deploymentRequests.length ? state.deploymentRequests.map((request) => (
+            <div className="grid gap-2 rounded-xl border bg-background p-3 text-sm md:grid-cols-4" key={request.id}>
+              <span>{applicationNameById.get(request.applicationId) ?? 'Application'}</span>
+              <span>{environmentNameById.get(request.environmentId) ?? 'Environment'}</span>
+              <span className="capitalize">{request.status}</span>
+              <span className="text-muted-foreground">{request.releaseRef ?? request.sourceRef ?? 'No reference supplied'}</span>
+            </div>
+          )) : <p className="text-sm text-muted-foreground">No deployment approval requests have been recorded.</p>}
+        </div>
+      </section>
+
       <section className="rounded-2xl border bg-card p-5" aria-labelledby="deployment-history-heading">
         <div>
           <h3 className="font-semibold" id="deployment-history-heading">Deployment history</h3>
