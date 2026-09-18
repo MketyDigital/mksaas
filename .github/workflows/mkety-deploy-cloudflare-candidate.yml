@@ -1,0 +1,86 @@
+name: Mkety Deploy Cloudflare Candidate
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/deploy/server/providers/cloudflare-candidate.ts'
+      - 'src/features/deploy/server/providers/cloudflare-candidate-api.ts'
+      - 'src/features/deploy/server/providers/cloudflare-candidate.test.ts'
+      - 'src/features/deploy/server/providers/cloudflare-candidate-api.test.ts'
+      - 'scripts/verify-cloudflare-deploy-candidate.ts'
+      - '.github/workflows/mkety-deploy-cloudflare-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-deploy-cloudflare-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-candidate:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID_VAR: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require isolated candidate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID_VAR:-}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID_VAR" >> "$GITHUB_ENV"
+            export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_VAR"
+          fi
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required Cloudflare candidate credential: $name"
+              exit 1
+            fi
+          done
+
+      - name: Verify candidate adapter contracts
+        run: >-
+          pnpm test --
+          src/features/deploy/server/providers/cloudflare-candidate.test.ts
+          src/features/deploy/server/providers/cloudflare-candidate-api.test.ts
+
+      - name: Deploy, smoke and remove isolated workers.dev candidate
+        id: verify
+        run: pnpm exec tsx scripts/verify-cloudflare-deploy-candidate.ts
+
+      - name: Verify isolated candidate cleanup
+        if: always() && steps.verify.outputs.candidate_name != ''
+        shell: bash
+        env:
+          CANDIDATE_NAME: ${{ steps.verify.outputs.candidate_name }}
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$CANDIDATE_NAME"
+          curl --silent --show-error             -X DELETE             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Accept: application/json'             "$base" >/tmp/mkety-deploy-candidate-delete.json || true
+
+          status="$(curl --silent --show-error             --output /tmp/mkety-deploy-candidate-get.json             --write-out '%{http_code}'             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Accept: application/json'             "$base" || true)"
+
+          if [ "$status" != '404' ]; then
+            echo "::error::Isolated Deploy candidate still exists after cleanup (HTTP $status)."
+            exit 1
+          fi
+
+          echo "Verified isolated Deploy candidate cleanup."
