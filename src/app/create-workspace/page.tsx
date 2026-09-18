@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
 import { auth } from '@/shared/lib/auth';
 
 export const metadata = {
@@ -8,7 +9,13 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function CreateWorkspacePage() {
+interface CreateWorkspacePageProps {
+  searchParams: Promise<{ plan?: string }>;
+}
+
+export default async function CreateWorkspacePage({ searchParams }: CreateWorkspacePageProps) {
+  const query = await searchParams;
+  const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
   const session = await auth();
 
   if (!session?.user) {
@@ -22,7 +29,7 @@ export default async function CreateWorkspacePage() {
             Sign in first, then create the organization where your projects and Mkety Workspaces will live.
           </p>
           <Link
-            href="/login"
+            href={planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login'}
             className="mt-7 inline-flex rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"
           >
             Continue to sign in
@@ -44,6 +51,7 @@ export default async function CreateWorkspacePage() {
         </p>
 
         <form action="/api/workspaces" method="post" className="mt-7 space-y-5">
+          {planKey ? <input type="hidden" name="plan" value={planKey} /> : null}
           <label className="block text-sm font-medium">
             Workspace name
             <input
