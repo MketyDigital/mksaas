@@ -24,7 +24,7 @@ Production cutover is blocked until all of the following are true:
 12. Public AI correctly states the canonical public commercial matrix and Academy/Trading domains, does not present removed plans, and refuses private repository/source disclosure.
 13. NOWPayments production credentials are configured and safely verified; hosted checkout providers such as Selar are optional and are governed by the admin/payment-provider catalog.
 14. Enterprise checkout remains non-entitling/non-provisioning until verified provider confirmation.
-15. Read-only production preflight records current `mkety.com`/`www.mkety.com` DNS, Worker Custom Domain, and Worker Route state and preserves unrelated routes, especially `learn.starpipsforex.com/* -> mklms`.
+15. Read-only production preflight records current `mkety.com`/`www.mkety.com` DNS, Worker Custom Domain, and Worker Route state and preserves unrelated routes, including unrelated legacy learning routes.
 16. `mkety.com/*` and `www.mkety.com/*` Worker Routes are absent; apex/www production promotion uses Worker Custom Domains only.
 17. No production DNS/domain mutation is performed from an unverified commit.
 
@@ -88,7 +88,7 @@ Before mutation, record:
 - existing Worker route patterns/scripts, which must remain unchanged;
 - current public response behavior;
 - candidate Worker URL and exact candidate SHA;
-- unrelated route evidence including `learn.starpipsforex.com/* -> mklms`.
+- unrelated route evidence including unrelated legacy learning routes.
 
 Do not log Cloudflare tokens, database URLs, AI credentials, payment credentials, cookie signing secrets, or authorization headers.
 
@@ -103,7 +103,7 @@ Do not log Cloudflare tokens, database URLs, AI credentials, payment credentials
 7. Attach `mkety.com` and `www.mkety.com` to the verified production Worker through Cloudflare Worker Custom Domains.
 8. Do not create or update apex/www Worker Routes; verify the complete Worker Route set remains unchanged before and after attachment.
 9. Verify `www.mkety.com` redirects canonically to `https://mkety.com` through the application behavior.
-10. Preserve `app.mkety.com`, `api.mkety.com`, `origin.mkety.com`, `academy.mkety.com`, `trade.mkety.com`, `*.mkety.app`, `learn.starpipsforex.com/* -> mklms`, and unrelated DNS/Worker resources.
+10. Preserve `app.mkety.com`, `api.mkety.com`, `origin.mkety.com`, `academy.mkety.com`, `trade.mkety.com`, `*.mkety.app`, unrelated legacy learning routes, and unrelated DNS/Worker resources.
 11. Verify SSL/public HTTP behavior and run the production acceptance matrix.
 
 ## Production acceptance matrix
