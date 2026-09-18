@@ -14,9 +14,13 @@ on:
       - 'scripts/migrate-mkety-platform-content.ts'
       - 'scripts/seed-mkety-platform-content.ts'
       - 'scripts/smoke-mkety-platform-content.ts'
+      - 'scripts/seed-mkety-billing-catalog.ts'
+      - 'scripts/smoke-mkety-billing-catalog.ts'
       - 'src/features/platform-content/**'
       - 'src/features/platform-app-experience/**'
       - 'src/features/enterprise-checkout/**'
+      - 'src/features/billing/**'
+      - 'src/features/entitlements/**'
       - 'src/shared/db/schema/platform-content.ts'
       - 'src/shared/db/schema/platform-app-experience.ts'
       - 'src/shared/db/schema/platform-enterprise-orders.ts'
@@ -70,6 +74,9 @@ jobs:
       - name: Seed Mkety CMS content
         run: pnpm db:seed:mkety-content
 
+      - name: Seed Mkety Billing catalog
+        run: pnpm db:seed:billing-catalog
+
       - name: Smoke-test Mkety CMS content
         shell: bash
         run: |
@@ -84,4 +91,6 @@ jobs:
           name: mkety-content-db-smoke-${{ github.sha }}
           if-no-files-found: warn
           retention-days: 7
-          path: /tmp/mkety-content-db-smoke.log
+          path: |
+            /tmp/mkety-content-db-smoke.log
+            /tmp/mkety-billing-catalog-smoke.log
