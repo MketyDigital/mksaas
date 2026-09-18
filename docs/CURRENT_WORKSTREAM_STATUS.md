@@ -64,7 +64,7 @@ Exact-candidate certification workflows are green:
 - Mkety Production Routing Preflight: `35300897695`;
 - Mkety Public Candidate Deploy: `35300898914`.
 
-PR #59 final-head MegaLinter attempt 1 was cancelled during image pull after the PR had already been merged by another agent. That exact final-head workflow was explicitly rerun as attempt 2; the certified application itself already has an independent successful MegaLinter run `35293332877`.
+PR #59 final-head MegaLinter attempt 1 was cancelled during image pull after the PR had already been merged by another agent. The exact same workflow run `35300668324` was rerun as attempt 2 and completed **successfully** on final head `20a30478a306d9be29aa8200360e076fb86bd7a9`. The certified application itself also has independent successful MegaLinter run `35293332877`.
 
 ## Cutover binding decision
 
@@ -125,7 +125,8 @@ It replaces route binding with guarded Custom Domain attachment while retaining 
 Follow-up cleanup:
 
 - `a0eff5f2724c8fe4b4459792e6b30d69c6c7e1aa`: clarifies the regression wording without changing the release contract;
-- `a8a654983270488f720189b4c5632d36b8a65f14`: removes the stale alternate production promoter.
+- `a8a654983270488f720189b4c5632d36b8a65f14`: removes the stale alternate production promoter;
+- `17e1e16bebd32cd659638b0a271db97421f8777c`: updates the production cutover runbook to require Worker Custom Domains.
 
 ## Production/environment/DB changes
 
