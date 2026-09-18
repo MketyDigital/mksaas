@@ -182,7 +182,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
     <MketyPublicShell settings={settings} navigation={navigation} footerGroups={footerGroups}>
       <section className="relative overflow-hidden border-b bg-gradient-to-b from-primary/[0.12] via-background to-background">
         <div className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[36rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
-        <div className="container relative mx-auto grid gap-12 px-4 py-16 lg:grid-cols-[1fr_1fr] lg:py-24">
+        <div className="container relative mx-auto grid min-w-0 gap-12 px-4 py-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:py-24">
           <div className="flex flex-col justify-center">
             <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border bg-background/80 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
               <Shield className="h-4 w-4" />
@@ -206,14 +206,14 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-2xl rounded-[2rem] border border-primary/20 bg-card/70 p-3 shadow-[0_32px_100px_-36px_hsl(var(--primary)/0.5)] backdrop-blur-xl">
+          <div className="relative mx-auto min-w-0 w-full max-w-2xl rounded-[2rem] border border-primary/20 bg-card/70 p-3 shadow-[0_32px_100px_-36px_hsl(var(--primary)/0.5)] backdrop-blur-xl">
             <div className="mb-3 flex items-center justify-between rounded-2xl border bg-background/80 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-primary" />
                 <span className="text-xs font-semibold uppercase tracking-[0.18em]">Mkety Console</span>
               </div>
               <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
-                Public preview
+                Connected platform
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr]">
@@ -252,7 +252,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
                 {hero.previewItems.slice(2, 4).map((item) => (
                   <div key={item.label} className="rounded-2xl border bg-background/70 px-4 py-3">
                     <p className="text-xs font-semibold">{item.label}</p>
-                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.description}</p>
+                    <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{item.description}</p>
                   </div>
                 ))}
               </div>
@@ -327,7 +327,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">
               Plans, Pricing, Credits, Usage
             </p>
-            <h2 className="mt-3 text-3xl font-bold md:text-4xl">Clear plans with controlled entitlements.</h2>
+            <h2 className="mt-3 text-3xl font-bold md:text-4xl">Plans that match how you want to build.</h2>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             {pricingPlans.map((plan) => (
