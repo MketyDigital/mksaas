@@ -1,26 +1,26 @@
 # Mkety Current Workstream Status
 
 **Updated:** 2026-09-18  
-**Current workstream:** Public-site certified production cutover  
-**Status:** IN PROGRESS  
-**Branch:** `release/cutover-public-2e871fe`  
-**Pull request:** #60
+**Current workstream:** Public-site production cutover through Cloudflare Worker Custom Domains  
+**Status:** IN PROGRESS — certified candidate green; first cutover attempt stopped before hostname mutation; reconciliation PR #62 ready for exact-head verification  
+**Branch:** `release/custom-domain-cutover-reconcile-2e871fe`  
+**Pull request:** #62
 
 ## Requested outcome
 
-Finish the `mkety.com` public site, cut over the exact certified release safely, then move immediately into authenticated `app.mkety.com` development.
+Finish the `mkety.com` public site, promote the exact certified release using Cloudflare Worker Custom Domains, verify production acceptance and rollback evidence, then move immediately into authenticated `app.mkety.com` development.
 
 ```text
 public runtime healthy
 → exact release certified
-→ production cutover
-→ verify live acceptance
+→ guarded Custom Domain cutover
+→ verify live acceptance + rollback evidence
 → app.mkety.com development
 ```
 
 ## Certified public release
 
-Exact certified SHA:
+Exact certified application SHA:
 
 `2e871fe5ba51585886713c2cb79544e68dc20b73`
 
@@ -32,136 +32,135 @@ Production release branch:
 
 `feat/mkety-public-site-production`
 
-The production release branch has been fast-forwarded without force to the exact certified SHA.
+The production release branch has been verified identical to the exact certified SHA.
 
-## Runtime evidence
+Production deep diagnostic run `35293332821` is green on that SHA and confirmed HTTP 200 for `/robots.txt`, `/sitemap.xml`, `/api/runtime-db-diagnostic`, `/api/health`, `/platform`, and `/api/public/assistant`, with the full Cloudflare/Hyperdrive DB ladder green through `singleton-database`.
 
-Production deep diagnostic run `35293332821` on exact SHA `2e871fe5ba51585886713c2cb79544e68dc20b73` is green.
+## Exact-SHA certification evidence
 
-Verified HTTP 200:
+Quality gates on exact SHA `2e871fe5...` are green:
 
-- `/robots.txt`;
-- `/sitemap.xml`;
-- `/api/runtime-db-diagnostic`;
-- `/api/health`;
-- `/platform`;
-- `/api/public/assistant`.
+- tests: `35293332938`;
+- type-check: `35293332928`;
+- lint: `35293332824`;
+- build: `35293332926`;
+- CI: `35293332854`;
+- Cloudflare/Vinext smoke: `35293332872`;
+- MegaLinter: `35293332877`;
+- production Hyperdrive deep diagnostic: `35293332821`.
 
-Verified DB ladder:
+PR #59 merged as `f05df19d88777bb792f435b2e1630b65591edf2c`. Candidate launcher run `35300887227` succeeded.
 
-- `cloudflare-binding`;
-- `explicit-cloudflare-resolver`;
-- `request-database`;
-- `singleton-database`.
+All four exact-candidate certification workflows are green:
 
-## Exact-SHA quality gates
+- Mkety Content DB Smoke: `35300895213`;
+- Mkety Public AI Runtime Diagnostic: `35300896504`;
+- Mkety Production Routing Preflight: `35300897695`;
+- Mkety Public Candidate Deploy: `35300898914`.
 
-All required quality workflows are green on exact candidate SHA `2e871fe5ba51585886713c2cb79544e68dc20b73`:
+PR #59 final-head MegaLinter run `35300668324` was explicitly rerun after an initial cancellation and succeeded on attempt 2.
 
-- Run tests: run `35293332938`;
-- Typecheck: run `35293332928`;
-- Lint: run `35293332824`;
-- Build: run `35293332926`;
-- combined CI: run `35293332854`;
-- Cloudflare/Vinext smoke: run `35293332872`.
+## First production cutover attempt: stopped before public binding
 
-## Exact-SHA certification gates
+Concurrent PR #60 merged as:
 
-PR #59 updated the existing candidate certification launcher and merged as `f05df19d88777bb792f435b2e1630b65591edf2c`.
+`b10f3c49827b8fd1d591b0fcd8b26fdea2574f87`
 
-The launcher verified `certify/2e871fe` is pinned to the exact candidate and dispatched all four blocking workflows.
+Its cutover launcher run `35301780726` succeeded and dispatched production cutover run:
 
-All four are green on the same exact SHA:
+`35301787839`
 
-- Mkety Content DB Smoke: run `35300895213`;
-- Mkety Public AI Runtime Diagnostic: run `35300896504`;
-- Mkety Production Routing Preflight: run `35300897695`;
-- Mkety Public Candidate Deploy: run `35300898914`.
+That run did **not** mutate the public hostname binding:
 
-The full isolated public candidate verified:
+- exact-SHA authorization: passed;
+- private production DB URL resolution: passed;
+- private PostgreSQL health/publicity/SSL preflight: passed;
+- exact-SHA ephemeral Coolify migration host creation: passed;
+- `Inject private database URL`: failed with `curl: (35) Recv failure: Connection reset by peer`;
+- ephemeral migration host cleanup: completed;
+- final `Verify exact candidate and cut over mkety.com` job: skipped.
 
-- candidate secrets and Public AI provider configuration;
-- tests, type-check, lint, Vinext compatibility;
-- connected content DB migrations, seed, and smoke;
-- operational NOWPayments read-only credential check;
-- isolated route-free Cloudflare Worker configuration and deployment;
-- all public routes and production copy quarantine;
-- Enterprise payment safety boundary;
-- Public Mkety AI real-provider response, memory restoration, New Chat isolation, canonical commercial grounding, Academy destination, Enterprise-first Trading sales, and private-source boundary.
+Therefore the failed run never reached Worker Route or Custom Domain mutation and never deployed/accepted the live public surface.
 
-The public release is fully certified.
+The failure is a Coolify control-plane transport failure during environment-variable injection, not a PostgreSQL, Hyperdrive, migration, or public runtime failure.
 
-## Current cutover authorization: PR #60
+## Binding decision: Worker Custom Domains only
 
-The repository already had a no-op `.github/workflows/mkety-public-cutover-launcher.yml` that explicitly could not mutate production.
+The production binding mechanism is:
 
-PR #60 upgrades only that launcher into a one-time exact-SHA dispatcher for the existing guarded `mkety-public-production-cutover.yml`.
+- `mkety.com` → `mkety-platform` Worker Custom Domain;
+- `www.mkety.com` → `mkety-platform` Worker Custom Domain.
 
-The launcher is pinned to:
+The following Worker Routes must remain absent:
 
-- `VERIFIED_SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73`;
-- `CONFIRMATION: CUTOVER MKETY PUBLIC`;
-- `RELEASE_BRANCH: feat/mkety-public-site-production`.
+- `mkety.com/*`;
+- `www.mkety.com/*`.
 
-Before dispatch it independently verifies the release branch still points to the certified SHA.
+PR #62 replaces the old apex/www Worker Route mutation with the Cloudflare Worker Custom Domains API while preserving all existing exact-SHA authorization, DB, Hyperdrive, payment, Public AI, preview, rollback, and live-acceptance gates.
 
-The production cutover workflow then re-verifies all exact-SHA gates before any mutation, snapshots current routes, deploys the exact SHA, binds only `mkety.com/*` and `www.mkety.com/*`, runs live acceptance, and automatically restores the pre-cutover apex/www route state if binding or acceptance fails.
+It also removes the stale alternate `.github/workflows/mkety-public-custom-domain-promote.yml` so the guarded production cutover workflow is the only production hostname-mutation path.
 
-### TDD evidence
+## PR #62 changes
 
-Test-only commit `7933b790b37e63336b57d351e2aebb7cdbced631` required the cutover launcher to contain the exact certified SHA, required confirmation phrase, `actions: write`, target production cutover workflow, and exact dispatch inputs.
+Test-only commit:
 
-Valid red:
+`03582d835a356d2067d5053fdeef8d21853dd309`
 
-- the existing no-op launcher was found but did not contain the certified SHA/confirmation or production dispatch;
-- the cutover-launcher regression failed;
-- the other 728 tests passed;
-- build, lint, and type-check passed.
+The regression requires:
 
-Implementation commit `650184e1c99074ae29aaa83c3e330f18487a12ba` converts the no-op launcher into the guarded exact-SHA dispatcher.
+- the guarded cutover to use the Worker Custom Domains API;
+- only `mkety.com` and `www.mkety.com` to be attached;
+- both domains to target `mkety-platform`;
+- Worker Routes to remain unchanged;
+- no old apex/www route-binding implementation;
+- the Coolify migration secret update to use `PATCH`;
+- transient Coolify transport errors to be retried;
+- the one-time cutover launcher generation to be `worker-custom-domains-v1`.
 
-Verification on implementation head `650184e1c99074ae29aaa83c3e330f18487a12ba`:
+Dedicated temporary evidence PR #63 ran the exact test-only commit and was closed without merge after recording a valid red. Combined CI run `35302062777` produced: Type-check green, Lint green, Build green, Test failure. The test summary was 1 failed / 156 passed suites and 3 failed / 727 passed tests (730 total). The three failures were exactly the new Custom Domain API assertion, launcher generation assertion, and Coolify PATCH/retry assertion.
 
-- standalone tests: green;
-- combined CI: green;
-- standalone build: green;
-- standalone lint: green;
-- standalone type-check: green;
-- Cloudflare/Vinext smoke: green;
-- PR validation: green;
-- MegaLinter was still running when this handoff update was written.
+Implementation commits currently include:
 
-This documentation update is the only intended change after the verified dispatcher implementation.
+- `fbdfd9547f49e42df01162be9d341c060767a8bd` — restore the vetted Worker Custom Domain cutover;
+- `f607c12536f34d6948a223b629f571bde1adcb41` — change Coolify environment update to retry-safe `PATCH`;
+- `6f3d57503409349a3aea1c488278082a2fe1d61c` — rearm the one-time launcher with `CUTOVER_MODE: worker-custom-domains-v1`;
+- `1f071cd0330b6cbef27b10a7bdbc3b31073aaad4` — remove the stale alternate promoter;
+- `f6feb2c64460f331e563b4fe890914ecf6e78bfa` — update the production cutover runbook for Custom Domains.
 
-## Production safety
+The Coolify environment update now uses bounded retries with `--retry 4 --retry-all-errors --retry-delay 2`, plus connect/overall timeouts, while retaining exact-SHA/private-DB guards. This matches the current Coolify Update Env contract (`PATCH /applications/{uuid}/envs`). The Custom Domain implementation matches Cloudflare's Worker Domains attach contract (`PUT /accounts/{account_id}/workers/domains`) and keeps apex/www Worker Routes absent.
 
-- Production route mutation has not occurred yet.
-- Until PR #60 merges and the guarded cutover workflow reaches its route-bind step, apex/www remain in the pre-cutover state.
-- The cutover workflow must refuse stale SHA, stale release branch, missing workflow evidence, missing production secrets, unexpected existing production Worker bindings, or failed preview acceptance.
-- Only `mkety.com/*` and `www.mkety.com/*` may be mutated.
-- Route snapshots and rollback instructions must be persisted before mutation.
-- Any partial route-bind or live acceptance failure must automatically restore the recorded pre-cutover target-route state.
-- No unrelated Worker route or DNS record may be changed.
+## Production/environment/DB state
 
-## Exact next steps
+As of this update:
 
-1. Require MegaLinter green for PR #60.
-2. Verify the final PR head differs from implementation head `650184e1c99074ae29aaa83c3e330f18487a12ba` only by this handoff.
-3. Merge PR #60 with the exact final head pinned.
-4. Confirm the cutover launcher succeeds on the merge push and dispatches `mkety-public-production-cutover.yml` with exact candidate SHA and required confirmation.
-5. Follow the guarded cutover run:
-   - authorize exact SHA and all blocking gates;
-   - execute the production DB step;
-   - snapshot routing and rollback evidence;
-   - deploy/preview exact candidate;
-   - disable temporary production preview exposure;
-   - bind only apex and www;
-   - run live public-route, canonical, sitemap, robots, www 308, NOWPayments webhook, and Public AI acceptance;
-   - retain bindings only if all acceptance passes.
-6. Record immutable cutover run/route evidence here after success.
-7. Remove or return the one-time cutover launcher to a no-op state after successful production acceptance.
-8. Move immediately to app work: reconcile stale draft PR #35, then Entitlements #22, Usage/Credits #23, and remaining Platform roadmap.
+- no successful public production cutover has occurred;
+- no apex/www Worker Route was bound by cutover run `35301787839`;
+- no Worker Custom Domain has yet been attached by this workstream;
+- the failed ephemeral Coolify migration host was cleaned up;
+- the private database resolved healthy and remained private/SSL-enabled;
+- the certified application SHA remains unchanged at `2e871fe5...`;
+- PR #62 changes release tooling/tests/docs only and does not change the certified application payload.
+
+## Remaining gate
+
+1. Verify PR #62 exact final documentation head.
+2. Mark PR #62 ready for review and require tests, CI, lint, type-check, build, Vinext smoke, PR validation, and MegaLinter green on that exact head.
+3. Merge PR #62 only with the exact-head guard.
+4. Confirm merge-time launcher generation `worker-custom-domains-v1` dispatches `mkety-public-production-cutover.yml` with:
+   - `verified_sha = 2e871fe5ba51585886713c2cb79544e68dc20b73`;
+   - confirmation `CUTOVER MKETY PUBLIC`.
+5. Require the private DB executor to complete migration/content seed/smoke successfully.
+6. Require Custom Domain attachment and live acceptance to pass, with:
+   - `mkety.com` and `www.mkety.com` attached to the exact Worker;
+   - Worker Routes unchanged;
+   - canonical www→apex behavior;
+   - sitemap/robots acceptance;
+   - NOWPayments fail-closed verification;
+   - Public AI commercial grounding/privacy boundary;
+   - persisted rollback artifacts.
+7. Immediately update this file and `docs/MKETY_DEVELOPMENT_CONTINUATION.md` with immutable production evidence.
+8. Move directly to app work: reconcile stale draft PR #35, then Entitlements #22, Usage/Credits #23, then the remaining Platform roadmap.
 
 ## Feature-agent handoff rule
 
-Every material feature/runtime/deploy PR must update this status and its feature handoff with requested outcome, prior state, changes, verification evidence, environment/runtime changes, blockers/risks, and exact next steps. No feature may be marked complete, verified, production, or merge-ready without that update.
+Every material feature/runtime/deploy/migration PR must update this status and its relevant handoff with requested outcome, previous state, changes made, status, exact verification evidence, production/environment/DB changes, blockers/risks, exact next steps, and PR/issues/run IDs. No feature may be called complete, production, verified, or merge-ready until that handoff is current.

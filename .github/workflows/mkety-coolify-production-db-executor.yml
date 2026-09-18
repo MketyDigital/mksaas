@@ -113,9 +113,10 @@ jobs:
           process.stdout.write(JSON.stringify({key:'DATABASE_URL',value:process.env.DB,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
           NODE
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' \
-            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 60 \
+            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
             --data-binary @/tmp/db-env.json "$base/applications/$APP_UUID/envs")"
-          [ "$code" = '201' ] || { echo "Adding migration database secret failed with HTTP $code."; exit 3; }
+          [ "$code" = '201' ] || { echo "Updating migration database secret failed with HTTP $code."; exit 3; }
 
       - name: Deploy exact SHA and verify migration success
         shell: bash
