@@ -2,6 +2,8 @@
 
 import { Bot, History, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface PublicConversationSummary {
   id: string;
@@ -165,20 +167,18 @@ export function MketyPublicAssistant() {
           aria-expanded="false"
           data-surface="mkety-ai-command"
           onClick={() => setOpen(true)}
-          className="fixed inset-x-3 bottom-[5.75rem] z-[55] mx-auto flex min-h-14 w-[calc(100%-1.5rem)] max-w-[720px] items-center gap-3 rounded-2xl border border-violet-400/30 bg-background/92 px-4 py-3 text-left shadow-2xl shadow-violet-950/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-violet-400/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 supports-[backdrop-filter]:bg-background/78"
+          className="fixed inset-x-4 bottom-[5.6rem] z-[55] mx-auto flex min-h-11 w-[calc(100%-2rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-transparent bg-transparent px-2.5 py-2 text-left shadow-none backdrop-blur-none transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
             <Sparkles className="h-4.5 w-4.5" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-foreground">Ask Mkety AI</span>
-            <span className="block truncate text-xs text-muted-foreground sm:text-sm">
-              Ask about Mkety, products, plans, workspaces and docs…
+            <span className="block text-[13px] font-semibold text-foreground">Ask Mkety AI</span>
+            <span className="block truncate text-[11px] text-muted-foreground sm:text-xs">
+              Products, plans, workspaces and docs
             </span>
           </span>
-          <span className="hidden rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 px-3 py-2 text-xs font-semibold text-white sm:inline-flex">
-            Open AI
-          </span>
+          
         </button>
       ) : null}
 
@@ -295,9 +295,40 @@ export function MketyPublicAssistant() {
               {messages.map((message) => (
                 <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'bg-gradient-to-br from-violet-600 to-violet-500 text-white' : 'bg-muted text-foreground'}`}
+                    className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'whitespace-pre-wrap bg-gradient-to-br from-violet-600 to-violet-500 text-white' : 'bg-muted/70 text-foreground'}`}
                   >
-                    {message.content}
+                    {message.role === 'assistant' ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                          ul: ({ children }) => <ul className="my-2 space-y-1.5 pl-5">{children}</ul>,
+                          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1.5 pl-5">{children}</ol>,
+                          li: ({ children }) => <li className="list-disc marker:text-muted-foreground">{children}</li>,
+                          a: ({ href, children }) => (
+                            <a
+                              href={href}
+                              className="font-medium text-violet-600 underline decoration-violet-400/40 underline-offset-2 hover:text-violet-500"
+                              target={href?.startsWith('http') ? '_blank' : undefined}
+                              rel={href?.startsWith('http') ? 'noreferrer' : undefined}
+                            >
+                              {children}
+                            </a>
+                          ),
+                          h1: ({ children }) => <h3 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
+                          h2: ({ children }) => <h3 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
+                          h3: ({ children }) => <h3 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
+                          code: ({ children }) => (
+                            <code className="rounded bg-background/70 px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    ) : (
+                      message.content
+                    )}
                   </div>
                 </div>
               ))}
