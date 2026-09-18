@@ -22,7 +22,7 @@ Before the verification and build-fix batch, `AGENTS.md` was rechecked. The acti
 - `mksaas` is the authoritative Mkety Platform and public website repository.
 - Mkety is not AI-only; AI is one major capability inside a broader technology platform.
 - Primary products remain Mkety Platform and Mkety Academy.
-- Enterprise/customer solutions such as Trading and `mklms` remain separate from the core Platform product boundary.
+- Enterprise/customer solutions such as Trading and other customer applications remain separate from the core Platform product boundary.
 - Trading stays visible in the frontend but remains Custom/Enterprise.
 - Approved domains remain `mkety.com`, `app.mkety.com`, `api.mkety.com`, `origin.mkety.com`, and `*.mkety.app`.
 - Admin-editable surfaces must not directly control backend logic, security rules, tenant isolation, billing ledger calculations, deployment engines, private keys, or Auth Gateway signing keys.
