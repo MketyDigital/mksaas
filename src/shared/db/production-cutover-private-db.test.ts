@@ -77,6 +77,11 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
     expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v7');
+    expect(workflow).toContain('wait_for_workflow_success');
+    expect(workflow).toContain("wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'");
+    expect(workflow).toContain("wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'");
+    expect(workflow).toContain("wait_for_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'");
+    expect(workflow).toContain("wait_for_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'");
   });
 
   it('upserts and verifies the Coolify migration secret without blindly replaying creates', async () => {
