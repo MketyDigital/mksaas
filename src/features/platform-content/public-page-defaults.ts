@@ -133,7 +133,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Complete solution patterns combining multiple Mkety capabilities.',
           },
         ],
-        cta: { label: 'Get Started', href: '/create-workspace' },
+        cta: { label: 'Get Started', href: '/signup' },
       },
     ],
   },
