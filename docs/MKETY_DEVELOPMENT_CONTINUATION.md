@@ -684,8 +684,8 @@ When starting a new Mkety session:
 ### Current exact next action
 
 ```text
-APP continuation — reconcile stale draft PR #35 against current main,
-then Entitlements #22, then Usage/Credits #23.
+APP-07 Deployments/Cloud — verify and merge the metadata-only Deploy foundation
+(applications, environments, deployment history), then design provider execution separately.
 ```
 
 The detailed task-level implementation plan for this milestone lives at:
@@ -849,3 +849,23 @@ Corrected Wallet PR #74 passed its full required gate set on head `e6a49adb82c63
 - CodeQL / PR-level validation `35320738336`.
 
 Security/correctness checks included explicit tenant-membership enforcement before Wallet reads and applied-only Billing settlement display.
+
+
+## Deployments/Cloud foundation
+
+Wallet APP-06 merged as `10abc1e269444e26f32865e2f128a6c9c69757b4`. The active app workstream is now APP-07 Deployments/Cloud.
+
+Branch `feat/deploy-foundation-current-main` implements the smallest missing backend foundation without enabling infrastructure mutation:
+
+- `deploy_applications` — tenant/project-scoped logical web/API/service records;
+- `deploy_environments` — tenant/project/application-scoped development, preview, staging, and protected production metadata;
+- `deployments` — read-oriented deployment history and release/provider references;
+- migration `0014_deploy_foundation.sql` plus Drizzle journal/snapshot;
+- manager/admin-only creation of application and environment metadata;
+- tenant/project-scoped reads through the existing project access boundary;
+- Deploy Workspace lists applications, environments, and deployment history;
+- production environments are metadata-only and marked protected.
+
+Explicitly not implemented in this slice: Cloudflare/OCI/Coolify provider calls, credentials, DNS/custom domains, public preview/production URLs, deployment triggers, production infrastructure mutation, or rollback execution.
+
+Verification must include migration baseline / `drizzle-kit check`, full tests, type-check, lint, build, Vinext smoke, PR validation, and MegaLinter before merge.
