@@ -9,9 +9,10 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Form
 interface LoginFormProps {
   initialEmail?: string;
   mode?: 'signin' | 'signup';
+  callbackUrl?: string;
 }
 
-export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin' }: LoginFormProps) => {
+export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin', callbackUrl = '/select-tenant' }: LoginFormProps) => {
   const { login, isLoading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -20,7 +21,7 @@ export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin' }:
     setIsLoading(true);
     setServerError(null);
     try {
-      await login('/select-tenant');
+      await login(callbackUrl);
     } catch {
       setServerError('Failed to initiate sign in');
       setIsLoading(false);
