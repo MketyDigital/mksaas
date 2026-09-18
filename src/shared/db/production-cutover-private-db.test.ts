@@ -70,7 +70,7 @@ describe('production cutover private database gate', () => {
   it('dispatches the guarded production cutover for the exact certified SHA', async () => {
     const workflow = await readFile(CUTOVER_LAUNCHER_PATH, 'utf8');
 
-    expect(workflow).toContain('VERIFIED_SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73');
+    expect(workflow).toContain('VERIFIED_SHA: a250ce1ceb24dc39be9b8b6da67a5a881b31cf45');
     expect(workflow).toContain('CONFIRMATION: CUTOVER MKETY PUBLIC');
     expect(workflow).toContain('actions: write');
     expect(workflow).toContain('mkety-public-production-cutover.yml');

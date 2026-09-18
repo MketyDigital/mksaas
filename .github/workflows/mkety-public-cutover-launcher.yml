@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  VERIFIED_SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73
+  VERIFIED_SHA: a250ce1ceb24dc39be9b8b6da67a5a881b31cf45
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
   CUTOVER_MODE: worker-custom-domains-v7
