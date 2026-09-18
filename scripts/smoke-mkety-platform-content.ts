@@ -17,7 +17,7 @@ import {
   getPublishedPlatformSiteSettings,
   getPublishedPricingPlans,
 } from '../src/features/platform-content/server/queries';
-import { db } from '../src/shared/db';
+import { db } from '../src/shared/db/node';
 import {
   platformEnterpriseOrders,
   publicAIConversations,
