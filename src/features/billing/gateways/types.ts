@@ -2,6 +2,7 @@ import type { NormalizedSettlement } from '../domain/settlement';
 import type { GatewayCapabilities } from '../domain/types';
 
 export interface CreateCheckoutInput {
+  checkoutId: string;
   tenantId: string;
   subscriptionId: string;
   billingPeriodId: string;
