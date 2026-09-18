@@ -19,7 +19,7 @@ jest.mock('drizzle-orm/postgres-js', () => ({
   drizzle: (...args: unknown[]) => mockDrizzle(...args),
 }));
 
-jest.mock('./runtime-connection', () => ({
+jest.mock('./runtime-connection.cloudflare', () => ({
   getRuntimeDatabaseConnectionString: () => mockRuntimeConnectionString(),
 }));
 
