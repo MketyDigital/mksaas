@@ -38,7 +38,17 @@ export function formatPublicAssistantContent(content: string) {
   let formatted = content.trim().replace(/\n{3,}/g, '\n\n');
 
   for (const [route, label] of Object.entries(publicRouteLabels)) {
-    const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\function renderInlineAssistantText(text: string, keyPrefix: string): ReactNode[] {
+    const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    formatted = formatted.replace(
+      new RegExp(`(?<!\\]\\()${escaped}(?=\\s|[.,;:!?)]|$)`, 'gi'),
+      `[${label}](${route})`,
+    );
+  }
+
+  return formatted;
+}
+
+function renderInlineAssistantText(text: string, keyPrefix: string): ReactNode[] {
   const tokenPattern = /(\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
@@ -120,15 +130,6 @@ function renderPublicAssistantContent(content: string): ReactNode {
       </p>
     );
   });
-}
-const suggestedPrompts = [');
-    formatted = formatted.replace(
-      new RegExp(`(?<!\\]\\()${escaped}(?=\\s|[.,;:!?)]|$)`, 'gi'),
-      `[${label}](${route})`,
-    );
-  }
-
-  return formatted;
 }
 const suggestedPrompts = [
   'What can I build with Mkety?',
