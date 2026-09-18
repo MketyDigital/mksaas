@@ -336,7 +336,7 @@ Deliverables:
 
 - Keep `Sign In` and `Get Started` pointing toward the Platform without requiring app feature completion for normal public browsing.
 - Trading appears only as Enterprise/Custom.
-- Do not expose `mklms` as a core Mkety product.
+- Do not expose internal customer implementations as core Mkety products.
 
 ### PUBLIC-02 — Brand and global metadata cleanup
 
@@ -1028,7 +1028,7 @@ The candidate returned HTTP 200 for the full required public route set plus site
 
 Starter, AI Workspace, Automation Workspace, Deploy Workspace, and Mkety One do not yet have a live self-service Billing checkout. The Billing NOWPayments/Selar adapters intentionally still reject live `createCheckout` calls. Public CTAs therefore correctly onboard users instead of falsely claiming payment completion.
 
-Next, integrate the already-approved reusable Mkety billing-service/settlement contract from the managed-hosting billing Worker into Platform Billing. Do not create a second gateway architecture. Verified payment must continue to settle into Mkety-owned Billing state before Entitlements/access changes.
+MKSaaS Billing is the authoritative billing implementation. Any remaining self-service checkout work must extend its existing gateway, checkout, verified-settlement, ledger, and Entitlements boundaries directly. Do not introduce a parallel or legacy-repository billing dependency.
 
 Enterprise negotiated-payment links remain a separate valid operational flow and are not a substitute for self-service subscription checkout.
 
