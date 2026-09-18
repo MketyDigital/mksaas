@@ -306,3 +306,22 @@ Usage/Credits current-main reconstruction PR #73, exact head `3cf6419824ddd4f58c
 No production database mutation has been run from PR #73. The repository migration chain is now prepared through `0013_lively_magma.sql`, with Usage/Credits still separated from Wallet and from the Billing financial ledger.
 
 Next after PR #73 merges: continue the authenticated Platform roadmap from the current post-Usage/Credits main. Wallet remains a later, separate commercial/accounting projection and must not become stored-value or a second financial ledger.
+
+
+## Wallet read-model slice
+
+After Entitlements and Usage/Credits merged, the active app workstream moved to Wallet.
+
+Branch `feat/wallet-read-model` implements the first Wallet slice as a read-only tenant account view. It deliberately does not create a new wallet table or financial ledger.
+
+Architecture:
+- Billing remains the only monetary ledger and source of subscription/billing-period/settlement truth.
+- Usage/Credits remains the separate non-monetary product-credit ledger.
+- Wallet composes both read models but never treats product credits as cash.
+- no withdrawals, transfers, FX, stored-value funding, payment-provider calls, or balance mutation are introduced.
+- tenant Wallet route: `/t/{tenant}/wallet`.
+- runtime reads use the Cloudflare database gateway.
+
+No database migration is required for this Wallet slice.
+
+Next: verify the exact Wallet head with tests, type-check, lint, build, Vinext, migration baseline, workspace smoke, PR validation and MegaLinter; then record immutable verification evidence before merge.

@@ -781,3 +781,18 @@ Usage/Credits current-main reconstruction PR #73, exact head `3cf6419824ddd4f58c
 No production database mutation has been run from PR #73. The repository migration chain is now prepared through `0013_lively_magma.sql`, with Usage/Credits still separated from Wallet and from the Billing financial ledger.
 
 Next after PR #73 merges: continue the authenticated Platform roadmap from the current post-Usage/Credits main. Wallet remains a later, separate commercial/accounting projection and must not become stored-value or a second financial ledger.
+
+
+## Wallet implementation resumed
+
+With the public milestone complete and Entitlements/Usage-Credits merged on current main, APP-06 Wallet is active.
+
+The first implementation is intentionally read-only:
+- current plan/subscription and billing-period amount;
+- Billing ledger activity;
+- verified/applied settlements;
+- separate product-credit balance with explicit non-cash wording.
+
+It adds no wallet persistence because Billing already owns monetary truth and Usage/Credits already owns product-credit truth. This preserves the rule that Wallet is not stored value and not a second financial ledger.
+
+After this Wallet slice is verified and merged, return to the architecture order for Deployments/Cloud, then later SolutionHub, Domains, Integrations and Administration.
