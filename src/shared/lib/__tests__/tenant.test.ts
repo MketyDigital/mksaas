@@ -1,4 +1,4 @@
-jest.mock('@/shared/db', () => ({ db: { query: { tenants: { findFirst: jest.fn() } } } }));
+jest.mock('@/shared/db/cloudflare', () => ({ db: { query: { tenants: { findFirst: jest.fn() } } } }));
 
 /**
  * Tests for tenant utilities
