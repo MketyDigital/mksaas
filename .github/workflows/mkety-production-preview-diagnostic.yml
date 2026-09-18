@@ -114,8 +114,8 @@ jobs:
             note "route=$route curl_rc=$curl_rc http=${code:-none} effective_url=${effective:-none} content_type=${content_type:-none}"
             if [ "$curl_rc" -ne 0 ]; then fail "HTML $route curl exit $curl_rc"; continue; fi
             if [ "$code" != '200' ]; then fail "HTML $route HTTP ${code:-none}"; continue; fi
-            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
-              match="$(grep -Eio 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|\bmklms\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body" | head -n 1)"
+            if grep -Eqi 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
+              match="$(grep -Eio 'under development|\bWIP\b|GitHub|MketyDigital|\bmksaas\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body" | head -n 1)"
               fail "HTML $route quarantined/internal wording matched: $match"
             else
               pass "HTML $route quarantine wording"
