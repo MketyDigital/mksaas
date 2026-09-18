@@ -12,7 +12,7 @@ interface WalletPageProps {
 
 function formatMinorUnits(amountMinor: bigint, currency: string): string {
   const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency });
-  const fractionDigits = formatter.resolvedOptions().maximumFractionDigits;
+  const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
   return formatter.format(Number(amountMinor) / 10 ** fractionDigits);
 }
 
