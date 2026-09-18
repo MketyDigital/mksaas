@@ -242,7 +242,7 @@ Required docs categories:
 
 10. **Enterprise**
     - Trading.
-    - mklms.
+    - customer applications.
     - Customer projects.
     - Shared services.
     - Deployment boundaries.
@@ -537,7 +537,7 @@ Default Academy summary:
 
 Default Enterprise summary:
 
-- Mkety builds custom systems and specialized infrastructure for companies and customer projects, including Trading, mklms-style learning systems, and future enterprise applications.
+- Mkety builds custom systems and specialized infrastructure for companies and customer projects, including Trading, customer learning systems, and future enterprise applications.
 
 ---
 
@@ -716,7 +716,7 @@ Recommended batches:
 - Do not reintroduce Vercel as the production target.
 - Do not remove Trading from public/frontend presentation.
 - Do not position Trading as a normal self-service subscription feature.
-- Do not turn mklms into a third core Mkety product.
+- Do not turn a customer application into a third core Mkety product.
 - Do not present Mkety as AI-only.
 - Do not confuse Plans, Pricing, Credits, Usage, Workspaces, and SolutionHub.
 - Do not advertise backend entitlements that cannot be enforced.

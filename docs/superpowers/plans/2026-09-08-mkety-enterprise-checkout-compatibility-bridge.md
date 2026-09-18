@@ -24,7 +24,7 @@
 - Only a verified final NOWPayments success state may mark an order confirmed.
 - The bridge must not activate subscriptions, entitlements, credits, wallet funds, tenant access, or infrastructure provisioning.
 - Preserve the existing Public Mkety AI architecture and its deployment gates.
-- Preserve unrelated Cloudflare routes, especially `learn.starpipsforex.com/* -> mklms`.
+- Preserve unrelated Cloudflare routes, including unrelated legacy learning routes.
 - Use TDD: targeted RED test before implementation, GREEN proof afterward.
 
 ---
@@ -524,7 +524,7 @@ If dedicated Public-AI staging secrets remain absent, record PUBLIC-14 as BLOCKE
 
 - [ ] **Step 5: Re-run read-only production preflight**
 
-Confirm root/www DNS remain proxied and unrelated `learn.starpipsforex.com/* -> mklms` route remains untouched.
+Confirm root/www DNS remain proxied and unrelated legacy learning routes remains untouched.
 
 - [ ] **Step 6: Execute guarded PUBLIC-15 production deployment only after every gate above is green**
 

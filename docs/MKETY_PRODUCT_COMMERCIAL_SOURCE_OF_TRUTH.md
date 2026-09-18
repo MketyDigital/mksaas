@@ -46,12 +46,6 @@ Customer production domain:
 https://academy.mkety.com
 ```
 
-Internal owning repository:
-
-```text
-MketyDigital/mklms
-```
-
 Where the main Mkety public site needs to hand a visitor into Academy, prefer the Academy production domain. The main public site may provide an Academy overview, but current programmes, enrolment details and Academy pricing are owned by the Academy product.
 
 Required Academy learning hubs for public overview where applicable:
@@ -117,7 +111,7 @@ Rules:
 The following may exist in private engineering documentation but must not be exposed as customer-facing website/docs/Public AI content unless a later approved public policy explicitly requires it:
 
 - GitHub or repository names;
-- organization/repository identifiers such as `MketyDigital`, `mksaas`, `mklms`, or private source locations;
+- organization/repository identifiers, internal repository names, or private source locations;
 - branches, pull requests, commits, internal implementation plans, debug notes, candidate/staging terminology;
 - internal provider/runtime architecture or private origin hostnames;
 - development-status wording such as `under development`, `WIP`, `candidate`, or `staging`;

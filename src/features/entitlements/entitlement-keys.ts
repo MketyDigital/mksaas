@@ -1,4 +1,7 @@
 export const ENTITLEMENT_KEYS = [
+  'workspace.ai',
+  'workspace.automation',
+  'workspace.deploy',
   'workspace.agents',
   'workspace.workflows',
   'workspace.knowledge',

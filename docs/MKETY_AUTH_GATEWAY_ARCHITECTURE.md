@@ -16,7 +16,7 @@ Mkety
 ├── Mkety Academy
 └── Enterprise / Customer Solutions
     ├── Trading
-    ├── mklms
+    ├── Customer Apps
     └── Future customer projects
 ```
 
@@ -29,7 +29,7 @@ Mkety Auth Gateway
   ↓ verifies product access from Mkety-owned records
 Short-lived signed Mkety access assertion
   ↓
-Mkety Platform / Academy / Trading / mklms / Enterprise Apps
+Mkety Platform / Academy / Trading / Customer Apps / Enterprise Apps
   ↓
 Each product enforces its own local authorization and tenant/product state
 ```
@@ -42,7 +42,7 @@ Products must not depend directly on ZITADEL-specific organization/project/role 
 
 ## Why this matters
 
-Mkety will have one platform, one Academy product, and multiple enterprise/customer applications. Trading is visible in the Mkety frontend but architecturally standalone. A central auth gateway allows Trading, Academy, mklms, and future standalone applications to share Mkety identity/access without each one inventing its own auth system.
+Mkety will have one platform, one Academy product, and multiple enterprise/customer applications. Trading is visible in the Mkety frontend but architecturally standalone. A central auth gateway allows Trading, Academy, customer applications, and future standalone applications to share Mkety identity/access without each one inventing its own auth system.
 
 ## Target flow
 
@@ -76,7 +76,7 @@ Add more product issuance endpoints only when needed:
 ```text
 POST /v1/access/platform
 POST /v1/access/academy
-POST /v1/access/mklms
+POST /v1/access/customer-app
 POST /v1/access/customer-apps
 ```
 
@@ -164,7 +164,7 @@ Not allowed:
 ### Phase 4 — Product integration
 
 - Trading verifies Mkety assertions and still checks Trading-owned DB state.
-- Academy, mklms, and future customer apps can adopt the same pattern later.
+- Academy and future customer apps can adopt the same pattern later.
 
 ## Non-negotiables
 

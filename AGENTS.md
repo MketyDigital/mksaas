@@ -37,7 +37,7 @@ Mkety
 │
 └── Enterprise / Customer Solutions
     ├── Trading
-    ├── mklms
+    ├── Customer Applications
     └── Future customer projects
 ```
 
@@ -143,7 +143,7 @@ Mkety
 │
 └── Enterprise / Customer Solutions
     ├── Trading
-    ├── mklms
+    ├── Customer Applications
     └── Future projects
 ```
 
@@ -250,33 +250,14 @@ Do not invent production capabilities merely to make the product appear larger.
 
 ---
 
-# 04. MKLMS
+# 04. CUSTOMER APPLICATIONS
 
-`mklms` is an enterprise/customer project.
+Customer-specific applications belong behind the Enterprise / Customer Solutions boundary.
 
-It is **not a third Mkety core product**.
+They are **not additional Mkety core products** and must not become architecture authorities for the Platform.
 
-It is an example of what Mkety can build for customers.
+They may consume Mkety authentication, Billing/payment interfaces, APIs, deployment infrastructure, storage, and other shared services through supported MKSaaS-owned contracts while remaining independently deployable.
 
-```text
-Mkety Platform
-       │
-       └── Enterprise Services
-              │
-              └── Customer Project
-                     └── mklms
-```
-
-`mklms` may use:
-
-* Mkety authentication
-* Mkety payment infrastructure
-* Mkety APIs
-* Mkety deployment infrastructure
-* Mkety storage
-* Mkety shared services
-
-But its codebase remains independently deployable.
 
 The same model applies to future customer projects.
 
@@ -1178,7 +1159,7 @@ The payment architecture should be reusable.
 Do not implement:
 
 ```text
-mklms → Selar directly
+Customer App → Selar directly
 Trading → Selar directly
 Platform → Selar directly
 ```
@@ -2921,7 +2902,7 @@ This is especially important for:
 ```text
 Mkety Platform
 Mkety Academy
-mklms
+Customer Applications
 Enterprise projects
 Trading
 ```
@@ -3111,7 +3092,7 @@ Keep Trading visible but architecturally standalone.
 
 ## Rule 10
 
-Keep mklms and future customer applications outside the core Platform application.
+Keep customer applications outside the core Platform application.
 
 ## Rule 11
 
@@ -3409,11 +3390,11 @@ STATUS: STANDALONE APPLICATION
 
 ---
 
-## mklms
+## Customer applications
 
 ```text
-STATUS: ENTERPRISE/CUSTOMER PROJECT
-STATUS: SEPARATE APPLICATION
+STATUS: ENTERPRISE/CUSTOMER PROJECTS
+STATUS: SEPARATE APPLICATIONS
 ```
 
 ---
@@ -3433,7 +3414,7 @@ The complete Mkety product structure is:
       │                │                 │                 │
 Mkety Platform   Mkety Academy       Trading          Customer Projects
       │                                      │               │
-      │                                      │              mklms
+      │                                      │              Custom Apps
       │                                      │
       │                                Standalone App
       │
@@ -3657,7 +3638,7 @@ provides education, while:
 Enterprise / Customer Solutions
 ```
 
-allows Mkety to build specialized systems such as Trading and mklms without polluting the core Platform architecture.
+allows Mkety to build specialized systems such as Trading and other customer applications without polluting the core Platform architecture.
 
 ---
 
@@ -3695,7 +3676,7 @@ The final Mkety ecosystem should be understood as:
         │                            Trading    Customer
         │                                         Projects
         │                                           │
-        │                                         mklms
+        │                                      Custom Apps
         │
         ├── Workspaces
         │     ├── AI

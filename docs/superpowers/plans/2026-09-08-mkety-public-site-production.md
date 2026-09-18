@@ -23,7 +23,7 @@
 - Cloudflare + vinext is the public production runtime. Do not add Vercel.
 - Preserve legacy public site availability until the new candidate is externally verified.
 - Trading remains visible only as Custom/Enterprise.
-- `mklms` remains an enterprise/customer-project example, not a core product.
+- Customer-specific applications remain Enterprise/customer projects, not core products.
 - Public content must distinguish currently available functionality from planned/future capabilities.
 - Public Mkety AI must never have tenant-private access or unrestricted tool execution.
 

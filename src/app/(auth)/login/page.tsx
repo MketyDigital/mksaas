@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
+import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
 
@@ -14,17 +15,27 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 interface LoginPageProps {
-  searchParams: Promise<{ email?: string }>;
+  searchParams: Promise<{ email?: string; plan?: string }>;
 }
 
-export default async function LoginPage({ searchParams: _searchParams }: LoginPageProps) {
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const query = await searchParams;
+  const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
+  const selectTenantUrl = planKey ? `/select-tenant?plan=${encodeURIComponent(planKey)}` : '/select-tenant';
+
   const session = await auth();
 
   if (session?.user) {
     const userRoles = (session.user.roles ?? {}) as Record<string, TenantRole>;
     const tenantSlugs = Object.keys(userRoles);
-    if (tenantSlugs.length === 1) redirect(`/t/${tenantSlugs[0]}`);
-    if (tenantSlugs.length > 1) redirect('/select-tenant');
+    if (tenantSlugs.length === 1) {
+      redirect(
+        planKey
+          ? `/t/${tenantSlugs[0]}/billing/checkout?plan=${encodeURIComponent(planKey)}`
+          : `/t/${tenantSlugs[0]}`,
+      );
+    }
+    if (tenantSlugs.length > 1) redirect(selectTenantUrl);
   }
 
   return (
@@ -39,10 +50,10 @@ export default async function LoginPage({ searchParams: _searchParams }: LoginPa
           <h1 className="mb-2 text-3xl font-bold tracking-tight">Welcome to Mkety</h1>
           <p className="text-muted-foreground">Sign in to your workspace</p>
         </div>
-        <LoginForm />
+        <LoginForm callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
           New to Mkety?{' '}
-          <Link href="/signup" className="font-semibold text-primary hover:underline">
+          <Link href={planKey ? `/signup?plan=${encodeURIComponent(planKey)}` : '/signup'} className="font-semibold text-primary hover:underline">
             Create an account
           </Link>
         </p>

@@ -22,7 +22,6 @@ Do not merge or deploy a downstream PR ahead of its prerequisite simply because 
 ## 2. Source-of-truth repositories and runtime
 
 - `MketyDigital/mksaas` is the authoritative Platform + public-site development repository.
-- `MketyDigital/mklms` is the enterprise/customer installation project and remains the reference for the external managed-hosting billing Worker/provider contract.
 - Legacy live Mkety code is reference material only; do not restore superseded framework/provider coupling from it.
 - Runtime authority: vinext + Cloudflare Workers.
 - OpenNext is removed from the active baseline.
@@ -131,7 +130,7 @@ Both are first-class gateway adapters at schema/service level.
 ### NOWPayments
 
 - Used for crypto checkout/recurring capability.
-- Hardened rule from `mklms` is authoritative: fail closed on missing/invalid verification.
+- The MKSaaS NOWPayments gateway contract is authoritative: fail closed on missing/invalid verification.
 - Only final verified `finished` is eligible to become a settled payment in this milestone.
 - Legacy live behavior that treated intermediate statuses such as `confirmed` or `sending` as completed was deliberately not copied.
 

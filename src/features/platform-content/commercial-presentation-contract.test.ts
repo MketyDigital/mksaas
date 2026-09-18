@@ -42,6 +42,12 @@ describe('Mkety documented public commercial presentation', () => {
       billingLabel: '/ month',
       highlighted: true,
     });
+    expect(pricingByKey.get('starter')?.ctaHref).toBe('/signup?plan=starter');
+    expect(pricingByKey.get('ai-workspace')?.ctaHref).toBe('/signup?plan=ai-workspace');
+    expect(pricingByKey.get('automation-workspace')?.ctaHref).toBe('/signup?plan=automation-workspace');
+    expect(pricingByKey.get('deploy-workspace')?.ctaHref).toBe('/signup?plan=deploy-workspace');
+    expect(pricingByKey.get('mkety-one')?.ctaHref).toBe('/signup?plan=mkety-one');
+
     expect(pricingByKey.get('enterprise')).toMatchObject({
       name: 'Enterprise',
       priceLabel: 'Custom',

@@ -1,7 +1,7 @@
 'use client';
 
 import { Bot, History, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 interface PublicConversationSummary {
   id: string;
@@ -22,6 +22,115 @@ interface HistoryResponse {
   messages: PublicAssistantMessage[];
 }
 
+const publicRouteLabels: Record<string, string> = {
+  '/pricing': 'view pricing',
+  '/docs': 'open the docs',
+  '/enterprise': 'explore Enterprise',
+  '/contact': 'contact Mkety',
+  '/platform': 'explore Mkety Platform',
+  '/workspaces': 'explore Workspaces',
+  '/solutions': 'explore SolutionHub',
+  '/academy': 'visit Mkety Academy',
+  '/about': 'learn about Mkety',
+};
+
+export function formatPublicAssistantContent(content: string) {
+  let formatted = content.trim().replace(/\n{3,}/g, '\n\n');
+
+  for (const [route, label] of Object.entries(publicRouteLabels)) {
+    const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    formatted = formatted.replace(
+      new RegExp(`(?<!\\]\\()${escaped}(?=\\s|[.,;:!?)]|$)`, 'gi'),
+      `[${label}](${route})`,
+    );
+  }
+
+  return formatted;
+}
+
+function renderInlineAssistantText(text: string, keyPrefix: string): ReactNode[] {
+  const tokenPattern = /(\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*)/g;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+
+    if (match[2] && match[3]) {
+      const href = match[3];
+      const safeHref = href.startsWith('/') || href.startsWith('https://') ? href : undefined;
+      nodes.push(
+        safeHref ? (
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={safeHref}
+            className="font-medium text-violet-600 underline decoration-violet-400/40 underline-offset-2 hover:text-violet-500"
+            target={safeHref.startsWith('https://') ? '_blank' : undefined}
+            rel={safeHref.startsWith('https://') ? 'noreferrer' : undefined}
+          >
+            {match[2]}
+          </a>
+        ) : (
+          match[2]
+        ),
+      );
+    } else if (match[4]) {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-foreground">
+          {match[4]}
+        </strong>,
+      );
+    }
+
+    cursor = tokenPattern.lastIndex;
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+function renderPublicAssistantContent(content: string): ReactNode {
+  const normalized = formatPublicAssistantContent(content);
+  const blocks = normalized.split(/\n\s*\n/).filter(Boolean);
+
+  return blocks.map((block, blockIndex) => {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const unordered = lines.length > 0 && lines.every((line) => /^[-*]\s+/.test(line));
+    const ordered = lines.length > 0 && lines.every((line) => /^\d+[.)]\s+/.test(line));
+
+    if (unordered) {
+      return (
+        <ul key={`block-${blockIndex}`} className="my-2 list-disc space-y-1.5 pl-5 marker:text-muted-foreground">
+          {lines.map((line, lineIndex) => (
+            <li key={`item-${blockIndex}-${lineIndex}`} className="pl-0.5">
+              {renderInlineAssistantText(line.replace(/^[-*]\s+/, ''), `u-${blockIndex}-${lineIndex}`)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    if (ordered) {
+      return (
+        <ol key={`block-${blockIndex}`} className="my-2 list-decimal space-y-1.5 pl-5 marker:text-muted-foreground">
+          {lines.map((line, lineIndex) => (
+            <li key={`item-${blockIndex}-${lineIndex}`} className="pl-0.5">
+              {renderInlineAssistantText(line.replace(/^\d+[.)]\s+/, ''), `o-${blockIndex}-${lineIndex}`)}
+            </li>
+          ))}
+        </ol>
+      );
+    }
+
+    const paragraph = lines.join(' ').replace(/^#{1,6}\s+/, '');
+    return (
+      <p key={`block-${blockIndex}`} className="mb-2 last:mb-0">
+        {renderInlineAssistantText(paragraph, `p-${blockIndex}`)}
+      </p>
+    );
+  });
+}
 const suggestedPrompts = [
   'What can I build with Mkety?',
   'Which Mkety product is right for me?',
@@ -165,20 +274,18 @@ export function MketyPublicAssistant() {
           aria-expanded="false"
           data-surface="mkety-ai-command"
           onClick={() => setOpen(true)}
-          className="fixed inset-x-3 bottom-[5.75rem] z-[55] mx-auto flex min-h-14 w-[calc(100%-1.5rem)] max-w-[720px] items-center gap-3 rounded-2xl border border-violet-400/30 bg-background/92 px-4 py-3 text-left shadow-2xl shadow-violet-950/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-violet-400/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 supports-[backdrop-filter]:bg-background/78"
+          className="fixed inset-x-4 bottom-[5.6rem] z-[55] mx-auto flex min-h-11 w-[calc(100%-2rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-transparent bg-transparent px-2.5 py-2 text-left shadow-none backdrop-blur-none transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
             <Sparkles className="h-4.5 w-4.5" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-foreground">Ask Mkety AI</span>
-            <span className="block truncate text-xs text-muted-foreground sm:text-sm">
-              Ask about Mkety, products, plans, workspaces and docs…
+            <span className="block text-[13px] font-semibold text-foreground">Ask Mkety AI</span>
+            <span className="block truncate text-[11px] text-muted-foreground sm:text-xs">
+              Products, plans, workspaces and docs
             </span>
           </span>
-          <span className="hidden rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 px-3 py-2 text-xs font-semibold text-white sm:inline-flex">
-            Open AI
-          </span>
+          
         </button>
       ) : null}
 
@@ -295,9 +402,11 @@ export function MketyPublicAssistant() {
               {messages.map((message) => (
                 <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'bg-gradient-to-br from-violet-600 to-violet-500 text-white' : 'bg-muted text-foreground'}`}
+                    className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'whitespace-pre-wrap bg-gradient-to-br from-violet-600 to-violet-500 text-white' : 'bg-muted/70 text-foreground'}`}
                   >
-                    {message.content}
+                    {message.role === 'assistant'
+                      ? renderPublicAssistantContent(message.content)
+                      : message.content}
                   </div>
                 </div>
               ))}

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
+import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
 import { auth } from '@/shared/lib/auth';
 
 export const metadata = {
@@ -12,9 +13,17 @@ export const metadata = {
 
 export const dynamic = 'force-dynamic';
 
-export default async function SignupPage() {
+interface SignupPageProps {
+  searchParams: Promise<{ plan?: string }>;
+}
+
+export default async function SignupPage({ searchParams }: SignupPageProps) {
+  const query = await searchParams;
+  const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
+  const selectTenantUrl = planKey ? `/select-tenant?plan=${encodeURIComponent(planKey)}` : '/select-tenant';
+
   const session = await auth();
-  if (session?.user) redirect('/select-tenant');
+  if (session?.user) redirect(selectTenantUrl);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-background via-background to-muted/30 p-4">
@@ -28,10 +37,10 @@ export default async function SignupPage() {
           <h1 className="mb-2 text-3xl font-bold tracking-tight">Start with Mkety</h1>
           <p className="text-muted-foreground">Create your account, then set up your first workspace.</p>
         </div>
-        <LoginForm mode="signup" />
+        <LoginForm mode="signup" callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/login" className="font-semibold text-primary hover:underline">
+          <Link href={planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login'} className="font-semibold text-primary hover:underline">
             Sign in
           </Link>
         </p>

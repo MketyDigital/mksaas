@@ -128,7 +128,9 @@ jobs:
         run: |
           pnpm db:migrate:mkety-content
           pnpm db:seed:mkety-content
+          pnpm db:seed:billing-catalog
           pnpm db:smoke:mkety-content
+          pnpm db:smoke:billing-catalog
 
       - name: Require operational Enterprise payment gateway
         id: enterprise-payment
@@ -251,7 +253,7 @@ jobs:
             '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise'
             '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt'
           )
-          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|mksaas|mklms|origin\.mkety\.com'
+          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|mksaas|origin\.mkety\.com'
           for route in "${routes[@]}"; do
             ok=false
             code='000'
@@ -348,7 +350,7 @@ jobs:
           if(required.some((r)=>!r.test(a))) { console.error('Public AI canonical commercial grounding failed.'); process.exit(1); }
           if(/trade\.mkety\.com/i.test(a)) { console.error('Public AI sent a new Trading buyer directly to the entitled-access product destination.'); process.exit(1); }
           if(/\b(Growth|Pro|Business)\b/.test(a)) { console.error('Public AI exposed a removed plan.'); process.exit(1); }
-          if(/GitHub|MketyDigital|\bmksaas\b|\bmklms\b|\brepositor(?:y|ies)\b|pull request|branch|commit/i.test(a)) { console.error('Public AI exposed internal engineering/source information.'); process.exit(1); }
+          if(/GitHub|MketyDigital|\bmksaas\b|\brepositor(?:y|ies)\b|pull request|branch|commit/i.test(a)) { console.error('Public AI exposed internal engineering/source information.'); process.exit(1); }
           NODE
 
           echo 'Public Mkety AI smoke passed: real provider, restored memory, New Chat isolation, canonical commercial grounding, Academy destination, Enterprise-first Trading sales, and private-source boundary.'

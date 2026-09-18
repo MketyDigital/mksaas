@@ -173,7 +173,7 @@ Cutover run `35304048710` passed authorization, production DB migration/seed/smo
 
 The Worker preview returned HTTP 200. The pre-domain smoke then rejected `/` because its quarantine regex treated any occurrence of the word `GitHub` as internal wording. The public homepage legitimately advertises GitHub integration, so this was an over-broad smoke rule rather than a runtime failure. Custom Domain attachment was skipped; production hostnames remain unchanged.
 
-PR #65 narrowed that check to actual internal repository references such as `github.com/MketyDigital` while continuing to block `MketyDigital`, `mksaas`, `mklms`, private origin hostnames, and stale runtime/template wording. Its v3 cutover progressed further: the preview returned HTTP 200 and passed the wording sweep, but the canonical smoke falsely required `rel="canonical"` to appear before `href` in the `<link>` tag. HTML attribute order is not significant. Branch `release/fix-canonical-smoke-2e871fe` reuses the repo's existing order-independent canonical-link parser and bumps the launcher to `worker-custom-domains-v4` for one clean retry.
+PR #65 narrowed that check to actual internal repository references such as `github.com/MketyDigital` while continuing to block internal repository identifiers, private origin hostnames, and stale runtime/template wording. Its v3 cutover progressed further: the preview returned HTTP 200 and passed the wording sweep, but the canonical smoke falsely required `rel="canonical"` to appear before `href` in the `<link>` tag. HTML attribute order is not significant. Branch `release/fix-canonical-smoke-2e871fe` reuses the repo's existing order-independent canonical-link parser and bumps the launcher to `worker-custom-domains-v4` for one clean retry.
 
 ## Exact next steps
 
@@ -579,3 +579,26 @@ No production DNS/custom-domain mutation, production Deploy execution, OCI/Cooli
 1. Merge PR #79 after the documentation-only successor head remains green.
 2. Implement live fixed-price self-service Billing checkout by reusing the approved shared Mkety billing-service contract and preserving verified/idempotent settlement boundaries.
 3. Then resume APP-07 Deployments/Cloud from the already-verified Cloudflare candidate-adapter state: add an authorized non-production customer invocation path with explicit audit/approval boundaries before any production execution work.
+## Self-service Billing checkout and MKSaaS billing authority
+
+PR #80 (`feat/self-service-billing-checkout`) makes the MKSaaS Billing domain the explicit authority for Mkety Platform self-service subscriptions and removes stale MKSaaS documentation/workflow references that incorrectly pointed implementation work toward the independent `mklms` product. `mklms` production/main is not modified by this work and remains an independently deployed Enterprise Mkety product.
+
+The self-service commercial path now covers the fixed-price Platform plans:
+
+- Starter — $5.99/month
+- AI Workspace — $16.99/month
+- Automation Workspace — $16.99/month
+- Deploy Workspace — $9.99/month
+- Mkety One — $49/month
+
+The implementation keeps Enterprise negotiated payments separate.
+
+Billing now includes a server-owned fixed-price catalog, immutable plan-version-safe seeding, paid-workspace entitlement mappings, a non-entitling `pending_payment` subscription state, authenticated tenant checkout, NOWPayments invoice creation inside MKSaaS, signed webhook verification, exact amount/currency binding to Mkety Billing records, and idempotent verified settlement through the existing Billing ledger/service boundary. Browser return/success pages remain non-entitling.
+
+The customer path is:
+
+`/pricing` → selected plan → signup/login → tenant selection or first-workspace creation → authenticated tenant checkout → provider invoice → verified final settlement → Billing state → Entitlements.
+
+Staging candidate and production DB release sequences seed and smoke the canonical Billing catalog. The standalone staging DB smoke is self-contained and independently seeds both CMS content and Billing catalog before smoke checks.
+
+After this Billing slice is merged and production-promoted, resume APP-07 Deployments/Cloud from the previously documented next step: an authorized, audited, non-production customer invocation path over the existing deploy execution kernel. Production deployment, DNS/custom-domain mutation, OCI/Coolify mutation, and rollback execution remain outside that next slice unless separately approved.

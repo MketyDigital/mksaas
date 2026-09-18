@@ -105,7 +105,7 @@
 - [ ] **Step 4: Write RED Selar capability tests** showing hosted checkout/recurring capability is represented independently from whether a specific payment method supports auto-charge, and success redirect alone cannot normalize to verified settlement.
 - [ ] **Step 5: Implement minimal Selar adapter capability model** without live API calls.
 - [ ] **Step 6: Write RED NOWPayments tests** proving only verified final `finished` events normalize as settlement candidates; `confirmed`, `sending`, `partially_paid`, missing verification and unknown statuses do not.
-- [ ] **Step 7: Implement minimal NOWPayments adapter normalization** based on the hardened `mklms` contract, not the legacy live route.
+- [ ] **Step 7: Implement minimal NOWPayments adapter normalization** based on the hardened MKSaaS billing security contract, not any legacy live route.
 - [ ] **Step 8: Run all gateway tests** and confirm green.
 - [ ] **Step 9: Commit** `feat: add billing gateway adapter contracts`.
 

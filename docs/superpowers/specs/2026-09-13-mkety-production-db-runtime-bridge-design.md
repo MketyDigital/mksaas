@@ -53,7 +53,7 @@ Cloudflare route mutation remains on GitHub-hosted runners and depends on succes
 - No public PostgreSQL port.
 - No database password, Coolify token, Cloudflare token, Tunnel token, runner token, or raw secret-bearing logs in repository output.
 - Coolify API calls must use HTTPS.
-- Existing MKLMS Hyperdrive configurations are out of scope and must remain unchanged.
+- Existing unrelated legacy customer-application Hyperdrive configurations are out of scope and must remain unchanged.
 - Workers VPC provisioning requires an account identity with Connectivity Directory Admin; fail closed if unavailable.
 - Do not enable Cloudflare Access solely as a workaround when Workers VPC is available.
 

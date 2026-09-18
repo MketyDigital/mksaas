@@ -304,7 +304,9 @@ jobs:
             'MKETY_DB_STAGE_OK=base-migrate',
             'MKETY_DB_STAGE_OK=content-migrate',
             'MKETY_DB_STAGE_OK=content-seed',
+            'MKETY_DB_STAGE_OK=billing-seed',
             'MKETY_DB_STAGE_OK=content-smoke',
+            'MKETY_DB_STAGE_OK=billing-smoke',
             'MKETY_DB_RELEASE_SEQUENCE_OK=true'
           ];
           process.exit(required.every((marker)=>logs.includes(marker)) ? 0 : 1);
@@ -330,7 +332,7 @@ jobs:
             echo 'Migration container became healthy before the full release sequence completed.'
             exit 10
           fi
-          echo "Production DB migration, content migration, seed, and smoke succeeded for exact SHA $TARGET_SHA."
+          echo "Production DB migration, content/Billing seed, and smoke succeeded for exact SHA $TARGET_SHA."
 
       - name: Delete ephemeral migration host
         if: always() && steps.app.outputs.app_uuid != ''

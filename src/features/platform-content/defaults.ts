@@ -227,7 +227,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'A simple entry plan for individuals getting started with Mkety projects and core platform access.',
     highlighted: false,
     ctaLabel: 'Get Started',
-    ctaHref: '/signup',
+    ctaHref: '/signup?plan=starter',
     features: ['Project workspace', 'Core platform access', 'SolutionHub discovery', 'Usage and credits visibility'],
   },
   {
@@ -238,7 +238,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For building, testing, publishing, and operating AI agents and AI-powered applications.',
     highlighted: false,
     ctaLabel: 'Get Started',
-    ctaHref: '/signup',
+    ctaHref: '/signup?plan=ai-workspace',
     features: ['AI agents', 'Knowledge connections', 'Model selection', 'Tools and runs', 'Versions and publishing'],
   },
   {
@@ -249,7 +249,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For building repeatable workflows, integrations, triggers, actions, and business automations.',
     highlighted: false,
     ctaLabel: 'Get Started',
-    ctaHref: '/signup',
+    ctaHref: '/signup?plan=automation-workspace',
     features: ['Workflow builder', 'Triggers and actions', 'Conditions and transformations', 'Webhooks', 'Run history'],
   },
   {
@@ -260,7 +260,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'For organizing deployment-ready applications and environments, managing release configuration, and tracking deployment history.',
     highlighted: false,
     ctaLabel: 'Get Started',
-    ctaHref: '/signup',
+    ctaHref: '/signup?plan=deploy-workspace',
     features: [
       'Application and environment management',
       'Release configuration',
@@ -276,7 +276,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     description: 'The complete self-service Mkety bundle: Starter plus AI, Automation, and Deploy Workspaces.',
     highlighted: true,
     ctaLabel: 'Get Started',
-    ctaHref: '/signup',
+    ctaHref: '/signup?plan=mkety-one',
     features: [
       'Starter included',
       'AI Workspace included',

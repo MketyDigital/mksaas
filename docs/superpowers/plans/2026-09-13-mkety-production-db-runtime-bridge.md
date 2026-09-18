@@ -6,7 +6,7 @@ Spec: `docs/superpowers/specs/2026-09-13-mkety-production-db-runtime-bridge-desi
 
 - Keep production PostgreSQL private.
 - Preserve exact-SHA/manual cutover governance and rollback.
-- Do not reuse or alter unrelated MKLMS Cloudflare resources.
+- Do not reuse or alter unrelated legacy customer-application Cloudflare resources.
 - Do not print or commit secrets.
 - Use supported Coolify and Cloudflare APIs only.
 - Production route mutation must remain blocked until private DB migration and runtime DB connectivity both pass.
