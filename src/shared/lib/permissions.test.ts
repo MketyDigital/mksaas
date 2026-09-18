@@ -1,5 +1,5 @@
 import { createMockSession } from '@/__tests__/mock-factories';
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import { auth } from '@/shared/lib/auth';
 import { getCurrentUserPermissions } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -12,7 +12,7 @@ jest.mock('@/shared/lib/tenant', () => ({
   getTenantBySlug: jest.fn(),
 }));
 
-jest.mock('@/shared/db', () => ({
+jest.mock('@/shared/db/cloudflare', () => ({
   db: {
     query: {
       tenantMemberships: {
