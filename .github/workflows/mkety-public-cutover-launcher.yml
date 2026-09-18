@@ -1,19 +1,79 @@
 name: Mkety Public Cutover Launcher
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-cutover-launcher.yml'
 
 permissions:
+  actions: write
   contents: read
 
+env:
+  VERIFIED_SHA: 2e871fe5ba51585886713c2cb79544e68dc20b73
+  CONFIRMATION: CUTOVER MKETY PUBLIC
+  RELEASE_BRANCH: feat/mkety-public-site-production
+
 jobs:
-  notice:
-    name: Production cutover launcher notice
+  dispatch:
+    name: Dispatch guarded production cutover
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Explain deployment control plane
+      - name: Verify certified release branch and dispatch cutover
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          echo 'Production cutover is intentionally dispatched only through the certified cutover workflow after exact-SHA gates pass.'
-          echo 'This launcher performs no mutation and cannot bind production routes.'
+
+          branches="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches?per_page=100")"
+
+          BRANCHES="$branches" node <<'NODE'
+          const branches = JSON.parse(process.env.BRANCHES || '[]');
+          const release = Array.isArray(branches)
+            ? branches.find((branch) => branch?.name === process.env.RELEASE_BRANCH)
+            : undefined;
+          if (!release?.commit?.sha) {
+            throw new Error(`Could not resolve release branch ${process.env.RELEASE_BRANCH}.`);
+          }
+          if (release.commit.sha !== process.env.VERIFIED_SHA) {
+            throw new Error(
+              `Release branch mismatch: expected ${process.env.VERIFIED_SHA}, got ${release.commit.sha}.`,
+            );
+          }
+          console.log(`Release branch pinned to certified SHA: ${release.commit.sha}`);
+          NODE
+
+          node <<'NODE' >/tmp/cutover-dispatch.json
+          process.stdout.write(JSON.stringify({
+            ref: 'main',
+            inputs: {
+              "verified_sha": process.env.VERIFIED_SHA,
+              "confirmation": process.env.CONFIRMATION,
+            },
+          }));
+          NODE
+
+          code="$(curl -sS -o /tmp/cutover-dispatch-response.json -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data @/tmp/cutover-dispatch.json \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/mkety-public-production-cutover.yml/dispatches")"
+
+          if [ "$code" != '204' ]; then
+            echo "Production cutover dispatch failed with HTTP $code."
+            cat /tmp/cutover-dispatch-response.json
+            exit 1
+          fi
+
+          echo "Dispatched guarded production cutover for $VERIFIED_SHA."
