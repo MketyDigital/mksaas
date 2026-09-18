@@ -24,6 +24,31 @@ interface HistoryResponse {
   messages: PublicAssistantMessage[];
 }
 
+const publicRouteLabels: Record<string, string> = {
+  '/pricing': 'view pricing',
+  '/docs': 'open the docs',
+  '/enterprise': 'explore Enterprise',
+  '/contact': 'contact Mkety',
+  '/platform': 'explore Mkety Platform',
+  '/workspaces': 'explore Workspaces',
+  '/solutions': 'explore SolutionHub',
+  '/academy': 'visit Mkety Academy',
+  '/about': 'learn about Mkety',
+};
+
+export function formatPublicAssistantContent(content: string) {
+  let formatted = content.trim().replace(/\n{3,}/g, '\n\n');
+
+  for (const [route, label] of Object.entries(publicRouteLabels)) {
+    const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\const suggestedPrompts = [');
+    formatted = formatted.replace(
+      new RegExp(`(?<!\\]\\()${escaped}(?=\\s|[.,;:!?)]|$)`, 'gi'),
+      `[${label}](${route})`,
+    );
+  }
+
+  return formatted;
+}
 const suggestedPrompts = [
   'What can I build with Mkety?',
   'Which Mkety product is right for me?',
@@ -303,9 +328,9 @@ export function MketyPublicAssistant() {
                         components={{
                           p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                           strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-                          ul: ({ children }) => <ul className="my-2 space-y-1.5 pl-5">{children}</ul>,
-                          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1.5 pl-5">{children}</ol>,
-                          li: ({ children }) => <li className="list-disc marker:text-muted-foreground">{children}</li>,
+                          ul: ({ children }) => <ul className="my-2 list-disc space-y-1.5 pl-5 marker:text-muted-foreground">{children}</ul>,
+                          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1.5 pl-5 marker:text-muted-foreground">{children}</ol>,
+                          li: ({ children }) => <li className="pl-0.5">{children}</li>,
                           a: ({ href, children }) => (
                             <a
                               href={href}
@@ -324,7 +349,7 @@ export function MketyPublicAssistant() {
                           ),
                         }}
                       >
-                        {message.content}
+                        {formatPublicAssistantContent(message.content)}
                       </ReactMarkdown>
                     ) : (
                       message.content
