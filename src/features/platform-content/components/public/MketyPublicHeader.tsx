@@ -27,18 +27,12 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
       <div className="container mx-auto flex min-h-16 items-center justify-between gap-3 px-4">
-        <Link
-          href="/"
-          className="flex shrink-0 items-center gap-2.5 font-bold tracking-tight"
-          aria-label={settings.brandName}
-        >
-          <span
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm shadow-violet-950/15"
-            aria-hidden="true"
-          >
-            M
-          </span>
-          <span>{settings.brandName}</span>
+        <Link href="/" className="flex shrink-0 items-center" aria-label={settings.brandName}>
+          <img
+            src={settings.logoUrl ?? '/mkety-brand.svg'}
+            alt={settings.brandName}
+            className="h-8 w-auto max-w-[8.5rem] object-contain sm:h-9"
+          />
         </Link>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
@@ -53,7 +47,7 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
             <Link href="/login">Sign In</Link>
           </Button>
           <Button asChild className="hidden rounded-xl sm:inline-flex">
-            <Link href="/create-workspace">Get Started</Link>
+            <Link href="/signup">Get Started</Link>
           </Button>
         </div>
       </div>
