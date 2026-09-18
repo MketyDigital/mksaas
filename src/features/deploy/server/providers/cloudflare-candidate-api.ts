@@ -82,13 +82,13 @@ export class CloudflareCandidateApiTransport implements CloudflareCandidateTrans
       'metadata.json',
     );
 
-    for (const module of input.artifact.modules) {
+    for (const candidateModule of input.artifact.modules) {
       form.set(
-        module.name,
-        new Blob([module.source], {
-          type: module.contentType ?? 'application/javascript+module',
+        candidateModule.name,
+        new Blob([candidateModule.source], {
+          type: candidateModule.contentType ?? 'application/javascript+module',
         }),
-        module.name,
+        candidateModule.name,
       );
     }
 
