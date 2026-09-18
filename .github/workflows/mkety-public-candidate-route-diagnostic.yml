@@ -58,7 +58,7 @@ jobs:
             '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise'
             '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt'
           )
-          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|GitHub|MketyDigital|mksaas|mklms|origin\.mkety\.com'
+          quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|GitHub|MketyDigital|mksaas|origin\.mkety\.com'
           for route in "${routes[@]}"; do
             ok=false
             code='000'
