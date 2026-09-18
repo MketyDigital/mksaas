@@ -7,7 +7,6 @@ import {
   Layers3,
   Rocket,
   Shield,
-  Sparkles,
   Workflow,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -49,6 +48,7 @@ interface MketyHomePageProps {
 }
 
 const workspaceIcons = [Bot, Workflow, Rocket, Layers3];
+const contentIcons = [Layers3, Workflow, Shield, Rocket];
 
 type ContentSection =
   | PlatformOverviewSectionInput
@@ -82,7 +82,9 @@ function PublicContentSection({ section, muted = false }: { section: ContentSect
 
             {section.items.length > 0 && (
               <div className="grid auto-rows-[minmax(10rem,auto)] gap-4 md:grid-cols-2">
-                {section.items.map((item, index) => (
+                {section.items.map((item, index) => {
+                  const Icon = contentIcons[index % contentIcons.length] ?? Layers3;
+                  return (
                   <Card
                     key={item.key}
                     className={
@@ -94,7 +96,7 @@ function PublicContentSection({ section, muted = false }: { section: ContentSect
                     <CardHeader>
                       <div className="mb-5 flex items-start justify-between gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <Sparkles className="h-4 w-4" />
+                          <Icon className="h-4 w-4" />
                         </span>
                         {item.badge && (
                           <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">
@@ -113,7 +115,8 @@ function PublicContentSection({ section, muted = false }: { section: ContentSect
                       </CardContent>
                     )}
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
