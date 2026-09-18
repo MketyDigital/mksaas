@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
@@ -34,13 +34,17 @@ export default async function LoginPage({ searchParams: _searchParams }: LoginPa
       </div>
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-lg mb-4 animate-pulse">
-            <Sparkles className="h-8 w-8 text-white" />
-          </div>
+          <img src="/mkety-brand.svg" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
           <h1 className="text-3xl font-bold brand-gradient-text mb-2">Welcome to Mkety</h1>
           <p className="text-muted-foreground">Sign in to your workspace</p>
         </div>
         <LoginForm />
+        <p className="mt-5 text-center text-sm text-muted-foreground">
+          New to Mkety?{' '}
+          <Link href="/signup" className="font-semibold text-primary hover:underline">
+            Create an account
+          </Link>
+        </p>
       </div>
     </div>
   );
