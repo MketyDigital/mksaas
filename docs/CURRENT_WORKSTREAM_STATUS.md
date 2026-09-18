@@ -77,7 +77,7 @@ That finding changed the source split to the current correct architecture:
 
 ### Current verification
 
-Current code head: `3d6ef9b35f64233d571ea50ddeb6ace71808ec7d`.
+Current code head: `b12213069efb832872304a10c96edbdabe0d3169`.
 
 Green on that head so far:
 
@@ -85,13 +85,13 @@ Green on that head so far:
 - standalone type-check;
 - standalone build;
 - Cloudflare/Vinext build and deployment-packaging smoke;
-- Mkety Content DB Smoke: migrations, CMS migrations, seeding, and Node-native content contract smoke all green;
-- PR validation.
+- Mkety Content DB Smoke: migrations, CMS migrations, seeding, and Node-native content contract smoke all green.
 
 Still required before merge:
 
 - standalone tests/coverage;
 - combined CI completion;
+- PR validation completion;
 - MegaLinter;
 - any remaining required checks.
 
