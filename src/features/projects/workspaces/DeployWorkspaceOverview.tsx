@@ -93,7 +93,7 @@ export function DeployWorkspaceOverview({ projectSlug, tenantSlug }: BuildDeploy
       </div>
 
       <p className="mt-5 text-xs leading-5 text-muted-foreground">
-        App, environment, and deployment-history records now provide the Deploy data foundation. Infrastructure automation remains inactive: domain ownership checks, provider credentials, approvals, audit logs, and rollback controls must exist before real provider changes can run.
+        App, environment, and deployment-history records provide the Deploy data foundation. A provider-neutral execution kernel now exists internally for bounded non-production lifecycle handling, but no real provider adapter or customer-facing deploy action is enabled. Provider credentials, production approvals, domain ownership, audit controls, and rollback must exist before real infrastructure changes can run.
       </p>
     </section>
   );
