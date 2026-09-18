@@ -2,7 +2,7 @@
 
 **Updated:** 2026-09-18  
 **Current workstream:** Public-site production cutover through Cloudflare Worker Custom Domains  
-**Status:** IN PROGRESS — certified candidate green; two cutover attempts stopped safely before hostname mutation; PR #64 under exact-head verification  
+**Status:** IN PROGRESS — certified candidate green; DB migration now passes; latest cutover stopped safely on an over-broad public-copy smoke before hostname mutation  
 **Branch:** `release/coolify-env-upsert-cutover-2e871fe`  
 **Pull request:** #64
 
@@ -166,6 +166,14 @@ As of this update:
 - private PostgreSQL remained healthy, private, and SSL-enabled;
 - the certified application payload remains exactly `2e871fe5...`;
 - public application runtime certification remains green.
+
+## Latest cutover attempt
+
+Cutover run `35304048710` passed authorization, production DB migration/seed/smoke, exact-SHA quality checks, Hyperdrive resolution, Cloudflare snapshot/rollback preparation, Worker build/deploy, direct-DB secret removal, and runtime secret attachment.
+
+The Worker preview returned HTTP 200. The pre-domain smoke then rejected `/` because its quarantine regex treated any occurrence of the word `GitHub` as internal wording. The public homepage legitimately advertises GitHub integration, so this was an over-broad smoke rule rather than a runtime failure. Custom Domain attachment was skipped; production hostnames remain unchanged.
+
+Branch `release/fix-public-copy-smoke-2e871fe` narrows that check to actual internal repository references such as `github.com/MketyDigital` while continuing to block `MketyDigital`, `mksaas`, `mklms`, private origin hostnames, and stale runtime/template wording. Launcher generation is bumped to `worker-custom-domains-v3` for one clean retry.
 
 ## Exact next steps
 
