@@ -243,3 +243,22 @@ Historical draft PR #35 is superseded by current `main`. Its intended migration 
 The only still-missing part from PR #35 was its regression coverage. Branch `fix/rls-auto-enable-portable-current-main` adds `src/shared/db/rls-auto-enable-migration.test.ts` against the current implementation. No production database mutation is performed by this reconciliation branch; it only locks the already-shipped portable migration behavior with tests.
 
 Next after this reconciliation: Entitlements #22, then Usage/Credits #23.
+
+
+## Entitlements #22 current-main reconstruction
+
+Historical draft PR #22 is 192 commits behind the post-cutover main. Its entitlement-only delta is being reconstructed on `feat/entitlements-current-main` rather than merging the stacked branch.
+
+Preserved scope:
+- canonical entitlement keys;
+- versioned plan entitlements;
+- tenant grant/deny overrides with expiry and actor metadata;
+- deny-by-default resolver;
+- authoritative `requireEntitlement` enforcement helper;
+- workspace entitlement filtering;
+- migration `0012` and Drizzle metadata.
+
+Current-main adaptation:
+- Entitlements database reads use `@/shared/db/cloudflare`, matching the production Worker runtime gateway.
+- Workspace query integration is applied on top of the current Cloudflare-aware Platform query file.
+- Usage/Credits remains out of scope and follows after Entitlements.

@@ -741,3 +741,12 @@ Historical draft PR #35 is superseded by current `main`. Its intended migration 
 The only still-missing part from PR #35 was its regression coverage. Branch `fix/rls-auto-enable-portable-current-main` adds `src/shared/db/rls-auto-enable-migration.test.ts` against the current implementation. No production database mutation is performed by this reconciliation branch; it only locks the already-shipped portable migration behavior with tests.
 
 Next after this reconciliation: Entitlements #22, then Usage/Credits #23.
+
+
+## Entitlements current-main reconstruction
+
+Entitlements #22 is being rebuilt from its entitlement-only delta on top of the post-production-cutover main. Do not merge the historical stacked branch directly.
+
+The reconstruction preserves deny-by-default semantics, plan-version grants, tenant deny/grant overrides, backend authorization enforcement, and workspace filtering. Runtime database reads are adapted to the current Cloudflare gateway. Migration ordering remains `0012` after the current `0011_billing_core_foundation`.
+
+After Entitlements verification/merge, continue to Usage/Credits #23.
