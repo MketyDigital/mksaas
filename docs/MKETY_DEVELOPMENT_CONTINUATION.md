@@ -907,3 +907,13 @@ Branch `feat/deploy-execution-kernel` adds:
 No real Cloudflare/OCI/Coolify adapter is registered. No customer-facing deploy action, provider credential, DNS/custom-domain mutation, public URL provisioning, production execution, or rollback execution is introduced.
 
 Next after this kernel verifies/merges: implement one isolated non-production provider adapter/candidate environment with explicit credential boundaries and real external verification before exposing a customer deployment control.
+
+
+## Deploy execution kernel pre-merge hardening
+
+Focused review added two fail-closed guarantees before any real provider adapter can be introduced:
+
+- deployment lifecycle transitions are verified atomically; provider execution does not proceed if `queued -> running` fails, and completion fails closed if `running -> completed` cannot be recorded;
+- provider execution is bounded by a default 60-second timeout, with invalid timeout configuration rejected before a deployment record is created.
+
+Provider failures and timeouts remain sanitized, protected/production environments remain non-executable, and no real Cloudflare/OCI/Coolify/DNS mutation is enabled.
