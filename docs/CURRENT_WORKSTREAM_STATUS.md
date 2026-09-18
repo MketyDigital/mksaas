@@ -206,3 +206,10 @@ Branch `release/resolve-custom-domain-dns-conflict-2e871fe` removes only pre-exi
 Cutover run `35306492667` successfully attached both `mkety.com` and `www.mkety.com` as Worker Custom Domains after removing only the stale apex/www A records. Live `mkety.com` readiness returned HTTP 200. The run then failed only because the acceptance script compared the raw `Location` header from the required www 308 redirect to one exact serialization.
 
 The workflow rolled back the Custom Domains and restored the pre-cutover A records, returning traffic to the previous site. Branch `release/robust-www-redirect-acceptance-2e871fe` keeps the 308 requirement but validates the redirect target semantically as HTTPS + hostname `mkety.com` + root path + no query/hash. Launcher generation is `worker-custom-domains-v6`.
+
+
+## Live Public AI acceptance alignment
+
+Cutover run `35307191844` passed authorization, production DB migration, exact-SHA quality checks, Hyperdrive resolution, Worker deploy/secrets, preview smoke, Custom Domain attachment, live route/canonical/sitemap/robots checks, and the semantic `www.mkety.com -> https://mkety.com/` 308 redirect check. Final acceptance then failed in the Public AI assertion and automatically rolled back the newly attached Custom Domains/restored prior A records.
+
+The production acceptance contract had drifted from the already-certified candidate contract: it required `trade.mkety.com` in a new Trading buyer answer, while candidate certification explicitly rejects direct `trade.mkety.com` handoff for new buyers and requires Enterprise-first Trading sales. Branch `release/align-live-ai-acceptance-2e871fe` makes live acceptance identical to the certified boundary: canonical plans/prices, Academy production destination, Enterprise-first Trading sales, removed-plan rejection, and private-source/internal-engineering rejection. Launcher generation is `worker-custom-domains-v7`.
