@@ -890,3 +890,20 @@ Deployments/Cloud foundation PR #75 implementation head `ed3fdd853e606a66874bb2e
 Migration `0014_deploy_foundation.sql`, its journal entry, and `0014_snapshot.json` passed the repository migration baseline and `drizzle-kit check`.
 
 No deployment provider, DNS, custom-domain, public URL, credential, production execution, or rollback mutation is enabled by this slice. The next Deployments/Cloud batch must introduce provider execution only behind an explicit provider boundary, approvals/audit, bounded failure handling, and rollback design.
+
+
+## Deploy provider-neutral execution kernel
+
+After Deploy foundation PR #75 merged as `41b0d40d75c7889da4d6aaa522714b141dbc69b0`, the next bounded Deployments/Cloud slice is the internal execution kernel.
+
+Branch `feat/deploy-execution-kernel` adds:
+- provider-neutral deployment adapter and repository contracts;
+- queued -> running -> completed/failed lifecycle orchestration;
+- request-scoped Drizzle lifecycle persistence through the existing `deployments` table;
+- hard rejection of protected or production environments before persistence/provider execution;
+- sanitized provider failures with no raw provider error leakage;
+- focused tests using an injected fake provider.
+
+No real Cloudflare/OCI/Coolify adapter is registered. No customer-facing deploy action, provider credential, DNS/custom-domain mutation, public URL provisioning, production execution, or rollback execution is introduced.
+
+Next after this kernel verifies/merges: implement one isolated non-production provider adapter/candidate environment with explicit credential boundaries and real external verification before exposing a customer deployment control.
