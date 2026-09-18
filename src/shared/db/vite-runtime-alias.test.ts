@@ -175,19 +175,22 @@ describe('Cloudflare Worker database build wiring', () => {
   });
 
   it('routes Worker database gateways directly through the Cloudflare adapter', async () => {
-    const [dbIndex, requestDatabase, publicAIRequestDatabase, nodeDatabase] = await Promise.all([
-      readFile(DB_INDEX_PATH, 'utf8'),
-      readFile(DB_REQUEST_PATH, 'utf8'),
-      readFile(PUBLIC_AI_REQUEST_DB_PATH, 'utf8'),
-      readFile(NODE_DB_PATH, 'utf8'),
-    ]);
+    const [dbIndex, cloudflareDatabase, requestDatabase, publicAIRequestDatabase, nodeDatabase] =
+      await Promise.all([
+        readFile(DB_INDEX_PATH, 'utf8'),
+        readFile(DB_CLOUDFLARE_PATH, 'utf8'),
+        readFile(DB_REQUEST_PATH, 'utf8'),
+        readFile(PUBLIC_AI_REQUEST_DB_PATH, 'utf8'),
+        readFile(NODE_DB_PATH, 'utf8'),
+      ]);
 
-    expect(dbIndex).toContain("from '@/shared/db/runtime-connection.cloudflare'");
+    expect(dbIndex).toContain("from '@/shared/db/runtime-connection'");
+    expect(dbIndex).not.toContain('runtime-connection.cloudflare');
+    expect(cloudflareDatabase).toContain("from './runtime-connection.cloudflare'");
     expect(requestDatabase).toContain("from '@/shared/db/runtime-connection.cloudflare'");
     expect(publicAIRequestDatabase).toContain(
       "from '@/shared/db/runtime-connection.cloudflare'",
     );
-    expect(dbIndex).not.toContain("from '@/shared/db/runtime-connection'");
     expect(requestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
     expect(publicAIRequestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
     expect(nodeDatabase).toContain("from './runtime-connection'");
