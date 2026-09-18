@@ -19,8 +19,8 @@ interface SelectTenantPageProps {
   searchParams: Promise<{ plan?: string }>;
 }
 
-export default async function SelectTenantPage({ searchParams }: SelectTenantPageProps) {
-  const query = await searchParams;
+export default async function SelectTenantPage(props?: SelectTenantPageProps) {
+  const query = props?.searchParams ? await props.searchParams : {};
   const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
 
   const session = await auth();
