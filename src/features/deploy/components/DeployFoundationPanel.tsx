@@ -1,8 +1,10 @@
-import { createDeployApplication, createDeployEnvironment } from '@/features/deploy/actions';
+import { createDeployApplication, createDeployEnvironment, deployCloudflareCandidate } from '@/features/deploy/actions';
 import type { DeployFoundationState } from '@/features/deploy/server/queries';
 
 interface DeployFoundationPanelProps {
   canManage: boolean;
+  canDeployCandidate: boolean;
+  candidateOutcome?: 'completed' | 'failed';
   projectSlug: string;
   state: DeployFoundationState;
   tenantSlug: string;
@@ -10,6 +12,8 @@ interface DeployFoundationPanelProps {
 
 export function DeployFoundationPanel({
   canManage,
+  canDeployCandidate,
+  candidateOutcome,
   projectSlug,
   state,
   tenantSlug,
@@ -76,6 +80,70 @@ export function DeployFoundationPanel({
         </div>
       )}
 
+      {candidateOutcome ? (
+        <div
+          className="rounded-2xl border bg-card p-4 text-sm"
+          role="status"
+        >
+          {candidateOutcome === 'completed'
+            ? 'Candidate deployment completed. The run is recorded in deployment history below.'
+            : 'Candidate deployment could not be completed. No production environment was changed.'}
+        </div>
+      ) : null}
+
+      {canManage ? (
+        <section className="rounded-2xl border bg-card p-5" aria-labelledby="candidate-deploy-heading">
+          <div>
+            <h3 className="font-semibold" id="candidate-deploy-heading">Deploy non-production candidate</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Creates an isolated workers.dev proof deployment from a Mkety-controlled artifact. Production environments, custom domains and DNS are not changed.
+            </p>
+          </div>
+
+          {canDeployCandidate ? (
+            <div className="mt-4 space-y-4">
+              {state.environments.filter((environment) => !environment.protected && environment.kind !== 'production').length ? (
+                state.environments
+                  .filter((environment) => !environment.protected && environment.kind !== 'production')
+                  .map((environment) => (
+                    <form action={deployCloudflareCandidate} className="grid gap-3 rounded-xl border bg-background p-4 md:grid-cols-[1fr_1fr_auto]" key={environment.id}>
+                      <input name="tenantSlug" type="hidden" value={tenantSlug} />
+                      <input name="projectSlug" type="hidden" value={projectSlug} />
+                      <input name="environmentId" type="hidden" value={environment.id} />
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">{environmentNameById.get(environment.id) ?? environment.name}</span>
+                        <input
+                          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                          name="releaseRef"
+                          placeholder="Release reference"
+                          required
+                        />
+                      </label>
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Source reference</span>
+                        <input
+                          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                          name="sourceRef"
+                          placeholder="Optional branch or commit"
+                        />
+                      </label>
+                      <button className="self-end rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" type="submit">
+                        Deploy candidate
+                      </button>
+                    </form>
+                  ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Add a development, preview or staging environment first.</p>
+              )}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Candidate deployment requires Deploy Workspace access and project manager permissions.
+            </p>
+          )}
+        </section>
+      ) : null}
+
       <section className="grid gap-4 lg:grid-cols-2" aria-label="Deploy foundation records">
         <div className="rounded-2xl border bg-card p-5">
           <h3 className="font-semibold">Applications</h3>
@@ -116,7 +184,7 @@ export function DeployFoundationPanel({
         <div>
           <h3 className="font-semibold" id="deployment-history-heading">Deployment history</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Read-only release history. Provider execution is not enabled in this foundation slice.
+            Audited candidate release history. Customer-triggered execution is limited to non-production isolated workers.dev candidates.
           </p>
         </div>
         <div className="mt-4 space-y-3">
