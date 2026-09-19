@@ -43,6 +43,20 @@ describe('MketyPublicAssistant', () => {
     expect(screen.getByText(/i need trading workspace/i)).toBeInTheDocument();
     expect(screen.getByText(/avoid sharing passwords, payment details or private account data/i)).toBeInTheDocument();
 
+    const input = screen.getByLabelText(/message mkety ai/i);
+    fireEvent.change(input, { target: { value: 'We need a Trading Workspace for our team.' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await waitFor(() => expect((global.fetch as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(2));
+    const salesRequest = (global.fetch as jest.Mock).mock.calls.find(
+      ([url, request]) => url === '/api/public/assistant' && request?.method === 'POST',
+    );
+    expect(salesRequest).toBeDefined();
+    expect(JSON.parse(salesRequest![1].body)).toEqual({
+      message: 'We need a Trading Workspace for our team.',
+      intent: 'enterprise-sales',
+    });
+
     window.history.replaceState({}, '', '/');
   });
 
