@@ -146,7 +146,19 @@ export async function GET(request: Request) {
       );
     });
   } catch (error) {
-    return safeError(error);
+    const errorChain = summarizeErrorChain(error);
+    publicAILogger.warn(
+      {
+        errorName: errorChain[0]?.name ?? 'UnknownError',
+        errorCauseCode: errorChain[1]?.code,
+      },
+      'Mkety public AI history unavailable; serving empty history',
+    );
+    return json({
+      conversations: [],
+      activeConversationId: null,
+      messages: [],
+    });
   }
 }
 
