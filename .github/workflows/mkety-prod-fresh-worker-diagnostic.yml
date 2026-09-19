@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  VERIFIED_SHA: 74d882d2c44647a46af593a88ac274af3785a624
+  VERIFIED_SHA: efbc87f41b2d7d4f94449fa657bc987ee6ce29a9
   TEMP_WORKER_NAME: mkety-platform-prodcheck
   MKETY_HYPERDRIVE_NAME: mkety-production-db
   SKIP_ENV_VALIDATION: 'true'
