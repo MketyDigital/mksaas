@@ -92,6 +92,8 @@ jobs:
           console.log('VPC_SERVICES_SAFE '+JSON.stringify(rows.map(x=>({
             name:x.name||null,type:x.type||null,tcpPort:x.tcp_port??null,
             appProtocol:x.app_protocol||null,
+            hostKind:x.host?.hostname?'hostname':x.host?.ipv4?'ipv4':x.host?.ipv6?'ipv6':'unknown',
+            certVerificationMode:x.tls_settings?.cert_verification_mode||null,
             hasTunnel:Boolean(x.host?.network?.tunnel_id||x.host?.resolver_network?.tunnel_id)
           }))));
           NODE
