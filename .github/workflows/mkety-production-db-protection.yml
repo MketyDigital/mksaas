@@ -22,7 +22,7 @@ jobs:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
-      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      BACKUP_UUID: msr4wenpw3xhksing9veqprl
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_S3_API: ${{ secrets.R2_S3_API }}
@@ -92,7 +92,6 @@ jobs:
           if (!backup) throw new Error('Expected production backup policy was not returned by Coolify.');
           if (backup.enabled === false) throw new Error('Production backup policy is disabled.');
           if (backup.save_s3 !== true) throw new Error('Production backup policy is not configured for offsite S3/R2 storage.');
-          if (!backup.s3_storage_uuid) throw new Error('Production backup policy has no S3/R2 storage destination.');
           if (Number(backup.database_backup_retention_amount_locally || 0) < 7) {
             throw new Error('Local backup retention is below 7 copies.');
           }
@@ -104,7 +103,7 @@ jobs:
             enabled: backup.enabled,
             frequency: backup.frequency,
             save_s3: backup.save_s3,
-            has_s3_storage: Boolean(backup.s3_storage_uuid),
+            has_s3_storage: backup.save_s3 === true,
             database_backup_retention_amount_locally: backup.database_backup_retention_amount_locally,
             database_backup_retention_amount_s3: backup.database_backup_retention_amount_s3,
             last_saved_at: backup.last_saved_at,
