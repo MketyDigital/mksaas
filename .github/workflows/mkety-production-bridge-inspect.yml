@@ -67,6 +67,16 @@ jobs:
           }));
           NODE
 
+          db_logs="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID/logs?lines=300&show_timestamps=false" || printf '{"logs":""}')"
+          DB_LOGS="$db_logs" node <<'NODE'
+          let raw=''; try { raw=String(JSON.parse(process.env.DB_LOGS||'{}').logs||''); } catch {}
+          const lines=raw.split('\n').filter(Boolean);
+          const safe=lines.filter(line=>/ssl|tls|certificate|handshake|connection received|could not accept|fatal|error/i.test(line))
+            .slice(-80)
+            .map(line=>line.replace(/user=[^ ]+/gi,'user=***').replace(/database=[^ ]+/gi,'database=***').replace(/host=[^ ]+/gi,'host=***'));
+          console.log('POSTGRES_TLS_LOGS_SAFE '+JSON.stringify(safe));
+          NODE
+
           services="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/services")"
           apps="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/applications")"
           SERVICES="$services" APPS="$apps" node <<'NODE'
