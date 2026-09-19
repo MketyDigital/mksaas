@@ -68,11 +68,15 @@ jobs:
           const routes = require('/tmp/mkety-worker-routes.json');
           const domains = require('/tmp/mkety-worker-domains.json');
           const settings = require('/tmp/mkety-worker-settings.json');
-          for (const [name, payload] of [['root DNS', root], ['www DNS', www], ['Worker routes', routes], ['Worker domains', domains], ['Worker settings', settings]]) {
+          for (const [name, payload] of [['root DNS', root], ['www DNS', www], ['Worker routes', routes], ['Worker domains', domains]]) {
             if (!payload.success || !Array.isArray(payload.result)) {
               console.error(`Cloudflare ${name} lookup failed.`);
               process.exit(1);
             }
+          }
+          if (!settings.success || !settings.result || typeof settings.result !== 'object' || Array.isArray(settings.result)) {
+            console.error('Cloudflare Worker settings lookup failed.');
+            process.exit(1);
           }
 
           function safeRecord(record) {
