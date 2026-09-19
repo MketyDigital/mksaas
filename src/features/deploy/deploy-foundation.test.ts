@@ -27,7 +27,7 @@ describe('Deploy foundation safety contract', () => {
     expect(actions).toContain("protected: kind === 'production'");
   });
 
-  it('does not expose infrastructure execution in this slice', async () => {
+  it('exposes only the guarded non-production customer candidate execution path', async () => {
     const files = await Promise.all([
       read('src/features/deploy/actions.ts'),
       read('src/features/deploy/server/queries.ts'),
@@ -35,8 +35,12 @@ describe('Deploy foundation safety contract', () => {
     ]);
     const source = files.join('\n');
 
-    expect(source).not.toMatch(/wrangler|cloudflare api|oci api|coolify|deploy\(|triggerDeployment|createDeploymentRun/i);
+    expect(source).toContain('deployCloudflareCandidate');
+    expect(source).toContain("entitlement: 'workspace.deploy'");
+    expect(source).toContain("environment.kind === 'production'");
+    expect(source).toContain('environment.protected');
+    expect(source).toContain('isolated workers.dev proof deployment');
     expect(source).toContain('No infrastructure is provisioned');
-    expect(source).toContain('Provider execution is not enabled');
+    expect(source).not.toMatch(/oci api|coolify|Deploy to production|Create custom domain|bind_pattern/i);
   });
 });
