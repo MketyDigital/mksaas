@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 import { publicAssistantDeleteSchema, publicAssistantMessageSchema } from '@/features/public-assistant/contracts';
-import { summarizeErrorChain } from '@/features/public-assistant/server/error-diagnostics';
 import {
   createDegradedConversationToken,
+  type DegradedPublicAIState,
   parseDegradedConversationToken,
   PUBLIC_AI_DEGRADED_COOKIE,
-  type DegradedPublicAIState,
 } from '@/features/public-assistant/server/degraded-memory';
+import { summarizeErrorChain } from '@/features/public-assistant/server/error-diagnostics';
 import {
   clearPublicAIHistory,
   deletePublicAIConversation,
