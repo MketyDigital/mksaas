@@ -4,6 +4,7 @@ export const publicAssistantMessageSchema = z
   .object({
     conversationId: z.uuid().optional(),
     message: z.string().trim().min(1).max(2000),
+    intent: z.enum(['enterprise-sales']).optional(),
   })
   .strict();
 
