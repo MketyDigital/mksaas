@@ -16,7 +16,7 @@ permissions:
 jobs:
   inspect:
     name: Inspect mkety.com routing without mutation
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24 || github.event.pull_request.number == 91
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: staging
@@ -59,12 +59,16 @@ jobs:
           curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=mkety.com" > /tmp/mkety-root-dns.json
           curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=www.mkety.com" > /tmp/mkety-www-dns.json
           curl -fsS "${auth[@]}" "$api/zones/$zone_id/workers/routes" > /tmp/mkety-worker-routes.json
+          curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > /tmp/mkety-worker-domains.json
+          curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/mkety-platform/settings" > /tmp/mkety-worker-settings.json
 
           ZONE_ID="$zone_id" node <<'NODE'
           const root = require('/tmp/mkety-root-dns.json');
           const www = require('/tmp/mkety-www-dns.json');
           const routes = require('/tmp/mkety-worker-routes.json');
-          for (const [name, payload] of [['root DNS', root], ['www DNS', www], ['Worker routes', routes]]) {
+          const domains = require('/tmp/mkety-worker-domains.json');
+          const settings = require('/tmp/mkety-worker-settings.json');
+          for (const [name, payload] of [['root DNS', root], ['www DNS', www], ['Worker routes', routes], ['Worker domains', domains], ['Worker settings', settings]]) {
             if (!payload.success || !Array.isArray(payload.result)) {
               console.error(`Cloudflare ${name} lookup failed.`);
               process.exit(1);
@@ -87,6 +91,9 @@ jobs:
           console.log('Root DNS records:', JSON.stringify(root.result.map(safeRecord)));
           console.log('www DNS records:', JSON.stringify(www.result.map(safeRecord)));
           console.log('Worker route patterns:', JSON.stringify(routes.result.map((route) => ({ pattern: route.pattern, script: route.script || null }))));
+          console.log('Mkety Worker custom domains:', JSON.stringify(domains.result.filter((d) => ['mkety.com','www.mkety.com'].includes(d.hostname)).map((d) => ({hostname:d.hostname,service:d.service,environment:d.environment || null}))));
+          console.log('Mkety Worker bindings:', JSON.stringify((settings.result?.bindings || []).map((b) => ({name:b.name,type:b.type})).sort((a,b)=>a.name.localeCompare(b.name))));
+          console.log('Mkety Worker compatibility date:', settings.result?.compatibility_date || null);
           NODE
 
       - name: Assert preflight remains read-only
