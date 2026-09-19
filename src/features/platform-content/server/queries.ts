@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db/cloudflare';
+import type { Database } from '@/shared/db';
+import { withRequestDatabase } from '@/shared/db/request';
 import {
   platformDocsArticles,
   platformDocsCategories,
@@ -50,12 +51,12 @@ const PUBLISHED = 'published' as const;
 const cmsLogger = createLogger({ module: 'platform-content' });
 
 async function withFallback<T>(
-  read: () => Promise<T | null | undefined>,
+  read: (database: Database) => Promise<T | null | undefined>,
   fallback: T,
   operation = 'cms-read',
 ): Promise<T> {
   try {
-    const value = await read();
+    const value = await withRequestDatabase(read);
     return value ?? fallback;
   } catch (error) {
     cmsLogger.warn(
@@ -76,7 +77,7 @@ function getSectionPayload(sectionByKey: Map<string, unknown>, ...keys: string[]
 
 export async function getPublishedPlatformSiteSettings() {
   return withFallback(
-    async () => {
+    async (db) => {
       const row = await db.query.platformSiteSettings.findFirst({
         where: and(eq(platformSiteSettings.environment, 'production'), eq(platformSiteSettings.status, PUBLISHED)),
         orderBy: [asc(platformSiteSettings.createdAt)],
@@ -110,7 +111,7 @@ export async function getPublishedNavigation(area?: 'header' | 'footer') {
     : defaultPlatformNavigation.filter((item) => item.area === area && item.enabled !== false);
 
   return withFallback(
-    async () => {
+    async (db) => {
       const rows = await db.query.platformNavigationItems.findMany({
         where: area
           ? and(
@@ -142,7 +143,7 @@ export async function getPublishedNavigation(area?: 'header' | 'footer') {
 
 export async function getPublishedPricingPlans() {
   return withFallback(
-    async () => {
+    async (db) => {
       const rows = await db.query.platformPricingPlans.findMany({
         where: eq(platformPricingPlans.status, PUBLISHED),
         orderBy: [asc(platformPricingPlans.sortOrder)],
@@ -178,7 +179,7 @@ export async function getPublishedPricingPlans() {
 
 export async function getPublishedDocsTree() {
   return withFallback(
-    async () => {
+    async (db) => {
       const categories = await db.query.platformDocsCategories.findMany({
         where: eq(platformDocsCategories.status, PUBLISHED),
         orderBy: [asc(platformDocsCategories.sortOrder)],
@@ -239,7 +240,7 @@ export async function getPublishedDocsArticle(slug: string) {
     null;
 
   return withFallback(
-    async () => {
+    async (db) => {
       const [categoryKey, articleSlug] = slug.includes('/') ? slug.split('/') : [undefined, slug];
       const conditions = [
         eq(platformDocsArticles.status, PUBLISHED),
@@ -294,7 +295,7 @@ export async function getPublishedHomepageContent() {
   ]);
 
   const sections = await withFallback(
-    async () => {
+    async (db) => {
       const page = await db.query.platformPages.findFirst({
         where: and(
           eq(platformPages.slug, 'home'),
