@@ -187,7 +187,10 @@ export async function deployCloudflareCandidate(formData: FormData) {
 
   let outcome = 'completed';
   try {
-    const provider = createCustomerCandidateProvider(process.env);
+    const provider = createCustomerCandidateProvider({
+      MKETY_DEPLOY_CLOUDFLARE_ACCOUNT_ID: process.env.MKETY_DEPLOY_CLOUDFLARE_ACCOUNT_ID,
+      MKETY_DEPLOY_CLOUDFLARE_API_TOKEN: process.env.MKETY_DEPLOY_CLOUDFLARE_API_TOKEN,
+    });
     await executeDeployment(
       drizzleDeploymentExecutionRepository,
       provider,
