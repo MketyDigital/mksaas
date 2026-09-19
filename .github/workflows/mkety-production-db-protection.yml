@@ -156,8 +156,9 @@ jobs:
             python3 -m pip install --user --quiet awscli
             export PATH="$HOME/.local/bin:$PATH"
           fi
+          R2_ENDPOINT_ORIGIN="$(node -e "const u=new URL(process.env.R2_S3_API); process.stdout.write(u.origin)")"
           aws s3api list-objects-v2 \
-            --endpoint-url "$R2_S3_API" \
+            --endpoint-url "$R2_ENDPOINT_ORIGIN" \
             --bucket "$R2_BUCKET" \
             --max-items 1000 \
             --output json > /tmp/r2-objects.json
