@@ -204,3 +204,67 @@ export async function runMketyPublicAssistant(input: {
     throw new PublicAssistantRuntimeError('Mkety AI is temporarily unavailable. Please try again.', 503);
   }
 }
+
+
+async function buildGroundedContextStateless(message: string) {
+  const toolNames = planPublicSupportTools(message);
+  const contextParts: string[] = [];
+
+  for (const toolName of toolNames) {
+    try {
+      const result = await executePublicSupportTool(toolName, buildToolInput(toolName, message));
+      contextParts.push(`${toolName}: ${JSON.stringify(result)}`);
+    } catch {
+      // Degraded public mode is intentionally fail-open for public support context.
+    }
+  }
+
+  return contextParts.join('\n\n');
+}
+
+export async function runMketyPublicAssistantStateless(input: {
+  message: string;
+  intent?: 'enterprise-sales';
+  environment: PublicAssistantEnvironment;
+}) {
+  const config = parsePublicAIProviderConfig(input.environment);
+  if (!config.enabled) {
+    throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
+  }
+
+  const groundedContext = await buildGroundedContextStateless(input.message);
+  const targets = resolveProviderTargets(input.environment);
+  const primary = targets[0];
+  if (!primary) {
+    throw new PublicAssistantRuntimeError('Mkety AI provider is not configured.', 503);
+  }
+
+  try {
+    const response = await runPublicAIGateway({
+      request: {
+        messages: [{ role: 'user', content: input.message }],
+        system: buildPublicSystemPrompt(
+          groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          { enterpriseSalesIntake: input.intent === 'enterprise-sales' },
+        ),
+        maxOutputTokens: 900,
+      },
+      primary,
+      fallbacks: targets.slice(1),
+    });
+
+    const answer = response.text.trim();
+    if (!answer) {
+      throw new PublicAssistantRuntimeError('Mkety AI did not return a usable answer.', 503);
+    }
+
+    return {
+      answer,
+      conversationId: crypto.randomUUID(),
+      degraded: true as const,
+    };
+  } catch (error) {
+    if (error instanceof PublicAssistantRuntimeError) throw error;
+    throw new PublicAssistantRuntimeError('Mkety AI is temporarily unavailable. Please try again.', 503);
+  }
+}
