@@ -278,6 +278,31 @@ jobs:
             echo "OK $route"
           done
 
+          for auth_route in /login /signup; do
+            headers_file="/tmp/mkety-auth-headers-${auth_route#/}"
+            body_file="/tmp/mkety-auth-body-${auth_route#/}"
+            code="$(curl -L -sS -D "$headers_file" -o "$body_file" -w '%{http_code}' "$CANDIDATE_URL$auth_route" || true)"
+            if [ "$code" != '200' ]; then
+              echo "Auth route expected HTTP 200: $auth_route (received $code)"
+              exit 1
+            fi
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$headers_file")"
+            content_disposition="$(awk 'BEGIN{IGNORECASE=1} /^content-disposition:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$headers_file")"
+            if ! printf '%s' "$content_type" | grep -Eqi '^text/html([;]|$)'; then
+              echo "Auth route must return HTML, not an API/text download: $auth_route (Content-Type: $content_type)"
+              exit 1
+            fi
+            if printf '%s' "$content_disposition" | grep -Eqi 'attachment|filename='; then
+              echo "Auth route must not return a downloadable attachment: $auth_route (Content-Disposition: $content_disposition)"
+              exit 1
+            fi
+            if ! grep -Eqi '<html|<!doctype html' "$body_file"; then
+              echo "Auth route body is not HTML: $auth_route"
+              exit 1
+            fi
+            echo "OK auth HTML contract $auth_route"
+          done
+
       - name: Smoke Enterprise payment safety boundary
         shell: bash
         env:
