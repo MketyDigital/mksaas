@@ -1,4 +1,4 @@
-name: Mkety Production Hyperdrive VPC Recovery
+name: Mkety Production Hyperdrive VPC TLS Diagnostic
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   recover:
-    name: Create and verify replacement production Hyperdrive
+    name: Temporarily test VPC TLS verification without live cutover
     runs-on: ubuntu-latest
     timeout-minutes: 12
     environment: production
@@ -23,7 +23,7 @@ jobs:
       COOLIFY_URL: https://deploy.mkety.com
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
       VPC_SERVICE_NAME: mkety-production-postgres
-      RECOVERY_HYPERDRIVE_NAME: mkety-production-db-vpc
+      RECOVERY_HYPERDRIVE_NAME: mkety-production-db-vpc-tls-test
       PROBE_WORKER_NAME: mkety-vpc-recovery-probe
 
     steps:
@@ -61,7 +61,7 @@ jobs:
           rm -f /tmp/db-parts.json /tmp/db.json
           echo 'Private production database credentials resolved without disclosure.'
 
-      - name: Snapshot and set production VPC service TLS verification to verify_ca
+      - name: Snapshot and temporarily disable VPC certificate verification
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +78,7 @@ jobs:
           const base={name:s.name,type:s.type,tcp_port:s.tcp_port,app_protocol:s.app_protocol,host:s.host};
           if(s.tls_settings) base.tls_settings=s.tls_settings;
           fs.writeFileSync('/tmp/original-vpc-service.json',JSON.stringify(base));
-          fs.writeFileSync('/tmp/verify-ca-vpc-service.json',JSON.stringify({...base,tls_settings:{cert_verification_mode:'verify_ca'}}));
+          fs.writeFileSync('/tmp/temporary-vpc-service.json',JSON.stringify({...base,tls_settings:{cert_verification_mode:'disabled'}}));
           fs.writeFileSync('/tmp/service-id',String(s.service_id));
           console.log('Original VPC TLS mode: '+(s.tls_settings?.cert_verification_mode||'verify_full(default)'));
           NODE
@@ -86,16 +86,16 @@ jobs:
           SERVICE_ID="$(cat /tmp/service-id)"
           echo "::add-mask::$SERVICE_ID"
           echo "SERVICE_ID=$SERVICE_ID" >> "$GITHUB_ENV"
-          code="$(curl -sS -o /tmp/vpc-update-response.json -w '%{http_code}'             -X PUT             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Content-Type: application/json'             --data-binary @/tmp/verify-ca-vpc-service.json             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
+          code="$(curl -sS -o /tmp/vpc-update-response.json -w '%{http_code}'             -X PUT             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Content-Type: application/json'             --data-binary @/tmp/temporary-vpc-service.json             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
           if [ "$code" != '200' ]; then
             echo "VPC TLS update failed with HTTP $code."
             node -e "const x=require('/tmp/vpc-update-response.json'); console.log('CLOUDFLARE_VPC_ERROR '+JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null,pointer:e.source?.pointer||null}))))"
             exit 1
           fi
-          node -e "const x=require('/tmp/vpc-update-response.json'); if(!x.success||x.result?.tls_settings?.cert_verification_mode!=='verify_ca') throw new Error('VPC service did not retain verify_ca')"
-          echo 'Production VPC PostgreSQL service now uses verify_ca for certificate validation.'
+          node -e "const x=require('/tmp/vpc-update-response.json'); if(!x.success||x.result?.tls_settings?.cert_verification_mode!=='disabled') throw new Error('VPC service did not enter temporary disabled verification mode')"
+          echo 'Temporary diagnostic only: VPC certificate verification is disabled until the mandatory restore step.'
 
-      - name: Create or refresh replacement VPC-backed Hyperdrive
+      - name: Create disposable VPC-backed Hyperdrive
         shell: bash
         run: |
           set -euo pipefail
@@ -229,21 +229,27 @@ jobs:
           fi
           echo 'Replacement VPC-backed Hyperdrive passed direct SELECT 1.'
 
-      - name: Restore original VPC service on recovery failure
-        if: ${{ failure() }}
+      - name: Restore original VPC service after diagnostic
+        if: ${{ always() }}
         shell: bash
         run: |
           set +e
           if [ -s /tmp/original-vpc-service.json ] && [ -n "${SERVICE_ID:-}" ]; then
             code="$(curl -sS -o /tmp/vpc-restore-response.json -w '%{http_code}'               -X PUT               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/original-vpc-service.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
-            echo "VPC rollback HTTP $code"
+            echo "VPC restore HTTP $code"
+            [ "$code" = '200' ] || exit 1
           fi
 
-      - name: Cleanup probe Worker
+      - name: Delete disposable Hyperdrive and cleanup probe Worker
         if: ${{ always() }}
         shell: bash
         run: |
           set +e
+          if [ -n "${RECOVERY_ID:-}" ]; then
+            curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$RECOVERY_ID" >/dev/null
+            echo 'Disposable recovery Hyperdrive deletion attempted.'
+          fi
           curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME/subdomain" >/dev/null
           curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME" >/dev/null
           echo 'Recovery probe Worker cleanup attempted.'
