@@ -1,0 +1,89 @@
+name: Mkety Production Backup Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-backup-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: Attach R2 backup target and request fresh backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      BACKUP_UUID: slamhu8pudyyj3qldejcgbr2
+      S3_STORAGE_UUID: o5p5dqqkijve7tsg1dxf1xnb
+
+    steps:
+      - name: Validate existing database and R2 storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_API_TOKEN:?required}"
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/s3-storages/$S3_STORAGE_UUID" -o /tmp/s3.json
+          node <<'NODE'
+          const db=require('/tmp/db.json');
+          const s3=require('/tmp/s3.json');
+          if(db.name!=='mkety-postgres'||db.is_public!==false||!String(db.status||'').toLowerCase().includes('healthy')) throw new Error('Production Postgres preflight failed.');
+          if(s3.uuid!==process.env.S3_STORAGE_UUID||s3.is_usable!==true||s3.bucket!=='mkety-production-db-backups') throw new Error('Expected usable Mkety R2 storage not found.');
+          console.log('Production Postgres and existing R2 backup target verified.');
+          NODE
+
+      - name: Attach R2 target and request backup now
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups.json
+          BACKUPS="$(cat /tmp/backups.json)" node <<'NODE' >/tmp/backup-patch.json
+          const raw=JSON.parse(process.env.BACKUPS||'[]');
+          const list=Array.isArray(raw)?raw:Array.isArray(raw?.data)?raw.data:Array.isArray(raw?.backups)?raw.backups:[];
+          const b=list.find(x=>x?.uuid===process.env.BACKUP_UUID);
+          if(!b) throw new Error('Expected backup policy not found.');
+          const local=Math.max(7,Number(b.database_backup_retention_amount_locally||0));
+          const s3=Math.max(30,Number(b.database_backup_retention_amount_s3||0));
+          const patch={
+            enabled:true,
+            save_s3:true,
+            s3_storage_uuid:process.env.S3_STORAGE_UUID,
+            backup_now:true,
+            frequency:b.frequency,
+            dump_all:b.dump_all===true,
+            database_backup_retention_amount_locally:local,
+            database_backup_retention_amount_s3:s3,
+            timeout:Number(b.timeout||3600)
+          };
+          if(typeof b.databases_to_backup==='string'&&b.databases_to_backup) patch.databases_to_backup=b.databases_to_backup;
+          process.stdout.write(JSON.stringify(patch));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/patch-response.json -w '%{http_code}' \
+            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/backup-patch.json "$base/databases/$POSTGRES_UUID/backups/$BACKUP_UUID")"
+          [ "$code" = '200' ] || { echo "Backup policy repair failed with HTTP $code."; exit 1; }
+          echo 'Backup policy updated and immediate backup requested.'
+
+      - name: Verify repaired policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/backups" -o /tmp/backups-after.json
+          node <<'NODE'
+          const raw=require('/tmp/backups-after.json');
+          const list=Array.isArray(raw)?raw:Array.isArray(raw?.data)?raw.data:Array.isArray(raw?.backups)?raw.backups:[];
+          const b=list.find(x=>x?.uuid===process.env.BACKUP_UUID);
+          if(!b||b.enabled===false||b.save_s3!==true||b.s3_storage_uuid!==process.env.S3_STORAGE_UUID) throw new Error('Backup policy repair did not persist.');
+          if(Number(b.database_backup_retention_amount_locally||0)<7||Number(b.database_backup_retention_amount_s3||0)<30) throw new Error('Backup retention remains below policy.');
+          console.log('Backup policy now targets Mkety R2 with required retention.');
+          NODE
