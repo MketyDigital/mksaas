@@ -1,0 +1,66 @@
+name: OCI Gateway DNS Credential Repair V2
+on:
+  push:
+    branches:
+      - ops/oci-gateway-cloudflare-token-repair-20260919
+    paths:
+      - ".github/workflows/oci-gateway-dns-repair-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      APP_UUID: p9xqtqpbljnggchy36mzd7a0
+    steps:
+      - name: Verify credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$COOLIFY_TOKEN"
+          test -n "$CF_TOKEN"
+          echo "::add-mask::$CF_TOKEN"
+          curl -fsS -H "Authorization: Bearer $CF_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify > /tmp/cf.json
+          node -e "const x=require('/tmp/cf.json'); if(!x.success || x.result.status!=='active') process.exit(1); console.log('CLOUDFLARE_TOKEN_ACTIVE=PASS')"
+
+      - name: Patch OCI DNS credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="${COOLIFY_URL%/}/api/v1"
+          node -e "require('fs').writeFileSync('/tmp/p.json', JSON.stringify({key:'CLOUDFLARE_DNS_API_TOKEN',value:process.env.CF_TOKEN,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:false}))"
+          code="$(curl -sS -o /tmp/r.json -w '%{http_code}' -X PATCH -H "Authorization: Bearer $COOLIFY_TOKEN" -H "Content-Type: application/json" --data-binary @/tmp/p.json "$api/applications/$APP_UUID/envs")"
+          test "$code" = "200" -o "$code" = "201"
+          curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" "$api/applications/$APP_UUID/envs" > /tmp/envs.json
+          node -e "const rows=require('/tmp/envs.json'); const r=rows.find(x=>x.key==='CLOUDFLARE_DNS_API_TOKEN'&&x.is_preview===false); if(!r||r.value!==process.env.CF_TOKEN) process.exit(1); console.log('OCI_DNS_TOKEN_PATCH=PASS')"
+
+      - name: Redeploy OCI gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="${COOLIFY_URL%/}/api/v1"
+          curl -fsS -X POST -H "Authorization: Bearer $COOLIFY_TOKEN" "$api/deploy?uuid=$APP_UUID&force=true" > /tmp/deploy.json
+          dep="$(node -e "const x=require('/tmp/deploy.json'); const d=x.deployments&&x.deployments[0]; if(!d||!d.deployment_uuid) process.exit(1); process.stdout.write(d.deployment_uuid)")"
+          echo "OCI_REDEPLOYMENT_UUID=$dep"
+          for i in $(seq 1 120); do
+            curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" "$api/deployments/$dep" > /tmp/d.json
+            s="$(node -e "const x=require('/tmp/d.json'); process.stdout.write(String(x.status||''))")"
+            case "${s,,}" in
+              finished|success|successful|succeeded|completed) echo "OCI_REDEPLOYMENT=PASS"; exit 0 ;;
+              failed|failure|error|cancelled|canceled) echo "OCI_REDEPLOYMENT=FAIL:$s"; exit 1 ;;
+            esac
+            sleep 5
+          done
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -f /tmp/cf.json /tmp/p.json /tmp/r.json /tmp/envs.json /tmp/deploy.json /tmp/d.json
