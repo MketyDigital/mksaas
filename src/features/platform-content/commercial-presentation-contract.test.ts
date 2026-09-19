@@ -52,7 +52,7 @@ describe('Mkety documented public commercial presentation', () => {
       name: 'Enterprise',
       priceLabel: 'Custom',
       highlighted: false,
-      ctaHref: '/contact',
+      ctaHref: '/?mketyAI=enterprise-sales',
     });
 
     const obsoletePlanIdentities = new Set(['growth', 'pro', 'business']);
@@ -89,21 +89,21 @@ describe('Mkety documented public commercial presentation', () => {
       description:
         'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: '/?mketyAI=enterprise-sales',
     });
 
     const workspacesPage = getDefaultPublicPage('workspaces');
     expect(workspacesPage?.sections[0]?.items.find((item) => item.key === 'trading')).toMatchObject({
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: '/?mketyAI=enterprise-sales',
     });
 
     const enterprisePage = getDefaultPublicPage('enterprise');
     expect(enterprisePage?.sections[0]?.items.find((item) => item.key === 'trading')).toMatchObject({
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: '/?mketyAI=enterprise-sales',
     });
-    expect(enterprisePage?.sections[0]?.cta).toMatchObject({ label: 'Discuss Enterprise Project', href: '/contact' });
+    expect(enterprisePage?.sections[0]?.cta).toMatchObject({ label: 'Discuss Enterprise Project', href: '/?mketyAI=enterprise-sales' });
   });
 
   it('keeps Academy as a distinct commercial and learning destination', () => {
