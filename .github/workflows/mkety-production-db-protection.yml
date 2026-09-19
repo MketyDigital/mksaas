@@ -1,6 +1,10 @@
 name: Mkety Production DB Protection
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-db-protection.yml
   workflow_dispatch:
   schedule:
     - cron: '15 3 * * *'
