@@ -14,7 +14,7 @@ describe('Mkety public support-agent behavior', () => {
   });
 
   it('hard-bounds the agent to production-safe public informational support', () => {
-    const prompt = buildPublicSystemPrompt('PUBLIC CONTEXT');
+    const prompt = buildPublicSystemPrompt('PUBLIC CONTEXT', { enterpriseSalesIntake: true });
     expect(prompt).toMatch(/public-facing Mkety support assistant/i);
     expect(prompt).toMatch(/never claim access to a visitor.*private/i);
     expect(prompt).toMatch(/do not disclose.*repositories.*github/i);
