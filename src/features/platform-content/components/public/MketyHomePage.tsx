@@ -354,7 +354,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
                     ))}
                   </ul>
                   <Button asChild className="mt-6 w-full rounded-xl" variant={plan.highlighted ? 'default' : 'outline'}>
-                    <Link href={plan.ctaHref}>{plan.ctaLabel}</Link>
+                    <Link href={plan.key === 'enterprise' ? '/?mketyAI=enterprise-sales' : plan.ctaHref}>{plan.ctaLabel}</Link>
                   </Button>
                 </CardContent>
               </Card>
