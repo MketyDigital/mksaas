@@ -116,13 +116,7 @@ jobs:
             server="$(awk 'BEGIN{IGNORECASE=1} /^server:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$headers" 2>/dev/null || true)"
             echo "PROBE $label HTTP=$code content-type=$content_type content-disposition=$disposition server=$server"
             if [ -s "$body" ]; then
-              python3 - "$body" <<'PY'
-import re,sys
-p=sys.argv[1]
-s=open(p,'r',encoding='utf-8',errors='replace').read(1200)
-s=re.sub(r'(?i)(authorization|token|secret|password|api[_-]?key)\s*[:=]\s*[^\s,}"\']+', r'\1=[REDACTED]', s)
-print('BODY', s.replace('\n',' ')[:1000])
-PY
+              python3 -c "import re,sys; s=open(sys.argv[1],'r',encoding='utf-8',errors='replace').read(1200); s=re.sub(r'(?i)(authorization|token|secret|password|api[_-]?key)\\s*[:=]\\s*[^\\s,}\"]+', r'\\1=[REDACTED]', s); print('BODY', s.replace('\\n',' ')[:1000])" "$body"
             fi
           }
           probe root 'https://mkety.com/'
