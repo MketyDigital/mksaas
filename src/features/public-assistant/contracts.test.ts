@@ -1,6 +1,24 @@
 import { publicAssistantDeleteSchema, publicAssistantMessageSchema } from './contracts';
 
 describe('Public Mkety AI API contracts', () => {
+  it('accepts only the explicit Enterprise sales intent when qualification mode is requested', () => {
+    expect(
+      publicAssistantMessageSchema.parse({
+        message: 'I need help with Trading Workspace',
+        intent: 'enterprise-sales',
+      }),
+    ).toEqual({
+      message: 'I need help with Trading Workspace',
+      intent: 'enterprise-sales',
+    });
+    expect(
+      publicAssistantMessageSchema.safeParse({
+        message: 'I need help',
+        intent: 'internal-debug',
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts a bounded support question without any provider/model selection', () => {
     expect(publicAssistantMessageSchema.parse({ message: 'How do I get started with Mkety?' })).toEqual({
       message: 'How do I get started with Mkety?',

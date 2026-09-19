@@ -4,6 +4,7 @@ import { MketyPublicAssistant } from './MketyPublicAssistant';
 
 describe('MketyPublicAssistant', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/');
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: jest.fn(),
@@ -22,6 +23,41 @@ describe('MketyPublicAssistant', () => {
     expect(launcher).toHaveClass('bg-transparent');
     expect(launcher).toHaveClass('max-w-[560px]');
     expect(screen.queryByText(/openai|gemini|bedrock|vertex|model selector/i)).not.toBeInTheDocument();
+  });
+
+
+  it('uses Mkety branding and opens at the top below the public header', () => {
+    render(<MketyPublicAssistant />);
+
+    const launcher = screen.getByRole('button', { name: /ask mkety ai/i });
+    expect(launcher).toHaveClass('top-[4.5rem]');
+    expect(launcher.querySelector('img')).toHaveAttribute('src', '/mkety-logo.png');
+  });
+
+  it('opens Enterprise sales intake from the public CTA deep link without exposing sensitive-data prompts', async () => {
+    window.history.replaceState({}, '', '/?mketyAI=enterprise-sales');
+    render(<MketyPublicAssistant />);
+
+    const dialog = await screen.findByRole('dialog', { name: /mkety ai/i });
+    expect(dialog).toHaveClass('top-[4.5rem]');
+    expect(await screen.findByText(/tell me briefly what you want mkety to build or help with/i)).toBeInTheDocument();
+    expect(await screen.findByText(/i need trading workspace/i)).toBeInTheDocument();
+    expect(screen.getByText(/avoid sharing passwords, payment details or private account data/i)).toBeInTheDocument();
+
+    const input = screen.getByLabelText(/message mkety ai/i);
+    fireEvent.change(input, { target: { value: 'We need a Trading Workspace for our team.' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await waitFor(() => expect((global.fetch as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(2));
+    const salesRequest = (global.fetch as jest.Mock).mock.calls.find(
+      ([url, request]) => url === '/api/public/assistant' && request?.method === 'POST',
+    );
+    expect(salesRequest).toBeDefined();
+    expect(JSON.parse(salesRequest![1].body)).toEqual({
+      message: 'We need a Trading Workspace for our team.',
+      intent: 'enterprise-sales',
+    });
+
   });
 
   it('opens a centered rectangular support panel with suggested Mkety questions', async () => {

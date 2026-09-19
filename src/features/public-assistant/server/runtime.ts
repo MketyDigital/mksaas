@@ -124,6 +124,7 @@ export async function runMketyPublicAssistant(input: {
   visitorId: string;
   conversationId?: string;
   message: string;
+  intent?: 'enterprise-sales';
   environment: PublicAssistantEnvironment;
 }) {
   const config = parsePublicAIProviderConfig(input.environment);
@@ -169,6 +170,7 @@ export async function runMketyPublicAssistant(input: {
         messages: toProviderMessages(conversation.messages),
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          { enterpriseSalesIntake: input.intent === 'enterprise-sales' },
         ),
         maxOutputTokens: 900,
       },

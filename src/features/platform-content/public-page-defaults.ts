@@ -27,7 +27,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Core model',
         title: 'Build from projects and focused workspaces.',
         description:
-          'Projects organize what you are building while AI, Automation and Deploy Workspaces provide specialized tools. SolutionHub supplies ready-made starting points and Enterprise supports specialized requirements.',
+          'Projects organize what you are building while AI, Automation and Deploy Workspaces provide self-service tools. Trading Workspace is available as a specialized Custom / Enterprise workspace. SolutionHub supplies ready-made starting points and Enterprise supports specialized requirements.',
         items: [
           {
             key: 'projects',
@@ -39,7 +39,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'workspaces',
             title: 'Focused workspaces',
             description:
-              'Choose AI, Automation or Deploy individually, or combine all self-service Workspaces with Mkety One.',
+              'Choose AI, Automation or Deploy individually, combine all self-service Workspaces with Mkety One, or use Trading Workspace through a Custom / Enterprise engagement.',
           },
           {
             key: 'solutions',
@@ -94,7 +94,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Trading Workspace',
             description:
               'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
-            href: '/enterprise',
+            href: '/?mketyAI=enterprise-sales',
             badge: 'Custom / Enterprise',
           },
         ],
@@ -189,17 +189,17 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Pricing',
     seoTitle: 'Mkety Pricing | Starter, Workspaces, Mkety One and Enterprise',
     seoDescription:
-      'Compare Mkety Starter, AI Workspace, Automation Workspace, Deploy Workspace, Mkety One and Enterprise.',
+      'Compare Mkety Starter, AI Workspace, Automation Workspace, Deploy Workspace, Mkety One, Trading Workspace as Custom / Enterprise, and Enterprise.',
     eyebrow: 'Pricing',
     headline: 'Choose Starter, a Workspace, Mkety One, or Enterprise.',
     intro:
-      'Pick only the Mkety access you need, combine the self-service Workspaces with Mkety One, or use Enterprise for specialized requirements.',
+      'Pick only the Mkety access you need, combine the self-service Workspaces with Mkety One, or use Trading Workspace and other specialized requirements through Custom / Enterprise.',
     sections: [
       {
         eyebrow: 'Commercial model',
         title: 'Clear options for different ways of working.',
         description:
-          'Starter is the entry plan. AI, Automation and Deploy can be purchased as individual Workspaces. Mkety One combines Starter plus all three self-service Workspaces. Enterprise is custom.',
+          'Starter is the entry plan. AI, Automation and Deploy can be purchased as individual Workspaces. Mkety One combines Starter plus all three self-service Workspaces. Trading Workspace is presented separately as Custom / Enterprise and does not use self-service pricing. Enterprise is custom.',
         items: [],
       },
     ],
@@ -226,7 +226,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Trading infrastructure',
             description:
               'Specialized trading systems are sold and scoped through Enterprise before approved Trading access is provided.',
-            href: '/enterprise',
+            href: '/?mketyAI=enterprise-sales',
             badge: 'Custom / Enterprise',
           },
           {
@@ -240,7 +240,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Implementation and operational support tailored to enterprise requirements.',
           },
         ],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/?mketyAI=enterprise-sales' },
       },
     ],
   },

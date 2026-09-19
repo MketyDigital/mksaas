@@ -32,6 +32,6 @@ describe('MketyPricingPlans', () => {
     expect(screen.getByRole('heading', { name: 'Starter' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Enterprise' })).toBeInTheDocument();
     expect(screen.getByText('Trading available through Custom / Enterprise engagement')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Contact Mkety' })).toHaveAttribute('href', '/contact');
+    expect(screen.getByRole('link', { name: 'Contact Mkety' })).toHaveAttribute('href', '/?mketyAI=enterprise-sales');
   });
 });

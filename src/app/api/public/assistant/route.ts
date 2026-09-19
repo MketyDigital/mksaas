@@ -146,7 +146,20 @@ export async function GET(request: Request) {
       );
     });
   } catch (error) {
-    return safeError(error);
+    if (error instanceof z.ZodError) return safeError(error);
+    const errorChain = summarizeErrorChain(error);
+    publicAILogger.warn(
+      {
+        errorName: errorChain[0]?.name ?? 'UnknownError',
+        errorCauseCode: errorChain[1]?.code,
+      },
+      'Mkety public AI history unavailable; serving empty history',
+    );
+    return json({
+      conversations: [],
+      activeConversationId: null,
+      messages: [],
+    });
   }
 }
 
@@ -174,6 +187,7 @@ export async function POST(request: Request) {
         visitorId: visitor.visitorId,
         message: input.message,
         conversationId: input.conversationId,
+        intent: input.intent,
         environment: process.env,
       });
 

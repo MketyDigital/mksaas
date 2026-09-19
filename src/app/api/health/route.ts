@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
-import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 
 /**
  * Health Check Endpoint
@@ -17,7 +17,7 @@ export async function GET() {
   // Database health check
   try {
     const dbStart = Date.now();
-    await db.execute(sql`SELECT 1`);
+    await withRequestDatabase((database) => database.execute(sql`SELECT 1`));
     checks.database = {
       status: 'healthy',
       latency: Date.now() - dbStart,

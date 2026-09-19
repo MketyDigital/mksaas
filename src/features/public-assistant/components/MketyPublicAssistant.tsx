@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, History, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
+import { History, Plus, Send, Trash2, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 interface PublicConversationSummary {
@@ -149,6 +149,7 @@ export function MketyPublicAssistant() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<PublicConversationSummary[]>([]);
   const [messages, setMessages] = useState<PublicAssistantMessage[]>([]);
+  const [salesIntake, setSalesIntake] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(async (requestedConversationId?: string) => {
@@ -173,6 +174,14 @@ export function MketyPublicAssistant() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mketyAI') === 'enterprise-sales') {
+      setSalesIntake(true);
+      setOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (open) void loadHistory();
   }, [open, loadHistory]);
 
@@ -191,7 +200,9 @@ export function MketyPublicAssistant() {
     setMessages((current) => [...current, { id: optimisticId, role: 'user', content: normalized }]);
 
     try {
-      const body = conversationId ? { message: normalized, conversationId } : { message: normalized };
+      const body = conversationId
+        ? { message: normalized, conversationId, ...(salesIntake ? { intent: 'enterprise-sales' as const } : {}) }
+        : { message: normalized, ...(salesIntake ? { intent: 'enterprise-sales' as const } : {}) };
       const response = await fetch('/api/public/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -274,10 +285,10 @@ export function MketyPublicAssistant() {
           aria-expanded="false"
           data-surface="mkety-ai-command"
           onClick={() => setOpen(true)}
-          className="fixed inset-x-4 bottom-[5.6rem] z-[55] mx-auto flex min-h-11 w-[calc(100%-2rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-transparent bg-transparent px-2.5 py-2 text-left shadow-none backdrop-blur-none transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
+          className="fixed inset-x-4 top-[4.5rem] z-[55] mx-auto flex min-h-11 w-[calc(100%-2rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-transparent bg-transparent px-2.5 py-2 text-left shadow-none backdrop-blur-none transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
         >
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
-            <Sparkles className="h-4.5 w-4.5" aria-hidden="true" />
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-background/90 p-1 shadow-sm ring-1 ring-violet-400/20">
+            <img src="/mkety-logo.png" alt="" className="h-full w-full object-contain" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[13px] font-semibold text-foreground">Ask Mkety AI</span>
@@ -295,12 +306,12 @@ export function MketyPublicAssistant() {
           aria-modal="false"
           aria-label="Mkety AI"
           data-surface="mkety-ai-panel"
-          className="fixed inset-x-3 bottom-[5.75rem] z-[55] mx-auto flex max-h-[min(720px,calc(100vh-7rem))] w-[calc(100%-1.5rem)] max-w-[760px] flex-col overflow-hidden rounded-[1.75rem] border border-violet-400/20 bg-background/96 shadow-2xl shadow-violet-950/20 backdrop-blur-xl supports-[backdrop-filter]:bg-background/88"
+          className="fixed inset-x-3 top-[4.5rem] z-[55] mx-auto flex max-h-[min(720px,calc(100vh-5.5rem))] w-[calc(100%-1.5rem)] max-w-[760px] flex-col overflow-hidden rounded-[1.75rem] border border-violet-400/20 bg-background/96 shadow-2xl shadow-violet-950/20 backdrop-blur-xl supports-[backdrop-filter]:bg-background/88"
         >
           <header className="flex items-center justify-between border-b border-border/80 bg-gradient-to-r from-violet-600/[0.08] to-cyan-500/[0.08] px-4 py-3 sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
-                <Bot className="h-5 w-5" aria-hidden="true" />
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-background/90 p-1.5 shadow-sm ring-1 ring-violet-400/20">
+                <img src="/mkety-logo.png" alt="" className="h-full w-full object-contain" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <h2 className="font-semibold">Mkety AI</h2>
@@ -380,11 +391,12 @@ export function MketyPublicAssistant() {
             {!loadingHistory && messages.length === 0 ? (
               <div>
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  I can help you understand Mkety, find the right product or workspace, explain plans, and guide you
-                  through our public documentation.
+                  {salesIntake
+                    ? 'Tell me briefly what you want Mkety to build or help with. I’ll ask only for non-sensitive project context, then guide you to the right sales handoff.'
+                    : 'I can help you understand Mkety, find the right product or workspace, explain plans, and guide you through our public documentation.'}
                 </p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {suggestedPrompts.map((prompt) => (
+                  {(salesIntake ? ['I need a custom application', 'I need Trading Workspace', 'I need automation or integrations', 'I’m not sure which Mkety option fits'] : suggestedPrompts).map((prompt) => (
                     <button
                       key={prompt}
                       type="button"

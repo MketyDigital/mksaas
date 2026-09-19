@@ -205,16 +205,16 @@ describe('Cloudflare Worker database build wiring', () => {
     expect(nodeDatabase).not.toContain('runtime-connection.cloudflare');
   });
 
-  it('keeps public route loaders on the explicit Cloudflare database', async () => {
+  it('keeps public route loaders on request-scoped Cloudflare database access', async () => {
     const [publicChrome, publicPageQuery] = await Promise.all([
       readFile(PUBLIC_CHROME_PATH, 'utf8'),
       readFile(PUBLIC_PAGE_QUERY_PATH, 'utf8'),
     ]);
 
-    expect(publicChrome).toContain("from '@/shared/db/cloudflare'");
-    expect(publicPageQuery).toContain("from '@/shared/db/cloudflare'");
-    expect(publicChrome).not.toContain("from '@/shared/db'");
-    expect(publicPageQuery).not.toContain("from '@/shared/db'");
+    expect(publicChrome).toContain("from '@/shared/db/request'");
+    expect(publicPageQuery).toContain("from '@/shared/db/request'");
+    expect(publicChrome).not.toContain("from '@/shared/db/cloudflare'");
+    expect(publicPageQuery).not.toContain("from '@/shared/db/cloudflare'");
   });
 
   it('allows Vinext Worker fetches to public Workers on the same Cloudflare zone', async () => {

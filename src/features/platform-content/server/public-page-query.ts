@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { platformPages } from '@/shared/db/schema/platform-content';
 
 const PUBLISHED = 'published' as const;
@@ -14,7 +14,8 @@ export interface PublishedPublicPageSeo {
 
 export async function getPublishedPublicPageSeo(slug: string): Promise<PublishedPublicPageSeo | null> {
   try {
-    const row = await db.query.platformPages.findFirst({
+    return await withRequestDatabase(async (db) => {
+      const row = await db.query.platformPages.findFirst({
       where: and(eq(platformPages.slug, slug), eq(platformPages.status, PUBLISHED), eq(platformPages.enabled, true)),
       columns: {
         slug: true,
@@ -24,14 +25,15 @@ export async function getPublishedPublicPageSeo(slug: string): Promise<Published
       },
     });
 
-    if (!row) return null;
+      if (!row) return null;
 
-    return {
+      return {
       slug: row.slug,
       title: row.title,
       seoTitle: row.seoTitle ?? undefined,
-      seoDescription: row.seoDescription ?? undefined,
-    };
+        seoDescription: row.seoDescription ?? undefined,
+      };
+    });
   } catch {
     return null;
   }

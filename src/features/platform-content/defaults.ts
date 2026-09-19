@@ -109,7 +109,7 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       title: 'Trading Workspace',
       description:
         'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
-      href: '/enterprise',
+      href: '/?mketyAI=enterprise-sales',
       badge: 'Custom / Enterprise',
     },
   ],
@@ -189,7 +189,7 @@ export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
       description: 'Dedicated systems and integrations can be delivered around your organization’s requirements.',
     },
   ],
-  cta: { label: 'Start Enterprise Project', href: '/enterprise' },
+  cta: { label: 'Start Enterprise Project', href: '/?mketyAI=enterprise-sales' },
 };
 
 export const defaultTrustSection: PlatformTrustSectionInput = {
@@ -293,7 +293,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety Enterprise',
-    ctaHref: '/contact',
+    ctaHref: '/?mketyAI=enterprise-sales',
     features: [
       'Custom implementation',
       'Enterprise support',

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
 
 import { getPublishedNavigation, getPublishedPlatformSiteSettings } from './queries';
@@ -11,13 +11,14 @@ const PUBLISHED = 'published' as const;
 
 async function getPublishedFooterGroups() {
   try {
-    const page = await db.query.platformPages.findFirst({
+    return await withRequestDatabase(async (db) => {
+      const page = await db.query.platformPages.findFirst({
       where: and(eq(platformPages.slug, 'home'), eq(platformPages.status, PUBLISHED), eq(platformPages.enabled, true)),
     });
 
-    if (!page) return defaultFooterGroups;
+      if (!page) return defaultFooterGroups;
 
-    const row = await db.query.platformPageSections.findFirst({
+      const row = await db.query.platformPageSections.findFirst({
       where: and(
         eq(platformPageSections.pageId, page.id),
         eq(platformPageSections.sectionKey, 'footer'),
@@ -26,7 +27,8 @@ async function getPublishedFooterGroups() {
       ),
     });
 
-    return row ? footerGroupSchema.array().parse(row.contentJson) : defaultFooterGroups;
+      return row ? footerGroupSchema.array().parse(row.contentJson) : defaultFooterGroups;
+    });
   } catch {
     return defaultFooterGroups;
   }
