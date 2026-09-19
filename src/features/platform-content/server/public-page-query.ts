@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { withRequestDatabase } from '@/shared/db/request';
 import { platformPages } from '@/shared/db/schema/platform-content';
+import { isPublicDegradedMode } from './degraded-mode';
 
 const PUBLISHED = 'published' as const;
 
@@ -13,6 +14,8 @@ export interface PublishedPublicPageSeo {
 }
 
 export async function getPublishedPublicPageSeo(slug: string): Promise<PublishedPublicPageSeo | null> {
+  if (isPublicDegradedMode()) return null;
+
   try {
     return await withRequestDatabase(async (db) => {
       const row = await db.query.platformPages.findFirst({
