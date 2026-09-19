@@ -6,6 +6,7 @@ import { platformPages, platformPageSections } from '@/shared/db/schema/platform
 import { normalizePublicPageSalesLinks } from '../commercial-routing';
 import { getDefaultLegalPage } from '../legal-page-defaults';
 import { getDefaultPublicPage, type MketyPublicPageDefault } from '../public-page-defaults';
+import { isPublicDegradedMode } from './degraded-mode';
 import { platformOverviewSectionSchema } from '../schemas';
 
 const PUBLISHED = 'published' as const;
@@ -20,6 +21,7 @@ export async function getPublishedPublicPageContent(slug: string): Promise<Mkety
   const fallback = getDefaultPublicPage(slug) ?? getDefaultLegalPage(slug);
   if (!fallback) return null;
   const normalizedFallback = normalizePage(fallback);
+  if (isPublicDegradedMode()) return normalizedFallback;
 
   try {
     return await withRequestDatabase(async (db) => {
