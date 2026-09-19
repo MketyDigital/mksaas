@@ -13,10 +13,10 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: 0093d275aed8ad949fc38f8d1c9e3be8d1e987bc
+  VERIFIED_SHA: efbc87f41b2d7d4f94449fa657bc987ee6ce29a9
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
-  CERT_BRANCH: certify/0093d27
+  CERT_BRANCH: certify/efbc87f
   CUTOVER_MODE: worker-custom-domains-v7
 
 jobs:
