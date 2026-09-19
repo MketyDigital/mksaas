@@ -4,12 +4,15 @@ import { withRequestDatabase } from '@/shared/db/request';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
 
 import { getPublishedNavigation, getPublishedPlatformSiteSettings } from './queries';
+import { isPublicDegradedMode } from './degraded-mode';
 import { defaultFooterGroups } from '../defaults';
 import { footerGroupSchema } from '../schemas';
 
 const PUBLISHED = 'published' as const;
 
 async function getPublishedFooterGroups() {
+  if (isPublicDegradedMode()) return defaultFooterGroups;
+
   try {
     return await withRequestDatabase(async (db) => {
       const page = await db.query.platformPages.findFirst({
