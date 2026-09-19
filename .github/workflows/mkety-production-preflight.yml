@@ -100,6 +100,39 @@ jobs:
           console.log('Mkety Worker compatibility date:', settings.result?.compatibility_date || null);
           NODE
 
+      - name: Probe live Mkety production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            local label="$1"
+            local url="$2"
+            local body="/tmp/mkety-probe-${label//[^a-zA-Z0-9]/_}.body"
+            local headers="/tmp/mkety-probe-${label//[^a-zA-Z0-9]/_}.headers"
+            local code
+            code="$(curl -sS --connect-timeout 10 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url" || true)"
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$headers" 2>/dev/null || true)"
+            disposition="$(awk 'BEGIN{IGNORECASE=1} /^content-disposition:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$headers" 2>/dev/null || true)"
+            server="$(awk 'BEGIN{IGNORECASE=1} /^server:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$headers" 2>/dev/null || true)"
+            echo "PROBE $label HTTP=$code content-type=$content_type content-disposition=$disposition server=$server"
+            if [ -s "$body" ]; then
+              python3 - "$body" <<'PY'
+import re,sys
+p=sys.argv[1]
+s=open(p,'r',encoding='utf-8',errors='replace').read(1200)
+s=re.sub(r'(?i)(authorization|token|secret|password|api[_-]?key)\s*[:=]\s*[^\s,}"\']+', r'\1=[REDACTED]', s)
+print('BODY', s.replace('\n',' ')[:1000])
+PY
+            fi
+          }
+          probe root 'https://mkety.com/'
+          probe www 'https://www.mkety.com/'
+          probe health 'https://mkety.com/api/health'
+          probe robots 'https://mkety.com/robots.txt'
+          probe sitemap 'https://mkety.com/sitemap.xml'
+          probe logo 'https://mkety.com/mkety-logo.png'
+          probe assistant 'https://mkety.com/api/public/assistant'
+
       - name: Assert preflight remains read-only
         shell: bash
         run: |
