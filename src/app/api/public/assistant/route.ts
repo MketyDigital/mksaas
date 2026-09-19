@@ -174,6 +174,7 @@ export async function POST(request: Request) {
         visitorId: visitor.visitorId,
         message: input.message,
         conversationId: input.conversationId,
+        intent: input.intent,
         environment: process.env,
       });
 
