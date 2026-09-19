@@ -40,6 +40,8 @@ jobs:
           get_optional databases /tmp/databases.json
           get_optional projects /tmp/projects.json
           get_optional projects/xrhsinddvxzghzcxgwux9esj /tmp/telethon-project.json
+          get_optional applications/p9xqtqpbljnggchy36mzd7a0 /tmp/oci-gateway-app.json
+          get_optional applications/p9xqtqpbljnggchy36mzd7a0/envs /tmp/oci-gateway-envs.json
 
           node <<'NODE'
           const fs = require('node:fs');
@@ -126,6 +128,8 @@ jobs:
           const databasesRaw = read('/tmp/databases.json');
           const projectsRaw = read('/tmp/projects.json');
           const telethonProjectRaw = read('/tmp/telethon-project.json');
+          const ociGatewayAppRaw = read('/tmp/oci-gateway-app.json');
+          const ociGatewayEnvsRaw = read('/tmp/oci-gateway-envs.json');
 
           console.log('COOLIFY_INVENTORY_BEGIN');
           console.log(JSON.stringify({
@@ -139,6 +143,19 @@ jobs:
             services: arr(servicesRaw).map(service),
             databases: arr(databasesRaw).map(database),
             projects: arr(projectsRaw).map(project),
+            oci_gateway_app: ociGatewayAppRaw && !ociGatewayAppRaw._http_status ? {
+              uuid:s(ociGatewayAppRaw.uuid??ociGatewayAppRaw.id),
+              name:s(ociGatewayAppRaw.name),
+              status:s(ociGatewayAppRaw.status),
+              repo:s(ociGatewayAppRaw.git_repository??ociGatewayAppRaw.git_full_url),
+              branch:s(ociGatewayAppRaw.git_branch),
+              compose:s(ociGatewayAppRaw.docker_compose_location)
+            } : ociGatewayAppRaw,
+            oci_gateway_env_schema: Array.isArray(ociGatewayEnvsRaw) ? ociGatewayEnvsRaw.map(e=>({
+              key:s(e.key),
+              is_preview:e.is_preview??null,
+              is_literal:e.is_literal??null
+            })).sort((a,b)=>(a.key||'').localeCompare(b.key||'')) : ociGatewayEnvsRaw,
             telethon_project_detail: telethonProjectRaw && !telethonProjectRaw._http_status ? {
               uuid: s(telethonProjectRaw.uuid ?? telethonProjectRaw.id),
               name: s(telethonProjectRaw.name),
