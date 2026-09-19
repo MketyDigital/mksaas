@@ -266,10 +266,6 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
 
       <MketyProductShowcase groups={showcaseGroups} />
 
-      <div id="platform">
-        <PublicContentSection section={platformOverview} />
-      </div>
-
       <section id="workspaces" className="px-4 py-12 md:py-16">
         <div className="container mx-auto overflow-hidden rounded-[2rem] border bg-muted/20 p-6 md:p-10">
           <div className="max-w-3xl">
