@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 
-import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
 
 import { normalizePublicPageSalesLinks } from '../commercial-routing';
@@ -22,7 +22,8 @@ export async function getPublishedPublicPageContent(slug: string): Promise<Mkety
   const normalizedFallback = normalizePage(fallback);
 
   try {
-    const page = await db.query.platformPages.findFirst({
+    return await withRequestDatabase(async (db) => {
+      const page = await db.query.platformPages.findFirst({
       where: and(eq(platformPages.slug, slug), eq(platformPages.status, PUBLISHED), eq(platformPages.enabled, true)),
     });
 
@@ -46,16 +47,17 @@ export async function getPublishedPublicPageContent(slug: string): Promise<Mkety
         : normalizedFallback.sections,
     );
 
-    return {
-      slug: page.slug,
+      return {
+        slug: page.slug,
       title: page.title,
       seoTitle: page.seoTitle ?? normalizedFallback.seoTitle,
       seoDescription: page.seoDescription ?? normalizedFallback.seoDescription,
       eyebrow: intro?.eyebrow ?? normalizedFallback.eyebrow,
       headline: intro?.title ?? normalizedFallback.headline,
       intro: intro?.description ?? normalizedFallback.intro,
-      sections,
-    };
+        sections,
+      };
+    });
   } catch {
     return normalizedFallback;
   }
