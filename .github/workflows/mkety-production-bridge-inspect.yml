@@ -65,6 +65,12 @@ jobs:
             internalScheme:typeof d.internal_db_url==='string'?String(d.internal_db_url).split(':')[0]:null,
             createdAt:d.created_at||null,updatedAt:d.updated_at||null
           }));
+          const tlsKeys=Object.keys(d).filter(k=>/ssl|cert|ca|key/i.test(k)).sort();
+          console.log('POSTGRES_TLS_FIELDS_SAFE '+JSON.stringify(tlsKeys.map(k=>({
+            key:k,
+            type:Array.isArray(d[k])?'array':d[k]===null?'null':typeof d[k],
+            present:d[k]!==null&&d[k]!==undefined&&String(d[k]).length>0
+          }))));
           NODE
 
           db_logs="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID/logs?lines=300&show_timestamps=false" || printf '{"logs":""}')"
