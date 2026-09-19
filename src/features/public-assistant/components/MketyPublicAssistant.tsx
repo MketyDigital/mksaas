@@ -200,8 +200,9 @@ export function MketyPublicAssistant() {
     setMessages((current) => [...current, { id: optimisticId, role: 'user', content: normalized }]);
 
     try {
-      const requestMessage = salesIntake ? `[Enterprise sales intake] ${normalized}` : normalized;
-      const body = conversationId ? { message: requestMessage, conversationId } : { message: requestMessage };
+      const body = conversationId
+        ? { message: normalized, conversationId, ...(salesIntake ? { intent: 'enterprise-sales' as const } : {}) }
+        : { message: normalized, ...(salesIntake ? { intent: 'enterprise-sales' as const } : {}) };
       const response = await fetch('/api/public/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
