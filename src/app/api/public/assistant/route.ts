@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { publicAssistantDeleteSchema, publicAssistantMessageSchema } from '@/features/public-assistant/contracts';
 import { summarizeErrorChain } from '@/features/public-assistant/server/error-diagnostics';
 import {
+  createDegradedConversationToken,
+  parseDegradedConversationToken,
+  PUBLIC_AI_DEGRADED_COOKIE,
+  type DegradedPublicAIState,
+} from '@/features/public-assistant/server/degraded-memory';
+import {
   clearPublicAIHistory,
   deletePublicAIConversation,
   ensurePublicAIVisitor,
@@ -85,6 +91,20 @@ function withVisitorCookie(response: Response, token: string | undefined, reques
   return response;
 }
 
+async function withDegradedConversationCookie(
+  response: Response,
+  state: DegradedPublicAIState,
+  request: Request,
+) {
+  const token = await createDegradedConversationToken(state, publicVisitorSecret());
+  const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
+  response.headers.append(
+    'Set-Cookie',
+    `${PUBLIC_AI_DEGRADED_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${PUBLIC_AI_COOKIE_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax${secure}`,
+  );
+  return response;
+}
+
 function json(data: unknown, status = 200) {
   return Response.json(data, {
     status,
@@ -121,7 +141,34 @@ function safeError(error: unknown) {
 
 export async function GET(request: Request) {
   if (publicDegradedMode()) {
-    return json({ conversations: [], activeConversationId: null, messages: [], degraded: true });
+    try {
+      const url = new URL(request.url);
+      const requestedConversationId = conversationQuerySchema.parse(
+        url.searchParams.get('conversationId') ?? undefined,
+      );
+      const state = await parseDegradedConversationToken(
+        getCookie(request, PUBLIC_AI_DEGRADED_COOKIE),
+        publicVisitorSecret(),
+      );
+      const selected = state && (!requestedConversationId || requestedConversationId === state.conversationId)
+        ? state
+        : null;
+      return json({
+        conversations: selected
+          ? [{ id: selected.conversationId, title: selected.messages.find((message) => message.role === 'user')?.content.slice(0, 60) || 'Mkety AI', updatedAt: new Date(0).toISOString() }]
+          : [],
+        activeConversationId: selected?.conversationId ?? null,
+        messages: (selected?.messages ?? []).map((message, index) => ({
+          id: `degraded-${index + 1}`,
+          role: message.role,
+          content: message.content,
+          createdAt: new Date(0).toISOString(),
+        })),
+        degraded: true,
+      });
+    } catch (error) {
+      return safeError(error);
+    }
   }
 
   try {
@@ -180,12 +227,28 @@ export async function POST(request: Request) {
     try {
       if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
       const input = publicAssistantMessageSchema.parse(await request.json());
+      const existing = await parseDegradedConversationToken(
+        getCookie(request, PUBLIC_AI_DEGRADED_COOKIE),
+        publicVisitorSecret(),
+      );
+      const state =
+        input.conversationId && existing?.conversationId === input.conversationId ? existing : null;
       const result = await runMketyPublicAssistantStateless({
         message: input.message,
+        conversationId: state?.conversationId,
+        messages: state?.messages,
         intent: input.intent,
         environment: process.env,
       });
-      return json(result);
+      const nextState: DegradedPublicAIState = {
+        conversationId: result.conversationId,
+        messages: [
+          ...(state?.messages ?? []),
+          { role: 'user', content: input.message },
+          { role: 'assistant', content: result.answer },
+        ],
+      };
+      return withDegradedConversationCookie(json(result), nextState, request);
     } catch (error) {
       return safeError(error);
     }
@@ -230,7 +293,13 @@ export async function DELETE(request: Request) {
     try {
       if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
       publicAssistantDeleteSchema.parse(await request.json());
-      return json({ cleared: true, degraded: true });
+      const response = json({ cleared: true, degraded: true });
+      const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
+      response.headers.append(
+        'Set-Cookie',
+        `${PUBLIC_AI_DEGRADED_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`,
+      );
+      return response;
     } catch (error) {
       return safeError(error);
     }
