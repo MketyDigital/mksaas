@@ -224,6 +224,8 @@ async function buildGroundedContextStateless(message: string) {
 
 export async function runMketyPublicAssistantStateless(input: {
   message: string;
+  conversationId?: string;
+  messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
   intent?: 'enterprise-sales';
   environment: PublicAssistantEnvironment;
 }) {
@@ -242,7 +244,10 @@ export async function runMketyPublicAssistantStateless(input: {
   try {
     const response = await runPublicAIGateway({
       request: {
-        messages: [{ role: 'user', content: input.message }],
+        messages: [
+          ...(input.messages ?? []),
+          { role: 'user' as const, content: input.message },
+        ],
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
           { enterpriseSalesIntake: input.intent === 'enterprise-sales' },
@@ -260,7 +265,7 @@ export async function runMketyPublicAssistantStateless(input: {
 
     return {
       answer,
-      conversationId: crypto.randomUUID(),
+      conversationId: input.conversationId ?? crypto.randomUUID(),
       degraded: true as const,
     };
   } catch (error) {
