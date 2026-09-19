@@ -128,8 +128,8 @@ async function main() {
     'homepage workspaces should keep Trading visible',
   );
   assertSmoke(
-    JSON.stringify(workspacePayload).includes('/enterprise'),
-    'public Trading sales should route through Enterprise',
+    JSON.stringify(workspacePayload).includes('/?mketyAI=enterprise-sales'),
+    'public Trading sales should begin through Mkety AI Enterprise intake',
   );
   assertPublicCopySafe(homeSections, 'homepage sections');
 
