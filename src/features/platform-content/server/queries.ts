@@ -13,6 +13,7 @@ import {
   platformSiteSettings,
 } from '@/shared/db/schema/platform-content';
 import { createLogger } from '@/shared/lib/logger';
+import { isPublicDegradedMode } from './degraded-mode';
 
 import {
   defaultAcademySection,
@@ -55,6 +56,8 @@ async function withFallback<T>(
   fallback: T,
   operation = 'cms-read',
 ): Promise<T> {
+  if (isPublicDegradedMode()) return fallback;
+
   try {
     const value = await withRequestDatabase(read);
     return value ?? fallback;
