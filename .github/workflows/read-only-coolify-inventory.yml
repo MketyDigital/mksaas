@@ -42,6 +42,7 @@ jobs:
           get_optional projects/xrhsinddvxzghzcxgwux9esj /tmp/telethon-project.json
           get_optional applications/p9xqtqpbljnggchy36mzd7a0 /tmp/oci-gateway-app.json
           get_optional applications/p9xqtqpbljnggchy36mzd7a0/envs /tmp/oci-gateway-envs.json
+          get_optional applications/p9xqtqpbljnggchy36mzd7a0/logs?lines=200\&show_timestamps=false /tmp/oci-gateway-logs.json
 
           node <<'NODE'
           const fs = require('node:fs');
@@ -130,6 +131,7 @@ jobs:
           const telethonProjectRaw = read('/tmp/telethon-project.json');
           const ociGatewayAppRaw = read('/tmp/oci-gateway-app.json');
           const ociGatewayEnvsRaw = read('/tmp/oci-gateway-envs.json');
+          const ociGatewayLogsRaw = read('/tmp/oci-gateway-logs.json');
 
           console.log('COOLIFY_INVENTORY_BEGIN');
           console.log(JSON.stringify({
@@ -151,6 +153,7 @@ jobs:
               branch:s(ociGatewayAppRaw.git_branch),
               compose:s(ociGatewayAppRaw.docker_compose_location)
             } : ociGatewayAppRaw,
+            oci_gateway_logs: (()=>{const raw=String(ociGatewayLogsRaw?.logs||'');return raw.split(/\r?\n/).filter(Boolean).slice(-80).join('\n').replace(/(CBOT_CONTROL_SECRET|CBOT_TOKEN_SIGNING_KEY|CLOUDFLARE_DNS_API_TOKEN)=\S+/gi,'$1=***')})(),
             oci_gateway_env_schema: Array.isArray(ociGatewayEnvsRaw) ? ociGatewayEnvsRaw.map(e=>({
               key:s(e.key),
               is_preview:e.is_preview??null,
