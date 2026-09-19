@@ -12,7 +12,11 @@ import {
   PUBLIC_AI_RATE_LIMIT_PER_MINUTE,
 } from '@/features/public-assistant/server/memory';
 import { withPublicAIRequestDatabase } from '@/features/public-assistant/server/request-database';
-import { PublicAssistantRuntimeError, runMketyPublicAssistant } from '@/features/public-assistant/server/runtime';
+import {
+  PublicAssistantRuntimeError,
+  runMketyPublicAssistant,
+  runMketyPublicAssistantStateless,
+} from '@/features/public-assistant/server/runtime';
 import {
   createPublicVisitorToken,
   parsePublicVisitorToken,
@@ -26,6 +30,10 @@ export const maxDuration = 30;
 const publicAILogger = createLogger({ module: 'public-assistant' });
 const PUBLIC_AI_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90;
 const conversationQuerySchema = z.uuid().optional();
+
+function publicDegradedMode() {
+  return process.env.MKETY_PUBLIC_DEGRADED_MODE === 'true';
+}
 
 function getCookie(request: Request, name: string) {
   const cookie = request.headers.get('cookie');
@@ -112,6 +120,10 @@ function safeError(error: unknown) {
 }
 
 export async function GET(request: Request) {
+  if (publicDegradedMode()) {
+    return json({ conversations: [], activeConversationId: null, messages: [], degraded: true });
+  }
+
   try {
     return await withPublicAIRequestDatabase(async (database) => {
       const visitor = await resolveVisitor(request, database);
@@ -164,6 +176,21 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (publicDegradedMode()) {
+    try {
+      if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
+      const input = publicAssistantMessageSchema.parse(await request.json());
+      const result = await runMketyPublicAssistantStateless({
+        message: input.message,
+        intent: input.intent,
+        environment: process.env,
+      });
+      return json(result);
+    } catch (error) {
+      return safeError(error);
+    }
+  }
+
   try {
     return await withPublicAIRequestDatabase(async (database) => {
       if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
@@ -199,6 +226,16 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  if (publicDegradedMode()) {
+    try {
+      if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
+      publicAssistantDeleteSchema.parse(await request.json());
+      return json({ cleared: true, degraded: true });
+    } catch (error) {
+      return safeError(error);
+    }
+  }
+
   try {
     return await withPublicAIRequestDatabase(async (database) => {
       if (!sameOriginAllowed(request)) return json({ error: 'Forbidden.' }, 403);
