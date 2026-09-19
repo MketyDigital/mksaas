@@ -39,6 +39,7 @@ jobs:
           get_optional services /tmp/services.json
           get_optional databases /tmp/databases.json
           get_optional projects /tmp/projects.json
+          get_optional projects/xrhsinddvxzghzcxgwux9esj /tmp/telethon-project.json
 
           node <<'NODE'
           const fs = require('node:fs');
@@ -124,6 +125,7 @@ jobs:
           const servicesRaw = read('/tmp/services.json');
           const databasesRaw = read('/tmp/databases.json');
           const projectsRaw = read('/tmp/projects.json');
+          const telethonProjectRaw = read('/tmp/telethon-project.json');
 
           console.log('COOLIFY_INVENTORY_BEGIN');
           console.log(JSON.stringify({
@@ -137,6 +139,14 @@ jobs:
             services: arr(servicesRaw).map(service),
             databases: arr(databasesRaw).map(database),
             projects: arr(projectsRaw).map(project),
+            telethon_project_detail: telethonProjectRaw && !telethonProjectRaw._http_status ? {
+              uuid: s(telethonProjectRaw.uuid ?? telethonProjectRaw.id),
+              name: s(telethonProjectRaw.name),
+              description: s(telethonProjectRaw.description),
+              environments: Array.isArray(telethonProjectRaw.environments) ? telethonProjectRaw.environments.map((e)=>({
+                uuid:s(e.uuid??e.id), name:s(e.name), description:s(e.description)
+              })) : []
+            } : telethonProjectRaw,
           }, null, 2));
           console.log('COOLIFY_INVENTORY_END');
           NODE
