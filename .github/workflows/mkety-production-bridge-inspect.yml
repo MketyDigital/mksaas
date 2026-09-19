@@ -1,0 +1,96 @@
+name: Mkety Production Bridge Inspect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-bridge-inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect production database bridge safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_URL: https://deploy.mkety.com
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      MKETY_HYPERDRIVE_NAME: mkety-production-db
+    steps:
+      - name: Inspect sanitized bridge state
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID COOLIFY_API_TOKEN; do
+            [ -n "${!v:-}" ] || { echo "$v is required"; exit 1; }
+          done
+
+          hd="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HD="$hd" node <<'NODE'
+          const p=JSON.parse(process.env.HD||'{}');
+          const h=Array.isArray(p.result)?p.result.find(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME):null;
+          if(!p.success||!h) throw new Error('Production Hyperdrive not found');
+          const o=h.origin&&typeof h.origin==='object'?h.origin:{};
+          console.log('HYPERDRIVE_SAFE '+JSON.stringify({
+            name:h.name||null,
+            originKeys:Object.keys(o).sort(),
+            scheme:o.scheme||null,
+            port:o.port??null,
+            hasServiceId:Boolean(o.service_id),
+            hasHost:Boolean(o.host),
+            hasDatabase:Boolean(o.database),
+            hasUser:Boolean(o.user),
+            createdOn:h.created_on||null,
+            modifiedOn:h.modified_on||null
+          }));
+          NODE
+
+          db="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID")"
+          DB="$db" node <<'NODE'
+          const d=JSON.parse(process.env.DB||'{}');
+          console.log('POSTGRES_SAFE '+JSON.stringify({
+            name:d.name||null,status:d.status||null,isPublic:d.is_public===true,
+            publicPort:d.public_port??null,sslEnabled:d.enable_ssl??null,
+            createdAt:d.created_at||null,updatedAt:d.updated_at||null
+          }));
+          NODE
+
+          services="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/services")"
+          apps="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/applications")"
+          SERVICES="$services" APPS="$apps" node <<'NODE'
+          const norm=x=>Array.isArray(x)?x:Array.isArray(x?.data)?x.data:[];
+          const ss=norm(JSON.parse(process.env.SERVICES||'[]'));
+          const aa=norm(JSON.parse(process.env.APPS||'[]'));
+          const rows=[...ss.map(x=>({...x,kind:'service'})),...aa.map(x=>({...x,kind:'application'}))];
+          const m=rows.filter(x=>/cloudflared|cloudflare|tunnel/i.test([x.name,x.description,x.service_type].filter(Boolean).join(' ')));
+          console.log('COOLIFY_TUNNEL_CANDIDATES '+JSON.stringify(m.map(x=>({
+            kind:x.kind,name:x.name||null,status:x.status||null,serviceType:x.service_type||null
+          }))));
+          NODE
+
+          tunnels="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" || printf '{"success":false}')"
+          TUNNELS="$tunnels" node <<'NODE'
+          const p=JSON.parse(process.env.TUNNELS||'{}');
+          const rows=Array.isArray(p.result)?p.result:[];
+          console.log('TUNNELS_SAFE '+JSON.stringify(rows.map(x=>({
+            name:x.name||null,status:x.status||null,createdAt:x.created_at||null,deletedAt:x.deleted_at||null
+          }))));
+          NODE
+
+          directory="$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services" || true)"
+          DIRECTORY="$directory" node <<'NODE'
+          let p={}; try{p=JSON.parse(process.env.DIRECTORY||'{}')}catch{}
+          const rows=Array.isArray(p.result)?p.result:[];
+          console.log('VPC_SERVICES_SAFE '+JSON.stringify(rows.map(x=>({
+            name:x.name||null,type:x.type||null,tcpPort:x.tcp_port??null,
+            appProtocol:x.app_protocol||null,
+            hasTunnel:Boolean(x.host?.network?.tunnel_id||x.host?.resolver_network?.tunnel_id)
+          }))));
+          NODE
