@@ -226,7 +226,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Trading infrastructure',
             description:
               'Specialized trading systems are sold and scoped through Enterprise before approved Trading access is provided.',
-            href: '/enterprise',
+            href: '/?mketyAI=enterprise-sales',
             badge: 'Custom / Enterprise',
           },
           {
