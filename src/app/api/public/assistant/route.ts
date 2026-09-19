@@ -146,6 +146,7 @@ export async function GET(request: Request) {
       );
     });
   } catch (error) {
+    if (error instanceof z.ZodError) return safeError(error);
     const errorChain = summarizeErrorChain(error);
     publicAILogger.warn(
       {
