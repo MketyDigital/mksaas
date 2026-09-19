@@ -293,7 +293,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety Enterprise',
-    ctaHref: '/contact',
+    ctaHref: '/?mketyAI=enterprise-sales',
     features: [
       'Custom implementation',
       'Enterprise support',
