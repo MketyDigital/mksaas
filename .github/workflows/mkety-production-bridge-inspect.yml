@@ -83,6 +83,18 @@ jobs:
           console.log('POSTGRES_TLS_LOGS_SAFE '+JSON.stringify(safe));
           NODE
 
+          backups="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID/backups" || printf '[]')"
+          BACKUPS="$backups" node <<'NODE'
+          let rows=[]; try { const p=JSON.parse(process.env.BACKUPS||'[]'); rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:Array.isArray(p?.backups)?p.backups:[]; } catch {}
+          console.log('BACKUPS_SAFE '+JSON.stringify(rows.map(x=>({
+            uuid:x.uuid||null,enabled:x.enabled!==false,frequency:x.frequency||null,saveS3:x.save_s3===true,
+            s3StorageUuid:x.s3_storage_uuid||x.s3_storage?.uuid||null,
+            localRetention:Number(x.database_backup_retention_amount_locally||0),
+            s3Retention:Number(x.database_backup_retention_amount_s3||0),
+            lastSavedAt:x.last_saved_at||null
+          }))));
+          NODE
+
           s3_storages="$(curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/s3-storages" || printf '[]')"
           S3_STORAGES="$s3_storages" node <<'NODE'
           let rows=[]; try { const p=JSON.parse(process.env.S3_STORAGES||'[]'); rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[]; } catch {}
