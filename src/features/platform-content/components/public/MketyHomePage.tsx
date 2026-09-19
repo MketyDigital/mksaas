@@ -269,9 +269,11 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
       <section id="workspaces" className="px-4 py-12 md:py-16">
         <div className="container mx-auto overflow-hidden rounded-[2rem] border bg-muted/20 p-6 md:p-10">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">{workspaces.eyebrow}</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">{workspaces.title}</h2>
-            {workspaces.description && <p className="mt-4 text-muted-foreground">{workspaces.description}</p>}
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Choose your workspace</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Pick the operating space that matches the work.</h2>
+            <p className="mt-4 text-muted-foreground">
+              Use AI, Automation or Deploy on their own, combine the self-service set with Mkety One, or discuss Trading as a Custom / Enterprise engagement.
+            </p>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {workspaces.items.map((item, index) => {
