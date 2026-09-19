@@ -36,6 +36,8 @@ jobs:
 
           get_optional servers /tmp/servers.json
           get_optional applications /tmp/applications.json
+          get_optional services /tmp/services.json
+          get_optional databases /tmp/databases.json
           get_optional projects /tmp/projects.json
 
           node <<'NODE'
@@ -83,6 +85,32 @@ jobs:
               created_at: s(x.created_at ?? x.createdAt),
             };
           }
+          function service(x) {
+            return {
+              uuid: s(x.uuid ?? x.id),
+              name: s(x.name),
+              description: s(x.description),
+              status: s(x.status),
+              server_uuid: s(x.server_uuid ?? x.destination?.server?.uuid ?? x.destination?.server_uuid),
+              destination_uuid: s(x.destination_uuid ?? x.destination?.uuid),
+              project_uuid: s(x.project_uuid ?? x.environment?.project?.uuid),
+              environment_uuid: s(x.environment_uuid ?? x.environment?.uuid),
+              docker_compose_raw: x.docker_compose_raw ? '[present]' : null,
+              created_at: s(x.created_at ?? x.createdAt),
+            };
+          }
+          function database(x) {
+            return {
+              uuid: s(x.uuid ?? x.id),
+              name: s(x.name),
+              description: s(x.description),
+              status: s(x.status),
+              type: s(x.type),
+              server_uuid: s(x.server_uuid ?? x.destination?.server?.uuid ?? x.destination?.server_uuid),
+              is_public: x.is_public ?? null,
+              created_at: s(x.created_at ?? x.createdAt),
+            };
+          }
           function project(x) {
             return {
               uuid: s(x.uuid ?? x.id),
@@ -93,15 +121,21 @@ jobs:
 
           const serversRaw = read('/tmp/servers.json');
           const appsRaw = read('/tmp/applications.json');
+          const servicesRaw = read('/tmp/services.json');
+          const databasesRaw = read('/tmp/databases.json');
           const projectsRaw = read('/tmp/projects.json');
 
           console.log('COOLIFY_INVENTORY_BEGIN');
           console.log(JSON.stringify({
             servers_http_status: serversRaw?._http_status ?? 200,
             applications_http_status: appsRaw?._http_status ?? 200,
+            services_http_status: servicesRaw?._http_status ?? 200,
+            databases_http_status: databasesRaw?._http_status ?? 200,
             projects_http_status: projectsRaw?._http_status ?? 200,
             servers: arr(serversRaw).map(server),
             applications: arr(appsRaw).map(app),
+            services: arr(servicesRaw).map(service),
+            databases: arr(databasesRaw).map(database),
             projects: arr(projectsRaw).map(project),
           }, null, 2));
           console.log('COOLIFY_INVENTORY_END');
