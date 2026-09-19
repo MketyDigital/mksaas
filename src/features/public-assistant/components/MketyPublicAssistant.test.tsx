@@ -24,6 +24,28 @@ describe('MketyPublicAssistant', () => {
     expect(screen.queryByText(/openai|gemini|bedrock|vertex|model selector/i)).not.toBeInTheDocument();
   });
 
+
+  it('uses Mkety branding and opens at the top below the public header', () => {
+    render(<MketyPublicAssistant />);
+
+    const launcher = screen.getByRole('button', { name: /ask mkety ai/i });
+    expect(launcher).toHaveClass('top-[4.5rem]');
+    expect(launcher.querySelector('img')).toHaveAttribute('src', '/mkety-logo.png');
+  });
+
+  it('opens Enterprise sales intake from the public CTA deep link without exposing sensitive-data prompts', async () => {
+    window.history.replaceState({}, '', '/?mketyAI=enterprise-sales');
+    render(<MketyPublicAssistant />);
+
+    const dialog = await screen.findByRole('dialog', { name: /mkety ai/i });
+    expect(dialog).toHaveClass('top-[4.5rem]');
+    expect(screen.getByText(/tell me briefly what you want mkety to build or help with/i)).toBeInTheDocument();
+    expect(screen.getByText(/i need trading workspace/i)).toBeInTheDocument();
+    expect(screen.queryByText(/password|api key|payment details/i)).not.toBeInTheDocument();
+
+    window.history.replaceState({}, '', '/');
+  });
+
   it('opens a centered rectangular support panel with suggested Mkety questions', async () => {
     render(<MketyPublicAssistant />);
     fireEvent.click(screen.getByRole('button', { name: /ask mkety ai/i }));
