@@ -23,6 +23,7 @@ jobs:
       COOLIFY_URL: https://deploy.mkety.com
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
       VPC_SERVICE_NAME: mkety-production-postgres
+      RECOVERY_VPC_SERVICE_NAME: mkety-production-postgres-vpc-recovery
       RECOVERY_HYPERDRIVE_NAME: mkety-production-db-vpc
       PROBE_WORKER_NAME: mkety-vpc-recovery-probe
 
@@ -61,12 +62,12 @@ jobs:
           rm -f /tmp/db-parts.json /tmp/db.json
           echo 'Private production database credentials resolved without disclosure.'
 
-      - name: Resolve healthy Workers VPC Postgres service
+      - name: Create or refresh recovery Workers VPC Postgres service
         shell: bash
         run: |
           set -euo pipefail
           response="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
-          SERVICES="$response" node <<'NODE' >/tmp/service-id
+          SERVICES="$response" node <<'NODE' >/tmp/source-service.json
           const p=JSON.parse(process.env.SERVICES||'{}');
           if(!p.success || !Array.isArray(p.result)) throw new Error('Could not list Workers VPC services.');
           const m=p.result.filter(x=>x.name===process.env.VPC_SERVICE_NAME);
@@ -78,12 +79,53 @@ jobs:
           if(!(s.host?.network?.tunnel_id || s.host?.resolver_network?.tunnel_id)) {
             throw new Error('Mkety production VPC service has no Cloudflare Tunnel association.');
           }
-          process.stdout.write(String(s.service_id));
+          process.stdout.write(JSON.stringify(s));
+          NODE
+
+          node <<'NODE' >/tmp/recovery-service.json
+          const s=require('/tmp/source-service.json');
+          process.stdout.write(JSON.stringify({
+            name:process.env.RECOVERY_VPC_SERVICE_NAME,
+            type:'tcp',
+            tcp_port:5432,
+            app_protocol:'postgresql',
+            host:s.host,
+            tls_settings:{cert_verification_mode:'verify_ca'}
+          }));
+          NODE
+
+          EXISTING="$response" node <<'NODE' >/tmp/recovery-service-id
+          const p=JSON.parse(process.env.EXISTING||'{}');
+          const m=Array.isArray(p.result)?p.result.filter(x=>x.name===process.env.RECOVERY_VPC_SERVICE_NAME):[];
+          if(m.length>1) throw new Error('Multiple recovery VPC services found.');
+          process.stdout.write(m[0]?.service_id||'');
+          NODE
+          EXISTING_SERVICE_ID="$(cat /tmp/recovery-service-id)"
+
+          if [ -n "$EXISTING_SERVICE_ID" ]; then
+            echo "::add-mask::$EXISTING_SERVICE_ID"
+            code="$(curl -sS -o /tmp/recovery-service-response.json -w '%{http_code}'               -X PUT               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/recovery-service.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$EXISTING_SERVICE_ID")"
+          else
+            code="$(curl -sS -o /tmp/recovery-service-response.json -w '%{http_code}'               -X POST               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/recovery-service.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
+          fi
+
+          if [ "$code" != '200' ]; then
+            echo "Recovery VPC service create/update failed with HTTP $code."
+            node -e "const x=require('/tmp/recovery-service-response.json'); console.log('CLOUDFLARE_VPC_ERROR '+JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null,pointer:e.source?.pointer||null}))))"
+            exit 1
+          fi
+
+          node <<'NODE' >/tmp/service-id
+          const p=require('/tmp/recovery-service-response.json');
+          if(!p.success||!p.result?.service_id) throw new Error('Cloudflare did not return recovery VPC service id.');
+          if(p.result.tls_settings?.cert_verification_mode!=='verify_ca') throw new Error('Recovery VPC service did not retain verify_ca.');
+          process.stdout.write(String(p.result.service_id));
           NODE
           SERVICE_ID="$(cat /tmp/service-id)"
           echo "::add-mask::$SERVICE_ID"
           echo "SERVICE_ID=$SERVICE_ID" >> "$GITHUB_ENV"
-          echo 'Resolved the dedicated Workers VPC PostgreSQL service.'
+          rm -f /tmp/source-service.json /tmp/recovery-service.json /tmp/recovery-service-response.json /tmp/recovery-service-id
+          echo 'Recovery Workers VPC PostgreSQL service is ready with verify_ca.'
 
       - name: Create or refresh replacement VPC-backed Hyperdrive
         shell: bash
