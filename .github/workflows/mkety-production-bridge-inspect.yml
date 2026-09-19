@@ -57,8 +57,12 @@ jobs:
           DB="$db" node <<'NODE'
           const d=JSON.parse(process.env.DB||'{}');
           console.log('POSTGRES_SAFE '+JSON.stringify({
-            name:d.name||null,status:d.status||null,isPublic:d.is_public===true,
-            publicPort:d.public_port??null,sslEnabled:d.enable_ssl??null,
+            name:d.name||null,status:d.status||null,image:d.image||null,
+            isPublic:d.is_public===true,publicPort:d.public_port??null,
+            sslEnabled:d.enable_ssl??null,sslMode:d.ssl_mode??null,
+            certificateStatus:d.ssl_certificate_status??d.certificate_status??null,
+            certificateExpiresAt:d.ssl_certificate_expiration_date??d.certificate_expiration_date??null,
+            internalScheme:typeof d.internal_db_url==='string'?String(d.internal_db_url).split(':')[0]:null,
             createdAt:d.created_at||null,updatedAt:d.updated_at||null
           }));
           NODE
