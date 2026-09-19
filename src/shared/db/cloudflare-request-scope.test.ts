@@ -6,6 +6,7 @@ import path from 'node:path';
 const publicRuntimeFiles = [
   'src/app/api/health/route.ts',
   'src/features/platform-content/server/queries.ts',
+  'src/features/platform-content/server/public-chrome.ts',
   'src/features/platform-content/server/public-page.ts',
   'src/features/platform-content/server/public-page-query.ts',
 ];
