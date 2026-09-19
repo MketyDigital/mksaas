@@ -246,3 +246,21 @@ Previously documented next slice:
 - customer invocation path over the existing Deploy execution kernel
 
 Do not broaden the first APP-07 slice into production provider mutation, production DNS/custom-domain mutation, OCI/Coolify production mutation or rollback execution unless separately approved.
+
+
+## Continuation update — public polish implementation
+
+The following items were implemented on this branch after the original handoff:
+
+- repaired the Public Mkety AI logo implementation so the top launcher/panel actually compile with `/mkety-logo.png`
+- added an explicit, bounded `enterprise-sales` public-AI intent instead of storing internal prompt markers in visitor conversation history
+- routed Trading and Enterprise sales CTAs through `/?mketyAI=enterprise-sales` at both default-content and runtime-normalization layers
+- forced Enterprise pricing CTAs through the same AI-first flow even when CMS/DB content still contains the older contact href
+- added Enterprise intake safety guidance and tests: minimal non-sensitive qualification, one or two questions at a time, final human handoff through `/contact`
+- removed the duplicate homepage Platform section immediately after the MketyOS showcase and rewrote the homepage Workspaces intro as a decision-oriented section
+- added candidate assertions for `/login` and `/signup` requiring HTTP 200 HTML responses with no attachment/filename content disposition
+- expanded Public Mkety AI regression coverage for top positioning, Mkety branding, clean sales-intent payloads and prompt safety
+
+Legacy Academy asset inspection is complete. The approved source files are `MketyDigital/Mkety/public/class1.jpg` through `class5.jpg`. The current GitHub connector can inspect their metadata but rejects binary repository content, so the asset-copy operation itself remains outstanding in this session. Do not replace them with new stock photography.
+
+Current verification target is the exact head of PR #91. Do not promote this branch until the normal PR CI, Vinext/Cloudflare smoke, candidate deploy (including the new auth HTML contract) and the requested mobile visual checks are green.
