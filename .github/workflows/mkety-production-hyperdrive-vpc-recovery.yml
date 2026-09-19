@@ -116,10 +116,18 @@ jobs:
           if [ -n "$EXISTING_ID" ]; then
             echo "::add-mask::$EXISTING_ID"
             code="$(curl -sS -o /tmp/hyperdrive-response.json -w '%{http_code}'               -X PUT               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/hyperdrive.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$EXISTING_ID")"
-            [ "$code" = '200' ] || { echo "Replacement Hyperdrive refresh failed with HTTP $code."; exit 1; }
+            if [ "$code" != '200' ]; then
+              echo "Replacement Hyperdrive refresh failed with HTTP $code."
+              node -e "const x=require('/tmp/hyperdrive-response.json'); console.log('CLOUDFLARE_ERROR '+JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null,pointer:e.source?.pointer||null}))))"
+              exit 1
+            fi
           else
             code="$(curl -sS -o /tmp/hyperdrive-response.json -w '%{http_code}'               -X POST               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/hyperdrive.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs")"
-            [ "$code" = '200' ] || { echo "Replacement Hyperdrive creation failed with HTTP $code."; exit 1; }
+            if [ "$code" != '200' ]; then
+              echo "Replacement Hyperdrive creation failed with HTTP $code."
+              node -e "const x=require('/tmp/hyperdrive-response.json'); console.log('CLOUDFLARE_ERROR '+JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null,pointer:e.source?.pointer||null}))))"
+              exit 1
+            fi
           fi
           node <<'NODE' >/tmp/recovery-id
           const p=require('/tmp/hyperdrive-response.json');
