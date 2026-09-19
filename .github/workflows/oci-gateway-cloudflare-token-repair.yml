@@ -1,0 +1,105 @@
+name: OCI Gateway Cloudflare DNS Token Repair
+on:
+  push:
+    branches:
+      - ops/oci-gateway-cloudflare-token-repair-20260919
+permissions:
+  contents: read
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TARGET_APP_UUID: p9xqtqpbljnggchy36mzd7a0
+    steps:
+      - name: Verify current Cloudflare token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${COOLIFY_API_TOKEN:-}" || { echo 'Missing COOLIFY_TOKEN'; exit 2; }
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing CLOUDFLARE_API_TOKEN'; exit 2; }
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             https://api.cloudflare.com/client/v4/user/tokens/verify > "$RUNNER_TEMP/cf-verify.json"
+          FILE="$RUNNER_TEMP/cf-verify.json" node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.FILE));if(!x.success||x.result?.status!=='active')process.exit(1);console.log('CLOUDFLARE_TOKEN=ACTIVE')"
+
+      - name: Patch OCI gateway DNS token only
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${COOLIFY_URL%/}"; [[ "$root" == */api/v1 ]] && api="$root" || api="$root/api/v1"
+          endpoint="$api/applications/$TARGET_APP_UUID/envs"
+          printf '::add-mask::%s
+' "$CLOUDFLARE_API_TOKEN"
+          TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE' > "$RUNNER_TEMP/env.json"
+          process.stdout.write(JSON.stringify({
+            key:'CLOUDFLARE_DNS_API_TOKEN',
+            value:process.env.TOKEN,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:false
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o "$RUNNER_TEMP/patch.json" -w '%{http_code}'             -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @"$RUNNER_TEMP/env.json" "$endpoint")"
+          [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Coolify DNS token patch failed HTTP $code"; exit 3; }
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" > "$RUNNER_TEMP/envs.json"
+          TOKEN="$CLOUDFLARE_API_TOKEN" FILE="$RUNNER_TEMP/envs.json" node <<'NODE'
+          const fs=require('fs');const rows=JSON.parse(fs.readFileSync(process.env.FILE,'utf8')||'[]');
+          const row=(Array.isArray(rows)?rows:[]).find(x=>x?.is_preview===false&&String(x.key||'')==='CLOUDFLARE_DNS_API_TOKEN');
+          if(!row) throw new Error('Target DNS token env missing');
+          if(String(row.value??'')!==String(process.env.TOKEN)) throw new Error('Target DNS token value mismatch');
+          console.log('OCI_DNS_TOKEN_PATCH=PASS');
+          NODE
+
+      - name: Redeploy OCI gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${COOLIFY_URL%/}"; [[ "$root" == */api/v1 ]] && api="$root" || api="$root/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o "$RUNNER_TEMP/deploy.json" -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$api/deploy?uuid=$TARGET_APP_UUID&force=true")"
+          [ "$code" = "200" ] || { echo "Deploy request failed HTTP $code"; exit 4; }
+          dep="$(node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/deploy.json'));const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          echo "OCI_REDEPLOYMENT_UUID=$dep"
+          done=no
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$api/deployments/$dep" > "$RUNNER_TEMP/deployment.json"
+            status="$(node -e "const x=require(process.env.RUNNER_TEMP+'/deployment.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) done=yes; break ;;
+              failed|failure|error|cancelled|canceled) echo "Redeploy failed status=$status"; exit 5 ;;
+            esac
+            sleep 5
+          done
+          [ "$done" = yes ] || { echo 'Redeploy timeout'; exit 6; }
+          echo 'OCI_REDEPLOYMENT=FINISHED'
+
+      - name: Verify Caddy obtained certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${COOLIFY_URL%/}"; [[ "$root" == */api/v1 ]] && api="$root" || api="$root/api/v1"
+          ok=no
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$api/applications/$TARGET_APP_UUID/logs?lines=200&show_timestamps=false" > "$RUNNER_TEMP/logs.json"
+            if FILE="$RUNNER_TEMP/logs.json" node <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.FILE,'utf8')||'{}');
+          const logs=String(x.logs||'');
+          if(/certificate obtained successfully|obtained certificate|certificate.*success/i.test(logs)) process.exit(0);
+          if(/Invalid access token|HTTP 403/i.test(logs)) process.exit(2);
+          process.exit(1);
+          NODE
+            then ok=yes; break
+            else rc=$?; [ "$rc" -eq 2 ] && { echo 'CLOUDFLARE_DNS_TOKEN_STILL_REJECTED'; exit 7; }
+            fi
+            sleep 4
+          done
+          [ "$ok" = yes ] || { echo 'Certificate issuance not confirmed'; exit 8; }
+          echo 'OCI_CADDY_CERTIFICATE=PASS'
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/cf-verify.json" "$RUNNER_TEMP/env.json" "$RUNNER_TEMP/patch.json" "$RUNNER_TEMP/envs.json" "$RUNNER_TEMP/deploy.json" "$RUNNER_TEMP/deployment.json" "$RUNNER_TEMP/logs.json"
