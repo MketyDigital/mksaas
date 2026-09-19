@@ -4,6 +4,7 @@ import { MketyPublicAssistant } from './MketyPublicAssistant';
 
 describe('MketyPublicAssistant', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/');
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: jest.fn(),
@@ -39,8 +40,8 @@ describe('MketyPublicAssistant', () => {
 
     const dialog = await screen.findByRole('dialog', { name: /mkety ai/i });
     expect(dialog).toHaveClass('top-[4.5rem]');
-    expect(screen.getByText(/tell me briefly what you want mkety to build or help with/i)).toBeInTheDocument();
-    expect(screen.getByText(/i need trading workspace/i)).toBeInTheDocument();
+    expect(await screen.findByText(/tell me briefly what you want mkety to build or help with/i)).toBeInTheDocument();
+    expect(await screen.findByText(/i need trading workspace/i)).toBeInTheDocument();
     expect(screen.getByText(/avoid sharing passwords, payment details or private account data/i)).toBeInTheDocument();
 
     const input = screen.getByLabelText(/message mkety ai/i);
@@ -57,7 +58,6 @@ describe('MketyPublicAssistant', () => {
       intent: 'enterprise-sales',
     });
 
-    window.history.replaceState({}, '', '/');
   });
 
   it('opens a centered rectangular support panel with suggested Mkety questions', async () => {
