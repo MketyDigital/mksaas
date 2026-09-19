@@ -65,7 +65,7 @@ jobs:
           echo "id=$(cat /tmp/hyperdrive-id)" >> "$GITHUB_OUTPUT"
           echo 'PASS production Hyperdrive resolved'
 
-      - name: Inspect production VPC service, tunnel, and private Postgres state
+      - name: Inspect production Hyperdrive origin and private Postgres state
         shell: bash
         env:
           COOLIFY_URL: https://deploy.mkety.com
@@ -75,73 +75,56 @@ jobs:
           set -euo pipefail
           : "${COOLIFY_API_TOKEN:?required}"
           hyperdrives="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
-          HYPERDRIVES="$hyperdrives" node <<'NODE' >/tmp/mkety-runtime-link.json
+          HYPERDRIVES="$hyperdrives" node <<'NODE' >/tmp/mkety-hyperdrive-safe.json
           const p=JSON.parse(process.env.HYPERDRIVES||'{}');
           const h=Array.isArray(p.result)?p.result.find(x=>x.name===process.env.MKETY_HYPERDRIVE_NAME):null;
           if(!p.success||!h?.id) throw new Error('Production Hyperdrive not found');
-          const serviceId=h.origin?.service_id;
-          if(!serviceId) throw new Error('Production Hyperdrive has no Workers VPC service_id');
-          process.stdout.write(JSON.stringify({hyperdriveId:h.id,serviceId}));
+          const origin=h.origin && typeof h.origin==='object' ? h.origin : {};
+          const safe={
+            name:h.name||null,
+            originKeys:Object.keys(origin).sort(),
+            originScheme:origin.scheme||null,
+            originPort:origin.port??null,
+            hasServiceId:Boolean(origin.service_id),
+            hasHost:Boolean(origin.host),
+            hasDatabase:Boolean(origin.database),
+            hasUser:Boolean(origin.user),
+            cachingDisabled:h.caching?.disabled??null,
+            createdOn:h.created_on||null,
+            modifiedOn:h.modified_on||null
+          };
+          process.stdout.write(JSON.stringify(safe,null,2));
           NODE
-          service_id="$(node -e "const x=require('/tmp/mkety-runtime-link.json');process.stdout.write(x.serviceId)")"
-          service="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$service_id")"
-          SERVICE="$service" node <<'NODE' >/tmp/mkety-vpc-safe.json
-          const p=JSON.parse(process.env.SERVICE||'{}');
-          if(!p.success||!p.result) throw new Error('Could not fetch production VPC service');
-          const s=p.result;
-          const tunnelId=s.host?.network?.tunnel_id || s.host?.resolver_network?.tunnel_id;
-          if(!tunnelId) throw new Error('Production VPC service has no tunnel id');
-          process.stdout.write(JSON.stringify({
-            serviceId:s.service_id||null,
-            name:s.name||null,
-            type:s.type||null,
-            tcpPort:s.tcp_port||null,
-            appProtocol:s.app_protocol||null,
-            tlsMode:s.tls_settings?.cert_verification_mode||null,
-            tunnelId
-          },null,2));
-          NODE
-          tunnel_id="$(node -e "const x=require('/tmp/mkety-vpc-safe.json');process.stdout.write(x.tunnelId)")"
-          tunnel="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tunnel_id")"
-          connections="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tunnel_id/connections")"
-          TUNNEL="$tunnel" CONNECTIONS="$connections" node <<'NODE' >/tmp/mkety-tunnel-safe.json
-          const t=JSON.parse(process.env.TUNNEL||'{}');
-          const c=JSON.parse(process.env.CONNECTIONS||'{}');
-          if(!t.success||!t.result) throw new Error('Could not fetch production Cloudflare Tunnel');
-          const list=Array.isArray(c.result)?c.result:[];
-          process.stdout.write(JSON.stringify({
-            name:t.result.name||null,
-            status:t.result.status||null,
-            connectionCount:list.length,
-            connectorVersions:[...new Set(list.map(x=>x.version).filter(Boolean))]
-          },null,2));
-          NODE
-          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID" -o /tmp/mkety-postgres-safe-source.json
+
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID" -o /tmp/mkety-postgres-source.json
           node <<'NODE' >/tmp/mkety-postgres-safe.json
           const fs=require('node:fs');
-          const d=JSON.parse(fs.readFileSync('/tmp/mkety-postgres-safe-source.json','utf8'));
+          const d=JSON.parse(fs.readFileSync('/tmp/mkety-postgres-source.json','utf8'));
           process.stdout.write(JSON.stringify({
             name:d.name||null,
             status:d.status||null,
             isPublic:d.is_public===true,
             publicPort:d.public_port??null,
-            sslEnabled:d.enable_ssl??null
+            sslEnabled:d.enable_ssl??null,
+            createdAt:d.created_at||null,
+            updatedAt:d.updated_at||null
           },null,2));
           NODE
+
           curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/services" -o /tmp/mkety-services.json
           curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Accept: application/json' "${COOLIFY_URL%/}/api/v1/applications" -o /tmp/mkety-applications.json
           node <<'NODE' >/tmp/mkety-coolify-tunnel-candidates.json
           const fs=require('node:fs');
-          const services=JSON.parse(fs.readFileSync('/tmp/mkety-services.json','utf8'));
-          const apps=JSON.parse(fs.readFileSync('/tmp/mkety-applications.json','utf8'));
-          const rows=[...(Array.isArray(services)?services:[]).map(x=>({...x,kind:'service'})),...(Array.isArray(apps)?apps:[]).map(x=>({...x,kind:'application'}))];
+          const normalize=x=>Array.isArray(x)?x:Array.isArray(x?.data)?x.data:[];
+          const services=normalize(JSON.parse(fs.readFileSync('/tmp/mkety-services.json','utf8')));
+          const apps=normalize(JSON.parse(fs.readFileSync('/tmp/mkety-applications.json','utf8')));
+          const rows=[...services.map(x=>({...x,kind:'service'})),...apps.map(x=>({...x,kind:'application'}))];
           const m=rows.filter(x=>/cloudflared|cloudflare|tunnel/i.test([x.name,x.description,x.service_type].filter(Boolean).join(' ')));
           process.stdout.write(JSON.stringify(m.map(x=>({kind:x.kind,uuid:x.uuid||null,name:x.name||null,status:x.status||null,serviceType:x.service_type||null})),null,2));
           NODE
-          echo '--- VPC service ---'
-          cat /tmp/mkety-vpc-safe.json
-          echo '--- Cloudflare Tunnel ---'
-          cat /tmp/mkety-tunnel-safe.json
+
+          echo '--- Hyperdrive safe origin shape ---'
+          cat /tmp/mkety-hyperdrive-safe.json
           echo '--- private Postgres ---'
           cat /tmp/mkety-postgres-safe.json
           echo '--- Coolify tunnel candidates ---'
