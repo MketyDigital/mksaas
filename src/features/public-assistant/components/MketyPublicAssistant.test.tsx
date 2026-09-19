@@ -41,7 +41,7 @@ describe('MketyPublicAssistant', () => {
     expect(dialog).toHaveClass('top-[4.5rem]');
     expect(screen.getByText(/tell me briefly what you want mkety to build or help with/i)).toBeInTheDocument();
     expect(screen.getByText(/i need trading workspace/i)).toBeInTheDocument();
-    expect(screen.queryByText(/password|api key|payment details/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/avoid sharing passwords, payment details or private account data/i)).toBeInTheDocument();
 
     window.history.replaceState({}, '', '/');
   });
