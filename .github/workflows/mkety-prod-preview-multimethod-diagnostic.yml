@@ -12,7 +12,7 @@ permissions:
 
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
-  VERIFIED_APP_SHA: 8ef16bd1802499331d5d8ea9e43db2b0f8da6bcd
+  VERIFIED_APP_SHA: 0093d275aed8ad949fc38f8d1c9e3be8d1e987bc
 
 jobs:
   diagnose:
