@@ -94,7 +94,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Trading Workspace',
             description:
               'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
-            href: '/enterprise',
+            href: '/?mketyAI=enterprise-sales',
             badge: 'Custom / Enterprise',
           },
         ],
@@ -240,7 +240,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Implementation and operational support tailored to enterprise requirements.',
           },
         ],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/?mketyAI=enterprise-sales' },
       },
     ],
   },
