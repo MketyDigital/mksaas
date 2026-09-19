@@ -1,0 +1,221 @@
+name: Mkety Production Hyperdrive VPC Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-hyperdrive-vpc-recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Create and verify replacement production Hyperdrive
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_URL: https://deploy.mkety.com
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      VPC_SERVICE_NAME: mkety-production-postgres
+      RECOVERY_HYPERDRIVE_NAME: mkety-production-db-vpc
+      PROBE_WORKER_NAME: mkety-vpc-recovery-probe
+
+    steps:
+      - name: Verify private Postgres and resolve credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID COOLIFY_API_TOKEN; do
+            [ -n "${!v:-}" ] || { echo "$v is required"; exit 1; }
+          done
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             -H 'Accept: application/json'             "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID" -o /tmp/db.json
+
+          node <<'NODE' >/tmp/db-parts.json
+          const d=require('/tmp/db.json');
+          if(d.is_public!==false || d.enable_ssl!==true || !String(d.status||'').toLowerCase().includes('healthy') || !d.internal_db_url) {
+            throw new Error('Production Postgres is not private, TLS-enabled, healthy, and internally addressable.');
+          }
+          const u=new URL(String(d.internal_db_url));
+          if(!u.username || !u.password || !u.pathname || u.pathname==='/') throw new Error('Private DB URL is incomplete.');
+          process.stdout.write(JSON.stringify({
+            user:decodeURIComponent(u.username),
+            password:decodeURIComponent(u.password),
+            database:decodeURIComponent(u.pathname.replace(/^\//,'')),
+          }));
+          NODE
+          DB_USER="$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.user)")"
+          DB_PASSWORD="$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.password)")"
+          DB_NAME="$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.database)")"
+          echo "::add-mask::$DB_USER"
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$DB_NAME"
+          echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
+          echo "DB_PASSWORD=$DB_PASSWORD" >> "$GITHUB_ENV"
+          echo "DB_NAME=$DB_NAME" >> "$GITHUB_ENV"
+          rm -f /tmp/db-parts.json /tmp/db.json
+          echo 'Private production database credentials resolved without disclosure.'
+
+      - name: Resolve healthy Workers VPC Postgres service
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
+          SERVICES="$response" node <<'NODE' >/tmp/service-id
+          const p=JSON.parse(process.env.SERVICES||'{}');
+          if(!p.success || !Array.isArray(p.result)) throw new Error('Could not list Workers VPC services.');
+          const m=p.result.filter(x=>x.name===process.env.VPC_SERVICE_NAME);
+          if(m.length!==1) throw new Error('Expected exactly one Mkety production Postgres VPC service.');
+          const s=m[0];
+          if(s.type!=='tcp' || Number(s.tcp_port)!==5432 || s.app_protocol!=='postgresql') {
+            throw new Error('Mkety production VPC service does not match PostgreSQL TCP expectations.');
+          }
+          if(!(s.host?.network?.tunnel_id || s.host?.resolver_network?.tunnel_id)) {
+            throw new Error('Mkety production VPC service has no Cloudflare Tunnel association.');
+          }
+          process.stdout.write(String(s.service_id));
+          NODE
+          SERVICE_ID="$(cat /tmp/service-id)"
+          echo "::add-mask::$SERVICE_ID"
+          echo "SERVICE_ID=$SERVICE_ID" >> "$GITHUB_ENV"
+          echo 'Resolved the dedicated Workers VPC PostgreSQL service.'
+
+      - name: Create or refresh replacement VPC-backed Hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          EXISTING="$existing" node <<'NODE' >/tmp/existing-id
+          const p=JSON.parse(process.env.EXISTING||'{}');
+          if(!p.success || !Array.isArray(p.result)) throw new Error('Could not list Hyperdrive configurations.');
+          const m=p.result.filter(x=>x.name===process.env.RECOVERY_HYPERDRIVE_NAME);
+          if(m.length>1) throw new Error('Multiple replacement Hyperdrive configs found.');
+          process.stdout.write(m[0]?.id||'');
+          NODE
+          EXISTING_ID="$(cat /tmp/existing-id)"
+
+          SERVICE_ID="$SERVICE_ID" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_NAME="$DB_NAME" node <<'NODE' >/tmp/hyperdrive.json
+          process.stdout.write(JSON.stringify({
+            name:process.env.RECOVERY_HYPERDRIVE_NAME,
+            origin:{
+              scheme:'postgresql',
+              database:process.env.DB_NAME,
+              user:process.env.DB_USER,
+              password:process.env.DB_PASSWORD,
+              service_id:process.env.SERVICE_ID
+            },
+            caching:{disabled:true}
+          }));
+          NODE
+
+          if [ -n "$EXISTING_ID" ]; then
+            echo "::add-mask::$EXISTING_ID"
+            code="$(curl -sS -o /tmp/hyperdrive-response.json -w '%{http_code}'               -X PUT               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/hyperdrive.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$EXISTING_ID")"
+            [ "$code" = '200' ] || { echo "Replacement Hyperdrive refresh failed with HTTP $code."; exit 1; }
+          else
+            code="$(curl -sS -o /tmp/hyperdrive-response.json -w '%{http_code}'               -X POST               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H 'Content-Type: application/json'               --data-binary @/tmp/hyperdrive.json               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs")"
+            [ "$code" = '200' ] || { echo "Replacement Hyperdrive creation failed with HTTP $code."; exit 1; }
+          fi
+          node <<'NODE' >/tmp/recovery-id
+          const p=require('/tmp/hyperdrive-response.json');
+          if(!p.success || !p.result?.id) throw new Error('Cloudflare did not return a replacement Hyperdrive id.');
+          if(!p.result.origin?.service_id) throw new Error('Replacement Hyperdrive is not Workers VPC-backed.');
+          process.stdout.write(String(p.result.id));
+          NODE
+          RECOVERY_ID="$(cat /tmp/recovery-id)"
+          echo "::add-mask::$RECOVERY_ID"
+          echo "RECOVERY_ID=$RECOVERY_ID" >> "$GITHUB_ENV"
+          rm -f /tmp/hyperdrive.json /tmp/hyperdrive-response.json /tmp/existing-id
+          echo 'Replacement Hyperdrive is confirmed Workers VPC-backed.'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy minimal SELECT 1 probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .diag
+          cat > .diag/recovery-probe.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(_req, env) {
+              if (!env.MKETY_DB?.connectionString) return Response.json({ok:false,stage:'binding'},{status:500});
+              let sql;
+              try {
+                sql=postgres(env.MKETY_DB.connectionString,{max:1});
+                const rows=await sql`select 1::int as ok`;
+                return Response.json({ok:rows?.[0]?.ok===1,stage:'query'},{status:rows?.[0]?.ok===1?200:500});
+              } catch (e) {
+                return Response.json({ok:false,stage:'query',name:String(e?.name||'Error'),code:typeof e?.code==='string'?e.code:null},{status:500});
+              } finally {
+                if(sql) await sql.end({timeout:1}).catch(()=>{});
+              }
+            }
+          }
+          JS
+          cat > .diag/recovery-wrangler.jsonc <<JSON
+          {
+            "name":"$PROBE_WORKER_NAME",
+            "main":"./recovery-probe.mjs",
+            "compatibility_date":"2026-09-06",
+            "compatibility_flags":["nodejs_compat"],
+            "workers_dev":true,
+            "preview_urls":true,
+            "hyperdrive":[{"binding":"MKETY_DB","id":"$RECOVERY_ID"}]
+          }
+          JSON
+          pnpm exec wrangler deploy --config .diag/recovery-wrangler.jsonc 2>&1 | tee /tmp/probe-deploy.log
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          ACCOUNT="$account" node <<'NODE' >/tmp/subdomain
+          const p=JSON.parse(process.env.ACCOUNT||'{}');
+          if(!p.success||!p.result?.subdomain) throw new Error('No workers.dev account subdomain.');
+          process.stdout.write(p.result.subdomain);
+          NODE
+          echo "PROBE_URL=https://$PROBE_WORKER_NAME.$(cat /tmp/subdomain).workers.dev" >> "$GITHUB_ENV"
+
+      - name: Require successful direct production SELECT 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 12); do
+            code="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/probe.json -w '%{http_code}' "$PROBE_URL/" || true)"
+            echo "Recovery Hyperdrive probe attempt $attempt/12: HTTP $code"
+            if [ "$code" = '200' ] && node -e "const x=require('/tmp/probe.json');process.exit(x.ok===true&&x.stage==='query'?0:1)"; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$ok" != '1' ]; then
+            node <<'NODE'
+          const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/probe.json','utf8'))}catch{}
+          console.log('RECOVERY_PROBE_SAFE '+JSON.stringify({ok:x.ok===true,stage:x.stage||null,name:x.name||null,code:x.code||null}));
+          NODE
+            exit 1
+          fi
+          echo 'Replacement VPC-backed Hyperdrive passed direct SELECT 1.'
+
+      - name: Cleanup probe Worker
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME/subdomain" >/dev/null
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME" >/dev/null
+          echo 'Recovery probe Worker cleanup attempted.'
