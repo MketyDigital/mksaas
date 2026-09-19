@@ -1,0 +1,54 @@
+name: Verify public cbot after OCI cutover
+on:
+  push:
+    branches:
+      - ops/cbot-oci-dns-cutover-20260919
+    paths:
+      - ".github/workflows/cbot-post-cutover-verify.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for OCI DNS and verify public gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="89.168.70.209"
+          resolved=""
+          for i in $(seq 1 36); do
+            resolved="$(getent ahostsv4 cbot.mkety.com | awk 'NR==1{print $1}')"
+            echo "CBOT_DNS_RESOLVED=$resolved"
+            [ "$resolved" = "$expected" ] && break
+            sleep 5
+          done
+          [ "$resolved" = "$expected" ] || { echo "DNS did not converge to OCI"; exit 2; }
+
+          curl --proto '=https' --tlsv1.2 -fsS --connect-timeout 10 --max-time 20             https://cbot.mkety.com:25345/health > /tmp/health.json
+          node -e "const b=require('/tmp/health.json'); if(!b.ok)process.exit(1); console.log('PUBLIC_HEALTH=PASS')"
+
+          mkdir -p /tmp/ws && cd /tmp/ws
+          npm init -y >/dev/null 2>&1
+          npm install --silent ws@8
+          node <<'NODE'
+          const WebSocket=require('ws');
+          async function probe(path){
+            return new Promise((resolve,reject)=>{
+              const ws=new WebSocket('wss://cbot.mkety.com:25345'+path);
+              let opened=false;
+              const timer=setTimeout(()=>reject(new Error(path+' timeout')),12000);
+              ws.on('open',()=>{opened=true;ws.send(JSON.stringify({type:'unauthenticated_probe'}));});
+              ws.on('error',reject);
+              ws.on('close',(code,reason)=>{
+                clearTimeout(timer);
+                const why=String(reason||'');
+                if(!opened)return reject(new Error(path+' never upgraded'));
+                if(code!==1008||why!=='AUTH_REQUIRED')return reject(new Error(path+' unexpected '+code+' '+why));
+                console.log(path+'=PASS');resolve();
+              });
+            });
+          }
+          (async()=>{await probe('/v1/cbot');await probe('/v1/mt5');})().catch(e=>{console.error(e.message);process.exit(1)});
+          NODE
