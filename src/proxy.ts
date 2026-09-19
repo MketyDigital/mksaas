@@ -7,11 +7,30 @@ import { customDomains, tenants } from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
 
+const MKETY_PUBLIC_PATHS = new Set([
+  '/',
+  '/platform',
+  '/workspaces',
+  '/solutions',
+  '/academy',
+  '/pricing',
+  '/enterprise',
+  '/about',
+  '/privacy',
+  '/terms',
+  '/contact',
+  '/login',
+  '/signup',
+  '/robots.txt',
+  '/sitemap.xml',
+  '/api/health',
+  '/api/public/assistant',
+  '/api/payments/enterprise/create',
+]);
+
 function isPublicPath(pathname: string): boolean {
   return (
-    pathname === '/' ||
-    pathname === '/login' ||
-    pathname === '/api/health' ||
+    MKETY_PUBLIC_PATHS.has(pathname) ||
     pathname.startsWith('/docs') ||
     pathname.startsWith('/api/docs') ||
     pathname.startsWith('/api/auth/') ||
@@ -22,7 +41,6 @@ function isPublicPath(pathname: string): boolean {
 export default async function proxy(request: Request & { nextUrl?: URL }) {
   const nextUrl = request.nextUrl ?? new URL(request.url);
   const { pathname, hostname } = nextUrl;
-  const session = await auth(request);
   let effectivePathname = pathname;
 
   const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
@@ -30,21 +48,33 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.redirect(canonicalPublicUrl, 308);
   }
 
+  const appHost = (() => {
+    try {
+      return new URL(process.env.NEXT_PUBLIC_APP_URL || '').hostname;
+    } catch {
+      return '';
+    }
+  })();
+  const vercelHost = process.env.VERCEL_URL || '';
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isMketyPublicHost =
+    hostname === 'mkety.com' ||
+    hostname === appHost ||
+    hostname === vercelHost ||
+    hostname.endsWith('.vercel.app') ||
+    hostname.endsWith('.workers.dev') ||
+    isLocalHost;
+
+  if (isMketyPublicHost && isPublicPath(pathname)) {
+    const response = NextResponse.next();
+    response.headers.set('x-pathname', pathname);
+    return response;
+  }
+
+  const session = await auth(request);
+
   if (!pathname.startsWith('/t/') && hostname) {
-    const appHost = (() => {
-      try {
-        return new URL(process.env.NEXT_PUBLIC_APP_URL || '').hostname;
-      } catch {
-        return '';
-      }
-    })();
-    const vercelHost = process.env.VERCEL_URL || '';
-    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const isKnownAppHost =
-      hostname === appHost ||
-      hostname === vercelHost ||
-      hostname.endsWith('.vercel.app') ||
-      hostname.endsWith('.workers.dev');
+    const isKnownAppHost = isMketyPublicHost;
 
     if (!isLocalHost && !isKnownAppHost && !pathname.startsWith('/api/')) {
       try {
