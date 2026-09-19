@@ -1,0 +1,108 @@
+name: Read-only Coolify Inventory Probe
+
+on:
+  push:
+    branches:
+      - ops/read-only-coolify-inventory-20260919
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+    steps:
+      - name: Verify Coolify API and print sanitized inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is unavailable.'; exit 2; }
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS "$base/health" >/dev/null
+
+          get_optional() {
+            local endpoint="$1" out="$2"
+            local code
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o "$out" -w '%{http_code}'               -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/$endpoint")"
+            if [ "$code" != "200" ]; then
+              printf '{"_http_status":%s}\n' "$code" > "$out"
+            fi
+          }
+
+          get_optional servers /tmp/servers.json
+          get_optional applications /tmp/applications.json
+          get_optional projects /tmp/projects.json
+
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function read(path) {
+            try { return JSON.parse(fs.readFileSync(path, 'utf8')); } catch { return null; }
+          }
+          function arr(v) {
+            if (Array.isArray(v)) return v;
+            if (Array.isArray(v?.data)) return v.data;
+            if (Array.isArray(v?.applications)) return v.applications;
+            if (Array.isArray(v?.servers)) return v.servers;
+            if (Array.isArray(v?.projects)) return v.projects;
+            return [];
+          }
+          function s(v) { return v == null ? null : String(v); }
+          function server(x) {
+            return {
+              uuid: s(x.uuid ?? x.id),
+              name: s(x.name),
+              description: s(x.description),
+              ip: s(x.ip ?? x.ipv4 ?? x.host),
+              status: s(x.status),
+              validation: s(x.validation_message ?? x.validationMessage),
+              is_reachable: x.is_reachable ?? x.isReachable ?? null,
+              is_usable: x.is_usable ?? x.isUsable ?? null,
+              created_at: s(x.created_at ?? x.createdAt),
+            };
+          }
+          function app(x) {
+            return {
+              uuid: s(x.uuid ?? x.id),
+              name: s(x.name),
+              description: s(x.description),
+              status: s(x.status),
+              fqdn: s(x.fqdn),
+              git_repository: s(x.git_repository ?? x.gitRepository),
+              git_branch: s(x.git_branch ?? x.gitBranch),
+              docker_compose_location: s(x.docker_compose_location ?? x.dockerComposeLocation),
+              server_uuid: s(x.server_uuid ?? x.destination?.server?.uuid ?? x.destination?.server_uuid),
+              destination_uuid: s(x.destination_uuid ?? x.destination?.uuid),
+              project_uuid: s(x.project_uuid ?? x.environment?.project?.uuid),
+              environment_uuid: s(x.environment_uuid ?? x.environment?.uuid),
+              created_at: s(x.created_at ?? x.createdAt),
+            };
+          }
+          function project(x) {
+            return {
+              uuid: s(x.uuid ?? x.id),
+              name: s(x.name),
+              description: s(x.description),
+            };
+          }
+
+          const serversRaw = read('/tmp/servers.json');
+          const appsRaw = read('/tmp/applications.json');
+          const projectsRaw = read('/tmp/projects.json');
+
+          console.log('COOLIFY_INVENTORY_BEGIN');
+          console.log(JSON.stringify({
+            servers_http_status: serversRaw?._http_status ?? 200,
+            applications_http_status: appsRaw?._http_status ?? 200,
+            projects_http_status: projectsRaw?._http_status ?? 200,
+            servers: arr(serversRaw).map(server),
+            applications: arr(appsRaw).map(app),
+            projects: arr(projectsRaw).map(project),
+          }, null, 2));
+          console.log('COOLIFY_INVENTORY_END');
+          NODE
