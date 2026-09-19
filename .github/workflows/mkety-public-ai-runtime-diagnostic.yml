@@ -14,7 +14,7 @@ permissions:
 jobs:
   diagnose:
     name: Detect accessible Public AI OpenAI model
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 24 || github.event.pull_request.number == 91
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: staging
