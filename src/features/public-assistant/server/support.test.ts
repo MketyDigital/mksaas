@@ -23,7 +23,10 @@ describe('Mkety public support-agent behavior', () => {
     expect(prompt).toMatch(/growth.*pro.*business.*not.*current/i);
     expect(prompt).toMatch(/academy\.mkety\.com/i);
     expect(prompt).toMatch(/trading.*sales.*pricing.*quotes.*access requests.*enterprise/i);
-    expect(prompt).toMatch(/do not send a new buyer there to purchase/i);
+    expect(prompt).toMatch(/do not quote old trading prices|do not send a new buyer directly/i);
+    expect(prompt).toMatch(/enterprise sales intake/i);
+    expect(prompt).toMatch(/never ask for passwords, api keys, payment details/i);
+    expect(prompt).toMatch(/one or two useful questions at a time/i);
     expect(prompt).toMatch(/academy.*pricing.*academy/i);
     expect(prompt).toContain('PUBLIC CONTEXT');
   });
