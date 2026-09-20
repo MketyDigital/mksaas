@@ -1,0 +1,77 @@
+name: Mkety Production PgBouncer Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-pgbouncer-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect production DB proxy safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+    steps:
+      - name: Inspect proxy app and logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_API_TOKEN:?required}"
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          node <<'NODE' >/tmp/proxy.json
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=rows.filter(x=>/pgbouncer|db.*proxy|proxy.*db/i.test([x.name,x.description].filter(Boolean).join(' ')));
+          console.log(JSON.stringify(m.map(x=>({
+            uuid:x.uuid||null,
+            name:x.name||null,
+            status:x.status||null,
+            buildPack:x.build_pack||null,
+            portsExposes:x.ports_exposes||null,
+            connectToDockerNetwork:x.connect_to_docker_network??null,
+            gitRepository:x.git_repository||null,
+            gitBranch:x.git_branch||null
+          }))));
+          NODE
+          cat /tmp/proxy.json
+          uuid="$(node -e "const x=require('/tmp/proxy.json'); const a=Array.isArray(x)?x:[]; const m=a.find(v=>v.name==='mkety-production-pgbouncer-tls-proxy'); if(m?.uuid)process.stdout.write(m.uuid)")"
+          if [ -z "$uuid" ]; then
+            echo 'Named production PgBouncer TLS proxy not found.'
+            exit 1
+          fi
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid" -o /tmp/app.json
+          node <<'NODE'
+          const a=require('/tmp/app.json');
+          console.log('PROXY_SAFE '+JSON.stringify({
+            name:a.name||null,status:a.status||null,
+            buildPack:a.build_pack||null,
+            portsExposes:a.ports_exposes||null,
+            connectToDockerNetwork:a.connect_to_docker_network??null,
+            healthCheckEnabled:a.health_check_enabled??null,
+            healthCheckPath:a.health_check_path||null,
+            createdAt:a.created_at||null,updatedAt:a.updated_at||null
+          }));
+          NODE
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/logs?lines=1000&show_timestamps=false" -o /tmp/logs.json || true
+          node <<'NODE'
+          const fs=require('node:fs');
+          let raw='';try{raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const safe=raw.split(/\r?\n/).filter(Boolean)
+            .filter(line=>/error|warn|fatal|tls|ssl|postgres|pgbouncer|connect|auth|6432|5432/i.test(line))
+            .slice(-200)
+            .map(line=>line
+              .replace(/postgres(?:ql)?:\/\/[^\s]+/gi,'postgresql://***')
+              .replace(/(password|secret|token|authorization)[=:]\s*[^\s,]+/gi,'$1=***')
+              .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted-email]'));
+          console.log('PROXY_LOGS_SAFE '+JSON.stringify(safe));
+          NODE
