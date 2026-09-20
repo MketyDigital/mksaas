@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  VERIFIED_SHA: 179b3d9c31a474bb6e4a991f25d154acc16fe80b
+  VERIFIED_SHA: 115dfca03206e47cf0a4b4a24d217b8d9b2e8e76
   SKIP_ENV_VALIDATION: 'true'
 
 jobs:
