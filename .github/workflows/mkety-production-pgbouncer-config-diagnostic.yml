@@ -1,5 +1,6 @@
 name: Mkety Production PgBouncer Config Diagnostic
 
+# 2026-09-20 upstream sslreq inspection
 on:
   push:
     branches: [main]
