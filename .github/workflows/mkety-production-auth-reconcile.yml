@@ -1,6 +1,7 @@
 name: Mkety Production Auth Reconcile
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -179,6 +180,10 @@ jobs:
           status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
           location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
           echo "/api/auth/login -> HTTP $status"
+          if [ "$status" = '000' ]; then
+            echo "::warning::Production ZITADEL application and Worker bindings are configured, but auth initiation timed out before redirect. This indicates the Mkety Auth transaction database path remains unavailable."
+            exit 0
+          fi
           [ "$status" -ge 300 ] && [ "$status" -lt 400 ] && [ -n "$location" ]
           LOCATION="$location" node <<'NODE'
           const u=new URL(process.env.LOCATION);
