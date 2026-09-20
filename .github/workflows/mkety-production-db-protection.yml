@@ -1,5 +1,7 @@
 name: Mkety Production DB Protection
 
+# Manual verification trigger: 2026-09-20 certificate repair preflight
+
 on:
   push:
     branches: [main]
