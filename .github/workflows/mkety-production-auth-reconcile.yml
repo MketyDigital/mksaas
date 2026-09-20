@@ -1,0 +1,203 @@
+name: Mkety Production Auth Reconcile
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-production-auth-reconcile.yml'
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_WORKER_NAME: mkety-platform
+  RELEASE_BRANCH: feat/mkety-public-site-production
+  SKIP_ENV_VALIDATION: 'true'
+  MKETY_AUTH_REDIRECT_URI: https://mkety.com/api/auth/callback
+  MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://mkety.com/login
+  NEXT_PUBLIC_APP_URL: https://mkety.com
+
+jobs:
+  reconcile:
+    name: Reconcile production ZITADEL and Worker auth bindings
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID_VAR: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      CONFIGURED_MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
+    steps:
+      - name: Checkout production release branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_BRANCH }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate production auth management credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID_VAR:-}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID_VAR" >> "$GITHUB_ENV"
+            export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID_VAR"
+          fi
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required production auth configuration: $name"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+
+      - name: Inspect current live auth bindings and headers safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json > /tmp/secrets.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/secrets.json','utf8');
+          const m=raw.match(/\[\s*(?:\{|\])/);
+          const entries=m?JSON.parse(raw.slice(m.index)):[];
+          const names=new Set(entries.map(x=>x.name));
+          const required=['MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET'];
+          console.log('AUTH_BINDINGS_SAFE '+JSON.stringify(Object.fromEntries(required.map(k=>[k,names.has(k)]))));
+          NODE
+          for path in /login /signup; do
+            headers="/tmp/${path#/}.headers"
+            body="/tmp/${path#/}.body"
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o "$body" -w '%{http_code}' "https://mkety.com$path" || true)"
+            ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
+            cd="$(awk 'BEGIN{IGNORECASE=1} /^content-disposition:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
+            printf 'BEFORE %s HTTP %s type=%s disposition=%s bytes=%s\n' "$path" "$code" "$ct" "$cd" "$(wc -c < "$body" | tr -d ' ')"
+          done
+
+      - name: Reconcile Mkety Platform Production OIDC application in ZITADEL
+        id: zitadel
+        shell: bash
+        env:
+          ZITADEL_APPLICATION_NAME: Mkety Platform Production
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/provision-zitadel-redirects.ts
+
+      - name: Prepare durable session secret strategy
+        id: session
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CONFIGURED_MKETY_AUTH_SESSION_SECRET:-}" ]; then
+            echo "::add-mask::$CONFIGURED_MKETY_AUTH_SESSION_SECRET"
+            echo "SESSION_SECRET=$CONFIGURED_MKETY_AUTH_SESSION_SECRET" >> "$GITHUB_ENV"
+            echo "write=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json > /tmp/secrets.json
+          exists="$(node -e "const fs=require('node:fs');const raw=fs.readFileSync('/tmp/secrets.json','utf8');const m=raw.match(/\[\s*(?:\{|\])/);const a=m?JSON.parse(raw.slice(m.index)):[];process.stdout.write(a.some(x=>x.name==='MKETY_AUTH_SESSION_SECRET')?'true':'false')")"
+          if [ "$exists" = true ]; then
+            echo "write=false" >> "$GITHUB_OUTPUT"
+          else
+            secret="$(openssl rand -hex 32)"
+            echo "::add-mask::$secret"
+            echo "SESSION_SECRET=$secret" >> "$GITHUB_ENV"
+            echo "write=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attach production Mkety Auth runtime bindings
+        shell: bash
+        env:
+          CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
+          WRITE_SESSION_SECRET: ${{ steps.session.outputs.write }}
+        run: |
+          set -euo pipefail
+          [ -n "$CLIENT_ID" ] || { echo "::error::ZITADEL did not return a client id"; exit 1; }
+          put_secret() {
+            local name="$1"; local value="$2"
+            [ -n "$value" ] || { echo "::error::Missing auth runtime value: $name"; exit 1; }
+            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$PRODUCTION_WORKER_NAME" >/dev/null
+            echo "Attached $name"
+          }
+          put_secret MKETY_AUTH_PROVIDER zitadel
+          put_secret MKETY_AUTH_ISSUER "$MKETY_AUTH_ISSUER"
+          put_secret MKETY_AUTH_CLIENT_ID "$CLIENT_ID"
+          put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
+          put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
+          put_secret NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
+          if [ "$WRITE_SESSION_SECRET" = true ]; then
+            put_secret MKETY_AUTH_SESSION_SECRET "$SESSION_SECRET"
+          fi
+
+      - name: Verify live login and signup are browser HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /login /signup; do
+            headers="/tmp/${path#/}.headers"
+            body="/tmp/${path#/}.body"
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o "$body" -w '%{http_code}' "https://mkety.com$path")"
+            ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
+            cd="$(awk 'BEGIN{IGNORECASE=1} /^content-disposition:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
+            echo "$path -> HTTP $code, Content-Type=$ct, Content-Disposition=$cd"
+            [ "$code" = 200 ]
+            printf '%s' "$ct" | grep -Eqi '^text/html(?:;|$)'
+            ! printf '%s' "$cd" | grep -Eqi 'attachment|filename='
+            grep -Eqi '<!doctype html|<html' "$body"
+          done
+
+      - name: Verify real production ZITADEL authorization redirect and PKCE
+        shell: bash
+        env:
+          EXPECTED_CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
+        run: |
+          set -euo pipefail
+          headers=/tmp/auth-login.headers
+          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          echo "/api/auth/login -> HTTP $status"
+          [ "$status" -ge 300 ] && [ "$status" -lt 400 ] && [ -n "$location" ]
+          LOCATION="$location" node <<'NODE'
+          const u=new URL(process.env.LOCATION);
+          const issuer=new URL(process.env.MKETY_AUTH_ISSUER);
+          if(u.origin!==issuer.origin) throw new Error('ZITADEL authorization origin mismatch');
+          if(u.searchParams.get('client_id')!==process.env.EXPECTED_CLIENT_ID) throw new Error('client_id mismatch');
+          if(u.searchParams.get('redirect_uri')!==process.env.MKETY_AUTH_REDIRECT_URI) throw new Error('redirect_uri mismatch');
+          if(u.searchParams.get('response_type')!=='code') throw new Error('response_type must be code');
+          if(u.searchParams.get('code_challenge_method')!=='S256'||!u.searchParams.get('code_challenge')) throw new Error('PKCE S256 missing');
+          console.log('Production ZITADEL redirect and PKCE verified.');
+          NODE
+
+      - name: Verify final auth binding names
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json > /tmp/final-secrets.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/final-secrets.json','utf8');
+          const m=raw.match(/\[\s*(?:\{|\])/);
+          const entries=m?JSON.parse(raw.slice(m.index)):[];
+          const names=new Set(entries.map(x=>x.name));
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET','NEXT_PUBLIC_APP_URL'];
+          const missing=required.filter(k=>!names.has(k));
+          if(missing.length) throw new Error('Missing production auth bindings: '+missing.join(', '));
+          console.log('Production Mkety Auth bindings verified by name.');
+          NODE
