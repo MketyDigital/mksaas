@@ -1,5 +1,7 @@
 name: Mkety Production DB Origin CA Repair
 
+# Secure repair trigger: 2026-09-20
+
 on:
   push:
     branches: [main]
