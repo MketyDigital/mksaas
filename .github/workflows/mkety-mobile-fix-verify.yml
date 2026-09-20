@@ -1,0 +1,46 @@
+name: Mkety Mobile Fix Verify
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-mobile-fix-verify.yml'
+
+permissions:
+  contents: read
+
+env:
+  VERIFIED_SHA: fc796abe6898bf2ca19c5cf224edf0412c36988f
+  SKIP_ENV_VALIDATION: 'true'
+
+jobs:
+  verify:
+    name: Verify MketyOS mobile containment exact SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERIFIED_SHA }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm type-check
+      - run: pnpm lint
+      - run: pnpx vinext check
+      - run: pnpm build
+      - name: Assert mobile containment contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=src/features/platform-content/components/public/MketyPublicExperience.tsx
+          grep -Fq 'grid-cols-[minmax(0,1fr)]' "$file"
+          grep -Fq 'overflow-x-clip' "$file"
+          grep -Fq '[overflow-wrap:anywhere]' "$file"
+          grep -Fq 'w-full max-w-full min-w-0' "$file"
+          echo 'MketyOS mobile containment contract verified.'
