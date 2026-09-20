@@ -1,5 +1,5 @@
 name: Mkety Public Cutover Launcher
-# certify public ui follow-up 2026-09-20
+# certify public ui + academy assets follow-up 2026-09-20
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: 14b69c970928c679f8b0b54183c848decdc14719
+  VERIFIED_SHA: a4bec5c5cc8768a6c60fa22fc8d825362f244373
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
   CERT_BRANCH: certify/14b69c9
