@@ -1,0 +1,277 @@
+name: Mkety Production PgBouncer Upstream CA Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-pgbouncer-upstream-ca-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: Repair PgBouncer upstream TLS CA and verify Hyperdrive/Auth
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+      HYPERDRIVE_NAME: mkety-production-db
+      PROBE_WORKER_NAME: mkety-production-db-probe
+      EXPECTED_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+
+    steps:
+      - name: Require production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in COOLIFY_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID EXPECTED_AUTH_ISSUER; do
+            [ -n "${!v:-}" ] || { echo "::error::$v is required"; exit 1; }
+          done
+
+      - name: Snapshot PgBouncer application and prepare narrow Dockerfile repair
+        id: proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/applications" -o /tmp/apps.json
+
+          uuid="$(node <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=rows.filter(x=>x.name===process.env.PROXY_NAME);
+          if(m.length!==1||!m[0]?.uuid) throw new Error('Expected exactly one production PgBouncer proxy app');
+          process.stdout.write(String(m[0].uuid));
+          NODE
+          )"
+          echo "::add-mask::$uuid"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/applications/$uuid" -o /tmp/proxy-app.json
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const app=JSON.parse(fs.readFileSync('/tmp/proxy-app.json','utf8'));
+          const dockerfile=String(app.dockerfile||'');
+          if(!dockerfile.includes('PGBOUNCER_CONFIG_B64')) throw new Error('Unexpected proxy Dockerfile: config decoder missing');
+          if(!dockerfile.includes('/etc/mkety/coolify-ca.crt')) throw new Error('Expected mounted Coolify CA is not referenced by proxy preflight');
+          if(!dockerfile.includes('/run/mkety/pgbouncer.ini')) throw new Error('Expected PgBouncer config path is missing');
+          fs.writeFileSync('/tmp/original-dockerfile',dockerfile,{mode:0o600});
+
+          const anchor='printf \'%s\' "$PGBOUNCER_CONFIG_B64" | base64 -d > /run/mkety/pgbouncer.ini';
+          if(!dockerfile.includes(anchor)) throw new Error('Could not locate exact PgBouncer config decode anchor');
+          const repair=[
+            anchor,
+            '# Mkety: force PostgreSQL-side PgBouncer TLS to the same CA proven by direct psql preflight.',
+            'if grep -Eq \'^[[:space:]]*server_tls_ca_file[[:space:]]*=\' /run/mkety/pgbouncer.ini; then',
+            '  sed -i -E \'s|^[[:space:]]*server_tls_ca_file[[:space:]]*=.*$|server_tls_ca_file = /etc/mkety/coolify-ca.crt|\' /run/mkety/pgbouncer.ini',
+            'else',
+            '  sed -i \'/^\\[pgbouncer\\][[:space:]]*$/a server_tls_ca_file = /etc/mkety/coolify-ca.crt\' /run/mkety/pgbouncer.ini',
+            'fi',
+            'if grep -Eq \'^[[:space:]]*server_tls_sslmode[[:space:]]*=\' /run/mkety/pgbouncer.ini; then',
+            '  sed -i -E \'s|^[[:space:]]*server_tls_sslmode[[:space:]]*=.*$|server_tls_sslmode = verify-ca|\' /run/mkety/pgbouncer.ini',
+            'else',
+            '  sed -i \'/^\\[pgbouncer\\][[:space:]]*$/a server_tls_sslmode = verify-ca\' /run/mkety/pgbouncer.ini',
+            'fi',
+            'grep -Eq \'^[[:space:]]*server_tls_ca_file[[:space:]]*=[[:space:]]*/etc/mkety/coolify-ca\\.crt[[:space:]]*$\' /run/mkety/pgbouncer.ini',
+            'grep -Eq \'^[[:space:]]*server_tls_sslmode[[:space:]]*=[[:space:]]*verify-ca[[:space:]]*$\' /run/mkety/pgbouncer.ini',
+            'echo MKETY_PGBOUNCER_UPSTREAM_CA_CONFIG_OK=true'
+          ].join('\n');
+          const patched=dockerfile.replace(anchor,repair);
+          if(patched===dockerfile) throw new Error('Proxy Dockerfile repair produced no change');
+          fs.writeFileSync('/tmp/patched-dockerfile',patched,{mode:0o600});
+          console.log('Prepared narrow PgBouncer upstream CA repair without reading hidden application secrets.');
+          NODE
+
+      - name: Apply PgBouncer Dockerfile repair
+        id: applied
+        shell: bash
+        env:
+          PROXY_UUID: ${{ steps.proxy.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          DOCKERFILE_FILE=/tmp/patched-dockerfile node <<'NODE' >/tmp/patch.json
+          const fs=require('node:fs');
+          process.stdout.write(JSON.stringify({dockerfile:fs.readFileSync(process.env.DOCKERFILE_FILE,'utf8')}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/patch-response.json -w '%{http_code}'             -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/patch.json "$base/applications/$PROXY_UUID")"
+          [ "$code" = 200 ] || { echo "PgBouncer application update failed with HTTP $code"; exit 1; }
+          echo "applied=true" >> "$GITHUB_OUTPUT"
+          echo 'PgBouncer Dockerfile repair saved.'
+
+      - name: Redeploy PgBouncer and require ready query markers
+        id: deployed
+        shell: bash
+        env:
+          PROXY_UUID: ${{ steps.proxy.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$PROXY_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "PgBouncer deploy request failed with HTTP $code"; exit 1; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            status="$(node -e "const x=require('/tmp/deployment.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) echo "PgBouncer deployment failed: $status"; exit 1 ;;
+            esac
+            [ "$i" -lt 120 ] || { echo 'Timed out waiting for PgBouncer deployment'; exit 1; }
+            sleep 3
+          done
+
+          ready=0
+          for i in $(seq 1 80); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$PROXY_UUID/logs?lines=500&show_timestamps=false" -o /tmp/proxy-logs.json || true
+            if node <<'NODE'
+          const fs=require('node:fs');
+          let raw='';try{raw=String(JSON.parse(fs.readFileSync('/tmp/proxy-logs.json','utf8')).logs||'')}catch{}
+          const required=[
+            'MKETY_PGBOUNCER_UPSTREAM_CA_CONFIG_OK=true',
+            'MKETY_PGBOUNCER_UPSTREAM_VERIFY_OK=true',
+            'MKETY_PGBOUNCER_CLIENT_TLS_OK=true',
+            'MKETY_PGBOUNCER_QUERY_OK=true',
+            'MKETY_PGBOUNCER_READY=true'
+          ];
+          process.exit(required.every(x=>raw.includes(x))?0:1);
+          NODE
+            then ready=1; break; fi
+            sleep 3
+          done
+          [ "$ready" = 1 ] || { echo 'PgBouncer did not prove verified upstream/client TLS and query readiness'; exit 1; }
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+          echo 'PgBouncer verified: direct upstream TLS, client TLS, and query through pooler all passed.'
+
+      - name: Resolve existing production Hyperdrive
+        id: hd
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HD="$response" node <<'NODE' >/tmp/hd-id
+          const p=JSON.parse(process.env.HD||'{}');
+          const m=Array.isArray(p.result)?p.result.filter(x=>x.name===process.env.HYPERDRIVE_NAME):[];
+          if(m.length!==1||!m[0]?.id) throw new Error('Expected exactly one production Hyperdrive');
+          process.stdout.write(String(m[0].id));
+          NODE
+          id="$(cat /tmp/hd-id)"
+          echo "::add-mask::$id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Require direct SELECT 1 through production Hyperdrive
+        shell: bash
+        env:
+          HD_ID: ${{ steps.hd.outputs.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .diag
+          cat > .diag/db-probe.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(_request, env) {
+              if (!env.MKETY_DB?.connectionString) return Response.json({ok:false,stage:'binding'},{status:500});
+              let sql;
+              try {
+                sql=postgres(env.MKETY_DB.connectionString,{max:1});
+                const rows=await sql`select 1::int as ok`;
+                return Response.json({ok:rows?.[0]?.ok===1,stage:'query'},{status:rows?.[0]?.ok===1?200:500});
+              } catch (e) {
+                return Response.json({ok:false,stage:'query',name:String(e?.name||'Error'),code:typeof e?.code==='string'?e.code:null},{status:500});
+              } finally {
+                if(sql) await sql.end({timeout:1}).catch(()=>{});
+              }
+            }
+          }
+          JS
+          cat > .diag/db-probe.jsonc <<JSON
+          {
+            "name":"$PROBE_WORKER_NAME",
+            "main":"./db-probe.mjs",
+            "compatibility_date":"2026-09-06",
+            "compatibility_flags":["nodejs_compat"],
+            "workers_dev":true,
+            "preview_urls":true,
+            "hyperdrive":[{"binding":"MKETY_DB","id":"$HD_ID"}]
+          }
+          JSON
+          pnpm --version >/dev/null 2>&1 || true
+          corepack enable
+          corepack prepare pnpm@10.17.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm exec wrangler deploy --config .diag/db-probe.jsonc >/tmp/probe-deploy.log 2>&1
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(ACCOUNT="$account" node -e "const p=JSON.parse(process.env.ACCOUNT||'{}');if(!p.success||!p.result?.subdomain)process.exit(1);process.stdout.write(p.result.subdomain)")"
+          url="https://$PROBE_WORKER_NAME.$subdomain.workers.dev"
+          ok=0
+          for i in $(seq 1 15); do
+            code="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/probe.json -w '%{http_code}' "$url/" || true)"
+            echo "Production Hyperdrive probe $i/15: HTTP $code"
+            if [ "$code" = 200 ] && node -e "const x=require('/tmp/probe.json');process.exit(x.ok===true&&x.stage==='query'?0:1)"; then ok=1; break; fi
+            sleep 3
+          done
+          if [ "$ok" != 1 ]; then
+            node -e "let x={};try{x=require('/tmp/probe.json')}catch{};console.log('HYPERDRIVE_PROBE_SAFE '+JSON.stringify({stage:x.stage||null,name:x.name||null,code:x.code||null}))"
+            exit 1
+          fi
+          echo 'Production Hyperdrive SELECT 1 passed.'
+
+      - name: Require live Mkety auth to reach ZITADEL with PKCE
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers=/tmp/auth.headers
+          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}'             'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          echo "/api/auth/login -> HTTP $status"
+          [ "$status" -ge 300 ] && [ "$status" -lt 400 ] && [ -n "$location" ]
+          LOCATION="$location" node <<'NODE'
+          const u=new URL(process.env.LOCATION);
+          const issuer=new URL(process.env.EXPECTED_AUTH_ISSUER);
+          if(u.origin!==issuer.origin) throw new Error('Authorization redirect origin mismatch');
+          if(u.searchParams.get('response_type')!=='code') throw new Error('Authorization response type is not code');
+          if(u.searchParams.get('code_challenge_method')!=='S256'||!u.searchParams.get('code_challenge')) throw new Error('PKCE S256 missing');
+          if(u.searchParams.get('redirect_uri')!=='https://mkety.com/api/auth/callback') throw new Error('Production callback mismatch');
+          if(!u.searchParams.get('client_id')) throw new Error('Production ZITADEL client id missing');
+          console.log('Live Mkety auth reaches ZITADEL with Authorization Code + PKCE S256.');
+          NODE
+
+      - name: Mark repair verified
+        id: verified
+        run: echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Roll back PgBouncer Dockerfile on verification failure
+        if: failure() && steps.applied.outputs.applied == 'true'
+        shell: bash
+        env:
+          PROXY_UUID: ${{ steps.proxy.outputs.uuid }}
+        run: |
+          set +e
+          base="${COOLIFY_URL%/}/api/v1"
+          ORIGINAL=/tmp/original-dockerfile node <<'NODE' >/tmp/rollback.json
+          const fs=require('node:fs');
+          process.stdout.write(JSON.stringify({dockerfile:fs.readFileSync(process.env.ORIGINAL,'utf8')}));
+          NODE
+          curl --proto '=https' --tlsv1.2 -sS -X PATCH             -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/rollback.json "$base/applications/$PROXY_UUID" >/dev/null
+          curl --proto '=https' --tlsv1.2 -sS -X POST             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$PROXY_UUID&force=true" >/dev/null
+          echo 'PgBouncer original Dockerfile restoration and redeploy requested.'
+
+      - name: Cleanup probe Worker
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME/subdomain" >/dev/null
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME" >/dev/null
+          shred -u /tmp/original-dockerfile /tmp/patched-dockerfile /tmp/patch.json /tmp/rollback.json 2>/dev/null || true
