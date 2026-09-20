@@ -1,0 +1,39 @@
+name: Mkety Production Postgres Cert Mounts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-postgres-cert-mounts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect production Postgres certificate mounts safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Inspect certificate mount metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+          node <<'NODE'
+          const s=require('/tmp/storages.json');
+          const files=Array.isArray(s.file_storages)?s.file_storages:[];
+          const out=files.filter(x=>/cert|crt|ca|key/i.test(String(x.mount_path||''))).map(x=>({
+            mountPath:x.mount_path||null,
+            contentPresent:typeof x.content==='string'&&x.content.length>0,
+            contentKind:typeof x.content==='string'&&x.content.includes('BEGIN CERTIFICATE')?'certificate':typeof x.content==='string'&&x.content.includes('PRIVATE KEY')?'private-key':'other'
+          }));
+          console.log('POSTGRES_CERT_MOUNTS_SAFE '+JSON.stringify(out));
+          NODE
