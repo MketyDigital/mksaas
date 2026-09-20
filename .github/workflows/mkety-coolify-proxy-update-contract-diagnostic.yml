@@ -1,0 +1,60 @@
+name: Mkety Coolify Proxy Update Contract Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-coolify-proxy-update-contract-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+    steps:
+      - name: Validate Coolify application update contract without changing Dockerfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          uuid="$(node <<'NODE'
+          const p=require('/tmp/apps.json');
+          const rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=rows.find(x=>x.name===process.env.PROXY_NAME);
+          if(!m?.uuid) throw new Error('Proxy app not found');
+          process.stdout.write(String(m.uuid));
+          NODE
+          )"
+          echo "::add-mask::$uuid"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid" -o /tmp/app.json
+          APP=/tmp/app.json node <<'NODE' >/tmp/payload.json
+          const fs=require('node:fs');
+          const a=JSON.parse(fs.readFileSync(process.env.APP,'utf8'));
+          if(typeof a.dockerfile!=='string'||!a.dockerfile) throw new Error('Dockerfile absent');
+          process.stdout.write(JSON.stringify({
+            dockerfile:a.dockerfile,
+            build_pack:a.build_pack,
+            dockerfile_location:a.dockerfile_location || '/',
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/response.json -w '%{http_code}'             -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/payload.json "$base/applications/$uuid")"
+          echo "COOLIFY_UPDATE_HTTP=$code"
+          RESPONSE=/tmp/response.json node <<'NODE'
+          const fs=require('node:fs');let x={};
+          try{x=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8'))}catch{}
+          console.log('COOLIFY_UPDATE_SAFE '+JSON.stringify({
+            message:x.message||null,
+            errors:x.errors||null,
+            uuid:x.uuid?'present':null
+          }));
+          NODE
+          [ "$code" = 200 ] || exit 1
