@@ -207,18 +207,27 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/start.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/start")"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/start.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/start")"
           [ "$code" = 200 ] || { echo "PostgreSQL start request failed with HTTP $code."; exit 1; }
-          for i in $(seq 1 80); do
-            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/databases/$POSTGRES_UUID" -o /tmp/db-state.json
+
+          seen_running=0
+          # Coolify lifecycle status is eventually consistent. Ignore the old stopped/exited
+          # state until this newly queued start has actually entered a fresh running state.
+          sleep 6
+          for i in $(seq 1 100); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/databases/$POSTGRES_UUID" -o /tmp/db-state.json
             status="$(node -e "const x=require('/tmp/db-state.json');process.stdout.write(String(x.status||''))")"
+            echo "Post-certificate start poll $i/100: $status"
+            if echo "$status" | grep -Fqi 'running'; then seen_running=1; fi
             if echo "$status" | grep -Fqi 'running:healthy'; then
               echo "started=true" >> "$GITHUB_OUTPUT"
               echo 'PostgreSQL restarted healthy with replacement certificate files.'
               exit 0
             fi
-            if echo "$status" | grep -Eqi 'failed|exited|unhealthy'; then
-              echo "PostgreSQL entered failure state: $status"
+            if [ "$seen_running" = 1 ] && echo "$status" | grep -Eqi '^exited|failed'; then
+              echo "PostgreSQL failed after entering a fresh running state: $status"
               exit 1
             fi
             sleep 3
