@@ -130,13 +130,20 @@ jobs:
           NODE
 
           directory="$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services" || true)"
-          DIRECTORY="$directory" node <<'NODE'
+          DIRECTORY="$directory" DB="$db" node <<'NODE'
           let p={}; try{p=JSON.parse(process.env.DIRECTORY||'{}')}catch{}
           const rows=Array.isArray(p.result)?p.result:[];
+          let dbHost=null;
+          try {
+            const d=JSON.parse(process.env.DB||'{}');
+            if(typeof d.internal_db_url==='string') dbHost=new URL(d.internal_db_url).hostname;
+          } catch {}
           console.log('VPC_SERVICES_SAFE '+JSON.stringify(rows.map(x=>({
             name:x.name||null,type:x.type||null,tcpPort:x.tcp_port??null,
             appProtocol:x.app_protocol||null,
             hostKind:x.host?.hostname?'hostname':x.host?.ipv4?'ipv4':x.host?.ipv6?'ipv6':'unknown',
+            hostnameMatchesInternalDbHost:Boolean(dbHost&&x.host?.hostname===dbHost),
+            resolverIpCount:Array.isArray(x.host?.resolver_network?.resolver_ips)?x.host.resolver_network.resolver_ips.length:0,
             certVerificationMode:x.tls_settings?.cert_verification_mode||null,
             hasTunnel:Boolean(x.host?.network?.tunnel_id||x.host?.resolver_network?.tunnel_id)
           }))));
