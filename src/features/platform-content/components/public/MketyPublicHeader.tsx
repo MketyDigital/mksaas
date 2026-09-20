@@ -44,10 +44,10 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
             />
           ))}
           <Button asChild variant="ghost" className="px-3">
-            <Link href="/login">Sign In</Link>
+            <a href="/login">Sign In</a>
           </Button>
           <Button asChild className="hidden rounded-xl sm:inline-flex">
-            <Link href="/signup">Get Started</Link>
+            <a href="/signup">Get Started</a>
           </Button>
         </div>
       </div>
