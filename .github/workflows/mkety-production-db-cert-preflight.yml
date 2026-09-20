@@ -34,7 +34,7 @@ jobs:
           const fs=require('node:fs');
           const d=JSON.parse(fs.readFileSync('/tmp/db.json','utf8'));
           const raw=JSON.parse(fs.readFileSync('/tmp/storages.json','utf8'));
-          const storages=Array.isArray(raw)?raw:Array.isArray(raw?.data)?raw.data:Array.isArray(raw?.storages)?raw.storages:[];
+          const storages=Array.isArray(raw)?raw:[...(Array.isArray(raw?.persistent_storages)?raw.persistent_storages:[]),...(Array.isArray(raw?.file_storages)?raw.file_storages:[]),...(Array.isArray(raw?.data)?raw.data:[]),...(Array.isArray(raw?.storages)?raw.storages:[])];
           const conf=String(d.postgres_conf||'');
           const sslLines=conf.split(/\r?\n/).filter(line=>/^\s*ssl(?:_|\s*=)|^\s*#?\s*ssl_(?:cert|key|ca)_file/i.test(line));
           console.log('DB_CERT_PREFLIGHT '+JSON.stringify({
