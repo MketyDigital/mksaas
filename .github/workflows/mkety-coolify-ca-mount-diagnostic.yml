@@ -67,7 +67,7 @@ jobs:
             type:'file',
             is_host_file:true,
             fs_path:'/data/coolify/ssl/coolify-ca.crt',
-            mount_path:'/etc/mkety/coolify-ca.crt'
+            mount_path:'/etc/mkety/coolify-ca-dir/coolify-ca.crt'
           }));
           NODE
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
