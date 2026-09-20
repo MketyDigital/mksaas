@@ -1,4 +1,5 @@
 import { CheckCircle2 } from 'lucide-react';
+import Link from 'next/link';
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 import type { PlatformPricingPlanInput } from '../../../schemas';
@@ -36,7 +37,7 @@ export function MketyPricingPlans({ plans }: { plans: PlatformPricingPlanInput[]
                 </ul>
                 <Button asChild className="mt-6 w-full rounded-xl" variant={plan.highlighted ? 'default' : 'outline'}>
                   {plan.key === 'enterprise' ? (
-                    <a href="/?mketyAI=enterprise-sales">{plan.ctaLabel}</a>
+                    <Link href="/?mketyAI=enterprise-sales">{plan.ctaLabel}</Link>
                   ) : (
                     <a href={plan.ctaHref}>{plan.ctaLabel}</a>
                   )}
