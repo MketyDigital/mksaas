@@ -1,0 +1,75 @@
+name: Mkety Production DB Certificate Preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-db-cert-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect production Postgres certificate configuration safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Inspect database config and storage metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"             -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"             -H 'Accept: application/json' "$base/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const d=JSON.parse(fs.readFileSync('/tmp/db.json','utf8'));
+          const raw=JSON.parse(fs.readFileSync('/tmp/storages.json','utf8'));
+          const storages=Array.isArray(raw)?raw:Array.isArray(raw?.data)?raw.data:Array.isArray(raw?.storages)?raw.storages:[];
+          const conf=String(d.postgres_conf||'');
+          const sslLines=conf.split(/\r?\n/).filter(line=>/^\s*ssl(?:_|\s*=)|^\s*#?\s*ssl_(?:cert|key|ca)_file/i.test(line));
+          console.log('DB_CERT_PREFLIGHT '+JSON.stringify({
+            name:d.name||null,
+            status:d.status||null,
+            image:d.image||null,
+            isPublic:d.is_public===true,
+            sslEnabled:d.enable_ssl===true,
+            sslMode:d.ssl_mode??null,
+            postgresConfPresent:conf.length>0,
+            sslConfigLines:sslLines.map(line=>line.replace(/=.*/, '=[configured]')),
+            storageCount:storages.length,
+            storages:storages.map(s=>({
+              uuid:s.uuid||null,
+              name:s.name||null,
+              type:s.type||null,
+              mountPath:s.mount_path||s.mountPath||null,
+              hostPath:s.host_path||s.hostPath? '[configured]':null,
+              hasContent:typeof s.content==='string'&&s.content.length>0
+            }))
+          },null,2));
+          NODE
+
+      - name: Confirm backup prerequisite is recent
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$(curl -fsS             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100")"
+          RUNS="$runs" node <<'NODE'
+          const p=JSON.parse(process.env.RUNS||'{}');
+          const run=(p.workflow_runs||[]).find(r=>r.name==='Mkety Production DB Protection'&&r.conclusion==='success');
+          if(!run) throw new Error('No successful production DB protection run found.');
+          const age=Date.now()-new Date(run.updated_at||run.created_at).getTime();
+          if(!Number.isFinite(age)||age>2*60*60*1000) throw new Error('Production DB protection evidence is older than two hours.');
+          console.log('Fresh production DB backup protection evidence confirmed.');
+          NODE
