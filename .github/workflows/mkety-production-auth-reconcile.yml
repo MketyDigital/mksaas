@@ -161,7 +161,7 @@ jobs:
             head -c 320 "$body" | tr '\n\r' '  ' | sed -E 's/[[:cntrl:]]/ /g'
             echo
             [ "$code" = 200 ]
-            printf '%s' "$ct" | grep -Eqi '^text/html(?:;|$)'
+            printf '%s' "$ct" | grep -Eqi '^text/html([;]|$)'
             ! printf '%s' "$cd" | grep -Eqi 'attachment|filename='
             if ! grep -Eqi '<!doctype html|<html' "$body"; then
               echo "::error::$path is labeled HTML but the body is not an HTML document."
