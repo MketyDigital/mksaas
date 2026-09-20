@@ -1,0 +1,50 @@
+name: Mkety Postgres Restored Certificate Validate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-postgres-restored-cert-validate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Validate stored original cert/key pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const s=require('/tmp/storages.json');
+          const files=Array.isArray(s.file_storages)?s.file_storages:[];
+          const cert=files.find(x=>x.mount_path==='/var/lib/postgresql/certs/server.crt');
+          const key=files.find(x=>x.mount_path==='/var/lib/postgresql/certs/server.key');
+          if(!cert?.content||!key?.content) throw new Error('SSL file contents missing.');
+          fs.writeFileSync('/tmp/cert.pem',cert.content,{mode:0o600});
+          fs.writeFileSync('/tmp/key.pem',key.content,{mode:0o600});
+          console.log('RESTORED_MOUNT_META '+JSON.stringify({
+            certChmod:cert.chmod??null,
+            keyChmod:key.chmod??null,
+            certChown:cert.chown??null,
+            keyChown:key.chown??null
+          }));
+          NODE
+          openssl x509 -in /tmp/cert.pem -noout -fingerprint -sha256 -dates
+          openssl pkey -in /tmp/key.pem -check -noout
+          cert_pub="$(openssl x509 -in /tmp/cert.pem -pubkey -noout | openssl pkey -pubin -outform pem | sha256sum | awk '{print $1}')"
+          key_pub="$(openssl pkey -in /tmp/key.pem -pubout -outform pem | sha256sum | awk '{print $1}')"
+          [ "$cert_pub" = "$key_pub" ] || { echo 'Restored certificate and private key do not match.'; exit 1; }
+          echo 'Restored certificate and private key are valid and match.'
+          shred -u /tmp/cert.pem /tmp/key.pem
