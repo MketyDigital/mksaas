@@ -1,0 +1,60 @@
+name: Mkety Production PgBouncer CA Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-pgbouncer-ca-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect PgBouncer upstream CA wiring safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Inspect safe config and database certificate mounts
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          uuid="$(node <<'NODE'
+          const p=require('/tmp/apps.json');
+          const rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=rows.find(x=>x.name==='mkety-production-pgbouncer-tls-proxy');
+          if(!m?.uuid) throw new Error('PgBouncer proxy not found');
+          process.stdout.write(String(m.uuid));
+          NODE
+          )"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/envs" -o /tmp/envs.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const envRaw=JSON.parse(fs.readFileSync('/tmp/envs.json','utf8'));
+          const envs=Array.isArray(envRaw)?envRaw:Array.isArray(envRaw?.data)?envRaw.data:[];
+          const cfg=envs.find(x=>x.key==='PGBOUNCER_CONFIG_B64'&&x.is_preview===false);
+          if(!cfg?.value) throw new Error('Production PGBOUNCER_CONFIG_B64 missing');
+          const text=Buffer.from(String(cfg.value),'base64').toString('utf8');
+          const safe=text.split(/\r?\n/).filter(line=>
+            /^\s*(server_tls_|client_tls_|listen_port|listen_addr|pool_mode|max_client_conn|default_pool_size|\[databases\]|mkety\s*=)/i.test(line)
+          ).map(line=>line.replace(/password=[^\s]+/gi,'password=***'));
+          console.log('PGBOUNCER_TLS_CONFIG_SAFE '+JSON.stringify(safe));
+
+          const s=JSON.parse(fs.readFileSync('/tmp/storages.json','utf8'));
+          const files=Array.isArray(s.file_storages)?s.file_storages:[];
+          console.log('POSTGRES_CERT_MOUNTS_SAFE '+JSON.stringify(files.filter(x=>/cert|crt|ca|key/i.test(String(x.mount_path||''))).map(x=>({
+            uuid:x.uuid||null,
+            mountPath:x.mount_path||null,
+            contentPresent:typeof x.content==='string'&&x.content.length>0,
+            contentKind:typeof x.content==='string'&&x.content.includes('BEGIN CERTIFICATE')?'certificate':typeof x.content==='string'&&x.content.includes('PRIVATE KEY')?'private-key':'other'
+          }))));
+          NODE
