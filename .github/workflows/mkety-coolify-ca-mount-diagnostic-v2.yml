@@ -1,0 +1,117 @@
+name: Mkety Coolify CA Mount Diagnostic V2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-coolify-ca-mount-diagnostic-v2.yml
+      - ops/coolify-ca-mount-diagnostic-v2/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Verify documented Coolify host CA mount
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create ephemeral diagnostic app
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.GITHUB_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/coolify-ca-mount-diagnostic-v2/Dockerfile',
+            ports_exposes:'3000',
+            name:'mkety-ca-mount-v2-'+process.env.GITHUB_SHA.slice(0,8),
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/create.json "$base/applications/public")"
+          [ "$code" = 201 ] || { echo "Create failed HTTP $code"; exit 1; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Add host-file CA mount
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          node <<'NODE' >/tmp/storage.json
+          process.stdout.write(JSON.stringify({
+            type:'file',
+            is_host_file:true,
+            fs_path:'/data/coolify/ssl/coolify-ca.crt',
+            mount_path:'/etc/ssl/certs/coolify-ca.crt'
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/storage.json "$base/applications/$APP_UUID/storages")"
+          echo "Storage API HTTP $code"
+          [ "$code" = 201 ] || exit 1
+
+      - name: Deploy and verify
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || exit 1
+          dep="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          status=''
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+            status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) break ;;
+            esac
+            sleep 3
+          done
+          case "${status,,}" in
+            finished|success|successful|succeeded|completed) ;;
+            *) echo "Deployment ended: $status"; exit 1 ;;
+          esac
+          ok=0
+          for i in $(seq 1 60); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$APP_UUID/logs?lines=120&show_timestamps=false" -o /tmp/logs.json || true
+            if node -e "const x=require('/tmp/logs.json');process.exit(String(x.logs||'').includes('MKETY_CA_MOUNT_PRESENT=true')?0:1)"; then ok=1; break; fi
+            sleep 3
+          done
+          [ "$ok" = 1 ] || { echo 'Mounted CA was not observed.'; exit 1; }
+          echo 'Documented Coolify CA host-file mount verified.'
+
+      - name: Cleanup
+        if: always() && steps.app.outputs.uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null
+          echo 'Ephemeral diagnostic app cleanup requested.'
