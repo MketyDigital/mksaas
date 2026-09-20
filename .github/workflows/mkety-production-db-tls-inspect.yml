@@ -1,0 +1,154 @@
+name: Mkety Production DB TLS Inspect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-db-tls-inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect private PostgreSQL TLS chain without mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+
+    steps:
+      - name: Resolve private database host safely
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          node <<'NODE' >/tmp/host.json
+          const d=require('/tmp/db.json');
+          if(d.is_public!==false || d.enable_ssl!==true || !String(d.status||'').toLowerCase().includes('healthy') || !d.internal_db_url) {
+            throw new Error('Production PostgreSQL is not private, TLS-enabled, healthy, and internally addressable.');
+          }
+          const u=new URL(String(d.internal_db_url));
+          process.stdout.write(JSON.stringify({host:u.hostname,port:Number(u.port||5432)}));
+          NODE
+          DB_HOST="$(node -e "const x=require('/tmp/host.json');process.stdout.write(x.host)")"
+          DB_PORT="$(node -e "const x=require('/tmp/host.json');process.stdout.write(String(x.port))")"
+          echo "db_host=$DB_HOST" >> "$GITHUB_OUTPUT"
+          echo "db_port=$DB_PORT" >> "$GITHUB_OUTPUT"
+          echo 'Resolved private PostgreSQL endpoint without credentials.'
+
+      - name: Create ephemeral private-network TLS inspector
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.GITHUB_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/db-tls-diagnostic/Dockerfile',
+            ports_exposes:'3000',
+            name:`mkety-db-tls-inspect-${process.env.GITHUB_SHA.slice(0,10)}`,
+            description:'Ephemeral non-mutating production PostgreSQL TLS certificate inspector',
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false
+          }));
+          NODE
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST             -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/create.json "$base/applications/public")"
+          [ "$code" = 201 ] || { echo "Inspector app creation failed with HTTP $code."; exit 1; }
+          uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "app_uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Inject endpoint only
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+          DB_HOST: ${{ steps.db.outputs.db_host }}
+          DB_PORT: ${{ steps.db.outputs.db_port }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1/applications/$APP_UUID/envs"
+          for key in DB_HOST DB_PORT; do
+            value="${!key}"
+            KEY="$key" VALUE="$value" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,
+            value:process.env.VALUE,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:false
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X POST               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/env.json "$base")"
+            [ "$code" = 201 ] || { echo "Failed to configure $key; HTTP $code."; exit 1; }
+          done
+
+      - name: Deploy and collect safe TLS result
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "Inspector deployment request failed with HTTP $code."; exit 1; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+
+          for i in $(seq 1 100); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            status="$(node -e "const x=require('/tmp/deployment.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) echo "Inspector deployment failed: $status"; exit 1 ;;
+            esac
+            sleep 3
+          done
+
+          found=0
+          for i in $(seq 1 60); do
+            curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs.json || true
+            if node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/logs.json','utf8'))}catch{};process.exit(String(x.logs||'').includes('MKETY_DB_TLS_DIAG_DONE=true')?0:1)"; then
+              found=1
+              break
+            fi
+            sleep 2
+          done
+          [ "$found" = 1 ] || { echo 'TLS inspector did not publish a result.'; exit 1; }
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/logs.json','utf8'));
+          const lines=String(x.logs||'').split(/\r?\n/).filter(line=>
+            /MKETY_DB_TLS_DIAG_(CERT_PRESENT|CLASS|OPENSSL_EXIT|DONE|Verify return code)/.test(line) ||
+            /^(subject|issuer|notBefore|notAfter|sha256 Fingerprint)=/i.test(line.trim())
+          );
+          console.log(lines.join('\n'));
+          NODE
+
+      - name: Delete ephemeral inspector
+        if: always() && steps.app.outputs.app_uuid != ''
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/applications/$APP_UUID" >/dev/null
+          echo 'Ephemeral TLS inspector cleanup requested.'
