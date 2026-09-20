@@ -1,0 +1,417 @@
+name: Mkety Production DB Origin CA Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-db-origin-ca-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: Replace Postgres SSL cert with Workers-VPC-trusted Origin CA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      VPC_SERVICE_NAME: mkety-production-postgres
+      CERT_HOSTNAME: db-origin.mkety.com
+      TEST_HYPERDRIVE_NAME: mkety-production-db-vpc-origin-test
+      PROBE_WORKER_NAME: mkety-vpc-origin-ca-probe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require fresh production backup evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsS             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100"             -o /tmp/runs.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/runs.json','utf8'));
+          const run=(p.workflow_runs||[]).find(r=>r.name==='Mkety Production DB Protection'&&r.conclusion==='success');
+          if(!run) throw new Error('No successful production DB protection run found.');
+          const at=new Date(run.updated_at||run.created_at).getTime();
+          const age=Date.now()-at;
+          if(!Number.isFinite(age)||age>2*60*60*1000) {
+            throw new Error('Production DB protection evidence is older than two hours.');
+          }
+          console.log('Fresh production DB protection evidence confirmed.');
+          NODE
+
+      - name: Snapshot database and certificate mounts without disclosure
+        id: snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in COOLIFY_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!v:-}" ] || { echo "$v is required."; exit 1; }
+          done
+          umask 077
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const d=require('/tmp/db.json');
+          if(d.uuid!==process.env.POSTGRES_UUID||d.is_public!==false||d.enable_ssl!==true||!String(d.status||'').toLowerCase().includes('healthy')||!d.internal_db_url) {
+            throw new Error('Production PostgreSQL preflight failed.');
+          }
+          const u=new URL(String(d.internal_db_url));
+          if(!u.username||!u.password||!u.pathname||u.pathname==='/') throw new Error('Private DB URL is incomplete.');
+          fs.writeFileSync('/tmp/db-parts.json',JSON.stringify({
+            host:u.hostname,
+            port:Number(u.port||5432),
+            user:decodeURIComponent(u.username),
+            password:decodeURIComponent(u.password),
+            database:decodeURIComponent(u.pathname.slice(1))
+          }),{mode:0o600});
+
+          const s=require('/tmp/storages.json');
+          const files=Array.isArray(s.file_storages)?s.file_storages:[];
+          const cert=files.find(x=>x.mount_path==='/var/lib/postgresql/certs/server.crt');
+          const key=files.find(x=>x.mount_path==='/var/lib/postgresql/certs/server.key');
+          if(!cert?.uuid||!key?.uuid||!cert.content||!key.content) throw new Error('Existing SSL certificate file mounts are incomplete.');
+          fs.writeFileSync('/tmp/old-cert.pem',String(cert.content),{mode:0o600});
+          fs.writeFileSync('/tmp/old-key.pem',String(key.content),{mode:0o600});
+          fs.writeFileSync('/tmp/cert-storage.json',JSON.stringify({uuid:cert.uuid,mount_path:cert.mount_path}),{mode:0o600});
+          fs.writeFileSync('/tmp/key-storage.json',JSON.stringify({uuid:key.uuid,mount_path:key.mount_path}),{mode:0o600});
+          console.log('Production DB, data isolation, and two SSL file mounts snapshotted.');
+          NODE
+
+          for key in user password database; do
+            value="$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(String(x['$key']))")"
+            echo "::add-mask::$value"
+          done
+          echo "DB_HOST=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.host)")" >> "$GITHUB_ENV"
+          echo "DB_PORT=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(String(x.port))")" >> "$GITHUB_ENV"
+          echo "DB_USER=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.user)")" >> "$GITHUB_ENV"
+          echo "DB_PASSWORD=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.password)")" >> "$GITHUB_ENV"
+          echo "DB_NAME=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.database)")" >> "$GITHUB_ENV"
+
+      - name: Issue long-lived Cloudflare Origin CA certificate
+        id: origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl req -new -newkey rsa:2048 -nodes             -keyout /tmp/new-key.pem -out /tmp/new.csr             -subj "/CN=$CERT_HOSTNAME" -addext "subjectAltName=DNS:$CERT_HOSTNAME" >/dev/null 2>&1
+          CSR="$(cat /tmp/new.csr)" HOST="$CERT_HOSTNAME" node <<'NODE' >/tmp/origin-request.json
+          process.stdout.write(JSON.stringify({
+            csr:process.env.CSR,
+            hostnames:[process.env.HOST],
+            request_type:'origin-rsa',
+            requested_validity:5475
+          }));
+          NODE
+          code="$(curl -sS -o /tmp/origin-response.json -w '%{http_code}'             -X POST 'https://api.cloudflare.com/client/v4/certificates'             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Content-Type: application/json'             --data-binary @/tmp/origin-request.json)"
+          [ "$code" = 200 ] || {
+            echo "Origin CA issuance failed with HTTP $code.";
+            node -e "const x=require('/tmp/origin-response.json');console.log(JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null}))))";
+            exit 1;
+          }
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=require('/tmp/origin-response.json');
+          if(!x.success||!x.result?.id||!x.result?.certificate) throw new Error('Origin CA response incomplete.');
+          fs.writeFileSync('/tmp/new-cert.pem',String(x.result.certificate),{mode:0o600});
+          fs.writeFileSync('/tmp/origin-id',String(x.result.id),{mode:0o600});
+          console.log('Origin CA certificate issued; expires '+x.result.expires_on+'.');
+          NODE
+          cert_pub="$(openssl x509 -in /tmp/new-cert.pem -pubkey -noout | openssl pkey -pubin -outform pem | sha256sum | awk '{print $1}')"
+          key_pub="$(openssl pkey -in /tmp/new-key.pem -pubout -outform pem | sha256sum | awk '{print $1}')"
+          [ "$cert_pub" = "$key_pub" ] || { echo 'Issued certificate does not match generated private key.'; exit 1; }
+          echo "certificate_id=$(cat /tmp/origin-id)" >> "$GITHUB_OUTPUT"
+          echo 'Origin CA certificate/private-key pair verified locally.'
+
+      - name: Stop PostgreSQL cleanly before certificate replacement
+        id: stopped
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/stop.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/stop?docker_cleanup=false")"
+          [ "$code" = 200 ] || { echo "PostgreSQL stop request failed with HTTP $code."; exit 1; }
+          for i in $(seq 1 40); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/databases/$POSTGRES_UUID" -o /tmp/db-state.json
+            status="$(node -e "const x=require('/tmp/db-state.json');process.stdout.write(String(x.status||''))")"
+            if ! echo "$status" | grep -Eqi '^running'; then
+              echo "PostgreSQL stopped (status=$status)."
+              echo "stopped=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo 'Timed out waiting for PostgreSQL to stop.'
+          exit 1
+
+      - name: Replace only the existing server certificate and key mounts
+        id: replaced
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID/storages"
+          make_payload() {
+            local meta="$1" content_file="$2" output="$3"
+            META="$meta" CONTENT_FILE="$content_file" node <<'NODE' >"$output"
+          const fs=require('node:fs');
+          const m=JSON.parse(fs.readFileSync(process.env.META,'utf8'));
+          process.stdout.write(JSON.stringify({
+            uuid:m.uuid,
+            type:'file',
+            mount_path:m.mount_path,
+            content:fs.readFileSync(process.env.CONTENT_FILE,'utf8')
+          }));
+          NODE
+          }
+          patch_storage() {
+            local payload="$1"
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/storage-response.json -w '%{http_code}'               -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @"$payload" "$base")"
+            [ "$code" = 200 ] || { echo "Certificate file-mount update failed with HTTP $code."; return 1; }
+          }
+          make_payload /tmp/cert-storage.json /tmp/new-cert.pem /tmp/new-cert-storage.json
+          make_payload /tmp/key-storage.json /tmp/new-key.pem /tmp/new-key-storage.json
+          patch_storage /tmp/new-cert-storage.json
+          patch_storage /tmp/new-key-storage.json
+          echo "replaced=true" >> "$GITHUB_OUTPUT"
+          echo 'Replaced only the existing PostgreSQL server certificate/key file contents.'
+
+      - name: Start PostgreSQL and require healthy status
+        id: started
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/start.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/start")"
+          [ "$code" = 200 ] || { echo "PostgreSQL start request failed with HTTP $code."; exit 1; }
+          for i in $(seq 1 80); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/databases/$POSTGRES_UUID" -o /tmp/db-state.json
+            status="$(node -e "const x=require('/tmp/db-state.json');process.stdout.write(String(x.status||''))")"
+            if echo "$status" | grep -Fqi 'running:healthy'; then
+              echo "started=true" >> "$GITHUB_OUTPUT"
+              echo 'PostgreSQL restarted healthy with replacement certificate files.'
+              exit 0
+            fi
+            if echo "$status" | grep -Eqi 'failed|exited|unhealthy'; then
+              echo "PostgreSQL entered failure state: $status"
+              exit 1
+            fi
+            sleep 3
+          done
+          echo 'Timed out waiting for healthy PostgreSQL.'
+          exit 1
+
+      - name: Resolve secure VPC service
+        id: vpc
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
+          SERVICES="$response" node <<'NODE' >/tmp/vpc-id
+          const p=JSON.parse(process.env.SERVICES||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Could not list VPC services.');
+          const m=p.result.filter(x=>x.name===process.env.VPC_SERVICE_NAME);
+          if(m.length!==1) throw new Error('Expected exactly one Mkety production Postgres VPC service.');
+          const s=m[0];
+          if(s.type!=='tcp'||Number(s.tcp_port)!==5432||s.app_protocol!=='postgresql') throw new Error('Unexpected VPC service shape.');
+          if(s.tls_settings?.cert_verification_mode!=='verify_ca') throw new Error('VPC certificate verification must remain verify_ca.');
+          if(!(s.host?.network?.tunnel_id||s.host?.resolver_network?.tunnel_id)) throw new Error('VPC service is not attached to a tunnel.');
+          process.stdout.write(String(s.service_id));
+          NODE
+          SERVICE_ID="$(cat /tmp/vpc-id)"
+          echo "::add-mask::$SERVICE_ID"
+          echo "service_id=$SERVICE_ID" >> "$GITHUB_OUTPUT"
+          echo 'Verified VPC service remains tunnel-backed with verify_ca.'
+
+      - name: Create disposable VPC-backed Hyperdrive
+        id: hd
+        shell: bash
+        env:
+          SERVICE_ID: ${{ steps.vpc.outputs.service_id }}
+        run: |
+          set -euo pipefail
+          existing="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          EXISTING="$existing" node <<'NODE' >/tmp/existing-id
+          const p=JSON.parse(process.env.EXISTING||'{}');
+          const m=Array.isArray(p.result)?p.result.filter(x=>x.name===process.env.TEST_HYPERDRIVE_NAME):[];
+          if(m.length>1) throw new Error('Multiple disposable Hyperdrive configs exist.');
+          process.stdout.write(m[0]?.id||'');
+          NODE
+          EXISTING_ID="$(cat /tmp/existing-id)"
+
+          SERVICE_ID="$SERVICE_ID" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_NAME="$DB_NAME" node <<'NODE' >/tmp/hd-request.json
+          process.stdout.write(JSON.stringify({
+            name:process.env.TEST_HYPERDRIVE_NAME,
+            origin:{
+              scheme:'postgresql',
+              database:process.env.DB_NAME,
+              user:process.env.DB_USER,
+              password:process.env.DB_PASSWORD,
+              service_id:process.env.SERVICE_ID
+            },
+            caching:{disabled:true}
+          }));
+          NODE
+
+          if [ -n "$EXISTING_ID" ]; then
+            endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$EXISTING_ID"
+            method=PUT
+          else
+            endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs"
+            method=POST
+          fi
+          code="$(curl -sS -o /tmp/hd-response.json -w '%{http_code}'             -X "$method" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/hd-request.json "$endpoint")"
+          if [ "$code" != 200 ]; then
+            echo "Secure VPC Hyperdrive creation failed with HTTP $code."
+            node -e "const x=require('/tmp/hd-response.json');console.log('CLOUDFLARE_ERROR '+JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null}))))"
+            exit 1
+          fi
+          node <<'NODE' >/tmp/hd-id
+          const p=require('/tmp/hd-response.json');
+          if(!p.success||!p.result?.id||!p.result.origin?.service_id) throw new Error('Hyperdrive is not VPC-backed.');
+          process.stdout.write(String(p.result.id));
+          NODE
+          HD_ID="$(cat /tmp/hd-id)"
+          echo "::add-mask::$HD_ID"
+          echo "hyperdrive_id=$HD_ID" >> "$GITHUB_OUTPUT"
+          echo 'Disposable secure VPC-backed Hyperdrive created successfully.'
+
+      - name: Deploy minimal SELECT 1 Worker probe
+        shell: bash
+        env:
+          HD_ID: ${{ steps.hd.outputs.hyperdrive_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .diag
+          cat > .diag/origin-ca-probe.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(_request, env) {
+              if (!env.MKETY_DB?.connectionString) return Response.json({ok:false,stage:'binding'},{status:500});
+              let sql;
+              try {
+                sql=postgres(env.MKETY_DB.connectionString,{max:1});
+                const rows=await sql`select 1::int as ok`;
+                return Response.json({ok:rows?.[0]?.ok===1,stage:'query'},{status:rows?.[0]?.ok===1?200:500});
+              } catch (e) {
+                return Response.json({ok:false,stage:'query',name:String(e?.name||'Error'),code:typeof e?.code==='string'?e.code:null},{status:500});
+              } finally {
+                if(sql) await sql.end({timeout:1}).catch(()=>{});
+              }
+            }
+          }
+          JS
+          cat > .diag/origin-ca-wrangler.jsonc <<JSON
+          {
+            "name":"$PROBE_WORKER_NAME",
+            "main":"./origin-ca-probe.mjs",
+            "compatibility_date":"2026-09-06",
+            "compatibility_flags":["nodejs_compat"],
+            "workers_dev":true,
+            "preview_urls":true,
+            "hyperdrive":[{"binding":"MKETY_DB","id":"$HD_ID"}]
+          }
+          JSON
+          pnpm exec wrangler deploy --config .diag/origin-ca-wrangler.jsonc >/tmp/probe-deploy.log 2>&1
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          ACCOUNT="$account" node <<'NODE' >/tmp/subdomain
+          const p=JSON.parse(process.env.ACCOUNT||'{}');
+          if(!p.success||!p.result?.subdomain) throw new Error('No workers.dev account subdomain.');
+          process.stdout.write(p.result.subdomain);
+          NODE
+          PROBE_URL="https://$PROBE_WORKER_NAME.$(cat /tmp/subdomain).workers.dev"
+          ok=0
+          for attempt in $(seq 1 15); do
+            code="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/probe.json -w '%{http_code}' "$PROBE_URL/" || true)"
+            echo "Secure DB probe attempt $attempt/15: HTTP $code"
+            if [ "$code" = 200 ] && node -e "const x=require('/tmp/probe.json');process.exit(x.ok===true&&x.stage==='query'?0:1)"; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$ok" != 1 ]; then
+            node -e "let x={};try{x=require('/tmp/probe.json')}catch{};console.log('PROBE_SAFE '+JSON.stringify({ok:x.ok===true,stage:x.stage||null,name:x.name||null,code:x.code||null}))"
+            exit 1
+          fi
+          echo 'Secure Workers VPC -> Hyperdrive -> private PostgreSQL SELECT 1 passed.'
+
+      - name: Mark repair verified
+        id: verified
+        run: echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Roll back original certificate on any repair failure
+        if: failure() && steps.replaced.outputs.replaced == 'true'
+        shell: bash
+        run: |
+          set +e
+          echo 'Repair failed after certificate replacement; restoring original certificate/key.'
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -sS -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/stop?docker_cleanup=false" >/dev/null
+          sleep 8
+          make_payload() {
+            local meta="$1" content_file="$2" output="$3"
+            META="$meta" CONTENT_FILE="$content_file" node <<'NODE' >"$output"
+          const fs=require('node:fs');
+          const m=JSON.parse(fs.readFileSync(process.env.META,'utf8'));
+          process.stdout.write(JSON.stringify({uuid:m.uuid,type:'file',mount_path:m.mount_path,content:fs.readFileSync(process.env.CONTENT_FILE,'utf8')}));
+          NODE
+          }
+          make_payload /tmp/cert-storage.json /tmp/old-cert.pem /tmp/rollback-cert.json
+          make_payload /tmp/key-storage.json /tmp/old-key.pem /tmp/rollback-key.json
+          curl --proto '=https' --tlsv1.2 -sS -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/rollback-cert.json "$base/databases/$POSTGRES_UUID/storages" >/dev/null
+          curl --proto '=https' --tlsv1.2 -sS -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/rollback-key.json "$base/databases/$POSTGRES_UUID/storages" >/dev/null
+          curl --proto '=https' --tlsv1.2 -sS -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/start" >/dev/null
+          echo 'Original certificate/key restoration requested.'
+
+      - name: Revoke replacement Origin CA certificate after rollback
+        if: failure() && steps.origin.outputs.certificate_id != ''
+        shell: bash
+        env:
+          CERTIFICATE_ID: ${{ steps.origin.outputs.certificate_id }}
+        run: |
+          set +e
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/certificates/$CERTIFICATE_ID" >/dev/null
+          echo 'Replacement Origin CA certificate revoked because repair did not verify.'
+
+      - name: Cleanup disposable Hyperdrive and probe Worker
+        if: always()
+        shell: bash
+        env:
+          HD_ID: ${{ steps.hd.outputs.hyperdrive_id }}
+        run: |
+          set +e
+          if [ -n "${HD_ID:-}" ]; then
+            curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$HD_ID" >/dev/null
+          fi
+          curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME/subdomain" >/dev/null
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME" >/dev/null
+          if [ "${{ steps.verified.outputs.verified }}" = true ]; then
+            echo 'Repair verified; replacement Origin CA certificate remains active on private PostgreSQL.'
+          fi
+          shred -u /tmp/new-key.pem /tmp/new.csr /tmp/origin-request.json /tmp/origin-response.json /tmp/old-key.pem /tmp/old-cert.pem 2>/dev/null || true
