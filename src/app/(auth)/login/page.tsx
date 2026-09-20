@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
@@ -53,9 +52,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <LoginForm callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
           New to Mkety?{' '}
-          <Link href={planKey ? `/signup?plan=${encodeURIComponent(planKey)}` : '/signup'} className="font-semibold text-primary hover:underline">
+          <a
+            href={planKey ? `/signup?plan=${encodeURIComponent(planKey)}` : '/signup'}
+            className="font-semibold text-primary hover:underline"
+          >
             Create an account
-          </Link>
+          </a>
         </p>
       </div>
     </div>
