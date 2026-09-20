@@ -157,10 +157,16 @@ jobs:
             ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
             cd="$(awk 'BEGIN{IGNORECASE=1} /^content-disposition:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
             echo "$path -> HTTP $code, Content-Type=$ct, Content-Disposition=$cd"
+            echo -n "$path body-prefix: "
+            head -c 320 "$body" | tr '\n\r' '  ' | sed -E 's/[[:cntrl:]]/ /g'
+            echo
             [ "$code" = 200 ]
             printf '%s' "$ct" | grep -Eqi '^text/html(?:;|$)'
             ! printf '%s' "$cd" | grep -Eqi 'attachment|filename='
-            grep -Eqi '<!doctype html|<html' "$body"
+            if ! grep -Eqi '<!doctype html|<html' "$body"; then
+              echo "::error::$path is labeled HTML but the body is not an HTML document."
+              exit 1
+            fi
           done
 
       - name: Verify real production ZITADEL authorization redirect and PKCE
