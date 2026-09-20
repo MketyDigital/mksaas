@@ -1,0 +1,59 @@
+name: Mkety Postgres Emergency Recover
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-postgres-emergency-recover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Restart production PostgreSQL after certificate rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Restart database through Coolify
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/restart" -o /tmp/restart.json
+          echo 'Coolify restart requested.'
+
+          # Do not treat the old exited state as a new failure while Coolify is recreating the container.
+          seen_running=0
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS               -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+            status="$(node -e "const x=require('/tmp/db.json');process.stdout.write(String(x.status||''))")"
+            echo "Recovery poll $i/120: $status"
+            if echo "$status" | grep -Fqi 'running'; then seen_running=1; fi
+            if echo "$status" | grep -Fqi 'running:healthy'; then
+              echo 'Production PostgreSQL recovered healthy.'
+              exit 0
+            fi
+            # Once a fresh running state has been seen, a later exit is meaningful.
+            if [ "$seen_running" = 1 ] && echo "$status" | grep -Eqi '^exited|failed'; then
+              echo "Fresh PostgreSQL restart failed after entering running state: $status"
+              break
+            fi
+            sleep 3
+          done
+
+          curl --proto '=https' --tlsv1.2 -sS             -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs.json || true
+          node <<'NODE'
+          const fs=require('node:fs');
+          let raw='';try{raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const safe=raw.split(/\r?\n/).filter(line=>/fatal|error|ssl|certificate|private key|permission|could not|database system/i.test(line)).slice(-120)
+            .map(line=>line.replace(/password=[^ ]+/gi,'password=***').replace(/user=[^ ]+/gi,'user=***').replace(/database=[^ ]+/gi,'database=***'));
+          console.log('RECOVERY_LOGS_SAFE '+JSON.stringify(safe));
+          NODE
+          exit 1
