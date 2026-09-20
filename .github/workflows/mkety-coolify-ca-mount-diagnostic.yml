@@ -93,7 +93,17 @@ jobs:
             s="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
             case "${s,,}" in
               finished|success|successful|succeeded|completed) break ;;
-              failed|failure|error|cancelled|canceled) echo "Deployment failed: $s"; exit 1 ;;
+              failed|failure|error|cancelled|canceled)
+                echo "Deployment failed: $s"
+                node <<'NODE'
+                const fs=require('node:fs');
+                const x=JSON.parse(fs.readFileSync('/tmp/dep.json','utf8'));
+                const raw=[x.logs,x.message,x.error,x.status].filter(Boolean).join('\n');
+                const safe=raw.split(/\r?\n/).filter(line=>/error|failed|mount|directory|file|docker|container|coolify-ca/i.test(line)).slice(-100);
+                console.log('CA_MOUNT_DEPLOY_ERROR_SAFE '+JSON.stringify(safe));
+                NODE
+                exit 1
+                ;;
             esac
             sleep 3
           done
