@@ -1,0 +1,59 @@
+name: Mkety Postgres Certificate Startup Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-postgres-cert-startup-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Verify rollback health and certificate mount permissions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+    steps:
+      - name: Inspect health, mount metadata and safe SSL startup logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/db.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+          curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID/logs?lines=250&show_timestamps=false" -o /tmp/logs.json || true
+          node <<'NODE'
+          const fs=require('node:fs');
+          const d=require('/tmp/db.json');
+          const s=require('/tmp/storages.json');
+          const files=Array.isArray(s.file_storages)?s.file_storages:[];
+          const wanted=files.filter(x=>['/var/lib/postgresql/certs/server.crt','/var/lib/postgresql/certs/server.key'].includes(x.mount_path));
+          console.log('ROLLBACK_DB_SAFE '+JSON.stringify({
+            status:d.status||null,
+            healthy:String(d.status||'').toLowerCase().includes('healthy'),
+            sslEnabled:d.enable_ssl===true,
+            mounts:wanted.map(x=>({
+              uuid:x.uuid||null,
+              mountPath:x.mount_path||null,
+              chmod:x.chmod??null,
+              chown:x.chown??null,
+              isHostFile:x.is_host_file??null,
+              isBinary:x.is_binary??null,
+              contentLength:typeof x.content==='string'?x.content.length:0
+            }))
+          }));
+          let raw='';
+          try{raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const safe=raw.split(/\r?\n/).filter(line=>/ssl|certificate|private key|permission|fatal|error|could not load|server\.key|server\.crt/i.test(line)).slice(-100)
+            .map(line=>line.replace(/password=[^ ]+/gi,'password=***').replace(/user=[^ ]+/gi,'user=***').replace(/database=[^ ]+/gi,'database=***'));
+          console.log('ROLLBACK_SSL_LOGS_SAFE '+JSON.stringify(safe));
+          if(!String(d.status||'').toLowerCase().includes('running:healthy')) process.exit(2);
+          if(wanted.length!==2) process.exit(3);
+          NODE
