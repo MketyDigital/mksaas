@@ -1,0 +1,63 @@
+name: Mkety Production PgBouncer Config Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-pgbouncer-config-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect production PgBouncer config keys safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+    steps:
+      - name: Inspect proxy configuration metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_API_TOKEN:?required}"
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          uuid="$(node <<'NODE'
+          const p=require('/tmp/apps.json');
+          const rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=rows.find(x=>x.name==='mkety-production-pgbouncer-tls-proxy');
+          if(!m?.uuid) throw new Error('PgBouncer proxy not found');
+          process.stdout.write(String(m.uuid));
+          NODE
+          )"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid" -o /tmp/app.json
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/envs" -o /tmp/envs.json
+          node <<'NODE'
+          const a=require('/tmp/app.json');
+          const e=require('/tmp/envs.json');
+          const rows=Array.isArray(e)?e:Array.isArray(e?.data)?e.data:[];
+          console.log('PROXY_CONFIG_FIELDS_SAFE '+JSON.stringify({
+            dockerfileLocation:a.dockerfile_location||null,
+            dockerfilePresent:typeof a.dockerfile==='string'&&a.dockerfile.length>0,
+            buildCommandPresent:Boolean(a.build_command),
+            startCommandPresent:Boolean(a.start_command),
+            portsExposes:a.ports_exposes||null,
+            connectToDockerNetwork:a.connect_to_docker_network??null
+          }));
+          console.log('PROXY_ENV_KEYS_SAFE '+JSON.stringify(rows.map(x=>({
+            key:x.key||null,
+            isLiteral:x.is_literal??null,
+            isPreview:x.is_preview??null
+          })).filter(x=>x.key).sort((a,b)=>a.key.localeCompare(b.key))));
+          if(typeof a.dockerfile==='string'&&a.dockerfile.length){
+            const safe=a.dockerfile.split(/\r?\n/).filter(line=>
+              /pgbouncer|tls|ssl|ca_file|cert|key|server_tls|client_tls|ENTRYPOINT|CMD|COPY|RUN/i.test(line)
+            ).map(line=>line.replace(/(password|secret|token)=\S+/gi,'$1=***'));
+            console.log('PROXY_DOCKERFILE_SAFE '+JSON.stringify(safe.slice(0,120)));
+          }
+          NODE
