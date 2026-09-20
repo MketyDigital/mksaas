@@ -13,6 +13,16 @@ import { executePublicSupportTool, type PublicSupportToolName } from './tools';
 import { parsePublicAIProviderConfig, type PublicAssistantEnvironment } from '../config';
 import { getDefaultPublicAIModel } from '../models';
 
+const PRIVATE_IMPLEMENTATION_REQUEST_PATTERN =
+  /\b(source\s*code|repositories?|github|source[- ]control|branches?|pull\s*requests?|commits?|engineering\s+internals?|deployment\s+internals?|implementation\s+details?)\b/i;
+
+const PUBLIC_SAFE_PRIVATE_IMPLEMENTATION_ANSWER =
+  'I can only help with public Mkety information. You can use [Mkety documentation](/docs) for public product guidance or [contact Mkety](/contact) if you need help from the Mkety team.';
+
+function isPrivateImplementationRequest(message: string): boolean {
+  return PRIVATE_IMPLEMENTATION_REQUEST_PATTERN.test(message);
+}
+
 export class PublicAssistantRuntimeError extends Error {
   constructor(
     message: string,
@@ -152,6 +162,20 @@ export async function runMketyPublicAssistant(input: {
   const conversation = await getPublicAIConversation(input.database, input.visitorId, conversationId);
   if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
 
+  if (isPrivateImplementationRequest(input.message)) {
+    await appendPublicAIMessage(input.database, {
+      visitorId: input.visitorId,
+      conversationId,
+      role: 'assistant',
+      content: PUBLIC_SAFE_PRIVATE_IMPLEMENTATION_ANSWER,
+      metadata: { privacyBoundary: true },
+    });
+    return {
+      answer: PUBLIC_SAFE_PRIVATE_IMPLEMENTATION_ANSWER,
+      conversationId,
+    };
+  }
+
   const groundedContext = await buildGroundedContext({
     database: input.database,
     visitorId: input.visitorId,
@@ -232,6 +256,14 @@ export async function runMketyPublicAssistantStateless(input: {
   const config = parsePublicAIProviderConfig(input.environment);
   if (!config.enabled) {
     throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
+  }
+
+  if (isPrivateImplementationRequest(input.message)) {
+    return {
+      answer: PUBLIC_SAFE_PRIVATE_IMPLEMENTATION_ANSWER,
+      conversationId: input.conversationId ?? crypto.randomUUID(),
+      degraded: true as const,
+    };
   }
 
   const groundedContext = await buildGroundedContextStateless(input.message);
