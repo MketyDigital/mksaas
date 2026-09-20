@@ -1,6 +1,6 @@
 name: Mkety Production Bridge Inspect
 # certificate-chain field inspection
-# rerun after internal TLS diagnostic 2026-09-20
+# rerun after Origin CA ClientHello failure 2026-09-20
 # public recovery inspection 2026-09-19
 
 on:
