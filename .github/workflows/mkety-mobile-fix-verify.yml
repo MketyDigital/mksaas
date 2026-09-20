@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  VERIFIED_SHA: fc796abe6898bf2ca19c5cf224edf0412c36988f
+  VERIFIED_SHA: 179b3d9c31a474bb6e4a991f25d154acc16fe80b
   SKIP_ENV_VALIDATION: 'true'
 
 jobs:
@@ -43,4 +43,6 @@ jobs:
           grep -Fq 'overflow-x-clip' "$file"
           grep -Fq '[overflow-wrap:anywhere]' "$file"
           grep -Fq 'w-full max-w-full min-w-0' "$file"
-          echo 'MketyOS mobile containment contract verified.'
+          grep -Fq '<a href="/login">Sign In</a>' src/features/platform-content/components/public/MketyPublicHeader.tsx
+          grep -Fq '<a href="/signup">Get Started</a>' src/features/platform-content/components/public/MketyPublicHeader.tsx
+          echo 'MketyOS mobile containment and full-document auth navigation contracts verified.'
