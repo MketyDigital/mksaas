@@ -1,0 +1,86 @@
+name: Mkety Origin CA Permission Preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-origin-ca-permission-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Verify Origin CA issuance and database file-mount schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      CERT_HOSTNAME: db-origin.mkety.com
+    steps:
+      - name: Inspect certificate file-mount schema safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "$base/databases/$POSTGRES_UUID/storages" -o /tmp/storages.json
+          node <<'NODE'
+          const x=require('/tmp/storages.json');
+          const files=Array.isArray(x?.file_storages)?x.file_storages:[];
+          const wanted=files.filter(s=>['/var/lib/postgresql/certs/server.crt','/var/lib/postgresql/certs/server.key'].includes(s.mount_path));
+          if(wanted.length!==2) throw new Error('Expected exactly two PostgreSQL SSL file mounts.');
+          console.log('CERT_STORAGE_SCHEMA '+JSON.stringify(wanted.map(s=>({
+            keys:Object.keys(s).filter(k=>!['content','real_value','value'].includes(k)).sort(),
+            uuid:s.uuid||null,
+            mountPath:s.mount_path||null,
+            contentPresent:typeof s.content==='string'&&s.content.length>0
+          }))));
+          NODE
+
+      - name: Issue disposable Origin CA certificate to verify permission
+        id: origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'CLOUDFLARE_API_TOKEN is required.'; exit 1; }
+          umask 077
+          openssl req -new -newkey rsa:2048 -nodes             -keyout /tmp/origin.key -out /tmp/origin.csr             -subj "/CN=$CERT_HOSTNAME" -addext "subjectAltName=DNS:$CERT_HOSTNAME" >/dev/null 2>&1
+          CSR="$(cat /tmp/origin.csr)" HOST="$CERT_HOSTNAME" node <<'NODE' >/tmp/origin-request.json
+          process.stdout.write(JSON.stringify({
+            csr:process.env.CSR,
+            hostnames:[process.env.HOST],
+            request_type:'origin-rsa',
+            requested_validity:7
+          }));
+          NODE
+          code="$(curl -sS -o /tmp/origin-response.json -w '%{http_code}'             -X POST 'https://api.cloudflare.com/client/v4/certificates'             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H 'Content-Type: application/json'             --data-binary @/tmp/origin-request.json)"
+          if [ "$code" != 200 ]; then
+            echo "Origin CA issuance permission preflight failed with HTTP $code."
+            node -e "const x=require('/tmp/origin-response.json');console.log(JSON.stringify((x.errors||[]).map(e=>({code:e.code||null,message:e.message||null}))))"
+            exit 1
+          fi
+          node <<'NODE' >/tmp/origin-id
+          const x=require('/tmp/origin-response.json');
+          if(!x.success||!x.result?.id||!x.result?.certificate) throw new Error('Origin CA response incomplete.');
+          process.stdout.write(String(x.result.id));
+          NODE
+          echo "certificate_id=$(cat /tmp/origin-id)" >> "$GITHUB_OUTPUT"
+          node -e "const x=require('/tmp/origin-response.json');console.log('Origin CA permission verified; disposable certificate expires '+x.result.expires_on+'.')"
+
+      - name: Revoke disposable certificate and shred key
+        if: always()
+        shell: bash
+        env:
+          CERTIFICATE_ID: ${{ steps.origin.outputs.certificate_id }}
+        run: |
+          set +e
+          if [ -n "${CERTIFICATE_ID:-}" ]; then
+            curl -sS -X DELETE               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               "https://api.cloudflare.com/client/v4/certificates/$CERTIFICATE_ID" >/dev/null
+            echo 'Disposable Origin CA certificate revoked.'
+          fi
+          shred -u /tmp/origin.key /tmp/origin.csr /tmp/origin-request.json /tmp/origin-response.json 2>/dev/null || rm -f /tmp/origin.key /tmp/origin.csr /tmp/origin-request.json /tmp/origin-response.json
