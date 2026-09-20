@@ -1,5 +1,5 @@
 FROM alpine:3.22
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl && mkdir -p /etc/mkety/coolify-ca-dir
 WORKDIR /app
 COPY ops/coolify-ca-mount-diagnostic/run.sh /app/run.sh
 RUN chmod +x /app/run.sh
