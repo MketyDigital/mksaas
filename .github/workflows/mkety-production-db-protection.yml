@@ -1,6 +1,6 @@
 name: Mkety Production DB Protection
 
-# Manual verification trigger: 2026-09-20 certificate repair preflight
+# Manual verification trigger: 2026-09-20 secure Origin CA repair preflight
 
 on:
   push:
