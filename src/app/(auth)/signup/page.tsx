@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
@@ -40,9 +39,12 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
         <LoginForm mode="signup" callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href={planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login'} className="font-semibold text-primary hover:underline">
+          <a
+            href={planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login'}
+            className="font-semibold text-primary hover:underline"
+          >
             Sign in
-          </Link>
+          </a>
         </p>
       </div>
     </div>
