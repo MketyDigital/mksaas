@@ -37,10 +37,10 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
   if (!activeGroup) return null;
 
   return (
-    <section className="px-4 py-10 md:py-16" aria-label="Mkety product experience">
-      <div className="container mx-auto min-w-0">
+    <section className="w-full max-w-full overflow-x-clip px-3 py-10 sm:px-4 md:py-16" aria-label="Mkety product experience">
+      <div className="container mx-auto w-full max-w-full min-w-0">
         <div className="min-w-0 overflow-hidden rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
-          <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
+          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)]">
             <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_hsl(var(--primary))]" />
@@ -49,7 +49,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               <div
                 role="tablist"
                 aria-label="Explore Mkety"
-                className="flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1 lg:flex-col lg:overflow-visible"
+                className="flex w-full min-w-0 max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin] lg:flex-col lg:overflow-visible"
               >
                 {groups.map((group, index) => {
                   const Icon = showcaseIcons[index] ?? LayoutGrid;
@@ -65,7 +65,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       tabIndex={selected ? 0 : -1}
                       onClick={() => setActiveId(group.id)}
                       className={cn(
-                        'flex shrink-0 items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition motion-reduce:transition-none lg:w-full',
+                        'flex min-w-0 shrink-0 items-center gap-3 rounded-2xl border px-3 py-3 text-left text-sm font-medium transition motion-reduce:transition-none sm:px-4 lg:w-full',
                         selected
                           ? 'border-primary/25 bg-background text-foreground shadow-sm'
                           : 'border-transparent text-muted-foreground hover:border-border hover:bg-background/60 hover:text-foreground',
@@ -90,18 +90,18 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               id={`mkety-showcase-panel-${activeGroup.id}`}
               role="tabpanel"
               aria-labelledby={`mkety-showcase-tab-${activeGroup.id}`}
-              className="relative min-w-0 p-5 md:p-8"
+              className="relative w-full max-w-full min-w-0 overflow-hidden p-3 sm:p-5 md:p-8"
             >
               <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-              <div className="relative grid min-w-0 gap-7 xl:grid-cols-[0.75fr_1.25fr]">
-                <div className="min-w-0 flex flex-col justify-between rounded-3xl border bg-background/70 p-6 shadow-sm">
+              <div className="relative grid w-full min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:gap-7 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+                <div className="flex w-full max-w-full min-w-0 flex-col justify-between overflow-hidden rounded-3xl border bg-background/70 p-4 shadow-sm sm:p-6">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
                       {activeGroup.eyebrow}
                     </p>
-                    <h2 className="mt-3 break-words text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
+                    <h2 className="mt-3 min-w-0 break-words [overflow-wrap:anywhere] text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
                     {activeGroup.description && (
-                      <p className="mt-4 break-words leading-7 text-muted-foreground">{activeGroup.description}</p>
+                      <p className="mt-4 min-w-0 break-words [overflow-wrap:anywhere] leading-7 text-muted-foreground">{activeGroup.description}</p>
                     )}
                   </div>
                   <Link
@@ -112,29 +112,29 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                   </Link>
                 </div>
 
-                <div className="grid auto-rows-[minmax(9rem,auto)] gap-3 sm:grid-cols-2">
+                <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)] auto-rows-[minmax(9rem,auto)] gap-3 sm:grid-cols-2">
                   {activeGroup.items.slice(0, 4).map((item, index) => {
                     const Icon = showcaseIcons[index] ?? LayoutGrid;
                     return (
                       <article
                         key={item.key}
                         className={cn(
-                          'group relative min-w-0 overflow-hidden rounded-3xl border bg-background/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
+                          'group relative w-full max-w-full min-w-0 overflow-hidden rounded-3xl border bg-background/80 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:p-5',
                           index === 0 && activeGroup.items.length > 2 ? 'sm:row-span-2' : '',
                         )}
                       >
-                        <div className="mb-8 flex items-start justify-between gap-3">
+                        <div className="mb-6 flex min-w-0 items-start justify-between gap-3 sm:mb-8">
                           <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                             <Icon className="h-5 w-5" />
                           </span>
                           {item.badge && (
-                            <span className="rounded-full border bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            <span className="max-w-[70%] shrink rounded-full border bg-card px-2.5 py-1 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground break-words [overflow-wrap:anywhere]">
                               {item.badge}
                             </span>
                           )}
                         </div>
-                        <h3 className="break-words font-semibold">{item.title}</h3>
-                        <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{item.description}</p>
+                        <h3 className="min-w-0 break-words [overflow-wrap:anywhere] font-semibold">{item.title}</h3>
+                        <p className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] text-sm leading-6 text-muted-foreground">{item.description}</p>
                         {item.href && (
                           <Link
                             href={item.href}
