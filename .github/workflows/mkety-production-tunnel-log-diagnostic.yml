@@ -1,0 +1,53 @@
+name: Mkety Production Tunnel Log Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-tunnel-log-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect cloudflared connectivity logs safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+    steps:
+      - name: Read sanitized tunnel logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_API_TOKEN:?required}"
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          uuid="$(node <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const rows=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=rows.filter(x=>x.name==='mkety-production-cloudflared');
+          if(m.length!==1||!m[0]?.uuid) throw new Error('Expected one production cloudflared app');
+          process.stdout.write(String(m[0].uuid));
+          NODE
+          )"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/logs?lines=1000&show_timestamps=false" -o /tmp/logs.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          let raw=''; try{raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const redact=(s)=>String(s)
+            .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi,'Bearer ***')
+            .replace(/postgres(?:ql)?:\/\/[^\s]+/gi,'postgresql://***')
+            .replace(/(token|password|secret|authorization)[=:]\s*[^\s,]+/gi,'$1=***')
+            .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted-email]');
+          const lines=raw.split(/\r?\n/).filter(Boolean)
+            .filter(line=>/error|warn|tls|handshake|connect|resolver|dns|origin|postgres|5432|vpc/i.test(line))
+            .slice(-160)
+            .map(redact);
+          console.log('CLOUDFLARED_LOGS_SAFE '+JSON.stringify(lines));
+          NODE
