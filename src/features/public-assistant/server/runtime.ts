@@ -17,7 +17,7 @@ const PRIVATE_IMPLEMENTATION_REQUEST_PATTERN =
   /\b(source\s*code|repositories?|github|source[- ]control|branches?|pull\s*requests?|commits?|engineering\s+internals?|deployment\s+internals?|implementation\s+details?)\b/i;
 
 const PUBLIC_SAFE_PRIVATE_IMPLEMENTATION_ANSWER =
-  'I can only help with public Mkety information. You can use [Mkety documentation](/docs) for public product guidance or [contact Mkety](/contact) if you need help from the Mkety team.';
+  'I can help with public Mkety information, but I cannot provide private implementation details. Current self-service options are Starter at $5.99/month, AI Workspace at $16.99/month, Automation Workspace at $16.99/month, Deploy Workspace at $9.99/month, and Mkety One at $49/month. Enterprise is tailored through the Mkety sales process. Academy is available at academy.mkety.com, and new Trading buyers should start through Enterprise rather than direct product access. You can also use [Mkety documentation](/docs) for public product guidance or [contact Mkety](/contact) for help from the Mkety team.';
 
 function isPrivateImplementationRequest(message: string): boolean {
   return PRIVATE_IMPLEMENTATION_REQUEST_PATTERN.test(message);
