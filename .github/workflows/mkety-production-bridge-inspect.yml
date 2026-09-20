@@ -1,4 +1,5 @@
 name: Mkety Production Bridge Inspect
+# certificate-chain field inspection
 # public recovery inspection 2026-09-19
 
 on:
