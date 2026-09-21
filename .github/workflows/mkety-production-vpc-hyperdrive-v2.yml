@@ -1,5 +1,5 @@
 name: Mkety Production VPC Hyperdrive V2
-# auth recovery retrigger 2026-09-21 - Docker DNS resolver test
+# auth recovery retrigger 2026-09-21 - stable internal hostname test
 
 on:
   push:
@@ -107,7 +107,7 @@ jobs:
           uuid="$(node -e "const p=require('/tmp/apps.json');const a=Array.isArray(p)?p:(p.data||[]);const m=a.filter(x=>x.name===process.env.PROXY_NAME);if(m.length>1)process.exit(2);process.stdout.write(m[0]?.uuid||'')")"
           if [ -z "$uuid" ]; then
             node <<'NODE' >/tmp/create.json
-          process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,git_repository:'https://github.com/MketyDigital/mksaas',git_branch:'main',git_commit_sha:process.env.GITHUB_SHA,build_pack:'dockerfile',dockerfile_location:'/ops/pgbouncer-v2/Dockerfile.final',ports_exposes:'6432',name:process.env.PROXY_NAME,description:'Verified-TLS PgBouncer v2 for Workers VPC Hyperdrive',autogenerate_domain:false,connect_to_docker_network:true,instant_deploy:false}));
+          process.stdout.write(JSON.stringify({project_uuid:process.env.PROJECT_UUID,server_uuid:process.env.SERVER_UUID,environment_uuid:process.env.ENVIRONMENT_UUID,git_repository:'https://github.com/MketyDigital/mksaas',git_branch:'main',git_commit_sha:process.env.GITHUB_SHA,build_pack:'dockerfile',dockerfile_location:'/ops/pgbouncer-v2/Dockerfile.final',ports_exposes:'6432',name:process.env.PROXY_NAME,description:'Verified-TLS PgBouncer v2 for Workers VPC Hyperdrive',custom_internal_name:process.env.PROXY_NAME,autogenerate_domain:false,connect_to_docker_network:true,instant_deploy:false}));
           NODE
             code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/create.json "$base/applications/public")"
             [ "$code" = 201 ] || exit 1
@@ -166,7 +166,7 @@ jobs:
           NODE
           SERVICE_ID="$(cat /tmp/service-id)"
           node <<'NODE' >/tmp/service.json
-          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',tcp_port:6432,app_protocol:'postgresql',host:{hostname:process.env.PROXY_NAME,resolver_network:{tunnel_id:process.env.TUNNEL_ID,resolver_ips:['127.0.0.11']}},tls_settings:{cert_verification_mode:'verify_ca'}}));
+          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',tcp_port:6432,app_protocol:'postgresql',host:{hostname:process.env.PROXY_NAME,resolver_network:{tunnel_id:process.env.TUNNEL_ID}},tls_settings:{cert_verification_mode:'verify_ca'}}));
           NODE
           if [ -n "$SERVICE_ID" ]; then
             code="$(curl -sS -o /tmp/service-response.json -w '%{http_code}' -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/service.json "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
