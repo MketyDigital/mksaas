@@ -1,5 +1,5 @@
 name: Mkety Production VPC Hyperdrive V2
-# auth recovery retrigger 2026-09-21
+# auth recovery retrigger 2026-09-21 - Docker DNS resolver test
 
 on:
   push:
@@ -166,7 +166,7 @@ jobs:
           NODE
           SERVICE_ID="$(cat /tmp/service-id)"
           node <<'NODE' >/tmp/service.json
-          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',tcp_port:6432,app_protocol:'postgresql',host:{hostname:process.env.PROXY_NAME,resolver_network:{tunnel_id:process.env.TUNNEL_ID}},tls_settings:{cert_verification_mode:'verify_ca'}}));
+          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',tcp_port:6432,app_protocol:'postgresql',host:{hostname:process.env.PROXY_NAME,resolver_network:{tunnel_id:process.env.TUNNEL_ID,resolver_ips:['127.0.0.11']}},tls_settings:{cert_verification_mode:'verify_ca'}}));
           NODE
           if [ -n "$SERVICE_ID" ]; then
             code="$(curl -sS -o /tmp/service-response.json -w '%{http_code}' -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/service.json "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
