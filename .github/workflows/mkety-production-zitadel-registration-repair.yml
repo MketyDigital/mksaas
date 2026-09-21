@@ -1,0 +1,101 @@
+name: Mkety Production ZITADEL Registration Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-zitadel-registration-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+
+    steps:
+      - name: Enable Mkety organization self-registration only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          publish() {
+            STATE="$1" DESC="$2" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:'mkety/zitadel-registration-repair',description:String(process.env.DESC||'').slice(0,140)}));
+          NODE
+            curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'               -H 'Content-Type: application/json' --data @/tmp/status.json               "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null || true
+          }
+
+          for name in ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            [ -n "${!name:-}" ] || { publish failure "Missing $name"; exit 1; }
+          done
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          issuer="${MKETY_AUTH_ISSUER%/}"
+
+          project_response="$(curl --fail-with-body --silent --show-error             -X POST "$issuer/zitadel.project.v2.ProjectService/GetProject"             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data "{\"projectId\":\"${ZITADEL_PROJECT_ID}\"}")"
+          org_id="$(RESPONSE="$project_response" node <<'NODE'
+          const p=JSON.parse(process.env.RESPONSE||'{}');
+          if(!p.project?.organizationId) throw new Error('organization id missing');
+          process.stdout.write(String(p.project.organizationId));
+          NODE
+          )"
+          echo "::add-mask::$org_id"
+
+          current="$(curl --fail-with-body --silent --show-error             "$issuer/management/v1/policies/login"             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}"             -H "x-zitadel-orgid: $org_id")"
+
+          CURRENT="$current" node <<'NODE' >/tmp/current.json
+          const x=JSON.parse(process.env.CURRENT||'{}');
+          if(!x.policy) throw new Error('login policy missing');
+          process.stdout.write(JSON.stringify(x));
+          NODE
+
+          is_default="$(node -e "const x=require('/tmp/current.json');process.stdout.write(String(x.policy?.isDefault ?? x.isDefault ?? false))")"
+          allow="$(node -e "const x=require('/tmp/current.json');process.stdout.write(String(x.policy?.allowRegister ?? false))")"
+
+          if [ "$allow" = true ]; then
+            publish success 'Production ZITADEL self-registration already enabled; no mutation required.'
+            exit 0
+          fi
+
+          POLICY="$(cat /tmp/current.json)" node <<'NODE' >/tmp/policy-body.json
+          const x=JSON.parse(process.env.POLICY||'{}').policy||{};
+          const out={
+            allowUsernamePassword:x.allowUsernamePassword ?? false,
+            allowRegister:true,
+            allowExternalIdp:x.allowExternalIdp ?? false,
+            forceMfa:x.forceMfa ?? false,
+            passwordlessType:x.passwordlessType || 'PASSWORDLESS_TYPE_NOT_ALLOWED',
+            hidePasswordReset:x.hidePasswordReset ?? false,
+            ignoreUnknownUsernames:x.ignoreUnknownUsernames ?? false
+          };
+          for(const k of ['defaultRedirectUri','passwordCheckLifetime','externalLoginCheckLifetime','mfaInitSkipLifetime','secondFactorCheckLifetime','multiFactorCheckLifetime']){
+            if(x[k]!==undefined && x[k]!==null && x[k]!=='') out[k]=x[k];
+          }
+          process.stdout.write(JSON.stringify(out));
+          NODE
+
+          method=PUT
+          [ "$is_default" = true ] && method=POST
+          code="$(curl --silent --show-error -o /tmp/repair-response.json -w '%{http_code}'             -X "$method" "$issuer/management/v1/policies/login"             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}"             -H "x-zitadel-orgid: $org_id"             -H 'Content-Type: application/json'             --data-binary @/tmp/policy-body.json)"
+          if [ "$code" != 200 ]; then
+            publish failure "ZITADEL registration policy update failed (HTTP $code)."
+            exit 1
+          fi
+
+          verify="$(curl --fail-with-body --silent --show-error             "$issuer/management/v1/policies/login"             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}"             -H "x-zitadel-orgid: $org_id")"
+          VERIFIED="$verify" node <<'NODE'
+          const x=JSON.parse(process.env.VERIFIED||'{}');
+          if(x.policy?.allowRegister!==true) throw new Error('allowRegister did not become true');
+          if(x.policy?.allowUsernamePassword!==true) throw new Error('username/password unexpectedly disabled');
+          NODE
+
+          publish success 'Production ZITADEL self-registration enabled for the Mkety organization and verified.'
