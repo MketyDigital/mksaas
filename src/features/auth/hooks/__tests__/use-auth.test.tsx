@@ -69,7 +69,7 @@ describe('useAuth', () => {
 
     await act(async () => result.current.login('/dashboard'));
 
-    expect(mockAssign).toHaveBeenCalledWith('/api/auth/login?returnTo=%2Fdashboard');
+    expect(mockAssign).toHaveBeenCalledWith('/api/auth/login?returnTo=%2Fdashboard&intent=signin');
   });
 
   it('navigates to the Mkety logout route', async () => {
