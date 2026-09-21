@@ -1,4 +1,5 @@
 name: Mkety Production Auth Diagnostic
+# bounded network timeouts: 2026-09-21
 
 on:
   push:
@@ -86,7 +87,7 @@ jobs:
         run: |
           set +e
           base="${COOLIFY_URL%/}/api/v1"
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/db.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID")"
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -sS -o /tmp/db.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID")"
           if [ "$code" = 200 ] && node <<'NODE'
           const x=require('/tmp/db.json');
           const healthy=String(x.status||'').toLowerCase().includes('healthy');
@@ -103,7 +104,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          tunnels="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null)"
+          tunnels="$(curl --connect-timeout 8 --max-time 20 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null)"
           TUNNELS="$tunnels" node <<'NODE' >/tmp/tunnel-id 2>/tmp/tunnel-error
           const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];
           const m=a.filter(x=>x.name===process.env.TUNNEL_NAME);
@@ -116,7 +117,7 @@ jobs:
             exit 0
           fi
           tid="$(cat /tmp/tunnel-id)"
-          cfg="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tid/configurations" 2>/dev/null)"
+          cfg="$(curl --connect-timeout 8 --max-time 20 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tid/configurations" 2>/dev/null)"
           CFG="$cfg" node <<'NODE' >/tmp/tunnel-result
           const p=JSON.parse(process.env.CFG||'{}');
           const ingress=p?.result?.config?.ingress;
@@ -139,7 +140,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          list="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" 2>/dev/null)"
+          list="$(curl --connect-timeout 8 --max-time 20 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" 2>/dev/null)"
           LIST="$list" node <<'NODE' >/tmp/hd-result
           const p=JSON.parse(process.env.LIST||'{}'),a=Array.isArray(p.result)?p.result:[];
           const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
@@ -186,7 +187,7 @@ jobs:
         run: |
           set +e
           issuer="${ZITADEL_URL%/}"
-          code="$(curl -sS -o /tmp/oidc.json -w '%{http_code}' "$issuer/.well-known/openid-configuration")"
+          code="$(curl --connect-timeout 8 --max-time 20 -sS -o /tmp/oidc.json -w '%{http_code}' "$issuer/.well-known/openid-configuration")"
           if [ "$code" = 200 ] && ISSUER="$issuer" node <<'NODE'
           const x=require('/tmp/oidc.json');
           process.exit(x.issuer && x.authorization_endpoint && x.token_endpoint ? 0 : 1);
