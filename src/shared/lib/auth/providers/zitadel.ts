@@ -62,6 +62,7 @@ export function createZitadelAdapter(config: ZitadelAdapterConfig): IdentityProv
         state: input.state,
         codeChallenge: input.codeChallenge,
         nonce: input.nonce,
+        prompt: input.prompt,
       });
     },
 
