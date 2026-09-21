@@ -176,34 +176,31 @@ jobs:
 
           verify_auth_intent() {
             local intent="$1"
-            local expected_prompt="$2"
+            local expected_path="$2"
             local ok=0
             for attempt in $(seq 1 12); do
               h="/tmp/auth-$intent.headers"
               code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o /dev/null -w '%{http_code}'                 "https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=$intent" || true)"
               location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h")"
-              if [ "$code" -ge 300 ] 2>/dev/null && [ "$code" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" EXPECTED_PROMPT="$expected_prompt" node <<'NODE'
-          const u=new URL(process.env.LOCATION), issuer=new URL(process.env.EXPECTED_AUTH_ISSUER);
+              if [ "$code" -ge 300 ] 2>/dev/null && [ "$code" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" EXPECTED_PATH="$expected_path" node <<'NODE'
+          const u=new URL(process.env.LOCATION);
+          const requestId=u.searchParams.get('requestId')||'';
           process.exit(
-            u.origin===issuer.origin &&
-            u.searchParams.get('response_type')==='code' &&
-            u.searchParams.get('code_challenge_method')==='S256' &&
-            !!u.searchParams.get('code_challenge') &&
-            u.searchParams.get('redirect_uri')==='https://mkety.com/api/auth/callback' &&
-            !!u.searchParams.get('client_id') &&
-            u.searchParams.get('prompt')===process.env.EXPECTED_PROMPT ? 0 : 1
+            u.origin==='https://auth.mkety.com' &&
+            u.pathname===process.env.EXPECTED_PATH &&
+            requestId.startsWith('oidc_') ? 0 : 1
           );
           NODE
               then ok=1; break; fi
-              echo "$intent propagation attempt $attempt/12 did not yet produce expected ZITADEL prompt=$expected_prompt (HTTP $code)."
+              echo "$intent propagation attempt $attempt/12 did not yet produce branded Mkety auth redirect (HTTP $code)."
               sleep 5
             done
             [ "$ok" = 1 ]
           }
 
-          verify_auth_intent signin login || { echo 'Live sign-in did not reach ZITADEL with prompt=login.'; exit 1; }
-          verify_auth_intent signup create || { echo 'Live signup did not reach ZITADEL with prompt=create.'; exit 1; }
-          echo 'Live sign-in and signup reach ZITADEL with distinct OIDC prompts and PKCE S256.'
+          verify_auth_intent signin /ui/v2/login/loginname || { echo 'Live sign-in did not reach branded Mkety auth.'; exit 1; }
+          verify_auth_intent signup /ui/v2/login/register || { echo 'Live signup did not reach branded Mkety registration.'; exit 1; }
+          echo 'Live sign-in and signup redirect directly to auth.mkety.com with real OIDC request IDs.'
 
       - name: Publish successful production auth status
         if: success()
