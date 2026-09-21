@@ -273,39 +273,46 @@ jobs:
           fi
           echo "- Unauthenticated session boundary: HTTP $status" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Smoke real ZITADEL authorization redirect and PKCE
+      - name: Smoke branded auth first-hop redirect
         shell: bash
         env:
           PREVIEW_URL: ${{ steps.preview-url.outputs.url }}
-          EXPECTED_ISSUER: ${{ env.MKETY_AUTH_ISSUER }}
-          EXPECTED_CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
-          EXPECTED_REDIRECT_URI: ${{ steps.preview-url.outputs.url }}/api/auth/callback
+          EXPECTED_LOGIN_ORIGIN: https://auth.mkety.com
         run: |
           set -euo pipefail
-          headers="$(mktemp)"
-          trap 'rm -f "$headers"' EXIT
-          status="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL/api/auth/login?returnTo=/select-tenant")"
-          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
-          echo "/api/auth/login -> HTTP $status"
-          if [ "$status" -lt 300 ] || [ "$status" -ge 400 ] || [ -z "$location" ]; then
-            echo "::error::Mkety Auth login did not return a ZITADEL redirect."
-            exit 1
-          fi
-          LOCATION="$location" node <<'NODE'
+          for intent in signin signup; do
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL/api/auth/login?returnTo=/select-tenant&intent=$intent")"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            rm -f "$headers"
+            echo "/api/auth/login?intent=$intent -> HTTP $status"
+            if [ "$status" -lt 300 ] || [ "$status" -ge 400 ] || [ -z "$location" ]; then
+              echo "::error::Mkety Auth $intent did not return a branded login redirect."
+              exit 1
+            fi
+            LOCATION="$location" INTENT="$intent" node <<'NODE'
           const location = new URL(process.env.LOCATION);
-          const issuer = new URL(process.env.EXPECTED_ISSUER);
-          if (location.origin !== issuer.origin) throw new Error(`Authorization redirect origin mismatch: ${location.origin}`);
-          if (location.searchParams.get('client_id') !== process.env.EXPECTED_CLIENT_ID) throw new Error('Authorization redirect client_id mismatch');
-          if (location.searchParams.get('redirect_uri') !== process.env.EXPECTED_REDIRECT_URI) throw new Error('Authorization redirect callback mismatch');
-          if (location.searchParams.get('response_type') !== 'code') throw new Error('Authorization redirect must use response_type=code');
-          if (!location.searchParams.get('code_challenge')) throw new Error('Authorization redirect is missing PKCE code_challenge');
-          if (location.searchParams.get('code_challenge_method') !== 'S256') throw new Error('Authorization redirect must use PKCE S256');
-          console.log('Verified real ZITADEL authorization redirect, client id, exact callback, and PKCE S256.');
+          if (location.origin !== process.env.EXPECTED_LOGIN_ORIGIN) {
+            throw new Error(`Browser-visible auth redirect escaped Mkety domain: ${location.origin}`);
+          }
+          if (!location.pathname.startsWith('/ui/v2/login/')) {
+            throw new Error(`Unexpected branded login path: ${location.pathname}`);
+          }
+          const requestId = location.searchParams.get('requestId') || '';
+          if (!requestId.startsWith('oidc_')) throw new Error('Branded login redirect is missing a real OIDC requestId');
+          const expectedPath = process.env.INTENT === 'signup' ? '/register' : '/login';
+          if (!location.pathname.includes(expectedPath)) {
+            throw new Error(`Branded ${process.env.INTENT} route mismatch: ${location.pathname}`);
+          }
+          console.log('BRANDED_AUTH_FIRST_HOP_SAFE '+JSON.stringify({
+            intent:process.env.INTENT,
+            origin:location.origin,
+            path:location.pathname
+          }));
           NODE
-          echo "- Real ZITADEL authorization redirect + PKCE: verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "- ZITADEL callback URI: $EXPECTED_REDIRECT_URI" >> "$GITHUB_STEP_SUMMARY"
-          echo "- ZITADEL post-logout URI: $PREVIEW_URL/login" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Automated authorization redirect gate: verified; authenticated browser gate follows." >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "- Browser-visible auth first hop: auth.mkety.com for sign-in and signup" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Authorization Code + PKCE remains enforced by Mkety auth service and authenticated browser flow." >> "$GITHUB_STEP_SUMMARY"
 
   authenticated-smoke:
     name: Authenticated login, tenant and logout gate
@@ -336,7 +343,7 @@ jobs:
           description="Authenticated preview failed: verify=$VERIFY_RESULT deploy=$DEPLOY_RESULT auth=$AUTH_RESULT"
           if [ "$VERIFY_RESULT" = success ] && [ "$DEPLOY_RESULT" = success ] && [ "$AUTH_RESULT" = success ]; then
             state=success
-            description='Exact-SHA preview passed build, ZITADEL PKCE, hosted login, Mkety session, tenant and logout.'
+            description='Exact-SHA preview passed build, branded first-hop auth, hosted login, Mkety session, tenant and logout.'
           fi
           STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/status.json
           process.stdout.write(JSON.stringify({
