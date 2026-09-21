@@ -157,12 +157,14 @@ jobs:
             auth_id="$(initiate_auth_request signin)"
             echo "::add-mask::$auth_id"
 
+            echo 'PROTO_STAGE auth_request_lookup'
             auth_request="$(curl --fail-with-body --silent --show-error               "$issuer/v2/oidc/auth_requests/$auth_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
             AUTH_REQUEST="$auth_request" node <<'NODE'
           const x=JSON.parse(process.env.AUTH_REQUEST||'{}').authRequest;
           if(!x?.id||x.redirectUri!=='https://mkety.com/api/auth/callback') throw new Error('auth request callback mismatch');
           NODE
 
+            echo 'PROTO_STAGE session_authenticate'
             session_pair="$(create_authenticated_zitadel_session)"
             session_id="${session_pair%%|*}"
             session_token="${session_pair#*|}"
@@ -170,10 +172,12 @@ jobs:
           process.stdout.write(JSON.stringify({session:{sessionId:process.env.SESSION_ID,sessionToken:process.env.SESSION_TOKEN}}));
           NODE
             )"
+            echo 'PROTO_STAGE auth_request_finalize'
             finalized="$(curl --fail-with-body --silent --show-error -X POST               "$issuer/v2/oidc/auth_requests/$auth_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data "$payload")"
             callback="$(FINALIZED="$finalized" node -e "const x=JSON.parse(process.env.FINALIZED||'{}');if(!x.callbackUrl)process.exit(1);process.stdout.write(x.callbackUrl)")"
 
             h=/tmp/mkety-callback.headers
+            echo 'PROTO_STAGE mkety_callback'
             code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o /dev/null -c "$jar" -b "$jar" -w '%{http_code}' "$callback")"
             location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h")"
             [ "$code" -ge 300 ] && [ "$code" -lt 400 ] || { echo "Mkety callback HTTP $code"; return 1; }
@@ -181,12 +185,14 @@ jobs:
               echo "Unexpected Mkety callback location: $location"; return 1;
             }
 
+            echo 'PROTO_STAGE mkety_session'
             session_json="$(curl -fsS -b "$jar" "$app/api/auth/session")"
             SESSION_JSON="$session_json" SMOKE_EMAIL="$SMOKE_EMAIL" node <<'NODE'
           const x=JSON.parse(process.env.SESSION_JSON||'null');
           if(x?.user?.email!==process.env.SMOKE_EMAIL) throw new Error('Mkety session email mismatch');
           NODE
 
+            echo 'PROTO_STAGE onboarding'
             onboarding="$(curl -fsS -b "$jar" "$app/select-tenant")"
             printf '%s' "$onboarding" | grep -qi 'Create your first workspace' || {
               echo 'No-workspace onboarding was not rendered'; return 1;
