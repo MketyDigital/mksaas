@@ -1,3 +1,4 @@
+import { withRequestDatabase } from '@/shared/db/request';
 import { env } from '@/shared/lib/env';
 
 import { generateOpaqueToken, isSafeReturnTo } from './crypto';
@@ -25,14 +26,19 @@ export async function beginLogin(returnTo = '/select-tenant'): Promise<string> {
   const nonce = generateOpaqueToken();
   const pkce = await createPkcePair();
 
-  await createLoginTransaction({
-    state,
-    provider: env.MKETY_AUTH_PROVIDER,
-    verifier: pkce.verifier,
-    nonce,
-    returnTo: safeReturnTo,
-    expiresAt: new Date(Date.now() + MKETY_LOGIN_TRANSACTION_TTL_SECONDS * 1000),
-  });
+  await withRequestDatabase((database) =>
+    createLoginTransaction(
+      {
+        state,
+        provider: env.MKETY_AUTH_PROVIDER,
+        verifier: pkce.verifier,
+        nonce,
+        returnTo: safeReturnTo,
+        expiresAt: new Date(Date.now() + MKETY_LOGIN_TRANSACTION_TTL_SECONDS * 1000),
+      },
+      database,
+    ),
+  );
 
   return provider.createAuthorizationUrl({
     state,
@@ -46,7 +52,7 @@ export async function beginLogin(returnTo = '/select-tenant'): Promise<string> {
 export async function completeLogin(code: string, state: string) {
   if (!code || !state) throw new Error('Authentication callback is incomplete');
 
-  const transaction = await consumeLoginTransaction(state);
+  const transaction = await withRequestDatabase((database) => consumeLoginTransaction(state, database));
   if (!transaction) throw new Error('Authentication callback state is invalid or expired');
   if (transaction.provider !== env.MKETY_AUTH_PROVIDER) throw new Error('Authentication provider changed during login');
 
@@ -58,42 +64,52 @@ export async function completeLogin(code: string, state: string) {
     redirectUri: env.MKETY_AUTH_REDIRECT_URI,
   });
 
-  let user = await findUserByExternalIdentity(identity.provider, identity.subject);
+  return withRequestDatabase(async (database) => {
+    let user = await findUserByExternalIdentity(identity.provider, identity.subject, database);
 
-  if (!user && identity.email && identity.emailVerified) {
-    user = await findUserByEmail(identity.email);
-  }
+    if (!user && identity.email && identity.emailVerified) {
+      user = await findUserByEmail(identity.email, database);
+    }
 
-  if (!user) {
-    user = await createUser({
-      email: identity.emailVerified ? identity.email : null,
-      name: identity.name,
-      image: identity.image,
-    });
-  }
+    if (!user) {
+      user = await createUser(
+        {
+          email: identity.emailVerified ? identity.email : null,
+          name: identity.name,
+          image: identity.image,
+        },
+        database,
+      );
+    }
 
-  await createExternalIdentity({
-    provider: identity.provider,
-    subject: identity.subject,
-    userId: user.id,
-    email: identity.emailVerified ? identity.email : null,
-    name: identity.name,
-    image: identity.image,
+    await createExternalIdentity(
+      {
+        provider: identity.provider,
+        subject: identity.subject,
+        userId: user.id,
+        email: identity.emailVerified ? identity.email : null,
+        name: identity.name,
+        image: identity.image,
+      },
+      database,
+    );
+
+    const expiresAt = new Date(Date.now() + MKETY_SESSION_MAX_AGE_SECONDS * 1000);
+    const session = await createSession(user.id, expiresAt, database);
+
+    return {
+      token: session.token,
+      expiresAt: session.expiresAt,
+      redirectTo: transaction.returnTo,
+    };
   });
-
-  const expiresAt = new Date(Date.now() + MKETY_SESSION_MAX_AGE_SECONDS * 1000);
-  const session = await createSession(user.id, expiresAt);
-
-  return {
-    token: session.token,
-    expiresAt: session.expiresAt,
-    redirectTo: transaction.returnTo,
-  };
 }
 
 export async function logoutSession(token: string | null | undefined, returnTo = '/login') {
   const safeReturnTo = isSafeReturnTo(returnTo) ? returnTo : '/login';
-  if (token) await revokeSession(token);
+  if (token) {
+    await withRequestDatabase((database) => revokeSession(token, database));
+  }
 
   try {
     const provider = getIdentityProvider();
