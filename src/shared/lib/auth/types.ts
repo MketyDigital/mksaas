@@ -23,12 +23,15 @@ export interface ExternalIdentity {
   image: string | null;
 }
 
+export type AuthorizationPrompt = 'login' | 'create' | 'select_account' | 'none';
+
 export interface AuthorizationRequest {
   state: string;
   codeChallenge: string;
   nonce: string;
   redirectUri: string;
   returnTo: string;
+  prompt?: AuthorizationPrompt;
 }
 
 export interface AuthorizationCodeExchange {
