@@ -158,7 +158,7 @@ jobs:
           const previewUrl = process.env.PREVIEW_URL!;
           const previewOrigin = new URL(previewUrl).origin;
           const issuer = new URL(process.env.ZITADEL_ISSUER!).origin;
-const loginOrigin = new URL(process.env.ZITADEL_LOGIN_ORIGIN ?? process.env.ZITADEL_ISSUER!).origin;
+          const loginOrigin = new URL(process.env.ZITADEL_LOGIN_ORIGIN ?? process.env.ZITADEL_ISSUER!).origin;
           const email = process.env.SMOKE_EMAIL!;
           const password = process.env.SMOKE_PASSWORD!;
           const slug = process.env.SMOKE_WORKSPACE_SLUG!;
