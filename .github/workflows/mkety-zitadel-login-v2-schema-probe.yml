@@ -150,14 +150,14 @@ jobs:
           NODE
             then
               routed=1
-              LOCATION="$location" node -e "const u=new URL(process.env.LOCATION);console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({origin:u.origin,path:u.pathname}))"
+              LOCATION="$location" EXPECTED_ORIGIN="$expected_origin" node -e "const u=new URL(process.env.LOCATION,process.env.EXPECTED_ORIGIN);console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({origin:u.origin,path:u.pathname,relative:!/^https?:\\/\\//i.test(process.env.LOCATION)}))"
               break
             fi
             echo "Disposable Login V2 routing propagation attempt $attempt/12 not ready."
             sleep 5
           done
           [ "$routed" = 1 ] || {
-            LOCATION="$location" node -e "let u;try{u=new URL(process.env.LOCATION)}catch{};console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({routed:false,origin:u?.origin||null,path:u?.pathname||null}))"
+            LOCATION="$location" EXPECTED_ORIGIN="$expected_origin" node -e "let u;try{u=new URL(process.env.LOCATION,process.env.EXPECTED_ORIGIN)}catch{};console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({routed:false,origin:u?.origin||null,path:u?.pathname||null}))"
             exit 1
           }
 
