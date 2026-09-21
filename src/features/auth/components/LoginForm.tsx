@@ -21,9 +21,9 @@ export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin', c
     setIsLoading(true);
     setServerError(null);
     try {
-      await login(callbackUrl);
+      await login(callbackUrl, mode);
     } catch {
-      setServerError('Failed to initiate sign in');
+      setServerError(mode === 'signup' ? 'Failed to initiate account creation' : 'Failed to initiate sign in');
       setIsLoading(false);
     }
   };
