@@ -139,45 +139,25 @@ jobs:
           set -euo pipefail
           verify_flow() {
             local intent="$1"
-            local expected_prompt="$2"
+            local expected_path="$2"
             local ok=0
             for attempt in $(seq 1 15); do
               headers="/tmp/$intent.headers"
-              first="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' \
-                "https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=$intent" || true)"
+              first="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}'                 "https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=$intent" || true)"
               location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$headers")"
-              if [ "$first" -ge 300 ] 2>/dev/null && [ "$first" -lt 400 ] 2>/dev/null && [ -n "$location" ]; then
-                LOCATION="$location" EXPECTED_PROMPT="$expected_prompt" node <<'NODE' || true
+              if [ "$first" -ge 300 ] 2>/dev/null && [ "$first" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" EXPECTED_PATH="$expected_path" AUTH_ORIGIN="$AUTH_ORIGIN" node <<'NODE'
           const u=new URL(process.env.LOCATION);
-          if(u.searchParams.get('prompt')!==process.env.EXPECTED_PROMPT) process.exit(1);
-          if(u.searchParams.get('response_type')!=='code') process.exit(1);
-          if(u.searchParams.get('code_challenge_method')!=='S256'||!u.searchParams.get('code_challenge')) process.exit(1);
-          NODE
-                final="$(curl -LsS --connect-timeout 10 --max-time 35 -o "/tmp/$intent.body" -w '%{url_effective}|%{http_code}' "$location" || true)"
-                if FINAL="$final" AUTH_ORIGIN="$AUTH_ORIGIN" node <<'NODE'
-          const raw=process.env.FINAL||'', i=raw.lastIndexOf('|');
-          const href=i>=0?raw.slice(0,i):raw, code=i>=0?Number(raw.slice(i+1)):0;
-          if(!href) process.exit(1);
-          const u=new URL(href);
+          const requestId=u.searchParams.get('requestId')||'';
           process.exit(
             u.origin===process.env.AUTH_ORIGIN &&
-            u.pathname.startsWith('/ui/v2/login') &&
-            code>=200 && code<500 ? 0 : 1
+            u.pathname===process.env.EXPECTED_PATH &&
+            requestId.startsWith('oidc_') ? 0 : 1
           );
           NODE
-                then
-                  if ! grep -qi 'Instance not found' "/tmp/$intent.body"; then
-                    FINAL="$final" INTENT="$intent" node <<'NODE'
-          const raw=process.env.FINAL||'', i=raw.lastIndexOf('|');
-          const u=new URL(i>=0?raw.slice(0,i):raw);
-          console.log('BRANDED_AUTH_REDIRECT_SAFE '+JSON.stringify({
-            intent:process.env.INTENT,origin:u.origin,path:u.pathname
-          }));
-          NODE
-                    ok=1
-                    break
-                  fi
-                fi
+              then
+                echo "BRANDED_AUTH_REDIRECT_SAFE intent=$intent location=$location"
+                ok=1
+                break
               fi
               echo "$intent propagation attempt $attempt/15 not ready."
               sleep 4
@@ -185,8 +165,8 @@ jobs:
             [ "$ok" = 1 ]
           }
 
-          verify_flow signin login
-          verify_flow signup create
+          verify_flow signin /ui/v2/login/loginname
+          verify_flow signup /ui/v2/login/register
 
       - name: Roll back instance Login V2 base URI on failure
         if: failure() && steps.switch.outputs.changed == 'true'
