@@ -8,7 +8,7 @@
 import { and, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { db } from '@/shared/db';
+import { withRequestDatabase } from '@/shared/db/request';
 import * as schema from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -31,12 +31,14 @@ async function getCurrentMembershipRole(tenantSlug: string, userId: string): Pro
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) return null;
 
-  const membership = await db.query.tenantMemberships.findFirst({
-    where: and(eq(schema.tenantMemberships.tenantId, tenant.id), eq(schema.tenantMemberships.userId, userId)),
-    columns: { role: true },
-  });
+  return withRequestDatabase(async (database) => {
+    const membership = await database.query.tenantMemberships.findFirst({
+      where: and(eq(schema.tenantMemberships.tenantId, tenant.id), eq(schema.tenantMemberships.userId, userId)),
+      columns: { role: true },
+    });
 
-  return membership?.role ?? null;
+    return membership?.role ?? null;
+  });
 }
 
 /**
@@ -156,13 +158,15 @@ export async function getAllRoles(): Promise<Record<string, TenantRole>> {
   const session = await auth();
   if (!session?.user?.id) return {};
 
-  const memberships = await db.query.tenantMemberships.findMany({
-    where: eq(schema.tenantMemberships.userId, session.user.id),
-    columns: { role: true },
-    with: { tenant: { columns: { slug: true } } },
-  });
+  return withRequestDatabase(async (database) => {
+    const memberships = await database.query.tenantMemberships.findMany({
+      where: eq(schema.tenantMemberships.userId, session.user.id),
+      columns: { role: true },
+      with: { tenant: { columns: { slug: true } } },
+    });
 
-  return Object.fromEntries(memberships.map((membership) => [membership.tenant.slug, membership.role]));
+    return Object.fromEntries(memberships.map((membership) => [membership.tenant.slug, membership.role]));
+  });
 }
 
 // ============================================================================
