@@ -1,0 +1,59 @@
+name: Mkety Production Auth Second Hop Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-auth-second-hop-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    steps:
+      - name: Inspect Mkety first redirect and ZITADEL second redirect
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for intent in signin signup; do
+            h1="/tmp/$intent-1.headers"
+            code1="$(curl -sS --connect-timeout 8 --max-time 20 -D "$h1" -o /dev/null -w '%{http_code}'               "https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=$intent")"
+            loc1="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h1")"
+            [ "$code1" -ge 300 ] && [ "$code1" -lt 400 ] && [ -n "$loc1" ]
+
+            L1="$loc1" node <<'NODE'
+          const u=new URL(process.env.L1);
+          console.log('MKETY_FIRST_HOP_SAFE '+JSON.stringify({origin:u.origin,path:u.pathname,prompt:u.searchParams.get('prompt')}));
+          NODE
+
+            h2="/tmp/$intent-2.headers"
+            code2="$(curl -sS --connect-timeout 8 --max-time 20 -D "$h2" -o /dev/null -w '%{http_code}' "$loc1")"
+            loc2="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h2")"
+            [ "$code2" -ge 300 ] && [ "$code2" -lt 400 ] && [ -n "$loc2" ]
+
+            L2="$loc2" INTENT="$intent" node <<'NODE'
+          const u=new URL(process.env.L2);
+          const requestId=u.searchParams.get('requestId')||'';
+          console.log('ZITADEL_SECOND_HOP_SAFE '+JSON.stringify({
+            intent:process.env.INTENT,
+            origin:u.origin,
+            path:u.pathname,
+            requestIdPrefix:requestId.slice(0,5)
+          }));
+          if(u.origin!=='https://auth.mkety.com') throw new Error('Second hop is not auth.mkety.com');
+          if(!requestId.startsWith('oidc_')) throw new Error('Second hop missing OIDC requestId');
+          NODE
+          done
+
+          cat >/tmp/status.json <<JSON
+          {"state":"success","context":"mkety/auth-second-hop","description":"ZITADEL authorize second hop resolves to auth.mkety.com for sign-in and signup.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
