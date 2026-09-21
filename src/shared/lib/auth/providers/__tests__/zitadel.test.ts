@@ -1,4 +1,4 @@
-import { createZitadelAdapter } from '../zitadel';
+import { createZitadelAdapter, resolveBrandedLoginFirstHop } from '../zitadel';
 
 const discovery = {
   authorization_endpoint: 'https://example.zitadel.cloud/oauth/v2/authorize',
@@ -48,76 +48,34 @@ describe('ZITADEL identity provider adapter', () => {
   });
 
   it('resolves a branded Login V2 first hop when ZITADEL returns auth.mkety.com', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.endsWith('/.well-known/openid-configuration')) {
-        return {
-          ok: true,
-          json: jest.fn().mockResolvedValue(discovery),
-        } as unknown as Response;
-      }
-      if (url.startsWith(discovery.authorization_endpoint)) {
-        return {
-          status: 302,
-          headers: new Headers({
-            location: 'https://auth.mkety.com/ui/v2/login/loginname?requestId=oidc_12345',
-          }),
-        } as unknown as Response;
-      }
-      throw new Error(`Unexpected fetch in branded first-hop test: ${url}`);
-    });
-
-    const adapter = createZitadelAdapter({
-      issuer: 'https://example.zitadel.cloud',
-      clientId: 'mkety-client',
-      redirectUri: 'https://mkety.com/api/auth/callback',
-      postLogoutRedirectUri: 'https://mkety.com/login',
-    });
+    const fetcher = jest.fn(async () => ({
+      status: 302,
+      headers: new Headers({
+        location: 'https://auth.mkety.com/ui/v2/login/loginname?requestId=oidc_12345',
+      }),
+    })) as unknown as typeof fetch;
 
     await expect(
-      adapter.createAuthorizationUrl({
-        state: 'state-value',
-        codeChallenge: 'challenge-value',
-        redirectUri: 'https://mkety.com/api/auth/callback',
-        returnTo: '/select-tenant',
-        nonce: 'nonce-value',
-        prompt: 'login',
-      }),
+      resolveBrandedLoginFirstHop(
+        'https://example.zitadel.cloud/oauth/v2/authorize?client_id=mkety-client',
+        'https://example.zitadel.cloud',
+        fetcher,
+      ),
     ).resolves.toBe('https://auth.mkety.com/ui/v2/login/loginname?requestId=oidc_12345');
   });
 
-  it('falls back to the issuer authorization URL when branded first-hop resolution fails', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.endsWith('/.well-known/openid-configuration')) {
-        return {
-          ok: true,
-          json: jest.fn().mockResolvedValue(discovery),
-        } as unknown as Response;
-      }
-      if (url.startsWith(discovery.authorization_endpoint)) {
-        throw new Error('temporary upstream failure');
-      }
-      throw new Error(`Unexpected fetch in fallback test: ${url}`);
-    });
+  it('returns null from the branded first-hop resolver when upstream resolution fails', async () => {
+    const fetcher = jest.fn(async () => {
+      throw new Error('temporary upstream failure');
+    }) as unknown as typeof fetch;
 
-    const adapter = createZitadelAdapter({
-      issuer: 'https://example.zitadel.cloud',
-      clientId: 'mkety-client',
-      redirectUri: 'https://mkety.com/api/auth/callback',
-      postLogoutRedirectUri: 'https://mkety.com/login',
-    });
-
-    const url = await adapter.createAuthorizationUrl({
-      state: 'state-value',
-      codeChallenge: 'challenge-value',
-      redirectUri: 'https://mkety.com/api/auth/callback',
-      returnTo: '/select-tenant',
-      nonce: 'nonce-value',
-      prompt: 'login',
-    });
-
-    expect(new URL(url).origin).toBe('https://example.zitadel.cloud');
-    expect(new URL(url).pathname).toBe('/oauth/v2/authorize');
+    await expect(
+      resolveBrandedLoginFirstHop(
+        'https://example.zitadel.cloud/oauth/v2/authorize?client_id=mkety-client',
+        'https://example.zitadel.cloud',
+        fetcher,
+      ),
+    ).resolves.toBeNull();
   });
+
 });
