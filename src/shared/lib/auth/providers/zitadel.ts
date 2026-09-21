@@ -55,7 +55,7 @@ export function createZitadelAdapter(config: ZitadelAdapterConfig): IdentityProv
     async createAuthorizationUrl(input: AuthorizationRequest): Promise<string> {
       const metadata = await discover(issuer);
       assertProviderUrl(metadata.authorization_endpoint, issuer);
-      return buildAuthorizationUrl({
+      const authorizationUrl = buildAuthorizationUrl({
         authorizationEndpoint: metadata.authorization_endpoint,
         clientId: config.clientId,
         redirectUri: input.redirectUri,
@@ -64,6 +64,37 @@ export function createZitadelAdapter(config: ZitadelAdapterConfig): IdentityProv
         nonce: input.nonce,
         prompt: input.prompt,
       });
+
+      // Keep the browser on Mkety-owned domains when the instance Login V2 base URI
+      // is configured for auth.mkety.com. ZITADEL still remains the OIDC issuer:
+      // this only resolves its front-channel authorize redirect server-side.
+      try {
+        const response = await fetch(authorizationUrl, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: { accept: 'text/html,application/xhtml+xml' },
+          signal: AbortSignal.timeout(4_000),
+        });
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (location) {
+            const brandedUrl = new URL(location, issuer);
+            const requestId = brandedUrl.searchParams.get('requestId') ?? '';
+            if (
+              brandedUrl.origin === 'https://auth.mkety.com' &&
+              brandedUrl.pathname.startsWith('/ui/v2/login/') &&
+              requestId.startsWith('oidc_')
+            ) {
+              return brandedUrl.toString();
+            }
+          }
+        }
+      } catch {
+        // Fall back to the standards-based issuer authorize endpoint. Auth remains
+        // functional even if branded first-hop resolution is temporarily unavailable.
+      }
+
+      return authorizationUrl;
     },
 
     async exchangeCode(input: AuthorizationCodeExchange): Promise<ExternalIdentity> {
