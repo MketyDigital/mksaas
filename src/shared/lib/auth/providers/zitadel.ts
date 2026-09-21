@@ -54,11 +54,15 @@ export async function resolveBrandedLoginFirstHop(
   fetcher: typeof fetch = fetch,
 ): Promise<string | null> {
   try {
+    const timeoutSignal =
+      typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(4_000)
+        : undefined;
     const response = await fetcher(authorizationUrl, {
       method: 'GET',
       redirect: 'manual',
       headers: { accept: 'text/html,application/xhtml+xml' },
-      signal: AbortSignal.timeout(4_000),
+      ...(timeoutSignal ? { signal: timeoutSignal } : {}),
     });
     if (response.status < 300 || response.status >= 400) return null;
 
