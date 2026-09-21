@@ -48,18 +48,24 @@ describe('ZITADEL identity provider adapter', () => {
   });
 
   it('resolves a branded Login V2 first hop when ZITADEL returns auth.mkety.com', async () => {
-    jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue(discovery),
-      } as unknown as Response)
-      .mockResolvedValueOnce({
-        status: 302,
-        headers: new Headers({
-          location: 'https://auth.mkety.com/ui/v2/login/loginname?requestId=oidc_12345',
-        }),
-      } as unknown as Response);
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        return {
+          ok: true,
+          json: jest.fn().mockResolvedValue(discovery),
+        } as unknown as Response;
+      }
+      if (url.startsWith(discovery.authorization_endpoint)) {
+        return {
+          status: 302,
+          headers: new Headers({
+            location: 'https://auth.mkety.com/ui/v2/login/loginname?requestId=oidc_12345',
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`Unexpected fetch in branded first-hop test: ${url}`);
+    });
 
     const adapter = createZitadelAdapter({
       issuer: 'https://example.zitadel.cloud',
@@ -81,13 +87,19 @@ describe('ZITADEL identity provider adapter', () => {
   });
 
   it('falls back to the issuer authorization URL when branded first-hop resolution fails', async () => {
-    jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue(discovery),
-      } as unknown as Response)
-      .mockRejectedValueOnce(new Error('temporary upstream failure'));
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        return {
+          ok: true,
+          json: jest.fn().mockResolvedValue(discovery),
+        } as unknown as Response;
+      }
+      if (url.startsWith(discovery.authorization_endpoint)) {
+        throw new Error('temporary upstream failure');
+      }
+      throw new Error(`Unexpected fetch in fallback test: ${url}`);
+    });
 
     const adapter = createZitadelAdapter({
       issuer: 'https://example.zitadel.cloud',
