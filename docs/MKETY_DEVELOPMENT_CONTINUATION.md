@@ -19,6 +19,20 @@ Do not restore the legacy production Hyperdrive merely because older handoff sec
 Open PRs that predate this baseline must be reconciled against current `main` before use; do not merge them as historical patches.
 
 
+### Production ZITADEL self-registration repair
+
+Post-auth-cutover validation found that the Mkety organization inherited a ZITADEL login policy with local authentication enabled but self-registration disabled. The production signup page therefore reached the hosted identity flow but could not create a new local user.
+
+The repair created an organization-scoped login policy that preserves the current effective login settings and enables `allowRegister=true` without changing the instance-wide default policy.
+
+Verification evidence:
+
+- repair run `35572460697`: success;
+- independent post-repair diagnostic run `35572489071`: success;
+- effective production policy now permits self-registration, local authentication, and username/password authentication.
+
+This means `/signup` can now use the same Mkety Auth/ZITADEL OIDC entry flow as `/login` while exposing ZITADEL's self-registration path for new users. Full user-specific callback/session verification still requires an actual browser identity, but the production infrastructure and policy gates required for registration are now green.
+
 **Status:** ACTIVE OPERATIONAL HANDOFF — PUBLIC MILESTONE PRODUCTION / APP WORK RESUMED  
 **Updated:** 2026-09-21  
 **Repository:** `MketyDigital/mksaas`  
