@@ -155,9 +155,88 @@ jobs:
           [ "$ok" = 1 ] || exit 1
           echo 'PgBouncer v2 local verified query passed.'
 
+      - name: Resolve PgBouncer v2 private IPv4 from Coolify network
+        id: resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          resolver_name="mkety-vpc-resolver-${GITHUB_SHA:0:10}"
+          node <<'NODE' >/tmp/resolver-create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.GITHUB_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/network-resolver-diagnostic/Dockerfile',
+            name:`mkety-vpc-resolver-${process.env.GITHUB_SHA.slice(0,10)}`,
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/resolver-create-response.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/resolver-create.json "$base/applications/public")"
+          [ "$code" = 201 ] || { echo "Resolver app create failed HTTP $code"; exit 1; }
+          RESOLVER_UUID="$(node -e "const x=require('/tmp/resolver-create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "::add-mask::$RESOLVER_UUID"
+          echo "uuid=$RESOLVER_UUID" >> "$GITHUB_OUTPUT"
+
+          TARGET_HOST="$PROXY_NAME" node <<'NODE' >/tmp/resolver-env.json
+          process.stdout.write(JSON.stringify({
+            key:'TARGET_HOST',
+            value:process.env.TARGET_HOST,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:true
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/resolver-env-response.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/resolver-env.json "$base/applications/$RESOLVER_UUID/envs")"
+          [ "$code" = 201 ] || { echo "Resolver env create failed HTTP $code"; exit 1; }
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/resolver-deploy.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$RESOLVER_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "Resolver deploy failed HTTP $code"; exit 1; }
+          dep="$(node -e "const x=require('/tmp/resolver-deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/resolver-dep.json
+            st="$(node -e "const x=require('/tmp/resolver-dep.json');process.stdout.write(String(x.status||''))")"
+            case "${st,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) echo "Resolver deployment failed: $st"; exit 1 ;;
+            esac
+            [ "$i" -lt 90 ] || { echo "Resolver deployment timed out"; exit 1; }
+            sleep 2
+          done
+
+          ipv4=""
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$RESOLVER_UUID/logs?lines=100&show_timestamps=false" -o /tmp/resolver-logs.json || true
+            ipv4="$(node -e "const x=require('/tmp/resolver-logs.json');const m=String(x.logs||'').match(/MKETY_TARGET_IPV4=([0-9.]+)/);process.stdout.write(m?.[1]||'')")"
+            if [ -n "$ipv4" ]; then break; fi
+            sleep 2
+          done
+          node -e "const ip=process.argv[1];const p=ip.split('.').map(Number);if(p.length!==4||p.some(n=>!Number.isInteger(n)||n<0||n>255))process.exit(1)" "$ipv4"
+          echo "::add-mask::$ipv4"
+          echo "ipv4=$ipv4" >> "$GITHUB_OUTPUT"
+          echo 'Resolved PgBouncer v2 to a private Docker IPv4 without exposing it.'
+
+      - name: Remove private IPv4 resolver app
+        if: always() && steps.resolver.outputs.uuid != ''
+        shell: bash
+        env:
+          RESOLVER_UUID: ${{ steps.resolver.outputs.uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN"             "${COOLIFY_URL%/}/api/v1/applications/$RESOLVER_UUID" >/dev/null
+
       - name: Create or refresh Workers VPC Service for PgBouncer v2
         id: service
         shell: bash
+        env:
+          PROXY_IPV4: ${{ steps.resolver.outputs.ipv4 }}
         run: |
           set -euo pipefail
           services="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
@@ -166,7 +245,7 @@ jobs:
           NODE
           SERVICE_ID="$(cat /tmp/service-id)"
           node <<'NODE' >/tmp/service.json
-          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',tcp_port:6432,app_protocol:'postgresql',host:{hostname:process.env.PROXY_NAME,resolver_network:{tunnel_id:process.env.TUNNEL_ID}},tls_settings:{cert_verification_mode:'verify_ca'}}));
+          process.stdout.write(JSON.stringify({name:process.env.VPC_SERVICE_NAME,type:'tcp',tcp_port:6432,app_protocol:'postgresql',host:{ipv4:process.env.PROXY_IPV4,network:{tunnel_id:process.env.TUNNEL_ID}},tls_settings:{cert_verification_mode:'verify_ca'}}));
           NODE
           if [ -n "$SERVICE_ID" ]; then
             code="$(curl -sS -o /tmp/service-response.json -w '%{http_code}' -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/service.json "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
