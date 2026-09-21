@@ -44,7 +44,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
             <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_hsl(var(--primary))]" />
-                Mkety OS
+                Explore Mkety
               </div>
               <div
                 role="tablist"
