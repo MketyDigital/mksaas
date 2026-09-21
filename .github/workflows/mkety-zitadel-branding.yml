@@ -86,7 +86,29 @@ jobs:
             "themeMode": "THEME_MODE_AUTO"
           }
           JSON
-          curl --fail-with-body --silent --show-error -X PUT             "$issuer/admin/v1/policies/label"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Content-Type: application/json' --data-binary @/tmp/policy.json >/dev/null
+          current="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" "$issuer/admin/v1/policies/label")"
+          if CURRENT="$current" node <<'NODE'
+          const x=JSON.parse(process.env.CURRENT||'{}').policy||{};
+          const wanted={
+            primaryColor:'#6D5DF6',hideLoginNameSuffix:true,warnColor:'#F59E0B',
+            backgroundColor:'#F7F7F9',fontColor:'#292933',primaryColorDark:'#8E83F8',
+            backgroundColorDark:'#18181F',warnColorDark:'#FBBF24',fontColorDark:'#F1F1F4',
+            disableWatermark:true,themeMode:'THEME_MODE_AUTO'
+          };
+          process.exit(Object.entries(wanted).every(([k,v])=>x[k]===v)?0:1);
+          NODE
+          then
+            echo 'Mkety label policy already matches; no update required.'
+          else
+            code="$(curl --silent --show-error -o /tmp/policy-response.json -w '%{http_code}' -X PUT               "$issuer/admin/v1/policies/label"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data-binary @/tmp/policy.json)"
+            [ "$code" = 200 ] || {
+              CODE="$code" node <<'NODE'
+          const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/policy-response.json','utf8'))}catch{}
+          console.log('ZITADEL_BRANDING_POLICY_SAFE '+JSON.stringify({http:process.env.CODE,code:x.code||null,message:x.message||null}));
+          NODE
+              exit 1
+            }
+          fi
 
       - name: Upload Mkety logo and icon assets
         shell: bash
@@ -100,7 +122,7 @@ jobs:
           upload() {
             local endpoint="$1"
             local code
-            code="$(curl --silent --show-error -o /tmp/asset-response.json -w '%{http_code}' -X POST               "$issuer/assets/v1/$endpoint"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: image/png'               --data-binary @/tmp/mkety-logo.png)"
+            code="$(curl --silent --show-error -o /tmp/asset-response.json -w '%{http_code}' -X POST               "$issuer/assets/v1/$endpoint"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -F 'file=@/tmp/mkety-logo.png;type=image/png')"
             if [ "$code" != 200 ]; then
               CODE="$code" ENDPOINT="$endpoint" node <<'NODE'
           const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/asset-response.json','utf8'))}catch{}
