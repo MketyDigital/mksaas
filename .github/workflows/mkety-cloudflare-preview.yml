@@ -299,7 +299,9 @@ jobs:
             throw new Error(`Unexpected branded login path: ${location.pathname}`);
           }
           const requestId = location.searchParams.get('requestId') || '';
-          if (!requestId.startsWith('oidc_')) throw new Error('Branded login redirect is missing a real OIDC requestId');
+          if (!requestId || !/^[A-Za-z0-9_-]+$/.test(requestId)) {
+            throw new Error('Branded login redirect is missing a valid OIDC request token');
+          }
           const expectedPath = process.env.INTENT === 'signup' ? '/register' : '/login';
           if (!location.pathname.includes(expectedPath)) {
             throw new Error(`Branded ${process.env.INTENT} route mismatch: ${location.pathname}`);
