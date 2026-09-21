@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE_SHA: d59d409efc725e0ed66c821aab594f0d8ac04ff6
-  CERT_BRANCH: certify/d59d409
+  CANDIDATE_SHA: 9ad3917cd9033970bd1ffbaf567d1a2667b84dfe
+  CERT_BRANCH: certify/9ad3917
 
 jobs:
   dispatch:
