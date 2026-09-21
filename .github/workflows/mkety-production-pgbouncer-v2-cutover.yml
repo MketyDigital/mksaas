@@ -33,6 +33,7 @@ jobs:
       HYPERDRIVE_NAME: mkety-production-db
       PROBE_WORKER_NAME: mkety-production-db-v2-probe
       EXPECTED_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Publish repair run locator
