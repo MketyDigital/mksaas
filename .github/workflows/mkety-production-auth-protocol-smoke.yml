@@ -1,0 +1,289 @@
+name: Mkety Production Auth Protocol Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-auth-protocol-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  protocol-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+      HYPERDRIVE_NAME: mkety-production-db-v2
+      CLEANUP_WORKER_NAME: mkety-production-auth-protocol-cleanup
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Publish run locator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat >/tmp/status.json <<JSON
+          {"state":"pending","context":"mkety/production-auth-protocol","description":"Production OIDC callback/session lifecycle verification started.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+      - name: Create disposable verified ZITADEL user
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID ZITADEL_ISSUER; do
+            [ -n "${!name:-}" ] || { echo "::error::Missing $name"; exit 1; }
+          done
+          password="$(openssl rand -hex 24)Aa1!"
+          email="mkety-prod-protocol-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.com"
+          login_name="mkp${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          echo "::add-mask::$password"
+          echo "SMOKE_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "SMOKE_EMAIL=$email" >> "$GITHUB_ENV"
+          echo "SMOKE_LOGIN_NAME=$login_name" >> "$GITHUB_ENV"
+
+          project_response="$(curl --fail-with-body --silent --show-error             -X POST "${ZITADEL_ISSUER%/}/zitadel.project.v2.ProjectService/GetProject"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data "{\"projectId\":\"${ZITADEL_PROJECT_ID}\"}")"
+          organization_id="$(PROJECT_RESPONSE="$project_response" node <<'NODE'
+          const p=JSON.parse(process.env.PROJECT_RESPONSE||'{}');
+          const id=p.project?.organizationId||p.project?.organization_id;
+          if(!id) throw new Error('organization id missing');
+          process.stdout.write(id);
+          NODE
+          )"
+          echo "::add-mask::$organization_id"
+
+          payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" SMOKE_LOGIN_NAME="$login_name" ORGANIZATION_ID="$organization_id" node <<'NODE'
+          process.stdout.write(JSON.stringify({
+            organizationId:process.env.ORGANIZATION_ID,
+            username:process.env.SMOKE_LOGIN_NAME,
+            human:{
+              profile:{givenName:'Mkety',familyName:'Protocol Smoke',displayName:'Mkety Protocol Smoke',preferredLanguage:'en'},
+              email:{email:process.env.SMOKE_EMAIL,isVerified:true},
+              password:{password:process.env.SMOKE_PASSWORD,changeRequired:false}
+            }
+          }));
+          NODE
+          )"
+          created="$(curl --fail-with-body --silent --show-error             -X POST "${ZITADEL_ISSUER%/}/v2/users/new"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Content-Type: application/json' --data "$payload")"
+          uid="$(CREATED="$created" node -e "const x=JSON.parse(process.env.CREATED||'{}');const id=x.id||x.userId||x.user_id;if(!id)process.exit(1);process.stdout.write(id)")"
+          echo "::add-mask::$uid"
+          echo "SMOKE_ZITADEL_USER_ID=$uid" >> "$GITHUB_ENV"
+
+      - name: Verify real OIDC callback, Mkety session, onboarding, logout and login again
+        shell: bash
+        run: |
+          set -euo pipefail
+          app='https://mkety.com'
+          issuer="${ZITADEL_ISSUER%/}"
+          jar=/tmp/mkety-auth-cookie.jar
+          : > "$jar"
+          : > /tmp/zitadel-session-ids
+
+          cleanup_sessions() {
+            while IFS= read -r sid; do
+              [ -n "$sid" ] || continue
+              curl -sS -X DELETE "$issuer/v2/sessions/$sid"                 -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" >/dev/null || true
+            done < /tmp/zitadel-session-ids
+          }
+          trap cleanup_sessions EXIT
+
+          create_authenticated_zitadel_session() {
+            local user_json session_id session_token pass_json
+            user_json="$(LOGIN_NAME="$SMOKE_LOGIN_NAME" node <<'NODE'
+          process.stdout.write(JSON.stringify({checks:{user:{loginName:process.env.LOGIN_NAME}}}));
+          NODE
+            )"
+            created="$(curl --fail-with-body --silent --show-error -X POST "$issuer/v2/sessions"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data "$user_json")"
+            session_id="$(CREATED="$created" node -e "const x=JSON.parse(process.env.CREATED||'{}');if(!x.sessionId)process.exit(1);process.stdout.write(x.sessionId)")"
+            session_token="$(CREATED="$created" node -e "const x=JSON.parse(process.env.CREATED||'{}');if(!x.sessionToken)process.exit(1);process.stdout.write(x.sessionToken)")"
+            echo "::add-mask::$session_id"; echo "::add-mask::$session_token"
+            echo "$session_id" >> /tmp/zitadel-session-ids
+
+            pass_json="$(SMOKE_PASSWORD="$SMOKE_PASSWORD" node <<'NODE'
+          process.stdout.write(JSON.stringify({checks:{password:{password:process.env.SMOKE_PASSWORD}}}));
+          NODE
+            )"
+            updated="$(curl --fail-with-body --silent --show-error -X PATCH "$issuer/v2/sessions/$session_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data "$pass_json")"
+            session_token="$(UPDATED="$updated" node -e "const x=JSON.parse(process.env.UPDATED||'{}');if(!x.sessionToken)process.exit(1);process.stdout.write(x.sessionToken)")"
+            echo "::add-mask::$session_token"
+            printf '%s|%s' "$session_id" "$session_token"
+          }
+
+          initiate_auth_request() {
+            local intent="$1" h=/tmp/mkety-login.headers location zh=/tmp/zitadel-authorize.headers zlocation
+            curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o /dev/null -c "$jar" -b "$jar"               "$app/api/auth/login?returnTo=/select-tenant&intent=$intent"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h")"
+            [ -n "$location" ] || { echo 'Mkety auth login did not return Location'; return 1; }
+
+            LOCATION="$location" INTENT="$intent" ZITADEL_ISSUER="$issuer" node <<'NODE'
+          const u=new URL(process.env.LOCATION), issuer=new URL(process.env.ZITADEL_ISSUER);
+          const expected=process.env.INTENT==='signup'?'create':'login';
+          if(u.origin!==issuer.origin) throw new Error('issuer mismatch');
+          if(u.searchParams.get('prompt')!==expected) throw new Error('prompt mismatch');
+          if(u.searchParams.get('response_type')!=='code') throw new Error('response type mismatch');
+          if(u.searchParams.get('code_challenge_method')!=='S256'||!u.searchParams.get('code_challenge')) throw new Error('PKCE missing');
+          NODE
+
+            curl -sS --connect-timeout 10 --max-time 25 -D "$zh" -o /dev/null -c "$jar" -b "$jar" "$location"
+            zlocation="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$zh")"
+            [ -n "$zlocation" ] || { echo 'ZITADEL authorize did not redirect to login app'; return 1; }
+            ZLOCATION="$zlocation" node <<'NODE'
+          const u=new URL(process.env.ZLOCATION, process.env.ZITADEL_ISSUER);
+          const raw=u.searchParams.get('requestId')||'';
+          if(!raw.startsWith('oidc_')) throw new Error('OIDC requestId missing');
+          process.stdout.write(raw.slice(5));
+          NODE
+          }
+
+          complete_one_login() {
+            local auth_id session_pair session_id session_token payload finalized callback h location
+            auth_id="$(initiate_auth_request signin)"
+            echo "::add-mask::$auth_id"
+
+            auth_request="$(curl --fail-with-body --silent --show-error               "$issuer/v2/oidc/auth_requests/$auth_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+            AUTH_REQUEST="$auth_request" node <<'NODE'
+          const x=JSON.parse(process.env.AUTH_REQUEST||'{}').authRequest;
+          if(!x?.id||x.redirectUri!=='https://mkety.com/api/auth/callback') throw new Error('auth request callback mismatch');
+          NODE
+
+            session_pair="$(create_authenticated_zitadel_session)"
+            session_id="${session_pair%%|*}"
+            session_token="${session_pair#*|}"
+            payload="$(SESSION_ID="$session_id" SESSION_TOKEN="$session_token" node <<'NODE'
+          process.stdout.write(JSON.stringify({session:{sessionId:process.env.SESSION_ID,sessionToken:process.env.SESSION_TOKEN}}));
+          NODE
+            )"
+            finalized="$(curl --fail-with-body --silent --show-error -X POST               "$issuer/v2/oidc/auth_requests/$auth_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data "$payload")"
+            callback="$(FINALIZED="$finalized" node -e "const x=JSON.parse(process.env.FINALIZED||'{}');if(!x.callbackUrl)process.exit(1);process.stdout.write(x.callbackUrl)")"
+
+            h=/tmp/mkety-callback.headers
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o /dev/null -c "$jar" -b "$jar" -w '%{http_code}' "$callback")"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h")"
+            [ "$code" -ge 300 ] && [ "$code" -lt 400 ] || { echo "Mkety callback HTTP $code"; return 1; }
+            [ "$location" = "/select-tenant" ] || [ "$location" = "$app/select-tenant" ] || {
+              echo "Unexpected Mkety callback location: $location"; return 1;
+            }
+
+            session_json="$(curl -fsS -b "$jar" "$app/api/auth/session")"
+            SESSION_JSON="$session_json" SMOKE_EMAIL="$SMOKE_EMAIL" node <<'NODE'
+          const x=JSON.parse(process.env.SESSION_JSON||'null');
+          if(x?.user?.email!==process.env.SMOKE_EMAIL) throw new Error('Mkety session email mismatch');
+          NODE
+
+            onboarding="$(curl -fsS -b "$jar" "$app/select-tenant")"
+            printf '%s' "$onboarding" | grep -qi 'Create your first workspace' || {
+              echo 'No-workspace onboarding was not rendered'; return 1;
+            }
+          }
+
+          complete_one_login
+          echo 'First real OIDC callback created a Mkety session and reached first-workspace onboarding.'
+
+          curl -sS --connect-timeout 10 --max-time 25 -D /tmp/logout.headers -o /dev/null -c "$jar" -b "$jar"             "$app/api/auth/logout?returnTo=/login"
+          after_logout="$(curl -fsS -b "$jar" "$app/api/auth/session")"
+          AFTER_LOGOUT="$after_logout" node -e "const x=JSON.parse(process.env.AFTER_LOGOUT||'null');if(x!==null)process.exit(1)"
+          echo 'Mkety local logout revoked the application session.'
+
+          complete_one_login
+          echo 'Second real OIDC callback successfully signed the same user back in.'
+
+      - name: Resolve production Hyperdrive for exact cleanup
+        if: always()
+        id: hd
+        shell: bash
+        run: |
+          set -euo pipefail
+          list="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          LIST="$list" node <<'NODE' >/tmp/hd-id
+          const p=JSON.parse(process.env.LIST||'{}'), rows=Array.isArray(p.result)?p.result:[];
+          const m=rows.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(m.length!==1||!m[0]?.id||!m[0]?.origin?.service_id) process.exit(1);
+          process.stdout.write(String(m[0].id));
+          NODE
+          id="$(cat /tmp/hd-id)"
+          echo "::add-mask::$id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Delete exact Mkety smoke user
+        if: always() && env.SMOKE_EMAIL != ''
+        shell: bash
+        env:
+          HD_ID: ${{ steps.hd.outputs.id }}
+        run: |
+          set +e
+          mkdir -p .protocol-cleanup
+          cat > .protocol-cleanup/worker.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(request, env) {
+              if(request.method!=='POST') return new Response('method',{status:405});
+              const email=request.headers.get('x-smoke-email');
+              if(!email||!email.startsWith('mkety-prod-protocol-smoke-')||!email.endsWith('@example.com')) return new Response('invalid',{status:400});
+              const sql=postgres(env.MKETY_DB.connectionString,{max:1});
+              try {
+                const rows=await sql`delete from saas_template.users where email=${email} returning id`;
+                return Response.json({deleted:rows.length});
+              } finally { await sql.end({timeout:1}).catch(()=>{}); }
+            }
+          }
+          JS
+          cat > .protocol-cleanup/wrangler.jsonc <<JSON
+          {"name":"$CLEANUP_WORKER_NAME","main":"./worker.mjs","compatibility_date":"2026-09-06","compatibility_flags":["nodejs_compat"],"workers_dev":true,"preview_urls":false,"hyperdrive":[{"binding":"MKETY_DB","id":"$HD_ID"}]}
+          JSON
+          pnpm exec wrangler deploy --config .protocol-cleanup/wrangler.jsonc >/tmp/cleanup-deploy.log 2>&1
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          sub="$(ACCOUNT="$account" node -e "const x=JSON.parse(process.env.ACCOUNT||'{}');if(!x.success||!x.result?.subdomain)process.exit(1);process.stdout.write(x.result.subdomain)")"
+          url="https://$CLEANUP_WORKER_NAME.$sub.workers.dev/"
+          for attempt in $(seq 1 15); do
+            code="$(curl -sS --connect-timeout 5 --max-time 15 -o /tmp/cleanup.json -w '%{http_code}' -X POST -H "x-smoke-email: $SMOKE_EMAIL" "$url" || true)"
+            [ "$code" = 200 ] && break
+            sleep 2
+          done
+
+      - name: Remove cleanup Worker
+        if: always()
+        shell: bash
+        run: |
+          curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$CLEANUP_WORKER_NAME/subdomain" >/dev/null || true
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$CLEANUP_WORKER_NAME" >/dev/null || true
+
+      - name: Delete disposable ZITADEL user
+        if: always() && env.SMOKE_ZITADEL_USER_ID != ''
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error             -X DELETE "${ZITADEL_ISSUER%/}/v2/users/${SMOKE_ZITADEL_USER_ID}"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" >/dev/null
+
+      - name: Publish protocol result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=success
+          desc='Real production OIDC callback, Mkety session, onboarding, logout and login-again passed.'
+          if [ "$JOB_STATUS" != success ]; then
+            state=failure
+            desc='Production OIDC protocol lifecycle failed; disposable identity cleanup was attempted.'
+          fi
+          STATE="$state" DESC="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:'mkety/production-auth-protocol',description:process.env.DESC,target_url:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`}));
+          NODE
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null || true
