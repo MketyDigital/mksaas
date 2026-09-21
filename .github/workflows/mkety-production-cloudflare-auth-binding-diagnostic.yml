@@ -1,0 +1,109 @@
+name: Mkety Production Cloudflare Auth Binding Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-cloudflare-auth-binding-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_URL: ${{ vars.ZITADEL_URL }}
+      PRODUCTION_WORKER_NAME: mkety-platform
+      TUNNEL_NAME: mkety-production-vpc
+      DB_HOSTNAME: db-runtime.mkety.com
+      HYPERDRIVE_NAME: mkety-production-db
+      OLD_PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+      NEW_PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Inspect Cloudflare binding chain
+        shell: bash
+        run: |
+          set +e
+          publish() {
+            context="$1"; state="$2"; desc="$3"
+            CONTEXT="$context" STATE="$state" DESCRIPTION="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:String(process.env.DESCRIPTION||'').slice(0,140)}));
+          NODE
+            curl --connect-timeout 5 --max-time 12 -fsS -X POST               -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'               -H 'Content-Type: application/json' --data @/tmp/status.json               "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          }
+
+          tunnels="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null)"
+          TUNNELS="$tunnels" node <<'NODE' >/tmp/tunnel-id 2>/dev/null
+          const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.TUNNEL_NAME); if(m.length!==1||!m[0]?.id) process.exit(1); process.stdout.write(m[0].id);
+          NODE
+          if [ "$?" -eq 0 ]; then
+            tid="$(cat /tmp/tunnel-id)"
+            cfg="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tid/configurations" 2>/dev/null)"
+            CFG="$cfg" node <<'NODE' >/tmp/tunnel-mode 2>/dev/null
+            const p=JSON.parse(process.env.CFG||'{}'),a=p?.result?.config?.ingress;
+            if(!Array.isArray(a)) process.exit(1); const m=a.filter(x=>x.hostname===process.env.DB_HOSTNAME); if(m.length!==1) process.exit(1);
+            const s=String(m[0].service||'');
+            if(s===`tcp://${process.env.NEW_PROXY_NAME}:6432`) process.stdout.write('v2');
+            else if(s===`tcp://${process.env.OLD_PROXY_NAME}:6432`) process.stdout.write('legacy');
+            else process.stdout.write('unexpected');
+            NODE
+            tm="$(cat /tmp/tunnel-mode 2>/dev/null)"
+            if [ "$tm" = v2 ]; then publish mkety/auth-cf-tunnel success 'DB tunnel target=v2';
+            elif [ "$tm" = legacy ]; then publish mkety/auth-cf-tunnel failure 'DB tunnel target=legacy';
+            else publish mkety/auth-cf-tunnel failure 'DB tunnel target=unexpected'; fi
+          else
+            publish mkety/auth-cf-tunnel failure 'DB tunnel unresolved'
+          fi
+
+          hdlist="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" 2>/dev/null)"
+          LIST="$hdlist" node <<'NODE' >/tmp/hd-info 2>/dev/null
+          const p=JSON.parse(process.env.LIST||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME); if(m.length!==1||!m[0]?.id) process.exit(1);
+          const o=m[0].origin||{}; process.stdout.write(JSON.stringify({id:m[0].id,mode:o.service_id?'service':(o.host?'host':'unknown')}));
+          NODE
+          if [ "$?" -eq 0 ]; then
+            hdmode="$(node -e "const x=require('/tmp/hd-info');process.stdout.write(x.mode)")"
+            publish mkety/auth-cf-hyperdrive success "Hyperdrive origin=$hdmode"
+          else
+            publish mkety/auth-cf-hyperdrive failure 'Production Hyperdrive unresolved'
+          fi
+
+          settings="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PRODUCTION_WORKER_NAME/settings" 2>/dev/null)"
+          SETTINGS="$settings" HD_FILE=/tmp/hd-info node <<'NODE' >/tmp/worker-binding 2>/dev/null
+          const fs=require('node:fs'),p=JSON.parse(process.env.SETTINGS||'{}');
+          const expected=fs.existsSync(process.env.HD_FILE)?JSON.parse(fs.readFileSync(process.env.HD_FILE,'utf8')).id:null;
+          const bs=p?.result?.bindings; if(!Array.isArray(bs)) process.exit(1);
+          const b=bs.find(x=>x.name==='MKETY_DB'); if(!b) process.exit(2);
+          const id=b.id||b.hyperdrive_id||b.config_id||null;
+          process.stdout.write(JSON.stringify({type:b.type||null,matched:!!expected&&id===expected,hasId:!!id}));
+          NODE
+          case "$?" in
+            0)
+              matched="$(node -e "const x=require('/tmp/worker-binding');process.stdout.write(x.matched?'yes':'no')")"
+              if [ "$matched" = yes ]; then publish mkety/auth-cf-worker-db success 'mkety-platform MKETY_DB matches production Hyperdrive';
+              else publish mkety/auth-cf-worker-db failure 'mkety-platform MKETY_DB does not match production Hyperdrive'; fi ;;
+            2) publish mkety/auth-cf-worker-db failure 'mkety-platform has no MKETY_DB binding' ;;
+            *) publish mkety/auth-cf-worker-db failure 'Could not inspect mkety-platform bindings' ;;
+          esac
+
+          headers=/tmp/auth.h
+          status="$(curl --connect-timeout 5 --max-time 12 -sS -D "$headers" -o /dev/null -w '%{http_code}'             'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          if [ "$status" -ge 300 ] 2>/dev/null && [ "$status" -lt 400 ] 2>/dev/null && [ -n "$location" ]; then
+            LOCATION="$location" node <<'NODE'
+            const u=new URL(process.env.LOCATION),i=new URL(process.env.ZITADEL_URL);
+            process.exit(u.origin===i.origin && u.searchParams.get('code_challenge_method')==='S256' ? 0 : 1);
+            NODE
+            if [ "$?" -eq 0 ]; then publish mkety/auth-live-http success "auth HTTP=$status valid PKCE redirect"; else publish mkety/auth-live-http failure "auth HTTP=$status wrong redirect"; fi
+          else
+            publish mkety/auth-live-http failure "auth HTTP=$status no ZITADEL redirect"
+          fi
