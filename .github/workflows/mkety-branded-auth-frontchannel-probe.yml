@@ -1,0 +1,58 @@
+name: Mkety Branded Auth Frontchannel Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-branded-auth-frontchannel-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Inspect live authorize redirect contract
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          code="$(curl -sS --connect-timeout 10 --max-time 25 -D /tmp/mkety.headers -o /dev/null -w '%{http_code}'             'https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin')"
+          [ "$code" -ge 300 ] && [ "$code" -lt 400 ] || { echo "::error::Mkety login did not redirect"; exit 1; }
+
+          authorize="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' /tmp/mkety.headers)"
+          [ -n "$authorize" ] || { echo "::error::Mkety login Location missing"; exit 1; }
+
+          auth_code="$(curl -sS --connect-timeout 10 --max-time 25 -D /tmp/issuer.headers -o /tmp/issuer.body -w '%{http_code}' "$authorize")"
+          issuer_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' /tmp/issuer.headers)"
+
+          AUTHORIZE="$authorize" LOCATION="$issuer_location" CODE="$auth_code" node <<'NODE'
+          const auth=new URL(process.env.AUTHORIZE);
+          let resolved=null;
+          try{resolved=new URL(process.env.LOCATION||'', auth.origin)}catch{}
+          const relative=!!process.env.LOCATION && !/^https?:\/\//i.test(process.env.LOCATION);
+          console.log('BRANDED_AUTH_FRONTCHANNEL_SAFE '+JSON.stringify({
+            authorizeOrigin:auth.origin,
+            authorizePath:auth.pathname,
+            authorizeHttp:Number(process.env.CODE),
+            locationPresent:!!process.env.LOCATION,
+            locationRelative:relative,
+            resolvedOrigin:resolved?.origin||null,
+            resolvedPath:resolved?.pathname||null,
+            canRebase:relative && resolved?.pathname?.startsWith('/ui/v2/login/')
+          }));
+          if(!(Number(process.env.CODE)>=300 && Number(process.env.CODE)<400)) process.exit(1);
+          if(!relative || !resolved?.pathname?.startsWith('/ui/v2/login/')) process.exit(1);
+          NODE
+
+          cat >/tmp/status.json <<JSON
+          {"state":"success","context":"mkety/branded-auth-frontchannel","description":"Live ZITADEL authorize returns rebasable Login V2 path for auth.mkety.com.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
