@@ -80,9 +80,11 @@ jobs:
           set -euo pipefail
           password="$(openssl rand -hex 24)Aa1!"
           email="mkety-prod-auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.com"
+          login_name="mks${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
           echo "::add-mask::$password"
           echo "SMOKE_PASSWORD=$password" >> "$GITHUB_ENV"
           echo "SMOKE_EMAIL=$email" >> "$GITHUB_ENV"
+          echo "SMOKE_LOGIN_NAME=$login_name" >> "$GITHUB_ENV"
 
           project_response="$(curl --fail-with-body --silent --show-error             -X POST "${ZITADEL_ISSUER%/}/zitadel.project.v2.ProjectService/GetProject"             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data "{\"projectId\":\"${ZITADEL_PROJECT_ID}\"}")"
           organization_id="$(PROJECT_RESPONSE="$project_response" node <<'NODE'
@@ -94,10 +96,10 @@ jobs:
           )"
           echo "::add-mask::$organization_id"
 
-          payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" ORGANIZATION_ID="$organization_id" node <<'NODE'
+          payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" SMOKE_LOGIN_NAME="$login_name" ORGANIZATION_ID="$organization_id" node <<'NODE'
           process.stdout.write(JSON.stringify({
             organizationId:process.env.ORGANIZATION_ID,
-            username:process.env.SMOKE_EMAIL,
+            username:process.env.SMOKE_LOGIN_NAME,
             human:{
               profile:{givenName:'Mkety',familyName:'Production Smoke',displayName:'Mkety Production Auth Smoke',preferredLanguage:'en'},
               email:{email:process.env.SMOKE_EMAIL,isVerified:true},
@@ -129,6 +131,7 @@ jobs:
           const appOrigin = new URL(app).origin;
           const issuer = new URL(process.env.ZITADEL_ISSUER!).origin;
           const email = process.env.SMOKE_EMAIL!;
+          const loginName = process.env.SMOKE_LOGIN_NAME!;
           const password = process.env.SMOKE_PASSWORD!;
 
           async function visible(locator: Locator) {
@@ -167,7 +170,7 @@ jobs:
 
               const usernameInput = page.getByTestId('username-text-input').first();
               if (await visible(usernameInput)) {
-                await fillHosted(page, usernameInput, email);
+                await fillHosted(page, usernameInput, loginName);
                 await usernameInput.locator('xpath=ancestor::form[1]').locator('[data-testid="submit-button"][type="submit"]').click();
                 await page.waitForTimeout(400);
                 continue;
