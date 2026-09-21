@@ -1,0 +1,256 @@
+name: Mkety Production Auth Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-auth-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_URL: ${{ vars.ZITADEL_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      TUNNEL_NAME: mkety-production-vpc
+      DB_HOSTNAME: db-runtime.mkety.com
+      HYPERDRIVE_NAME: mkety-production-db
+      PRODUCTION_WORKER_NAME: mkety-platform
+      OLD_PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+      NEW_PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Diagnostic helper
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/publish.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          context="$1"; state="$2"; description="$3"
+          CONTEXT="$context" STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({
+            state: process.env.STATE,
+            context: process.env.CONTEXT,
+            description: String(process.env.DESCRIPTION || '').slice(0, 140),
+          }));
+          NODE
+          curl -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28'             -H 'Content-Type: application/json'             --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          SH
+          chmod 700 /tmp/publish.sh
+
+      - name: Check production credentials are wired
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          missing=()
+          for v in COOLIFY_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_URL ZITADEL_MANAGEMENT_TOKEN; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ "${#missing[@]}" -eq 0 ]; then
+            /tmp/publish.sh mkety/auth-diag-secrets success 'Required production secret/variable bindings are present.'
+          else
+            /tmp/publish.sh mkety/auth-diag-secrets failure 'One or more required production secret/variable bindings are missing.'
+            touch /tmp/diag-failed
+          fi
+
+      - name: Check Coolify PostgreSQL health/privacy/TLS
+        shell: bash
+        run: |
+          set +e
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/db.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID")"
+          if [ "$code" = 200 ] && node <<'NODE'
+          const x=require('/tmp/db.json');
+          const healthy=String(x.status||'').toLowerCase().includes('healthy');
+          process.exit(x.is_public===false && x.enable_ssl===true && healthy && !!x.internal_db_url ? 0 : 1);
+          NODE
+          then
+            /tmp/publish.sh mkety/auth-diag-db success 'Coolify PostgreSQL is private, TLS-enabled, healthy and internally addressable.'
+          else
+            /tmp/publish.sh mkety/auth-diag-db failure 'Coolify PostgreSQL health/privacy/TLS preflight failed.'
+            touch /tmp/diag-failed
+          fi
+
+      - name: Check Cloudflare tunnel DB ingress target
+        shell: bash
+        run: |
+          set +e
+          tunnels="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null)"
+          TUNNELS="$tunnels" node <<'NODE' >/tmp/tunnel-id 2>/tmp/tunnel-error
+          const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.TUNNEL_NAME);
+          if(m.length!==1||!m[0]?.id) process.exit(1);
+          process.stdout.write(String(m[0].id));
+          NODE
+          if [ "$?" -ne 0 ]; then
+            /tmp/publish.sh mkety/auth-diag-tunnel failure 'Production Cloudflare tunnel could not be resolved.'
+            touch /tmp/diag-failed
+            exit 0
+          fi
+          tid="$(cat /tmp/tunnel-id)"
+          cfg="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tid/configurations" 2>/dev/null)"
+          CFG="$cfg" node <<'NODE' >/tmp/tunnel-result
+          const p=JSON.parse(process.env.CFG||'{}');
+          const ingress=p?.result?.config?.ingress;
+          if(!Array.isArray(ingress)) process.exit(1);
+          const m=ingress.filter(x=>x.hostname===process.env.DB_HOSTNAME);
+          if(m.length!==1) process.exit(1);
+          const s=String(m[0].service||'');
+          if(s===`tcp://${process.env.NEW_PROXY_NAME}:6432`) process.stdout.write('new');
+          else if(s===`tcp://${process.env.OLD_PROXY_NAME}:6432`) process.stdout.write('old');
+          else process.stdout.write('unexpected');
+          NODE
+          result="$(cat /tmp/tunnel-result 2>/dev/null)"
+          case "$result" in
+            new) /tmp/publish.sh mkety/auth-diag-tunnel success 'DB tunnel ingress targets the verified PgBouncer v2 proxy.' ;;
+            old) /tmp/publish.sh mkety/auth-diag-tunnel failure 'DB tunnel ingress is still on the legacy PgBouncer proxy.'; touch /tmp/diag-failed ;;
+            *) /tmp/publish.sh mkety/auth-diag-tunnel failure 'DB tunnel ingress target is missing or unexpected.'; touch /tmp/diag-failed ;;
+          esac
+
+      - name: Check production Hyperdrive configuration exists
+        shell: bash
+        run: |
+          set +e
+          list="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" 2>/dev/null)"
+          LIST="$list" node <<'NODE' >/tmp/hd-result
+          const p=JSON.parse(process.env.LIST||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(m.length!==1||!m[0]?.id) process.exit(1);
+          const o=m[0].origin||{};
+          process.stdout.write(o.service_id ? 'service' : (o.host ? 'host' : 'unknown'));
+          NODE
+          if [ "$?" -eq 0 ]; then
+            mode="$(cat /tmp/hd-result)"
+            /tmp/publish.sh mkety/auth-diag-hyperdrive success "Production Hyperdrive exists and origin mode is $mode."
+          else
+            /tmp/publish.sh mkety/auth-diag-hyperdrive failure 'Production Hyperdrive is missing or ambiguous.'
+            touch /tmp/diag-failed
+          fi
+
+      - name: Check production Worker auth binding names
+        shell: bash
+        run: |
+          set +e
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json >/tmp/secrets.json 2>/tmp/wrangler.err
+          if [ "$?" -ne 0 ]; then
+            /tmp/publish.sh mkety/auth-diag-worker failure 'Could not inspect production Worker secret bindings.'
+            touch /tmp/diag-failed
+            exit 0
+          fi
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/secrets.json','utf8');
+          const m=raw.match(/\[\s*(?:\{|\])/);
+          const entries=m?JSON.parse(raw.slice(m.index)):[];
+          const names=new Set(entries.map(x=>x.name));
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET','NEXT_PUBLIC_APP_URL'];
+          process.exit(required.every(k=>names.has(k))?0:1);
+          NODE
+          if [ "$?" -eq 0 ]; then
+            /tmp/publish.sh mkety/auth-diag-worker success 'Production Worker has all required Mkety Auth binding names.'
+          else
+            /tmp/publish.sh mkety/auth-diag-worker failure 'Production Worker is missing one or more Mkety Auth binding names.'
+            touch /tmp/diag-failed
+          fi
+
+      - name: Check ZITADEL issuer metadata
+        shell: bash
+        run: |
+          set +e
+          issuer="${ZITADEL_URL%/}"
+          code="$(curl -sS -o /tmp/oidc.json -w '%{http_code}' "$issuer/.well-known/openid-configuration")"
+          if [ "$code" = 200 ] && ISSUER="$issuer" node <<'NODE'
+          const x=require('/tmp/oidc.json');
+          process.exit(x.issuer && x.authorization_endpoint && x.token_endpoint ? 0 : 1);
+          NODE
+          then
+            /tmp/publish.sh mkety/auth-diag-zitadel success 'ZITADEL OIDC discovery is reachable and complete.'
+          else
+            /tmp/publish.sh mkety/auth-diag-zitadel failure 'ZITADEL OIDC discovery failed.'
+            touch /tmp/diag-failed
+          fi
+
+      - name: Check live login/signup HTML
+        shell: bash
+        run: |
+          set +e
+          failed=0
+          for path in /login /signup; do
+            headers="/tmp/${path#/}.headers"; body="/tmp/${path#/}.body"
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o "$body" -w '%{http_code}' "https://mkety.com$path")"
+            ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
+            [ "$code" = 200 ] && printf '%s' "$ct" | grep -Eqi '^text/html([;]|$)' && grep -Eqi '<!doctype html|<html' "$body" || failed=1
+          done
+          if [ "$failed" -eq 0 ]; then
+            /tmp/publish.sh mkety/auth-diag-pages success 'Live login and signup routes return browser HTML.'
+          else
+            /tmp/publish.sh mkety/auth-diag-pages failure 'Live login or signup page response contract is broken.'
+            touch /tmp/diag-failed
+          fi
+
+      - name: Check live Mkety Auth redirect + PKCE
+        shell: bash
+        run: |
+          set +e
+          headers=/tmp/auth.headers
+          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}'             'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          if [ "$status" -ge 300 ] 2>/dev/null && [ "$status" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" node <<'NODE'
+          const u=new URL(process.env.LOCATION), issuer=new URL(process.env.ZITADEL_URL);
+          process.exit(
+            u.origin===issuer.origin &&
+            u.searchParams.get('response_type')==='code' &&
+            u.searchParams.get('code_challenge_method')==='S256' &&
+            !!u.searchParams.get('code_challenge') &&
+            u.searchParams.get('redirect_uri')==='https://mkety.com/api/auth/callback' &&
+            !!u.searchParams.get('client_id') ? 0 : 1
+          );
+          NODE
+          then
+            /tmp/publish.sh mkety/auth-diag-live success 'Live /api/auth/login reaches ZITADEL with Authorization Code + PKCE S256.'
+          else
+            if [ "$status" = 000 ]; then
+              /tmp/publish.sh mkety/auth-diag-live failure 'Live /api/auth/login timed out before reaching ZITADEL.'
+            else
+              /tmp/publish.sh mkety/auth-diag-live failure "Live /api/auth/login did not produce the required ZITADEL PKCE redirect (HTTP $status)."
+            fi
+            touch /tmp/diag-failed
+          fi
+
+      - name: Publish overall diagnostic
+        if: always()
+        shell: bash
+        run: |
+          if [ -e /tmp/diag-failed ]; then
+            /tmp/publish.sh mkety/auth-diagnostic failure 'Production auth diagnostic found one or more broken dependencies.'
+            exit 1
+          fi
+          /tmp/publish.sh mkety/auth-diagnostic success 'Production auth chain is fully connected through ZITADEL and PostgreSQL.'
