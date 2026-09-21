@@ -1,5 +1,24 @@
 # Mkety Development Continuation Roadmap
 
+## 2026-09-21 verified production baseline
+
+The `mkety.com` public milestone is live and production authentication has been repaired.
+
+Current verified production contract:
+
+- `mkety.com` / `www.mkety.com` → `mkety-platform` Cloudflare Worker Custom Domains;
+- Worker runtime database access → `MKETY_DB` → `mkety-production-db-v2` Hyperdrive → Workers VPC Service → private PgBouncer/PostgreSQL path;
+- production Mkety Auth provider → ZITADEL;
+- `/login` and `/signup` are public Mkety-branded entry pages;
+- `/api/auth/login` reaches ZITADEL using Authorization Code + PKCE S256;
+- production callback → `https://mkety.com/api/auth/callback`;
+- auth cutover verification run → `35571673240`.
+
+Do not restore the legacy production Hyperdrive merely because older handoff sections reference it. Treat those sections as historical evidence. Any future DB/auth change must prove the new path independently and preserve rollback evidence.
+
+Open PRs that predate this baseline must be reconciled against current `main` before use; do not merge them as historical patches.
+
+
 **Status:** ACTIVE OPERATIONAL HANDOFF — PUBLIC MILESTONE PRODUCTION / APP WORK RESUMED  
 **Updated:** 2026-09-18  
 **Repository:** `MketyDigital/mksaas`  
