@@ -3,7 +3,7 @@
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { db } from '@/shared/db';
+import { withRequestDatabase } from '@/shared/db/request';
 import * as schema from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 
@@ -26,22 +26,24 @@ export async function createWorkspace(formData: FormData) {
 
   if (!name || !slug) throw new Error('Workspace name and slug are required.');
 
-  const existing = await db.query.tenants.findFirst({ where: eq(schema.tenants.slug, slug) });
-  if (existing) throw new Error('That workspace slug is already in use.');
+  const tenant = await withRequestDatabase(async (database) => {
+    const existing = await database.query.tenants.findFirst({ where: eq(schema.tenants.slug, slug) });
+    if (existing) throw new Error('That workspace slug is already in use.');
 
-  const tenant = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(schema.tenants)
-      .values({ name, slug, description: description || null })
-      .returning();
+    return database.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(schema.tenants)
+        .values({ name, slug, description: description || null })
+        .returning();
 
-    await tx.insert(schema.tenantMemberships).values({
-      tenantId: created.id,
-      userId: session.user.id,
-      role: 'admin',
+      await tx.insert(schema.tenantMemberships).values({
+        tenantId: created.id,
+        userId: session.user.id,
+        role: 'admin',
+      });
+
+      return created;
     });
-
-    return created;
   });
 
   redirect(`/t/${tenant.slug}`);
