@@ -45,6 +45,7 @@ jobs:
           cache: pnpm
 
       - name: Require production credentials and resolve private DB
+        id: preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -140,6 +141,7 @@ jobs:
           echo "created=true" >> "$GITHUB_OUTPUT"
 
       - name: Configure v2 runtime and mount Coolify DB CA
+        id: configure
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.uuid }}
@@ -265,6 +267,7 @@ jobs:
           echo 'db-runtime tunnel ingress switched to verified PgBouncer v2.'
 
       - name: Install exact Worker probe dependencies
+        id: install
         run: pnpm install --frozen-lockfile
 
       - name: Require production Hyperdrive SELECT 1 through v2
@@ -391,13 +394,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
+          PREFLIGHT: ${{ steps.preflight.outcome }}
+          ORIGIN: ${{ steps.origin.outcome }}
+          APP: ${{ steps.app.outcome }}
+          CONFIGURE: ${{ steps.configure.outcome }}
+          READY: ${{ steps.ready.outcome }}
+          TUNNEL: ${{ steps.tunnel.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          HYPERDRIVE: ${{ steps.hyperdrive.outcome }}
+          AUTH: ${{ steps.auth.outcome }}
         run: |
           set -euo pipefail
           state=success
           description='PgBouncer v2 DB path and live auth verification passed.'
           if [ "$JOB_STATUS" != 'success' ]; then
             state=failure
-            description='PgBouncer v2 auth repair did not verify; rollback safeguards applied.'
+            failed=unknown
+            for pair in               "preflight:$PREFLIGHT" "origin:$ORIGIN" "app:$APP" "configure:$CONFIGURE"               "ready:$READY" "tunnel:$TUNNEL" "install:$INSTALL" "hyperdrive:$HYPERDRIVE" "auth:$AUTH"; do
+              name="${pair%%:*}"; outcome="${pair#*:}"
+              if [ "$outcome" = failure ] || [ "$outcome" = cancelled ]; then failed="$name"; break; fi
+            done
+            description="Auth repair failed at stage=$failed; rollback safeguards applied."
           fi
           STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/auth-repair-status.json
           process.stdout.write(JSON.stringify({
@@ -406,4 +423,4 @@ jobs:
             description: process.env.DESCRIPTION,
           }));
           NODE
-          curl -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28'             -H 'Content-Type: application/json'             --data @/tmp/auth-repair-status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28'             -H 'Content-Type: application/json'             --data @/tmp/auth-repair-status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
