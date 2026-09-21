@@ -1,4 +1,5 @@
 name: Mkety Production ZITADEL Registration Diagnostic
+# rerun after registration repair
 
 on:
   push:
