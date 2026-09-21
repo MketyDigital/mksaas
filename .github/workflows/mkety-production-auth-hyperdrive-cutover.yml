@@ -1,5 +1,5 @@
 name: Mkety Production Auth Hyperdrive Cutover
-# production auth login/signup intent redeploy 2026-09-21
+# production onboarding request-db redeploy 2026-09-21
 
 on:
   push:
