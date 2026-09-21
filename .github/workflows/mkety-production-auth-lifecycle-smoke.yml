@@ -137,9 +137,12 @@ jobs:
 
           async function fillHosted(page: Page, input: Locator, value: string) {
             await expect(input).toBeVisible({ timeout: 8_000 });
+            await page.waitForTimeout(500);
+            await input.click();
             await input.fill('');
-            await input.pressSequentially(value, { delay: 10 });
-            await expect(input).toHaveValue(value);
+            await input.pressSequentially(value, { delay: 15 });
+            await expect(input).toHaveValue(value, { timeout: 5_000 });
+            await input.press('Tab');
           }
 
           async function completeHostedLogin(page: Page) {
