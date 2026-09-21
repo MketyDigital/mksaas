@@ -155,13 +155,13 @@ jobs:
           cat > mkety-auth-smoke.spec.ts <<'TEST'
           import { test, expect, type Locator, type Page } from '@playwright/test';
 
-          const previewUrl = process.env.PREVIEW_URL!;
+          const previewUrl = String(process.env.PREVIEW_URL);
           const previewOrigin = new URL(previewUrl).origin;
-          const issuer = new URL(process.env.ZITADEL_ISSUER!).origin;
-          const loginOrigin = new URL(process.env.ZITADEL_LOGIN_ORIGIN ?? process.env.ZITADEL_ISSUER!).origin;
-          const email = process.env.SMOKE_EMAIL!;
-          const password = process.env.SMOKE_PASSWORD!;
-          const slug = process.env.SMOKE_WORKSPACE_SLUG!;
+          const issuer = new URL(String(process.env.ZITADEL_ISSUER)).origin;
+          const loginOrigin = new URL(String(process.env.ZITADEL_LOGIN_ORIGIN || process.env.ZITADEL_ISSUER)).origin;
+          const email = String(process.env.SMOKE_EMAIL);
+          const password = String(process.env.SMOKE_PASSWORD);
+          const slug = String(process.env.SMOKE_WORKSPACE_SLUG);
 
           async function visible(locator: Locator) {
             return locator.isVisible().catch(() => false);
