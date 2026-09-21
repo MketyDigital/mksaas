@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   verify:
@@ -31,6 +32,16 @@ jobs:
       R2_BUCKET: mkety-production-db-backups
 
     steps:
+      - name: Publish DB protection run locator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/status.json <<JSON
+          {"state":"pending","context":"mkety/db-protection-run","description":"Production DB protection verification started.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
       - name: Validate dedicated credentials
         shell: bash
         run: |
