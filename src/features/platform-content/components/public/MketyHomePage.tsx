@@ -3,7 +3,6 @@ import {
   BookOpen,
   Bot,
   CheckCircle2,
-  Cloud,
   Layers3,
   Rocket,
   Shield,
@@ -209,57 +208,28 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
             </div>
           </div>
 
-          <div className="relative mx-auto min-w-0 w-full max-w-2xl rounded-[2rem] border border-primary/20 bg-card/70 p-3 shadow-[0_32px_100px_-36px_hsl(var(--primary)/0.5)] backdrop-blur-xl">
-            <div className="mb-3 flex items-center justify-between rounded-2xl border bg-background/80 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-                <span className="text-xs font-semibold uppercase tracking-[0.18em]">Mkety Platform</span>
-              </div>
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
-                Connected platform
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-3xl border bg-background/85 p-5 sm:row-span-2">
-                <div className="flex items-center gap-2 text-primary">
-                  <Cloud className="h-5 w-5" />
-                  <span className="text-sm font-semibold">One operating system</span>
-                </div>
-                <p className="mt-3 text-xl font-bold">Build. Automate. Deploy. Operate.</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Build and manage connected digital work from one Mkety experience.
-                </p>
-                <div className="mt-8 grid grid-cols-2 gap-2">
-                  {['AI', 'Automation', 'Deploy', 'Solutions'].map((label) => (
-                    <div key={label} className="rounded-2xl border bg-card p-3 text-xs font-semibold">
-                      {label}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {hero.previewItems.slice(0, 2).map((item, index) => (
-                <div key={item.label} className="rounded-3xl border bg-background/85 p-5">
+          <div className="relative mx-auto min-w-0 w-full max-w-2xl rounded-[2rem] border border-primary/20 bg-card/70 p-4 shadow-[0_32px_100px_-36px_hsl(var(--primary)/0.5)] backdrop-blur-xl sm:p-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {hero.previewItems.slice(0, 4).map((item, index) => (
+                <div
+                  key={item.label}
+                  className={
+                    index === 0
+                      ? 'rounded-3xl border border-primary/15 bg-background/90 p-5 sm:row-span-2 sm:p-6'
+                      : 'rounded-3xl border bg-background/80 p-5'
+                  }
+                >
                   <div className="mb-5 flex items-center justify-between">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                       0{index + 1}
                     </span>
                     <span className="h-2 w-2 rounded-full bg-primary/70" />
                   </div>
-                  <p className="font-semibold">{item.label}</p>
+                  <p className={index === 0 ? 'text-lg font-semibold' : 'font-semibold'}>{item.label}</p>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
                 </div>
               ))}
             </div>
-            {hero.previewItems.length > 2 && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {hero.previewItems.slice(2, 4).map((item) => (
-                  <div key={item.label} className="rounded-2xl border bg-background/70 px-4 py-3">
-                    <p className="text-xs font-semibold">{item.label}</p>
-                    <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </section>
