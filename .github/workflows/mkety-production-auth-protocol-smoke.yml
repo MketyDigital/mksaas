@@ -127,7 +127,7 @@ jobs:
           }
 
           initiate_auth_request() {
-            local intent="$1" h=/tmp/mkety-login.headers location zh=/tmp/zitadel-authorize.headers zlocation
+            local intent="$1" h=/tmp/mkety-login.headers location final_url
             curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o /dev/null -c "$jar" -b "$jar"               "$app/api/auth/login?returnTo=/select-tenant&intent=$intent"
             location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h")"
             [ -n "$location" ] || { echo 'Mkety auth login did not return Location'; return 1; }
@@ -141,13 +141,13 @@ jobs:
           if(u.searchParams.get('code_challenge_method')!=='S256'||!u.searchParams.get('code_challenge')) throw new Error('PKCE missing');
           NODE
 
-            curl -sS --connect-timeout 10 --max-time 25 -D "$zh" -o /dev/null -c "$jar" -b "$jar" "$location"
-            zlocation="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$zh")"
-            [ -n "$zlocation" ] || { echo 'ZITADEL authorize did not redirect to login app'; return 1; }
-            ZLOCATION="$zlocation" node <<'NODE'
-          const u=new URL(process.env.ZLOCATION, process.env.ZITADEL_ISSUER);
+            final_url="$(curl -sS -L --max-redirs 8 --connect-timeout 10 --max-time 35               -c "$jar" -b "$jar" -o /dev/null -w '%{url_effective}' "$location")"
+            FINAL_URL="$final_url" ZITADEL_ISSUER="$issuer" node <<'NODE'
+          const u=new URL(process.env.FINAL_URL, process.env.ZITADEL_ISSUER);
           const raw=u.searchParams.get('requestId')||'';
-          if(!raw.startsWith('oidc_')) throw new Error('OIDC requestId missing');
+          if(!raw.startsWith('oidc_')) {
+            throw new Error(`OIDC requestId missing at final hosted-login path ${u.pathname}`);
+          }
           process.stdout.write(raw.slice(5));
           NODE
           }
