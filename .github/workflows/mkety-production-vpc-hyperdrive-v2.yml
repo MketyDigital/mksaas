@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   verify:
@@ -32,6 +33,16 @@ jobs:
       DB_HOSTNAME: db-runtime.mkety.com
 
     steps:
+      - name: Publish VPC v2 run locator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/status.json <<JSON
+          {"state":"pending","context":"mkety/vpc-v2-run","description":"Isolated VPC-backed Hyperdrive v2 verification started.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -218,6 +229,10 @@ jobs:
           if [ "$ok" != 1 ]; then node -e "let x={};try{x=require('/tmp/probe.json')}catch{};console.log('VPC_HD_V2_SAFE '+JSON.stringify({stage:x.stage||null,name:x.name||null,code:x.code||null}))";exit 1;fi
           echo "ok=true" >> "$GITHUB_OUTPUT"
           echo 'VPC-backed Hyperdrive v2 SELECT 1 passed.'
+          cat > /tmp/status.json <<JSON
+          {"state":"success","context":"mkety/vpc-v2-select","description":"VPC-backed Hyperdrive v2 SELECT 1 passed.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer ${{ github.token }}" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
 
       - name: Cleanup failed v2 resources
         if: failure()
