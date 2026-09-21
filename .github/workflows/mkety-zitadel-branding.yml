@@ -1,0 +1,179 @@
+name: Mkety ZITADEL Branding
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-zitadel-branding.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  brand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_LOGO_URL: https://mkety.com/mkety-logo.png
+
+    steps:
+      - name: Publish branding locator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat >/tmp/status.json <<JSON
+          {"state":"pending","context":"mkety/zitadel-branding","description":"Applying Mkety label policy and logo to ZITADEL.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+      - name: Require ZITADEL credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${ZITADEL_ISSUER:-}" ]
+          [ -n "${ZITADEL_MANAGEMENT_TOKEN:-}" ]
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+
+      - name: Snapshot current label policy safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             "$issuer/admin/v1/policies/label" -o /tmp/policy-before.json
+          node <<'NODE'
+          const x=require('/tmp/policy-before.json').policy||{};
+          console.log('ZITADEL_BRANDING_BEFORE_SAFE '+JSON.stringify({
+            primaryColor:x.primaryColor||null,
+            backgroundColor:x.backgroundColor||null,
+            fontColor:x.fontColor||null,
+            primaryColorDark:x.primaryColorDark||null,
+            backgroundColorDark:x.backgroundColorDark||null,
+            fontColorDark:x.fontColorDark||null,
+            disableWatermark:x.disableWatermark===true,
+            hasLogo:!!x.logoUrl,
+            hasDarkLogo:!!x.logoUrlDark,
+            hasIcon:!!x.iconUrl,
+            hasDarkIcon:!!x.iconUrlDark,
+            themeMode:x.themeMode||null
+          }));
+          NODE
+
+      - name: Apply Mkety label colors and remove ZITADEL watermark
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          cat >/tmp/policy.json <<'JSON'
+          {
+            "primaryColor": "#6D5DF6",
+            "hideLoginNameSuffix": true,
+            "warnColor": "#F59E0B",
+            "backgroundColor": "#F7F7F9",
+            "fontColor": "#292933",
+            "primaryColorDark": "#8E83F8",
+            "backgroundColorDark": "#18181F",
+            "warnColorDark": "#FBBF24",
+            "fontColorDark": "#F1F1F4",
+            "disableWatermark": true,
+            "themeMode": "THEME_MODE_AUTO"
+          }
+          JSON
+          curl --fail-with-body --silent --show-error -X PUT             "$issuer/admin/v1/policies/label"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Content-Type: application/json' --data-binary @/tmp/policy.json >/dev/null
+
+      - name: Upload Mkety logo and icon assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          curl --fail-with-body --silent --show-error "$MKETY_LOGO_URL" -o /tmp/mkety-logo.png
+          [ -s /tmp/mkety-logo.png ]
+          file /tmp/mkety-logo.png | grep -qiE 'PNG image|image data'
+
+          upload() {
+            local endpoint="$1"
+            local code
+            code="$(curl --silent --show-error -o /tmp/asset-response.json -w '%{http_code}' -X POST               "$issuer/assets/v1/$endpoint"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: image/png'               --data-binary @/tmp/mkety-logo.png)"
+            if [ "$code" != 200 ]; then
+              CODE="$code" ENDPOINT="$endpoint" node <<'NODE'
+          const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/asset-response.json','utf8'))}catch{}
+          console.log('ZITADEL_ASSET_UPLOAD_SAFE '+JSON.stringify({endpoint:process.env.ENDPOINT,http:process.env.CODE,code:x.code||null,message:x.message||null}));
+          NODE
+              exit 1
+            fi
+          }
+
+          upload instance/policy/label/logo
+          upload instance/policy/label/logo/dark
+          upload instance/policy/label/icon
+          upload instance/policy/label/icon/dark
+
+      - name: Activate Mkety branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          curl --fail-with-body --silent --show-error -X POST             "$issuer/admin/v1/policies/label/_activate"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Content-Type: application/json' --data '{}' >/dev/null
+
+      - name: Verify effective Mkety branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             "$issuer/admin/v1/policies/label" -o /tmp/policy-after.json
+          node <<'NODE'
+          const x=require('/tmp/policy-after.json').policy||{};
+          const failures=[];
+          if(String(x.primaryColor||'').toUpperCase()!=='#6D5DF6') failures.push('primaryColor');
+          if(x.disableWatermark!==true) failures.push('disableWatermark');
+          if(!x.logoUrl) failures.push('logoUrl');
+          if(!x.logoUrlDark) failures.push('logoUrlDark');
+          if(!x.iconUrl) failures.push('iconUrl');
+          if(!x.iconUrlDark) failures.push('iconUrlDark');
+          if(failures.length) throw new Error('Branding verification failed: '+failures.join(', '));
+          console.log('ZITADEL_BRANDING_AFTER_SAFE '+JSON.stringify({
+            primaryColor:x.primaryColor,
+            disableWatermark:x.disableWatermark,
+            hasLogo:!!x.logoUrl,
+            hasDarkLogo:!!x.logoUrlDark,
+            hasIcon:!!x.iconUrl,
+            hasDarkIcon:!!x.iconUrlDark,
+            themeMode:x.themeMode||null
+          }));
+          NODE
+
+      - name: Smoke branded login service after label activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS --connect-timeout 8 --max-time 20 -D /tmp/h -o /tmp/b -w '%{http_code}'             'https://auth.mkety.com/ui/v2/login' || true)"
+          echo "auth.mkety.com branding smoke -> HTTP $code"
+          [ "$code" -ge 200 ] && [ "$code" -lt 500 ]
+          if grep -qi 'Instance not found' /tmp/b; then
+            echo "::error::Branded Login V2 lost instance context."
+            exit 1
+          fi
+
+      - name: Publish branding result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=success
+          desc='Mkety ZITADEL branding active: logo/assets present and ZITADEL watermark disabled.'
+          if [ "$JOB_STATUS" != success ]; then
+            state=failure
+            desc='Mkety ZITADEL branding workflow failed; inspect label-policy evidence.'
+          fi
+          STATE="$state" DESC="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:'mkety/zitadel-branding',description:process.env.DESC,target_url:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`}));
+          NODE
+          curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null || true
