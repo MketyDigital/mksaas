@@ -1,3 +1,9 @@
+const mockDatabase = { kind: 'request-db' } as never;
+
+jest.mock('@/shared/db/request', () => ({
+  withRequestDatabase: jest.fn(async (work: (database: unknown) => Promise<unknown>) => work(mockDatabase)),
+}));
+
 jest.mock('@/shared/lib/env', () => ({
   env: {
     MKETY_AUTH_PROVIDER: 'zitadel',
@@ -50,6 +56,7 @@ describe('Mkety Auth service', () => {
 
     expect(createLoginTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'zitadel', returnTo: '/select-tenant' }),
+      mockDatabase,
     );
     expect(mockProvider.createAuthorizationUrl).toHaveBeenCalledWith(
       expect.objectContaining({ state: expect.any(String), nonce: expect.any(String), codeChallenge: expect.any(String) }),
@@ -82,9 +89,18 @@ describe('Mkety Auth service', () => {
 
     const result = await completeLogin('code-1', 'state-1');
 
-    expect(createUser).toHaveBeenCalledWith({ email: 'user@example.com', name: 'Example User', image: null });
-    expect(createExternalIdentity).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', provider: 'zitadel', subject: 'subject-1' }));
-    expect(createSession).toHaveBeenCalledWith('user-1', expect.any(Date));
+    expect(consumeLoginTransaction).toHaveBeenCalledWith('state-1', mockDatabase);
+    expect(findUserByExternalIdentity).toHaveBeenCalledWith('zitadel', 'subject-1', mockDatabase);
+    expect(findUserByEmail).toHaveBeenCalledWith('user@example.com', mockDatabase);
+    expect(createUser).toHaveBeenCalledWith(
+      { email: 'user@example.com', name: 'Example User', image: null },
+      mockDatabase,
+    );
+    expect(createExternalIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', provider: 'zitadel', subject: 'subject-1' }),
+      mockDatabase,
+    );
+    expect(createSession).toHaveBeenCalledWith('user-1', expect.any(Date), mockDatabase);
     expect(result).toEqual({ token: 'session-token', expiresAt: new Date('2026-10-01T00:00:00Z'), redirectTo: '/select-tenant' });
   });
 });
