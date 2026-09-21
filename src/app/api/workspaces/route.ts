@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
-import { db } from '@/shared/db';
+import { withRequestDatabase } from '@/shared/db/request';
 import * as schema from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 
@@ -36,41 +36,45 @@ export async function POST(request: Request) {
 
   if (!name || !slug) return NextResponse.json({ success: false, error: 'Workspace name and slug are required.' }, { status: 400 });
 
-  const existing = await db.query.tenants.findFirst({ where: eq(schema.tenants.slug, slug) });
-  if (existing) return NextResponse.json({ success: false, error: 'That workspace slug is already in use.' }, { status: 409 });
+  const tenant = await withRequestDatabase(async (database) => {
+    const existing = await database.query.tenants.findFirst({ where: eq(schema.tenants.slug, slug) });
+    if (existing) return null;
 
-  const tenant = await db.transaction(async (tx) => {
-    const [created] = await tx.insert(schema.tenants).values({ name, slug, description: description || null }).returning();
-    const personName = splitName(session.user.name, session.user.email!);
-    const [person] = await tx.insert(schema.persons).values({
-      tenantId: created.id,
-      email: session.user.email!,
-      firstName: personName.firstName,
-      lastName: personName.lastName,
-      displayName: personName.displayName,
-      avatarUrl: session.user.image || null,
-      status: 'active',
-      profileInitialized: true,
-    }).returning();
+    return database.transaction(async (tx) => {
+      const [created] = await tx.insert(schema.tenants).values({ name, slug, description: description || null }).returning();
+      const personName = splitName(session.user.name, session.user.email!);
+      const [person] = await tx.insert(schema.persons).values({
+        tenantId: created.id,
+        email: session.user.email!,
+        firstName: personName.firstName,
+        lastName: personName.lastName,
+        displayName: personName.displayName,
+        avatarUrl: session.user.image || null,
+        status: 'active',
+        profileInitialized: true,
+      }).returning();
 
-    const [membership] = await tx.insert(schema.tenantMemberships).values({
-      tenantId: created.id,
-      userId: session.user.id,
-      personId: person.id,
-      role: 'admin',
-    }).returning();
+      const [membership] = await tx.insert(schema.tenantMemberships).values({
+        tenantId: created.id,
+        userId: session.user.id,
+        personId: person.id,
+        role: 'admin',
+      }).returning();
 
-    const [adminRole] = await tx.insert(schema.roles).values({
-      tenantId: created.id,
-      name: 'Admin',
-      slug: 'admin',
-      description: 'Full workspace administration access',
-      isSystem: true,
-    }).returning();
+      const [adminRole] = await tx.insert(schema.roles).values({
+        tenantId: created.id,
+        name: 'Admin',
+        slug: 'admin',
+        description: 'Full workspace administration access',
+        isSystem: true,
+      }).returning();
 
-    await tx.insert(schema.tenantMembershipRoles).values({ membershipId: membership.id, roleId: adminRole.id });
-    return created;
+      await tx.insert(schema.tenantMembershipRoles).values({ membershipId: membership.id, roleId: adminRole.id });
+      return created;
+    });
   });
+
+  if (!tenant) return NextResponse.json({ success: false, error: 'That workspace slug is already in use.' }, { status: 409 });
 
   const redirectTo = planKey
     ? `/t/${tenant.slug}/billing/checkout?plan=${encodeURIComponent(planKey)}`
