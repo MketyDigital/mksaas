@@ -67,7 +67,7 @@ The public milestone has been re-audited after production auth recovery.
 
 Current exact public candidate:
 
-`3f85da0405141182221602f25bc57ff2615d2ffb`
+`a44f672b0e89f6c6e0129c2d425cd1bed3b3aa44`
 
 Release branch:
 
@@ -75,7 +75,7 @@ Release branch:
 
 Immutable certification branch:
 
-`certify/3f85da0`
+`certify/a44f672`
 
 This candidate preserves the production sign-in/signup intent fix, approved Academy local imagery with fallback behavior, and adds actionable Mkety Contact destinations using the established `support@mkety.com`, `hello@mkety.com`, `https://t.me/mketyadmin`, and Academy channels.
 
