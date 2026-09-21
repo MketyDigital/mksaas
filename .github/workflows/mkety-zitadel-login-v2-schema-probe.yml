@@ -1,0 +1,94 @@
+name: Mkety ZITADEL Login V2 Schema Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-zitadel-login-v2-schema-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      AUTH_BASE_URI: https://auth.mkety.com/ui/v2/login
+
+    steps:
+      - name: Probe per-application Login V2 schema with disposable app
+        id: probe
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          name="mkety-login-v2-probe-${GITHUB_RUN_ID}"
+
+          NAME="$name" BASE="$AUTH_BASE_URI" node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({
+            name:process.env.NAME,
+            redirectUris:['https://example.com/callback'],
+            responseTypes:['OIDC_RESPONSE_TYPE_CODE'],
+            grantTypes:['OIDC_GRANT_TYPE_AUTHORIZATION_CODE'],
+            appType:'OIDC_APP_TYPE_WEB',
+            authMethodType:'OIDC_AUTH_METHOD_TYPE_NONE',
+            postLogoutRedirectUris:['https://example.com/logout'],
+            version:'OIDC_VERSION_1_0',
+            devMode:false,
+            accessTokenType:'OIDC_TOKEN_TYPE_BEARER',
+            loginVersion:{loginV2:{baseUri:process.env.BASE}}
+          }));
+          NODE
+
+          code="$(curl --silent --show-error -o /tmp/create-response.json -w '%{http_code}' -X POST             "$issuer/management/v1/projects/$ZITADEL_PROJECT_ID/apps/oidc"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Content-Type: application/json' --data-binary @/tmp/create.json)"
+          if [ "$code" != 200 ]; then
+            CODE="$code" node <<'NODE'
+          const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/create-response.json','utf8'))}catch{}
+          console.log('LOGIN_V2_SCHEMA_CREATE_SAFE '+JSON.stringify({http:process.env.CODE,code:x.code||null,message:x.message||null}));
+          NODE
+            exit 1
+          fi
+
+          app_id="$(node -e "const x=require('/tmp/create-response.json');if(!x.appId)process.exit(1);process.stdout.write(x.appId)")"
+          echo "::add-mask::$app_id"
+          echo "app_id=$app_id" >> "$GITHUB_OUTPUT"
+
+          curl --fail-with-body --silent --show-error             "$issuer/management/v1/projects/$ZITADEL_PROJECT_ID/apps/$app_id"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -o /tmp/app.json
+
+          APP="$(cat /tmp/app.json)" node <<'NODE'
+          const p=JSON.parse(process.env.APP||'{}'), app=p.app||{}, o=app.oidcConfig||{};
+          const lv=o.loginVersion||null;
+          console.log('LOGIN_V2_SCHEMA_READBACK '+JSON.stringify({
+            hasOidcConfig:!!app.oidcConfig,
+            loginVersion:lv,
+            redirectCount:Array.isArray(o.redirectUris)?o.redirectUris.length:0,
+            logoutCount:Array.isArray(o.postLogoutRedirectUris)?o.postLogoutRedirectUris.length:0
+          }));
+          if(!lv?.loginV2) throw new Error('Disposable app did not retain loginV2');
+          if(lv.loginV2.baseUri!==process.env.AUTH_BASE_URI) throw new Error('Disposable app baseUri mismatch');
+          NODE
+
+          cat >/tmp/status.json <<JSON
+          {"state":"success","context":"mkety/zitadel-login-v2-schema","description":"Per-app Login V2 custom base URI schema verified on disposable OIDC app.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+      - name: Delete disposable probe app
+        if: always() && steps.probe.outputs.app_id != ''
+        shell: bash
+        env:
+          APP_ID: ${{ steps.probe.outputs.app_id }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error -X DELETE             "${ZITADEL_ISSUER%/}/management/v1/projects/$ZITADEL_PROJECT_ID/apps/$APP_ID"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" >/dev/null
+          echo 'Disposable Login V2 probe app removed.'
