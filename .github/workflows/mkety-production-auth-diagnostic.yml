@@ -88,9 +88,9 @@ jobs:
           const required=['MKETY_PGBOUNCER_V2_UPSTREAM_VERIFY_OK=true','MKETY_PGBOUNCER_V2_CLIENT_TLS_OK=true','MKETY_PGBOUNCER_V2_QUERY_OK=true','MKETY_PGBOUNCER_V2_READY=true'];
           process.exit(healthy && required.every(x=>logs.includes(x)) ? 0 : 1);
           NODE
-            then publish mkety/auth-diag-proxy-v2 success 'PgBouncer v2 app exists, is healthy and has verified TLS/query readiness markers.';
-            else publish mkety/auth-diag-proxy-v2 failure 'PgBouncer v2 app exists but is not verified-ready.'; fail=1; fi
-          else publish mkety/auth-diag-proxy-v2 failure 'PgBouncer v2 app is missing in Coolify.'; fail=1; fi
+            then publish mkety/auth-diag-proxy-v2-exists success 'PgBouncer v2 app exists in Coolify.'; publish mkety/auth-diag-proxy-v2-ready success 'PgBouncer v2 is healthy with verified TLS/query readiness markers.';
+            else publish mkety/auth-diag-proxy-v2-exists success 'PgBouncer v2 app exists in Coolify.'; publish mkety/auth-diag-proxy-v2-ready failure 'PgBouncer v2 exists but is not healthy/verified-ready.'; fail=1; fi
+          else publish mkety/auth-diag-proxy-v2-exists failure 'PgBouncer v2 app is missing in Coolify.'; publish mkety/auth-diag-proxy-v2-ready failure 'PgBouncer v2 cannot be ready because the app is missing.'; fail=1; fi
 
           tunnels="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null || true)"
           tid="$(TUNNELS="$tunnels" node -e "try{const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];const m=a.filter(x=>x.name===process.env.TUNNEL_NAME);process.stdout.write(m.length===1&&m[0]?.id?String(m[0].id):'')}catch{}")"
