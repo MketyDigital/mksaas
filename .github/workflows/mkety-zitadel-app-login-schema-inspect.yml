@@ -1,0 +1,63 @@
+name: Mkety ZITADEL App Login Schema Inspect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-zitadel-app-login-schema-inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      OIDC_APP_NAME: Mkety Platform Production
+
+    steps:
+      - name: Inspect application login fields safely
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          apps="$(curl --fail-with-body --silent --show-error -X POST             "$issuer/zitadel.application.v2.ApplicationService/ListApplications"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1' -H 'Content-Type: application/json' --data '{}')"
+          app_id="$(APPS="$apps" node -e "const p=JSON.parse(process.env.APPS||'{}'),a=p.applications||[];const m=a.filter(x=>x.projectId===process.env.ZITADEL_PROJECT_ID&&x.name===process.env.OIDC_APP_NAME);if(m.length!==1)process.exit(1);process.stdout.write(m[0].applicationId)")"
+          echo "::add-mask::$app_id"
+          detail="$(curl --fail-with-body --silent --show-error -X POST             "$issuer/zitadel.application.v2.ApplicationService/GetApplication"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1' -H 'Content-Type: application/json'             --data "$(APP_ID="$app_id" node -e "process.stdout.write(JSON.stringify({applicationId:process.env.APP_ID}))")")"
+          DETAIL="$detail" node <<'NODE'
+          const p=JSON.parse(process.env.DETAIL||'{}'), a=p.application||{};
+          function scan(obj,prefix=''){
+            const out=[];
+            for(const [k,v] of Object.entries(obj||{})){
+              const path=prefix?prefix+'.'+k:k;
+              if(/login|base|uri|url|version/i.test(k)){
+                if(Array.isArray(v)) out.push([path,'array('+v.length+')']);
+                else if(v&&typeof v==='object') out.push([path,'object']);
+                else if(typeof v==='string'){
+                  const safe=/^https?:\/\//.test(v)?new URL(v).origin+new URL(v).pathname:v;
+                  out.push([path,safe]);
+                } else out.push([path,v]);
+              }
+              if(v&&typeof v==='object'&&!Array.isArray(v)) out.push(...scan(v,path));
+            }
+            return out;
+          }
+          console.log('ZITADEL_APP_TOPLEVEL_KEYS '+JSON.stringify(Object.keys(a).sort()));
+          console.log('ZITADEL_APP_LOGIN_FIELDS '+JSON.stringify(scan(a)));
+          NODE
+
+          cat >/tmp/status.json <<JSON
+          {"state":"success","context":"mkety/zitadel-app-login-schema","description":"Production ZITADEL app login schema inspected safely.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
