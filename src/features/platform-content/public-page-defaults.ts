@@ -281,11 +281,23 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'Choose the area that best matches your enquiry. Never send passwords, API keys, payment secrets or other sensitive credentials through a general enquiry.',
         items: [
-          { key: 'general', title: 'General', description: 'Questions about Mkety, products and public information.' },
+          {
+            key: 'support',
+            title: 'Product & Support',
+            description: 'Account, product, access and general Mkety support enquiries.',
+            href: 'mailto:support@mkety.com',
+          },
           {
             key: 'enterprise',
-            title: 'Enterprise',
-            description: 'Custom systems, integrations, Trading and managed implementation requirements.',
+            title: 'Enterprise & Partnerships',
+            description: 'Custom systems, integrations, Trading, partnerships and managed implementation requirements.',
+            href: 'mailto:hello@mkety.com',
+          },
+          {
+            key: 'telegram',
+            title: 'Telegram',
+            description: 'Use the established Mkety Telegram contact for direct public enquiries.',
+            href: 'https://t.me/mketyadmin',
           },
           {
             key: 'academy',
