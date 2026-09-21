@@ -47,7 +47,29 @@ Verification evidence:
 - independent post-repair diagnostic run `35572489071`: success;
 - effective production policy now permits self-registration, local authentication, and username/password authentication.
 
-This means `/signup` can now use the same Mkety Auth/ZITADEL OIDC entry flow as `/login` while exposing ZITADEL's self-registration path for new users. Full user-specific callback/session verification still requires an actual browser identity, but the production infrastructure and policy gates required for registration are now green.
+This means `/signup` can now use the same Mkety Auth/ZITADEL OIDC entry flow as `/login` while exposing ZITADEL's self-registration path for new users.
+
+### Production sign-in vs registration intent repair
+
+A live-user report showed that both Mkety `/login` and `/signup` were entering the same generic ZITADEL authorization flow. When ZITADEL remembered an older account/session, signup could therefore show the hosted account chooser instead of opening registration.
+
+The application flow now carries an explicit Mkety auth intent end to end:
+
+- Mkety sign-in → `intent=signin` → OIDC `prompt=login`;
+- Mkety signup → `intent=signup` → OIDC `prompt=create`;
+- Authorization Code + PKCE `S256`, one-time state/nonce transaction persistence, and the production callback remain unchanged.
+
+Guarded production deployment run `35573336899` passed and independently verified both live redirect contracts against the production ZITADEL issuer. Rollback was not required.
+
+Additional lifecycle verification established:
+
+- disposable verified ZITADEL identities can be created through the existing production management credential;
+- ZITADEL username/password session creation succeeds for those identities;
+- production OIDC auth-request lookup succeeds;
+- the CI management PAT intentionally cannot finalize an OIDC auth request: ZITADEL returns `403 No matching permissions found` because finalization requires the dedicated instance `IAM_LOGIN_CLIENT` / `session.link` capability;
+- do **not** grant `IAM_LOGIN_CLIENT` to the general `ZITADEL_MANAGEMENT_PAT` or an application end-user merely to make CI impersonate the hosted login. ZITADEL's hosted login already operates with the appropriate login-client authority. A future deterministic callback smoke should use a separate least-privilege login-client service account/PAT if one is provisioned.
+
+The earlier Playwright production lifecycle attempts are not evidence of a Mkety product failure: they failed inside ZITADEL's reactive hosted-login field before Mkety callback. The protocol smoke then isolated the final CI-only permission boundary above. Treat the live redirect/policy/database evidence as the production baseline unless a real browser user reports a new callback/session failure.
 
 ## Requested outcome
 
