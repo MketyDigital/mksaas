@@ -70,7 +70,9 @@ jobs:
           allow="$(node -e "const x=require('/tmp/summary.json');process.stdout.write(String(x.allowRegister))")"
           local="$(node -e "const x=require('/tmp/summary.json');process.stdout.write(String(x.allowLocalAuthentication))")"
           userpass="$(node -e "const x=require('/tmp/summary.json');process.stdout.write(String(x.allowUsernamePassword))")"
-          echo "ZITADEL_REGISTRATION_SAFE allowRegister=$allow allowLocalAuthentication=$local allowUsernamePassword=$userpass"
+          is_default="$(node -e "const x=require('/tmp/summary.json');process.stdout.write(String(x.isDefault))")"
+          echo "ZITADEL_REGISTRATION_SAFE allowRegister=$allow allowLocalAuthentication=$local allowUsernamePassword=$userpass isDefault=$is_default"
+          node -e "const x=require('/tmp/summary.json');console.log('ZITADEL_POLICY_KEYS_SAFE '+JSON.stringify({settingsKeys:x.settingsKeys,policyKeys:x.policyKeys}))"
 
           if [ "$allow" = true ] && [ "$local" = true ] && [ "$userpass" = true ]; then
             publish success 'Production ZITADEL allows self-registration and local username/password authentication.'
