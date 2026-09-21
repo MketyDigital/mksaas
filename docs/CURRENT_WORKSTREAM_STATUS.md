@@ -107,6 +107,30 @@ The earlier `3f85da0...` certification attempt correctly exposed stale test expe
 
 Production promotion remains behind the repository's guarded public cutover confirmation and must not be bypassed.
 
+
+## 2026-09-21 branded authentication cutover
+
+Customer-facing authentication is now Mkety-branded and stays on the Mkety domain:
+
+- interactive login hostname: `https://auth.mkety.com`;
+- Login V2 base path: `/ui/v2/login`;
+- ZITADEL Cloud remains the OIDC issuer/backend at the generated `*.zitadel.cloud` instance domain; do not change issuer/token validation to `auth.mkety.com`;
+- the official ZITADEL Login V2 service is self-deployed behind Mkety infrastructure with the required public-host / instance-host proxy boundary;
+- `auth.mkety.com` is a trusted ZITADEL login domain;
+- a dedicated machine identity with only `IAM_LOGIN_CLIENT` is used by the Login V2 runtime; the general management PAT is not embedded in the login service;
+- Mkety label policy is active with Mkety logo/icon assets, Mkety colors, hidden login-name suffix, and the ZITADEL watermark disabled;
+- the effective instance feature is `loginV2.required=true` with `baseUri=https://auth.mkety.com/ui/v2/login`.
+
+Guarded production cutover run `35609958644` passed. Live verification proved:
+
+- sign-in lands on `https://auth.mkety.com/ui/v2/login/loginname`;
+- signup lands on `https://auth.mkety.com/ui/v2/login/register`;
+- the rollback step was not invoked.
+
+Important implementation note: per-application `loginVersion.loginV2.baseUri` was not sufficient because the instance already had Login V2 required at instance scope; instance-level Login V2 takes precedence. Do not remove the instance base URI unless intentionally rolling back to the ZITADEL-hosted login.
+
+ZITADEL Cloud native custom domains remain a paid Pro capability. Mkety currently achieves a branded customer login hostname without changing the Cloud issuer by using the supported self-hosted Login V2 custom-base architecture.
+
 ## Requested outcome
 
 Finish the `mkety.com` public site, promote the exact certified release using Cloudflare Worker Custom Domains, verify production acceptance and rollback evidence, then move immediately into authenticated `app.mkety.com` development.
