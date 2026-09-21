@@ -35,6 +35,20 @@ Repository audit findings relevant to the public milestone:
 
 Public/auth production is now a verified baseline. Do not re-open the legacy Hyperdrive/PgBouncer repair paths unless a new production regression provides fresh evidence.
 
+### Production ZITADEL self-registration repair
+
+Post-auth-cutover validation found that the Mkety organization inherited a ZITADEL login policy with local authentication enabled but self-registration disabled. The production signup page therefore reached the hosted identity flow but could not create a new local user.
+
+The repair created an organization-scoped login policy that preserves the current effective login settings and enables `allowRegister=true` without changing the instance-wide default policy.
+
+Verification evidence:
+
+- repair run `35572460697`: success;
+- independent post-repair diagnostic run `35572489071`: success;
+- effective production policy now permits self-registration, local authentication, and username/password authentication.
+
+This means `/signup` can now use the same Mkety Auth/ZITADEL OIDC entry flow as `/login` while exposing ZITADEL's self-registration path for new users. Full user-specific callback/session verification still requires an actual browser identity, but the production infrastructure and policy gates required for registration are now green.
+
 ## Requested outcome
 
 Finish the `mkety.com` public site, promote the exact certified release using Cloudflare Worker Custom Domains, verify production acceptance and rollback evidence, then move immediately into authenticated `app.mkety.com` development.
