@@ -1,0 +1,43 @@
+name: Mkety ZITADEL Login Image Inspect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-zitadel-login-image-inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect official Login V2 image metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/zitadel/zitadel-login:v4.17.1
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE" >/dev/null
+          docker image inspect "$IMAGE" > /tmp/image.json
+          IMAGE_JSON="$(cat /tmp/image.json)" node <<'NODE'
+          const a=JSON.parse(process.env.IMAGE_JSON||'[]'), x=a[0]||{}, c=x.Config||{};
+          console.log('ZITADEL_LOGIN_IMAGE_SAFE '+JSON.stringify({
+            entrypoint:c.Entrypoint||null,
+            cmd:c.Cmd||null,
+            exposedPorts:Object.keys(c.ExposedPorts||{}),
+            workingDir:c.WorkingDir||null,
+            user:c.User||null,
+            envNames:(c.Env||[]).map(v=>String(v).split('=')[0]).sort()
+          }));
+          NODE
+          state=success
+          cat >/tmp/status.json <<JSON
+          {"state":"$state","context":"mkety/zitadel-login-image","description":"Official ZITADEL Login V2 image metadata inspected.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
