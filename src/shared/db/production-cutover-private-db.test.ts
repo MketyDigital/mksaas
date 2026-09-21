@@ -59,12 +59,13 @@ describe('production cutover private database gate', () => {
   it('pins candidate certification to the exact current public release SHA', async () => {
     const workflow = await readFile(CERTIFY_LAUNCHER_PATH, 'utf8');
 
-    expect(workflow).toContain('CANDIDATE_SHA: 9ad3917cd9033970bd1ffbaf567d1a2667b84dfe');
-    expect(workflow).toContain('CERT_BRANCH: certify/9ad3917');
+    expect(workflow).toContain('CANDIDATE_SHA: 2601f8368f91ffc75ab67d3d297aad8d523aa85e');
+    expect(workflow).toContain('CERT_BRANCH: certify/2601f83');
     expect(workflow).toContain("dispatch 'mkety-content-db-smoke.yml'");
     expect(workflow).toContain("dispatch 'mkety-public-ai-runtime-diagnostic.yml'");
     expect(workflow).toContain("dispatch 'mkety-production-preflight.yml'");
     expect(workflow).toContain("dispatch 'mkety-public-candidate-deploy.yml'");
+    expect(workflow).toContain("dispatch 'mkety-cloudflare-preview.yml'");
   });
 
   it('dispatches the guarded production cutover for the exact certified SHA', async () => {
