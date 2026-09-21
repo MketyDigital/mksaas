@@ -1,0 +1,46 @@
+name: Mkety ZITADEL Login V2 Instance Feature Inspect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-zitadel-login-v2-instance-feature-inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+
+    steps:
+      - name: Inspect effective instance Login V2 feature
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+          curl --fail-with-body --silent --show-error             "$issuer/v2/features/instance?inheritance=true"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -o /tmp/features.json
+          node <<'NODE'
+          const x=require('/tmp/features.json');
+          const l=x.loginV2||null;
+          console.log('ZITADEL_LOGIN_V2_INSTANCE_SAFE '+JSON.stringify({
+            required:l?.required??null,
+            baseUri:l?.baseUri??null,
+            source:l?.source??null
+          }));
+          NODE
+
+          cat >/tmp/status.json <<JSON
+          {"state":"success","context":"mkety/zitadel-login-v2-instance","description":"Effective instance Login V2 feature inspected safely.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
