@@ -46,8 +46,6 @@ jobs:
 
       - name: Prepare repair status helper
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           cat > /tmp/publish-repair.sh <<'SH'
           #!/usr/bin/env bash
@@ -94,6 +92,7 @@ jobs:
           echo "DB_USER=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.user)")" >> "$GITHUB_ENV"
           echo "DB_PASSWORD=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.password)")" >> "$GITHUB_ENV"
           echo "DB_NAME=$(node -e "const x=require('/tmp/db-parts.json');process.stdout.write(x.database)")" >> "$GITHUB_ENV"
+          /tmp/publish-repair.sh mkety/auth-repair-preflight success 'Production PostgreSQL preflight passed.'
 
       - name: Issue replacement-proxy Origin certificate
         id: origin
