@@ -1,0 +1,100 @@
+name: Mkety Production Hyperdrive Error Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-hyperdrive-error-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HYPERDRIVE_NAME: mkety-production-db
+      PROBE_WORKER_NAME: mkety-production-hyperdrive-error-probe
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Probe production Hyperdrive error details safely
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          hd="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HD="$hd" node <<'NODE' >/tmp/hd-id
+          const p=JSON.parse(process.env.HD||'{}'), a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(m.length!==1||!m[0]?.id) process.exit(1);
+          process.stdout.write(String(m[0].id));
+          NODE
+          HD_ID="$(cat /tmp/hd-id)"
+          echo "::add-mask::$HD_ID"
+
+          mkdir -p .diag
+          cat > .diag/hd-error.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(_r,env) {
+              let sql;
+              try {
+                sql=postgres(env.MKETY_DB.connectionString,{max:1});
+                const rows=await sql`select 1::int as ok`;
+                return Response.json({ok:rows?.[0]?.ok===1,stage:'query'},{status:200});
+              } catch(e) {
+                const safe={
+                  ok:false,
+                  stage:'query',
+                  name:String(e?.name||'Error'),
+                  code:typeof e?.code==='string'?e.code:null,
+                  severity:typeof e?.severity==='string'?e.severity:null,
+                  message:typeof e?.message==='string'?e.message.slice(0,240):null,
+                  detail:typeof e?.detail==='string'?e.detail.slice(0,240):null,
+                  hint:typeof e?.hint==='string'?e.hint.slice(0,240):null,
+                  routine:typeof e?.routine==='string'?e.routine:null,
+                  file:typeof e?.file==='string'?e.file:null
+                };
+                return Response.json(safe,{status:500});
+              } finally { if(sql) await sql.end({timeout:1}).catch(()=>{}); }
+            }
+          }
+          JS
+          cat > .diag/hd-error.jsonc <<JSON
+          {"name":"$PROBE_WORKER_NAME","main":"./hd-error.mjs","compatibility_date":"2026-09-06","compatibility_flags":["nodejs_compat"],"workers_dev":true,"preview_urls":true,"hyperdrive":[{"binding":"MKETY_DB","id":"$HD_ID"}]}
+          JSON
+          pnpm exec wrangler deploy --config .diag/hd-error.jsonc >/tmp/deploy.log 2>&1
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          sub="$(ACCOUNT="$account" node -e "const x=JSON.parse(process.env.ACCOUNT||'{}');if(!x.success||!x.result?.subdomain)process.exit(1);process.stdout.write(x.result.subdomain)")"
+          curl -sS --connect-timeout 10 --max-time 20 "https://$PROBE_WORKER_NAME.$sub.workers.dev/" -o /tmp/result.json -w '%{http_code}' >/tmp/code
+          node -e "const x=require('/tmp/result.json');console.log('HYPERDRIVE_ERROR_SAFE '+JSON.stringify(x))"
+
+          DESC="$(node -e "const x=require('/tmp/result.json'); const parts=[x.code,x.message,x.routine].filter(Boolean); process.stdout.write(parts.join(' | ').slice(0,140))")"
+          STATE=failure
+          [ "$(cat /tmp/code)" = 200 ] && STATE=success
+          STATE="$STATE" DESC="$DESC" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:'mkety/hyperdrive-error-detail',description:process.env.DESC||'No diagnostic detail'}));
+          NODE
+          curl --connect-timeout 5 --max-time 10 -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json'             --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+      - name: Cleanup probe
+        if: always()
+        shell: bash
+        run: |
+          curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME/subdomain" >/dev/null || true
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER_NAME" >/dev/null || true
