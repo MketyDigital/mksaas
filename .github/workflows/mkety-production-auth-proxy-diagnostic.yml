@@ -81,7 +81,18 @@ jobs:
           if [ "$appok" -eq 1 ] && [ "$markers" = ready ]; then
             publish mkety/auth-proxy-app success 'PgBouncer v2 app is running and has verified TLS/query readiness markers.'
           else
-            publish mkety/auth-proxy-app failure "PgBouncer v2 app is not ready (runtime=$status, markers=$markers)."
+            reason="runtime=$status; markers=$markers"
+            publish mkety/auth-proxy-app failure "PgBouncer v2 app is not ready ($reason)."
+            if [ "$appok" -ne 1 ]; then
+              publish mkety/auth-proxy-runtime failure "PgBouncer v2 runtime is not healthy/running ($status)."
+            else
+              publish mkety/auth-proxy-runtime success "PgBouncer v2 runtime is running ($status)."
+            fi
+            if [ "$markers" != ready ]; then
+              publish mkety/auth-proxy-markers failure 'PgBouncer v2 readiness markers are incomplete.'
+            else
+              publish mkety/auth-proxy-markers success 'PgBouncer v2 readiness markers are complete.'
+            fi
           fi
 
           tunnels="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null || true)"
