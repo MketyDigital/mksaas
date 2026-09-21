@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   inspect:
@@ -27,6 +28,16 @@ jobs:
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
       MKETY_HYPERDRIVE_NAME: mkety-production-db
     steps:
+      - name: Publish bridge inspection locator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/status.json <<JSON
+          {"state":"pending","context":"mkety/bridge-inspect-run","description":"Sanitized production bridge inspection started.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
       - name: Inspect sanitized bridge state
         shell: bash
         run: |
