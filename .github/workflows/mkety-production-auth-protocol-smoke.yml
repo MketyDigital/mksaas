@@ -173,7 +173,16 @@ jobs:
           NODE
             )"
             echo 'PROTO_STAGE auth_request_finalize'
-            finalized="$(curl --fail-with-body --silent --show-error -X POST               "$issuer/v2/oidc/auth_requests/$auth_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data "$payload")"
+            finalize_code="$(curl --silent --show-error -o /tmp/zitadel-finalize.json -w '%{http_code}' -X POST               "$issuer/v2/oidc/auth_requests/$auth_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data "$payload")"
+            if [ "$finalize_code" != 200 ]; then
+              FINALIZE_CODE="$finalize_code" node <<'NODE'
+          const fs=require('node:fs'); let x={};
+          try{x=JSON.parse(fs.readFileSync('/tmp/zitadel-finalize.json','utf8'))}catch{}
+          console.log('ZITADEL_FINALIZE_SAFE '+JSON.stringify({http:process.env.FINALIZE_CODE,code:x.code||null,message:x.message||null}));
+          NODE
+              return 1
+            fi
+            finalized="$(cat /tmp/zitadel-finalize.json)"
             callback="$(FINALIZED="$finalized" node -e "const x=JSON.parse(process.env.FINALIZED||'{}');if(!x.callbackUrl)process.exit(1);process.stdout.write(x.callbackUrl)")"
 
             h=/tmp/mkety-callback.headers
