@@ -315,7 +315,7 @@ jobs:
             await page.waitForURL((url) => url.origin === previewOrigin, { timeout: 20_000 });
 
             await page.goto(`${previewUrl}/create-workspace`, { waitUntil: 'networkidle' });
-            await expect(page.getByRole('heading', { name: 'Create a workspace' })).toBeVisible();
+            await expect(page.getByRole('heading', { name: 'Set up your workspace' })).toBeVisible();
             await expect(page.getByText('Sign in first.')).toHaveCount(0);
 
             const sessionResponse = await page.context().request.get(`${previewUrl}/api/auth/session`);
@@ -324,7 +324,7 @@ jobs:
             expect(session?.user?.email).toBe(email);
 
             await page.getByLabel('Workspace name').fill('Mkety Auth Smoke');
-            await page.getByLabel('Workspace slug').fill(slug);
+            await page.getByLabel(/Workspace address/i).fill(slug);
             await Promise.all([
               page.waitForURL(`**/t/${slug}`, { timeout: 20_000 }),
               page.getByRole('button', { name: 'Create workspace' }).click(),
