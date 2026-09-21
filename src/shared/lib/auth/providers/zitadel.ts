@@ -48,6 +48,39 @@ function assertProviderUrl(url: string, issuer: string): void {
   if (parsed.origin !== expected.origin) throw new Error('Identity provider endpoint is outside the configured issuer');
 }
 
+export async function resolveBrandedLoginFirstHop(
+  authorizationUrl: string,
+  issuer: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string | null> {
+  try {
+    const response = await fetcher(authorizationUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (response.status < 300 || response.status >= 400) return null;
+
+    const location = response.headers.get('location');
+    if (!location) return null;
+
+    const brandedUrl = new URL(location, issuer);
+    const requestId = brandedUrl.searchParams.get('requestId') ?? '';
+    if (
+      brandedUrl.origin === 'https://auth.mkety.com' &&
+      brandedUrl.pathname.startsWith('/ui/v2/login/') &&
+      requestId.startsWith('oidc_')
+    ) {
+      return brandedUrl.toString();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 export function createZitadelAdapter(config: ZitadelAdapterConfig): IdentityProviderAdapter {
   const issuer = normalizeIssuer(config.issuer);
 
@@ -66,35 +99,9 @@ export function createZitadelAdapter(config: ZitadelAdapterConfig): IdentityProv
       });
 
       // Keep the browser on Mkety-owned domains when the instance Login V2 base URI
-      // is configured for auth.mkety.com. ZITADEL still remains the OIDC issuer:
-      // this only resolves its front-channel authorize redirect server-side.
-      try {
-        const response = await fetch(authorizationUrl, {
-          method: 'GET',
-          redirect: 'manual',
-          headers: { accept: 'text/html,application/xhtml+xml' },
-          signal: AbortSignal.timeout(4_000),
-        });
-        if (response.status >= 300 && response.status < 400) {
-          const location = response.headers.get('location');
-          if (location) {
-            const brandedUrl = new URL(location, issuer);
-            const requestId = brandedUrl.searchParams.get('requestId') ?? '';
-            if (
-              brandedUrl.origin === 'https://auth.mkety.com' &&
-              brandedUrl.pathname.startsWith('/ui/v2/login/') &&
-              requestId.startsWith('oidc_')
-            ) {
-              return brandedUrl.toString();
-            }
-          }
-        }
-      } catch {
-        // Fall back to the standards-based issuer authorize endpoint. Auth remains
-        // functional even if branded first-hop resolution is temporarily unavailable.
-      }
-
-      return authorizationUrl;
+      // is configured for auth.mkety.com. ZITADEL remains the OIDC issuer; this only
+      // resolves its front-channel authorize redirect server-side.
+      return (await resolveBrandedLoginFirstHop(authorizationUrl, issuer)) ?? authorizationUrl;
     },
 
     async exchangeCode(input: AuthorizationCodeExchange): Promise<ExternalIdentity> {
