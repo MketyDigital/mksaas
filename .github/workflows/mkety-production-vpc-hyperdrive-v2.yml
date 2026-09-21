@@ -273,10 +273,25 @@ jobs:
           process.stdout.write(JSON.stringify({name:process.env.HYPERDRIVE_NAME,origin:{scheme:'postgresql',database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,service_id:process.env.SERVICE_ID},caching:{disabled:true}}));
           NODE
           if [ -n "$ID" ]; then
-            code="$(curl -sS -o /tmp/hd-response.json -w '%{http_code}' -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/hd.json "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$ID")"
+            endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/$ID"
+            method=PUT
           else
-            code="$(curl -sS -o /tmp/hd-response.json -w '%{http_code}' -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/hd.json "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs")"
+            endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs"
+            method=POST
           fi
+
+          code=""
+          for attempt in $(seq 1 10); do
+            code="$(curl -sS -o /tmp/hd-response.json -w '%{http_code}' -X "$method" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/hd.json "$endpoint")"
+            if [ "$code" = 200 ]; then
+              echo "Hyperdrive accepted VPC Service on attempt $attempt/10."
+              break
+            fi
+            retryable="$(node -e "let x={};try{x=require('/tmp/hd-response.json')}catch{};const m=JSON.stringify(x.errors||[]);process.stdout.write(m.includes('destination_not_found')?'true':'false')")"
+            if [ "$retryable" != true ]; then break; fi
+            echo "VPC Service not routable yet; retrying Hyperdrive registration ($attempt/10)."
+            sleep 6
+          done
           [ "$code" = 200 ] || { node -e "let x={};try{x=require('/tmp/hd-response.json')}catch{};console.log('HYPERDRIVE_CREATE_ERROR '+JSON.stringify(x.errors||[]))"; exit 1; }
           ID="$(node -e "const x=require('/tmp/hd-response.json');if(!x.success||!x.result?.id||!x.result.origin?.service_id)process.exit(1);process.stdout.write(x.result.id)")"
           echo "::add-mask::$ID"; echo "id=$ID" >> "$GITHUB_OUTPUT"
