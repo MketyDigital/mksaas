@@ -3969,4 +3969,38 @@ Examples:
 
 Infrastructure may then be Cloudflare, OCI paid resources, Azure/startup-credit resources, another provider, or customer-owned infrastructure depending on requirements and agreement.
 
-#####end:DO NOT REMOVE ANYTHING ON THIS DOCUMEMNET, ONLY ADD BELLOW HERE ANY OTHER THING:end###### 
+#####end:DO NOT REMOVE ANYTHING ON THIS DOCUMEMNET, ONLY ADD BELLOW HERE ANY OTHER THING:end######
+
+# 2026-09-21 Production State Override
+
+This section is newer than the protected historical blueprint above and overrides any older production-state statement that conflicts with it.
+
+## Public-site authority
+
+- The new `mksaas` public site is now the production site for `mkety.com` and `www.mkety.com`.
+- The old `mkety` repository is a legacy/historical reference. It is no longer the live public-site authority.
+- Do not route new public-site fixes or production cutovers back to the old repository.
+- Current public-site state and exact evidence live in `docs/CURRENT_WORKSTREAM_STATUS.md` and `docs/MKETY_DEVELOPMENT_CONTINUATION.md`.
+
+## Production authentication contract
+
+- Public entry pages: `/login` and `/signup`.
+- Auth layer: Mkety Auth with production ZITADEL OIDC.
+- OIDC flow: Authorization Code + PKCE S256.
+- Production callback: `https://mkety.com/api/auth/callback`.
+- ZITADEL self-registration is enabled for the Mkety organization; do not disable it while public signup is intended to remain available.
+- Do not bypass Mkety Auth with direct application-specific identity logic.
+
+## Production database runtime contract
+
+- Cloudflare Worker: `mkety-platform`.
+- Runtime DB binding: `MKETY_DB`.
+- Active production Hyperdrive: `mkety-production-db-v2`.
+- Network path: Hyperdrive → Workers VPC Service → private PgBouncer/PostgreSQL.
+- Do not restore the legacy Hyperdrive merely because historical handoffs reference it.
+- Production PostgreSQL must remain private, TLS-protected, backed up locally and to the dedicated R2 backup bucket, and verified through the read-only DB-protection workflow.
+
+## Pull-request and branch rule after recovery
+
+Historical certification/recovery branches and PRs must not be merged blindly. Reconcile any still-needed intent onto current `main`, then run fresh verification. The current production baseline takes precedence over stale branch state.
+
