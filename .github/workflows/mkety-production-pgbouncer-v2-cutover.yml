@@ -44,6 +44,25 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
 
+      - name: Prepare repair status helper
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/publish-repair.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          CONTEXT="$1" STATE="$2" DESCRIPTION="$3" node <<'NODE' >/tmp/repair-status.json
+          process.stdout.write(JSON.stringify({
+            state: process.env.STATE,
+            context: process.env.CONTEXT,
+            description: String(process.env.DESCRIPTION||'').slice(0,140),
+          }));
+          NODE
+          curl --connect-timeout 5 --max-time 10 -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28'             -H 'Content-Type: application/json'             --data @/tmp/repair-status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null || true
+          SH
+          chmod 700 /tmp/publish-repair.sh
+
       - name: Require production credentials and resolve private DB
         id: preflight
         shell: bash
@@ -265,6 +284,7 @@ jobs:
           node -e "const x=require('/tmp/tunnel-update.json');if(!x.success)process.exit(1)"
           echo "switched=true" >> "$GITHUB_OUTPUT"
           echo 'db-runtime tunnel ingress switched to verified PgBouncer v2.'
+          /tmp/publish-repair.sh mkety/auth-repair-tunnel success 'DB tunnel switched to verified PgBouncer v2 target.'
 
       - name: Install exact Worker probe dependencies
         id: install
@@ -321,6 +341,7 @@ jobs:
           fi
           echo "verified=true" >> "$GITHUB_OUTPUT"
           echo 'Production Hyperdrive SELECT 1 passed through PgBouncer v2.'
+          /tmp/publish-repair.sh mkety/auth-repair-hyperdrive success 'Production Hyperdrive SELECT 1 passed through PgBouncer v2.'
 
       - name: Require live Mkety auth ZITADEL redirect with PKCE
         id: auth
@@ -342,10 +363,17 @@ jobs:
           console.log('Live Mkety auth reaches ZITADEL with PKCE S256.');
           NODE
           echo "verified=true" >> "$GITHUB_OUTPUT"
+          /tmp/publish-repair.sh mkety/auth-repair-live success 'Live Mkety auth reaches ZITADEL with PKCE S256.'
 
       - name: Mark cutover verified
         id: verified
         run: echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish failed repair stage summary
+        if: failure()
+        shell: bash
+        run: |
+          /tmp/publish-repair.sh mkety/auth-repair-stage failure 'Guarded auth DB repair failed before full verification; rollback will run if tunnel changed.'
 
       - name: Restore original tunnel target on verification failure
         if: failure() && steps.tunnel.outputs.switched == 'true'
