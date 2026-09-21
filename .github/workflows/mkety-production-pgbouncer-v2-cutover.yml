@@ -123,6 +123,7 @@ jobs:
           key_pub="$(openssl pkey -in /tmp/proxy-key.pem -pubout -outform pem | sha256sum | awk '{print $1}')"
           [ "$cert_pub" = "$key_pub" ]
           echo "certificate_id=$(cat /tmp/origin-id)" >> "$GITHUB_OUTPUT"
+          /tmp/publish-repair.sh mkety/auth-repair-origin success 'Replacement PgBouncer Origin CA certificate issued and verified.'
           echo 'Replacement proxy Origin certificate verified.'
 
       - name: Create isolated PgBouncer v2 application
@@ -157,6 +158,7 @@ jobs:
           uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
           echo "::add-mask::$uuid"
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+          /tmp/publish-repair.sh mkety/auth-repair-proxy-config success 'PgBouncer v2 application exists and configuration inputs were accepted.'
           echo "created=true" >> "$GITHUB_OUTPUT"
 
       - name: Configure v2 runtime and mount Coolify DB CA
