@@ -71,6 +71,32 @@ Additional lifecycle verification established:
 
 The earlier Playwright production lifecycle attempts are not evidence of a Mkety product failure: they failed inside ZITADEL's reactive hosted-login field before Mkety callback. The protocol smoke then isolated the final CI-only permission boundary above. Treat the live redirect/policy/database evidence as the production baseline unless a real browser user reports a new callback/session failure.
 
+## 2026-09-21 public final-polish reconciliation
+
+The public-site audit was completed against current `main`, the active release branch, historical PRs, and the production auth recovery evidence.
+
+Final reconciliation completed:
+
+- restored the five approved Mkety Academy hub photos to current `main` from the already-approved release blobs and restored local-first image rendering with a safe external fallback;
+- confirmed the public release branch already carries the approved Academy image set and the explicit sign-in/signup OIDC intent repair;
+- made the public Contact experience actionable using established Mkety-owned channels:
+  - product/support: `support@mkety.com`;
+  - Enterprise/partnerships: `hello@mkety.com`;
+  - Telegram: `https://t.me/mketyadmin`;
+  - Academy: `https://academy.mkety.com`;
+- added a regression test preventing placeholder contact destinations;
+- confirmed public `/docs` renders from the Mkety CMS/default documentation tree rather than the legacy starter-template docs source;
+- closed historical PR #20 because its Trading-local bearer decision is superseded by the current central Mkety Auth Gateway authority;
+- left PR #78 on hold because it is a separate authenticated Deployments/Cloud workstream and conflicts with current `main`.
+
+Current public release candidate:
+
+- release branch: `feat/mkety-public-site-production`;
+- exact candidate SHA: `3f85da0405141182221602f25bc57ff2615d2ffb`;
+- immutable certification branch: `certify/3f85da0`.
+
+This candidate has not been described as certified until exact-SHA release checks run successfully. Production promotion remains behind the repository's guarded public cutover confirmation and must not be bypassed.
+
 ## Requested outcome
 
 Finish the `mkety.com` public site, promote the exact certified release using Cloudflare Worker Custom Domains, verify production acceptance and rollback evidence, then move immediately into authenticated `app.mkety.com` development.
