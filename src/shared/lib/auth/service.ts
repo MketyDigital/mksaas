@@ -19,7 +19,9 @@ export const MKETY_SESSION_COOKIE = 'mkety_session';
 export const MKETY_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 export const MKETY_LOGIN_TRANSACTION_TTL_SECONDS = 10 * 60;
 
-export async function beginLogin(returnTo = '/select-tenant'): Promise<string> {
+export type AuthIntent = 'signin' | 'signup';
+
+export async function beginLogin(returnTo = '/select-tenant', intent: AuthIntent = 'signin'): Promise<string> {
   const safeReturnTo = isSafeReturnTo(returnTo) ? returnTo : '/select-tenant';
   const provider = getIdentityProvider();
   const state = generateOpaqueToken();
@@ -46,6 +48,7 @@ export async function beginLogin(returnTo = '/select-tenant'): Promise<string> {
     codeChallenge: pkce.challenge,
     redirectUri: env.MKETY_AUTH_REDIRECT_URI,
     returnTo: safeReturnTo,
+    prompt: intent === 'signup' ? 'create' : 'login',
   });
 }
 
