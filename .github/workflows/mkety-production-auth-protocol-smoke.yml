@@ -72,7 +72,7 @@ jobs:
           payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" SMOKE_LOGIN_NAME="$login_name" ORGANIZATION_ID="$organization_id" node <<'NODE'
           process.stdout.write(JSON.stringify({
             organizationId:process.env.ORGANIZATION_ID,
-            username:process.env.SMOKE_LOGIN_NAME,
+            username:process.env.SMOKE_EMAIL,
             human:{
               profile:{givenName:'Mkety',familyName:'Protocol Smoke',displayName:'Mkety Protocol Smoke',preferredLanguage:'en'},
               email:{email:process.env.SMOKE_EMAIL,isVerified:true},
