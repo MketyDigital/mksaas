@@ -1,0 +1,111 @@
+name: Mkety Production Hyperdrive Wiring Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-hyperdrive-wiring-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HYPERDRIVE_NAME: mkety-production-db
+      EXPECTED_PROXY: mkety-production-pgbouncer-tls-proxy-v2
+
+    steps:
+      - name: Inspect Hyperdrive and VPC Service wiring
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          publish() {
+            CONTEXT="$1" STATE="$2" DESCRIPTION="$3" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:String(process.env.DESCRIPTION||'').slice(0,140)}));
+          NODE
+            curl --connect-timeout 5 --max-time 10 -fsS -X POST               -H "Authorization: Bearer $GH_TOKEN"               -H 'Accept: application/vnd.github+json'               -H 'X-GitHub-Api-Version: 2022-11-28'               -H 'Content-Type: application/json'               --data @/tmp/status.json               "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null || true
+          }
+
+          list="$(curl --connect-timeout 5 --max-time 12 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HD="$list" node <<'NODE' >/tmp/hd.json
+          const p=JSON.parse(process.env.HD||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(m.length!==1||!m[0]?.id) process.exit(1);
+          const x=m[0], o=x.origin||{};
+          process.stdout.write(JSON.stringify({
+            hasServiceId:!!o.service_id,
+            serviceId:o.service_id||null,
+            hasHost:!!o.host,
+            scheme:o.scheme||null,
+            database:!!o.database,
+            user:!!o.user
+          }));
+          NODE
+          if [ "$?" -ne 0 ]; then
+            publish mkety/hyperdrive-wiring failure 'Production Hyperdrive could not be uniquely resolved.'
+            exit 1
+          fi
+
+          has_service="$(node -e "const x=require('/tmp/hd.json');process.stdout.write(x.hasServiceId?'true':'false')")"
+          has_host="$(node -e "const x=require('/tmp/hd.json');process.stdout.write(x.hasHost?'true':'false')")"
+          if [ "$has_service" != true ]; then
+            publish mkety/hyperdrive-wiring failure "Production Hyperdrive is not VPC-Service-backed (hasHost=$has_host)."
+            exit 1
+          fi
+          service_id="$(node -e "const x=require('/tmp/hd.json');process.stdout.write(x.serviceId||'')")"
+          echo "::add-mask::$service_id"
+          publish mkety/hyperdrive-wiring success 'Production Hyperdrive is VPC-Service-backed.'
+
+          services="$(curl --connect-timeout 5 --max-time 12 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
+          SERVICE_ID="$service_id" SERVICES="$services" node <<'NODE' >/tmp/service.json
+          const p=JSON.parse(process.env.SERVICES||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>String(x.service_id||'')===String(process.env.SERVICE_ID||''));
+          if(m.length!==1) process.exit(1);
+          const x=m[0], h=x.host||{}, tls=x.tls_settings||{};
+          process.stdout.write(JSON.stringify({
+            name:x.name||'',
+            type:x.type||'',
+            tcp_port:Number(x.tcp_port||0),
+            app_protocol:x.app_protocol||'',
+            hostname:h.hostname||'',
+            hasTunnel:!!h?.resolver_network?.tunnel_id,
+            certMode:tls.cert_verification_mode||''
+          }));
+          NODE
+          if [ "$?" -ne 0 ]; then
+            publish mkety/vpc-service-wiring failure 'Hyperdrive VPC Service could not be resolved.'
+            exit 1
+          fi
+
+          name="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.name)")"
+          type="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.type)")"
+          port="$(node -e "const x=require('/tmp/service.json');process.stdout.write(String(x.tcp_port))")"
+          proto="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.app_protocol)")"
+          host="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.hostname)")"
+          tunnel="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.hasTunnel?'yes':'no')")"
+          cert="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.certMode)")"
+
+          publish mkety/vpc-service-details success "VPC service=$name host=$host port=$port protocol=$proto tunnel=$tunnel tls=$cert."
+          if [ "$type" = tcp ] && [ "$port" = 6432 ] && [ "$proto" = postgresql ] && [ "$tunnel" = yes ]; then
+            publish mkety/vpc-service-shape success 'VPC Service protocol/port/tunnel shape is PostgreSQL TCP/6432 through a tunnel.'
+          else
+            publish mkety/vpc-service-shape failure "Unexpected VPC Service shape: type=$type port=$port protocol=$proto tunnel=$tunnel."
+            exit 1
+          fi
+
+          if [ "$host" = "$EXPECTED_PROXY" ]; then
+            publish mkety/vpc-service-target success 'VPC Service directly targets PgBouncer v2.'
+          else
+            publish mkety/vpc-service-target failure "VPC Service target is $host, not the expected PgBouncer v2 host."
+            exit 1
+          fi
