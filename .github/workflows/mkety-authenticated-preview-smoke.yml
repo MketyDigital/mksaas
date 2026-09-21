@@ -18,6 +18,7 @@ jobs:
       ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
       ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
+      ZITADEL_LOGIN_ORIGIN: https://auth.mkety.com
     steps:
       - uses: actions/checkout@v4
 
@@ -157,6 +158,7 @@ jobs:
           const previewUrl = process.env.PREVIEW_URL!;
           const previewOrigin = new URL(previewUrl).origin;
           const issuer = new URL(process.env.ZITADEL_ISSUER!).origin;
+const loginOrigin = new URL(process.env.ZITADEL_LOGIN_ORIGIN ?? process.env.ZITADEL_ISSUER!).origin;
           const email = process.env.SMOKE_EMAIL!;
           const password = process.env.SMOKE_PASSWORD!;
           const slug = process.env.SMOKE_WORKSPACE_SLUG!;
@@ -228,7 +230,7 @@ jobs:
             while (Date.now() < deadline) {
               const current = new URL(page.url());
               if (current.origin === previewOrigin) return;
-              if (current.origin !== issuer) {
+              if (current.origin !== loginOrigin) {
                 await safeDiagnostic(page, 'unexpected-origin');
                 throw new Error(`Unexpected hosted-login origin: ${current.origin}`);
               }
@@ -310,7 +312,7 @@ jobs:
             test.setTimeout(120_000);
 
             await page.goto(`${previewUrl}/api/auth/login?returnTo=/create-workspace`, { waitUntil: 'domcontentloaded' });
-            await expect.poll(() => new URL(page.url()).origin, { timeout: 20_000 }).toBe(issuer);
+            await expect.poll(() => new URL(page.url()).origin, { timeout: 20_000 }).toBe(loginOrigin);
             await completeHostedLogin(page);
             await page.waitForURL((url) => url.origin === previewOrigin, { timeout: 20_000 });
 
