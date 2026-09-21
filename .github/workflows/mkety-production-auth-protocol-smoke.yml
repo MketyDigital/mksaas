@@ -106,7 +106,7 @@ jobs:
 
           create_authenticated_zitadel_session() {
             local user_json session_id session_token pass_json
-            user_json="$(LOGIN_NAME="$SMOKE_LOGIN_NAME" node <<'NODE'
+            user_json="$(LOGIN_NAME="$SMOKE_EMAIL" node <<'NODE'
           process.stdout.write(JSON.stringify({checks:{user:{loginName:process.env.LOGIN_NAME}}}));
           NODE
             )"
