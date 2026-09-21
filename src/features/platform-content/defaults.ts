@@ -26,6 +26,7 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoTitle: 'Mkety | Build, automate, deploy, and operate',
   defaultSeoDescription:
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
+  contactEmail: 'support@mkety.com',
   contactHref: '/contact',
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
