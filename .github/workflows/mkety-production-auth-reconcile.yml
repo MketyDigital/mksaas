@@ -170,30 +170,26 @@ jobs:
             fi
           done
 
-      - name: Verify real production ZITADEL authorization redirect and PKCE
+      - name: Verify branded production auth first hop
         shell: bash
-        env:
-          EXPECTED_CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
         run: |
           set -euo pipefail
           headers=/tmp/auth-login.headers
-          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
+          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin')"
           location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
           echo "/api/auth/login -> HTTP $status"
           if [ "$status" = '000' ]; then
-            echo "::warning::Production ZITADEL application and Worker bindings are configured, but auth initiation timed out before redirect. This indicates the Mkety Auth transaction database path remains unavailable."
+            echo "::warning::Production auth initiation timed out before redirect; database path may still be unavailable."
             exit 0
           fi
           [ "$status" -ge 300 ] && [ "$status" -lt 400 ] && [ -n "$location" ]
           LOCATION="$location" node <<'NODE'
           const u=new URL(process.env.LOCATION);
-          const issuer=new URL(process.env.MKETY_AUTH_ISSUER);
-          if(u.origin!==issuer.origin) throw new Error('ZITADEL authorization origin mismatch');
-          if(u.searchParams.get('client_id')!==process.env.EXPECTED_CLIENT_ID) throw new Error('client_id mismatch');
-          if(u.searchParams.get('redirect_uri')!==process.env.MKETY_AUTH_REDIRECT_URI) throw new Error('redirect_uri mismatch');
-          if(u.searchParams.get('response_type')!=='code') throw new Error('response_type must be code');
-          if(u.searchParams.get('code_challenge_method')!=='S256'||!u.searchParams.get('code_challenge')) throw new Error('PKCE S256 missing');
-          console.log('Production ZITADEL redirect and PKCE verified.');
+          const requestId=u.searchParams.get('requestId')||'';
+          if(u.origin!=='https://auth.mkety.com') throw new Error('Browser-visible auth redirect escaped Mkety domain');
+          if(u.pathname!=='/ui/v2/login/loginname') throw new Error('Unexpected branded sign-in path');
+          if(!requestId.startsWith('oidc_')) throw new Error('Missing real OIDC requestId');
+          console.log('Production branded Mkety auth first hop verified.');
           NODE
 
       - name: Verify final auth binding names
