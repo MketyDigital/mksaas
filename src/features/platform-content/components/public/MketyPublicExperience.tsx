@@ -162,34 +162,34 @@ const academyHubs = [
     description:
       'Practical screen sessions with React, Next.js, mobile application building, and modern deployment workflows.',
     icon: Code2,
-    image: 'https://images.unsplash.com/photo-1547082299-de196ea013d6?w=1200&auto=format&fit=crop&q=85',
+    image: '/academy-hubs/class1.jpg',
   },
   {
     title: 'Trading Masterclass',
     description:
       'Live chart study, strategy reviews, risk management, market psychology, and execution-focused learning.',
     icon: TrendingUp,
-    image: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&auto=format&fit=crop&q=85',
+    image: '/academy-hubs/class2.jpg',
   },
   {
     title: 'Digital Funnel & Marketing',
     description:
       'Build conversion-focused campaigns, social advertising systems, funnels, and measurable digital growth workflows.',
     icon: Megaphone,
-    image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&auto=format&fit=crop&q=85',
+    image: '/academy-hubs/class3.jpg',
   },
   {
     title: 'AI & Automation Lab',
     description: 'Build practical AI agents, prompt workflows, API connections, webhooks, and Mkety Flow automations.',
     icon: Bot,
-    image: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?w=1200&auto=format&fit=crop&q=85',
+    image: '/academy-hubs/class4.jpg',
   },
   {
     title: 'Certified Digital Skills',
     description:
       'Structured practical programs, collaborative projects, mentorship, and certification through the Mkety Academy ecosystem.',
     icon: GraduationCap,
-    image: 'https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=1200&auto=format&fit=crop&q=85',
+    image: '/academy-hubs/class5.jpg',
   },
 ] as const;
 
