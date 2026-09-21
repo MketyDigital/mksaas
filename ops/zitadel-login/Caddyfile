@@ -1,0 +1,8 @@
+:3000 {
+  encode zstd gzip
+
+  reverse_proxy 127.0.0.1:3001 {
+    header_up X-Zitadel-Public-Host {$ZITADEL_PUBLIC_HOST}
+    header_up X-Zitadel-Instance-Host {$ZITADEL_INSTANCE_HOST}
+  }
+}
