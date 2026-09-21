@@ -120,6 +120,13 @@ jobs:
                   return Response.json({ok:true});
                 }
                 return new Response('not found',{status:404});
+              } catch (error) {
+                return Response.json({
+                  ok:false,
+                  code:typeof error?.code==='string'?error.code:null,
+                  message:typeof error?.message==='string'?error.message.slice(0,220):'database operation failed',
+                  routine:typeof error?.routine==='string'?error.routine:null
+                },{status:500});
               } finally {
                 await sql.end({timeout:1}).catch(()=>{});
               }
@@ -162,7 +169,11 @@ jobs:
           USER_ID="$SMOKE_USER_ID" EMAIL="$SMOKE_EMAIL" HASH="$SMOKE_TOKEN_HASH" node <<'NODE' >/tmp/setup.json
           process.stdout.write(JSON.stringify({userId:process.env.USER_ID,email:process.env.EMAIL,tokenHash:process.env.HASH}));
           NODE
-          curl -fsS -X POST -H "x-smoke-key: $SMOKE_KEY" -H 'Content-Type: application/json'             --data @/tmp/setup.json "$HELPER_URL/setup" >/tmp/setup-result.json
+          code="$(curl -sS -X POST -H "x-smoke-key: $SMOKE_KEY" -H 'Content-Type: application/json'             --data @/tmp/setup.json "$HELPER_URL/setup" -o /tmp/setup-result.json -w '%{http_code}')"
+          if [ "$code" != 200 ]; then
+            node -e "const x=require('/tmp/setup-result.json');console.log('ONBOARDING_HELPER_SAFE '+JSON.stringify(x))"
+            exit 1
+          fi
           node -e "const x=require('/tmp/setup-result.json');if(x.ok!==true)process.exit(1)"
 
       - name: Verify session and create real production workspace
