@@ -1,0 +1,170 @@
+name: Mkety Production Auth Parallel Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-auth-parallel-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  coolify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Coolify and PostgreSQL
+        shell: bash
+        run: |
+          set +e
+          state=failure
+          desc='Coolify production DB API is unreachable or unhealthy.'
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 12 -sS -o /tmp/db.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/databases/$POSTGRES_UUID")"
+          if [ "$code" = 200 ] && node <<'NODE'
+          const x=require('/tmp/db.json');
+          process.exit(x.is_public===false && x.enable_ssl===true && String(x.status||'').toLowerCase().includes('healthy') && !!x.internal_db_url ? 0 : 1);
+          NODE
+          then state=success; desc='Coolify production PostgreSQL is reachable, private, TLS-enabled and healthy.'; fi
+          CONTEXT=mkety/auth-diag-coolify STATE="$state" DESCRIPTION="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:process.env.DESCRIPTION}));
+          NODE
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          [ "$state" = success ]
+
+  cloudflare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TUNNEL_NAME: mkety-production-vpc
+      DB_HOSTNAME: db-runtime.mkety.com
+      HYPERDRIVE_NAME: mkety-production-db
+      OLD_PROXY_NAME: mkety-production-pgbouncer-tls-proxy
+      NEW_PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check tunnel and Hyperdrive
+        shell: bash
+        run: |
+          set +e
+          tunnel_state=failure
+          tunnel_desc='Cloudflare production DB tunnel could not be verified.'
+          tunnels="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null)"
+          TUNNELS="$tunnels" node <<'NODE' >/tmp/tunnel-id 2>/dev/null
+          const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.TUNNEL_NAME); if(m.length!==1||!m[0]?.id) process.exit(1); process.stdout.write(m[0].id);
+          NODE
+          if [ "$?" -eq 0 ]; then
+            tid="$(cat /tmp/tunnel-id)"
+            cfg="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tid/configurations" 2>/dev/null)"
+            CFG="$cfg" node <<'NODE' >/tmp/tunnel-mode 2>/dev/null
+            const p=JSON.parse(process.env.CFG||'{}'); const a=p?.result?.config?.ingress;
+            if(!Array.isArray(a)) process.exit(1);
+            const m=a.filter(x=>x.hostname===process.env.DB_HOSTNAME); if(m.length!==1) process.exit(1);
+            const s=String(m[0].service||'');
+            if(s===`tcp://${process.env.NEW_PROXY_NAME}:6432`) process.stdout.write('v2');
+            else if(s===`tcp://${process.env.OLD_PROXY_NAME}:6432`) process.stdout.write('legacy');
+            else process.stdout.write('unexpected');
+            NODE
+            mode="$(cat /tmp/tunnel-mode 2>/dev/null)"
+            if [ "$mode" = v2 ]; then tunnel_state=success; tunnel_desc='Cloudflare DB tunnel targets PgBouncer v2.'; 
+            elif [ "$mode" = legacy ]; then tunnel_desc='Cloudflare DB tunnel still targets legacy PgBouncer.'; 
+            else tunnel_desc='Cloudflare DB tunnel target is unexpected.'; fi
+          fi
+          CONTEXT=mkety/auth-diag-cf-tunnel STATE="$tunnel_state" DESCRIPTION="$tunnel_desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:process.env.DESCRIPTION}));
+          NODE
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+          hd_state=failure
+          hd_desc='Production Hyperdrive could not be verified.'
+          list="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" 2>/dev/null)"
+          LIST="$list" node <<'NODE' >/tmp/hd-mode 2>/dev/null
+          const p=JSON.parse(process.env.LIST||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME); if(m.length!==1||!m[0]?.id) process.exit(1);
+          const o=m[0].origin||{}; process.stdout.write(o.service_id?'service':(o.host?'host':'unknown'));
+          NODE
+          if [ "$?" -eq 0 ]; then hd_state=success; hd_desc="Production Hyperdrive exists; origin mode $(cat /tmp/hd-mode)."; fi
+          CONTEXT=mkety/auth-diag-cf-hyperdrive STATE="$hd_state" DESCRIPTION="$hd_desc" node <<'NODE' >/tmp/status2.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:process.env.DESCRIPTION}));
+          NODE
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status2.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          [ "$tunnel_state" = success ] && [ "$hd_state" = success ]
+
+  zitadel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      ZITADEL_URL: ${{ vars.ZITADEL_URL }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check ZITADEL
+        shell: bash
+        run: |
+          set +e
+          state=failure; desc='ZITADEL issuer or management credentials are not usable.'
+          issuer="${ZITADEL_URL%/}"
+          code="$(curl --connect-timeout 5 --max-time 12 -sS -o /tmp/oidc.json -w '%{http_code}' "$issuer/.well-known/openid-configuration")"
+          if [ -n "$ZITADEL_MANAGEMENT_TOKEN" ] && [ "$code" = 200 ] && node <<'NODE'
+          const x=require('/tmp/oidc.json'); process.exit(x.issuer&&x.authorization_endpoint&&x.token_endpoint?0:1);
+          NODE
+          then state=success; desc='ZITADEL issuer metadata and management credential binding are present.'; fi
+          CONTEXT=mkety/auth-diag-zitadel-parallel STATE="$state" DESCRIPTION="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:process.env.DESCRIPTION}));
+          NODE
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          [ "$state" = success ]
+
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      ZITADEL_URL: ${{ vars.ZITADEL_URL }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check public pages and auth redirect
+        shell: bash
+        run: |
+          set +e
+          pages=success
+          for path in /login /signup; do
+            headers="/tmp/${path#/}.h"; body="/tmp/${path#/}.b"
+            code="$(curl --connect-timeout 5 --max-time 12 -sS -D "$headers" -o "$body" -w '%{http_code}' "https://mkety.com$path")"
+            ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
+            [ "$code" = 200 ] && printf '%s' "$ct" | grep -Eqi '^text/html([;]|$)' && grep -Eqi '<!doctype html|<html' "$body" || pages=failure
+          done
+          CONTEXT=mkety/auth-diag-live-pages STATE="$pages" DESCRIPTION='Live login/signup page response contract checked.' node <<'NODE' >/tmp/pages.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:process.env.DESCRIPTION}));
+          NODE
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/pages.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+          auth=failure; desc='Live /api/auth/login did not return a valid ZITADEL PKCE redirect.'
+          headers=/tmp/auth.h
+          status="$(curl --connect-timeout 5 --max-time 12 -sS -D "$headers" -o /dev/null -w '%{http_code}'             'https://mkety.com/api/auth/login?returnTo=/select-tenant')"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          if [ "$status" -ge 300 ] 2>/dev/null && [ "$status" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" node <<'NODE'
+          const u=new URL(process.env.LOCATION), issuer=new URL(process.env.ZITADEL_URL);
+          process.exit(u.origin===issuer.origin && u.searchParams.get('response_type')==='code' &&
+            u.searchParams.get('code_challenge_method')==='S256' && !!u.searchParams.get('code_challenge') &&
+            u.searchParams.get('redirect_uri')==='https://mkety.com/api/auth/callback' && !!u.searchParams.get('client_id') ? 0 : 1);
+          NODE
+          then auth=success; desc='Live /api/auth/login reaches ZITADEL with Authorization Code + PKCE S256.'; fi
+          CONTEXT=mkety/auth-diag-live-parallel STATE="$auth" DESCRIPTION="$desc" node <<'NODE' >/tmp/auth.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:process.env.CONTEXT,description:process.env.DESCRIPTION}));
+          NODE
+          curl --connect-timeout 5 --max-time 12 -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/auth.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          [ "$pages" = success ] && [ "$auth" = success ]
