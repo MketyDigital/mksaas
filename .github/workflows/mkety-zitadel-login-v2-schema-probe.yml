@@ -117,6 +117,50 @@ jobs:
           console.log('LOGIN_V2_SCHEMA_PRESERVATION_SAFE '+JSON.stringify({preserved:true,keys:Object.keys(normalize(after)).sort()}));
           NODE
 
+          client_id="$(node -e "const x=require('/tmp/app-after.json').app?.oidcConfig||{};if(!x.clientId)process.exit(1);process.stdout.write(x.clientId)")"
+          echo "::add-mask::$client_id"
+          verifier="$(openssl rand -hex 32)"
+          challenge="$(VERIFIER="$verifier" node -e "const crypto=require('node:crypto');process.stdout.write(crypto.createHash('sha256').update(process.env.VERIFIER).digest('base64url'))")"
+          state="$(openssl rand -hex 16)"
+          nonce="$(openssl rand -hex 16)"
+          expected_origin="https://auth.mkety.com"
+
+          routed=0
+          for attempt in $(seq 1 12); do
+            query="$(CLIENT_ID="$client_id" CHALLENGE="$challenge" STATE="$state" NONCE="$nonce" node <<'NODE'
+          const q=new URLSearchParams({
+            client_id:process.env.CLIENT_ID,
+            redirect_uri:'https://example.com/callback',
+            response_type:'code',
+            scope:'openid profile email',
+            state:process.env.STATE,
+            nonce:process.env.NONCE,
+            code_challenge:process.env.CHALLENGE,
+            code_challenge_method:'S256',
+            prompt:'login'
+          });
+          process.stdout.write(q.toString());
+          NODE
+            )"
+            curl -sS --connect-timeout 10 --max-time 20 -D /tmp/authorize.headers -o /dev/null               "$issuer/oauth/v2/authorize?$query"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' /tmp/authorize.headers)"
+            if [ -n "$location" ] && LOCATION="$location" EXPECTED_ORIGIN="$expected_origin" node <<'NODE'
+          const u=new URL(process.env.LOCATION, process.env.EXPECTED_ORIGIN);
+          process.exit(u.origin===process.env.EXPECTED_ORIGIN && u.pathname.startsWith('/ui/v2/login')?0:1);
+          NODE
+            then
+              routed=1
+              LOCATION="$location" node -e "const u=new URL(process.env.LOCATION);console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({origin:u.origin,path:u.pathname}))"
+              break
+            fi
+            echo "Disposable Login V2 routing propagation attempt $attempt/12 not ready."
+            sleep 5
+          done
+          [ "$routed" = 1 ] || {
+            LOCATION="$location" node -e "let u;try{u=new URL(process.env.LOCATION)}catch{};console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({routed:false,origin:u?.origin||null,path:u?.pathname||null}))"
+            exit 1
+          }
+
           cat >/tmp/status.json <<JSON
           {"state":"success","context":"mkety/zitadel-login-v2-schema","description":"Per-app Login V2 custom base URI schema verified on disposable OIDC app.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
           JSON
