@@ -137,12 +137,17 @@ jobs:
 
           async function fillHosted(page: Page, input: Locator, value: string) {
             await expect(input).toBeVisible({ timeout: 8_000 });
-            await page.waitForTimeout(500);
-            await input.click();
-            await input.fill('');
-            await input.pressSequentially(value, { delay: 15 });
-            await expect(input).toHaveValue(value, { timeout: 5_000 });
-            await input.press('Tab');
+            await page.waitForTimeout(750);
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                await input.fill(value, { force: true });
+                await expect(input).toHaveValue(value, { timeout: 2_000 });
+                return;
+              } catch {
+                if (attempt === 5) throw new Error('ZITADEL hosted input did not stabilize for automation');
+                await page.waitForTimeout(500);
+              }
+            }
           }
 
           async function completeHostedLogin(page: Page) {
@@ -302,7 +307,18 @@ jobs:
           pnpm exec wrangler deploy --config .prod-auth-cleanup/wrangler.jsonc >/tmp/cleanup-deploy.log 2>&1
           account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
           sub="$(ACCOUNT="$account" node -e "const x=JSON.parse(process.env.ACCOUNT||'{}');if(!x.success||!x.result?.subdomain)process.exit(1);process.stdout.write(x.result.subdomain)")"
-          curl -fsS -X POST -H "x-smoke-email: $SMOKE_EMAIL" "https://$CLEANUP_WORKER_NAME.$sub.workers.dev/" >/tmp/cleanup-result.json
+          cleanup_url="https://$CLEANUP_WORKER_NAME.$sub.workers.dev/"
+          cleaned=0
+          for attempt in $(seq 1 15); do
+            code="$(curl -sS --connect-timeout 5 --max-time 15 -o /tmp/cleanup-result.json -w '%{http_code}'               -X POST -H "x-smoke-email: $SMOKE_EMAIL" "$cleanup_url" || true)"
+            if [ "$code" = 200 ]; then
+              cleaned=1
+              break
+            fi
+            echo "Cleanup Worker propagation attempt $attempt/15 returned HTTP $code"
+            sleep 2
+          done
+          [ "$cleaned" = 1 ] || { echo 'Cleanup Worker did not become reachable.'; exit 1; }
           cat /tmp/cleanup-result.json
 
       - name: Remove cleanup Worker and generated browser files
