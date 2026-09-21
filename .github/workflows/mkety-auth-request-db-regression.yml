@@ -1,0 +1,42 @@
+name: Mkety Auth Request DB Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-auth-request-db-regression.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run focused auth regression
+        id: auth
+        run: pnpm test -- src/shared/lib/auth/__tests__/service.test.ts src/shared/db/request.test.ts
+      - name: Publish result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.auth.outcome }}
+        shell: bash
+        run: |
+          state=failure
+          desc='Request-scoped auth DB regression failed.'
+          if [ "$OUTCOME" = success ]; then state=success; desc='Request-scoped auth DB regression passed.'; fi
+          STATE="$state" DESCRIPTION="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:'mkety/auth-request-db-regression',description:process.env.DESCRIPTION}));
+          NODE
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
