@@ -61,6 +61,30 @@ The earlier Playwright production lifecycle attempts are not evidence of a Mkety
 **Current public-site branch:** `feat/mkety-public-site-production`  
 **Base:** `main` at `95b6759dc45120f2276ad2129b1bc3918bed99ab`
 
+## 2026-09-21 public final-polish candidate
+
+The public milestone has been re-audited after production auth recovery.
+
+Current exact public candidate:
+
+`3f85da0405141182221602f25bc57ff2615d2ffb`
+
+Release branch:
+
+`feat/mkety-public-site-production`
+
+Immutable certification branch:
+
+`certify/3f85da0`
+
+This candidate preserves the production sign-in/signup intent fix, approved Academy local imagery with fallback behavior, and adds actionable Mkety Contact destinations using the established `support@mkety.com`, `hello@mkety.com`, `https://t.me/mketyadmin`, and Academy channels.
+
+Current `main` was also reconciled so the approved Academy assets/behavior are no longer release-branch-only. Public `/docs` remains CMS/default-content backed; legacy starter docs under `src/features/docs/content` are not the source of the public Mkety Docs route and are non-blocking internal debt.
+
+Historical PR #20 is closed as superseded by the central Mkety Auth Gateway authority. PR #78 remains intentionally open/on hold as a separate Deployments/Cloud workstream and must not be merged into public release work.
+
+Do not call `3f85da0...` certified until its exact-SHA release checks pass. Do not promote it by merging unrelated `main` changes. Use the guarded public release path and preserve its explicit cutover confirmation requirement.
+
 ## 1. Purpose
 
 This is the operational continuation document for Mkety development.
