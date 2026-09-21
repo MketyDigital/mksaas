@@ -61,19 +61,19 @@ export const defaultHeroSection: PlatformHeroSectionInput = {
 
 export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
   eyebrow: 'Platform',
-  title: 'Build, automate, deploy, integrate, and operate.',
+  title: 'Everything your digital work needs, connected.',
   description:
-    'Mkety connects projects, teams, AI, automation, deployments, SolutionHub, usage, credits, billing, and administration in one product ecosystem.',
+    'Projects, teams, AI, automation, deployments, SolutionHub, usage, credits, billing, and administration share one coordinated system.',
   items: [
     {
       key: 'build',
-      title: 'Build',
-      description: 'Create applications, AI experiences, workflows, portals, and connected business systems.',
+      title: 'Create',
+      description: 'Turn ideas into applications, AI experiences, workflows, portals, and connected business systems.',
     },
     {
       key: 'operate',
-      title: 'Operate',
-      description: 'Keep projects, teams, usage, billing visibility, domains, and operations connected.',
+      title: 'Manage',
+      description: 'Keep projects, teams, usage, billing visibility, domains, and day-to-day operations organized.',
     },
   ],
   cta: { label: 'Explore Platform', href: '/platform' },
