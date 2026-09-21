@@ -20,7 +20,7 @@ jobs:
       ZITADEL_ISSUER: ${{ vars.ZITADEL_URL }}
       ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
-      AUTH_BASE_URI: https://auth.mkety.com/ui/v2/login
+      AUTH_BASE_URI: https://auth.mkety.com
 
     steps:
       - name: Probe per-application Login V2 schema with disposable app
@@ -144,20 +144,21 @@ jobs:
             )"
             curl -sS --connect-timeout 10 --max-time 20 -D /tmp/authorize.headers -o /dev/null               "$issuer/oauth/v2/authorize?$query"
             location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' /tmp/authorize.headers)"
-            if [ -n "$location" ] && LOCATION="$location" EXPECTED_ORIGIN="$expected_origin" node <<'NODE'
-          const u=new URL(process.env.LOCATION, process.env.EXPECTED_ORIGIN);
-          process.exit(u.origin===process.env.EXPECTED_ORIGIN && u.pathname.startsWith('/ui/v2/login')?0:1);
+            if [ -n "$location" ] && LOCATION="$location" ISSUER="$issuer" EXPECTED_ORIGIN="$expected_origin" node <<'NODE'
+          const isAbsolute=/^https?:\/\//i.test(process.env.LOCATION||'');
+          const browserResolved=new URL(process.env.LOCATION, process.env.ISSUER);
+          process.exit(isAbsolute && browserResolved.origin===process.env.EXPECTED_ORIGIN && browserResolved.pathname.startsWith('/ui/v2/login')?0:1);
           NODE
             then
               routed=1
-              LOCATION="$location" EXPECTED_ORIGIN="$expected_origin" node -e "const u=new URL(process.env.LOCATION,process.env.EXPECTED_ORIGIN);console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({origin:u.origin,path:u.pathname,relative:!/^https?:\\/\\//i.test(process.env.LOCATION)}))"
+              LOCATION="$location" ISSUER="$issuer" node -e "const u=new URL(process.env.LOCATION,process.env.ISSUER);console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({origin:u.origin,path:u.pathname,relative:!/^https?:\\/\\//i.test(process.env.LOCATION)}))"
               break
             fi
             echo "Disposable Login V2 routing propagation attempt $attempt/12 not ready."
             sleep 5
           done
           [ "$routed" = 1 ] || {
-            LOCATION="$location" EXPECTED_ORIGIN="$expected_origin" node -e "let u;try{u=new URL(process.env.LOCATION,process.env.EXPECTED_ORIGIN)}catch{};console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({routed:false,origin:u?.origin||null,path:u?.pathname||null}))"
+            LOCATION="$location" ISSUER="$issuer" node -e "let u;try{u=new URL(process.env.LOCATION,process.env.ISSUER)}catch{};console.log('LOGIN_V2_AUTHORIZE_ROUTE_SAFE '+JSON.stringify({routed:false,origin:u?.origin||null,path:u?.pathname||null,relative:!/^https?:\\/\\//i.test(process.env.LOCATION||'')}))"
             exit 1
           }
 
