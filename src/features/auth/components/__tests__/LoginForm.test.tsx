@@ -27,7 +27,7 @@ describe('LoginForm', () => {
 
     await user.click(screen.getByRole('button', { name: /continue to mkety/i }));
 
-    expect(mockLogin).toHaveBeenCalledWith('/select-tenant');
+    expect(mockLogin).toHaveBeenCalledWith('/select-tenant', 'signin');
   });
 
   it('shows a provider-neutral authentication message', () => {
