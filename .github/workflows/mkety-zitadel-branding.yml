@@ -101,13 +101,15 @@ jobs:
             echo 'Mkety label policy already matches; no update required.'
           else
             code="$(curl --silent --show-error -o /tmp/policy-response.json -w '%{http_code}' -X PUT               "$issuer/admin/v1/policies/label"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"               -H 'Content-Type: application/json' --data-binary @/tmp/policy.json)"
-            [ "$code" = 200 ] || {
+            if [ "$code" != 200 ]; then
+              unchanged="$(node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/policy-response.json','utf8'))}catch{};process.stdout.write(Number(x.code)===9&&/not been changed/i.test(String(x.message||''))?'true':'false')")"
               CODE="$code" node <<'NODE'
           const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/policy-response.json','utf8'))}catch{}
           console.log('ZITADEL_BRANDING_POLICY_SAFE '+JSON.stringify({http:process.env.CODE,code:x.code||null,message:x.message||null}));
           NODE
-              exit 1
-            }
+              [ "$unchanged" = true ] || exit 1
+              echo 'Mkety branding draft already staged; continuing to assets and activation.'
+            fi
           fi
 
       - name: Upload Mkety logo and icon assets
