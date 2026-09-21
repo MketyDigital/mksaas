@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE_SHA: 9ad3917cd9033970bd1ffbaf567d1a2667b84dfe
-  CERT_BRANCH: certify/9ad3917
+  CANDIDATE_SHA: 2601f8368f91ffc75ab67d3d297aad8d523aa85e
+  CERT_BRANCH: certify/2601f83
 
 jobs:
   dispatch:
@@ -64,3 +64,4 @@ jobs:
           dispatch 'mkety-public-ai-runtime-diagnostic.yml'
           dispatch 'mkety-production-preflight.yml'
           dispatch 'mkety-public-candidate-deploy.yml'
+          dispatch 'mkety-cloudflare-preview.yml'
