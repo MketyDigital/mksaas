@@ -53,17 +53,27 @@ jobs:
           )"
           echo "::add-mask::$org_id"
 
-          login="$(curl --fail-with-body --silent --show-error             "$issuer/v2/settings/login?ctx.orgId=$org_id"             -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}")"
+          login_v2="$(curl --fail-with-body --silent --show-error \
+            "$issuer/v2/settings/login?ctx.orgId=$org_id" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}")"
+          login_v1="$(curl --fail-with-body --silent --show-error \
+            "$issuer/management/v1/policies/login" \
+            -H "Authorization: Bearer ${ZITADEL_MANAGEMENT_TOKEN}" \
+            -H "x-zitadel-orgid: $org_id")"
 
-          LOGIN="$login" node <<'NODE' >/tmp/summary.json
-          const p=JSON.parse(process.env.LOGIN||'{}'), s=p.settings||{};
+          LOGIN_V2="$login_v2" LOGIN_V1="$login_v1" node <<'NODE' >/tmp/summary.json
+          const v2=JSON.parse(process.env.LOGIN_V2||'{}'), s=v2.settings||{};
+          const v1=JSON.parse(process.env.LOGIN_V1||'{}'), p=v1.policy||{};
           process.stdout.write(JSON.stringify({
-            allowUsernamePassword:s.allowUsernamePassword ?? null,
+            allowUsernamePassword:p.allowUsernamePassword ?? s.allowUsernamePassword ?? null,
             allowLocalAuthentication:s.allowLocalAuthentication ?? null,
-            allowRegister:s.allowRegister ?? null,
-            allowExternalIdp:s.allowExternalIdp ?? null,
-            hidePasswordReset:s.hidePasswordReset ?? null,
-            allowDomainDiscovery:s.allowDomainDiscovery ?? null
+            allowRegister:p.allowRegister ?? s.allowRegister ?? null,
+            allowExternalIdp:p.allowExternalIdp ?? s.allowExternalIdp ?? null,
+            hidePasswordReset:p.hidePasswordReset ?? s.hidePasswordReset ?? null,
+            allowDomainDiscovery:p.allowDomainDiscovery ?? s.allowDomainDiscovery ?? null,
+            isDefault:p.isDefault ?? v1.isDefault ?? null,
+            settingsKeys:Object.keys(s).sort(),
+            policyKeys:Object.keys(p).sort()
           }));
           NODE
 
