@@ -1,0 +1,218 @@
+name: Mkety Production Auth Hyperdrive Cutover
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-auth-hyperdrive-cutover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      PRODUCTION_WORKER_NAME: mkety-platform
+      RELEASE_BRANCH: feat/mkety-public-site-production
+      NEW_HYPERDRIVE_NAME: mkety-production-db-v2
+      OLD_HYPERDRIVE_NAME: mkety-production-db
+      EXPECTED_AUTH_ISSUER: ${{ vars.ZITADEL_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SKIP_ENV_VALIDATION: 'true'
+
+    steps:
+      - name: Checkout frozen public release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_BRANCH }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve old and verified VPC-backed Hyperdrives
+        id: hd
+        shell: bash
+        run: |
+          set -euo pipefail
+          list="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          LIST="$list" node <<'NODE' >/tmp/hd-map.json
+          const p=JSON.parse(process.env.LIST||'{}'), rows=Array.isArray(p.result)?p.result:[];
+          const one=(name)=>{const m=rows.filter(x=>x.name===name);if(m.length!==1||!m[0]?.id)throw new Error(`Expected exactly one Hyperdrive named ${name}`);return m[0];};
+          const old=one(process.env.OLD_HYPERDRIVE_NAME);
+          const next=one(process.env.NEW_HYPERDRIVE_NAME);
+          if(!next.origin?.service_id) throw new Error('New Hyperdrive is not Workers-VPC-Service-backed.');
+          process.stdout.write(JSON.stringify({oldId:old.id,newId:next.id,newServiceId:next.origin.service_id}));
+          NODE
+          old_id="$(node -e "const x=require('/tmp/hd-map.json');process.stdout.write(x.oldId)")"
+          new_id="$(node -e "const x=require('/tmp/hd-map.json');process.stdout.write(x.newId)")"
+          service_id="$(node -e "const x=require('/tmp/hd-map.json');process.stdout.write(x.newServiceId)")"
+          echo "::add-mask::$old_id"
+          echo "::add-mask::$new_id"
+          echo "::add-mask::$service_id"
+          echo "old_id=$old_id" >> "$GITHUB_OUTPUT"
+          echo "new_id=$new_id" >> "$GITHUB_OUTPUT"
+          echo 'Resolved verified VPC-backed Hyperdrive and legacy rollback target.'
+
+      - name: Verify production Worker auth bindings exist before deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json >/tmp/auth-secrets.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/auth-secrets.json','utf8');
+          const m=raw.match(/\[\s*(?:\{|\])/);
+          const entries=m?JSON.parse(raw.slice(m.index)):[];
+          const names=new Set(entries.map(x=>x.name));
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET','NEXT_PUBLIC_APP_URL'];
+          const missing=required.filter(k=>!names.has(k));
+          if(missing.length) throw new Error('Missing production auth bindings: '+missing.join(', '));
+          console.log('Production auth bindings present before DB binding cutover.');
+          NODE
+
+      - name: Configure build for verified VPC Hyperdrive
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hd.outputs.new_id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          config.name=process.env.PRODUCTION_WORKER_NAME;
+          config.workers_dev=false;
+          config.preview_urls=false;
+          config.keep_vars=true;
+          config.vars={...(config.vars||{}),SKIP_ENV_VALIDATION:'true'};
+          config.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
+          NODE
+          pnpm build
+
+      - name: Locate generated production Worker config
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$(find dist -mindepth 2 -maxdepth 2 -type f -name wrangler.json ! -path 'dist/client/*' | while read -r f; do
+            node - "$f" "$PRODUCTION_WORKER_NAME" <<'NODE' && echo "$f"
+          const fs=require('node:fs'),path=require('node:path');
+          const [f,name]=process.argv.slice(2),x=JSON.parse(fs.readFileSync(f,'utf8'));
+          if(x.name!==name||!x.main||!fs.existsSync(path.resolve(path.dirname(f),x.main)))process.exit(1);
+          NODE
+          done | tail -n1)"
+          [ -n "$config" ] || { echo 'Generated production Worker config not found.'; exit 1; }
+          CONFIG="$config" NEW_ID="${{ steps.hd.outputs.new_id }}" node <<'NODE'
+          const fs=require('node:fs'),x=JSON.parse(fs.readFileSync(process.env.CONFIG,'utf8'));
+          const b=(x.hyperdrive||[]).filter(v=>v.binding==='MKETY_DB'&&v.id===process.env.NEW_ID);
+          if(b.length!==1) throw new Error('Generated config does not carry verified VPC Hyperdrive binding.');
+          NODE
+          echo "path=$config" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy same public release with verified DB binding
+        id: deploy
+        shell: bash
+        env:
+          CONFIG: ${{ steps.config.outputs.path }}
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler deploy --config "$CONFIG"
+          echo 'Deployed mkety-platform with verified VPC-backed MKETY_DB binding.'
+
+      - name: Verify auth bindings survived deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json >/tmp/auth-secrets-after.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/auth-secrets-after.json','utf8');
+          const m=raw.match(/\[\s*(?:\{|\])/);
+          const entries=m?JSON.parse(raw.slice(m.index)):[];
+          const names=new Set(entries.map(x=>x.name));
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET','NEXT_PUBLIC_APP_URL'];
+          if(required.some(k=>!names.has(k))) process.exit(1);
+          NODE
+
+      - name: Verify live pages and ZITADEL PKCE auth
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for p in /login /signup; do
+            h="/tmp/${p#/}.headers"; b="/tmp/${p#/}.body"
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o "$b" -w '%{http_code}' "https://mkety.com$p")"
+            ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, "");gsub(/\r/,"");v=$0} END{print v}' "$h")"
+            [ "$code" = 200 ]
+            printf '%s' "$ct" | grep -Eqi '^text/html([;]|$)'
+            grep -Eqi '<!doctype html|<html' "$b"
+          done
+
+          auth_ok=0
+          for attempt in $(seq 1 12); do
+            h=/tmp/auth-login.headers
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$h" -o /dev/null -w '%{http_code}'               'https://mkety.com/api/auth/login?returnTo=/select-tenant' || true)"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$h")"
+            if [ "$code" -ge 300 ] 2>/dev/null && [ "$code" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" node <<'NODE'
+          const u=new URL(process.env.LOCATION), issuer=new URL(process.env.EXPECTED_AUTH_ISSUER);
+          process.exit(
+            u.origin===issuer.origin &&
+            u.searchParams.get('response_type')==='code' &&
+            u.searchParams.get('code_challenge_method')==='S256' &&
+            !!u.searchParams.get('code_challenge') &&
+            u.searchParams.get('redirect_uri')==='https://mkety.com/api/auth/callback' &&
+            !!u.searchParams.get('client_id') ? 0 : 1
+          );
+          NODE
+            then auth_ok=1; break; fi
+            echo "Auth propagation attempt $attempt/12 did not yet produce valid ZITADEL redirect (HTTP $code)."
+            sleep 5
+          done
+          [ "$auth_ok" = 1 ] || { echo 'Live auth did not reach ZITADEL with valid PKCE after DB binding cutover.'; exit 1; }
+          echo 'Live /api/auth/login reaches ZITADEL with Authorization Code + PKCE S256.'
+
+      - name: Publish successful production auth status
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat >/tmp/status.json <<JSON
+          {"state":"success","context":"mkety/production-auth","description":"Live Mkety auth reaches ZITADEL with PKCE over verified VPC-backed PostgreSQL.","target_url":"https://mkety.com/login"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28' -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+      - name: Roll back Worker DB binding if production auth smoke fails
+        if: failure() && steps.config.outputs.path != ''
+        shell: bash
+        env:
+          CONFIG: ${{ steps.config.outputs.path }}
+          OLD_ID: ${{ steps.hd.outputs.old_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          CONFIG="$CONFIG" OLD_ID="$OLD_ID" node <<'NODE'
+          const fs=require('node:fs'),x=JSON.parse(fs.readFileSync(process.env.CONFIG,'utf8'));
+          x.hyperdrive=[{binding:'MKETY_DB',id:process.env.OLD_ID}];
+          fs.writeFileSync(process.env.CONFIG,JSON.stringify(x,null,2)+'\n');
+          NODE
+          pnpm exec wrangler deploy --config "$CONFIG"
+          cat >/tmp/status.json <<JSON
+          {"state":"failure","context":"mkety/production-auth","description":"VPC DB binding cutover failed auth smoke; previous Hyperdrive binding was redeployed."}
+          JSON
+          curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2022-11-28' -H 'Content-Type: application/json' --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
