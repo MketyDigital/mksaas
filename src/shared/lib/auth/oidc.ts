@@ -1,3 +1,5 @@
+import type { AuthorizationPrompt } from './types';
+
 export interface PkcePair {
   verifier: string;
   challenge: string;
@@ -11,6 +13,7 @@ export interface AuthorizationUrlInput {
   codeChallenge: string;
   nonce: string;
   scope?: string;
+  prompt?: AuthorizationPrompt;
 }
 
 export interface OidcJsonWebKey extends JsonWebKey {
@@ -86,6 +89,7 @@ export function buildAuthorizationUrl({
   codeChallenge,
   nonce,
   scope = 'openid profile email',
+  prompt,
 }: AuthorizationUrlInput): string {
   const url = new URL(authorizationEndpoint);
   url.searchParams.set('client_id', clientId);
@@ -96,6 +100,7 @@ export function buildAuthorizationUrl({
   url.searchParams.set('code_challenge', codeChallenge);
   url.searchParams.set('code_challenge_method', 'S256');
   url.searchParams.set('nonce', nonce);
+  if (prompt) url.searchParams.set('prompt', prompt);
   return url.toString();
 }
 
