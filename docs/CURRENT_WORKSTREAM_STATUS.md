@@ -1,10 +1,39 @@
 # Mkety Current Workstream Status
 
-**Updated:** 2026-09-18  
-**Current workstream:** `app.mkety.com` Deployments/Cloud foundation  
-**Status:** IN PROGRESS — Wallet merged; first Deploy backend slice implemented on `feat/deploy-foundation-current-main`  
+**Updated:** 2026-09-21  
+**Current workstream:** `mkety.com` public-site final acceptance and production auth recovery  
+**Status:** PRODUCTION — public site live; login/signup repaired and verified against ZITADEL over Workers VPC-backed Hyperdrive  
 **Production application SHA:** `2e871fe5ba51585886713c2cb79544e68dc20b73`  
 **Successful cutover run:** `35309531966`
+
+## 2026-09-21 production auth recovery and public-site audit
+
+The public site remains live on `mkety.com` and `www.mkety.com` through the existing `mkety-platform` Worker Custom Domains. A production authentication regression prevented login/signup from reaching ZITADEL because the live Worker database path was still bound to the legacy Hyperdrive route.
+
+Verified recovery:
+
+- isolated PgBouncer v2 local secure `SELECT 1`: pass;
+- Workers VPC Service created against the PgBouncer private Docker IPv4;
+- separate `mkety-production-db-v2` Hyperdrive created after VPC routing propagation;
+- `SELECT 1` through the VPC-backed Hyperdrive v2: pass;
+- existing `mkety-platform` public release redeployed with only the `MKETY_DB` binding changed to the verified VPC-backed Hyperdrive;
+- required production Mkety Auth bindings remained present after deploy;
+- live `/login` and `/signup` returned browser HTML;
+- live `/api/auth/login?returnTo=/select-tenant` redirected to the configured ZITADEL origin with Authorization Code flow, PKCE `S256`, the production callback `https://mkety.com/api/auth/callback`, and a client id;
+- rollback to the legacy Hyperdrive was not required.
+
+Production auth cutover run: `35571673240`.
+
+Repository audit findings relevant to the public milestone:
+
+- current public routes are present for Platform, Workspaces, Solutions, Academy, Pricing, Enterprise, About, Contact, Privacy, Terms, and Mkety Docs;
+- login and signup are Mkety-branded and both use the same Mkety Auth/ZITADEL flow;
+- the root layout uses Mkety metadata rather than starter-template metadata;
+- public docs are served from the Mkety docs route group and are protected by tests against stale template/runtime/auth claims;
+- the root README was still starter-template branded and has now been replaced with current Mkety repository guidance;
+- open PRs #93, #57, #78, and #20 are all materially behind current `main`; none should be merged blindly. PR #93 and #57 are superseded by current production recovery work. PR #78 is an authenticated Platform/Deployments workstream and must be reconciled separately. PR #20 is an old documentation decision branch and must be reconciled separately if still needed.
+
+Public/auth production is now a verified baseline. Do not re-open the legacy Hyperdrive/PgBouncer repair paths unless a new production regression provides fresh evidence.
 
 ## Requested outcome
 
