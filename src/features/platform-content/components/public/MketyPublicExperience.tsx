@@ -44,7 +44,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
             <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_hsl(var(--primary))]" />
-                Mkety OS
+                Explore Mkety
               </div>
               <div
                 role="tablist"
@@ -96,10 +96,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               <div className="relative grid w-full min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:gap-7 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
                 <div className="flex w-full max-w-full min-w-0 flex-col justify-between overflow-hidden rounded-3xl border bg-background/70 p-4 shadow-sm sm:p-6">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
-                      {activeGroup.eyebrow}
-                    </p>
-                    <h2 className="mt-3 min-w-0 break-words [overflow-wrap:anywhere] text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
+                    <h2 className="min-w-0 break-words [overflow-wrap:anywhere] text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
                     {activeGroup.description && (
                       <p className="mt-4 min-w-0 break-words [overflow-wrap:anywhere] leading-7 text-muted-foreground">{activeGroup.description}</p>
                     )}
