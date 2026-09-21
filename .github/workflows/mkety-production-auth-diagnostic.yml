@@ -74,6 +74,24 @@ jobs:
           then publish mkety/auth-diag-db success 'Coolify PostgreSQL is private, TLS-enabled, healthy and internally addressable.';
           else publish mkety/auth-diag-db failure "Coolify PostgreSQL API/preflight failed (HTTP $db_code)."; fail=1; fi
 
+          base="${COOLIFY_URL%/}/api/v1"
+          apps="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" 2>/dev/null || true)"
+          proxy_uuid="$(APPS="$apps" node -e "try{const p=JSON.parse(process.env.APPS||'[]'),a=Array.isArray(p)?p:(p.data||[]);const m=a.filter(x=>x.name===process.env.NEW_PROXY_NAME);if(m.length===1&&m[0]?.uuid)process.stdout.write(String(m[0].uuid))}catch{}")"
+          if [ -n "$proxy_uuid" ]; then
+            pcode="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 12 -sS -o /tmp/proxy.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$proxy_uuid" || true)"
+            lcode="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 12 -sS -o /tmp/proxylogs.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$proxy_uuid/logs?lines=500&show_timestamps=false" || true)"
+            if [ "$pcode" = 200 ] && [ "$lcode" = 200 ] && node <<'NODE'
+          const app=require('/tmp/proxy.json');
+          const logs=String(require('/tmp/proxylogs.json').logs||'');
+          const st=String(app.status||'').toLowerCase();
+          const healthy=st.includes('running')||st.includes('healthy');
+          const required=['MKETY_PGBOUNCER_V2_UPSTREAM_VERIFY_OK=true','MKETY_PGBOUNCER_V2_CLIENT_TLS_OK=true','MKETY_PGBOUNCER_V2_QUERY_OK=true','MKETY_PGBOUNCER_V2_READY=true'];
+          process.exit(healthy && required.every(x=>logs.includes(x)) ? 0 : 1);
+          NODE
+            then publish mkety/auth-diag-proxy-v2 success 'PgBouncer v2 app exists, is healthy and has verified TLS/query readiness markers.';
+            else publish mkety/auth-diag-proxy-v2 failure 'PgBouncer v2 app exists but is not verified-ready.'; fail=1; fi
+          else publish mkety/auth-diag-proxy-v2 failure 'PgBouncer v2 app is missing in Coolify.'; fail=1; fi
+
           tunnels="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" 2>/dev/null || true)"
           tid="$(TUNNELS="$tunnels" node -e "try{const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];const m=a.filter(x=>x.name===process.env.TUNNEL_NAME);process.stdout.write(m.length===1&&m[0]?.id?String(m[0].id):'')}catch{}")"
           if [ -n "$tid" ]; then
