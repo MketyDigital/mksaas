@@ -92,10 +92,20 @@ Final reconciliation completed:
 Current public release candidate:
 
 - release branch: `feat/mkety-public-site-production`;
-- exact candidate SHA: `3f85da0405141182221602f25bc57ff2615d2ffb`;
+- exact candidate SHA: `a44f672b0e89f6c6e0129c2d425cd1bed3b3aa44`;
 - immutable certification branch: `certify/3f85da0`.
 
-This candidate has not been described as certified until exact-SHA release checks run successfully. Production promotion remains behind the repository's guarded public cutover confirmation and must not be bypassed.
+Exact-SHA certification is now complete and green for `a44f672b0e89f6c6e0129c2d425cd1bed3b3aa44`:
+
+- Content DB Smoke — run `35586389825`;
+- Public AI Runtime Diagnostic — run `35586392588`;
+- Production Routing Preflight — run `35586395433`;
+- Public Candidate Deploy — run `35586398082`;
+- Cloudflare Preview, including real hosted ZITADEL login → Mkety session → workspace creation → protected tenant access → hosted logout — run `35586401611`.
+
+The earlier `3f85da0...` certification attempt correctly exposed stale test expectations around explicit sign-in intent, request-scoped RBAC database access, and current onboarding copy. Those were repaired as test/smoke-contract changes without changing approved runtime behavior.
+
+Production promotion remains behind the repository's guarded public cutover confirmation and must not be bypassed.
 
 ## Requested outcome
 
