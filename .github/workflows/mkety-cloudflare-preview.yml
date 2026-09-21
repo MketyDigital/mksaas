@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: mkety-cloudflare-preview
@@ -311,3 +312,38 @@ jobs:
     needs: deploy-preview
     uses: ./.github/workflows/mkety-authenticated-preview-smoke.yml
     secrets: inherit
+
+
+  report:
+    name: Report exact-SHA authenticated preview
+    if: always()
+    needs:
+      - verify
+      - deploy-preview
+      - authenticated-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish authenticated preview status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          DEPLOY_RESULT: ${{ needs.deploy-preview.result }}
+          AUTH_RESULT: ${{ needs.authenticated-smoke.result }}
+        run: |
+          set -euo pipefail
+          state=failure
+          description="Authenticated preview failed: verify=$VERIFY_RESULT deploy=$DEPLOY_RESULT auth=$AUTH_RESULT"
+          if [ "$VERIFY_RESULT" = success ] && [ "$DEPLOY_RESULT" = success ] && [ "$AUTH_RESULT" = success ]; then
+            state=success
+            description='Exact-SHA preview passed build, ZITADEL PKCE, hosted login, Mkety session, tenant and logout.'
+          fi
+          STATE="$state" DESCRIPTION="$description" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({
+            state: process.env.STATE,
+            context: 'mkety/authenticated-preview',
+            description: String(process.env.DESCRIPTION || '').slice(0, 140),
+          }));
+          NODE
+          curl -fsS -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'Content-Type: application/json'             --data @/tmp/status.json             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+          [ "$state" = success ]
