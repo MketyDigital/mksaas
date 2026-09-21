@@ -1,0 +1,251 @@
+name: Mkety Production Onboarding Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-onboarding-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  onboarding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HYPERDRIVE_NAME: mkety-production-db-v2
+      HELPER_WORKER_NAME: mkety-production-onboarding-smoke-helper
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish run locator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat >/tmp/status.json <<JSON
+          {"state":"pending","context":"mkety/production-onboarding","description":"Production session-backed onboarding smoke started.","target_url":"https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"}
+          JSON
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null
+
+      - name: Resolve verified production Hyperdrive
+        id: hd
+        shell: bash
+        run: |
+          set -euo pipefail
+          list="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          LIST="$list" node <<'NODE' >/tmp/hd-id
+          const p=JSON.parse(process.env.LIST||'{}'), rows=Array.isArray(p.result)?p.result:[];
+          const m=rows.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          if(m.length!==1||!m[0]?.id||!m[0]?.origin?.service_id) process.exit(1);
+          process.stdout.write(String(m[0].id));
+          NODE
+          id="$(cat /tmp/hd-id)"
+          echo "::add-mask::$id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Create isolated DB helper Worker
+        shell: bash
+        env:
+          HD_ID: ${{ steps.hd.outputs.id }}
+        run: |
+          set -euo pipefail
+          key="$(openssl rand -hex 32)"
+          token="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+          token_hash="$(TOKEN="$token" node --input-type=module <<'NODE'
+          const data=new TextEncoder().encode(process.env.TOKEN);
+          const digest=await crypto.subtle.digest('SHA-256',data);
+          process.stdout.write([...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join(''));
+          NODE
+          )"
+          email="mkety-onboarding-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.com"
+          user_id="mkety-onboarding-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          slug="onboarding-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "::add-mask::$key"
+          echo "::add-mask::$token"
+          echo "SMOKE_KEY=$key" >> "$GITHUB_ENV"
+          echo "SMOKE_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "SMOKE_TOKEN_HASH=$token_hash" >> "$GITHUB_ENV"
+          echo "SMOKE_EMAIL=$email" >> "$GITHUB_ENV"
+          echo "SMOKE_USER_ID=$user_id" >> "$GITHUB_ENV"
+          echo "SMOKE_SLUG=$slug" >> "$GITHUB_ENV"
+
+          mkdir -p .onboarding-smoke
+          cat > .onboarding-smoke/worker.mjs <<'JS'
+          import postgres from 'postgres';
+
+          export default {
+            async fetch(request, env) {
+              if (request.headers.get('x-smoke-key') !== env.SMOKE_KEY) return new Response('unauthorized',{status:401});
+              const payload=await request.json().catch(()=>({}));
+              const email=String(payload.email||'');
+              const userId=String(payload.userId||'');
+              const tokenHash=String(payload.tokenHash||'');
+              const slug=String(payload.slug||'');
+              if(!email.startsWith('mkety-onboarding-smoke-')||!email.endsWith('@example.com')) return new Response('invalid email',{status:400});
+              if(!userId.startsWith('mkety-onboarding-smoke-')) return new Response('invalid user',{status:400});
+              if(tokenHash && !/^[0-9a-f]{64}$/.test(tokenHash)) return new Response('invalid token hash',{status:400});
+              if(slug && !slug.startsWith('onboarding-smoke-')) return new Response('invalid slug',{status:400});
+
+              const sql=postgres(env.MKETY_DB.connectionString,{max:1,prepare:false});
+              try {
+                if(new URL(request.url).pathname==='/setup') {
+                  await sql.begin(async tx=>{
+                    await tx`delete from saas_template.users where email=${email}`;
+                    await tx`insert into saas_template.users (id,name,email) values (${userId},'Mkety Onboarding Smoke',${email})`;
+                    await tx`insert into saas_template.auth_sessions (user_id,token_hash,expires_at) values (${userId},${tokenHash},now()+interval '1 hour')`;
+                  });
+                  return Response.json({ok:true});
+                }
+                if(new URL(request.url).pathname==='/cleanup') {
+                  await sql.begin(async tx=>{
+                    if(slug) await tx`delete from saas_template.tenants where slug=${slug}`;
+                    await tx`delete from saas_template.users where email=${email}`;
+                  });
+                  return Response.json({ok:true});
+                }
+                return new Response('not found',{status:404});
+              } finally {
+                await sql.end({timeout:1}).catch(()=>{});
+              }
+            }
+          }
+          JS
+
+          cat > .onboarding-smoke/wrangler.jsonc <<JSON
+          {
+            "name":"$HELPER_WORKER_NAME",
+            "main":"./worker.mjs",
+            "compatibility_date":"2026-09-06",
+            "compatibility_flags":["nodejs_compat"],
+            "workers_dev":true,
+            "preview_urls":false,
+            "hyperdrive":[{"binding":"MKETY_DB","id":"$HD_ID"}]
+          }
+          JSON
+
+          pnpm exec wrangler deploy --config .onboarding-smoke/wrangler.jsonc >/tmp/helper-deploy.log 2>&1
+          printf '%s' "$key" | pnpm exec wrangler secret put SMOKE_KEY --name "$HELPER_WORKER_NAME" >/dev/null
+
+          account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          sub="$(ACCOUNT="$account" node -e "const x=JSON.parse(process.env.ACCOUNT||'{}');if(!x.success||!x.result?.subdomain)process.exit(1);process.stdout.write(x.result.subdomain)")"
+          url="https://$HELPER_WORKER_NAME.$sub.workers.dev"
+          echo "HELPER_URL=$url" >> "$GITHUB_ENV"
+
+          ready=0
+          for attempt in $(seq 1 15); do
+            code="$(curl -sS --connect-timeout 5 --max-time 15 -o /tmp/helper-ready -w '%{http_code}' -H "x-smoke-key: $key" "$url/" || true)"
+            if [ "$code" != 000 ] && [ "$code" != 404 ]; then ready=1; break; fi
+            sleep 2
+          done
+          [ "$ready" = 1 ]
+
+      - name: Create disposable production Mkety session
+        shell: bash
+        run: |
+          set -euo pipefail
+          USER_ID="$SMOKE_USER_ID" EMAIL="$SMOKE_EMAIL" HASH="$SMOKE_TOKEN_HASH" node <<'NODE' >/tmp/setup.json
+          process.stdout.write(JSON.stringify({userId:process.env.USER_ID,email:process.env.EMAIL,tokenHash:process.env.HASH}));
+          NODE
+          curl -fsS -X POST -H "x-smoke-key: $SMOKE_KEY" -H 'Content-Type: application/json'             --data @/tmp/setup.json "$HELPER_URL/setup" >/tmp/setup-result.json
+          node -e "const x=require('/tmp/setup-result.json');if(x.ok!==true)process.exit(1)"
+
+      - name: Verify session and create real production workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie="mkety_session=$SMOKE_TOKEN"
+
+          curl -fsS -H "Cookie: $cookie" https://mkety.com/api/auth/session -o /tmp/session-before.json
+          EMAIL="$SMOKE_EMAIL" node <<'NODE'
+          const x=require('/tmp/session-before.json');
+          if(x?.user?.email!==process.env.EMAIL) throw new Error('Disposable production session not recognized');
+          if(Object.keys(x?.user?.roles||{}).length!==0) throw new Error('Disposable user unexpectedly has tenant roles before onboarding');
+          NODE
+
+          NAME="Mkety Onboarding Smoke" SLUG="$SMOKE_SLUG" node <<'NODE' >/tmp/workspace.json
+          process.stdout.write(JSON.stringify({name:process.env.NAME,slug:process.env.SLUG,description:'Automated production onboarding verification'}));
+          NODE
+          code="$(curl -sS --connect-timeout 10 --max-time 30 -o /tmp/workspace-response.json -w '%{http_code}'             -X POST -H "Cookie: $cookie" -H 'Content-Type: application/json' --data @/tmp/workspace.json             https://mkety.com/api/workspaces)"
+          [ "$code" = 200 ] || { echo "Workspace create HTTP $code"; cat /tmp/workspace-response.json; exit 1; }
+
+          SLUG="$SMOKE_SLUG" node <<'NODE'
+          const x=require('/tmp/workspace-response.json');
+          if(x?.success!==true||x?.data?.slug!==process.env.SLUG||x?.redirectTo!==`/t/${process.env.SLUG}`) {
+            throw new Error('Workspace creation response contract failed');
+          }
+          NODE
+
+          curl -fsS -H "Cookie: $cookie" https://mkety.com/api/auth/session -o /tmp/session-after.json
+          SLUG="$SMOKE_SLUG" node <<'NODE'
+          const x=require('/tmp/session-after.json');
+          if(x?.user?.roles?.[process.env.SLUG]!=='admin') throw new Error('New workspace admin membership missing from session');
+          NODE
+
+          tenant_code="$(curl -sS --connect-timeout 10 --max-time 30 -o /tmp/tenant.html -w '%{http_code}'             -H "Cookie: $cookie" "https://mkety.com/t/$SMOKE_SLUG")"
+          [ "$tenant_code" = 200 ] || { echo "Tenant route HTTP $tenant_code"; exit 1; }
+          grep -Fq 'Mkety Onboarding Smoke' /tmp/tenant.html || { echo 'Tenant page missing workspace name'; exit 1; }
+
+          select_code="$(curl -sS --connect-timeout 10 --max-time 30 -D /tmp/select.headers -o /tmp/select.body -w '%{http_code}'             -H "Cookie: $cookie" https://mkety.com/select-tenant)"
+          if [ "$select_code" -ge 300 ] && [ "$select_code" -lt 400 ]; then
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' /tmp/select.headers)"
+            case "$location" in
+              */t/$SMOKE_SLUG|/t/$SMOKE_SLUG) ;;
+              *) echo "Unexpected select-tenant redirect: $location"; exit 1 ;;
+            esac
+          else
+            echo "select-tenant did not redirect for single workspace: HTTP $select_code"
+            exit 1
+          fi
+
+      - name: Clean exact smoke tenant and user
+        if: always() && env.HELPER_URL != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          EMAIL="$SMOKE_EMAIL" SLUG="$SMOKE_SLUG" USER_ID="$SMOKE_USER_ID" node <<'NODE' >/tmp/cleanup.json
+          process.stdout.write(JSON.stringify({email:process.env.EMAIL,slug:process.env.SLUG,userId:process.env.USER_ID}));
+          NODE
+          curl -fsS -X POST -H "x-smoke-key: $SMOKE_KEY" -H 'Content-Type: application/json'             --data @/tmp/cleanup.json "$HELPER_URL/cleanup" >/tmp/cleanup.json.out
+          node -e "const x=require('/tmp/cleanup.json.out');if(x.ok!==true)process.exit(1)"
+
+      - name: Remove helper Worker
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'             --data '{"enabled":false,"previews_enabled":false}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$HELPER_WORKER_NAME/subdomain" >/dev/null || true
+          curl -sS -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$HELPER_WORKER_NAME" >/dev/null || true
+
+      - name: Publish result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=success
+          desc='Production Mkety session, first-workspace creation, membership and tenant routing passed.'
+          if [ "$JOB_STATUS" != success ]; then
+            state=failure
+            desc='Production onboarding smoke failed; exact test data cleanup was attempted.'
+          fi
+          STATE="$state" DESC="$desc" node <<'NODE' >/tmp/status.json
+          process.stdout.write(JSON.stringify({state:process.env.STATE,context:'mkety/production-onboarding',description:process.env.DESC,target_url:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`}));
+          NODE
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json'             --data @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" >/dev/null || true
