@@ -7,7 +7,7 @@ export const MKETY_LEGAL_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     seoTitle: 'Mkety Privacy Policy | Data and privacy information',
     seoDescription: 'Read how Mkety handles information across the public website, Mkety Platform, Academy and Enterprise services.',
     eyebrow: 'Privacy Policy',
-    headline: 'How Mkety handles information.',
+    headline: 'Mkety privacy and how we handle information.',
     intro:
       'Effective 22 September 2026. This Privacy Policy explains the main categories of information Mkety may process, why that information is used, and the choices available to you when you use mkety.com, Mkety Platform, public Mkety AI, Academy entry points, or Enterprise services.',
     sections: [
