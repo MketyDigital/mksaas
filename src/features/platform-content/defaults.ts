@@ -54,7 +54,7 @@ export const defaultHeroSection: PlatformHeroSectionInput = {
   previewItems: [
     { label: 'AI', description: 'Agents, knowledge, tools, models, runs, versions, and publishing.' },
     { label: 'Automation', description: 'Triggers, workflows, actions, conditions, webhooks, and run history.' },
-    { label: 'Deploy', description: 'Applications, environments, release configuration, and deployment history.' },
+    { label: 'Deploy', description: 'Lightweight web apps, APIs, portals, managed edge/serverless deployment, status, and history.' },
     { label: 'SolutionHub', description: 'Ready-made solutions, templates, blueprints, and enterprise options.' },
   ],
 };
@@ -431,7 +431,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Projects and workspaces',
     excerpt: 'How Mkety organizes work around focused spaces.',
     bodyMarkdown:
-      '# Projects and workspaces\n\nProjects organize the work you are building. AI Workspace focuses on agents and AI applications, Automation Workspace focuses on workflows and integrations, and Deploy Workspace focuses on organizing applications and environments, release configuration, and deployment history. Mkety One combines Starter with all three self-service Workspaces.',
+      '# Projects and workspaces\n\nProjects organize the work you are building. AI Workspace focuses on agents, knowledge, tools and supported AI channels. Automation Workspace focuses on visual workflows, triggers, actions, integrations and execution history. Deploy Workspace focuses on lightweight web apps, APIs, portals and managed edge/serverless deployment. Mkety One combines Starter with all three self-service Workspaces.',
     sortOrder: 10,
   },
   {
@@ -465,7 +465,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     categoryKey: 'workspaces',
     slug: 'deploy-workspace',
     title: 'Deploy Workspace',
-    excerpt: 'Organize applications and environments, release configuration, and deployment history.',
+    excerpt: 'Deploy lightweight web apps, APIs, portals, and managed serverless workloads.',
     bodyMarkdown:
       '# Deploy Workspace\n\nDeploy Workspace is for lightweight web applications, APIs, portals, and serverless workloads using Mkety managed edge/serverless deployment. It includes environment configuration, secrets, supported custom domains and SSL, deployment history, logs/status where available, and project/application usage visibility.',
     sortOrder: 30,
