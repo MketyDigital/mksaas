@@ -298,13 +298,16 @@ jobs:
           if (!location.pathname.startsWith('/ui/v2/login/')) {
             throw new Error(`Unexpected branded login path: ${location.pathname}`);
           }
-          const requestId = location.searchParams.get('requestId') || '';
+          const authRequest =
+            location.searchParams.get('authRequest') ||
+            location.searchParams.get('requestId') ||
+            '';
           if (
-            requestId.length < 8 ||
-            requestId.length > 1024 ||
-            /[\u0000-\u0020\u007f]/.test(requestId)
+            authRequest.length < 8 ||
+            authRequest.length > 1024 ||
+            /[\u0000-\u0020\u007f]/.test(authRequest)
           ) {
-            throw new Error('Branded login redirect is missing a valid opaque OIDC request token');
+            throw new Error('Branded login redirect is missing a valid opaque OIDC auth request token');
           }
           const expectedPath = process.env.INTENT === 'signup' ? '/register' : '/login';
           if (!location.pathname.includes(expectedPath)) {
