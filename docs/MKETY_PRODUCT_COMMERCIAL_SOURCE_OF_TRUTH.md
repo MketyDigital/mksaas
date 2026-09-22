@@ -189,3 +189,24 @@ For fixed-price self-service plans, the canonical customer sequence is account/w
 This is required because Billing and access state are tenant-scoped. Enterprise remains on its separate negotiated commercial flow.
 
 Starter is currently a commercial entry plan whose public positioning is Pages-first website/publishing. Do not invent a backend entitlement key merely to mirror the price card. Until the Starter publishing/runtime capability has an enforceable backend boundary, the catalog may intentionally carry no workspace entitlement for Starter. When that runtime is implemented, add a real entitlement/usage contract in the same change that introduces enforceable Starter capabilities.
+
+
+## 10. Self-service prepaid billing terms — September 22, 2026
+
+Fixed-price self-service plans support four prepaid subscription terms:
+
+| Term | Discount | Commercial meaning |
+| ---- | -------- | ------------------ |
+| 1 month | 0% | canonical monthly list price |
+| 3 months | 5% | prepaid subscription total |
+| 6 months | 10% | prepaid subscription total |
+| 12 months | 15% | prepaid subscription total |
+
+The discount applies only to the fixed subscription price. It does not automatically discount metered usage, credits, pass-through model/provider charges, or Enterprise/custom work.
+
+The monthly plan version remains the immutable list-price source. The selected prepaid term deterministically calculates the server-owned checkout total and sets the Billing period end to the selected number of months. Browser/query values are never trusted as prices.
+
+The selected term must survive:
+`pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> provider checkout`.
+
+Enterprise and Trading Custom / Enterprise terms remain separately quoted and are not governed by this self-service discount table.
