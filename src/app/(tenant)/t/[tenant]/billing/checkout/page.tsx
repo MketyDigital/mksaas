@@ -128,6 +128,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
             <form action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post" className="mt-8">
               <input type="hidden" name="planKey" value={plan.key} />
               <input type="hidden" name="termKey" value={termKey} />
+              <input type="hidden" name="termKey" value={termKey} />
               <button
                 type="submit"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:opacity-95"
