@@ -1168,7 +1168,7 @@ Current behavior and correction:
 - first-workspace creation makes the creator the tenant `admin`;
 - built-in tenant `admin` is intentionally full authority for that tenant;
 - Mkety public CMS/app-experience records are global platform content;
-- Platform Control therefore now additionally requires the route tenant to match server configuration `MKETY_PLATFORM_CONTROL_TENANT_SLUG`;
+- Platform Control therefore now additionally requires the route tenant to match server configuration `MKETY_PLATFORM_CONTROL_TENANT_SLUG` and the signed-in email to match `MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS`;
 - the check fails closed if the variable is missing or the current tenant is a normal customer workspace;
 - module-specific PBAC checks remain in force after the operator-tenant boundary.
 
