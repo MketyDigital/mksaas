@@ -1180,3 +1180,26 @@ Self-service customer order remains account-first:
 This is required because subscriptions and entitlement state belong to an authenticated tenant. Browser return/success state remains non-entitling. Enterprise/Trading Custom sales remain the separate negotiated-payment path.
 
 Starter follow-up: the $5.99 Starter catalog entry currently has no Starter-specific entitlement key. The Pages-first commercial positioning is authoritative, but authenticated Pages product access/limits still need an enforceable app implementation before Starter is considered feature-complete.
+
+
+## Auth/onboarding and Platform Control production boundary — 2026-09-22
+
+Self-service customer order is authoritative:
+
+`pricing -> signup/sign-in -> tenant selection or first-workspace creation -> authenticated checkout -> verified final settlement -> Billing state -> Entitlements`.
+
+Do not move payment before identity/workspace creation for ordinary self-service plans. Billing/subscription/entitlement state is tenant-scoped and browser return URLs are non-entitling. Enterprise remains a separate negotiated-payment path.
+
+Auth entry presentation is intentionally concise:
+- login: one short support sentence;
+- signup: one short support sentence;
+- no repeated provider/security marketing inside the auth card.
+
+Global Mkety Platform Control/CMS is not ordinary customer tenant administration. The global control surface must require:
+- tenant slug equals server-side `MKETY_PLATFORM_CONTROL_TENANT_SLUG`;
+- authenticated operator email is in server-side `MKETY_PLATFORM_ADMIN_EMAILS`;
+- the required PBAC permission for the requested control area.
+
+The reserved Platform Control workspace slug cannot be created by a non-allowlisted identity. Customer-created workspaces may still make their creator tenant `admin`, but that authority is scoped to the customer tenant and must not grant global Mkety CMS access.
+
+Bootstrap the first operator through normal production Mkety Auth; do not create a hard-coded admin login or authentication bypass.
