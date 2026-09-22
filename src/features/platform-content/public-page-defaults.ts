@@ -72,21 +72,21 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'ai',
             title: 'AI Workspace',
             description:
-              'Build and publish AI agents with knowledge, tools, model choice, testing, versions, supported channels, API access, and run history.',
+              'Build and publish AI agents with knowledge, tools/actions, model choice, testing, drafts/versions, Website AI, supported messaging channels, API access, run history, and usage visibility.',
             href: '/app',
           },
           {
             key: 'automation',
             title: 'Automation Workspace',
             description:
-              'Build visual workflows with webhooks, schedules, API actions, conditions, integrations, secrets, retries, and execution history.',
+              'Build visual workflows with webhooks, schedules, API actions, conditions, notifications, integrations, secrets, retries, execution logs/history, and usage visibility.',
             href: '/app',
           },
           {
             key: 'deploy',
             title: 'Deploy Workspace',
             description:
-              'Deploy lightweight web apps, APIs, portals, and serverless workloads through Mkety managed edge deployment, with environment configuration, status, and history.',
+              'Deploy lightweight web apps, APIs, portals, and serverless workloads through Mkety managed edge/serverless deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
             href: '/app',
           },
           {
