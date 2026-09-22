@@ -335,7 +335,7 @@ jobs:
             await page.getByLabel('Workspace name').fill('Mkety Auth Smoke');
             await page.getByLabel(/Workspace address/i).fill(slug);
             await Promise.all([
-              page.waitForURL(`**/t/${slug}`, { timeout: 20_000 }),
+              page.waitForURL(`**/t/${slug}`, { timeout: 20_000, waitUntil: 'commit' }),
               page.getByRole('button', { name: 'Create workspace' }).click(),
             ]);
             await expect(page).toHaveURL(new RegExp(`/t/${slug}$`));
