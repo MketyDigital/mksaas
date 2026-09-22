@@ -7,6 +7,7 @@ export const PLATFORM_CONTENT_PERMISSION = 'platform:content';
 export const PLATFORM_APP_EXPERIENCE_PERMISSION = 'platform:app-experience';
 
 export const PLATFORM_CONTROL_TENANT_ENV = 'MKETY_PLATFORM_CONTROL_TENANT_SLUG';
+export const PLATFORM_CONTROL_ADMIN_EMAILS_ENV = 'MKETY_PLATFORM_ADMIN_EMAILS';
 export const PLATFORM_CONTROL_OPERATOR_EMAILS_ENV = 'MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS';
 
 export type PlatformAdminArea = 'control-center' | 'public-content' | 'app-experience';
@@ -20,6 +21,17 @@ const permissionByArea: Record<PlatformAdminArea, string> = {
 export function isPlatformControlTenant(tenantSlug: string) {
   const configuredSlug = process.env[PLATFORM_CONTROL_TENANT_ENV]?.trim();
   return Boolean(configuredSlug && configuredSlug === tenantSlug);
+}
+
+export function isPlatformOperatorEmail(email: string) {
+  const configured = process.env[PLATFORM_CONTROL_ADMIN_EMAILS_ENV] ?? '';
+  const allowed = new Set(
+    configured
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return allowed.has(email.trim().toLowerCase());
 }
 
 export function isPlatformControlOperatorEmail(email: string) {
