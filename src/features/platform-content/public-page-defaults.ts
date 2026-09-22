@@ -47,6 +47,12 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description:
               'Start faster with reusable SolutionHub blueprints or work with Mkety on custom Enterprise delivery.',
           },
+          {
+            key: 'operate',
+            title: 'Operate',
+            description:
+              'Manage domains, usage, credits, billing visibility, team access, history, and approved administration from the same Mkety platform.',
+          },
         ],
         cta: { label: 'Explore Workspaces', href: '/workspaces' },
       },
