@@ -89,20 +89,20 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       key: 'ai',
       title: 'AI Workspace',
       description:
-        'Build and publish AI agents with knowledge, tools, model choice, testing, versions, supported channels, API access, and run history.',
+        'Build and publish AI agents with knowledge, tools/actions, model choice, testing, drafts/versions, Website AI, supported messaging channels, API access, run history, and usage visibility.',
       href: '/app',
     },
     {
       key: 'automation',
       title: 'Automation Workspace',
-      description: 'Build visual workflows with webhooks, schedules, API actions, conditions, integrations, secrets, retries, and execution history.',
+      description: 'Build visual workflows with webhooks, schedules, API actions, conditions, notifications, integrations, secrets, retries, execution logs/history, and usage visibility.',
       href: '/app',
     },
     {
       key: 'deploy',
       title: 'Deploy Workspace',
       description:
-        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety managed edge deployment, with environment configuration, status, and history.',
+        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety managed edge/serverless deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
       href: '/app',
     },
     {
@@ -231,10 +231,11 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     ctaHref: '/signup?plan=starter',
     features: [
       'Published websites and pages',
-      'Landing pages, portfolios, and simple business sites',
+      'Landing pages, portfolios, simple business sites, and supported blogs/docs',
       'Custom domains, SSL, and edge delivery where supported',
       'Forms and integrations where supported',
-      'Basic analytics, project, asset, and usage visibility',
+      'Basic analytics and project management',
+      'Asset/storage and Mkety usage/credits visibility',
     ],
   },
   {
@@ -242,16 +243,17 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     name: 'AI Workspace',
     priceLabel: '$16.99',
     billingLabel: '/ month',
-    description: 'For building, testing, publishing, and operating AI agents and AI-powered applications.',
+    description: 'Build and operate AI agents with knowledge, tools, model choice, publishing, supported channels, API access, and usage visibility.',
     highlighted: false,
     ctaLabel: 'Get Started',
     ctaHref: '/signup?plan=ai-workspace',
     features: [
-      'AI Agent Builder and agent publishing',
-      'Knowledge sources and retrieval',
-      'Model choice, tools, actions, and API access',
-      'Testing, drafts, versions, runs, and conversation history',
-      'Website AI and supported messaging integrations',
+      'AI Agent Builder with agents and published agents',
+      'Drafts, version history, model choice, and test playground',
+      'Knowledge sources, storage, and retrieval',
+      'Tools, actions, and API access',
+      'Website AI, Telegram, and supported messaging integrations',
+      'Conversation/run history, usage, and team access',
     ],
   },
   {
@@ -259,16 +261,17 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     name: 'Automation Workspace',
     priceLabel: '$16.99',
     billingLabel: '/ month',
-    description: 'For building repeatable workflows, integrations, triggers, actions, and business automations.',
+    description: 'Build and operate visual workflows with triggers, actions, integrations, execution history, and usage visibility.',
     highlighted: false,
     ctaLabel: 'Get Started',
     ctaHref: '/signup?plan=automation-workspace',
     features: [
-      'Visual workflow builder',
+      'Visual workflow builder and workflow management',
       'Webhook and scheduled triggers',
       'API actions, conditions, notifications, and integrations',
-      'Secrets, retries, run history, and execution logs',
-      'Usage and execution visibility',
+      'Secrets and protected integration configuration',
+      'Run history, execution logs, and retries',
+      'Execution/usage visibility and team access',
     ],
   },
   {
@@ -281,9 +284,10 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     ctaLabel: 'Get Started',
     ctaHref: '/signup?plan=deploy-workspace',
     features: [
-      'Managed serverless application runtime',
-      'Web application and API deployment',
-      'Environment configuration and secrets',
+      'Managed serverless application runtime and edge deployment',
+      'Lightweight web app, API, and portal deployment',
+      'Custom domains and SSL where supported',
+      'Environment variables and secrets',
       'Deployment history, logs, and status where available',
       'Project, application, and usage visibility',
     ],
@@ -298,11 +302,12 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     ctaLabel: 'Get Started',
     ctaHref: '/signup?plan=mkety-one',
     features: [
-      'Starter included',
-      'AI Workspace included',
-      'Automation Workspace included',
-      'Deploy Workspace included',
-      'Unified projects, usage, domains, teams, and support experience',
+      'Starter website and publishing capabilities',
+      'AI Workspace, Automation Workspace, and Deploy Workspace included',
+      'Unified projects and workspace management',
+      'Domains, usage, credits, and activity visibility',
+      'Team access and shared operational controls',
+      'Support and history/analytics experience across the bundle',
     ],
   },
   {
@@ -310,7 +315,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     name: 'Enterprise',
     priceLabel: 'Custom',
     description:
-      'For requirements beyond the standard shared platform envelope, including dedicated infrastructure, specialized integrations, private runtimes, and Trading.',
+      'For requirements beyond the standard shared platform envelope, including dedicated infrastructure, specialized integrations, private runtimes, persistent services, and Trading.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety Enterprise',
     ctaHref: '/contact',
@@ -444,7 +449,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'AI Workspace',
     excerpt: 'Build agents, knowledge-powered tools, and AI applications.',
     bodyMarkdown:
-      '# AI Workspace\n\nAI Workspace is designed for agents, knowledge, tools, model selection, testing, runs, versions, publishing, and ongoing AI application work.',
+      '# AI Workspace\n\nAI Workspace is the Mkety agent-building workspace for agents and published agents, knowledge sources and retrieval, model choice, tools/actions, testing, drafts and version history, Website AI, supported messaging integrations, API access, conversation/run history, usage, and team access.',
     sortOrder: 10,
   },
   {
@@ -453,7 +458,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Automation Workspace',
     excerpt: 'Build repeatable workflows and connected business automations.',
     bodyMarkdown:
-      '# Automation Workspace\n\nAutomation Workspace helps you create workflows from triggers, actions, conditions, transformations, webhooks, integrations, agent steps, and run history.',
+      '# Automation Workspace\n\nAutomation Workspace provides a visual workflow builder with webhook and scheduled triggers, API actions, conditions, notifications, integrations, secrets, retries, execution logs and run history, usage/execution visibility, and team access.',
     sortOrder: 20,
   },
   {
@@ -462,7 +467,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Deploy Workspace',
     excerpt: 'Organize applications and environments, release configuration, and deployment history.',
     bodyMarkdown:
-      '# Deploy Workspace\n\nDeploy Workspace gives teams one place to organize applications and environments, manage release configuration, and review deployment history across Mkety projects.',
+      '# Deploy Workspace\n\nDeploy Workspace is for lightweight web applications, APIs, portals, and serverless workloads using Mkety managed edge/serverless deployment. It includes environment configuration, secrets, supported custom domains and SSL, deployment history, logs/status where available, and project/application usage visibility.',
     sortOrder: 30,
   },
   {
