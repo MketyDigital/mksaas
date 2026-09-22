@@ -809,3 +809,24 @@ Canonical customer-facing feature dimensions now include:
 - Trading Workspace remains visible as Custom / Enterprise with no self-service price.
 
 Production content DB smoke now compares every published pricing feature array exactly against the canonical defaults. This prevents a stale CMS seed or edited pricing dataset from silently passing release verification. Public pricing remains free of CPU/RAM/VPS/server-allocation claims.
+
+
+## 10. Self-service prepaid billing terms — September 22, 2026
+
+Fixed-price self-service plans support four prepaid subscription terms:
+
+| Term | Discount | Commercial meaning |
+| ---- | -------- | ------------------ |
+| 1 month | 0% | canonical monthly list price |
+| 3 months | 5% | prepaid subscription total |
+| 6 months | 10% | prepaid subscription total |
+| 12 months | 15% | prepaid subscription total |
+
+The discount applies only to the fixed subscription price. It does not automatically discount metered usage, credits, pass-through model/provider charges, or Enterprise/custom work.
+
+The monthly plan version remains the immutable list-price source. The selected prepaid term deterministically calculates the server-owned checkout total and sets the Billing period end to the selected number of months. Browser/query values are never trusted as prices.
+
+The selected term must survive:
+`pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> provider checkout`.
+
+Enterprise and Trading Custom / Enterprise terms remain separately quoted and are not governed by this self-service discount table.
