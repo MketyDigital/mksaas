@@ -207,7 +207,10 @@ async function main() {
     );
     assertSmoke(actual.ctaLabel === expected.ctaLabel, `${expected.key} should keep its canonical CTA label`);
     assertSmoke(actual.ctaHref === expected.ctaHref, `${expected.key} should keep its canonical CTA route`);
-    assertSmoke(actual.features.length > 0, `${expected.key} should expose at least one published feature`);
+    assertSmoke(
+      JSON.stringify(actual.features) === JSON.stringify(expected.features),
+      `${expected.key} should keep its canonical published feature list`,
+    );
   }
   assertPublicCopySafe(pricingContract, 'pricing');
 
