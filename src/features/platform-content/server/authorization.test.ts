@@ -20,6 +20,19 @@ describe('platform content authorization constants', () => {
     else process.env[PLATFORM_CONTROL_TENANT_ENV] = previous;
   });
 
+  it('fails closed unless the actor email is in the configured operator allowlist', () => {
+    const previous = process.env[PLATFORM_CONTROL_ADMIN_EMAILS_ENV];
+    delete process.env[PLATFORM_CONTROL_ADMIN_EMAILS_ENV];
+    expect(isPlatformOperatorEmail('owner@mkety.com')).toBe(false);
+
+    process.env[PLATFORM_CONTROL_ADMIN_EMAILS_ENV] = 'owner@mkety.com, ops@mkety.com';
+    expect(isPlatformOperatorEmail('OWNER@MKETY.COM')).toBe(true);
+    expect(isPlatformOperatorEmail('customer@example.com')).toBe(false);
+
+    if (previous === undefined) delete process.env[PLATFORM_CONTROL_ADMIN_EMAILS_ENV];
+    else process.env[PLATFORM_CONTROL_ADMIN_EMAILS_ENV] = previous;
+  });
+
   it('fails closed unless the signed-in identity is an approved Mkety operator', () => {
     const previous = process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV];
     delete process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV];
