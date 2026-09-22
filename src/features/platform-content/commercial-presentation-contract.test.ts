@@ -64,25 +64,27 @@ describe('Mkety documented public commercial presentation', () => {
 
   it('keeps public pricing free of infrastructure-slice and stale Academy/Trading pricing', () => {
     const presentation = JSON.stringify(defaultPricingPlans);
-    expect(presentation).not.toMatch(/\b(cpu|ram|vps)\b/i);
+    expect(presentation).not.toMatch(/\b(cpu|ram|vps|server allocation|shared cpu|shared ram)\b/i);
     expect(presentation).not.toMatch(/African edition/i);
     expect(presentation).not.toMatch(/academy.*\$|trading.*\$/i);
+    expect(pricingByKey.get('starter')?.description).toMatch(/Pages-first website and publishing/i);
+    expect(pricingByKey.get('deploy-workspace')?.description).toMatch(/serverless application deployment|managed edge runtime/i);
   });
 
   it('keeps Trading visible but sends new buyers through Enterprise first', () => {
     expect(workspaceByKey.get('ai')).toMatchObject({
       title: 'AI Workspace',
       description:
-        'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
+        'Build and publish AI agents with knowledge, tools, model choice, testing, versions, supported channels, API access, and run history.',
     });
     expect(workspaceByKey.get('automation')).toMatchObject({
       title: 'Automation Workspace',
-      description: 'Create workflows from triggers, actions, conditions, webhooks, transformations, and agent steps.',
+      description: 'Build visual workflows with webhooks, schedules, API actions, conditions, integrations, secrets, retries, and execution history.',
     });
     expect(workspaceByKey.get('deploy')).toMatchObject({
       title: 'Deploy Workspace',
       description:
-        'Organize deployment-ready applications and environments, manage release configuration, and track deployment history.',
+        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety managed edge deployment, with environment configuration, status, and history.',
     });
     expect(workspaceByKey.get('trading')).toMatchObject({
       title: 'Trading Workspace',
