@@ -37,6 +37,23 @@ describe('Mkety auth entry and self-service onboarding contract', () => {
     expect(workspaceRoute).toContain('/billing/checkout?plan=');
   });
 
+  it('preserves selected billing term through auth and workspace onboarding', async () => {
+    const [login, signup, selectTenant, createWorkspace, workspaceRoute] = await Promise.all([
+      read('src/app/(auth)/login/page.tsx'),
+      read('src/app/(auth)/signup/page.tsx'),
+      read('src/app/(auth)/select-tenant/page.tsx'),
+      read('src/app/create-workspace/page.tsx'),
+      read('src/app/api/workspaces/route.ts'),
+    ]);
+
+    for (const source of [login, signup, selectTenant, createWorkspace]) {
+      expect(source).toContain('term');
+      expect(source).toContain('isSelfServiceBillingTermKey');
+    }
+    expect(workspaceRoute).toContain('isSelfServiceBillingTermKey');
+    expect(workspaceRoute).toContain('&term=');
+  });
+
   it('uses account and workspace creation before self-service payment', async () => {
     const checkout = await read('src/app/(tenant)/t/[tenant]/billing/checkout/page.tsx');
     const workspaceRoute = await read('src/app/api/workspaces/route.ts');
