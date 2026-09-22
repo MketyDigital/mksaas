@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
-import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
+import { isSelfServiceBillingPlanKey, isSelfServiceBillingTermKey } from '@/features/billing/catalog/self-service-plans';
 import { auth } from '@/shared/lib/auth';
 
 export const metadata = {
@@ -14,13 +14,15 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 interface SignupPageProps {
-  searchParams: Promise<{ plan?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string }>;
 }
 
 export default async function SignupPage({ searchParams }: SignupPageProps) {
   const query = await searchParams;
   const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
-  const selectTenantUrl = planKey ? `/select-tenant?plan=${encodeURIComponent(planKey)}` : '/select-tenant';
+  const termKey = query.term && isSelfServiceBillingTermKey(query.term) ? query.term : null;
+  const planQuery = planKey ? `plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}` : '';
+  const selectTenantUrl = planKey ? `/select-tenant?${planQuery}` : '/select-tenant';
 
   const session = await auth();
   if (session?.user) redirect(selectTenantUrl);
@@ -40,7 +42,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
         <LoginForm mode="signup" callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href={planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login'} className="font-semibold text-primary hover:underline">
+          <Link href={planKey ? `/login?${planQuery}` : '/login'} className="font-semibold text-primary hover:underline">
             Sign in
           </Link>
         </p>
