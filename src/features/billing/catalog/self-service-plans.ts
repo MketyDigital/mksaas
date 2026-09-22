@@ -4,7 +4,7 @@ export const SELF_SERVICE_BILLING_PLANS = {
   starter: {
     key: 'starter',
     name: 'Starter',
-    description: 'Core Mkety platform access for individuals getting started.',
+    description: 'Pages-first website and publishing access for lightweight websites and landing pages.',
     amountMinor: 599n,
     currency: 'USD',
     billingInterval: 'monthly',
@@ -13,7 +13,7 @@ export const SELF_SERVICE_BILLING_PLANS = {
   'ai-workspace': {
     key: 'ai-workspace',
     name: 'AI Workspace',
-    description: 'AI agents, knowledge, integrations, and AI application workspace access.',
+    description: 'AI Agent Builder access with knowledge, tools, models, publishing, supported integrations, and run history.',
     amountMinor: 1699n,
     currency: 'USD',
     billingInterval: 'monthly',
@@ -27,7 +27,7 @@ export const SELF_SERVICE_BILLING_PLANS = {
   'automation-workspace': {
     key: 'automation-workspace',
     name: 'Automation Workspace',
-    description: 'Workflow, webhook, trigger, action, and integration workspace access.',
+    description: 'Visual workflow access with webhooks, schedules, API actions, conditions, integrations, retries, and execution history.',
     amountMinor: 1699n,
     currency: 'USD',
     billingInterval: 'monthly',
@@ -40,7 +40,7 @@ export const SELF_SERVICE_BILLING_PLANS = {
   'deploy-workspace': {
     key: 'deploy-workspace',
     name: 'Deploy Workspace',
-    description: 'Application, environment, release configuration, and deployment-history access.',
+    description: 'Managed serverless and edge deployment access for lightweight web apps, APIs, and portals.',
     amountMinor: 999n,
     currency: 'USD',
     billingInterval: 'monthly',
