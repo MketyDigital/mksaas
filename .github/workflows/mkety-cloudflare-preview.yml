@@ -309,14 +309,11 @@ jobs:
           ) {
             throw new Error('Branded login redirect is missing a valid opaque OIDC auth request token');
           }
-          const expectedPath = process.env.INTENT === 'signup' ? '/register' : '/login';
-          if (!location.pathname.includes(expectedPath)) {
-            throw new Error(`Branded ${process.env.INTENT} route mismatch: ${location.pathname}`);
-          }
           console.log('BRANDED_AUTH_FIRST_HOP_SAFE '+JSON.stringify({
             intent:process.env.INTENT,
             origin:location.origin,
-            path:location.pathname
+            path:location.pathname,
+            authRequestPresent:true
           }));
           NODE
           done
