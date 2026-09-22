@@ -13,12 +13,12 @@ DELETE FROM "saas_template"."platform_pricing_plans" WHERE "key" = 'growth';
 INSERT INTO "saas_template"."platform_pricing_plans"
   ("key", "name", "price_label", "billing_label", "description", "highlighted", "cta_label", "cta_href", "sort_order", "status", "updated_at")
 VALUES
-  ('starter', 'Starter', '$5.99', '/ month', 'Pages-first website and publishing access for lightweight websites, landing pages, portfolios, and simple business sites.', false, 'Get Started', '/signup?plan=starter', 10, 'published', now()),
-  ('ai-workspace', 'AI Workspace', '$16.99', '/ month', 'AI Agent Builder access with knowledge, tools, model choice, testing, versions, publishing, supported integrations, and run history.', false, 'Get Started', '/signup?plan=ai-workspace', 20, 'published', now()),
-  ('automation-workspace', 'Automation Workspace', '$16.99', '/ month', 'Visual workflow access with webhooks, schedules, API actions, conditions, integrations, retries, and execution history.', false, 'Get Started', '/signup?plan=automation-workspace', 30, 'published', now()),
-  ('deploy-workspace', 'Deploy Workspace', '$9.99', '/ month', 'Managed serverless and edge deployment for lightweight web apps, APIs, portals, and other bounded application workloads.', false, 'Get Started', '/signup?plan=deploy-workspace', 40, 'published', now()),
+  ('starter', 'Starter', '$5.99', '/ month', 'A Pages-first website and publishing plan for landing pages, portfolios, simple business sites, and other lightweight web publishing.', false, 'Get Started', '/signup?plan=starter', 10, 'published', now()),
+  ('ai-workspace', 'AI Workspace', '$16.99', '/ month', 'Build and operate AI agents with knowledge, tools, model choice, publishing, supported channels, API access, and usage visibility.', false, 'Get Started', '/signup?plan=ai-workspace', 20, 'published', now()),
+  ('automation-workspace', 'Automation Workspace', '$16.99', '/ month', 'Build and operate visual workflows with triggers, actions, integrations, execution history, and usage visibility.', false, 'Get Started', '/signup?plan=automation-workspace', 30, 'published', now()),
+  ('deploy-workspace', 'Deploy Workspace', '$9.99', '/ month', 'For lightweight web apps, APIs, portals, and serverless application deployment through a managed edge runtime.', false, 'Get Started', '/signup?plan=deploy-workspace', 40, 'published', now()),
   ('mkety-one', 'Mkety One', '$49', '/ month', 'The complete self-service Mkety bundle: Starter plus AI, Automation, and Deploy Workspaces.', true, 'Get Started', '/signup?plan=mkety-one', 50, 'published', now()),
-  ('enterprise', 'Enterprise', 'Custom', NULL, 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.', false, 'Talk to Mkety Enterprise', '/contact', 60, 'published', now())
+  ('enterprise', 'Enterprise', 'Custom', NULL, 'For requirements beyond the standard shared platform envelope, including dedicated infrastructure, specialized integrations, private runtimes, persistent services, and Trading.', false, 'Talk to Mkety Enterprise', '/contact', 60, 'published', now())
 ON CONFLICT ("key") DO UPDATE SET
   "name" = EXCLUDED."name",
   "price_label" = EXCLUDED."price_label",
