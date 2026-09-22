@@ -34,8 +34,8 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
           <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
-          <h1 className="mb-2 text-3xl font-bold tracking-tight">Start with Mkety</h1>
-          <p className="text-muted-foreground">Create your account, then set up your first workspace.</p>
+          <h1 className="mb-2 text-3xl font-bold tracking-tight">Create your Mkety account</h1>
+          <p className="text-muted-foreground">Create your account to get started.</p>
         </div>
         <LoginForm mode="signup" callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
