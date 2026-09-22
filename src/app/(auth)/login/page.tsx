@@ -47,8 +47,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
           <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
-          <h1 className="mb-2 text-3xl font-bold tracking-tight">Welcome to Mkety</h1>
-          <p className="text-muted-foreground">Sign in to your workspace</p>
+          <h1 className="mb-2 text-3xl font-bold tracking-tight">Sign in to Mkety</h1>
+          <p className="text-muted-foreground">Access your Mkety workspace.</p>
         </div>
         <LoginForm callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
