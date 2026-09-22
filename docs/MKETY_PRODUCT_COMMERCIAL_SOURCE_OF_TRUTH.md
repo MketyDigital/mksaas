@@ -178,3 +178,14 @@ The following customer-facing positioning is authoritative for current public-si
 - **SolutionHub Class B** is Enterprise/Custom when the requirement includes complex ERP, substantial regulated/data/security systems, larger transactional platforms, heavy logistics/data processing, browser automation, arbitrary containers, persistent services, private databases/networking/models, dedicated environments, specialized Trading infrastructure, high-throughput integrations, or strict latency/SLA requirements.
 
 Public copy must continue to describe customer outcomes and product limits rather than exposing internal CPU/RAM/container allocation assumptions.
+
+
+## 9. Signup, checkout, and Starter enforcement note
+
+For fixed-price self-service plans, the canonical customer sequence is account/workspace first, payment second:
+
+`pricing -> signup/sign-in -> tenant selection or creation -> authenticated checkout -> verified settlement -> Billing state -> Entitlements`.
+
+This is required because Billing and access state are tenant-scoped. Enterprise remains on its separate negotiated commercial flow.
+
+Starter is currently a commercial entry plan whose public positioning is Pages-first website/publishing. Do not invent a backend entitlement key merely to mirror the price card. Until the Starter publishing/runtime capability has an enforceable backend boundary, the catalog may intentionally carry no workspace entitlement for Starter. When that runtime is implemented, add a real entitlement/usage contract in the same change that introduces enforceable Starter capabilities.
