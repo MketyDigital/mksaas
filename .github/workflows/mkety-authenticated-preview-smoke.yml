@@ -79,9 +79,11 @@ jobs:
           set -euo pipefail
           password="$(openssl rand -hex 24)Aa1!"
           email="mkety-auth-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.com"
+          login_name="mkety${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
           echo "::add-mask::$password"
           echo "SMOKE_PASSWORD=$password" >> "$GITHUB_ENV"
           echo "SMOKE_EMAIL=$email" >> "$GITHUB_ENV"
+          echo "SMOKE_LOGIN_NAME=$login_name" >> "$GITHUB_ENV"
 
           project_response="$(curl --fail-with-body --silent --show-error \
             -X POST "${ZITADEL_ISSUER%/}/zitadel.project.v2.ProjectService/GetProject" \
@@ -97,10 +99,10 @@ jobs:
           NODE
           )"
 
-          payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" ORGANIZATION_ID="$organization_id" node <<'NODE'
+          payload="$(SMOKE_EMAIL="$email" SMOKE_PASSWORD="$password" SMOKE_LOGIN_NAME="$login_name" ORGANIZATION_ID="$organization_id" node <<'NODE'
           const payload = {
             organizationId: process.env.ORGANIZATION_ID,
-            username: process.env.SMOKE_EMAIL,
+            username: process.env.SMOKE_LOGIN_NAME,
             human: {
               profile: {
                 givenName: 'Mkety',
@@ -160,6 +162,7 @@ jobs:
           const issuer = new URL(String(process.env.ZITADEL_ISSUER)).origin;
           const loginOrigin = new URL(String(process.env.ZITADEL_LOGIN_ORIGIN || process.env.ZITADEL_ISSUER)).origin;
           const email = String(process.env.SMOKE_EMAIL);
+          const loginName = String(process.env.SMOKE_LOGIN_NAME || process.env.SMOKE_EMAIL);
           const password = String(process.env.SMOKE_PASSWORD);
           const slug = String(process.env.SMOKE_WORKSPACE_SLUG);
 
@@ -250,7 +253,7 @@ jobs:
               const loginInput = page.getByTestId('username-text-input').first();
               if (await visible(loginInput)) {
                 unknownStateCount = 0;
-                await fillHostedField(page, loginInput, email, 'identifier');
+                await fillHostedField(page, loginInput, loginName, 'identifier');
                 await submitHostedForm(page, loginInput, 'identifier');
                 continue;
               }
