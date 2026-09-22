@@ -4,6 +4,7 @@ import {
   getSelfServiceBillingPlan,
   isSelfServiceBillingPlanKey,
   isSelfServiceBillingTermKey,
+  isSelfServiceBillingTermKey,
 } from '@/features/billing/catalog/self-service-plans';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
@@ -64,6 +65,7 @@ export async function POST(request: Request, context: RouteContext) {
   const plan = getSelfServiceBillingPlan(planKey);
   const requestOrigin = new URL(request.url).origin;
   const encodedPlan = encodeURIComponent(plan.key);
+  const encodedTerm = encodeURIComponent(termKey);
   const encodedTerm = encodeURIComponent(termKey);
   const checkoutPage = `${requestOrigin}/t/${encodeURIComponent(tenantSlug)}/billing/checkout`;
   const adapter = createNowPaymentsBillingAdapter({ apiKey, ipnSecret });
