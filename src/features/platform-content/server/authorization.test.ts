@@ -1,4 +1,4 @@
-import { isPlatformControlTenant, PLATFORM_APP_EXPERIENCE_PERMISSION, PLATFORM_CONTENT_PERMISSION, PLATFORM_CONTROL_PERMISSION, PLATFORM_CONTROL_TENANT_ENV } from './authorization';
+import { isPlatformControlOperatorEmail, isPlatformControlTenant, PLATFORM_APP_EXPERIENCE_PERMISSION, PLATFORM_CONTENT_PERMISSION, PLATFORM_CONTROL_OPERATOR_EMAILS_ENV, PLATFORM_CONTROL_PERMISSION, PLATFORM_CONTROL_TENANT_ENV } from './authorization';
 
 describe('platform content authorization constants', () => {
   it('keeps platform CMS and app experience permissions distinct', () => {
@@ -18,5 +18,18 @@ describe('platform content authorization constants', () => {
 
     if (previous === undefined) delete process.env[PLATFORM_CONTROL_TENANT_ENV];
     else process.env[PLATFORM_CONTROL_TENANT_ENV] = previous;
+  });
+
+  it('fails closed unless the signed-in identity is an approved Mkety operator', () => {
+    const previous = process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV];
+    delete process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV];
+    expect(isPlatformControlOperatorEmail('owner@mkety.com')).toBe(false);
+
+    process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV] = 'owner@mkety.com, ops@mkety.com';
+    expect(isPlatformControlOperatorEmail('OWNER@MKETY.COM')).toBe(true);
+    expect(isPlatformControlOperatorEmail('customer@example.com')).toBe(false);
+
+    if (previous === undefined) delete process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV];
+    else process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV] = previous;
   });
 });
