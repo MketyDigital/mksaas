@@ -782,3 +782,6 @@ Bootstrap procedure for the first Mkety operator account:
 6. invite/add later operator identities to that dedicated workspace and grant only the required operator roles/permissions.
 
 Do not create a hidden hard-coded admin account, bypass identity, or grant customer workspaces global CMS authority.
+
+
+The control-workspace slug alone is not an authorization secret. The server also requires the authenticated actor email to be present in `MKETY_PLATFORM_ADMIN_EMAILS`. This prevents a normal customer from claiming the reserved control slug and inheriting global CMS authority.
