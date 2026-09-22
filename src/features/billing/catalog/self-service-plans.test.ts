@@ -8,6 +8,11 @@ import {
 
 describe('self-service billing catalog', () => {
   it('contains only the approved fixed-price public plans', () => {
+    expect(SELF_SERVICE_BILLING_PLANS.starter.description).toMatch(/Pages-first website and publishing/i);
+    expect(SELF_SERVICE_BILLING_PLANS['ai-workspace'].description).toMatch(/AI Agent Builder/i);
+    expect(SELF_SERVICE_BILLING_PLANS['automation-workspace'].description).toMatch(/Visual workflow/i);
+    expect(SELF_SERVICE_BILLING_PLANS['deploy-workspace'].description).toMatch(/serverless and edge deployment/i);
+
     expect(Object.keys(SELF_SERVICE_BILLING_PLANS)).toEqual([
       'starter',
       'ai-workspace',
