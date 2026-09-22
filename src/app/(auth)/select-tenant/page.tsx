@@ -2,7 +2,7 @@ import { Building2, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
+import { isSelfServiceBillingPlanKey, isSelfServiceBillingTermKey } from '@/features/billing/catalog/self-service-plans';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { auth } from '@/shared/lib/auth';
 import { getAllRoles } from '@/shared/lib/rbac';
@@ -16,16 +16,18 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 interface SelectTenantPageProps {
-  searchParams: Promise<{ plan?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string }>;
 }
 
 export default async function SelectTenantPage(props?: SelectTenantPageProps) {
   const query = props?.searchParams ? await props.searchParams : {};
   const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
+  const termKey = query.term && isSelfServiceBillingTermKey(query.term) ? query.term : null;
+  const planQuery = planKey ? `plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}` : '';
 
   const session = await auth();
 
-  if (!session?.user) redirect(planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login');
+  if (!session?.user) redirect(planKey ? `/login?${planQuery}` : '/login');
 
   const userRoles = await getAllRoles();
   const tenantSlugs = Object.keys(userRoles);
@@ -41,7 +43,7 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
           <p className="text-muted-foreground mb-6">
             You&apos;re signed in as <strong>{session.user.email}</strong>. Create your first workspace or ask an organization admin to invite you.
           </p>
-          <Link href={planKey ? `/create-workspace?plan=${encodeURIComponent(planKey)}` : '/create-workspace'} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+          <Link href={planKey ? `/create-workspace?${planQuery}` : '/create-workspace'} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
             <Plus className="h-4 w-4" />
             Create workspace
           </Link>
@@ -53,7 +55,7 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
   if (tenantSlugs.length === 1) {
     redirect(
       planKey
-        ? `/t/${tenantSlugs[0]}/billing/checkout?plan=${encodeURIComponent(planKey)}`
+        ? `/t/${tenantSlugs[0]}/billing/checkout?${planQuery}`
         : `/t/${tenantSlugs[0]}`,
     );
   }
@@ -76,7 +78,7 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
             {tenantSlugs.map((slug) => {
               const role = userRoles[slug];
               return (
-                <Link key={slug} href={planKey ? `/t/${slug}/billing/checkout?plan=${encodeURIComponent(planKey)}` : `/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
+                <Link key={slug} href={planKey ? `/t/${slug}/billing/checkout?${planQuery}` : `/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Building2 className="h-5 w-5" /></div>
                     <div>
@@ -88,7 +90,7 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
                 </Link>
               );
             })}
-            <Link href={planKey ? `/create-workspace?plan=${encodeURIComponent(planKey)}` : '/create-workspace'} className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm font-medium hover:bg-muted/40">
+            <Link href={planKey ? `/create-workspace?${planQuery}` : '/create-workspace'} className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm font-medium hover:bg-muted/40">
               <Plus className="h-4 w-4" /> Create another workspace
             </Link>
           </CardContent>
