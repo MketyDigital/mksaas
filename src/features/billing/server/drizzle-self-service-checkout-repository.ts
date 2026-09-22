@@ -17,7 +17,6 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
   async prepareCheckout(input) {
     const catalogPlan = getSelfServiceBillingPlan(input.planKey);
     const quote = getSelfServiceBillingQuote(input.planKey, input.termKey);
-    const quote = getSelfServiceBillingQuote(input.planKey, input.termKey);
 
     return db.transaction(async (tx) => {
       const [existingSubscription] = await tx
