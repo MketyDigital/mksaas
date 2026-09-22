@@ -10,12 +10,13 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
-import { getSelfServiceBillingPlan } from '../catalog/self-service-plans';
+import { getSelfServiceBillingPlan, getSelfServiceBillingQuote } from '../catalog/self-service-plans';
 import type { SelfServiceCheckoutRepository } from './self-service-checkout';
 
 export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository = {
   async prepareCheckout(input) {
     const catalogPlan = getSelfServiceBillingPlan(input.planKey);
+    const quote = getSelfServiceBillingQuote(input.planKey, input.termKey);
 
     return db.transaction(async (tx) => {
       const [existingSubscription] = await tx
@@ -66,7 +67,7 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
       }
 
       const periodStart = input.now;
-      const periodEnd = addMonths(periodStart, 1);
+      const periodEnd = addMonths(periodStart, quote.term.months);
 
       const [subscription] = await tx
         .insert(billingSubscriptions)
@@ -89,7 +90,7 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
           subscriptionId: subscription.id,
           periodStart,
           periodEnd,
-          amountDueMinor: activeVersion.amountMinor,
+          amountDueMinor: quote.amountMinor,
           currency: activeVersion.currency,
           collectionStatus: 'open',
           dueAt: input.now,
@@ -103,7 +104,7 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
           subscriptionId: subscription.id,
           billingPeriodId: period.id,
           provider: input.provider,
-          amountExpectedMinor: activeVersion.amountMinor,
+          amountExpectedMinor: quote.amountMinor,
           currency: activeVersion.currency,
           status: 'created',
         })
@@ -114,7 +115,7 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
         tenantId: input.tenantId,
         subscriptionId: subscription.id,
         billingPeriodId: period.id,
-        amountExpectedMinor: activeVersion.amountMinor,
+        amountExpectedMinor: quote.amountMinor,
         currency: activeVersion.currency,
       };
     });
