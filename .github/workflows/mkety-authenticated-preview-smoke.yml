@@ -189,13 +189,18 @@ jobs:
           }
 
           async function fillHostedField(page: Page, input: Locator, value: string, phase: string) {
-            await expect(input, `${phase} input should be visible`).toBeVisible({ timeout: 5_000 });
-            await page.waitForTimeout(500);
-            await input.click();
-            await input.fill('');
-            await input.pressSequentially(value, { delay: 15 });
-            await expect(input, `${phase} input should retain its value`).toHaveValue(value, { timeout: 5_000 });
-            await input.press('Tab');
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              await expect(input, `${phase} input should be visible`).toBeVisible({ timeout: 5_000 });
+              await input.fill(value).catch(() => undefined);
+              await page.waitForTimeout(250);
+              const actual = await input.inputValue().catch(() => '');
+              if (actual === value) {
+                await input.press('Tab').catch(() => undefined);
+                return;
+              }
+            }
+            await safeDiagnostic(page, `${phase}-input-value`);
+            throw new Error(`${phase} input did not retain its value after retries`);
           }
 
           async function submitHostedForm(page: Page, input: Locator, phase: string) {
