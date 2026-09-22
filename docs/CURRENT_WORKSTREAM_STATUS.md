@@ -745,3 +745,39 @@ Findings and changes:
 No production database, Cloudflare route, payment, authentication, deployment-provider or DNS mutation is part of this branch.
 
 Remaining gate before merge/production use: exact-head repository CI, public candidate/route acceptance where triggered, and review of the rendered legal pages on the candidate.
+
+
+## 2026-09-22 auth, onboarding and Platform Control boundary audit
+
+The production auth/onboarding path was rechecked while finishing the public site.
+
+Confirmed self-service sequence:
+
+`/pricing` -> selected fixed-price plan -> signup/sign-in -> tenant selection or first-workspace creation -> authenticated tenant checkout -> provider invoice -> verified final settlement -> Billing state -> Entitlements.
+
+This order is intentional. Non-Enterprise customers register before payment because subscriptions, payment records and entitlements are scoped to an authenticated Mkety tenant/workspace. A browser payment return never grants access. Enterprise remains separate and uses the protected negotiated-payment flow.
+
+Auth behavior remains Mkety-owned and provider-neutral at the application boundary:
+- sign-in uses `intent=signin`;
+- signup uses `intent=signup`;
+- both continue through the existing Authorization Code + PKCE flow;
+- selected self-service plan keys survive auth and first-workspace onboarding into tenant checkout.
+
+Login/signup presentation was reduced to one short explanatory sentence per page; the repeated card description/security copy was removed.
+
+Security finding and correction:
+- first-workspace creation correctly makes the creator an `admin` of that customer tenant;
+- tenant `admin` currently resolves to wildcard tenant permissions;
+- public CMS records are global Mkety content, not customer-tenant content;
+- therefore Platform Control/CMS must not be reachable merely because a customer created a workspace.
+
+Platform Control now fails closed unless the route tenant slug exactly matches the server-side `MKETY_PLATFORM_CONTROL_TENANT_SLUG` configuration. Normal customer tenant admins remain admins of their own workspace but cannot use the global Mkety Platform Control/CMS surface.
+
+Bootstrap procedure for the first Mkety operator account:
+1. configure `MKETY_PLATFORM_CONTROL_TENANT_SLUG` to a dedicated internal slug such as `mkety-ops`;
+2. create/sign in with the intended Mkety operator identity through the normal production auth flow;
+3. create the dedicated workspace using that exact slug;
+4. the creator becomes tenant `admin` and can open `/t/<slug>/admin/platform-control`;
+5. invite/add later operator identities to that dedicated workspace and grant only the required operator roles/permissions.
+
+Do not create a hidden hard-coded admin account, bypass identity, or grant customer workspaces global CMS authority.
