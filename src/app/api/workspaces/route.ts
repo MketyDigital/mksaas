@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
+import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 import { withRequestDatabase } from '@/shared/db/request';
 import * as schema from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -35,6 +36,10 @@ export async function POST(request: Request) {
   const planKey = body.plan && isSelfServiceBillingPlanKey(String(body.plan)) ? String(body.plan) : null;
 
   if (!name || !slug) return NextResponse.json({ success: false, error: 'Workspace name and slug are required.' }, { status: 400 });
+
+  if (isPlatformControlTenant(slug) && !isPlatformOperatorEmail(session.user.email)) {
+    return NextResponse.json({ success: false, error: 'That workspace address is reserved.' }, { status: 403 });
+  }
 
   const tenant = await withRequestDatabase(async (database) => {
     const existing = await database.query.tenants.findFirst({ where: eq(schema.tenants.slug, slug) });
