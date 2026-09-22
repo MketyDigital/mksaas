@@ -1,8 +1,12 @@
+import { redirect } from 'next/navigation';
+
 import { requirePermission } from '@/shared/lib/permissions';
 
 export const PLATFORM_CONTROL_PERMISSION = 'admin:dashboard';
 export const PLATFORM_CONTENT_PERMISSION = 'platform:content';
 export const PLATFORM_APP_EXPERIENCE_PERMISSION = 'platform:app-experience';
+
+export const PLATFORM_CONTROL_TENANT_ENV = 'MKETY_PLATFORM_CONTROL_TENANT_SLUG';
 
 export type PlatformAdminArea = 'control-center' | 'public-content' | 'app-experience';
 
@@ -12,7 +16,15 @@ const permissionByArea: Record<PlatformAdminArea, string> = {
   'app-experience': PLATFORM_APP_EXPERIENCE_PERMISSION,
 };
 
+export function isPlatformControlTenant(tenantSlug: string) {
+  const configuredSlug = process.env[PLATFORM_CONTROL_TENANT_ENV]?.trim();
+  return Boolean(configuredSlug && configuredSlug === tenantSlug);
+}
+
 export async function requirePlatformAdminArea(tenantSlug: string, area: PlatformAdminArea) {
+  if (!isPlatformControlTenant(tenantSlug)) {
+    redirect(`/t/${tenantSlug}?error=unauthorized`);
+  }
   return requirePermission(tenantSlug, permissionByArea[area]);
 }
 
