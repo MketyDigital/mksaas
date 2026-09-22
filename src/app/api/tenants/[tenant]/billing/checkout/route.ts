@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   getSelfServiceBillingPlan,
   isSelfServiceBillingPlanKey,
+  isSelfServiceBillingTermKey,
 } from '@/features/billing/catalog/self-service-plans';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
@@ -42,12 +43,16 @@ export async function POST(request: Request, context: RouteContext) {
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { planKey?: string })
-    : (Object.fromEntries(await request.formData()) as { planKey?: string });
+    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string })
+    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string });
 
   const planKey = String(body.planKey ?? '');
+  const termKey = String(body.termKey ?? '1m');
   if (!isSelfServiceBillingPlanKey(planKey)) {
     return json({ success: false, message: 'Unknown self-service plan.' }, 400);
+  }
+  if (!isSelfServiceBillingTermKey(termKey)) {
+    return json({ success: false, message: 'Unknown billing term.' }, 400);
   }
 
   const apiKey = process.env.NOWPAYMENTS_API_KEY;
@@ -59,6 +64,7 @@ export async function POST(request: Request, context: RouteContext) {
   const plan = getSelfServiceBillingPlan(planKey);
   const requestOrigin = new URL(request.url).origin;
   const encodedPlan = encodeURIComponent(plan.key);
+  const encodedTerm = encodeURIComponent(termKey);
   const checkoutPage = `${requestOrigin}/t/${encodeURIComponent(tenantSlug)}/billing/checkout`;
   const adapter = createNowPaymentsBillingAdapter({ apiKey, ipnSecret });
 
@@ -69,8 +75,9 @@ export async function POST(request: Request, context: RouteContext) {
       {
         tenantId: tenant.id,
         planKey,
-        returnUrl: `${checkoutPage}?plan=${encodedPlan}&payment=returned`,
-        cancelUrl: `${checkoutPage}?plan=${encodedPlan}&payment=cancelled`,
+        termKey,
+        returnUrl: `${checkoutPage}?plan=${encodedPlan}&term=${encodedTerm}&payment=returned`,
+        cancelUrl: `${checkoutPage}?plan=${encodedPlan}&term=${encodedTerm}&payment=cancelled`,
       },
     );
 
