@@ -162,3 +162,19 @@ No `mkety.com` production cutover until the exact candidate SHA proves all of th
 - both NOWPayments and Selar readiness gates;
 - Enterprise payments remain non-entitling/non-provisioning until verified payment confirmation;
 - routing/DNS guardrails and unrelated Cloudflare resources remain preserved.
+
+
+## 8. September 22, 2026 frontend plan/workspace positioning
+
+The following customer-facing positioning is authoritative for current public-site copy and supersedes legacy infrastructure-slice wording:
+
+- **Starter** is a Pages-first website/publishing plan. Present websites/pages, landing pages, portfolios, simple business sites, supported blogs/docs, domains, SSL, edge delivery, supported forms/integrations, basic analytics, project/asset allowances, and usage/credits. Do not market CPU, RAM, VPS slices, or dedicated server allocation.
+- **AI Workspace** is the Mkety agent product: Agent Builder, agents/published agents, drafts/versions, model choice, testing, Website AI, supported messaging integrations, API access, tools/actions, knowledge, run/conversation history, usage, and team access. Standard inference uses external model providers; do not market a dedicated per-customer compute process.
+- **Automation Workspace** is workflow capability: visual workflows, webhooks, schedules, API actions, conditions, notifications, integrations, secrets, history/logs, retries, executions/credits, and team access. Normal orchestration is shared/serverless-first.
+- **Deploy Workspace** is for lightweight web apps, APIs, portals, and serverless deployment using managed edge/serverless language. Customer copy may describe managed application runtime, serverless application runtime, edge deployment, managed deployment, environment configuration, deployment history/status, and application/API usage allowances. Arbitrary containers, persistent daemons, large compute, special networking, and dedicated resources belong to Enterprise.
+- **Mkety One** bundles the standard Starter + AI + Automation + Deploy capabilities. Describe value through product limits/usage such as websites, apps, agents, knowledge, workflow executions, credits, domains, team members, support, and history retention; do not promise physical server allocations or unbounded unlimited resources.
+- **Trading Workspace remains visible** in Workspace/public presentation exactly as a specialized **Custom / Enterprise** product. It does not receive a self-service price and remains architecturally standalone.
+- **SolutionHub Class A** is transparent/shared-platform where economics fit Mkety shared/serverless services: AI assistants, normal automations, websites, portals, dashboards, lightweight APIs/apps, and similar bounded workloads.
+- **SolutionHub Class B** is Enterprise/Custom when the requirement includes complex ERP, substantial regulated/data/security systems, larger transactional platforms, heavy logistics/data processing, browser automation, arbitrary containers, persistent services, private databases/networking/models, dedicated environments, specialized Trading infrastructure, high-throughput integrations, or strict latency/SLA requirements.
+
+Public copy must continue to describe customer outcomes and product limits rather than exposing internal CPU/RAM/container allocation assumptions.
