@@ -13,10 +13,10 @@ DELETE FROM "saas_template"."platform_pricing_plans" WHERE "key" = 'growth';
 INSERT INTO "saas_template"."platform_pricing_plans"
   ("key", "name", "price_label", "billing_label", "description", "highlighted", "cta_label", "cta_href", "sort_order", "status", "updated_at")
 VALUES
-  ('starter', 'Starter', '$5.99', '/ month', 'A simple entry plan for individuals getting started with Mkety projects and core platform access.', false, 'Get Started', '/signup?plan=starter', 10, 'published', now()),
-  ('ai-workspace', 'AI Workspace', '$16.99', '/ month', 'For building, testing, publishing, and operating AI agents and AI-powered applications.', false, 'Get Started', '/signup?plan=ai-workspace', 20, 'published', now()),
-  ('automation-workspace', 'Automation Workspace', '$16.99', '/ month', 'For building repeatable workflows, integrations, triggers, actions, and business automations.', false, 'Get Started', '/signup?plan=automation-workspace', 30, 'published', now()),
-  ('deploy-workspace', 'Deploy Workspace', '$9.99', '/ month', 'For organizing deployment-ready applications and environments, managing release configuration, and tracking deployment history.', false, 'Get Started', '/signup?plan=deploy-workspace', 40, 'published', now()),
+  ('starter', 'Starter', '$5.99', '/ month', 'Pages-first website and publishing access for lightweight websites, landing pages, portfolios, and simple business sites.', false, 'Get Started', '/signup?plan=starter', 10, 'published', now()),
+  ('ai-workspace', 'AI Workspace', '$16.99', '/ month', 'AI Agent Builder access with knowledge, tools, model choice, testing, versions, publishing, supported integrations, and run history.', false, 'Get Started', '/signup?plan=ai-workspace', 20, 'published', now()),
+  ('automation-workspace', 'Automation Workspace', '$16.99', '/ month', 'Visual workflow access with webhooks, schedules, API actions, conditions, integrations, retries, and execution history.', false, 'Get Started', '/signup?plan=automation-workspace', 30, 'published', now()),
+  ('deploy-workspace', 'Deploy Workspace', '$9.99', '/ month', 'Managed serverless and edge deployment for lightweight web apps, APIs, portals, and other bounded application workloads.', false, 'Get Started', '/signup?plan=deploy-workspace', 40, 'published', now()),
   ('mkety-one', 'Mkety One', '$49', '/ month', 'The complete self-service Mkety bundle: Starter plus AI, Automation, and Deploy Workspaces.', true, 'Get Started', '/signup?plan=mkety-one', 50, 'published', now()),
   ('enterprise', 'Enterprise', 'Custom', NULL, 'For custom systems, specialized implementations, trading infrastructure, enterprise support, and managed delivery.', false, 'Talk to Mkety Enterprise', '/contact', 60, 'published', now())
 ON CONFLICT ("key") DO UPDATE SET
