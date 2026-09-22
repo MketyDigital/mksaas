@@ -1149,3 +1149,12 @@ Plan selection is preserved across public pricing, account creation/sign-in, ten
 The staging candidate and production migration-host release sequences now seed and smoke the canonical Billing catalog. The standalone staging database check also independently seeds the catalog before smoking it, avoiding false positives from shared staging state.
 
 Once PR #80 is merged and promoted, continue APP-07 Deployments/Cloud with the authorized/audited non-production customer invocation path. Do not broaden that slice into production provider mutation, DNS/custom-domain execution, OCI/Coolify mutation, or rollback execution.
+## Public legal/content production completion — 2026-09-22
+
+Before resuming authenticated app development, the public site received a final legal/copy audit against the legacy Mkety production site and current MKSaaS architecture.
+
+Branch `fix/public-site-production-copy-20260922` replaces the thin Privacy/Terms defaults with production-oriented coverage grounded in current behavior, while explicitly rejecting stale legacy claims that no longer match Mkety. It also removes residual template/demo/Auth.js wording from reusable public components and the English getting-started documentation.
+
+This is a content/legal-surface hardening slice only. It does not change production infrastructure, payment settlement, authentication, tenant authorization, deployment execution or database schema.
+
+After the exact branch head passes current repository/public-candidate gates and is merged, resume the authenticated application roadmap from current `main`. Do not merge historical PR #78 as-is: it is materially behind current main and must be reconciled against the already-merged APP-07 progression before any Deploy approval work is reused.
