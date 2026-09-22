@@ -207,13 +207,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     eyebrow: 'Pricing',
     headline: 'Choose Starter, a Workspace, Mkety One, or Enterprise.',
     intro:
-      'Pick the product access you need, combine the standard self-service options with Mkety One, or use Trading Workspace and other specialized requirements through Custom / Enterprise.',
+      'Pick the product access you need and pay monthly or prepay 3, 6, or 12 months. Longer prepaid terms receive progressively lower effective monthly pricing. Mkety One combines the standard self-service options, while Trading Workspace and other specialized requirements remain Custom / Enterprise.',
     sections: [
       {
         eyebrow: 'Commercial model',
         title: 'Clear options for different ways of working.',
         description:
-          'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Mkety One combines Starter plus all three self-service Workspaces. Trading Workspace remains visible as Custom / Enterprise without self-service pricing. Enterprise covers requirements beyond the standard shared platform envelope.',
+          'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Self-service plans support 1, 3, 6, and 12 month prepaid terms with 0%, 5%, 10%, and 15% discounts respectively. Mkety One combines Starter plus all three self-service Workspaces. Trading Workspace remains visible as Custom / Enterprise without self-service pricing. Enterprise covers requirements beyond the standard shared platform envelope.',
         items: [],
       },
     ],
