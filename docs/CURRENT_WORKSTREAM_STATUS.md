@@ -785,3 +785,27 @@ Do not create a hidden hard-coded admin account, bypass identity, or grant custo
 
 
 The control-workspace slug alone is not an authorization secret. The server also requires the authenticated actor email to be present in `MKETY_PLATFORM_ADMIN_EMAILS`. This prevents a normal customer from claiming the reserved control slug and inheriting global CMS authority.
+
+
+## 2026-09-22 canonical production plan/workspace feature sweep
+
+Public plan/workspace capability copy has been normalized to the September 22 AGENTS/commercial contract across:
+- homepage workspace/default content;
+- /platform and /workspaces public page defaults;
+- /pricing plan cards;
+- public docs workspace articles;
+- Public Mkety AI grounding;
+- billing-facing plan descriptions;
+- CMS repair migration pricing descriptions and feature rows;
+- Platform Control pricing-module wording.
+
+Canonical customer-facing feature dimensions now include:
+- Starter: published websites/pages; landing pages, portfolios, simple business sites and supported blogs/docs; supported custom domains/SSL/edge delivery; supported forms/integrations; basic analytics/project management; asset/storage and usage/credits visibility.
+- AI Workspace: Agent Builder; agents/published agents; drafts/version history; model choice/test playground; knowledge/storage/retrieval; tools/actions/API; Website AI, Telegram and supported messaging; conversation/run history; usage and team access.
+- Automation Workspace: visual workflow builder; webhooks/schedules; API actions/conditions/notifications/integrations; secrets; retries; execution logs/history; execution/usage visibility and team access.
+- Deploy Workspace: managed edge/serverless application runtime; lightweight web app/API/portal deployment; supported custom domains/SSL; environment variables/secrets; deployment history/logs/status where available; project/application/usage visibility.
+- Mkety One: Starter + AI + Automation + Deploy capabilities expressed through projects/workspaces, domains, usage/credits, teams, operational controls, support and history/analytics rather than infrastructure slices.
+- Enterprise: custom implementation/managed delivery, dedicated/private infrastructure when required, containers/persistent services/networking/high-throughput needs, specialized integrations/Trading infrastructure, and custom support/commercial terms.
+- Trading Workspace remains visible as Custom / Enterprise with no self-service price.
+
+Production content DB smoke now compares every published pricing feature array exactly against the canonical defaults. This prevents a stale CMS seed or edited pricing dataset from silently passing release verification. Public pricing remains free of CPU/RAM/VPS/server-allocation claims.
