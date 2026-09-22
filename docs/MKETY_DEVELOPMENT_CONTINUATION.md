@@ -1158,3 +1158,25 @@ Branch `fix/public-site-production-copy-20260922` replaces the thin Privacy/Term
 This is a content/legal-surface hardening slice only. It does not change production infrastructure, payment settlement, authentication, tenant authorization, deployment execution or database schema.
 
 After the exact branch head passes current repository/public-candidate gates and is merged, resume the authenticated application roadmap from current `main`. Do not merge historical PR #78 as-is: it is materially behind current main and must be reconciled against the already-merged APP-07 progression before any Deploy approval work is reused.
+
+
+## Platform Control operator-tenant boundary — 2026-09-22
+
+While rechecking login/signup, onboarding, self-service Billing and CMS administration before closing the public-site workstream, the existing permission model exposed an important distinction already required by the CMS architecture: customer tenant administration is not Mkety global platform administration.
+
+Current behavior and correction:
+- first-workspace creation makes the creator the tenant `admin`;
+- built-in tenant `admin` is intentionally full authority for that tenant;
+- Mkety public CMS/app-experience records are global platform content;
+- Platform Control therefore now additionally requires the route tenant to match server configuration `MKETY_PLATFORM_CONTROL_TENANT_SLUG`;
+- the check fails closed if the variable is missing or the current tenant is a normal customer workspace;
+- module-specific PBAC checks remain in force after the operator-tenant boundary.
+
+Admin bootstrap is documented in `docs/MKETY_PLATFORM_CONTROL_ADMIN_BOOTSTRAP.md`.
+
+Self-service customer order remains account-first:
+`pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> verified settlement -> Billing -> Entitlements`.
+
+This is required because subscriptions and entitlement state belong to an authenticated tenant. Browser return/success state remains non-entitling. Enterprise/Trading Custom sales remain the separate negotiated-payment path.
+
+Starter follow-up: the $5.99 Starter catalog entry currently has no Starter-specific entitlement key. The Pages-first commercial positioning is authoritative, but authenticated Pages product access/limits still need an enforceable app implementation before Starter is considered feature-complete.
