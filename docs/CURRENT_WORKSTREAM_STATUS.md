@@ -771,13 +771,14 @@ Security finding and correction:
 - public CMS records are global Mkety content, not customer-tenant content;
 - therefore Platform Control/CMS must not be reachable merely because a customer created a workspace.
 
-Platform Control now fails closed unless the route tenant slug exactly matches the server-side `MKETY_PLATFORM_CONTROL_TENANT_SLUG` configuration. Normal customer tenant admins remain admins of their own workspace but cannot use the global Mkety Platform Control/CMS surface.
+Platform Control now fails closed unless the route tenant slug exactly matches the server-side `MKETY_PLATFORM_CONTROL_TENANT_SLUG` configuration and the signed-in identity is listed in `MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS`. Normal customer tenant admins remain admins of their own workspace but cannot use the global Mkety Platform Control/CMS surface.
 
 Bootstrap procedure for the first Mkety operator account:
 1. configure `MKETY_PLATFORM_CONTROL_TENANT_SLUG` to a dedicated internal slug such as `mkety-ops`;
-2. create/sign in with the intended Mkety operator identity through the normal production auth flow;
-3. create the dedicated workspace using that exact slug;
-4. the creator becomes tenant `admin` and can open `/t/<slug>/admin/platform-control`;
-5. invite/add later operator identities to that dedicated workspace and grant only the required operator roles/permissions.
+2. configure `MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS` with the approved operator identity/identities;
+3. create/sign in with one of those identities through the normal production auth flow;
+4. create the dedicated workspace using that exact slug;
+5. the creator becomes tenant `admin` and can open `/t/<slug>/admin/platform-control`;
+6. invite/add later operator identities to that dedicated workspace and grant only the required operator roles/permissions.
 
 Do not create a hidden hard-coded admin account, bypass identity, or grant customer workspaces global CMS authority.
