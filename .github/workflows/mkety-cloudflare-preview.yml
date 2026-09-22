@@ -251,7 +251,7 @@ jobs:
         run: |
           set -euo pipefail
           for path in / /login; do
-            status="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL$path")"
+            status="$(curl --silent --show-error --retry 4 --retry-delay 2 --retry-all-errors --output /dev/null --write-out '%{http_code}' --max-time 30 "$PREVIEW_URL$path")"
             echo "$path -> HTTP $status"
             if [ "$status" -lt 200 ] || [ "$status" -ge 400 ]; then
               echo "::error::Preview route $path did not resolve successfully; HTTP $status"
