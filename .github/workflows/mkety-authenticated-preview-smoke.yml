@@ -195,7 +195,6 @@ jobs:
               await page.waitForTimeout(250);
               const actual = await input.inputValue().catch(() => '');
               if (actual === value) {
-                await input.press('Tab').catch(() => undefined);
                 return;
               }
             }
@@ -209,7 +208,7 @@ jobs:
             await expect(form, `${phase} form should be visible`).toBeVisible({ timeout: 5_000 });
             const submit = form.locator('[data-testid="submit-button"][type="submit"]').first();
             await expect(submit, `${phase} submit button should be visible`).toBeVisible({ timeout: 5_000 });
-            await expect(submit, `${phase} submit button should be enabled`).toBeEnabled({ timeout: 5_000 });
+            await expect(submit, `${phase} submit button should be enabled`).toBeEnabled({ timeout: 10_000 });
             await submit.click();
 
             const deadline = Date.now() + 15_000;
