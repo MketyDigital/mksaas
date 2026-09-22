@@ -12,6 +12,10 @@ const FAQ_ITEMS = [
     a: 'No. You can use Starter or choose an individual AI, Automation or Deploy Workspace. Mkety One combines Starter with all three self-service Workspaces.',
   },
   {
+    q: 'Can I pay for more than one month?',
+    a: 'Yes. Self-service plans support 1, 3, 6 and 12 month prepaid terms. The approved subscription discounts are 0%, 5%, 10% and 15% respectively, so longer prepaid terms have a lower effective monthly rate.',
+  },
+  {
     q: 'Where do I access the Platform?',
     a: 'The main authenticated Platform is at app.mkety.com. Public product information, pricing and Enterprise enquiries remain on mkety.com.',
   },
