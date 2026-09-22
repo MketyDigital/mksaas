@@ -338,7 +338,7 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Do I need Mkety One to use Mkety?',
     answer:
-      'No. You can start with Starter or choose an individual AI, Automation, or Deploy Workspace. Mkety One combines Starter and all three self-service Workspaces in one bundle.',
+      'No. You can start with Starter or choose an individual AI, Automation, or Deploy Workspace. Mkety One combines Starter and all three self-service Workspaces in one bundle. Self-service plans can be paid monthly or prepaid for 3, 6, or 12 months, with progressively larger prepaid discounts.',
   },
   {
     question: 'Where do I access Mkety Academy and Trading?',
@@ -440,7 +440,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Plans, pricing, usage and credits',
     excerpt: 'The current Mkety Platform commercial options.',
     bodyMarkdown:
-      '# Plans, pricing, usage and credits\n\nCurrent Mkety Platform options are Starter at $5.99/month, AI Workspace at $16.99/month, Automation Workspace at $16.99/month, Deploy Workspace at $9.99/month, Mkety One at $49/month, and Enterprise on custom terms. Mkety One includes Starter, AI Workspace, Automation Workspace, and Deploy Workspace. Usage and credits may vary by product activity and are shown separately from the subscription price.',
+      '# Plans, pricing, usage and credits\n\nCurrent Mkety Platform monthly list prices are Starter at $5.99/month, AI Workspace at $16.99/month, Automation Workspace at $16.99/month, Deploy Workspace at $9.99/month, and Mkety One at $49/month, with Enterprise on custom terms. Self-service customers may prepay 1, 3, 6, or 12 months. The approved prepaid discounts are 0%, 5%, 10%, and 15% respectively, so longer terms have a lower effective monthly subscription rate. Mkety One includes Starter, AI Workspace, Automation Workspace, and Deploy Workspace. Usage and credits may vary by product activity and are shown separately from the subscription price.',
     sortOrder: 20,
   },
   {
