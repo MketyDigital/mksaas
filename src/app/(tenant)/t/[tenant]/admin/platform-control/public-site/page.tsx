@@ -20,7 +20,7 @@ const sections = [
   },
   {
     title: 'Pricing Display',
-    description: 'Manage public pricing copy, plan cards, feature bullets, Lite Offer wording, and enterprise CTAs.',
+    description: 'Manage public pricing copy, canonical plan cards, approved feature bullets, Workspace positioning, and Enterprise CTAs.',
     href: 'public-site/pricing',
   },
   {
