@@ -727,3 +727,21 @@ The customer path is:
 Staging candidate and production DB release sequences seed and smoke the canonical Billing catalog. The standalone staging DB smoke is self-contained and independently seeds both CMS content and Billing catalog before smoke checks.
 
 After this Billing slice is merged and production-promoted, resume APP-07 Deployments/Cloud from the previously documented next step: an authorized, audited, non-production customer invocation path over the existing deploy execution kernel. Production deployment, DNS/custom-domain mutation, OCI/Coolify mutation, and rollback execution remain outside that next slice unless separately approved.
+## 2026-09-22 public legal and production-copy completion
+
+A fresh public-site audit was run against current `main` at `d5ee4b4a0d34d8fdc68effdc290c039ec56b567f`, the authoritative architecture/handoff documents, the live public-content defaults, the remaining open PR state, and the protected legacy `MketyDigital/Mkety` repository.
+
+Branch: `fix/public-site-production-copy-20260922`.
+
+Findings and changes:
+- the current `/privacy` and `/terms` routes existed but their defaults were short baseline summaries rather than production-complete legal pages;
+- the legacy production site contained materially broader Privacy/Terms coverage, including billing/refunds, Academy, Enterprise, Trading, integrations and acceptable-use language;
+- legacy wording was used only as coverage reference: obsolete plan names, automatic-renewal claims, blanket no-refund language, unsupported infrastructure/domain promises, provider-specific privacy guarantees and other stale product claims were not copied;
+- Privacy now covers information categories, purposes, providers/integrations, AI processing, cookies/browser storage, retention/security, user choices and privacy contact without claiming unapproved certifications or fixed retention periods;
+- Terms now cover account/access security, acceptable use, AI/automation/integrations, billing/cancellation/refunds, Academy/Enterprise/Trading boundaries, intellectual property, service evolution, suspension/termination, disclaimers and contact/update handling;
+- stale template/demo/Auth.js-era customer wording was removed from the English getting-started docs and retained landing components so no reusable public surface advertises Mkety as a SaaS starter/boilerplate or promises a demo that does not match the current product;
+- internal `saas_template` database/schema identifiers were intentionally not renamed because they are implementation details and changing them would be a migration/runtime concern, not a public-copy cleanup.
+
+No production database, Cloudflare route, payment, authentication, deployment-provider or DNS mutation is part of this branch.
+
+Remaining gate before merge/production use: exact-head repository CI, public candidate/route acceptance where triggered, and review of the rendered legal pages on the candidate.
