@@ -86,8 +86,8 @@ const modules: Record<string, PublicSiteModule> = {
   },
   settings: {
     title: 'Brand & SEO Settings',
-    description: 'Manage public brand settings and metadata without changing application source code.',
-    items: ['Brand name', 'Logo URL', 'Favicon URL', 'SEO title', 'SEO description', 'Social image', 'Legal links'],
+    description: 'Manage public brand/SEO settings, support channels, and Public Mkety AI guidance/fallback behavior without changing application source code.',
+    items: ['Brand name', 'Logo URL', 'Favicon URL', 'SEO title', 'SEO description', 'Support email', 'Sales email', 'Telegram', 'Academy URL', 'Public AI prompt guidance', 'AI fallback', 'Lead capture', 'Human escalation', 'Legal links'],
     area: 'settings',
     entityType: 'site_settings',
     entityKey: 'production',
