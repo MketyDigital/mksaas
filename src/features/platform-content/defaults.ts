@@ -27,7 +27,13 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoDescription:
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
   contactEmail: 'support@mkety.com',
-  contactHref: '/contact',
+  contactHref: '/contact?ask=support',
+  salesEmail: 'hello@mkety.com',
+  telegramUrl: 'https://t.me/mketyadmin',
+  publicAssistantFallbackMessage:
+    'Mkety AI could not complete that request just now. You can leave your contact details here, message Mkety on Telegram, or email our support team.',
+  publicAssistantPromptExtension: '',
+  publicAssistantLeadCaptureEnabled: true,
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
     { label: 'Terms', href: '/terms' },
