@@ -28,6 +28,20 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
   contactEmail: 'support@mkety.com',
   contactHref: '/contact',
+  support: {
+    supportEmail: 'support@mkety.com',
+    salesEmail: 'hello@mkety.com',
+    telegramHref: 'https://t.me/mketyadmin',
+    academyHref: 'https://academy.mkety.com',
+  },
+  publicAssistant: {
+    customInstructions:
+      'Use Mkety Docs first when they clearly answer the visitor. If docs do not fully answer the question, answer from the approved public Mkety context. Escalate to human support only when needed.',
+    fallbackMessage:
+      'Mkety AI is temporarily unavailable. You can still reach Mkety support by email or Telegram.',
+    leadCaptureEnabled: true,
+    humanEscalationEnabled: true,
+  },
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
     { label: 'Terms', href: '/terms' },
