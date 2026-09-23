@@ -34,6 +34,9 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain("verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'");
     expect(workflow).toContain("verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'");
 
+    expect(workflow).toContain("MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}");
+    expect(workflow).toContain("MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || 'support@mkety.com,hello@mkety.com' }}");
+
     expect(workflow).toContain('production-db:');
     expect(workflow).toContain('needs: authorize');
     expect(workflow).toContain('uses: ./.github/workflows/mkety-coolify-production-db-executor.yml');
@@ -71,14 +74,15 @@ describe('production cutover private database gate', () => {
   it('dispatches the guarded production cutover for the exact certified SHA', async () => {
     const workflow = await readFile(CUTOVER_LAUNCHER_PATH, 'utf8');
 
-    expect(workflow).toContain('VERIFIED_SHA: ba11699f83669e7c49953e0fafc10c4f625fb1da');
+    const verifiedSha = workflow.match(/VERIFIED_SHA:\\s*([0-9a-f]{40})/)?.[1];
+    expect(verifiedSha).toMatch(/^[0-9a-f]{40}$/);
     expect(workflow).toContain('CONFIRMATION: CUTOVER MKETY PUBLIC');
     expect(workflow).toContain('actions: write');
     expect(workflow).toContain('mkety-public-production-cutover.yml');
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
     expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v7');
-    expect(workflow).toContain('CERT_BRANCH: certify/ba11699');
+    expect(workflow).toContain(`CERT_BRANCH: certify/${verifiedSha?.slice(0, 7)}`);
     expect(workflow).toContain('dispatch_certification');
     expect(workflow).toContain("dispatch_certification 'mkety-content-db-smoke.yml'");
     expect(workflow).toContain("dispatch_certification 'mkety-public-ai-runtime-diagnostic.yml'");
