@@ -17,6 +17,24 @@ export const ctaSchema = z.object({
   href: safeHrefSchema,
 });
 
+export const supportConfigSchema = z.object({
+  supportEmail: z.string().email().default('support@mkety.com'),
+  salesEmail: z.string().email().default('hello@mkety.com'),
+  telegramHref: z.string().url().default('https://t.me/mketyadmin'),
+  academyHref: z.string().url().default('https://academy.mkety.com'),
+});
+
+export const publicAssistantConfigSchema = z.object({
+  customInstructions: z.string().max(4000).default(''),
+  fallbackMessage: z
+    .string()
+    .min(1)
+    .max(1000)
+    .default('Mkety AI is temporarily unavailable. You can still reach Mkety support by email or Telegram.'),
+  leadCaptureEnabled: z.boolean().default(true),
+  humanEscalationEnabled: z.boolean().default(true),
+});
+
 export const siteSettingsSchema = z.object({
   brandName: z.string().min(1).max(120).default('Mkety'),
   logoUrl: z.string().url().optional(),
@@ -29,6 +47,8 @@ export const siteSettingsSchema = z.object({
   socialImageUrl: z.string().url().optional(),
   contactEmail: z.string().email().optional(),
   contactHref: safeHrefSchema.optional(),
+  support: supportConfigSchema.default({}),
+  publicAssistant: publicAssistantConfigSchema.default({}),
   legalLinks: z.array(ctaSchema).default([]),
 });
 
