@@ -1,12 +1,13 @@
 import { and, desc, eq } from 'drizzle-orm';
 
 import { withRequestDatabase } from '@/shared/db/request';
-import { deployApplications, deployEnvironments, deployments } from '@/shared/db/schema';
+import { deployApplications, deployEnvironments, deploymentRequests, deployments } from '@/shared/db/schema';
 
 export interface DeployFoundationState {
   applications: Array<typeof deployApplications.$inferSelect>;
   environments: Array<typeof deployEnvironments.$inferSelect>;
   deploymentHistory: Array<typeof deployments.$inferSelect>;
+  deploymentRequests: Array<typeof deploymentRequests.$inferSelect>;
 }
 
 export async function getDeployFoundationState(
@@ -14,7 +15,7 @@ export async function getDeployFoundationState(
   projectId: string,
 ): Promise<DeployFoundationState> {
   return withRequestDatabase(async (db) => {
-    const [applications, environments, deploymentHistory] = await Promise.all([
+    const [applications, environments, deploymentHistory, requests] = await Promise.all([
       db
         .select()
         .from(deployApplications)
@@ -46,8 +47,19 @@ export async function getDeployFoundationState(
         )
         .orderBy(desc(deployments.createdAt))
         .limit(25),
+      db
+        .select()
+        .from(deploymentRequests)
+        .where(
+          and(
+            eq(deploymentRequests.tenantId, tenantId),
+            eq(deploymentRequests.projectId, projectId),
+          ),
+        )
+        .orderBy(desc(deploymentRequests.requestedAt))
+        .limit(25),
     ]);
 
-    return { applications, environments, deploymentHistory };
+    return { applications, environments, deploymentHistory, deploymentRequests: requests };
   });
 }
