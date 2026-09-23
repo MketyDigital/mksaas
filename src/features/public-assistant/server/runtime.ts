@@ -3,12 +3,14 @@ import type { Database } from '@/shared/db';
 import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
 import {
   appendPublicAIMessage,
+  captureExplicitPublicAIContactFacts,
   createPublicAIConversation,
   getPublicAIConversation,
   recordPublicAIToolRun,
 } from './memory';
 import { createPublicAIProviderAdapters } from './providers';
 import { buildPublicSystemPrompt, planPublicSupportTools, sanitizePublicAssistantAnswer } from './support';
+import { getPublishedPlatformSiteSettings } from '@/features/platform-content/server/queries';
 import { executePublicSupportTool, type PublicSupportToolName } from './tools';
 import { parsePublicAIProviderConfig, type PublicAssistantEnvironment } from '../config';
 import { getDefaultPublicAIModel } from '../models';
@@ -147,16 +149,24 @@ export async function runMketyPublicAssistant(input: {
     role: 'user',
     content: input.message,
   });
-
-  const conversation = await getPublicAIConversation(input.database, input.visitorId, conversationId);
-  if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
-
-  const groundedContext = await buildGroundedContext({
-    database: input.database,
+  await captureExplicitPublicAIContactFacts(input.database, {
     visitorId: input.visitorId,
     conversationId,
     message: input.message,
   });
+
+  const conversation = await getPublicAIConversation(input.database, input.visitorId, conversationId);
+  if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
+
+  const [groundedContext, supportSettings] = await Promise.all([
+    buildGroundedContext({
+      database: input.database,
+      visitorId: input.visitorId,
+      conversationId,
+      message: input.message,
+    }),
+    getPublishedPlatformSiteSettings(),
+  ]);
   const targets = resolveProviderTargets(input.environment);
   const primary = targets[0];
   if (!primary) {
@@ -169,6 +179,12 @@ export async function runMketyPublicAssistant(input: {
         messages: toProviderMessages(conversation.messages),
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          {
+            supportEmail: supportSettings.contactEmail,
+            salesEmail: supportSettings.salesEmail,
+            telegramHref: supportSettings.telegramHref,
+            guidance: supportSettings.publicAiGuidance,
+          },
         ),
         maxOutputTokens: 900,
       },
