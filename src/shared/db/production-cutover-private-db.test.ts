@@ -51,6 +51,9 @@ describe('production cutover private database gate', () => {
 
     expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
     expect(workflow).toContain('Attach apex and www as Worker Custom Domains');
+    expect(workflow).toContain('Business\\s+(?:plan|tier|workspace)');
+    // The acceptance check must not reject ordinary phrases such as "business sites".
+    expect(workflow).not.toContain('\\b(Growth|Pro|Business)\\b');
     expect(workflow).toContain('for host in mkety.com www.mkety.com');
     expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
     expect(workflow).toContain('Verify unrelated Worker Routes remain unchanged');
@@ -79,7 +82,6 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain('CONFIRMATION: CUTOVER MKETY PUBLIC');
     expect(workflow).toContain('actions: write');
     expect(workflow).toContain('mkety-public-production-cutover.yml');
-    expect(workflow).toContain('Business\\s+(?:plan|tier|workspace)');
     expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
     expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
     expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v7');
