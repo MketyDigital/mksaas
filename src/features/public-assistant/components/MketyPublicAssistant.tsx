@@ -59,7 +59,7 @@ function renderInlineAssistantText(text: string, keyPrefix: string): ReactNode[]
 
     if (match[2] && match[3]) {
       const href = match[3];
-      const safeHref = href.startsWith('/') || href.startsWith('https://') ? href : undefined;
+      const safeHref = href.startsWith('/') || href.startsWith('https://') || href.startsWith('mailto:') ? href : undefined;
       nodes.push(
         safeHref ? (
           <a
@@ -135,11 +135,30 @@ const suggestedPrompts = [
   'What can I build with Mkety?',
   'Which Mkety product is right for me?',
   'How does Automation work?',
-  'Explain SolutionHub.',
-  'How do I get started?',
+  'I need Mkety support.',
+  'I want to talk to sales or Enterprise.',
 ] as const;
 
-export function MketyPublicAssistant() {
+const askIntentPrompts: Record<string, string> = {
+  support: 'I need Mkety support. Please check the docs first and help me.',
+  enterprise: 'I want to discuss Enterprise, Trading, a custom project, or a partnership.',
+  telegram: 'I want to contact Mkety. Please help first, then give me the Telegram option if needed.',
+  sales: 'I want to talk to Mkety sales. Please help me choose the right next step.',
+};
+
+interface MketyPublicAssistantProps {
+  supportEmail?: string;
+  salesEmail?: string;
+  telegramHref?: string;
+  fallbackMessage?: string;
+}
+
+export function MketyPublicAssistant({
+  supportEmail = 'support@mkety.com',
+  salesEmail = 'hello@mkety.com',
+  telegramHref = 'https://t.me/mketyadmin',
+  fallbackMessage = 'Mkety AI is temporarily unavailable. You can still reach Mkety support by email or Telegram.',
+}: MketyPublicAssistantProps) {
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -175,6 +194,15 @@ export function MketyPublicAssistant() {
   useEffect(() => {
     if (open) void loadHistory();
   }, [open, loadHistory]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ask = new URLSearchParams(window.location.search).get('ask');
+    const prompt = ask ? askIntentPrompts[ask] : undefined;
+    if (!prompt) return;
+    setOpen(true);
+    setInput((current) => current || prompt);
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -380,8 +408,8 @@ export function MketyPublicAssistant() {
             {!loadingHistory && messages.length === 0 ? (
               <div>
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  I can help you understand Mkety, find the right product or workspace, explain plans, and guide you
-                  through our public documentation.
+                  I’ll check Mkety’s public documentation first, then help from approved Mkety information. If you still
+                  need a person, I can guide you to support, sales, email, or Telegram.
                 </p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {suggestedPrompts.map((prompt) => (
@@ -423,7 +451,19 @@ export function MketyPublicAssistant() {
                 role="alert"
                 className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
               >
-                {error}
+                <span className="block font-medium">{error}</span>
+                <span className="mt-1 block text-muted-foreground">{fallbackMessage}</span>
+                <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {supportEmail ? (
+                    <a className="font-medium underline" href={`mailto:${supportEmail}`}>Email support</a>
+                  ) : null}
+                  {salesEmail ? (
+                    <a className="font-medium underline" href={`mailto:${salesEmail}`}>Email sales</a>
+                  ) : null}
+                  {telegramHref ? (
+                    <a className="font-medium underline" href={telegramHref} target="_blank" rel="noreferrer">Telegram</a>
+                  ) : null}
+                </span>
               </p>
             ) : null}
           </div>
