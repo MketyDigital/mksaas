@@ -136,3 +136,25 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(migration).not.toMatch(/DROP TABLE|DROP SCHEMA|TRUNCATE/i);
   });
 });
+
+
+describe('final Academy and support handoff contract', () => {
+  it('keeps Academy discovery AI-first and uses the five approved uploaded images', async () => {
+    const { readFile, stat } = await import('node:fs/promises');
+    const experience = await readFile('src/features/platform-content/components/public/MketyPublicExperience.tsx', 'utf8');
+    const defaults = await readFile('src/features/platform-content/public-page-defaults.ts', 'utf8');
+    const supportTools = await readFile('src/features/public-assistant/server/tools.ts', 'utf8');
+
+    for (let index = 1; index <= 5; index += 1) {
+      const imagePath = `public/academy-hubs/class${index}.jpg`;
+      const imageStat = await stat(imagePath);
+      expect(imageStat.size).toBeGreaterThan(100_000);
+      expect(experience).toContain(`/academy-hubs/class${index}.jpg`);
+    }
+
+    expect(defaults).toContain("label: 'Ask Mkety AI about Academy'");
+    expect(defaults).toContain("href: '#mkety-ai'");
+    expect(supportTools).toContain("academy: '/academy'");
+    expect(supportTools).not.toContain('https://academy.mkety.com');
+  });
+});
