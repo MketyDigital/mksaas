@@ -13,10 +13,11 @@ describe('production cutover Hyperdrive runtime binding', () => {
       readFile(DEPLOY_SCRIPT_PATH, 'utf8'),
     ]);
 
-    expect(workflow).toContain('MKETY_HYPERDRIVE_NAME: mkety-production-db');
+    expect(workflow).toContain('MKETY_HYPERDRIVE_NAME: mkety-production-db-v2');
     expect(workflow).toContain('/hyperdrive/configs?per_page=100');
     expect(workflow).toContain("item.name === process.env.MKETY_HYPERDRIVE_NAME");
     expect(workflow).toContain("binding: 'MKETY_DB'");
+    expect(workflow).not.toContain('MKETY_HYPERDRIVE_NAME: mkety-production-db\n');
     expect(workflow).toContain('id: process.env.MKETY_HYPERDRIVE_ID');
     expect(deployScript).toContain('Generated Worker config lost MKETY_DB Hyperdrive binding.');
     expect(deployScript).toContain('MKETY_HYPERDRIVE_ID');
