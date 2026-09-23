@@ -530,5 +530,95 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     bodyMarkdown:
       '# Privacy and access\n\nPublic Mkety pages and documentation contain general product information. Account, workspace, billing, deployment, and organization-specific information should only be accessed through the appropriate authenticated Mkety experience.',
     sortOrder: 20,
+  },,
+  {
+    categoryKey: 'getting-started',
+    slug: 'choose-where-to-start',
+    title: 'Choose where to start',
+    excerpt: 'Pick Starter, a Workspace, Mkety One, Academy, or Enterprise based on what you need.',
+    bodyMarkdown:
+      '# Choose where to start\n\nUse Starter when your main goal is publishing websites and pages. Choose AI Workspace for agents and knowledge-powered experiences, Automation Workspace for workflows and integrations, and Deploy Workspace for lightweight applications, APIs and portals. Mkety One combines the standard self-service products. Use Mkety Academy when your goal is learning, and Enterprise when your requirement needs dedicated infrastructure, specialized integrations, persistent services, Trading, or other custom delivery.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'getting-started',
+    slug: 'account-workspace-and-checkout',
+    title: 'Account, workspace and checkout',
+    excerpt: 'How registration, workspace creation, checkout and activation fit together.',
+    bodyMarkdown:
+      '# Account, workspace and checkout\n\nFor self-service plans, choose a plan and billing term, sign in or create your Mkety account, choose or create a workspace, and then complete the authenticated checkout for that workspace. Plan access is activated from verified payment settlement; a browser return or success screen alone does not grant entitlements.',
+    sortOrder: 30,
+  },
+  {
+    categoryKey: 'platform',
+    slug: 'teams-and-access',
+    title: 'Teams and access',
+    excerpt: 'How Mkety keeps workspace access and administration scoped.',
+    bodyMarkdown:
+      '# Teams and access\n\nMkety work is scoped to organizations, workspaces and projects. Roles and permissions determine who can view or manage protected areas. Public Mkety AI never has access to private tenant, project, billing, deployment, file, agent or workflow information.',
+    sortOrder: 30,
+  },
+  {
+    categoryKey: 'platform',
+    slug: 'billing-and-subscription-terms',
+    title: 'Billing and subscription terms',
+    excerpt: 'Monthly, 3-month, 6-month and annual prepaid self-service terms.',
+    bodyMarkdown:
+      '# Billing and subscription terms\n\nSelf-service plans support 1, 3, 6 and 12 month prepaid terms. The approved subscription discounts are 0%, 5%, 10% and 15% respectively. The discount applies to the fixed subscription total, not automatically to metered usage, credits or pass-through provider charges. Enterprise and Trading use separately agreed commercial terms.',
+    sortOrder: 40,
+  },
+  {
+    categoryKey: 'workspaces',
+    slug: 'starter-publishing',
+    title: 'Starter publishing',
+    excerpt: 'Pages-first website and publishing capabilities in the Starter plan.',
+    bodyMarkdown:
+      '# Starter publishing\n\nStarter is the Pages-first Mkety plan for published websites and pages, landing pages, portfolios, simple business sites and supported blogs or documentation. It also covers supported custom domains, SSL and edge delivery, forms and integrations, basic analytics/project management, assets/storage and usage visibility. Starter is not sold as a VPS, CPU/RAM allocation or general-purpose server.',
+    sortOrder: 5,
+  },
+  {
+    categoryKey: 'workspaces',
+    slug: 'mkety-one',
+    title: 'Mkety One',
+    excerpt: 'The complete standard self-service Mkety bundle.',
+    bodyMarkdown:
+      '# Mkety One\n\nMkety One combines Starter plus AI Workspace, Automation Workspace and Deploy Workspace. It is designed for customers who want the standard publishing, agent, workflow and lightweight deployment capabilities together, with unified projects, workspace management, usage/credits visibility and team controls.',
+    sortOrder: 40,
+  },
+  {
+    categoryKey: 'solutions',
+    slug: 'shared-vs-enterprise-solutions',
+    title: 'Shared-platform vs Enterprise solutions',
+    excerpt: 'Know when a SolutionHub use case fits the shared platform and when it becomes Enterprise.',
+    bodyMarkdown:
+      '# Shared-platform vs Enterprise solutions\n\nShared-platform SolutionHub use cases include AI assistants, knowledge and document Q&A, support and lead qualification, webhook and scheduled automations, business websites, portals, lightweight CRM or project tools, dashboards and APIs. Complex ERP, substantial regulated-data systems, heavy browser automation, arbitrary containers, persistent services, private networking, dedicated environments, Trading infrastructure, high-throughput or strict-SLA requirements belong to Enterprise.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'academy',
+    slug: 'academy-learning-hubs',
+    title: 'Academy learning hubs',
+    excerpt: 'The practical learning areas represented across Mkety Academy.',
+    bodyMarkdown:
+      '# Academy learning hubs\n\nMkety Academy presents learning across Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Current programmes, schedules, enrolment and pricing should always be checked at academy.mkety.com.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'enterprise',
+    slug: 'when-to-use-enterprise',
+    title: 'When to use Enterprise',
+    excerpt: 'Requirements that sit outside the standard self-service platform envelope.',
+    bodyMarkdown:
+      '# When to use Enterprise\n\nUse Enterprise for dedicated or private infrastructure, arbitrary containers, persistent services, special networking, high-throughput workloads, complex integrations, substantial regulated-data systems, strict latency or SLA requirements, browser automation, custom commercial delivery, or specialized Trading infrastructure. Enterprise scope and pricing are agreed for the specific project.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'trust',
+    slug: 'support-and-contact-safety',
+    title: 'Support and contact safety',
+    excerpt: 'Use Mkety AI and official support channels without sharing secrets.',
+    bodyMarkdown:
+      '# Support and contact safety\n\nStart public product, pricing, documentation, support and sales questions with Mkety AI. It searches approved public Mkety information first and can route you to human support when needed. You may voluntarily leave normal contact details for follow-up, but never send passwords, API keys, payment secrets, recovery codes or other sensitive credentials in a public support conversation.',
+    sortOrder: 30,
   },
 ];
