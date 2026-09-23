@@ -44,6 +44,17 @@ export default async function DocsPage({ params }: DocsPageProps) {
 
   const tree = await getPublishedDocsTree();
   const category = tree.categories.find((item) => item.key === article.categoryKey);
+  const orderedArticles = tree.categories.flatMap((categoryItem) =>
+    tree.articles
+      .filter((item) => item.categoryKey === categoryItem.key)
+      .map((item) => ({ ...item, href: `/docs/${item.categoryKey}/${item.slug}` })),
+  );
+  const currentIndex = orderedArticles.findIndex(
+    (item) => item.categoryKey === article.categoryKey && item.slug === article.slug,
+  );
+  const previousArticle = currentIndex > 0 ? orderedArticles[currentIndex - 1] : null;
+  const nextArticle =
+    currentIndex >= 0 && currentIndex < orderedArticles.length - 1 ? orderedArticles[currentIndex + 1] : null;
 
   return (
     <div className="flex gap-8">
@@ -63,6 +74,27 @@ export default async function DocsPage({ params }: DocsPageProps) {
         </div>
 
         <DocsContent content={article.bodyMarkdown} />
+
+        <nav className="mt-12 grid gap-3 border-t pt-6 sm:grid-cols-2" aria-label="Documentation pagination">
+          {previousArticle ? (
+            <Link
+              href={previousArticle.href}
+              className="rounded-xl border bg-muted/20 p-4 transition hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Previous</span>
+              <span className="mt-1 block font-medium text-foreground">← {previousArticle.title}</span>
+            </Link>
+          ) : <span />}
+          {nextArticle ? (
+            <Link
+              href={nextArticle.href}
+              className="rounded-xl border bg-muted/20 p-4 text-right transition hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next</span>
+              <span className="mt-1 block font-medium text-foreground">{nextArticle.title} →</span>
+            </Link>
+          ) : null}
+        </nav>
       </article>
 
       <aside className="hidden w-56 shrink-0 xl:block">
