@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { cn } from '@/shared/lib/utils';
 
 import { DocsHeader } from './DocsHeader';
+import { MketyPublicAssistant } from '@/features/public-assistant/components/MketyPublicAssistant';
+
 import { DocsSearch } from './DocsSearch';
 import { DocsSidebar } from './DocsSidebar';
 
@@ -75,6 +77,7 @@ export function DocsLayoutClient({ children, docsTree }: DocsLayoutClientProps) 
 
       {/* Search dialog */}
       <DocsSearch open={searchOpen} onOpenChange={setSearchOpen} />
+      <MketyPublicAssistant />
     </div>
   );
 }
