@@ -177,8 +177,12 @@ export function MketyPublicAssistant({
     if (handledAskRef.current) return;
     handledAskRef.current = true;
     const ask = new URLSearchParams(window.location.search).get('ask');
-    if (!ask) return;
-    const intent = ask === 'sales' || ask === 'enterprise' || ask === 'support' ? ask : 'general';
+    if (!ask && window.location.pathname !== '/contact') return;
+    const requestedIntent = ask ?? 'support';
+    const intent =
+      requestedIntent === 'sales' || requestedIntent === 'enterprise' || requestedIntent === 'support'
+        ? requestedIntent
+        : 'general';
     setHandoffIntent(intent);
     setOpen(true);
     setInput(
