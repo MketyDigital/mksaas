@@ -20,7 +20,12 @@ export function MketyPublicShell({ settings, navigation, footerGroups, children 
       <MketyPublicHeader settings={settings} navigation={navigation} />
       <main>{children}</main>
       <MketyPublicFooter settings={settings} footerGroups={footerGroups} />
-      <MketyPublicAssistant />
+      <MketyPublicAssistant
+        supportEmail={settings.contactEmail}
+        salesEmail={settings.salesEmail}
+        telegramHref={settings.telegramHref}
+        fallbackMessage={settings.publicAiFallbackMessage}
+      />
       <MketyPublicDock />
     </div>
   );
