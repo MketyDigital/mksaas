@@ -530,7 +530,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     bodyMarkdown:
       '# Privacy and access\n\nPublic Mkety pages and documentation contain general product information. Account, workspace, billing, deployment, and organization-specific information should only be accessed through the appropriate authenticated Mkety experience.',
     sortOrder: 20,
-  },,
+  },
   {
     categoryKey: 'getting-started',
     slug: 'choose-where-to-start',
