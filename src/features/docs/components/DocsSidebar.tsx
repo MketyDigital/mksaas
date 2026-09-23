@@ -1,81 +1,88 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { BookOpen, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { cn } from '@/shared/lib/utils';
 
-import { docSections } from '../lib/docs-navigation';
+import type { PublicDocsTree } from './DocsLayoutClient';
 
 interface DocsSidebarProps {
+  docsTree: PublicDocsTree;
   onNavigate?: () => void;
 }
 
-export function DocsSidebar({ onNavigate }: DocsSidebarProps) {
-  const t = useTranslations();
+export function DocsSidebar({ docsTree, onNavigate }: DocsSidebarProps) {
   const pathname = usePathname();
-  const currentSlug = pathname.replace('/docs/', '').replace('/docs', '');
+  const currentSlug = pathname.replace(/^\/docs\/?/, '');
 
-  // Default all sections to open
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    for (const section of docSections) {
-      initial[section.id] = true;
-    }
-    return initial;
-  });
-
-  const toggleSection = (id: string) => {
-    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(docsTree.categories.map((category) => [category.key, true])),
+  );
 
   return (
-    <nav className="space-y-1" aria-label="Documentation navigation">
-      {docSections.map((section) => {
-        const Icon = section.icon;
-        const isOpen = openSections[section.id] ?? true;
-        const hasActivePage = section.pages.some((p) => p.slug === currentSlug);
+    <nav className="space-y-2" aria-label="Documentation navigation">
+      <Link
+        href="/docs"
+        onClick={onNavigate}
+        className={cn(
+          'mb-3 flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold transition-colors',
+          !currentSlug ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted',
+        )}
+      >
+        <BookOpen className="h-4 w-4 shrink-0" />
+        Mkety Docs
+      </Link>
+
+      {docsTree.categories.map((category) => {
+        const articles = docsTree.articles.filter((article) => article.categoryKey === category.key);
+        const isOpen = openSections[category.key] ?? true;
+        const hasActivePage = articles.some(
+          (article) => `${category.key}/${article.slug}` === currentSlug,
+        );
 
         return (
-          <div key={section.id}>
+          <div key={category.key}>
             <button
-              onClick={() => toggleSection(section.id)}
+              type="button"
+              onClick={() =>
+                setOpenSections((current) => ({ ...current, [category.key]: !isOpen }))
+              }
               className={cn(
                 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold transition-colors',
                 hasActivePage ? 'text-primary' : 'text-foreground hover:bg-muted',
               )}
             >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="flex-1 text-left">{t(section.titleKey)}</span>
+              <span className="flex-1 text-left">{category.title}</span>
               <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !isOpen && '-rotate-90')} />
             </button>
 
-            {isOpen && (
-              <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-3">
-                {section.pages.map((page) => {
-                  const isActive = page.slug === currentSlug;
+            {isOpen ? (
+              <ul className="ml-2 mt-1 space-y-0.5 border-l border-border pl-3">
+                {articles.map((article) => {
+                  const slug = `${category.key}/${article.slug}`;
+                  const isActive = slug === currentSlug;
                   return (
-                    <li key={page.slug}>
+                    <li key={slug}>
                       <Link
-                        href={`/docs/${page.slug}`}
+                        href={`/docs/${slug}`}
                         onClick={onNavigate}
                         className={cn(
-                          'block rounded-md px-2 py-1 text-sm transition-colors',
+                          'block rounded-md px-2 py-1.5 text-sm leading-5 transition-colors',
                           isActive
                             ? 'bg-primary/10 font-medium text-primary'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                         )}
                       >
-                        {t(page.titleKey)}
+                        {article.title}
                       </Link>
                     </li>
                   );
                 })}
               </ul>
-            )}
+            ) : null}
           </div>
         );
       })}
