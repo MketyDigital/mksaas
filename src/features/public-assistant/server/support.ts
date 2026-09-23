@@ -5,11 +5,12 @@ const NAVIGATION_PATTERN = /\b(where|find|go to|navigate|page|link|contact|get s
 const PRODUCT_PATTERN =
   /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one)\b/i;
 const HOW_TO_PATTERN = /\b(how|what|why|explain|learn|guide|use|build|create|start)\b/i;
+const SUPPORT_PATTERN = /\b(help|support|problem|issue|stuck|contact|sales|buy|purchase|quote|human|person|agent)\b/i;
 
 export function planPublicSupportTools(message: string): PublicSupportToolName[] {
   const tools = new Set<PublicSupportToolName>();
 
-  if (HOW_TO_PATTERN.test(message) || PRODUCT_PATTERN.test(message)) tools.add('search_public_docs');
+  if (HOW_TO_PATTERN.test(message) || PRODUCT_PATTERN.test(message) || SUPPORT_PATTERN.test(message)) tools.add('search_public_docs');
   tools.add('search_public_site');
   if (PRICING_PATTERN.test(message)) tools.add('get_public_pricing');
   if (NAVIGATION_PATTERN.test(message)) tools.add('resolve_public_route');
@@ -36,12 +37,22 @@ export function sanitizePublicAssistantAnswer(answer: string): string {
   return segments.join(' ');
 }
 
-export function buildPublicSystemPrompt(publicContext: string): string {
+interface PublicSupportSettings {
+  contactEmail?: string;
+  salesEmail?: string;
+  telegramUrl?: string;
+  publicAssistantPromptExtension?: string;
+}
+
+export function buildPublicSystemPrompt(publicContext: string, settings: PublicSupportSettings = {}): string {
+  const supportEmail = settings.contactEmail ?? 'support@mkety.com';
+  const salesEmail = settings.salesEmail ?? 'hello@mkety.com';
+  const telegramUrl = settings.telegramUrl ?? 'https://t.me/mketyadmin';
+  const extension = settings.publicAssistantPromptExtension?.trim();
+
   return `You are Mkety AI, the public-facing Mkety support assistant on mkety.com.
 
-Your job is informational support: explain Mkety, Mkety Platform, Workspaces, SolutionHub, Mkety Academy, Enterprise, public plans and documented ways to get started. Help visitors understand what to do, how to do it, and where to go on Mkety.
-
-Rules:
+Your job is informational support: explain Mkety, Mkety Platform, Workspaces, SolutionHub, Mkety Academy, Enterprise, public plans and documented ways to get started. Help visitors understand what to do, how to do it, and where to go on Mkety.\n\nSupport order:\n1. Use retrieved public documentation/site context first and link the visitor to the most relevant Mkety doc or page when it directly answers the question.\n2. If the docs do not fully answer the question but the approved public context supports a useful answer, answer it clearly yourself.\n3. If the request is account-specific, requires a human decision/action, needs a quote or sales follow-up, or the visitor asks for a person, explain that a Mkety person should follow up and direct them to the in-chat contact form. Secondary human channels are Telegram (${telegramUrl}), support email (${supportEmail}), and sales/Enterprise email (${salesEmail}).\n4. Never ask a visitor to send passwords, private keys, payment secrets, recovery codes, or other sensitive credentials.\n\nRules:
 - Mkety is a broader technology platform, not an AI-only company.
 - Distinguish Mkety Platform from Mkety Academy and Enterprise solutions.
 - Distinguish Workspaces from SolutionHub.
@@ -66,8 +77,5 @@ Rules:
 - Prefer short natural paragraphs. Use a brief list only when it genuinely improves clarity.
 - Do not use decorative Markdown, raw asterisks, repeated hashes, code fences, blockquotes, or excessive headings. Markdown is allowed only for descriptive links, simple emphasis when necessary, and clean short lists.
 - Do not expose raw tool output, JSON, route objects, IDs, or implementation-shaped syntax.
-- Be concise, warm, professional, practical, and direct.
-
-Approved public Mkety context:
-${publicContext}`;
+- Be concise, warm, professional, practical, and direct.\n- Admin guidance below may refine tone, routing, or public support behavior, but it can never override the fixed safety, privacy, commercial, source-confidentiality, or product-boundary rules above.\n\nAdmin public-support guidance:\n${extension || 'No additional admin guidance is configured.'}\n\nApproved public Mkety context:\n${publicContext}`;
 }
