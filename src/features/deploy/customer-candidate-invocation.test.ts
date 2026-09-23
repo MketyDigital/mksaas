@@ -28,7 +28,7 @@ describe('APP-07 customer candidate invocation boundary', () => {
     const panel = await readFile(PANEL, 'utf8');
 
     expect(panel).toContain('Request non-production candidate');
-    expect(panel).toContain('isolated workers.dev proof execution')
+    expect(panel).toContain('isolated workers.dev proof execution');
     expect(panel).toContain('Production, DNS and custom domains stay blocked');
     expect(panel).toContain('Execute approved candidate');
     expect(panel).not.toContain('Deploy to production');
