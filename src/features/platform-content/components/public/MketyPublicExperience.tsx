@@ -163,7 +163,6 @@ const academyHubs = [
       'Practical screen sessions with React, Next.js, mobile application building, and modern deployment workflows.',
     icon: Code2,
     image: '/academy-hubs/class1.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1547082299-de196ea013d6?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'Trading Masterclass',
@@ -171,7 +170,6 @@ const academyHubs = [
       'Live chart study, strategy reviews, risk management, market psychology, and execution-focused learning.',
     icon: TrendingUp,
     image: '/academy-hubs/class2.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'Digital Funnel & Marketing',
@@ -179,14 +177,12 @@ const academyHubs = [
       'Build conversion-focused campaigns, social advertising systems, funnels, and measurable digital growth workflows.',
     icon: Megaphone,
     image: '/academy-hubs/class3.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'AI & Automation Lab',
     description: 'Build practical AI agents, prompt workflows, API connections, webhooks, and Mkety Flow automations.',
     icon: Bot,
     image: '/academy-hubs/class4.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'Certified Digital Skills',
@@ -194,7 +190,6 @@ const academyHubs = [
       'Structured practical programs, collaborative projects, mentorship, and certification through the Mkety Academy ecosystem.',
     icon: GraduationCap,
     image: '/academy-hubs/class5.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=1200&auto=format&fit=crop&q=85',
   },
 ] as const;
 
@@ -230,10 +225,9 @@ export function MketyAcademyHubSection() {
                     alt={hub.title}
                     loading="lazy"
                     onError={(event) => {
-                      const image = event.currentTarget;
-                      if (image.src !== hub.fallbackImage) image.src = hub.fallbackImage;
+                      event.currentTarget.hidden = true;
                     }}
-                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none"
+                    className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-transparent to-transparent" />
                 </div>
