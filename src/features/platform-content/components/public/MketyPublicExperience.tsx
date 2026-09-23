@@ -39,9 +39,9 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
   return (
     <section className="px-4 py-10 md:py-16" aria-label="Mkety product experience">
       <div className="container mx-auto">
-        <div className="overflow-hidden rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
+        <div className="rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl lg:overflow-hidden">
           <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
-            <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
+            <div className="min-w-0 overflow-hidden border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_hsl(var(--primary))]" />
                 Explore Mkety
@@ -49,7 +49,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               <div
                 role="tablist"
                 aria-label="Explore Mkety"
-                className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible"
+                className="-mx-4 flex touch-pan-x snap-x snap-proximity gap-2 overflow-x-auto overscroll-x-contain px-4 pb-2 pr-10 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch] lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-1 lg:pr-0"
               >
                 {groups.map((group, index) => {
                   const Icon = showcaseIcons[index] ?? LayoutGrid;
@@ -65,7 +65,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       tabIndex={selected ? 0 : -1}
                       onClick={() => setActiveId(group.id)}
                       className={cn(
-                        'flex min-w-fit items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition motion-reduce:transition-none lg:w-full',
+                        'flex min-w-fit shrink-0 snap-start items-center gap-3 whitespace-nowrap rounded-2xl border px-4 py-3 text-left text-sm font-medium transition motion-reduce:transition-none lg:w-full lg:whitespace-normal',
                         selected
                           ? 'border-primary/25 bg-background text-foreground shadow-sm'
                           : 'border-transparent text-muted-foreground hover:border-border hover:bg-background/60 hover:text-foreground',
@@ -90,18 +90,18 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               id={`mkety-showcase-panel-${activeGroup.id}`}
               role="tabpanel"
               aria-labelledby={`mkety-showcase-tab-${activeGroup.id}`}
-              className="relative min-w-0 p-5 md:p-8"
+              className="relative min-w-0 overflow-hidden p-5 md:p-8"
             >
               <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
               <div className="relative grid gap-7 xl:grid-cols-[0.75fr_1.25fr]">
-                <div className="flex flex-col justify-between rounded-3xl border bg-background/70 p-6 shadow-sm">
+                <div className="flex min-w-0 flex-col justify-between rounded-3xl border bg-background/70 p-6 shadow-sm">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
                       {activeGroup.eyebrow}
                     </p>
-                    <h2 className="mt-3 text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
+                    <h2 className="mt-3 break-words text-2xl font-bold tracking-tight [overflow-wrap:anywhere] md:text-3xl">{activeGroup.title}</h2>
                     {activeGroup.description && (
-                      <p className="mt-4 leading-7 text-muted-foreground">{activeGroup.description}</p>
+                      <p className="mt-4 break-words leading-7 text-muted-foreground [overflow-wrap:anywhere]">{activeGroup.description}</p>
                     )}
                   </div>
                   <Link
@@ -119,7 +119,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       <article
                         key={item.key}
                         className={cn(
-                          'group relative overflow-hidden rounded-3xl border bg-background/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
+                          'group relative min-w-0 overflow-hidden rounded-3xl border bg-background/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
                           index === 0 && activeGroup.items.length > 2 ? 'sm:row-span-2' : '',
                         )}
                       >
@@ -133,8 +133,8 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                             </span>
                           )}
                         </div>
-                        <h3 className="font-semibold">{item.title}</h3>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
+                        <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{item.title}</h3>
+                        <p className="mt-2 break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{item.description}</p>
                         {item.href && (
                           <Link
                             href={item.href}
