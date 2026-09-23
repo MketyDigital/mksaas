@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  MKETY_HYPERDRIVE_NAME: mkety-production-db
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
   PROBE_WORKER_NAME: mkety-hyperdrive-probe
   APP_WORKER_NAME: mkety-platform-prodtrace
   SKIP_ENV_VALIDATION: 'true'
