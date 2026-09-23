@@ -8,7 +8,6 @@ export const PLATFORM_APP_EXPERIENCE_PERMISSION = 'platform:app-experience';
 
 export const PLATFORM_CONTROL_TENANT_ENV = 'MKETY_PLATFORM_CONTROL_TENANT_SLUG';
 export const PLATFORM_CONTROL_ADMIN_EMAILS_ENV = 'MKETY_PLATFORM_ADMIN_EMAILS';
-export const PLATFORM_CONTROL_OPERATOR_EMAILS_ENV = 'MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS';
 
 export type PlatformAdminArea = 'control-center' | 'public-content' | 'app-experience';
 
@@ -34,20 +33,12 @@ export function isPlatformOperatorEmail(email: string) {
   return allowed.has(email.trim().toLowerCase());
 }
 
-export function isPlatformControlOperatorEmail(email: string) {
-  const allowed = (process.env[PLATFORM_CONTROL_OPERATOR_EMAILS_ENV] ?? '')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  return allowed.includes(email.trim().toLowerCase());
-}
-
 export async function requirePlatformAdminArea(tenantSlug: string, area: PlatformAdminArea) {
   if (!isPlatformControlTenant(tenantSlug)) {
     redirect(`/t/${tenantSlug}?error=unauthorized`);
   }
   const actor = await requirePermission(tenantSlug, permissionByArea[area]);
-  if (!isPlatformControlOperatorEmail(actor.email)) {
+  if (!isPlatformOperatorEmail(actor.email)) {
     redirect(`/t/${tenantSlug}?error=unauthorized`);
   }
   return actor;
