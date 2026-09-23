@@ -27,7 +27,7 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoDescription:
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
   contactEmail: 'support@mkety.com',
-  contactHref: '/contact',
+  contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
   telegramHref: 'https://t.me/mketyadmin',
   publicAiPrompt:
@@ -325,7 +325,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'For requirements beyond the standard shared platform envelope, including dedicated infrastructure, specialized integrations, private runtimes, persistent services, and Trading.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety Enterprise',
-    ctaHref: '/contact',
+    ctaHref: '/contact#mkety-ai',
     features: [
       'Custom implementation and managed delivery',
       'Dedicated or private infrastructure when required',
@@ -370,7 +370,7 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
       { label: 'Academy', href: '/academy' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'About', href: '/about' },
-      { label: 'Contact', href: '/contact' },
+      { label: 'Contact', href: '/contact#mkety-ai' },
       { label: 'Docs', href: '/docs' },
     ],
   },
