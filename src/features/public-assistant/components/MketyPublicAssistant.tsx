@@ -142,9 +142,22 @@ const suggestedPrompts = [
 interface MketyPublicAssistantProps {
   logoUrl?: string;
   brandName?: string;
+  supportEmail?: string;
+  salesEmail?: string;
+  telegramUrl?: string;
+  fallbackMessage?: string;
+  leadCaptureEnabled?: boolean;
 }
 
-export function MketyPublicAssistant({ logoUrl = '/mkety-logo.png', brandName = 'Mkety' }: MketyPublicAssistantProps) {
+export function MketyPublicAssistant({
+  logoUrl = '/mkety-logo.png',
+  brandName = 'Mkety',
+  supportEmail = 'support@mkety.com',
+  salesEmail = 'hello@mkety.com',
+  telegramUrl = 'https://t.me/mketyadmin',
+  fallbackMessage = 'Mkety AI could not complete that request just now. You can leave your contact details here, message Mkety on Telegram, or email our support team.',
+  leadCaptureEnabled = true,
+}: MketyPublicAssistantProps) {
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -152,9 +165,30 @@ export function MketyPublicAssistant({ logoUrl = '/mkety-logo.png', brandName = 
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [leadOpen, setLeadOpen] = useState(false);
+  const [leadStatus, setLeadStatus] = useState<string | null>(null);
+  const [handoffIntent, setHandoffIntent] = useState<'support' | 'sales' | 'enterprise' | 'general'>('general');
   const [conversations, setConversations] = useState<PublicConversationSummary[]>([]);
   const [messages, setMessages] = useState<PublicAssistantMessage[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const handledAskRef = useRef(false);
+
+  useEffect(() => {
+    if (handledAskRef.current) return;
+    handledAskRef.current = true;
+    const ask = new URLSearchParams(window.location.search).get('ask');
+    if (!ask) return;
+    const intent = ask === 'sales' || ask === 'enterprise' || ask === 'support' ? ask : 'general';
+    setHandoffIntent(intent);
+    setOpen(true);
+    setInput(
+      intent === 'sales'
+        ? 'I want to talk about buying Mkety or choosing a plan.'
+        : intent === 'enterprise'
+          ? 'I need help with an Enterprise or custom Mkety requirement.'
+          : 'I need help or support with Mkety.',
+    );
+  }, []);
 
   const loadHistory = useCallback(async (requestedConversationId?: string) => {
     setLoadingHistory(true);
@@ -219,7 +253,8 @@ export function MketyPublicAssistant({ logoUrl = '/mkety-logo.png', brandName = 
     } catch (sendError) {
       setMessages((current) => current.filter((messageItem) => messageItem.id !== optimisticId));
       setInput(normalized);
-      setError(sendError instanceof Error ? sendError.message : 'Mkety AI could not answer just now.');
+      setError(sendError instanceof Error ? sendError.message : fallbackMessage);
+      if (leadCaptureEnabled) setLeadOpen(true);
     } finally {
       setLoading(false);
     }
@@ -241,6 +276,34 @@ export function MketyPublicAssistant({ logoUrl = '/mkety-logo.png', brandName = 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void sendMessage(input);
+  }
+
+  async function submitLead(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setLeadStatus('sending');
+    try {
+      const response = await fetch('/api/public/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          conversationId,
+          intent: handoffIntent,
+          name: form.get('name'),
+          email: form.get('email'),
+          phone: form.get('phone'),
+          message: form.get('message'),
+          website: form.get('website'),
+          sourcePath: window.location.pathname + window.location.search,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Could not save your request.');
+      setLeadStatus('sent');
+      event.currentTarget.reset();
+    } catch (leadError) {
+      setLeadStatus(leadError instanceof Error ? leadError.message : 'Could not save your request.');
+    }
   }
 
   function startNewChat() {
@@ -424,12 +487,38 @@ export function MketyPublicAssistant({ logoUrl = '/mkety-logo.png', brandName = 
             </div>
 
             {error ? (
-              <p
+              <div
                 role="alert"
-                className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+                className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs"
               >
-                {error}
-              </p>
+                <p className="text-destructive">{error}</p>
+                <p className="mt-1 text-muted-foreground">{fallbackMessage}</p>
+              </div>
+            ) : null}
+
+            {leadOpen && leadCaptureEnabled ? (
+              <form onSubmit={submitLead} className="mt-4 rounded-2xl border bg-muted/20 p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-semibold">Ask a Mkety person to follow up</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Leave only the contact details needed to reach you. Do not include passwords, payment secrets, or private keys.
+                  </p>
+                </div>
+                <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input name="name" required maxLength={160} placeholder="Your name" className="rounded-lg border bg-background px-3 py-2 text-sm" />
+                  <input name="email" required type="email" maxLength={255} placeholder="Email" className="rounded-lg border bg-background px-3 py-2 text-sm" />
+                </div>
+                <input name="phone" maxLength={80} placeholder="Phone / WhatsApp (optional)" className="mt-2 w-full rounded-lg border bg-background px-3 py-2 text-sm" />
+                <textarea name="message" required minLength={5} maxLength={2000} rows={3} placeholder="How can Mkety help?" className="mt-2 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm" />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button type="submit" disabled={leadStatus === 'sending'} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+                    {leadStatus === 'sending' ? 'Sending…' : 'Send request'}
+                  </button>
+                  {leadStatus === 'sent' ? <span className="text-xs font-medium text-emerald-600">Request received.</span> : null}
+                  {leadStatus && leadStatus !== 'sending' && leadStatus !== 'sent' ? <span className="text-xs text-destructive">{leadStatus}</span> : null}
+                </div>
+              </form>
             ) : null}
           </div>
 
@@ -463,10 +552,16 @@ export function MketyPublicAssistant({ logoUrl = '/mkety-logo.png', brandName = 
                 <Send className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
-            <p className="mt-2 px-1 text-[11px] text-muted-foreground">
-              Mkety AI provides public product and documentation guidance. Avoid sharing passwords, payment details or
-              private account data.
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground">
+              <span>Mkety AI checks public docs and product information first. Avoid sharing passwords or private account data.</span>
+              {leadCaptureEnabled ? (
+                <button type="button" onClick={() => setLeadOpen((value) => !value)} className="font-medium text-primary hover:underline">
+                  Human follow-up
+                </button>
+              ) : null}
+              <a href={telegramUrl} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">Telegram</a>
+              <a href={`mailto:${handoffIntent === 'sales' || handoffIntent === 'enterprise' ? salesEmail : supportEmail}`} className="font-medium text-primary hover:underline">Email</a>
+            </div>
           </form>
         </section>
       ) : null}
