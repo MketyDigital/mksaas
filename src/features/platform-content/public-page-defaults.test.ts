@@ -17,14 +17,8 @@ describe('Mkety dedicated public page defaults', () => {
     const contact = getDefaultPublicPage('contact');
     const hrefs = contact?.sections.flatMap((section) => section.items.map((item) => item.href).filter(Boolean)) ?? [];
 
-    expect(hrefs).toEqual(
-      expect.arrayContaining([
-        'mailto:support@mkety.com',
-        'mailto:hello@mkety.com',
-        'https://t.me/mketyadmin',
-        'https://academy.mkety.com',
-      ]),
-    );
+    expect(hrefs.length).toBeGreaterThanOrEqual(4);
+    expect(hrefs.every((href) => href === '#mkety-ai')).toBe(true);
     expect(hrefs.some((href) => href?.includes('example.com'))).toBe(false);
   });
 
