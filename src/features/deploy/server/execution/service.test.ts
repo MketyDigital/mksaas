@@ -81,6 +81,28 @@ describe('Deploy execution kernel', () => {
     );
   });
 
+  it('uses a pre-created queued deployment without creating a duplicate record', async () => {
+    const storage = repository();
+    const adapter = provider();
+    const input = context();
+
+    const result = await executeDeployment(storage, adapter, input, {
+      queuedDeploymentId: 'deployment-approved-1',
+    });
+
+    expect(storage.createQueued).not.toHaveBeenCalled();
+    expect(storage.markRunning).toHaveBeenCalledWith(
+      'deployment-approved-1',
+      'cloudflare',
+      expect.any(Date),
+    );
+    expect(adapter.deploy).toHaveBeenCalledWith({
+      ...input,
+      deploymentId: 'deployment-approved-1',
+    });
+    expect(result.deploymentId).toBe('deployment-approved-1');
+  });
+
   it('rejects protected environments before persistence or provider execution', async () => {
     const storage = repository();
     const adapter = provider();
