@@ -10,17 +10,21 @@ async function read(relativePath: string) {
 }
 
 describe('Mkety auth entry and self-service onboarding contract', () => {
-  it('keeps login and signup presentation concise', async () => {
-    const [login, signup, form] = await Promise.all([
+  it('sends login and signup directly into the branded auth intent without an intermediary click', async () => {
+    const [login, signup, header] = await Promise.all([
       read('src/app/(auth)/login/page.tsx'),
       read('src/app/(auth)/signup/page.tsx'),
-      read('src/features/auth/components/LoginForm.tsx'),
+      read('src/features/platform-content/components/public/MketyPublicHeader.tsx'),
     ]);
 
-    expect(login).toContain('Access your Mkety workspace.');
-    expect(signup).toContain('Create your account to get started.');
-    expect(form).not.toContain('Your account is protected by Mkety');
-    expect(form).not.toContain('Create your account securely and continue');
+    expect(login).toContain('/api/auth/login?returnTo=');
+    expect(login).toContain('intent=signin');
+    expect(signup).toContain('/api/auth/login?returnTo=');
+    expect(signup).toContain('intent=signup');
+    expect(login).not.toContain('<LoginForm');
+    expect(signup).not.toContain('<LoginForm');
+    expect(header).toContain('intent=signin');
+    expect(header).toContain('intent=signup');
   });
 
   it('preserves selected plan through signup/sign-in into tenant checkout', async () => {
