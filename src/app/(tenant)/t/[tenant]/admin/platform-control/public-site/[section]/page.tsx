@@ -11,6 +11,7 @@ import {
 } from '@/features/platform-content/defaults';
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
 import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
+import { getRecentPublicAILeads } from '@/features/platform-content/server/queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 interface PublicSiteSectionPageProps {
@@ -103,6 +104,8 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
 
   if (!sectionModule) notFound();
 
+  const publicAILeads = section === 'settings' ? await getRecentPublicAILeads(50) : [];
+
   return (
     <div className="space-y-8">
       <div>
@@ -147,6 +150,35 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
           </CardContent>
         </Card>
       </div>
+
+      {section === 'settings' ? (
+        <Card className="rounded-2xl border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Recent Public AI leads</CardTitle>
+            <CardDescription>
+              Voluntary email/phone details captured by Mkety AI when lead capture is enabled. Public AI never asks for passwords, API keys, payment secrets, recovery codes, or other sensitive credentials.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {publicAILeads.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No captured public leads yet.</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {publicAILeads.map((lead) => (
+                  <div
+                    key={`${lead.conversationId}-${lead.createdAt.toISOString()}`}
+                    className="rounded-xl border bg-muted/20 p-4 text-sm"
+                  >
+                    <p className="font-medium">{lead.email ?? lead.phone}</p>
+                    {lead.email && lead.phone ? <p className="mt-1 text-muted-foreground">{lead.phone}</p> : null}
+                    <p className="mt-2 text-xs text-muted-foreground">{lead.createdAt.toISOString()}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
