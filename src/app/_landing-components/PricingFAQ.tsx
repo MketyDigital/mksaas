@@ -29,7 +29,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Where can I learn more before buying?',
-    a: 'Use the public Docs and Pricing pages for current product information. For Academy programmes use academy.mkety.com, and for custom requirements contact Mkety Enterprise.',
+    a: 'Use the public Docs and Pricing pages for current product information. For Academy programmes, support, or custom requirements, start with Mkety AI on mkety.com; it checks public information first and routes you to the appropriate next step or human channel.',
   },
 ];
 
