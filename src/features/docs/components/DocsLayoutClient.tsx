@@ -8,11 +8,17 @@ import { DocsHeader } from './DocsHeader';
 import { DocsSearch } from './DocsSearch';
 import { DocsSidebar } from './DocsSidebar';
 
-interface DocsLayoutClientProps {
-  children: React.ReactNode;
+interface DocsTree {
+  categories: Array<{ key: string; title: string; description?: string; sortOrder: number }>;
+  articles: Array<{ categoryKey: string; slug: string; title: string; excerpt?: string; bodyMarkdown: string; sortOrder: number }>;
 }
 
-export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
+interface DocsLayoutClientProps {
+  children: React.ReactNode;
+  docsTree: DocsTree;
+}
+
+export function DocsLayoutClient({ children, docsTree }: DocsLayoutClientProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -50,7 +56,7 @@ export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
               sidebarOpen ? 'translate-x-0' : '-translate-x-full',
             )}
           >
-            <DocsSidebar onNavigate={handleNavigate} />
+            <DocsSidebar tree={docsTree} onNavigate={handleNavigate} />
           </aside>
 
           {/* Mobile overlay backdrop */}
