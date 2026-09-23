@@ -28,7 +28,11 @@ export const siteSettingsSchema = z.object({
   defaultSeoDescription: z.string().min(1).max(320),
   socialImageUrl: z.string().url().optional(),
   contactEmail: z.string().email().optional(),
+  salesEmail: z.string().email().optional(),
+  telegramHref: safeHrefSchema.optional(),
   contactHref: safeHrefSchema.optional(),
+  publicAiGuidance: z.string().max(4000).optional(),
+  publicAiFallbackMessage: z.string().max(700).optional(),
   legalLinks: z.array(ctaSchema).default([]),
 });
 
