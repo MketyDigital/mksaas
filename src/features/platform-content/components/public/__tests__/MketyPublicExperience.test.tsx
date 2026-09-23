@@ -44,6 +44,21 @@ describe('Mkety public app experience', () => {
     expect(screen.getByText('Practical learning')).toBeInTheDocument();
   });
 
+  it('uses only the real uploaded Academy Hub images without remote stock fallbacks', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    for (let index = 1; index <= 5; index += 1) {
+      const file = path.join(process.cwd(), `public/academy-hubs/class${index}.jpg`);
+      const stat = await fs.stat(file);
+      expect(stat.size).toBeGreaterThan(100_000);
+    }
+    const source = await fs.readFile(
+      path.join(process.cwd(), 'src/features/platform-content/components/public/MketyPublicExperience.tsx'),
+      'utf8',
+    );
+    expect(source).not.toContain('images.unsplash.com');
+  });
+
   it('keeps the complete legacy At Our Hubs module set', () => {
     render(<MketyAcademyHubSection />);
 
