@@ -147,7 +147,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'Complex ERP, larger transactional or regulated systems, browser automation, heavy data processing, arbitrary containers, persistent services, private databases or networking, dedicated environments, specialized Trading infrastructure, high-throughput integrations, and strict SLA deployments are scoped through Enterprise.',
         items: [],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/contact?ask=enterprise' },
       },
     ],
   },
@@ -254,7 +254,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Implementation and operational support tailored to enterprise requirements.',
           },
         ],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/contact?ask=enterprise' },
       },
     ],
   },
@@ -287,31 +287,31 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
       'Contact Mkety about Platform access, Academy, partnerships, enterprise implementations or support.',
     eyebrow: 'Contact',
     headline: 'Talk to the right part of Mkety.',
-    intro: 'Use the options below for product, Academy, enterprise and general Mkety enquiries.',
+    intro: 'Start with Mkety AI for product, support, sales, partnership, Enterprise, and general enquiries. It checks public docs first and routes you to human support when needed.',
     sections: [
       {
         eyebrow: 'Enquiries',
         title: 'Product, learning and enterprise conversations.',
         description:
-          'Choose the area that best matches your enquiry. Never send passwords, API keys, payment secrets or other sensitive credentials through a general enquiry.',
+          'Choose the area that best matches your enquiry. Mkety AI helps first, then routes unresolved or account-specific needs to configured human support. Never send passwords, API keys, payment secrets or other sensitive credentials.',
         items: [
           {
             key: 'support',
             title: 'Product & Support',
             description: 'Account, product, access and general Mkety support enquiries.',
-            href: 'mailto:support@mkety.com',
+            href: '/contact?ask=support',
           },
           {
             key: 'enterprise',
             title: 'Enterprise & Partnerships',
             description: 'Custom systems, integrations, Trading, partnerships and managed implementation requirements.',
-            href: 'mailto:hello@mkety.com',
+            href: '/contact?ask=enterprise',
           },
           {
             key: 'telegram',
             title: 'Telegram',
             description: 'Use the established Mkety Telegram contact for direct public enquiries.',
-            href: 'https://t.me/mketyadmin',
+            href: '/contact?ask=telegram',
           },
           {
             key: 'academy',
