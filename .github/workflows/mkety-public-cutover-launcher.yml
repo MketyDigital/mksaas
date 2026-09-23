@@ -1,4 +1,5 @@
 name: Mkety Public Cutover Launcher
+# final certified production cutover 2026-09-23
 # certify public ui + academy assets follow-up 2026-09-20
 # rerun certified cutover with Platform Control production fallback 2026-09-23
 # rerun certified cutover with VPC-backed Hyperdrive v2 2026-09-23
@@ -16,10 +17,10 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: 220593e4e054c2213ff7377b04ffcdde45de162d
+  VERIFIED_SHA: 6704dc1db64b2c24572c9f674a04bb2ac680f3b0
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
-  CERT_BRANCH: certify/220593e
+  CERT_BRANCH: certify/6704dc1
   CUTOVER_MODE: worker-custom-domains-v7
 
 jobs:
