@@ -1,0 +1,135 @@
+/** @jest-environment node */
+
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+const root = process.cwd();
+
+async function read(relativePath: string) {
+  return readFile(path.join(root, relativePath), 'utf8');
+}
+
+describe('final public production UX, support, docs and auth contract', () => {
+  it('keeps Explore Mkety mobile-safe and horizontally scrollable', async () => {
+    const source = await read('src/features/platform-content/components/public/MketyPublicExperience.tsx');
+    expect(source).toContain('touch-pan-x');
+    expect(source).toContain('overflow-x-auto');
+    expect(source).toContain('max-w-[calc(100vw-2rem)]');
+    expect(source).toContain('min-w-max');
+    expect(source).toContain('break-words');
+  });
+
+  it('uses only the five real local Academy hub images', async () => {
+    const source = await read('src/features/platform-content/components/public/MketyPublicExperience.tsx');
+    for (let i = 1; i <= 5; i += 1) {
+      expect(source).toContain(`/academy-hubs/class${i}.jpg`);
+    }
+    expect(source).not.toContain('images.unsplash.com');
+  });
+
+  it('keeps the Public AI command box below the header with the Mkety logo', async () => {
+    const source = await read('src/features/public-assistant/components/MketyPublicAssistant.tsx');
+    expect(source).toContain("top-[4.5rem]");
+    expect(source).toContain('/mkety-logo.png');
+    expect(source).toContain("window.location.hash === '#mkety-ai'");
+  });
+
+  it('drives docs navigation from the same published CMS tree as article routing', async () => {
+    const [layout, sidebar, article] = await Promise.all([
+      read('src/app/(docs)/docs/layout.tsx'),
+      read('src/features/docs/components/DocsSidebar.tsx'),
+      read('src/app/(docs)/docs/[...slug]/page.tsx'),
+    ]);
+    expect(layout).toContain('getPublishedDocsTree');
+    expect(sidebar).toContain('docsTree.categories');
+    expect(sidebar).toContain('docsTree.articles');
+    expect(sidebar).not.toContain('docSections');
+    expect(article).toContain('Previous');
+    expect(article).toContain('Next');
+  });
+
+  it('keeps public support and AI controls admin-managed through site settings', async () => {
+    const [schema, defaults, actions, admin] = await Promise.all([
+      read('src/features/platform-content/schemas.ts'),
+      read('src/features/platform-content/defaults.ts'),
+      read('src/features/platform-content/server/actions.ts'),
+      read('src/app/(tenant)/t/[tenant]/admin/platform-control/public-site/[section]/page.tsx'),
+    ]);
+    for (const field of [
+      'salesEmail',
+      'telegramHref',
+      'publicAiPrompt',
+      'publicAiFallbackMessage',
+      'publicAiLeadCaptureEnabled',
+    ]) {
+      expect(schema).toContain(field);
+      expect(defaults).toContain(field);
+      expect(actions).toContain(field);
+    }
+    expect(admin).toContain('Brand, Support & AI Settings');
+  });
+
+  it('uses docs-first support, optional lead metadata and deterministic fallback', async () => {
+    const [support, runtime] = await Promise.all([
+      read('src/features/public-assistant/server/support.ts'),
+      read('src/features/public-assistant/server/runtime.ts'),
+    ]);
+    expect(support).toContain('SUPPORT_PATTERN');
+    expect(support).toContain("tools.add('search_public_docs')");
+    expect(runtime).toContain('detectLeadMetadata');
+    expect(runtime).toContain('publicAiLeadCaptureEnabled');
+    expect(runtime).toContain('deterministicFallback');
+    expect(runtime).toContain('mailto:');
+    expect(runtime).toContain('telegramHref');
+  });
+
+  it('routes contact and Enterprise sales through Public AI first', async () => {
+    const [defaults, pages] = await Promise.all([
+      read('src/features/platform-content/defaults.ts'),
+      read('src/features/platform-content/public-page-defaults.ts'),
+    ]);
+    expect(defaults).toContain("contactHref: '/contact#mkety-ai'");
+    expect(defaults).toContain("ctaHref: '/contact#mkety-ai'");
+    expect(pages).toContain("href: '#mkety-ai'");
+  });
+
+  it('sends login and signup straight to their branded hosted auth intent', async () => {
+    const [login, signup] = await Promise.all([
+      read('src/app/(auth)/login/page.tsx'),
+      read('src/app/(auth)/signup/page.tsx'),
+    ]);
+    expect(login).toContain('intent=signin');
+    expect(signup).toContain('intent=signup');
+    expect(login).not.toContain('<LoginForm');
+    expect(signup).not.toContain('<LoginForm');
+  });
+
+  it('configures hosted auth legal/help/support links to Mkety destinations', async () => {
+    const workflow = await read('.github/workflows/mkety-branded-auth-provision.yml');
+    expect(workflow).toContain('SetLinkSettings');
+    expect(workflow).toContain('GetLinkSettings');
+    expect(workflow).toContain('https://mkety.com/terms');
+    expect(workflow).toContain('https://mkety.com/privacy');
+    expect(workflow).toContain('https://mkety.com/docs');
+    expect(workflow).toContain('mailto:support@mkety.com');
+  });
+
+  it('smokes the real Academy images and every rendered docs link before release', async () => {
+    const [candidate, production] = await Promise.all([
+      read('.github/workflows/mkety-public-candidate-deploy.yml'),
+      read('.github/workflows/mkety-public-production-cutover.yml'),
+    ]);
+    for (const source of [candidate, production]) {
+      expect(source).toContain('class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg');
+      expect(source).toContain('Docs index rendered no article links.');
+      expect(source).toContain('Rendered docs link failed:');
+    }
+  });
+
+  it('keeps the support settings migration additive', async () => {
+    const migration = await read('src/shared/db/migrations/0016_public_support_ai_settings.sql');
+    expect(migration).toContain('public_ai_fallback_message');
+    expect(migration).toContain('public_ai_lead_capture_enabled');
+    expect(migration).not.toMatch(/DROP TABLE|DROP SCHEMA|TRUNCATE/i);
+  });
+});
