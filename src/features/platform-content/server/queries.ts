@@ -96,6 +96,11 @@ export async function getPublishedPlatformSiteSettings() {
         socialImageUrl: row.socialImageUrl ?? undefined,
         contactEmail: row.contactEmail ?? undefined,
         contactHref: row.contactHref ?? undefined,
+        salesEmail: row.salesEmail ?? undefined,
+        telegramHref: row.telegramHref ?? undefined,
+        publicAiPrompt: row.publicAiPrompt ?? undefined,
+        publicAiFallbackMessage: row.publicAiFallbackMessage ?? undefined,
+        publicAiLeadCaptureEnabled: row.publicAiLeadCaptureEnabled,
         legalLinks: row.legalLinksJson ?? [],
       });
     },
