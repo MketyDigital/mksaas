@@ -49,7 +49,9 @@ export async function executeDeployment(
     throw new DeploymentExecutionError('Deployment provider timeout must be a positive finite number.');
   }
 
-  const record = await repository.createQueued(context, provider.id);
+  const record = options.queuedDeploymentId
+    ? { id: options.queuedDeploymentId }
+    : await repository.createQueued(context, provider.id);
   const startedAt = new Date();
   const started = await repository.markRunning(record.id, provider.id, startedAt);
   if (!started) {
