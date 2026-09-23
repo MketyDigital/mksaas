@@ -851,3 +851,29 @@ Current contract:
 - production deployment, DNS mutation, custom-domain mutation, rollback, arbitrary customer source execution, OCI, and Coolify remain out of scope.
 
 Persistence is additive in `0015_deployment_requests`. The Deployments & Domains Platform Control module is now a foundation approval surface at `/admin/platform-control/deployments-domains`.
+
+
+## 2026-09-23 production public cutover complete
+
+The Mkety public production release is live and certified.
+
+- deployed application release SHA: `6704dc1db64b2c24572c9f674a04bb2ac680f3b0`;
+- production cutover workflow run: `35858120559` — success;
+- production Worker: `mkety-platform`;
+- public Custom Domains: `mkety.com` and `www.mkety.com`;
+- canonical `www` redirect to `https://mkety.com/`: pass;
+- runtime database binding: `MKETY_DB`;
+- active Hyperdrive: `mkety-production-db-v2`;
+- private production database migration: pass;
+- Hyperdrive DB-backed production Worker preview: pass;
+- direct production `DATABASE_URL` Worker secret removed;
+- Platform Control runtime identity configuration attached;
+- production public-route/canonical/sitemap/robots acceptance: pass;
+- NOWPayments read-only credential validation and invalid-signature fail-closed acceptance: pass;
+- Public Mkety AI canonical commercial grounding, Academy destination, Enterprise-first Trading sales, memory/privacy/private-source acceptance: pass;
+- isolated candidate tests/typecheck/lint/Vinext/content DB/payment/live route/Public AI acceptance: pass;
+- pre-mutation rollback evidence persisted and no rollback was required.
+
+The production release path now consistently uses `mkety-production-db-v2`; active diagnostic workflows were aligned to the same Hyperdrive authority. Historical references to `mkety-production-db` are not production authority.
+
+The public-site phase is complete. Continue authenticated application development from current `main`, preserving the production release controls and APP-07 approval boundary.
