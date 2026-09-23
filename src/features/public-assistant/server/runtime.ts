@@ -145,6 +145,42 @@ function resolveProviderTargets(environment: PublicAssistantEnvironment): Public
   });
 }
 
+function buildDeterministicSupportFallback(settings: {
+  fallbackMessage: string;
+  supportEmail: string;
+  salesEmail: string;
+  telegramHref: string;
+}) {
+  return [
+    settings.fallbackMessage,
+    settings.supportEmail ? `[Email Mkety support](mailto:${settings.supportEmail})` : null,
+    settings.telegramHref ? `[Message Mkety on Telegram](${settings.telegramHref})` : null,
+    settings.salesEmail ? `[Email Mkety sales](mailto:${settings.salesEmail})` : null,
+  ].filter(Boolean).join(' ');
+}
+
+async function returnDeterministicFallback(input: {
+  database: Database;
+  visitorId: string;
+  conversationId: string;
+  settings: {
+    fallbackMessage: string;
+    supportEmail: string;
+    salesEmail: string;
+    telegramHref: string;
+  };
+}) {
+  const answer = buildDeterministicSupportFallback(input.settings);
+  await appendPublicAIMessage(input.database, {
+    visitorId: input.visitorId,
+    conversationId: input.conversationId,
+    role: 'assistant',
+    content: answer,
+    metadata: { deterministicFallback: true },
+  });
+  return { answer, conversationId: input.conversationId };
+}
+
 export async function runMketyPublicAssistant(input: {
   database: Database;
   visitorId: string;
@@ -153,9 +189,6 @@ export async function runMketyPublicAssistant(input: {
   environment: PublicAssistantEnvironment;
 }) {
   const config = parsePublicAIProviderConfig(input.environment);
-  if (!config.enabled) {
-    throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
-  }
 
   let conversationId = input.conversationId;
   if (conversationId) {
@@ -178,6 +211,15 @@ export async function runMketyPublicAssistant(input: {
     metadata: leadMetadata,
   });
 
+  if (!config.enabled) {
+    return returnDeterministicFallback({
+      database: input.database,
+      visitorId: input.visitorId,
+      conversationId,
+      settings: supportSettings,
+    });
+  }
+
   const conversation = await getPublicAIConversation(input.database, input.visitorId, conversationId);
   if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
 
@@ -190,7 +232,12 @@ export async function runMketyPublicAssistant(input: {
   const targets = resolveProviderTargets(input.environment);
   const primary = targets[0];
   if (!primary) {
-    throw new PublicAssistantRuntimeError('Mkety AI provider is not configured.', 503);
+    return returnDeterministicFallback({
+      database: input.database,
+      visitorId: input.visitorId,
+      conversationId,
+      settings: supportSettings,
+    });
   }
 
   try {
@@ -230,21 +277,11 @@ export async function runMketyPublicAssistant(input: {
     };
   } catch (error) {
     if (error instanceof PublicAssistantRuntimeError && error.status < 500) throw error;
-    const fallback = [
-      supportSettings.fallbackMessage,
-      supportSettings.supportEmail ? `[Email Mkety support](mailto:${supportSettings.supportEmail})` : null,
-      supportSettings.telegramHref ? `[Message Mkety on Telegram](${supportSettings.telegramHref})` : null,
-      supportSettings.salesEmail ? `[Email Mkety sales](mailto:${supportSettings.salesEmail})` : null,
-    ].filter(Boolean).join(' ');
-
-    await appendPublicAIMessage(input.database, {
+    return returnDeterministicFallback({
+      database: input.database,
       visitorId: input.visitorId,
       conversationId,
-      role: 'assistant',
-      content: fallback,
-      metadata: { deterministicFallback: true },
+      settings: supportSettings,
     });
-
-    return { answer: fallback, conversationId };
   }
 }
