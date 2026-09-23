@@ -31,9 +31,9 @@ describe('Mkety auth entry and self-service onboarding contract', () => {
       read('src/app/api/workspaces/route.ts'),
     ]);
 
-    expect(login).toContain('/billing/checkout?plan=');
-    expect(signup).toContain('/select-tenant?plan=');
-    expect(selectTenant).toContain('/billing/checkout?plan=');
+    expect(login).toContain('/billing/checkout?${planQuery}');
+    expect(signup).toContain('/select-tenant?${planQuery}');
+    expect(selectTenant).toContain('/billing/checkout?${planQuery}');
     expect(workspaceRoute).toContain('/billing/checkout?plan=');
   });
 
