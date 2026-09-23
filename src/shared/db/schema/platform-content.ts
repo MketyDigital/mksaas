@@ -45,6 +45,19 @@ export const platformSiteSettings = appSchema.table(
     contactEmail: varchar('contact_email', { length: 255 }),
     contactHref: text('contact_href'),
     legalLinksJson: jsonb('legal_links_json').$type<Array<{ label: string; href: string }>>().notNull().default([]),
+    supportConfigJson: jsonb('support_config_json')
+      .$type<{ supportEmail?: string; salesEmail?: string; telegramHref?: string; academyHref?: string }>()
+      .notNull()
+      .default({}),
+    assistantConfigJson: jsonb('assistant_config_json')
+      .$type<{
+        customInstructions?: string;
+        fallbackMessage?: string;
+        leadCaptureEnabled?: boolean;
+        humanEscalationEnabled?: boolean;
+      }>()
+      .notNull()
+      .default({}),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
