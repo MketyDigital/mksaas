@@ -58,6 +58,6 @@ Public pricing currently includes Starter, AI Workspace, Automation Workspace, D
 
 ## Where to Go Next
 
-Use the docs navigation or search to open the guide for the feature you are working with. For account, billing or access support, use the Mkety contact page or `support@mkety.com`.
+Use the docs navigation or search to open the guide for the feature you are working with. For account, billing, access, Academy, product or sales questions, start with Mkety AI on the Mkety public site; it checks the public docs first and escalates to configured email/Telegram support when needed.
 
-For public product information, visit `mkety.com`. For Mkety Academy, visit `academy.mkety.com`. Approved Trading customers receive access through the Enterprise process.
+For public product and Academy information, use `mkety.com` and Mkety AI. Academy access is provided separately after the appropriate enrolment/access is confirmed. Approved Trading customers receive access through the Enterprise process.
