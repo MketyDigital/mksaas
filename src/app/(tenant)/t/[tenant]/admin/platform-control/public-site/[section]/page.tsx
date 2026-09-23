@@ -85,9 +85,9 @@ const modules: Record<string, PublicSiteModule> = {
     defaultPayload: { categories: defaultDocsCategories, articles: defaultDocsArticles },
   },
   settings: {
-    title: 'Brand & SEO Settings',
-    description: 'Manage public brand settings and metadata without changing application source code.',
-    items: ['Brand name', 'Logo URL', 'Favicon URL', 'SEO title', 'SEO description', 'Social image', 'Legal links'],
+    title: 'Brand, Support & AI Settings',
+    description: 'Manage public brand settings, support channels, Mkety AI guidance/fallback behavior, and metadata without changing application source code.',
+    items: ['Brand name', 'Logo URL', 'SEO & social metadata', 'Support email', 'Sales email', 'Telegram URL', 'Public AI prompt extension', 'AI fallback message', 'Lead capture toggle', 'Legal links'],
     area: 'settings',
     entityType: 'site_settings',
     entityKey: 'production',
