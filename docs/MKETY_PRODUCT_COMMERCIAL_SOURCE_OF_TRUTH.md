@@ -210,3 +210,10 @@ The selected term must survive:
 `pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> provider checkout`.
 
 Enterprise and Trading Custom / Enterprise terms remain separately quoted and are not governed by this self-service discount table.
+
+
+## Public Academy discovery and access handoff — September 23, 2026
+
+Public Academy discovery is AI-first on `mkety.com`. The public Academy page explains the learning areas and opens Mkety AI for programme, schedule, pricing, enrolment, qualification and follow-up questions. Public Mkety AI checks approved docs/site content first, answers from approved public context when needed, may capture voluntarily supplied contact details, and escalates to configured human support when necessary.
+
+The Academy production hostname remains an approved Mkety product domain, but it is not advertised as the default public discovery route. Mkety provides the Academy access destination separately when the appropriate enrolment/access has been confirmed. Public route resolution should return `/academy`, not the Academy hostname.
