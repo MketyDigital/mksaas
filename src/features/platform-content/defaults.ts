@@ -27,7 +27,14 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoDescription:
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
   contactEmail: 'support@mkety.com',
-  contactHref: '/contact',
+  salesEmail: 'hello@mkety.com',
+  telegramHref: 'https://t.me/mketyadmin',
+  contactHref: '/contact?ask=support',
+  publicAiGuidance:
+    'Use Mkety Docs first for documented product/how-to questions. If the docs do not clearly answer the visitor, answer from approved public Mkety context. For account-specific, payment-specific, partnership, sales, or unresolved support needs, offer human escalation using the configured support email, sales email, or Telegram link. When a visitor wants follow-up, ask only for the minimum contact details needed and never ask for passwords, API keys, payment secrets, or other sensitive credentials.',
+  publicAiFallbackMessage:
+    'Mkety AI is temporarily unavailable. You can still reach Mkety support by email or Telegram, or leave your contact details here for follow-up.',
+
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
     { label: 'Terms', href: '/terms' },
