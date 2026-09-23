@@ -162,3 +162,51 @@ No `mkety.com` production cutover until the exact candidate SHA proves all of th
 - both NOWPayments and Selar readiness gates;
 - Enterprise payments remain non-entitling/non-provisioning until verified payment confirmation;
 - routing/DNS guardrails and unrelated Cloudflare resources remain preserved.
+
+
+## 8. September 22, 2026 frontend plan/workspace positioning
+
+The following customer-facing positioning is authoritative for current public-site copy and supersedes legacy infrastructure-slice wording:
+
+- **Starter** is a Pages-first website/publishing plan. Present websites/pages, landing pages, portfolios, simple business sites, supported blogs/docs, domains, SSL, edge delivery, supported forms/integrations, basic analytics, project/asset allowances, and usage/credits. Do not market CPU, RAM, VPS slices, or dedicated server allocation.
+- **AI Workspace** is the Mkety agent product: Agent Builder, agents/published agents, drafts/versions, model choice, testing, Website AI, supported messaging integrations, API access, tools/actions, knowledge, run/conversation history, usage, and team access. Standard inference uses external model providers; do not market a dedicated per-customer compute process.
+- **Automation Workspace** is workflow capability: visual workflows, webhooks, schedules, API actions, conditions, notifications, integrations, secrets, history/logs, retries, executions/credits, and team access. Normal orchestration is shared/serverless-first.
+- **Deploy Workspace** is for lightweight web apps, APIs, portals, and serverless deployment using managed edge/serverless language. Customer copy may describe managed application runtime, serverless application runtime, edge deployment, managed deployment, environment configuration, deployment history/status, and application/API usage allowances. Arbitrary containers, persistent daemons, large compute, special networking, and dedicated resources belong to Enterprise.
+- **Mkety One** bundles the standard Starter + AI + Automation + Deploy capabilities. Describe value through product limits/usage such as websites, apps, agents, knowledge, workflow executions, credits, domains, team members, support, and history retention; do not promise physical server allocations or unbounded unlimited resources.
+- **Trading Workspace remains visible** in Workspace/public presentation exactly as a specialized **Custom / Enterprise** product. It does not receive a self-service price and remains architecturally standalone.
+- **SolutionHub Class A** is transparent/shared-platform where economics fit Mkety shared/serverless services: AI assistants, normal automations, websites, portals, dashboards, lightweight APIs/apps, and similar bounded workloads.
+- **SolutionHub Class B** is Enterprise/Custom when the requirement includes complex ERP, substantial regulated/data/security systems, larger transactional platforms, heavy logistics/data processing, browser automation, arbitrary containers, persistent services, private databases/networking/models, dedicated environments, specialized Trading infrastructure, high-throughput integrations, or strict latency/SLA requirements.
+
+Public copy must continue to describe customer outcomes and product limits rather than exposing internal CPU/RAM/container allocation assumptions.
+
+
+## 9. Signup, checkout, and Starter enforcement note
+
+For fixed-price self-service plans, the canonical customer sequence is account/workspace first, payment second:
+
+`pricing -> signup/sign-in -> tenant selection or creation -> authenticated checkout -> verified settlement -> Billing state -> Entitlements`.
+
+This is required because Billing and access state are tenant-scoped. Enterprise remains on its separate negotiated commercial flow.
+
+Starter is currently a commercial entry plan whose public positioning is Pages-first website/publishing. Do not invent a backend entitlement key merely to mirror the price card. Until the Starter publishing/runtime capability has an enforceable backend boundary, the catalog may intentionally carry no workspace entitlement for Starter. When that runtime is implemented, add a real entitlement/usage contract in the same change that introduces enforceable Starter capabilities.
+
+
+## 10. Self-service prepaid billing terms — September 22, 2026
+
+Fixed-price self-service plans support four prepaid subscription terms:
+
+| Term | Discount | Commercial meaning |
+| ---- | -------- | ------------------ |
+| 1 month | 0% | canonical monthly list price |
+| 3 months | 5% | prepaid subscription total |
+| 6 months | 10% | prepaid subscription total |
+| 12 months | 15% | prepaid subscription total |
+
+The discount applies only to the fixed subscription price. It does not automatically discount metered usage, credits, pass-through model/provider charges, or Enterprise/custom work.
+
+The monthly plan version remains the immutable list-price source. The selected prepaid term deterministically calculates the server-owned checkout total and sets the Billing period end to the selected number of months. Browser/query values are never trusted as prices.
+
+The selected term must survive:
+`pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> provider checkout`.
+
+Enterprise and Trading Custom / Enterprise terms remain separately quoted and are not governed by this self-service discount table.

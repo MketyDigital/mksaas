@@ -5,7 +5,10 @@ import { notFound, redirect } from 'next/navigation';
 
 import {
   getSelfServiceBillingPlan,
+  getSelfServiceBillingQuote,
   isSelfServiceBillingPlanKey,
+  isSelfServiceBillingTermKey,
+  SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
@@ -14,7 +17,7 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface PageProps {
   params: Promise<{ tenant: string }>;
-  searchParams: Promise<{ plan?: string; payment?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string; payment?: string }>;
 }
 
 export const metadata = {
@@ -48,6 +51,8 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   if (!query.plan || !isSelfServiceBillingPlanKey(query.plan)) notFound();
 
   const plan = getSelfServiceBillingPlan(query.plan);
+  const termKey = query.term && isSelfServiceBillingTermKey(query.term) ? query.term : '1m';
+  const quote = getSelfServiceBillingQuote(plan.key, termKey);
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
 
@@ -77,9 +82,31 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
           <h1 className="mt-2 text-3xl font-bold tracking-tight">{plan.name}</h1>
           <p className="mt-3 text-muted-foreground">{plan.description}</p>
 
-          <div className="mt-7 flex items-end gap-2">
-            <span className="text-4xl font-bold">{formatUsd(plan.amountMinor)}</span>
-            <span className="pb-1 text-sm text-muted-foreground">/ month</span>
+          <div className="mt-7 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {Object.values(SELF_SERVICE_BILLING_TERMS).map((term) => (
+              <Link
+                key={term.key}
+                href={`/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${term.key}`}
+                className={term.key === termKey ? 'rounded-xl border border-primary bg-primary/5 p-3 text-center' : 'rounded-xl border p-3 text-center hover:border-primary/50'}
+              >
+                <span className="block text-sm font-semibold">{term.label}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {term.discountPercent ? `${term.discountPercent}% off` : 'Standard'}
+                </span>
+              </Link>
+            ))}
+          </div>
+
+          <div className="mt-7">
+            <div className="flex items-end gap-2">
+              <span className="text-4xl font-bold">{formatUsd(quote.amountMinor)}</span>
+              <span className="pb-1 text-sm text-muted-foreground">total for {quote.term.months} month{quote.term.months === 1 ? '' : 's'}</span>
+            </div>
+            {quote.term.discountPercent ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {formatUsd(quote.effectiveMonthlyMinor)}/month effective rate · save {formatUsd(quote.savingsMinor)}
+              </p>
+            ) : null}
           </div>
 
           <ul className="mt-7 space-y-3 text-sm">
@@ -100,6 +127,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
           {!returned ? (
             <form action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post" className="mt-8">
               <input type="hidden" name="planKey" value={plan.key} />
+              <input type="hidden" name="termKey" value={termKey} />
               <button
                 type="submit"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:opacity-95"

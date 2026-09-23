@@ -4,7 +4,7 @@ import { Lock } from 'lucide-react';
 import { useState } from 'react';
 
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormGlobalError } from '@/shared/components/ui';
+import { Button, Card, CardContent, FormGlobalError } from '@/shared/components/ui';
 
 interface LoginFormProps {
   initialEmail?: string;
@@ -32,15 +32,7 @@ export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin', c
 
   return (
     <Card className="w-full border shadow-xl bg-card backdrop-blur-sm">
-      <CardHeader className="space-y-1 text-center pb-6">
-        <CardTitle className="text-2xl font-bold">{mode === 'signup' ? 'Create your Mkety account' : 'Sign in to Mkety'}</CardTitle>
-        <CardDescription>
-          {mode === 'signup'
-            ? 'Create your account securely and continue to your first workspace.'
-            : 'Continue securely to your Mkety workspace.'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-6">
         <FormGlobalError visible={!!serverError} id="login-server-error">
           {serverError}
         </FormGlobalError>
@@ -60,9 +52,6 @@ export const LoginForm = ({ initialEmail: _initialEmail = '', mode = 'signin', c
               ? 'Create Mkety account'
               : 'Continue to Mkety'}
         </Button>
-        <p className="text-xs text-center text-muted-foreground pt-2">
-          Your account is protected by Mkety&apos;s secure sign-in system.
-        </p>
       </CardContent>
     </Card>
   );

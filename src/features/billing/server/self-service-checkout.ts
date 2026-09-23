@@ -1,5 +1,5 @@
 import type { BillingGatewayAdapter } from '../gateways/types';
-import { getSelfServiceBillingPlan, type SelfServiceBillingPlanKey } from '../catalog/self-service-plans';
+import { getSelfServiceBillingQuote, type SelfServiceBillingPlanKey, type SelfServiceBillingTermKey } from '../catalog/self-service-plans';
 
 export interface PreparedSelfServiceCheckout {
   checkoutId: string;
@@ -14,6 +14,7 @@ export interface SelfServiceCheckoutRepository {
   prepareCheckout(input: {
     tenantId: string;
     planKey: SelfServiceBillingPlanKey;
+    termKey: SelfServiceBillingTermKey;
     provider: string;
     now: Date;
   }): Promise<PreparedSelfServiceCheckout>;
@@ -39,24 +40,26 @@ export async function createSelfServiceCheckout(
   input: {
     tenantId: string;
     planKey: SelfServiceBillingPlanKey;
+    termKey: SelfServiceBillingTermKey;
     returnUrl: string;
     cancelUrl: string;
     now?: Date;
   },
 ) {
   const now = input.now ?? new Date();
-  const catalogPlan = getSelfServiceBillingPlan(input.planKey);
+  const quote = getSelfServiceBillingQuote(input.planKey, input.termKey);
 
   const prepared = await repository.prepareCheckout({
     tenantId: input.tenantId,
     planKey: input.planKey,
+    termKey: input.termKey,
     provider: adapter.provider,
     now,
   });
 
   if (
-    prepared.amountExpectedMinor !== catalogPlan.amountMinor ||
-    prepared.currency !== catalogPlan.currency
+    prepared.amountExpectedMinor !== quote.amountMinor ||
+    prepared.currency !== quote.currency
   ) {
     throw new Error('Prepared checkout does not match the authoritative Mkety billing catalog.');
   }

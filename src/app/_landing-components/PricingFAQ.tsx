@@ -4,28 +4,32 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 
 const FAQ_ITEMS = [
   {
-    q: 'Is Mkety Platform free to try?',
-    a: 'Yes! The demo environment is fully functional with no payment required. Explore every feature with sample data.',
+    q: 'What is Mkety Platform?',
+    a: 'Mkety Platform brings AI, automation, deployment, projects, billing, usage and reusable business solutions into one connected product experience.',
   },
   {
-    q: 'What data do I need to get started?',
-    a: 'Just your team roster. You can import from CSV, invite members manually, or use the bulk import feature. The platform is ready to use immediately after setup.',
+    q: 'Do I need Mkety One?',
+    a: 'No. You can use Starter or choose an individual AI, Automation or Deploy Workspace. Mkety One combines Starter with all three self-service Workspaces.',
   },
   {
-    q: 'Does it work with our existing tools?',
-    a: 'The template integrates with GitHub out of the box, and includes a flexible integration framework to connect any external system via webhooks or custom sync adapters.',
+    q: 'Can I pay for more than one month?',
+    a: 'Yes. Self-service plans support 1, 3, 6 and 12 month prepaid terms. The approved subscription discounts are 0%, 5%, 10% and 15% respectively, so longer prepaid terms have a lower effective monthly rate.',
   },
   {
-    q: 'How does the AI assistant work?',
-    a: "The AI uses your organization's knowledge base and user data to answer questions, search documents, and provide contextual help. Supports OpenAI and Anthropic models.",
+    q: 'Where do I access the Platform?',
+    a: 'The main authenticated Platform is at app.mkety.com. Public product information, pricing and Enterprise enquiries remain on mkety.com.',
   },
   {
-    q: 'Is my data secure?',
-    a: "Absolutely. The template is multi-tenant by design — each organization's data is fully isolated. Enterprise-grade authentication (Auth.js) and permission-based access control (PBAC) are included.",
+    q: 'How is account access protected?',
+    a: 'Mkety uses organization, project, role and permission boundaries. You should also keep passwords, recovery methods, API credentials and other secrets private.',
   },
   {
-    q: 'Can I migrate my existing data?',
-    a: 'Yes. The bulk import feature supports CSV import for team members. The integration engine can sync data from external systems on a schedule.',
+    q: 'Does Mkety support Enterprise requirements?',
+    a: 'Yes. Custom systems, specialized integrations, managed delivery and Trading requirements are handled through Mkety Enterprise under separately agreed scope and commercial terms.',
+  },
+  {
+    q: 'Where can I learn more before buying?',
+    a: 'Use the public Docs and Pricing pages for current product information. For Academy programmes use academy.mkety.com, and for custom requirements contact Mkety Enterprise.',
   },
 ];
 

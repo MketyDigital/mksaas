@@ -1,87 +1,63 @@
 ---
 title: Welcome to Mkety Platform
-description: Overview of the platform — multi-tenant SaaS with AI assistance, RBAC, and integrations. Key concepts, user roles, and quick links to guides.
+description: Overview of Mkety Platform, projects, workspaces, roles, billing, and the safest way to get started.
 section: getting-started
 order: 1
 ---
 
 # Welcome to Mkety Platform
 
-Mkety Platform is a **multi-tenant SaaS starter** with AI assistance, role-based access control, and integration capabilities built in. It helps teams collaborate, manage members, and leverage AI — all with proper tenant isolation and permissions.
+Mkety Platform is the authenticated workspace for building and operating AI, automation, deployment and business solutions under the correct organization and project boundaries.
 
-This guide introduces the platform, key concepts, user roles, and where to go next.
-
----
-
-## What This Platform Does
-
-The template provides three foundational pillars:
-
-- **Multi-tenant organization** — Each tenant (organization) has its own members, roles, departments, and settings. Data is fully isolated between tenants.
-- **AI-powered assistance** — An in-app AI assistant that can answer questions, search content semantically, and provide recommendations. Configurable per tenant.
-- **Integrations and automation** — Webhooks, sync engine, and external system connectivity for building workflows that fit your needs.
-
-> **Tip:** This is a **tenant-based** platform. Your organization (tenant) has its own members, configuration, and data. If you belong to multiple organizations, you switch between them from the app.
+The main application is available at `app.mkety.com`. Public product information, pricing and Enterprise enquiries remain on `mkety.com`.
 
 ---
 
-## Key Concepts
+## How Mkety Is Organized
 
-| Concept          | What it means                                                                    |
-| ---------------- | -------------------------------------------------------------------------------- |
-| **Tenant**       | Your organization. Each tenant has its own members, roles, and configuration.    |
-| **Person**       | A member within a tenant — contains profile info, department, and relationships. |
-| **Role**         | Defines permissions: what you can see and do (member, manager, admin).           |
-| **AI Assistant** | In-app conversational AI for questions, search, and guidance.                    |
-| **Integrations** | Connections to external systems via webhooks and sync engine.                    |
+Mkety uses a tenant-and-project model:
 
-Understanding these will help you navigate the Member and Admin guides.
+- **Organization (tenant)** — the company, team or account boundary that owns members, projects, billing and permissions.
+- **Project** — the working boundary for applications, AI, automations, deployments and related records.
+- **AI Workspace** — agents, knowledge, models, tools, runs, versions and AI applications.
+- **Automation Workspace** — workflows, triggers, actions, conditions, transformations, webhooks and execution history.
+- **Deploy Workspace** — applications, environments, release configuration, deployment requests and deployment history.
+- **SolutionHub** — reusable solutions and blueprints that can be used with one or more Workspaces.
+- **Wallet, Usage and Billing** — separate customer views for commercial records, non-cash product credits and usage.
 
----
-
-## User Roles
-
-Your experience depends on your **role** (and permissions) in the tenant. Roles are separate from your job title; they define what you can see and do.
-
-| Role        | Who it's for            | What you get                                                                       |
-| ----------- | ----------------------- | ---------------------------------------------------------------------------------- |
-| **Member**  | Everyone                | Your profile, dashboard, AI assistant, and access to shared resources.             |
-| **Manager** | People who manage teams | Everything in Member, plus team visibility and management capabilities.            |
-| **Admin**   | Tenant administrators   | Full access: members, invitations, roles, permissions, settings, and integrations. |
+Trading remains a specialized **Custom / Enterprise** product rather than a normal self-service Workspace subscription.
 
 ---
 
-## Quick Links to Guides
+## Roles and Permissions
 
-Depending on your role, start here:
+Your experience depends on the permissions granted inside your organization and project.
 
-- **New to the platform?** → [First Login](/docs/en/getting-started/first-login) and [Navigation](/docs/en/getting-started/navigation).
-- **Set up your profile** → [Profile Setup](/docs/en/getting-started/profile-setup).
-- **Member** → Member guide: dashboard, profile settings, and AI assistant.
-- **Admin** → Admin guide: members, roles, settings, and integrations.
+| Role | Typical responsibility |
+| --- | --- |
+| **Member** | Uses the Workspaces and projects they have been granted access to. |
+| **Manager** | Manages permitted team or project operations in addition to normal member access. |
+| **Admin** | Manages organization-level access, members, permissions and supported administrative settings. |
 
-Use the **docs sidebar** or **search** to jump to any topic.
-
----
-
-## Interactive Components
-
-The platform uses a consistent design system. Here is a live preview of available button variants:
-
-```preview
-component: ButtonVariants
-props: {}
-```
+Some Platform Control actions require specific permissions beyond a general role. Access is always evaluated within the relevant organization and project boundary.
 
 ---
 
-## Why This Template?
+## Getting Started
 
-This template is designed as a solid foundation for your SaaS:
+1. Create or sign in to your Mkety account.
+2. Select an existing organization or create your first workspace.
+3. Create or open a project.
+4. Choose the Workspace that matches the job you want to do.
+5. Review plan, billing, usage and credit information before enabling paid capabilities.
+6. Keep passwords, private keys, API credentials and payment secrets out of public support conversations.
 
-- **Multi-tenancy from day one** — Proper data isolation, per-tenant configuration, and scalable architecture.
-- **AI-native** — AI assistant infrastructure ready for your domain-specific use cases.
-- **Permissions done right** — RBAC with fine-grained permissions, not just role checks.
-- **Integration-ready** — Webhook and sync engine infrastructure for connecting to external systems.
+Public pricing currently includes Starter, AI Workspace, Automation Workspace, Deploy Workspace and Mkety One, with Enterprise available on custom terms. The live pricing page is the commercial source to check before purchase.
 
-If you have feedback or questions, use your tenant's usual support channel or reach out to your admin.
+---
+
+## Where to Go Next
+
+Use the docs navigation or search to open the guide for the feature you are working with. For account, billing or access support, use the Mkety contact page or `support@mkety.com`.
+
+For public product information, visit `mkety.com`. For Mkety Academy, visit `academy.mkety.com`. Approved Trading customers receive access through the Enterprise process.

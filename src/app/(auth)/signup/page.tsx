@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
-import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
+import { isSelfServiceBillingPlanKey, isSelfServiceBillingTermKey } from '@/features/billing/catalog/self-service-plans';
 import { auth } from '@/shared/lib/auth';
 
 export const metadata = {
@@ -14,13 +14,15 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 interface SignupPageProps {
-  searchParams: Promise<{ plan?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string }>;
 }
 
 export default async function SignupPage({ searchParams }: SignupPageProps) {
   const query = await searchParams;
   const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
-  const selectTenantUrl = planKey ? `/select-tenant?plan=${encodeURIComponent(planKey)}` : '/select-tenant';
+  const termKey = query.term && isSelfServiceBillingTermKey(query.term) ? query.term : null;
+  const planQuery = planKey ? `plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}` : '';
+  const selectTenantUrl = planKey ? `/select-tenant?${planQuery}` : '/select-tenant';
 
   const session = await auth();
   if (session?.user) redirect(selectTenantUrl);
@@ -34,13 +36,13 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
           <img src="/mkety-logo.png" alt="Mkety" className="mx-auto mb-5 h-10 w-auto" />
-          <h1 className="mb-2 text-3xl font-bold tracking-tight">Start with Mkety</h1>
-          <p className="text-muted-foreground">Create your account, then set up your first workspace.</p>
+          <h1 className="mb-2 text-3xl font-bold tracking-tight">Create your Mkety account</h1>
+          <p className="text-muted-foreground">Create your account to get started.</p>
         </div>
         <LoginForm mode="signup" callbackUrl={selectTenantUrl} />
         <p className="mt-5 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href={planKey ? `/login?plan=${encodeURIComponent(planKey)}` : '/login'} className="font-semibold text-primary hover:underline">
+          <Link href={planKey ? `/login?${planQuery}` : '/login'} className="font-semibold text-primary hover:underline">
             Sign in
           </Link>
         </p>

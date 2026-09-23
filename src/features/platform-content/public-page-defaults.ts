@@ -47,6 +47,12 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description:
               'Start faster with reusable SolutionHub blueprints or work with Mkety on custom Enterprise delivery.',
           },
+          {
+            key: 'operate',
+            title: 'Operate',
+            description:
+              'Manage domains, usage, credits, billing visibility, team access, history, and approved administration from the same Mkety platform.',
+          },
         ],
         cta: { label: 'Explore Workspaces', href: '/workspaces' },
       },
@@ -72,21 +78,21 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'ai',
             title: 'AI Workspace',
             description:
-              'Build agents, connect knowledge, choose models, test, version, publish, and monitor AI applications.',
+              'Build and publish AI agents with knowledge, tools/actions, model choice, testing, drafts/versions, Website AI, supported messaging channels, API access, run history, and usage visibility.',
             href: '/app',
           },
           {
             key: 'automation',
             title: 'Automation Workspace',
             description:
-              'Create workflows from triggers, actions, conditions, webhooks, transformations, and agent steps.',
+              'Build visual workflows with webhooks, schedules, API actions, conditions, notifications, integrations, secrets, retries, execution logs/history, and usage visibility.',
             href: '/app',
           },
           {
             key: 'deploy',
             title: 'Deploy Workspace',
             description:
-              'Organize applications and environments, manage release configuration, and review deployment history.',
+              'Deploy lightweight web apps, APIs, portals, and serverless workloads through Mkety managed edge/serverless deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
             href: '/app',
           },
           {
@@ -106,7 +112,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety SolutionHub',
     seoTitle: 'Mkety SolutionHub | Ready-made business solutions',
     seoDescription:
-      'Discover reusable Mkety agents, workflows, applications, deployment templates, business automations and enterprise solutions.',
+      'Discover reusable Mkety AI, automation, website, portal, dashboard, lightweight application and enterprise solutions.',
     eyebrow: 'SolutionHub',
     headline: 'Start from a useful solution, then adapt it to your business.',
     intro: 'SolutionHub gives you reusable starting points that can use one or more Mkety Workspaces.',
@@ -120,20 +126,28 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           {
             key: 'ai-solutions',
             title: 'AI solutions',
-            description: 'Packaged agents, knowledge patterns and AI applications.',
+            description: 'Website AI, knowledge assistants, support and sales agents, document Q&A, lead qualification, appointment AI, and supported messaging AI.',
           },
           {
             key: 'automation-solutions',
             title: 'Automation solutions',
-            description: 'Workflow blueprints for repeatable business processes.',
+            description: 'Lead, notification, content, API, scheduled, webhook, approval, CRM, sales, support, and reasonable data-sync workflows.',
           },
           {
             key: 'business-solutions',
-            title: 'Business solutions',
-            description: 'Complete solution patterns combining multiple Mkety capabilities.',
+            title: 'Web & lightweight applications',
+            description: 'Landing pages, business sites, portfolios, blogs, booking apps, portals, dashboards, lightweight CRM/help-desk/inventory tools, APIs, and web applications.',
           },
         ],
         cta: { label: 'Get Started', href: '/signup' },
+      },
+      {
+        eyebrow: 'Enterprise boundary',
+        title: 'Dedicated infrastructure when the requirement needs it.',
+        description:
+          'Complex ERP, larger transactional or regulated systems, browser automation, heavy data processing, arbitrary containers, persistent services, private databases or networking, dedicated environments, specialized Trading infrastructure, high-throughput integrations, and strict SLA deployments are scoped through Enterprise.',
+        items: [],
+        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
       },
     ],
   },
@@ -189,17 +203,17 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Pricing',
     seoTitle: 'Mkety Pricing | Starter, Workspaces, Mkety One and Enterprise',
     seoDescription:
-      'Compare Mkety Starter, AI Workspace, Automation Workspace, Deploy Workspace, Mkety One and Enterprise.',
+      'Compare Mkety Starter, AI Workspace, Automation Workspace, Deploy Workspace, Mkety One, Trading Workspace as Custom / Enterprise, and Enterprise.',
     eyebrow: 'Pricing',
     headline: 'Choose Starter, a Workspace, Mkety One, or Enterprise.',
     intro:
-      'Pick only the Mkety access you need, combine the self-service Workspaces with Mkety One, or use Enterprise for specialized requirements.',
+      'Pick the product access you need and pay monthly or prepay 3, 6, or 12 months. Longer prepaid terms receive progressively lower effective monthly pricing. Mkety One combines the standard self-service options, while Trading Workspace and other specialized requirements remain Custom / Enterprise.',
     sections: [
       {
         eyebrow: 'Commercial model',
         title: 'Clear options for different ways of working.',
         description:
-          'Starter is the entry plan. AI, Automation and Deploy can be purchased as individual Workspaces. Mkety One combines Starter plus all three self-service Workspaces. Enterprise is custom.',
+          'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Self-service plans support 1, 3, 6, and 12 month prepaid terms with 0%, 5%, 10%, and 15% discounts respectively. Mkety One combines Starter plus all three self-service Workspaces. Trading Workspace remains visible as Custom / Enterprise without self-service pricing. Enterprise covers requirements beyond the standard shared platform envelope.',
         items: [],
       },
     ],

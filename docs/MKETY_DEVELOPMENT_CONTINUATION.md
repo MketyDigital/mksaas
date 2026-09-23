@@ -1149,3 +1149,102 @@ Plan selection is preserved across public pricing, account creation/sign-in, ten
 The staging candidate and production migration-host release sequences now seed and smoke the canonical Billing catalog. The standalone staging database check also independently seeds the catalog before smoking it, avoiding false positives from shared staging state.
 
 Once PR #80 is merged and promoted, continue APP-07 Deployments/Cloud with the authorized/audited non-production customer invocation path. Do not broaden that slice into production provider mutation, DNS/custom-domain execution, OCI/Coolify mutation, or rollback execution.
+## Public legal/content production completion — 2026-09-22
+
+Before resuming authenticated app development, the public site received a final legal/copy audit against the legacy Mkety production site and current MKSaaS architecture.
+
+Branch `fix/public-site-production-copy-20260922` replaces the thin Privacy/Terms defaults with production-oriented coverage grounded in current behavior, while explicitly rejecting stale legacy claims that no longer match Mkety. It also removes residual template/demo/Auth.js wording from reusable public components and the English getting-started documentation.
+
+This is a content/legal-surface hardening slice only. It does not change production infrastructure, payment settlement, authentication, tenant authorization, deployment execution or database schema.
+
+After the exact branch head passes current repository/public-candidate gates and is merged, resume the authenticated application roadmap from current `main`. Do not merge historical PR #78 as-is: it is materially behind current main and must be reconciled against the already-merged APP-07 progression before any Deploy approval work is reused.
+
+
+## Platform Control operator-tenant boundary — 2026-09-22
+
+While rechecking login/signup, onboarding, self-service Billing and CMS administration before closing the public-site workstream, the existing permission model exposed an important distinction already required by the CMS architecture: customer tenant administration is not Mkety global platform administration.
+
+Current behavior and correction:
+- first-workspace creation makes the creator the tenant `admin`;
+- built-in tenant `admin` is intentionally full authority for that tenant;
+- Mkety public CMS/app-experience records are global platform content;
+- Platform Control therefore now additionally requires the route tenant to match server configuration `MKETY_PLATFORM_CONTROL_TENANT_SLUG` and the signed-in email to match `MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS`;
+- the check fails closed if the variable is missing or the current tenant is a normal customer workspace;
+- module-specific PBAC checks remain in force after the operator-tenant boundary.
+
+Admin bootstrap is documented in `docs/MKETY_PLATFORM_CONTROL_ADMIN_BOOTSTRAP.md`.
+
+Self-service customer order remains account-first:
+`pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> verified settlement -> Billing -> Entitlements`.
+
+This is required because subscriptions and entitlement state belong to an authenticated tenant. Browser return/success state remains non-entitling. Enterprise/Trading Custom sales remain the separate negotiated-payment path.
+
+Starter follow-up: the $5.99 Starter catalog entry currently has no Starter-specific entitlement key. The Pages-first commercial positioning is authoritative, but authenticated Pages product access/limits still need an enforceable app implementation before Starter is considered feature-complete.
+
+
+## Auth/onboarding and Platform Control production boundary — 2026-09-22
+
+Self-service customer order is authoritative:
+
+`pricing -> signup/sign-in -> tenant selection or first-workspace creation -> authenticated checkout -> verified final settlement -> Billing state -> Entitlements`.
+
+Do not move payment before identity/workspace creation for ordinary self-service plans. Billing/subscription/entitlement state is tenant-scoped and browser return URLs are non-entitling. Enterprise remains a separate negotiated-payment path.
+
+Auth entry presentation is intentionally concise:
+- login: one short support sentence;
+- signup: one short support sentence;
+- no repeated provider/security marketing inside the auth card.
+
+Global Mkety Platform Control/CMS is not ordinary customer tenant administration. The global control surface must require:
+- tenant slug equals server-side `MKETY_PLATFORM_CONTROL_TENANT_SLUG`;
+- authenticated operator email is in server-side `MKETY_PLATFORM_ADMIN_EMAILS`;
+- the required PBAC permission for the requested control area.
+
+The reserved Platform Control workspace slug cannot be created by a non-allowlisted identity. Customer-created workspaces may still make their creator tenant `admin`, but that authority is scoped to the customer tenant and must not grant global Mkety CMS access.
+
+Bootstrap the first operator through normal production Mkety Auth; do not create a hard-coded admin login or authentication bypass.
+
+
+## 2026-09-22 canonical production plan/workspace feature sweep
+
+Public plan/workspace capability copy has been normalized to the September 22 AGENTS/commercial contract across:
+- homepage workspace/default content;
+- /platform and /workspaces public page defaults;
+- /pricing plan cards;
+- public docs workspace articles;
+- Public Mkety AI grounding;
+- billing-facing plan descriptions;
+- CMS repair migration pricing descriptions and feature rows;
+- Platform Control pricing-module wording.
+
+Canonical customer-facing feature dimensions now include:
+- Starter: published websites/pages; landing pages, portfolios, simple business sites and supported blogs/docs; supported custom domains/SSL/edge delivery; supported forms/integrations; basic analytics/project management; asset/storage and usage/credits visibility.
+- AI Workspace: Agent Builder; agents/published agents; drafts/version history; model choice/test playground; knowledge/storage/retrieval; tools/actions/API; Website AI, Telegram and supported messaging; conversation/run history; usage and team access.
+- Automation Workspace: visual workflow builder; webhooks/schedules; API actions/conditions/notifications/integrations; secrets; retries; execution logs/history; execution/usage visibility and team access.
+- Deploy Workspace: managed edge/serverless application runtime; lightweight web app/API/portal deployment; supported custom domains/SSL; environment variables/secrets; deployment history/logs/status where available; project/application/usage visibility.
+- Mkety One: Starter + AI + Automation + Deploy capabilities expressed through projects/workspaces, domains, usage/credits, teams, operational controls, support and history/analytics rather than infrastructure slices.
+- Enterprise: custom implementation/managed delivery, dedicated/private infrastructure when required, containers/persistent services/networking/high-throughput needs, specialized integrations/Trading infrastructure, and custom support/commercial terms.
+- Trading Workspace remains visible as Custom / Enterprise with no self-service price.
+
+Production content DB smoke now compares every published pricing feature array exactly against the canonical defaults. This prevents a stale CMS seed or edited pricing dataset from silently passing release verification. Public pricing remains free of CPU/RAM/VPS/server-allocation claims.
+
+
+## 10. Self-service prepaid billing terms — September 22, 2026
+
+Fixed-price self-service plans support four prepaid subscription terms:
+
+| Term | Discount | Commercial meaning |
+| ---- | -------- | ------------------ |
+| 1 month | 0% | canonical monthly list price |
+| 3 months | 5% | prepaid subscription total |
+| 6 months | 10% | prepaid subscription total |
+| 12 months | 15% | prepaid subscription total |
+
+The discount applies only to the fixed subscription price. It does not automatically discount metered usage, credits, pass-through model/provider charges, or Enterprise/custom work.
+
+The monthly plan version remains the immutable list-price source. The selected prepaid term deterministically calculates the server-owned checkout total and sets the Billing period end to the selected number of months. Browser/query values are never trusted as prices.
+
+The selected term must survive:
+`pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> provider checkout`.
+
+Enterprise and Trading Custom / Enterprise terms remain separately quoted and are not governed by this self-service discount table.

@@ -17,7 +17,7 @@ function repository(): SelfServiceCheckoutRepository & {
         tenantId: 'tenant-1',
         subscriptionId: 'subscription-1',
         billingPeriodId: 'period-1',
-        amountExpectedMinor: 1699n,
+        amountExpectedMinor: 4842n,
         currency: 'USD',
       };
     },
@@ -55,6 +55,7 @@ describe('createSelfServiceCheckout', () => {
     const result = await createSelfServiceCheckout(repo, gateway, {
       tenantId: 'tenant-1',
       planKey: 'ai-workspace',
+      termKey: '3m',
       returnUrl: 'https://mkety.com/payment/success',
       cancelUrl: 'https://mkety.com/payment/cancelled',
       now: new Date('2026-09-18T12:00:00.000Z'),
@@ -82,6 +83,7 @@ describe('createSelfServiceCheckout', () => {
     await expect(createSelfServiceCheckout(repo, adapter(), {
       tenantId: 'tenant-1',
       planKey: 'ai-workspace',
+      termKey: '3m',
       returnUrl: 'https://mkety.com/payment/success',
       cancelUrl: 'https://mkety.com/payment/cancelled',
     })).rejects.toThrow('authoritative Mkety billing catalog');
@@ -98,6 +100,7 @@ describe('createSelfServiceCheckout', () => {
     await expect(createSelfServiceCheckout(repo, gateway, {
       tenantId: 'tenant-1',
       planKey: 'ai-workspace',
+      termKey: '3m',
       returnUrl: 'https://mkety.com/payment/success',
       cancelUrl: 'https://mkety.com/payment/cancelled',
     })).rejects.toThrow('provider unavailable');

@@ -1,23 +1,23 @@
-import { Rocket, Settings2, TrendingUp } from 'lucide-react';
+import { FolderKanban, Rocket, Settings2 } from 'lucide-react';
 
 const STEPS = [
   {
     step: 1,
     icon: Settings2,
-    title: 'Deploy & configure',
-    description: 'Deploy the template, create your tenant, configure branding, roles, and connect your AI provider.',
+    title: 'Create your workspace',
+    description: 'Sign in, choose or create your organization, and set up the project you want to work on.',
   },
   {
     step: 2,
-    icon: Rocket,
-    title: 'Invite users',
-    description: 'Invite your team members, assign roles, and let them set up their profiles and connect integrations.',
+    icon: FolderKanban,
+    title: 'Choose a Mkety Workspace',
+    description: 'Use AI, Automation or Deploy for focused work, or combine the self-service Workspaces with Mkety One.',
   },
   {
     step: 3,
-    icon: TrendingUp,
-    title: 'Launch with AI',
-    description: 'Connect your knowledge base, enable the AI assistant, set up webhooks, and go live.',
+    icon: Rocket,
+    title: 'Build and operate',
+    description: 'Create, test, review usage and billing, and move approved work through the controls provided by each Workspace.',
   },
 ];
 
@@ -28,7 +28,6 @@ export function HowItWorks() {
         const Icon = step.icon;
         return (
           <div key={step.step} className="relative text-center">
-            {/* Connector line (hidden on mobile and last item) */}
             {step.step < 3 && (
               <div
                 className="hidden md:block absolute top-8 left-[60%] w-[80%] h-px border-t-2 border-dashed border-primary/20"

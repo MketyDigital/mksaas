@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
-import { isSelfServiceBillingPlanKey } from '@/features/billing/catalog/self-service-plans';
+import { isSelfServiceBillingPlanKey, isSelfServiceBillingTermKey } from '@/features/billing/catalog/self-service-plans';
+import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 import { withRequestDatabase } from '@/shared/db/request';
 import * as schema from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -26,15 +27,20 @@ export async function POST(request: Request) {
 
   const contentType = request.headers.get('content-type') || '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { name?: string; slug?: string; description?: string; plan?: string })
-    : (Object.fromEntries(await request.formData()) as { name?: string; slug?: string; description?: string; plan?: string });
+    ? ((await request.json().catch(() => ({}))) as { name?: string; slug?: string; description?: string; plan?: string; term?: string })
+    : (Object.fromEntries(await request.formData()) as { name?: string; slug?: string; description?: string; plan?: string; term?: string });
 
   const name = String(body.name || '').trim();
   const slug = slugify(String(body.slug || name));
   const description = String(body.description || '').trim();
   const planKey = body.plan && isSelfServiceBillingPlanKey(String(body.plan)) ? String(body.plan) : null;
+  const termKey = body.term && isSelfServiceBillingTermKey(String(body.term)) ? String(body.term) : null;
 
   if (!name || !slug) return NextResponse.json({ success: false, error: 'Workspace name and slug are required.' }, { status: 400 });
+
+  if (isPlatformControlTenant(slug) && !isPlatformOperatorEmail(session.user.email)) {
+    return NextResponse.json({ success: false, error: 'That workspace address is reserved.' }, { status: 403 });
+  }
 
   const tenant = await withRequestDatabase(async (database) => {
     const existing = await database.query.tenants.findFirst({ where: eq(schema.tenants.slug, slug) });
@@ -77,7 +83,7 @@ export async function POST(request: Request) {
   if (!tenant) return NextResponse.json({ success: false, error: 'That workspace slug is already in use.' }, { status: 409 });
 
   const redirectTo = planKey
-    ? `/t/${tenant.slug}/billing/checkout?plan=${encodeURIComponent(planKey)}`
+    ? `/t/${tenant.slug}/billing/checkout?plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}`
     : `/t/${tenant.slug}`;
 
   if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(redirectTo, request.url), 303);
