@@ -176,7 +176,7 @@ export const defaultAcademySection: PlatformAcademySectionInput = {
       description: 'Follow practical learning paths designed to build demonstrable digital capability.',
     },
   ],
-  cta: { label: 'Explore Mkety Academy', href: 'https://academy.mkety.com' },
+  cta: { label: 'Ask Mkety AI about Academy', href: '/academy#mkety-ai' },
 };
 
 export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
@@ -350,7 +350,7 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Where do I access Mkety Academy and Trading?',
     answer:
-      'Mkety Academy is available at academy.mkety.com. New Trading sales, custom pricing, and access requests start through Mkety Enterprise; customers with an approved commercial arrangement receive the appropriate Trading access separately.',
+      'Start Academy questions on the public Academy page and with Mkety AI. Mkety AI can explain published programmes, schedules, enrolment steps and capture follow-up details; the Academy access destination is provided separately after Mkety confirms the appropriate enrolment/access. New Trading sales, custom pricing, and access requests start through Mkety Enterprise.',
   },
 ];
 
@@ -492,7 +492,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Mkety Academy',
     excerpt: 'Practical learning across engineering, trading, marketing, AI, automation, and certified digital skills.',
     bodyMarkdown:
-      '# Mkety Academy\n\nMkety Academy is available at https://academy.mkety.com. Its learning hubs include Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Academy course pricing and enrolment details are maintained by Mkety Academy and should be checked there for the latest information.',
+      '# Mkety Academy\n\nMkety Academy covers Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Start public Academy questions with Mkety AI on mkety.com so it can check published information, answer questions, capture follow-up details when appropriate, and escalate to the team. The Academy access destination is provided separately after Mkety confirms the appropriate enrolment/access.',
     sortOrder: 10,
   },
   {
@@ -510,7 +510,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Official Mkety web addresses',
     excerpt: 'The main customer-facing Mkety product addresses.',
     bodyMarkdown:
-      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website, `app.mkety.com` for the Mkety Platform application, `academy.mkety.com` for Mkety Academy, and `trade.mkety.com` for approved access to the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
+      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
     sortOrder: 10,
   },
   {
@@ -600,7 +600,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Academy learning hubs',
     excerpt: 'The practical learning areas represented across Mkety Academy.',
     bodyMarkdown:
-      '# Academy learning hubs\n\nMkety Academy presents learning across Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Current programmes, schedules, enrolment and pricing should always be checked at academy.mkety.com.',
+      '# Academy learning hubs\n\nMkety Academy presents learning across Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Start with Mkety AI for current published programme, schedule, enrolment and pricing information. When an Academy access handoff is appropriate, Mkety provides the destination separately.',
     sortOrder: 20,
   },
   {
