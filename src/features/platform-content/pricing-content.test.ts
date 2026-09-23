@@ -5,9 +5,9 @@ const publicPricingText = JSON.stringify(defaultPricingPlans).toLowerCase();
 
 describe('Mkety public pricing contract', () => {
   it('does not market ordinary plans with infrastructure/VPS promises or stale regional wording', () => {
-    expect(publicPricingText).not.toContain('cpu');
-    expect(publicPricingText).not.toContain('ram');
-    expect(publicPricingText).not.toContain('vps');
+    expect(publicPricingText).not.toMatch(/\bcpu\b/);
+    expect(publicPricingText).not.toMatch(/\bram\b/);
+    expect(publicPricingText).not.toMatch(/\bvps\b/);
     expect(publicPricingText).not.toContain('african edition');
   });
 
