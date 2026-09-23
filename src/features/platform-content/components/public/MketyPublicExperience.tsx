@@ -49,7 +49,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               <div
                 role="tablist"
                 aria-label="Explore Mkety"
-                className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible"
+                className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:flex-col lg:overflow-visible"
               >
                 {groups.map((group, index) => {
                   const Icon = showcaseIcons[index] ?? LayoutGrid;
@@ -65,7 +65,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       tabIndex={selected ? 0 : -1}
                       onClick={() => setActiveId(group.id)}
                       className={cn(
-                        'flex min-w-fit items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition motion-reduce:transition-none lg:w-full',
+                        'flex min-w-0 w-full items-center gap-2 rounded-2xl border px-3 py-3 text-left text-sm font-medium transition motion-reduce:transition-none lg:gap-3 lg:px-4',
                         selected
                           ? 'border-primary/25 bg-background text-foreground shadow-sm'
                           : 'border-transparent text-muted-foreground hover:border-border hover:bg-background/60 hover:text-foreground',
@@ -79,7 +79,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       >
                         <Icon className="h-4 w-4" />
                       </span>
-                      {group.label}
+                      <span className="min-w-0 break-words leading-tight">{group.label}</span>
                     </button>
                   );
                 })}
@@ -99,9 +99,9 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
                       {activeGroup.eyebrow}
                     </p>
-                    <h2 className="mt-3 text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
+                    <h2 className="mt-3 break-words text-2xl font-bold tracking-tight [overflow-wrap:anywhere] md:text-3xl">{activeGroup.title}</h2>
                     {activeGroup.description && (
-                      <p className="mt-4 leading-7 text-muted-foreground">{activeGroup.description}</p>
+                      <p className="mt-4 break-words leading-7 text-muted-foreground [overflow-wrap:anywhere]">{activeGroup.description}</p>
                     )}
                   </div>
                   <Link
@@ -133,8 +133,8 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                             </span>
                           )}
                         </div>
-                        <h3 className="font-semibold">{item.title}</h3>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
+                        <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{item.title}</h3>
+                        <p className="mt-2 break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{item.description}</p>
                         {item.href && (
                           <Link
                             href={item.href}
@@ -163,7 +163,6 @@ const academyHubs = [
       'Practical screen sessions with React, Next.js, mobile application building, and modern deployment workflows.',
     icon: Code2,
     image: '/academy-hubs/class1.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1547082299-de196ea013d6?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'Trading Masterclass',
@@ -171,7 +170,6 @@ const academyHubs = [
       'Live chart study, strategy reviews, risk management, market psychology, and execution-focused learning.',
     icon: TrendingUp,
     image: '/academy-hubs/class2.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'Digital Funnel & Marketing',
@@ -179,14 +177,12 @@ const academyHubs = [
       'Build conversion-focused campaigns, social advertising systems, funnels, and measurable digital growth workflows.',
     icon: Megaphone,
     image: '/academy-hubs/class3.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'AI & Automation Lab',
     description: 'Build practical AI agents, prompt workflows, API connections, webhooks, and Mkety Flow automations.',
     icon: Bot,
     image: '/academy-hubs/class4.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?w=1200&auto=format&fit=crop&q=85',
   },
   {
     title: 'Certified Digital Skills',
@@ -194,7 +190,6 @@ const academyHubs = [
       'Structured practical programs, collaborative projects, mentorship, and certification through the Mkety Academy ecosystem.',
     icon: GraduationCap,
     image: '/academy-hubs/class5.jpg',
-    fallbackImage: 'https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=1200&auto=format&fit=crop&q=85',
   },
 ] as const;
 
@@ -229,10 +224,6 @@ export function MketyAcademyHubSection() {
                     src={hub.image}
                     alt={hub.title}
                     loading="lazy"
-                    onError={(event) => {
-                      const image = event.currentTarget;
-                      if (image.src !== hub.fallbackImage) image.src = hub.fallbackImage;
-                    }}
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-transparent to-transparent" />
