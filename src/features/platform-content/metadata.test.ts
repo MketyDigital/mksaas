@@ -9,6 +9,7 @@ const settings: PlatformSiteSettingsInput = {
   defaultSeoTitle: 'Mkety | Build, automate, deploy, and operate',
   defaultSeoDescription: 'Mkety public description',
   socialImageUrl: 'https://assets.example.com/mkety-share.png',
+  publicAiLeadCaptureEnabled: true,
   legalLinks: [],
 };
 
