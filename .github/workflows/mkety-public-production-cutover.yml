@@ -777,6 +777,30 @@ jobs:
             }
           done
 
+
+          for image in class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg; do
+            headers="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o /tmp/mkety-academy-image -w '%{http_code}' "https://mkety.com/academy-hubs/$image" || true)"
+            [ "$code" = '200' ] || { echo "Academy image failed: $image HTTP $code"; exit 1; }
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, "");gsub(/\r/,"");v=$0} END{print v}' "$headers")"
+            printf '%s' "$content_type" | grep -Eqi '^image/' || { echo "Academy asset is not an image: $image ($content_type)"; exit 1; }
+          done
+
+          curl -fsS "https://mkety.com/docs" -o /tmp/mkety-docs-index.html
+          python3 <<'PY' >/tmp/mkety-doc-links
+import re
+html=open('/tmp/mkety-docs-index.html','r',encoding='utf-8',errors='replace').read()
+links=sorted(set(re.findall(r'href=["\'](/docs/[^"\'#?]+)', html)))
+for link in links:
+    print(link)
+PY
+          [ -s /tmp/mkety-doc-links ] || { echo 'Docs index rendered no article links.'; exit 1; }
+          while IFS= read -r doc_path; do
+            [ -n "$doc_path" ] || continue
+            code="$(curl -L -sS -o /tmp/mkety-doc-page -w '%{http_code}' "https://mkety.com$doc_path" || true)"
+            [ "$code" = '200' ] || { echo "Rendered docs link failed: $doc_path HTTP $code"; exit 1; }
+          done </tmp/mkety-doc-links
+
           curl -fsS 'https://mkety.com/sitemap.xml' -o /tmp/mkety-production-sitemap.xml
           for path in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact; do
             expected="https://mkety.com${path}"
