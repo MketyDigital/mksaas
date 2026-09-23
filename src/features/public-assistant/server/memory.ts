@@ -1,7 +1,7 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 
 import type { Database } from '@/shared/db';
-import { publicAIConversations, publicAIMessages, publicAIToolRuns, publicAIVisitors } from '@/shared/db/schema';
+import { publicAIConversations, publicAIMemoryFacts, publicAIMessages, publicAIToolRuns, publicAIVisitors } from '@/shared/db/schema';
 
 export const PUBLIC_AI_HISTORY_LIMIT = 20;
 export const PUBLIC_AI_MESSAGE_CONTEXT_LIMIT = 30;
@@ -161,4 +161,75 @@ export async function deletePublicAIConversation(database: Database, visitorId: 
 export async function clearPublicAIHistory(database: Database, visitorId: string) {
   await database.delete(publicAIConversations).where(eq(publicAIConversations.visitorId, visitorId));
   await database.delete(publicAIVisitors).where(eq(publicAIVisitors.id, visitorId));
+}
+
+
+async function upsertPublicAIMemoryFact(
+  database: Database,
+  input: {
+    visitorId: string;
+    key: string;
+    value: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const existing = await database.query.publicAIMemoryFacts.findFirst({
+    where: and(eq(publicAIMemoryFacts.visitorId, input.visitorId), eq(publicAIMemoryFacts.key, input.key)),
+  });
+
+  const values = {
+    value: input.value,
+    metadata: input.metadata ?? {},
+    updatedAt: new Date(),
+  };
+
+  if (existing) {
+    const [updated] = await database
+      .update(publicAIMemoryFacts)
+      .set(values)
+      .where(and(eq(publicAIMemoryFacts.id, existing.id), eq(publicAIMemoryFacts.visitorId, input.visitorId)))
+      .returning();
+    return updated;
+  }
+
+  const [created] = await database
+    .insert(publicAIMemoryFacts)
+    .values({ visitorId: input.visitorId, key: input.key, ...values })
+    .returning();
+  return created;
+}
+
+export async function captureExplicitPublicAIContactFacts(
+  database: Database,
+  input: { visitorId: string; conversationId: string; message: string },
+) {
+  const leadIntent =
+    /\b(?:support|contact|sales|enterprise|partnership|partner|quote|buy|purchase|trading|demo|human|agent|representative|follow[ -]?up|call me|email me)\b/i.test(
+      input.message,
+    );
+  if (!leadIntent) return 0;
+
+  const facts: Array<[string, string]> = [];
+  const email = input.message.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0];
+  const phone = input.message.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0]?.trim();
+  const name = input.message.match(/\bmy name is\s+([A-Za-z][A-Za-z .'-]{1,80})/i)?.[1]?.trim();
+
+  if (email) facts.push(['lead_email', email]);
+  if (phone) facts.push(['lead_phone', phone]);
+  if (name) facts.push(['lead_name', name]);
+
+  for (const [key, value] of facts) {
+    await upsertPublicAIMemoryFact(database, {
+      visitorId: input.visitorId,
+      key,
+      value,
+      metadata: {
+        kind: 'public_support_lead',
+        conversationId: input.conversationId,
+        capturedFromExplicitVisitorMessage: true,
+      },
+    });
+  }
+
+  return facts.length;
 }
