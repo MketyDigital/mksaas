@@ -20,7 +20,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'app-experience': ['Edit dashboard copy', 'Manage workspace cards', 'Control onboarding text', 'Update quick links'],
   'plans-entitlements': ['Manage plan presentation', 'Review entitlement mappings', 'Control feature visibility', 'Set usage display rules'],
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
-  'deployments-domains': ['Review deployment history', 'Approve domains', 'Retry failed jobs', 'Trigger safe rollback flows'],
+  'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
     'Monitor mkety.com public website routing',
     'Monitor app.mkety.com platform routing',
