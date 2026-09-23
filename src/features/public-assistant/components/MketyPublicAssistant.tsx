@@ -59,7 +59,7 @@ function renderInlineAssistantText(text: string, keyPrefix: string): ReactNode[]
 
     if (match[2] && match[3]) {
       const href = match[3];
-      const safeHref = href.startsWith('/') || href.startsWith('https://') ? href : undefined;
+      const safeHref = href.startsWith('/') || href.startsWith('https://') || href.startsWith('mailto:') ? href : undefined;
       nodes.push(
         safeHref ? (
           <a
@@ -170,6 +170,15 @@ export function MketyPublicAssistant() {
     } finally {
       setLoadingHistory(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const syncFromHash = () => {
+      if (window.location.hash === '#mkety-ai') setOpen(true);
+    };
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
   }, []);
 
   useEffect(() => {
