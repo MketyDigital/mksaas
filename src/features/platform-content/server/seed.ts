@@ -108,6 +108,8 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
       socialImageUrl: defaultPlatformSiteSettings.socialImageUrl,
       contactEmail: defaultPlatformSiteSettings.contactEmail,
       contactHref: defaultPlatformSiteSettings.contactHref,
+      supportConfigJson: defaultPlatformSiteSettings.support,
+      assistantConfigJson: defaultPlatformSiteSettings.publicAssistant,
       legalLinksJson: defaultPlatformSiteSettings.legalLinks,
       publishedAt: new Date(),
     });
@@ -128,6 +130,8 @@ export async function seedDefaultPlatformContent(): Promise<SeedResult> {
         socialImageUrl: defaultPlatformSiteSettings.socialImageUrl,
         contactEmail: defaultPlatformSiteSettings.contactEmail,
         contactHref: defaultPlatformSiteSettings.contactHref,
+        supportConfigJson: defaultPlatformSiteSettings.support,
+        assistantConfigJson: defaultPlatformSiteSettings.publicAssistant,
         legalLinksJson: defaultPlatformSiteSettings.legalLinks,
         publishedAt: existingSettings.publishedAt ?? new Date(),
         updatedAt: new Date(),
