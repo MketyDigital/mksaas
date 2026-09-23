@@ -8,7 +8,10 @@ ALTER TABLE "saas_template"."platform_site_settings"
 UPDATE "saas_template"."platform_site_settings"
 SET
   "contact_email" = COALESCE("contact_email", 'support@mkety.com'),
-  "contact_href" = COALESCE("contact_href", '/contact?ask=support'),
+  "contact_href" = CASE
+    WHEN "contact_href" IS NULL OR "contact_href" = '/contact' THEN '/contact?ask=support'
+    ELSE "contact_href"
+  END,
   "sales_email" = COALESCE("sales_email", 'hello@mkety.com'),
   "telegram_url" = COALESCE("telegram_url", 'https://t.me/mketyadmin'),
   "public_assistant_fallback_message" = COALESCE(
@@ -42,3 +45,8 @@ CREATE INDEX IF NOT EXISTS "public_support_leads_created_idx"
   ON "saas_template"."public_support_leads" ("created_at");
 CREATE INDEX IF NOT EXISTS "public_support_leads_email_idx"
   ON "saas_template"."public_support_leads" ("email");
+
+
+UPDATE "saas_template"."platform_pricing_plans"
+SET "cta_href" = '/contact?ask=sales', "updated_at" = now()
+WHERE "key" = 'enterprise' AND "cta_href" = '/contact';
