@@ -52,7 +52,7 @@ describe('Mkety documented public commercial presentation', () => {
       name: 'Enterprise',
       priceLabel: 'Custom',
       highlighted: false,
-      ctaHref: '/contact',
+      ctaHref: '/contact#mkety-ai',
     });
 
     const obsoletePlanIdentities = new Set(['growth', 'pro', 'business']);
@@ -153,7 +153,7 @@ describe('Mkety documented public commercial presentation', () => {
       badge: 'Custom / Enterprise',
       href: '/enterprise',
     });
-    expect(enterprisePage?.sections[0]?.cta).toMatchObject({ label: 'Discuss Enterprise Project', href: '/contact' });
+    expect(enterprisePage?.sections[0]?.cta).toMatchObject({ label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' });
   });
 
   it('keeps the production CMS repair seed aligned with the canonical feature lists', async () => {
@@ -192,8 +192,8 @@ describe('Mkety documented public commercial presentation', () => {
       'Certified Digital Skills',
     ]);
     expect(academyPage?.sections[0]?.cta).toMatchObject({
-      label: 'Explore Mkety Academy',
-      href: 'https://academy.mkety.com',
+      label: 'Ask Mkety AI about Academy',
+      href: '#mkety-ai',
     });
   });
 });
