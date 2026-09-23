@@ -1,3 +1,4 @@
+import { getPublishedPlatformSiteSettings } from '@/features/platform-content/server/queries';
 import type { Database } from '@/shared/db';
 
 import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
@@ -169,6 +170,7 @@ export async function runMketyPublicAssistant(input: {
         messages: toProviderMessages(conversation.messages),
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          await getPublishedPlatformSiteSettings(),
         ),
         maxOutputTokens: 900,
       },
