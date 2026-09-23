@@ -34,7 +34,9 @@ describe('Mkety public app experience', () => {
     const user = userEvent.setup();
     render(<MketyProductShowcase groups={showcaseGroups} />);
 
-    expect(screen.getByRole('tablist', { name: /explore mkety/i })).toBeInTheDocument();
+    const tablist = screen.getByRole('tablist', { name: /explore mkety/i });
+    expect(tablist).toBeInTheDocument();
+    expect(tablist).toHaveClass('grid-cols-2');
     expect(screen.getByRole('tab', { name: 'Platform' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Build and operate from one system')).toBeInTheDocument();
 
@@ -53,5 +55,8 @@ describe('Mkety public app experience', () => {
     expect(screen.getByText('Digital Funnel & Marketing')).toBeInTheDocument();
     expect(screen.getByText('AI & Automation Lab')).toBeInTheDocument();
     expect(screen.getByText('Certified Digital Skills')).toBeInTheDocument();
+    for (const [index, title] of ['Web & App Engineering', 'Trading Masterclass', 'Digital Funnel & Marketing', 'AI & Automation Lab', 'Certified Digital Skills'].entries()) {
+      expect(screen.getByRole('img', { name: title })).toHaveAttribute('src', `/academy-hubs/class${index + 1}.jpg`);
+    }
   });
 });
