@@ -20,7 +20,7 @@ permissions:
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
   RELEASE_BRANCH: feat/mkety-public-site-production
-  MKETY_HYPERDRIVE_NAME: mkety-production-db
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
 
 jobs:
   authorize:
