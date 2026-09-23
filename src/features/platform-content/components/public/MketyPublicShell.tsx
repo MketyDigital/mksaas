@@ -16,11 +16,11 @@ interface MketyPublicShellProps {
 
 export function MketyPublicShell({ settings, navigation, footerGroups, children }: MketyPublicShellProps) {
   return (
-    <div className="min-h-screen bg-background pb-40 text-foreground sm:pb-44">
+    <div className="min-h-screen bg-background pb-24 text-foreground sm:pb-28">
       <MketyPublicHeader settings={settings} navigation={navigation} />
+      <MketyPublicAssistant logoUrl={settings.logoUrl} brandName={settings.brandName} />
       <main>{children}</main>
       <MketyPublicFooter settings={settings} footerGroups={footerGroups} />
-      <MketyPublicAssistant />
       <MketyPublicDock />
     </div>
   );
