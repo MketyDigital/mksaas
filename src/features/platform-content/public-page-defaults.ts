@@ -166,7 +166,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Learning hubs',
         title: 'Choose the skill path that fits your goal.',
         description:
-          'Current programmes, enrolment options and Academy pricing are maintained directly by Mkety Academy.',
+          'Start with Mkety AI for current published programme, schedule, enrolment and pricing information. Mkety provides Academy access separately when the right enrolment/access is confirmed.',
         items: [
           {
             key: 'web-app',
@@ -194,7 +194,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Follow practical learning paths designed to build demonstrable digital capability.',
           },
         ],
-        cta: { label: 'Explore Mkety Academy', href: 'https://academy.mkety.com' },
+        cta: { label: 'Ask Mkety AI about Academy', href: '#mkety-ai' },
       },
     ],
   },
@@ -304,26 +304,26 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           {
             key: 'support',
             title: 'Product & Support',
-            description: 'Account, product, access and general Mkety support enquiries.',
-            href: 'mailto:support@mkety.com',
+            description: 'Ask Mkety AI first for account, product, access and general support; it will provide the configured human channel when needed.',
+            href: '#mkety-ai',
           },
           {
             key: 'enterprise',
             title: 'Enterprise & Partnerships',
-            description: 'Custom systems, integrations, Trading, partnerships and managed implementation requirements.',
-            href: 'mailto:hello@mkety.com',
+            description: 'Start Enterprise, Trading, partnership and managed implementation enquiries with Mkety AI; it will escalate to sales when needed.',
+            href: '#mkety-ai',
           },
           {
             key: 'telegram',
             title: 'Telegram',
-            description: 'Use the established Mkety Telegram contact for direct public enquiries.',
-            href: 'https://t.me/mketyadmin',
+            description: 'Mkety AI can route you to the configured Telegram support channel when a human conversation is needed.',
+            href: '#mkety-ai',
           },
           {
             key: 'academy',
             title: 'Academy',
-            description: 'Courses, programmes and enrolment information.',
-            href: 'https://academy.mkety.com',
+            description: 'Ask Mkety AI about programmes, schedules, enrolment and next steps; Academy access is handed off separately when appropriate.',
+            href: '#mkety-ai',
           },
         ],
       },
