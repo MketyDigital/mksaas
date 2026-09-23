@@ -8,7 +8,7 @@ import {
   recordPublicAIToolRun,
 } from './memory';
 import { createPublicAIProviderAdapters } from './providers';
-import { buildPublicSystemPrompt, planPublicSupportTools } from './support';
+import { buildPublicSystemPrompt, planPublicSupportTools, sanitizePublicAssistantAnswer } from './support';
 import { executePublicSupportTool, type PublicSupportToolName } from './tools';
 import { parsePublicAIProviderConfig, type PublicAssistantEnvironment } from '../config';
 import { getDefaultPublicAIModel } from '../models';
@@ -176,7 +176,7 @@ export async function runMketyPublicAssistant(input: {
       fallbacks: targets.slice(1),
     });
 
-    const answer = response.text.trim();
+    const answer = sanitizePublicAssistantAnswer(response.text);
     if (!answer) {
       throw new PublicAssistantRuntimeError('Mkety AI did not return a usable answer.', 503);
     }
