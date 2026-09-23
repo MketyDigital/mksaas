@@ -35,11 +35,12 @@ describe('Deploy foundation safety contract', () => {
     ]);
     const source = files.join('\n');
 
-    expect(source).toContain('deployCloudflareCandidate');
+    expect(source).toContain('createDeploymentRequest');
+    expect(source).toContain('executeApprovedDeploymentRequest');
     expect(source).toContain("entitlement: 'workspace.deploy'");
     expect(source).toContain("environment.kind === 'production'");
     expect(source).toContain('environment.protected');
-    expect(source).toContain('isolated workers.dev proof deployment');
+    expect(source).toContain('isolated workers.dev proof execution');
     expect(source).toContain('No infrastructure is provisioned');
     expect(source).not.toMatch(/oci api|coolify|Deploy to production|Create custom domain|bind_pattern/i);
   });

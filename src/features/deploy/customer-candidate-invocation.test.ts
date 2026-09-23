@@ -16,6 +16,9 @@ describe('APP-07 customer candidate invocation boundary', () => {
     expect(actions).toContain("entitlement: 'workspace.deploy'");
     expect(actions).toContain("environment.kind === 'production'");
     expect(actions).toContain('environment.protected');
+    expect(actions).toContain('createDeploymentRequest');
+    expect(actions).toContain('executeApprovedDeploymentRequest');
+    expect(actions).toContain('executionDeploymentId');
     expect(actions).toContain('drizzleDeploymentExecutionRepository');
     expect(actions).toContain('executeDeployment');
     expect(actions).toContain('createCustomerCandidateProvider');
@@ -24,9 +27,10 @@ describe('APP-07 customer candidate invocation boundary', () => {
   it('exposes only isolated candidate execution in the customer UI', async () => {
     const panel = await readFile(PANEL, 'utf8');
 
-    expect(panel).toContain('Deploy non-production candidate');
-    expect(panel).toContain('isolated workers.dev proof deployment');
-    expect(panel).toContain('Production environments, custom domains and DNS are not changed');
+    expect(panel).toContain('Request non-production candidate');
+    expect(panel).toContain('isolated workers.dev proof execution');
+    expect(panel).toContain('Production, DNS and custom domains stay blocked');
+    expect(panel).toContain('Execute approved candidate');
     expect(panel).not.toContain('Deploy to production');
     expect(panel).not.toContain('Create custom domain');
   });

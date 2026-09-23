@@ -1248,3 +1248,24 @@ The selected term must survive:
 `pricing -> signup/sign-in -> tenant selection/creation -> authenticated checkout -> provider checkout`.
 
 Enterprise and Trading Custom / Enterprise terms remain separately quoted and are not governed by this self-service discount table.
+
+
+## 2026-09-23 APP-07 deployment approval boundary
+
+APP-07 now reconciles the historical deployment-request approval intent onto the current authorized Cloudflare candidate execution kernel.
+
+Current contract:
+- project manager/admin plus active `workspace.deploy` entitlement may request a non-production candidate;
+- request stores tenant/project/application/environment plus required `releaseRef` and optional `sourceRef`;
+- production/protected environments are rejected when requesting and again when executing;
+- Platform Control operator access plus `platform:deployments` authority may approve or reject a pending request;
+- approval does not execute a provider;
+- an approved request may be consumed once by a project manager while Deploy entitlement remains active;
+- request claim and queued `deployments` row creation happen in one database transaction;
+- the queued execution is bound to the approved environment and exact release/source refs;
+- provider execution uses the existing audited deployment kernel and Mkety-controlled Cloudflare candidate provider;
+- request state moves through `pending -> approved/rejected -> executing -> completed/failed`;
+- `executionDeploymentId` permanently links the request to its single execution;
+- production deployment, DNS mutation, custom-domain mutation, rollback, arbitrary customer source execution, OCI, and Coolify remain out of scope.
+
+Persistence is additive in `0015_deployment_requests`. The Deployments & Domains Platform Control module is now a foundation approval surface at `/admin/platform-control/deployments-domains`.

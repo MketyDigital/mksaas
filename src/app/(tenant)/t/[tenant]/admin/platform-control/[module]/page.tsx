@@ -1,10 +1,15 @@
 import { notFound } from 'next/navigation';
 
+import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
+import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
+
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
 import { getPublishedControlCenterModule } from '@/features/platform-app-experience/server/queries';
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { requirePermission } from '@/shared/lib/permissions';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface PlatformControlModulePageProps {
   params: Promise<{ tenant: string; module: string }>;
@@ -15,7 +20,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'app-experience': ['Edit dashboard copy', 'Manage workspace cards', 'Control onboarding text', 'Update quick links'],
   'plans-entitlements': ['Manage plan presentation', 'Review entitlement mappings', 'Control feature visibility', 'Set usage display rules'],
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
-  'deployments-domains': ['Review deployment history', 'Approve domains', 'Retry failed jobs', 'Trigger safe rollback flows'],
+  'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
     'Monitor mkety.com public website routing',
     'Monitor app.mkety.com platform routing',
@@ -40,6 +45,15 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
 
   const actions = protectedActionsByModule[controlModule.key] ?? ['Review configuration', 'Manage approved settings'];
   const isAppExperience = controlModule.key === 'app-experience';
+  const isDeployments = controlModule.key === 'deployments-domains';
+  let deploymentApprovalRows = null;
+
+  if (isDeployments) {
+    await requirePermission(tenant, 'platform:deployments');
+    const tenantRecord = await getTenantBySlug(tenant);
+    if (!tenantRecord) notFound();
+    deploymentApprovalRows = await getDeploymentApprovalQueue(tenantRecord.id);
+  }
 
   return (
     <div className="space-y-8">
@@ -64,6 +78,10 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
           defaultPayload={defaultAppExperience}
         />
       )}
+
+      {isDeployments && deploymentApprovalRows ? (
+        <DeploymentApprovalQueue rows={deploymentApprovalRows} tenantSlug={tenant} />
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">

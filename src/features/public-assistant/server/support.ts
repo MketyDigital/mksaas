@@ -18,6 +18,24 @@ export function planPublicSupportTools(message: string): PublicSupportToolName[]
   return [...tools].slice(0, 4);
 }
 
+const PRIVATE_SOURCE_RESPONSE_PATTERN =
+  /\b(?:github|mketydigital|mksaas|repositor(?:y|ies)|pull requests?|branches?|commits?)\b/i;
+
+export function sanitizePublicAssistantAnswer(answer: string): string {
+  const segments = answer
+    .trim()
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .filter((segment) => !PRIVATE_SOURCE_RESPONSE_PATTERN.test(segment));
+
+  if (segments.length === 0) {
+    return 'I can only help with public Mkety information. I can explain Mkety products, pricing, documentation, Academy, and Enterprise options.';
+  }
+
+  return segments.join(' ');
+}
+
 export function buildPublicSystemPrompt(publicContext: string): string {
   return `You are Mkety AI, the public-facing Mkety support assistant on mkety.com.
 

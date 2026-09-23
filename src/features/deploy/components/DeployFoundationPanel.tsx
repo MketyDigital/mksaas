@@ -1,4 +1,9 @@
-import { createDeployApplication, createDeployEnvironment, deployCloudflareCandidate } from '@/features/deploy/actions';
+import {
+  createDeployApplication,
+  createDeployEnvironment,
+  createDeploymentRequest,
+  executeApprovedDeploymentRequest,
+} from '@/features/deploy/actions';
 import type { DeployFoundationState } from '@/features/deploy/server/queries';
 
 interface DeployFoundationPanelProps {
@@ -20,6 +25,9 @@ export function DeployFoundationPanel({
 }: DeployFoundationPanelProps) {
   const applicationNameById = new Map(state.applications.map((application) => [application.id, application.name]));
   const environmentNameById = new Map(state.environments.map((environment) => [environment.id, environment.name]));
+  const requestableEnvironments = state.environments.filter(
+    (environment) => !environment.protected && environment.kind !== 'production',
+  );
 
   return (
     <div className="space-y-6">
@@ -81,64 +89,56 @@ export function DeployFoundationPanel({
       )}
 
       {candidateOutcome ? (
-        <div
-          className="rounded-2xl border bg-card p-4 text-sm"
-          role="status"
-        >
+        <div className="rounded-2xl border bg-card p-4 text-sm" role="status">
           {candidateOutcome === 'completed'
-            ? 'Candidate deployment completed. The run is recorded in deployment history below.'
-            : 'Candidate deployment could not be completed. No production environment was changed.'}
+            ? 'Approved candidate deployment completed. The run is recorded in deployment history below.'
+            : 'Approved candidate deployment could not be completed. No production environment was changed.'}
         </div>
       ) : null}
 
       {canManage ? (
-        <section className="rounded-2xl border bg-card p-5" aria-labelledby="candidate-deploy-heading">
+        <section className="rounded-2xl border bg-card p-5" aria-labelledby="candidate-request-heading">
           <div>
-            <h3 className="font-semibold" id="candidate-deploy-heading">Deploy non-production candidate</h3>
+            <h3 className="font-semibold" id="candidate-request-heading">Request non-production candidate</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Creates an isolated workers.dev proof deployment from a Mkety-controlled artifact. Production environments, custom domains and DNS are not changed.
+              A manager submits the exact environment and release/source references for Platform Control approval. Approval authorizes one isolated workers.dev proof execution only.
             </p>
           </div>
 
           {canDeployCandidate ? (
-            <div className="mt-4 space-y-4">
-              {state.environments.filter((environment) => !environment.protected && environment.kind !== 'production').length ? (
-                state.environments
-                  .filter((environment) => !environment.protected && environment.kind !== 'production')
-                  .map((environment) => (
-                    <form action={deployCloudflareCandidate} className="grid gap-3 rounded-xl border bg-background p-4 md:grid-cols-[1fr_1fr_auto]" key={environment.id}>
-                      <input name="tenantSlug" type="hidden" value={tenantSlug} />
-                      <input name="projectSlug" type="hidden" value={projectSlug} />
-                      <input name="environmentId" type="hidden" value={environment.id} />
-                      <label className="space-y-1 text-sm">
-                        <span className="font-medium">{environmentNameById.get(environment.id) ?? environment.name}</span>
-                        <input
-                          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                          name="releaseRef"
-                          placeholder="Release reference"
-                          required
-                        />
-                      </label>
-                      <label className="space-y-1 text-sm">
-                        <span className="font-medium">Source reference</span>
-                        <input
-                          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                          name="sourceRef"
-                          placeholder="Optional branch or commit"
-                        />
-                      </label>
-                      <button className="self-end rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" type="submit">
-                        Deploy candidate
-                      </button>
-                    </form>
-                  ))
-              ) : (
-                <p className="text-sm text-muted-foreground">Add a development, preview or staging environment first.</p>
-              )}
-            </div>
+            <form action={createDeploymentRequest} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+              <input name="tenantSlug" type="hidden" value={tenantSlug} />
+              <input name="projectSlug" type="hidden" value={projectSlug} />
+              <select className="rounded-md border bg-background px-3 py-2 text-sm" name="environmentId" required>
+                <option value="">Choose non-production environment</option>
+                {requestableEnvironments.map((environment) => (
+                  <option key={environment.id} value={environment.id}>
+                    {applicationNameById.get(environment.applicationId) ?? 'Application'} · {environment.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                name="releaseRef"
+                placeholder="Release reference"
+                required
+              />
+              <input
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                name="sourceRef"
+                placeholder="Source reference (optional)"
+              />
+              <button
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={requestableEnvironments.length === 0}
+                type="submit"
+              >
+                Request approval
+              </button>
+            </form>
           ) : (
             <p className="mt-4 text-sm text-muted-foreground">
-              Candidate deployment requires Deploy Workspace access and project manager permissions.
+              Candidate requests require Deploy Workspace access and project manager permissions.
             </p>
           )}
         </section>
@@ -180,11 +180,40 @@ export function DeployFoundationPanel({
         </div>
       </section>
 
+      <section className="rounded-2xl border bg-card p-5" aria-labelledby="deployment-requests-heading">
+        <div>
+          <h3 className="font-semibold" id="deployment-requests-heading">Deployment requests</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Approved requests can be executed once by a project manager while Deploy entitlement remains active. Production, DNS and custom domains stay blocked.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          {state.deploymentRequests.length ? state.deploymentRequests.map((request) => (
+            <div className="grid gap-3 rounded-xl border bg-background p-3 text-sm md:grid-cols-[1fr_1fr_1fr_1fr_auto]" key={request.id}>
+              <span>{applicationNameById.get(request.applicationId) ?? 'Application'}</span>
+              <span>{environmentNameById.get(request.environmentId) ?? 'Environment'}</span>
+              <span className="capitalize">{request.status}</span>
+              <span className="text-muted-foreground">{request.releaseRef}</span>
+              {canDeployCandidate && request.status === 'approved' && !request.executionDeploymentId ? (
+                <form action={executeApprovedDeploymentRequest}>
+                  <input name="tenantSlug" type="hidden" value={tenantSlug} />
+                  <input name="projectSlug" type="hidden" value={projectSlug} />
+                  <input name="requestId" type="hidden" value={request.id} />
+                  <button className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground" type="submit">
+                    Execute approved candidate
+                  </button>
+                </form>
+              ) : <span className="text-xs text-muted-foreground">{request.executionDeploymentId ? 'Execution linked' : 'Awaiting action'}</span>}
+            </div>
+          )) : <p className="text-sm text-muted-foreground">No deployment approval requests have been recorded.</p>}
+        </div>
+      </section>
+
       <section className="rounded-2xl border bg-card p-5" aria-labelledby="deployment-history-heading">
         <div>
           <h3 className="font-semibold" id="deployment-history-heading">Deployment history</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Audited candidate release history. Customer-triggered execution is limited to non-production isolated workers.dev candidates.
+            Audited candidate release history. Customer execution is limited to approved non-production isolated workers.dev candidates.
           </p>
         </div>
         <div className="mt-4 space-y-3">

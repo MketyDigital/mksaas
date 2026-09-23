@@ -47,4 +47,5 @@ export interface DeploymentExecutionRepository {
 
 export interface DeploymentExecutionOptions {
   timeoutMs?: number;
+  queuedDeploymentId?: string;
 }
