@@ -147,7 +147,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'Complex ERP, larger transactional or regulated systems, browser automation, heavy data processing, arbitrary containers, persistent services, private databases or networking, dedicated environments, specialized Trading infrastructure, high-throughput integrations, and strict SLA deployments are scoped through Enterprise.',
         items: [],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' },
       },
     ],
   },
@@ -287,14 +287,20 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
       'Contact Mkety about Platform access, Academy, partnerships, enterprise implementations or support.',
     eyebrow: 'Contact',
     headline: 'Talk to the right part of Mkety.',
-    intro: 'Use the options below for product, Academy, enterprise and general Mkety enquiries.',
+    intro: 'Start with Mkety AI for product, support, sales and general enquiries. It checks public Mkety documentation first, answers directly when it can, and points you to human support when needed.',
     sections: [
       {
         eyebrow: 'Enquiries',
-        title: 'Product, learning and enterprise conversations.',
+        title: 'Start with Mkety AI, then escalate only when needed.',
         description:
           'Choose the area that best matches your enquiry. Never send passwords, API keys, payment secrets or other sensitive credentials through a general enquiry.',
         items: [
+          {
+            key: 'ai-support',
+            title: 'Ask Mkety AI',
+            description: 'Start here for product, docs, pricing, support and sales questions. Mkety AI can guide you and escalate to a human channel when needed.',
+            href: '#mkety-ai',
+          },
           {
             key: 'support',
             title: 'Product & Support',
