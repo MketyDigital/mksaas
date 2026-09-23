@@ -128,6 +128,8 @@ async function saveSiteSettingsDraft(payload: unknown, actorId: string) {
       socialImageUrl: settings.socialImageUrl ?? null,
       contactEmail: settings.contactEmail ?? null,
       contactHref: settings.contactHref ?? null,
+      supportConfigJson: settings.support,
+      assistantConfigJson: settings.publicAssistant,
       legalLinksJson: settings.legalLinks,
       updatedBy: actorId,
       updatedAt: new Date(),
