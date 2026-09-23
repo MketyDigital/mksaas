@@ -113,6 +113,13 @@
       "when": 1789703600000,
       "tag": "0015_deployment_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790164800000,
+      "tag": "0016_public_support_ai_settings",
+      "breakpoints": true
     }
   ]
 }
