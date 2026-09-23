@@ -139,7 +139,33 @@ const suggestedPrompts = [
   'How do I get started?',
 ] as const;
 
-export function MketyPublicAssistant() {
+interface MketyPublicAssistantProps {
+  support?: {
+    supportEmail: string;
+    salesEmail: string;
+    telegramHref: string;
+    academyHref: string;
+  };
+  publicAssistant?: {
+    fallbackMessage: string;
+    leadCaptureEnabled: boolean;
+    humanEscalationEnabled: boolean;
+  };
+}
+
+export function MketyPublicAssistant({
+  support = {
+    supportEmail: 'support@mkety.com',
+    salesEmail: 'hello@mkety.com',
+    telegramHref: 'https://t.me/mketyadmin',
+    academyHref: 'https://academy.mkety.com',
+  },
+  publicAssistant = {
+    fallbackMessage: 'Mkety AI is temporarily unavailable. You can still reach Mkety support by email or Telegram.',
+    leadCaptureEnabled: true,
+    humanEscalationEnabled: true,
+  },
+}: MketyPublicAssistantProps) {
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -170,6 +196,11 @@ export function MketyPublicAssistant() {
     } finally {
       setLoadingHistory(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('ask') || url.hash === '#mkety-ai') setOpen(true);
   }, []);
 
   useEffect(() => {
@@ -380,8 +411,8 @@ export function MketyPublicAssistant() {
             {!loadingHistory && messages.length === 0 ? (
               <div>
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  I can help you understand Mkety, find the right product or workspace, explain plans, and guide you
-                  through our public documentation.
+                  I can check Mkety Docs first, answer product or workspace questions, help with pricing and sales,
+                  and guide you to human support when needed.
                 </p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {suggestedPrompts.map((prompt) => (
@@ -419,12 +450,31 @@ export function MketyPublicAssistant() {
             </div>
 
             {error ? (
-              <p
+              <div
                 role="alert"
-                className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+                className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs"
               >
-                {error}
-              </p>
+                <p className="text-destructive">{error}</p>
+                <p className="mt-2 text-muted-foreground">{publicAssistant.fallbackMessage}</p>
+                {publicAssistant.humanEscalationEnabled ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a
+                      href={`mailto:${support.supportEmail}`}
+                      className="rounded-lg border bg-background px-3 py-2 font-medium text-foreground"
+                    >
+                      Email support
+                    </a>
+                    <a
+                      href={support.telegramHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg border bg-background px-3 py-2 font-medium text-foreground"
+                    >
+                      Telegram
+                    </a>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
 
