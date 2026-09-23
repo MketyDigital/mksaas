@@ -147,7 +147,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'Complex ERP, larger transactional or regulated systems, browser automation, heavy data processing, arbitrary containers, persistent services, private databases or networking, dedicated environments, specialized Trading infrastructure, high-throughput integrations, and strict SLA deployments are scoped through Enterprise.',
         items: [],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/contact?ask=enterprise' },
       },
     ],
   },
@@ -254,7 +254,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Implementation and operational support tailored to enterprise requirements.',
           },
         ],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/contact?ask=enterprise' },
       },
     ],
   },
@@ -287,7 +287,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
       'Contact Mkety about Platform access, Academy, partnerships, enterprise implementations or support.',
     eyebrow: 'Contact',
     headline: 'Talk to the right part of Mkety.',
-    intro: 'Use the options below for product, Academy, enterprise and general Mkety enquiries.',
+    intro: 'Start with Mkety AI for product, support, sales and general enquiries. It checks Mkety Docs first, answers when it can, and directs you to human support when needed.',
     sections: [
       {
         eyebrow: 'Enquiries',
@@ -297,15 +297,15 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         items: [
           {
             key: 'support',
-            title: 'Product & Support',
-            description: 'Account, product, access and general Mkety support enquiries.',
-            href: 'mailto:support@mkety.com',
+            title: 'Start with Mkety AI',
+            description: 'Ask about products, docs, account access, support or troubleshooting. Mkety AI will escalate when needed.',
+            href: '/contact?ask=support',
           },
           {
             key: 'enterprise',
-            title: 'Enterprise & Partnerships',
-            description: 'Custom systems, integrations, Trading, partnerships and managed implementation requirements.',
-            href: 'mailto:hello@mkety.com',
+            title: 'Sales, Enterprise & Partnerships',
+            description: 'Start with Mkety AI for custom systems, Trading, partnerships, proposals and managed implementation enquiries.',
+            href: '/contact?ask=enterprise',
           },
           {
             key: 'telegram',
