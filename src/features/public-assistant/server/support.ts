@@ -19,7 +19,7 @@ export function planPublicSupportTools(message: string): PublicSupportToolName[]
 }
 
 const PRIVATE_SOURCE_RESPONSE_PATTERN =
-  /\b(?:github|mketydigital|mksaas|repositories?|pull requests?|branches?|commits?)\b/i;
+  /\b(?:github|mketydigital|mksaas|repositor(?:y|ies)|pull requests?|branches?|commits?)\b/i;
 
 export function sanitizePublicAssistantAnswer(answer: string): string {
   const segments = answer
