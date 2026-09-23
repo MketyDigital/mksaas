@@ -13,8 +13,15 @@ describe('projectWorkspaces', () => {
     expect(trading.protectedReason?.toLowerCase()).toContain('custom');
   });
 
-  it('routes AI through the ai segment', () => {
-    expect(getProjectWorkspaceByKey('ai').hrefSegment).toBe('ai');
+  it('marks implemented self-service workspace surfaces available', () => {
     expect(getProjectWorkspaceByKey('ai').availability).toBe('available');
+    expect(getProjectWorkspaceByKey('automation').availability).toBe('available');
+    expect(getProjectWorkspaceByKey('deploy').availability).toBe('available');
+    expect(getProjectWorkspaceByKey('solutions').availability).toBe('available');
+
+    expect(getProjectWorkspaceByKey('ai').hrefSegment).toBe('ai');
+    expect(getProjectWorkspaceByKey('deploy').description).toContain('non-production');
+    expect(getProjectWorkspaceByKey('deploy').description).toContain('production and domains remain protected');
+    expect(getProjectWorkspaceByKey('solutions').statusLabel).toBe('Catalog available');
   });
 });

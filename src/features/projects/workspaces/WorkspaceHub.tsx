@@ -37,7 +37,7 @@ export function WorkspaceHub({
         <h1 className="mt-2 text-2xl font-semibold md:text-3xl">{projectName}</h1>
         {projectDescription && <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{projectDescription}</p>}
         <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Open the right workspace for this project. AI is available now, while Automate, Deploy, SolutionHub, and enterprise Trading are staged behind clear product boundaries.
+          Open the right workspace for this project. AI, Automation, Deploy, and SolutionHub expose their current safe capabilities, while Trading remains Custom / Enterprise.
         </p>
       </header>
 

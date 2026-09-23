@@ -20,7 +20,7 @@ export default async function SolutionHubWorkspacePage({ params }: { params: Pro
       tenantSlug={access.tenant.slug}
       workspace={getProjectWorkspaceByKey('solutions')}
     >
-      <SolutionHubWorkspaceOverview />
+      <SolutionHubWorkspaceOverview projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
     </WorkspaceShell>
   );
 }
