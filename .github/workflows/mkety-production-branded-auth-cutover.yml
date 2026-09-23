@@ -65,6 +65,56 @@ jobs:
           }));
           NODE
 
+      - name: Snapshot and enforce Mkety auth legal/support links
+        id: legal
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
+            "$issuer/admin/v1/policies/privacy" -o /tmp/privacy-before.json
+
+          node <<'NODE' >/tmp/privacy-update.json
+          process.stdout.write(JSON.stringify({
+            tosLink: 'https://mkety.com/terms',
+            privacyLink: 'https://mkety.com/privacy',
+            helpLink: 'https://mkety.com/contact?ask=support',
+            supportEmail: 'support@mkety.com',
+            docsLink: 'https://mkety.com/docs',
+            customLink: 'https://t.me/mketyadmin',
+            customLinkText: 'Telegram support',
+          }));
+          NODE
+
+          code="$(curl --silent --show-error -o /tmp/privacy-update-response.json -w '%{http_code}' -X PUT \
+            "$issuer/admin/v1/policies/privacy" \
+            -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
+            -H 'Content-Type: application/json' --data-binary @/tmp/privacy-update.json)"
+          [ "$code" = 200 ] || { echo "::error::Mkety auth legal/support policy update failed HTTP $code"; cat /tmp/privacy-update-response.json; exit 1; }
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
+            "$issuer/admin/v1/policies/privacy" -o /tmp/privacy-after.json
+
+          node <<'NODE'
+          const x=require('/tmp/privacy-after.json').policy||{};
+          const expected={
+            tosLink:'https://mkety.com/terms',
+            privacyLink:'https://mkety.com/privacy',
+            helpLink:'https://mkety.com/contact?ask=support',
+            supportEmail:'support@mkety.com',
+            docsLink:'https://mkety.com/docs',
+            customLink:'https://t.me/mketyadmin',
+          };
+          const failures=Object.entries(expected).filter(([key,value])=>x[key]!==value).map(([key])=>key);
+          if(failures.length) throw new Error('Mkety auth legal/support links did not converge: '+failures.join(','));
+          console.log('MKETY_AUTH_LEGAL_LINKS_SAFE '+JSON.stringify({
+            terms:true,privacy:true,help:true,support:true,docs:true,telegram:true
+          }));
+          NODE
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
       - name: Snapshot effective instance Login V2 feature
         id: snapshot
         shell: bash
@@ -187,6 +237,31 @@ jobs:
           echo "INSTANCE_LOGIN_V2_ROLLBACK_SAFE HTTP $code"
           [ "$code" = 200 ]
 
+      - name: Roll back auth legal/support links on failure
+        if: failure() && steps.legal.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set +e
+          issuer="${ZITADEL_ISSUER%/}"
+          node <<'NODE' >/tmp/privacy-rollback.json
+          const x=require('/tmp/privacy-before.json').policy||{};
+          process.stdout.write(JSON.stringify({
+            tosLink:x.tosLink||'',
+            privacyLink:x.privacyLink||'',
+            helpLink:x.helpLink||'',
+            supportEmail:x.supportEmail||'',
+            docsLink:x.docsLink||'',
+            customLink:x.customLink||'',
+            customLinkText:x.customLinkText||'',
+          }));
+          NODE
+          code="$(curl --silent --show-error -o /tmp/privacy-rollback-response.json -w '%{http_code}' -X PUT \
+            "$issuer/admin/v1/policies/privacy" \
+            -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
+            -H 'Content-Type: application/json' --data-binary @/tmp/privacy-rollback.json)"
+          echo "MKETY_AUTH_LEGAL_LINKS_ROLLBACK_SAFE HTTP $code"
+          [ "$code" = 200 ]
+
       - name: Publish cutover result
         if: always()
         shell: bash
@@ -195,10 +270,10 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           state=success
-          desc='ZITADEL instance Login V2 now routes Mkety authentication through branded auth.mkety.com.'
+          desc='Mkety Login V2 is branded on auth.mkety.com with Mkety legal/support links.'
           if [ "$JOB_STATUS" != success ]; then
             state=failure
-            desc='Branded auth instance cutover failed; prior Login V2 base URI was restored when changed.'
+            desc='Branded auth cutover failed; prior Login V2 and legal/support policy were restored when changed.'
           fi
           STATE="$state" DESC="$desc" node <<'NODE' >/tmp/status.json
           process.stdout.write(JSON.stringify({
