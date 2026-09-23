@@ -6,13 +6,14 @@ import { cn } from '@/shared/lib/utils';
 
 import { DocsHeader } from './DocsHeader';
 import { DocsSearch } from './DocsSearch';
-import { DocsSidebar } from './DocsSidebar';
+import { DocsSidebar, type PublishedDocsNavigationTree } from './DocsSidebar';
 
 interface DocsLayoutClientProps {
   children: React.ReactNode;
+  tree: PublishedDocsNavigationTree;
 }
 
-export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
+export function DocsLayoutClient({ children, tree }: DocsLayoutClientProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -50,7 +51,7 @@ export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
               sidebarOpen ? 'translate-x-0' : '-translate-x-full',
             )}
           >
-            <DocsSidebar onNavigate={handleNavigate} />
+            <DocsSidebar tree={tree} onNavigate={handleNavigate} />
           </aside>
 
           {/* Mobile overlay backdrop */}
