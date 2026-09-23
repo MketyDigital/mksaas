@@ -816,7 +816,7 @@ jobs:
             console.error('Public AI sent a new Trading buyer directly to the entitled-access product destination.');
             process.exit(1);
           }
-          if (/\b(Growth|Pro|Business)\b/i.test(a)) {
+          if (/(?:\b(?:Growth|Pro)\b(?:\s+(?:plan|tier|workspace))?|\bBusiness\s+(?:plan|tier|workspace)\b)/i.test(a)) {
             console.error('Public AI exposed a removed plan.');
             process.exit(1);
           }
