@@ -64,6 +64,19 @@ describe('APP-07 deployment approval boundary', () => {
     expect(service).toContain('options.queuedDeploymentId');
   });
 
+  it('keeps the Platform Control deployment module on the implemented approval route', async () => {
+    const registry = await read('src/features/platform-app-experience/control-center-registry.ts');
+    const deployBlock = registry.slice(
+      registry.indexOf("key: 'deployments-domains'"),
+      registry.indexOf("key: 'domains-routing'"),
+    );
+
+    expect(deployBlock).toContain("href: '/admin/platform-control/deployments-domains'");
+    expect(deployBlock).toContain("status: 'foundation'");
+    expect(deployBlock).toContain('candidate deployment approvals');
+    expect(deployBlock).toContain('production execution');
+  });
+
   it('keeps execution isolated from production, DNS, custom domains and rollback', async () => {
     const panel = await read('src/features/deploy/components/DeployFoundationPanel.tsx');
     const actions = await read('src/features/deploy/actions.ts');
