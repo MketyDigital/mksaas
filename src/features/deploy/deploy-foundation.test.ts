@@ -35,7 +35,8 @@ describe('Deploy foundation safety contract', () => {
     ]);
     const source = files.join('\n');
 
-    expect(source).toContain('deployCloudflareCandidate');
+    expect(source).toContain('createDeploymentRequest');
+    expect(source).toContain('executeApprovedDeploymentRequest');
     expect(source).toContain("entitlement: 'workspace.deploy'");
     expect(source).toContain("environment.kind === 'production'");
     expect(source).toContain('environment.protected');
