@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, History, Plus, Send, Sparkles, Trash2, X } from 'lucide-react';
+import { History, Plus, Send, Trash2, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 interface PublicConversationSummary {
@@ -274,10 +274,10 @@ export function MketyPublicAssistant() {
           aria-expanded="false"
           data-surface="mkety-ai-command"
           onClick={() => setOpen(true)}
-          className="fixed inset-x-4 bottom-[5.6rem] z-[55] mx-auto flex min-h-11 w-[calc(100%-2rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-transparent bg-transparent px-2.5 py-2 text-left shadow-none backdrop-blur-none transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
+          className="fixed inset-x-4 top-[4.65rem] z-[35] mx-auto flex min-h-14 w-[calc(100%-2rem)] max-w-[620px] items-center gap-3 rounded-2xl border border-violet-400/20 bg-background/95 px-3 py-2.5 text-left shadow-lg shadow-violet-950/10 backdrop-blur-xl transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2"
         >
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
-            <Sparkles className="h-4.5 w-4.5" aria-hidden="true" />
+          <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl border bg-white p-1 shadow-sm">
+            <img src="/mkety-logo.png" alt="" className="h-full w-full object-contain" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[13px] font-semibold text-foreground">Ask Mkety AI</span>
@@ -295,12 +295,12 @@ export function MketyPublicAssistant() {
           aria-modal="false"
           aria-label="Mkety AI"
           data-surface="mkety-ai-panel"
-          className="fixed inset-x-3 bottom-[5.75rem] z-[55] mx-auto flex max-h-[min(720px,calc(100vh-7rem))] w-[calc(100%-1.5rem)] max-w-[760px] flex-col overflow-hidden rounded-[1.75rem] border border-violet-400/20 bg-background/96 shadow-2xl shadow-violet-950/20 backdrop-blur-xl supports-[backdrop-filter]:bg-background/88"
+          className="fixed inset-x-3 top-[4.65rem] z-[55] mx-auto flex max-h-[min(720px,calc(100vh-5.5rem))] w-[calc(100%-1.5rem)] max-w-[760px] flex-col overflow-hidden rounded-[1.75rem] border border-violet-400/20 bg-background/96 shadow-2xl shadow-violet-950/20 backdrop-blur-xl supports-[backdrop-filter]:bg-background/88"
         >
           <header className="flex items-center justify-between border-b border-border/80 bg-gradient-to-r from-violet-600/[0.08] to-cyan-500/[0.08] px-4 py-3 sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 text-white shadow-sm">
-                <Bot className="h-5 w-5" aria-hidden="true" />
+              <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl border bg-white p-1 shadow-sm">
+                <img src="/mkety-logo.png" alt="" className="h-full w-full object-contain" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <h2 className="font-semibold">Mkety AI</h2>
