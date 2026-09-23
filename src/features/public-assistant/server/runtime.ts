@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm';
+
 import type { Database } from '@/shared/db';
+import { platformSiteSettings } from '@/shared/db/schema';
 
 import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
 import {
@@ -105,6 +108,29 @@ async function buildGroundedContext(input: {
   return contextParts.join('\n\n');
 }
 
+function detectLeadMetadata(message: string) {
+  const email = message.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0];
+  const phone = message.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0]?.trim();
+  if (!email && !phone) return undefined;
+  return { leadCapture: true, ...(email ? { email } : {}), ...(phone ? { phone } : {}) };
+}
+
+async function getPublicSupportSettings(database: Database) {
+  const row = await database.query.platformSiteSettings.findFirst({
+    where: eq(platformSiteSettings.environment, 'production'),
+  });
+  return {
+    supportEmail: row?.contactEmail ?? 'support@mkety.com',
+    salesEmail: row?.salesEmail ?? 'hello@mkety.com',
+    telegramHref: row?.telegramHref ?? 'https://t.me/mketyadmin',
+    promptExtension: row?.publicAiPrompt ?? undefined,
+    fallbackMessage:
+      row?.publicAiFallbackMessage ??
+      'Mkety AI is temporarily unavailable. You can continue with Mkety support by email or Telegram.',
+    leadCaptureEnabled: row?.publicAiLeadCaptureEnabled ?? true,
+  };
+}
+
 function resolveProviderTargets(environment: PublicAssistantEnvironment): PublicAIProviderTarget[] {
   const config = parsePublicAIProviderConfig(environment);
   const requestedProviders = [config.primaryProvider, ...config.fallbackProviders];
@@ -141,11 +167,15 @@ export async function runMketyPublicAssistant(input: {
     conversationId = conversation.id;
   }
 
+  const supportSettings = await getPublicSupportSettings(input.database);
+  const leadMetadata = supportSettings.leadCaptureEnabled ? detectLeadMetadata(input.message) : undefined;
+
   await appendPublicAIMessage(input.database, {
     visitorId: input.visitorId,
     conversationId,
     role: 'user',
     content: input.message,
+    metadata: leadMetadata,
   });
 
   const conversation = await getPublicAIConversation(input.database, input.visitorId, conversationId);
@@ -169,6 +199,7 @@ export async function runMketyPublicAssistant(input: {
         messages: toProviderMessages(conversation.messages),
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          supportSettings,
         ),
         maxOutputTokens: 900,
       },
@@ -198,7 +229,22 @@ export async function runMketyPublicAssistant(input: {
       conversationId,
     };
   } catch (error) {
-    if (error instanceof PublicAssistantRuntimeError) throw error;
-    throw new PublicAssistantRuntimeError('Mkety AI is temporarily unavailable. Please try again.', 503);
+    if (error instanceof PublicAssistantRuntimeError && error.status < 500) throw error;
+    const fallback = [
+      supportSettings.fallbackMessage,
+      supportSettings.supportEmail ? `[Email Mkety support](mailto:${supportSettings.supportEmail})` : null,
+      supportSettings.telegramHref ? `[Message Mkety on Telegram](${supportSettings.telegramHref})` : null,
+      supportSettings.salesEmail ? `[Email Mkety sales](mailto:${supportSettings.salesEmail})` : null,
+    ].filter(Boolean).join(' ');
+
+    await appendPublicAIMessage(input.database, {
+      visitorId: input.visitorId,
+      conversationId,
+      role: 'assistant',
+      content: fallback,
+      metadata: { deterministicFallback: true },
+    });
+
+    return { answer: fallback, conversationId };
   }
 }
