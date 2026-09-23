@@ -325,7 +325,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'For requirements beyond the standard shared platform envelope, including dedicated infrastructure, specialized integrations, private runtimes, persistent services, and Trading.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety Enterprise',
-    ctaHref: '/contact',
+    ctaHref: '/contact?ask=enterprise',
     features: [
       'Custom implementation and managed delivery',
       'Dedicated or private infrastructure when required',
