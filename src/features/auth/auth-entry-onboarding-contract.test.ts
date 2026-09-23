@@ -37,6 +37,20 @@ describe('Mkety auth entry and self-service onboarding contract', () => {
     expect(workspaceRoute).toContain('/billing/checkout?plan=');
   });
 
+  it('redirects signed-out login and signup directly into the correct hosted auth intent', async () => {
+    const [login, signup] = await Promise.all([
+      read('src/app/(auth)/login/page.tsx'),
+      read('src/app/(auth)/signup/page.tsx'),
+    ]);
+
+    expect(login).toContain("authStart.searchParams.set('intent', 'signin')");
+    expect(signup).toContain("authStart.searchParams.set('intent', 'signup')");
+    expect(login).toContain("authStart.searchParams.set('returnTo', selectTenantUrl)");
+    expect(signup).toContain("authStart.searchParams.set('returnTo', selectTenantUrl)");
+    expect(login).not.toContain('<LoginForm');
+    expect(signup).not.toContain('<LoginForm');
+  });
+
   it('preserves selected billing term through auth and workspace onboarding', async () => {
     const [login, signup, selectTenant, createWorkspace, workspaceRoute] = await Promise.all([
       read('src/app/(auth)/login/page.tsx'),
