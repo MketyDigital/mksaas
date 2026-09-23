@@ -42,6 +42,7 @@ const MIGRATION_FILES = [
   'migrations/0007_archive_retired_public_plans.sql',
   'migrations/0008_harden_rls_auto_enable.sql',
   'migrations/0009_platform_commercial_content_repair.sql',
+  'migrations/0010_public_support_ai_settings.sql',
 ] as const;
 
 const queryClient = postgres(DATABASE_URL, {
