@@ -35,6 +35,7 @@ export * from './platform-content';
 export * from './platform-enterprise-orders';
 export * from './projects';
 export * from './public-assistant-memory';
+export * from './public-support-leads';
 export * from './roles';
 export * from './schema';
 export * from './tenant-credit-accounts';
