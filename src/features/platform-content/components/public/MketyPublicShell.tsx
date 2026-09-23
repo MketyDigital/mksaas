@@ -18,7 +18,7 @@ export function MketyPublicShell({ settings, navigation, footerGroups, children 
   return (
     <div className="min-h-screen bg-background pb-40 text-foreground sm:pb-44">
       <MketyPublicHeader settings={settings} navigation={navigation} />
-      <MketyPublicAssistant />
+      <MketyPublicAssistant support={settings.support} publicAssistant={settings.publicAssistant} />
       <main>{children}</main>
       <MketyPublicFooter settings={settings} footerGroups={footerGroups} />
       <MketyPublicDock />
