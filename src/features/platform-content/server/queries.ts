@@ -96,6 +96,8 @@ export async function getPublishedPlatformSiteSettings() {
         socialImageUrl: row.socialImageUrl ?? undefined,
         contactEmail: row.contactEmail ?? undefined,
         contactHref: row.contactHref ?? undefined,
+        support: row.supportConfigJson ?? {},
+        publicAssistant: row.assistantConfigJson ?? {},
         legalLinks: row.legalLinksJson ?? [],
       });
     },
