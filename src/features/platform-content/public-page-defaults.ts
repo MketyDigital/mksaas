@@ -254,7 +254,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Implementation and operational support tailored to enterprise requirements.',
           },
         ],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact' },
+        cta: { label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' },
       },
     ],
   },
