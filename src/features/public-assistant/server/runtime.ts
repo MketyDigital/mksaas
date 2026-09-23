@@ -1,3 +1,4 @@
+import { getPublishedPlatformSiteSettings } from '@/features/platform-content/server/queries';
 import type { Database } from '@/shared/db';
 
 import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
@@ -127,6 +128,9 @@ export async function runMketyPublicAssistant(input: {
   environment: PublicAssistantEnvironment;
 }) {
   const config = parsePublicAIProviderConfig(input.environment);
+  const siteSettings = await getPublishedPlatformSiteSettings();
+  const assistantSettings = siteSettings.publicAssistant;
+  const supportSettings = siteSettings.support;
   if (!config.enabled) {
     throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
   }
@@ -169,6 +173,14 @@ export async function runMketyPublicAssistant(input: {
         messages: toProviderMessages(conversation.messages),
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          {
+            customInstructions: assistantSettings.customInstructions,
+            supportEmail: supportSettings.supportEmail,
+            salesEmail: supportSettings.salesEmail,
+            telegramHref: supportSettings.telegramHref,
+            leadCaptureEnabled: assistantSettings.leadCaptureEnabled,
+            humanEscalationEnabled: assistantSettings.humanEscalationEnabled,
+          },
         ),
         maxOutputTokens: 900,
       },
@@ -198,7 +210,26 @@ export async function runMketyPublicAssistant(input: {
       conversationId,
     };
   } catch (error) {
-    if (error instanceof PublicAssistantRuntimeError) throw error;
-    throw new PublicAssistantRuntimeError('Mkety AI is temporarily unavailable. Please try again.', 503);
+    const fallback = `${assistantSettings.fallbackMessage}
+
+Email: ${supportSettings.supportEmail}
+Telegram: ${supportSettings.telegramHref}`;
+
+    await appendPublicAIMessage(input.database, {
+      visitorId: input.visitorId,
+      conversationId,
+      role: 'assistant',
+      content: fallback,
+      metadata: {
+        fallback: true,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+    });
+
+    return {
+      answer: fallback,
+      conversationId,
+      fallback: true,
+    };
   }
 }
