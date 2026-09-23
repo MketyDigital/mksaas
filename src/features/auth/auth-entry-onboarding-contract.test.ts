@@ -10,17 +10,18 @@ async function read(relativePath: string) {
 }
 
 describe('Mkety auth entry and self-service onboarding contract', () => {
-  it('keeps login and signup presentation concise', async () => {
-    const [login, signup, form] = await Promise.all([
+  it('sends unauthenticated visitors straight to the correct branded auth intent', async () => {
+    const [login, signup] = await Promise.all([
       read('src/app/(auth)/login/page.tsx'),
       read('src/app/(auth)/signup/page.tsx'),
-      read('src/features/auth/components/LoginForm.tsx'),
     ]);
 
-    expect(login).toContain('Access your Mkety workspace.');
-    expect(signup).toContain('Create your account to get started.');
-    expect(form).not.toContain('Your account is protected by Mkety');
-    expect(form).not.toContain('Create your account securely and continue');
+    expect(login).toContain('intent=signin');
+    expect(signup).toContain('intent=signup');
+    expect(login).toContain('/api/auth/login?returnTo=');
+    expect(signup).toContain('/api/auth/login?returnTo=');
+    expect(login).not.toContain('<LoginForm');
+    expect(signup).not.toContain('<LoginForm');
   });
 
   it('preserves selected plan through signup/sign-in into tenant checkout', async () => {
@@ -32,7 +33,8 @@ describe('Mkety auth entry and self-service onboarding contract', () => {
     ]);
 
     expect(login).toContain('/billing/checkout?${planQuery}');
-    expect(signup).toContain('/select-tenant?${planQuery}');
+    expect(signup).toContain('selectTenantUrl');
+    expect(signup).toContain('returnTo=${encodeURIComponent(selectTenantUrl)}');
     expect(selectTenant).toContain('/billing/checkout?${planQuery}');
     expect(workspaceRoute).toContain('/billing/checkout?plan=');
   });
