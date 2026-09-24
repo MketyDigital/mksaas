@@ -37,11 +37,11 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
   if (!activeGroup) return null;
 
   return (
-    <section className="box-border w-full min-w-0 max-w-[100vw] overflow-x-clip px-3 py-10 sm:px-4 md:py-16" aria-label="Mkety product experience">
-      <div className="container mx-auto box-border w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
-        <div className="box-border w-full min-w-0 max-w-full overflow-visible rounded-[2rem] border lg:overflow-hidden border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
-          <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
-            <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
+    <section className="box-border w-full min-w-0 max-w-full overflow-x-hidden px-3 py-10 sm:px-4 md:py-16" aria-label="Mkety product experience">
+      <div className="container mx-auto box-border w-full min-w-0 max-w-full">
+        <div className="box-border w-full min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
+          <div className="grid w-full min-w-0 max-w-full lg:grid-cols-[15rem_minmax(0,1fr)]">
+            <div className="min-w-0 border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_hsl(var(--primary))]" />
                 Explore Mkety
@@ -49,7 +49,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               <div
                 role="tablist"
                 aria-label="Explore Mkety"
-                className="-mx-2 flex max-w-[calc(100vw-2rem)] touch-pan-x snap-x snap-proximity gap-2 overflow-x-auto overscroll-x-contain px-2 pb-2 [scrollbar-width:thin] lg:mx-0 lg:max-w-none lg:flex-col lg:overflow-visible lg:px-0"
+                className="-mx-2 flex w-[calc(100%+1rem)] min-w-0 max-w-none touch-pan-x snap-x snap-proximity gap-2 overflow-x-auto overscroll-x-contain px-2 pb-2 [scrollbar-width:thin] lg:mx-0 lg:w-full lg:flex-col lg:overflow-visible lg:px-0"
               >
                 {groups.map((group, index) => {
                   const Icon = showcaseIcons[index] ?? LayoutGrid;
@@ -90,7 +90,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               id={`mkety-showcase-panel-${activeGroup.id}`}
               role="tabpanel"
               aria-labelledby={`mkety-showcase-tab-${activeGroup.id}`}
-              className="relative box-border w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-visible p-3 sm:max-w-full sm:p-5 md:p-8"
+              className="relative box-border w-full min-w-0 max-w-full overflow-hidden p-3 sm:p-5 md:p-8"
             >
               <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
               <div className="relative grid box-border w-full min-w-0 max-w-full grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
@@ -119,7 +119,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       <article
                         key={item.key}
                         className={cn(
-                          'group relative box-border w-full min-w-0 max-w-full overflow-visible rounded-3xl border bg-background/80 p-4 shadow-sm transition sm:p-5 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
+                          'group relative box-border w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/80 p-4 shadow-sm transition sm:p-5 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
                           index === 0 && activeGroup.items.length > 2 ? 'sm:row-span-2' : '',
                         )}
                       >

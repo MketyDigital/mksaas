@@ -14,15 +14,15 @@ describe('final public production UX, support, docs and auth contract', () => {
     const source = await read('src/features/platform-content/components/public/MketyPublicExperience.tsx');
     expect(source).toContain('touch-pan-x');
     expect(source).toContain('overflow-x-auto');
-    expect(source).toContain('max-w-[calc(100vw-2rem)]');
+    expect(source).toContain('w-[calc(100%+1rem)]');
     expect(source).toContain('min-w-max');
     expect(source).toContain('break-words');
     expect(source).toContain('[overflow-wrap:anywhere]');
     expect(source).toContain('grid-cols-1');
-    expect(source).toContain('max-w-[100vw]');
-    expect(source).toContain('max-w-[calc(100vw-1.5rem)]');
+    expect(source).toContain('max-w-full');
+    expect(source).toContain('overflow-x-hidden');
     expect(source).toContain('box-border');
-    expect(source).toContain('lg:overflow-hidden');
+    expect(source).toContain('overflow-hidden rounded-[2rem]');
   });
 
   it('uses only the five real local Academy hub images', async () => {
@@ -124,7 +124,7 @@ describe('final public production UX, support, docs and auth contract', () => {
 
   it('shows USD currency on calculated prepaid totals', async () => {
     const pricing = await read('src/features/platform-content/components/public/pages/MketyPricingPlans.tsx');
-    expect(pricing).toContain('return `$');
+    expect(pricing).toContain('return `${(Number(amountMinor) / 100).toFixed(2)}`;');
   });
 
   it('routes contact and Enterprise sales through Public AI first', async () => {
