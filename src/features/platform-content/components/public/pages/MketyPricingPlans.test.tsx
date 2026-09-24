@@ -31,7 +31,9 @@ describe('MketyPricingPlans', () => {
 
     expect(screen.getByRole('heading', { name: 'Starter' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Enterprise' })).toBeInTheDocument();
+    expect(screen.getByText('$5.99')).toBeInTheDocument();
     expect(screen.getByText('Trading available through Custom / Enterprise engagement')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Contact Mkety' })).toHaveAttribute('href', '/contact');
+    expect(screen.getByText('$5.99')).toHaveAttribute('data-plan-price', 'starter:$5.99');
   });
 });
