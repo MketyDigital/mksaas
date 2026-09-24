@@ -17,6 +17,8 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(source).toContain('max-w-[calc(100vw-2rem)]');
     expect(source).toContain('min-w-max');
     expect(source).toContain('break-words');
+    expect(source).toContain('[overflow-wrap:anywhere]');
+    expect(source).toContain('grid-cols-1');
   });
 
   it('uses only the five real local Academy hub images', async () => {
@@ -31,6 +33,7 @@ describe('final public production UX, support, docs and auth contract', () => {
     const source = await read('src/features/public-assistant/components/MketyPublicAssistant.tsx');
     expect(source).toContain("top-[4.5rem]");
     expect(source).toContain('/mkety-logo.png');
+    expect(source).toContain('bg-transparent');
     expect(source).toContain("window.location.hash === '#mkety-ai'");
   });
 
@@ -46,6 +49,33 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(sidebar).not.toContain('docSections');
     expect(article).toContain('Previous');
     expect(article).toContain('Next');
+  });
+
+  it('keeps Academy sales public-first while exposing a separate learning-access CTA and admin-managed tier cards', async () => {
+    const [pages, admin] = await Promise.all([
+      read('src/features/platform-content/public-page-defaults.ts'),
+      read('src/app/(tenant)/t/[tenant]/admin/platform-control/public-site/[section]/page.tsx'),
+    ]);
+
+    expect(pages).toContain("label: 'Ask Mkety AI about Academy'");
+    expect(pages).toContain("label: 'Check current courses and pricing'");
+    expect(pages).toContain("label: 'Sign in to Mkety Academy'");
+    expect(pages).toContain("href: 'https://academy.mkety.com'");
+    expect(pages).toContain("badge: 'Ask AI for current options'");
+    expect(admin).toContain('Academy course/tier cards & price badges');
+    expect(admin).toContain('Academy ready-to-learn access CTA');
+  });
+
+  it('keeps Trading Workspace visibly represented as Custom / Enterprise on pricing and Workspaces', async () => {
+    const [pages, defaults] = await Promise.all([
+      read('src/features/platform-content/public-page-defaults.ts'),
+      read('src/features/platform-content/defaults.ts'),
+    ]);
+
+    expect(pages).toContain("title: 'Trading Workspace'");
+    expect(pages).toContain("badge: 'Custom / Enterprise'");
+    expect(defaults).toContain("key: 'trading'");
+    expect(defaults).toContain("title: 'Trading Workspace'");
   });
 
   it('keeps public support and AI controls admin-managed through site settings', async () => {
@@ -84,6 +114,11 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(runtime).toContain('returnDeterministicFallback');
     expect(runtime).toContain('mailto:');
     expect(runtime).toContain('telegramHref');
+  });
+
+  it('shows USD currency on calculated prepaid totals', async () => {
+    const pricing = await read('src/features/platform-content/components/public/pages/MketyPricingPlans.tsx');
+    expect(pricing).toContain('return `$');
   });
 
   it('routes contact and Enterprise sales through Public AI first', async () => {
