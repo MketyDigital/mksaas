@@ -119,7 +119,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                       <article
                         key={item.key}
                         className={cn(
-                          'group relative w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/80 p-4 sm:p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
+                          'group relative w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/80 p-4 shadow-sm transition sm:p-5 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
                           index === 0 && activeGroup.items.length > 2 ? 'sm:row-span-2' : '',
                         )}
                       >
@@ -128,7 +128,7 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                             <Icon className="h-5 w-5" />
                           </span>
                           {item.badge && (
-                            <span className="rounded-full border bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            <span className="max-w-[70%] whitespace-normal break-words rounded-full border bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground [overflow-wrap:anywhere]">
                               {item.badge}
                             </span>
                           )}
