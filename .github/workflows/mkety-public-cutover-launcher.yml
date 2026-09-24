@@ -3,6 +3,7 @@ name: Mkety Public Cutover Launcher
 # final public UX/support/docs/auth production release 2026-09-24
 # final certified production cutover 2026-09-23
 # exact-SHA CI certification dispatch added 2026-09-24
+# release repinned to CI-dispatchable SHA 758ce73 2026-09-24
 # vinext certification added 2026-09-23
 # certify public ui + academy assets follow-up 2026-09-20
 # rerun certified cutover with Platform Control production fallback 2026-09-23
@@ -21,10 +22,10 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: c6614147cdf8a6d97d3c6baaa5e629ec5dfe07de
+  VERIFIED_SHA: 758ce73b29571844f6f4991709e100934f990bbd
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
-  CERT_BRANCH: certify/c661414
+  CERT_BRANCH: certify/758ce73
   CUTOVER_MODE: worker-custom-domains-v7
 
 jobs:
