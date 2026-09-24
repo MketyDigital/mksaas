@@ -215,7 +215,14 @@ jobs:
 
           if [ "$link_status" = "404" ] || [ "$link_status" = "400" ]; then
             printf '%s\n' '{"tosLink":"https://mkety.com/terms","privacyLink":"https://mkety.com/privacy","helpLink":"https://mkety.com/docs","supportEmail":"support@mkety.com","docsLink":"https://mkety.com/docs","customLink":"","customLinkText":""}' > /tmp/privacy-policy.json
-            curl --fail-with-body --silent --show-error -X PUT \
+
+            current_before="$(curl --fail-with-body --silent --show-error \
+              "$issuer/admin/v1/policies/privacy" \
+              -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
+              -H 'Accept: application/json')"
+            privacy_method="$(POLICY="$current_before" node -e 'const p=JSON.parse(process.env.POLICY||"{}").policy||{};process.stdout.write(p.isDefault===true?"POST":"PUT")')"
+
+            curl --fail-with-body --silent --show-error -X "$privacy_method" \
               "$issuer/admin/v1/policies/privacy" \
               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
               -H 'Content-Type: application/json' \
