@@ -1,5 +1,7 @@
 name: Mkety Branded Auth Provision
 
+# public auth settings refresh 2026-09-24
+
 on:
   push:
     branches: [main]
