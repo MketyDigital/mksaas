@@ -12,6 +12,7 @@ import {
 } from './memory';
 import { createPublicAIProviderAdapters } from './providers';
 import { buildPublicSystemPrompt, planPublicSupportTools, sanitizePublicAssistantAnswer } from './support';
+import { getPublicPricingKnowledge } from './knowledge';
 import { executePublicSupportTool, type PublicSupportToolName } from './tools';
 import { parsePublicAIProviderConfig, type PublicAssistantEnvironment } from '../config';
 import { getDefaultPublicAIModel } from '../models';
@@ -106,6 +107,44 @@ async function buildGroundedContext(input: {
   }
 
   return contextParts.join('\n\n');
+}
+
+const PRICING_REQUEST_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription)\b/i;
+const ACADEMY_ACCESS_PATTERN = /\b(academy|training|education)\b/i;
+const ACCESS_REQUEST_PATTERN = /\b(where|access|open|visit|go to|link|website|url)\b/i;
+
+function normalizeMoneyLabel(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+async function ensureCriticalPublicFacts(message: string, answer: string) {
+  const additions: string[] = [];
+
+  if (PRICING_REQUEST_PATTERN.test(message)) {
+    const plans = (await getPublicPricingKnowledge()).filter((plan) => plan.key !== 'enterprise');
+    const missing = plans.filter((plan) => {
+      const price = normalizeMoneyLabel(plan.priceLabel);
+      return !answer.toLowerCase().includes(plan.name.toLowerCase()) || !answer.includes(price);
+    });
+
+    if (missing.length > 0) {
+      additions.push(
+        `Current self-service pricing: ${plans
+          .map((plan) => `${plan.name} — ${normalizeMoneyLabel(plan.priceLabel)}${plan.billingLabel ? ` ${plan.billingLabel}` : ''}`)
+          .join('; ')}.`,
+      );
+    }
+  }
+
+  if (
+    ACADEMY_ACCESS_PATTERN.test(message) &&
+    ACCESS_REQUEST_PATTERN.test(message) &&
+    !/academy\.mkety\.com/i.test(answer)
+  ) {
+    additions.push('Mkety Academy access: https://academy.mkety.com.');
+  }
+
+  return additions.length ? `${answer.trim()} ${additions.join(' ')}` : answer;
 }
 
 function detectLeadMetadata(message: string) {
@@ -254,7 +293,10 @@ export async function runMketyPublicAssistant(input: {
       fallbacks: targets.slice(1),
     });
 
-    const answer = sanitizePublicAssistantAnswer(response.text);
+    const answer = await ensureCriticalPublicFacts(
+      input.message,
+      sanitizePublicAssistantAnswer(response.text),
+    );
     if (!answer) {
       throw new PublicAssistantRuntimeError('Mkety AI did not return a usable answer.', 503);
     }
