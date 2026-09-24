@@ -283,7 +283,7 @@ export function MketyPublicAssistant() {
           aria-expanded="false"
           data-surface="mkety-ai-command"
           onClick={() => setOpen(true)}
-          className="fixed inset-x-3 top-[4.5rem] z-[55] mx-auto flex min-h-12 w-[calc(100%-1.5rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-primary/20 bg-background/95 px-3 py-2.5 text-left shadow-lg shadow-primary/10 backdrop-blur-xl transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:top-[4.75rem]"
+          className="fixed inset-x-3 top-[4.5rem] z-[55] mx-auto flex min-h-12 w-[calc(100%-1.5rem)] max-w-[560px] items-center gap-2.5 rounded-xl border border-primary/20 bg-transparent px-3 py-2.5 text-left shadow-lg shadow-primary/10 backdrop-blur-xl transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:top-[4.75rem]"
         >
           <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg border bg-background shadow-sm">
             <img src="/mkety-logo.png" alt="" className="h-6 w-6 object-contain" aria-hidden="true" />

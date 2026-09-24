@@ -37,9 +37,9 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
   if (!activeGroup) return null;
 
   return (
-    <section className="min-w-0 overflow-x-clip px-4 py-10 md:py-16" aria-label="Mkety product experience">
-      <div className="container mx-auto min-w-0 max-w-full">
-        <div className="min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
+    <section className="w-full min-w-0 overflow-x-hidden px-3 py-10 sm:px-4 md:py-16" aria-label="Mkety product experience">
+      <div className="container mx-auto w-full min-w-0 max-w-full overflow-x-hidden">
+        <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
           <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
             <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
@@ -90,36 +90,36 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               id={`mkety-showcase-panel-${activeGroup.id}`}
               role="tabpanel"
               aria-labelledby={`mkety-showcase-tab-${activeGroup.id}`}
-              className="relative min-w-0 max-w-full overflow-hidden p-4 sm:p-5 md:p-8"
+              className="relative w-full min-w-0 max-w-full overflow-hidden p-3 sm:p-5 md:p-8"
             >
               <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-              <div className="relative grid min-w-0 max-w-full gap-7 xl:grid-cols-[0.75fr_1.25fr]">
-                <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/70 p-5 shadow-sm sm:p-6">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+              <div className="relative grid w-full min-w-0 max-w-full grid-cols-1 gap-5 overflow-hidden xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+                <div className="w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/70 p-4 shadow-sm sm:p-6">
+                  <div className="w-full min-w-0 max-w-full [overflow-wrap:anywhere]">
+                    <p className="max-w-full text-xs font-semibold uppercase tracking-[0.22em] text-primary">
                       {activeGroup.eyebrow}
                     </p>
-                    <h2 className="mt-3 break-words text-2xl font-bold tracking-tight md:text-3xl">{activeGroup.title}</h2>
+                    <h2 className="mt-3 max-w-full whitespace-normal break-words text-2xl font-bold tracking-tight [overflow-wrap:anywhere] md:text-3xl">{activeGroup.title}</h2>
                     {activeGroup.description && (
-                      <p className="mt-4 break-words leading-7 text-muted-foreground">{activeGroup.description}</p>
+                      <p className="mt-4 max-w-full whitespace-normal break-words leading-7 text-muted-foreground [overflow-wrap:anywhere]">{activeGroup.description}</p>
                     )}
                   </div>
                   <Link
                     href={activeGroup.href}
-                    className="mt-8 inline-flex w-fit items-center gap-2 text-sm font-semibold text-primary hover:underline"
+                    className="mt-8 inline-flex max-w-full flex-wrap items-center gap-2 break-words text-sm font-semibold text-primary [overflow-wrap:anywhere] hover:underline"
                   >
                     Open {activeGroup.label} <span aria-hidden>→</span>
                   </Link>
                 </div>
 
-                <div className="grid min-w-0 max-w-full auto-rows-[minmax(9rem,auto)] gap-3 sm:grid-cols-2">
+                <div className="grid w-full min-w-0 max-w-full grid-cols-1 auto-rows-[minmax(9rem,auto)] gap-3 overflow-hidden sm:grid-cols-2">
                   {activeGroup.items.slice(0, 4).map((item, index) => {
                     const Icon = showcaseIcons[index] ?? LayoutGrid;
                     return (
                       <article
                         key={item.key}
                         className={cn(
-                          'group relative min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
+                          'group relative w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/80 p-4 shadow-sm transition sm:p-5 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
                           index === 0 && activeGroup.items.length > 2 ? 'sm:row-span-2' : '',
                         )}
                       >
@@ -128,13 +128,13 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                             <Icon className="h-5 w-5" />
                           </span>
                           {item.badge && (
-                            <span className="rounded-full border bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            <span className="max-w-[70%] whitespace-normal break-words rounded-full border bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground [overflow-wrap:anywhere]">
                               {item.badge}
                             </span>
                           )}
                         </div>
-                        <h3 className="break-words font-semibold">{item.title}</h3>
-                        <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{item.description}</p>
+                        <h3 className="max-w-full whitespace-normal break-words font-semibold [overflow-wrap:anywhere]">{item.title}</h3>
+                        <p className="mt-2 max-w-full whitespace-normal break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{item.description}</p>
                         {item.href && (
                           <Link
                             href={item.href}
