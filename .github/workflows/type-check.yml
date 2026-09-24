@@ -1,6 +1,7 @@
 name: Typecheck
 
 on:
+  workflow_dispatch:
   # Run this workflow on push to main
   push:
     branches:
