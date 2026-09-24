@@ -1,6 +1,7 @@
 name: Mkety Branded Auth Provision
 
 # public auth settings refresh 2026-09-24
+# production legal/login refresh 2026-09-24
 
 on:
   push:
