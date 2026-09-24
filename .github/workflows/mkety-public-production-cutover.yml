@@ -467,7 +467,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm run deploy 2>&1 | tee /tmp/mkety-production-deploy.log
+          deploy_ok=0
+          : > /tmp/mkety-production-deploy.log
+          for attempt in 1 2 3; do
+            attempt_log="/tmp/mkety-production-deploy-attempt-${attempt}.log"
+            set +e
+            pnpm run deploy 2>&1 | tee "$attempt_log"
+            deploy_status=${PIPESTATUS[0]}
+            set -e
+            cat "$attempt_log" >> /tmp/mkety-production-deploy.log
+
+            if [ "$deploy_status" -eq 0 ]; then
+              deploy_ok=1
+              break
+            fi
+
+            if grep -Eq 'assets-upload-session|code: 10013|unknown error has occurred' "$attempt_log"; then
+              echo "Cloudflare assets upload session failed transiently on attempt ${attempt}/3; retrying with backoff."
+              sleep "$((attempt * 10))"
+              continue
+            fi
+
+            echo "Production Worker deploy failed with a non-retryable error on attempt ${attempt}."
+            exit "$deploy_status"
+          done
+
+          if [ "$deploy_ok" != '1' ]; then
+            echo 'Production Worker deploy exhausted bounded retries for transient Cloudflare upload-session errors.'
+            exit 1
+          fi
+
           url="$(grep -Eo 'https://[^[:space:]]+workers\.dev' /tmp/mkety-production-deploy.log | tail -n 1 || true)"
           if [ -z "$url" ]; then
             echo 'Production Worker deployed without a discoverable workers.dev preview URL.'
