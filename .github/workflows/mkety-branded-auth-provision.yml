@@ -222,23 +222,7 @@ jobs:
               "$issuer/admin/v1/policies/privacy" \
               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
               -H 'Accept: application/json')"
-            POLICY="$current" node <<'NODE'
-            const payload=JSON.parse(process.env.POLICY||'{}');
-            const policy=payload.policy||{};
-            const expected={
-              tosLink:'https://mkety.com/terms',
-              privacyLink:'https://mkety.com/privacy',
-              helpLink:'https://mkety.com/docs',
-              supportEmail:'support@mkety.com',
-              docsLink:'https://mkety.com/docs',
-            };
-            for (const [key,value] of Object.entries(expected)) {
-              if (policy[key] !== value) {
-                throw new Error(`Missing Mkety Login legal/support setting: ${key}`);
-              }
-            }
-            console.log('Mkety Login legal/support links verified through Admin v1 fallback.');
-            NODE
+            POLICY="$current" node -e 'const payload=JSON.parse(process.env.POLICY||"{}"); const policy=payload.policy||{}; const expected={tosLink:"https://mkety.com/terms",privacyLink:"https://mkety.com/privacy",helpLink:"https://mkety.com/docs",supportEmail:"support@mkety.com",docsLink:"https://mkety.com/docs"}; for (const [key,value] of Object.entries(expected)) { if (policy[key] !== value) throw new Error("Missing Mkety Login legal/support setting: "+key); } console.log("Mkety Login legal/support links verified through Admin v1 fallback.");'
           elif [ "$link_status" -ge 200 ] && [ "$link_status" -lt 300 ]; then
             current="$(curl --fail-with-body --silent --show-error -X POST \
               "$issuer/zitadel.settings.v2.SettingsService/GetLinkSettings" \
@@ -246,23 +230,7 @@ jobs:
               -H 'Connect-Protocol-Version: 1' \
               -H 'Content-Type: application/json' \
               --data '{"ctx":{"instance":true}}')"
-            LINKS="$current" node <<'NODE'
-            const payload=JSON.parse(process.env.LINKS||'{}');
-            const links=payload.settings?.links||[];
-            const expected=new Map([
-              ['LINK_TYPE_TERMS_OF_SERVICE','https://mkety.com/terms'],
-              ['LINK_TYPE_PRIVACY_POLICY','https://mkety.com/privacy'],
-              ['LINK_TYPE_HELP','https://mkety.com/docs'],
-              ['LINK_TYPE_SUPPORT','mailto:support@mkety.com'],
-              ['LINK_TYPE_DOCS','https://mkety.com/docs'],
-            ]);
-            for (const [type,url] of expected) {
-              if (!links.some((link)=>link.type===type && link.url===url)) {
-                throw new Error(`Missing Mkety Login V2 link setting: ${type}`);
-              }
-            }
-            console.log('Mkety Login V2 legal/support links verified.');
-            NODE
+            LINKS="$current" node -e 'const payload=JSON.parse(process.env.LINKS||"{}"); const links=payload.settings?.links||[]; const expected=new Map([["LINK_TYPE_TERMS_OF_SERVICE","https://mkety.com/terms"],["LINK_TYPE_PRIVACY_POLICY","https://mkety.com/privacy"],["LINK_TYPE_HELP","https://mkety.com/docs"],["LINK_TYPE_SUPPORT","mailto:support@mkety.com"],["LINK_TYPE_DOCS","https://mkety.com/docs"]]); for (const [type,url] of expected) { if (!links.some((link)=>link.type===type && link.url===url)) throw new Error("Missing Mkety Login V2 link setting: "+type); } console.log("Mkety Login V2 legal/support links verified.");'
           else
             cat /tmp/link-settings-response.json >&2 || true
             echo "::error::ZITADEL SetLinkSettings returned HTTP $link_status."
