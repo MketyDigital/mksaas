@@ -167,6 +167,12 @@ describe('final public production UX, support, docs and auth contract', () => {
       expect(source).toContain('class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg');
       expect(source).toContain('Docs index rendered no article links.');
       expect(source).toContain('Rendered docs link failed:');
+      expect(source).toContain('Academy page missing Courses & tiers section.');
+      expect(source).toContain('Academy page missing ready-to-learn handoff.');
+      expect(source).toContain('Pricing page missing USD currency symbol.');
+      expect(source).toContain('Pricing page missing Trading Workspace.');
+      expect(source).toContain('Workspaces page missing Trading Workspace.');
+      expect(source).toContain('Homepage must not bypass AI-first Academy discovery.');
     }
   });
 
