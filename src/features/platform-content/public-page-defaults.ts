@@ -196,6 +196,31 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         ],
         cta: { label: 'Ask Mkety AI about Academy', href: '#mkety-ai' },
       },
+      {
+        eyebrow: 'Courses & tiers',
+        title: 'Published course options can have their own tiers and prices.',
+        description:
+          'Mkety admins can add, remove, duplicate, reorder, or change course/tier cards from Platform Control. Each tier card can carry its own title, description, price badge, and enrolment CTA. Published sales and enrolment questions start with Mkety AI so current programme details can be checked before human follow-up.',
+        items: [
+          {
+            key: 'course-tier-guide',
+            title: 'Course and tier catalogue',
+            description:
+              'Current course tiers, schedules, pricing and enrolment availability are published by Mkety admins and can change without code deployment.',
+            href: '#mkety-ai',
+            badge: 'Ask AI for current options',
+          },
+        ],
+        cta: { label: 'Check current courses and pricing', href: '#mkety-ai' },
+      },
+      {
+        eyebrow: 'Ready to learn?',
+        title: 'Already enrolled or ready to enter the learning portal?',
+        description:
+          'The Academy app is the learning-access destination. Public discovery, programme questions, sales and enrolment guidance remain on mkety.com through Mkety AI and human support.',
+        items: [],
+        cta: { label: 'Sign in to Mkety Academy', href: 'https://academy.mkety.com' },
+      },
     ],
   },
   {
@@ -214,7 +239,16 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         title: 'Clear options for different ways of working.',
         description:
           'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Self-service plans support 1, 3, 6, and 12 month prepaid terms with 0%, 5%, 10%, and 15% discounts respectively. Mkety One combines Starter plus all three self-service Workspaces. Trading Workspace remains visible as Custom / Enterprise without self-service pricing. Enterprise covers requirements beyond the standard shared platform envelope.',
-        items: [],
+        items: [
+          {
+            key: 'trading-workspace',
+            title: 'Trading Workspace',
+            description:
+              'Specialized trading automation, signal workflows, integrations, execution infrastructure, monitoring and deployments are delivered under Custom / Enterprise terms.',
+            href: '/enterprise',
+            badge: 'Custom / Enterprise',
+          },
+        ],
       },
     ],
   },
