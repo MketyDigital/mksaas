@@ -34,7 +34,10 @@ describe('Mkety public app experience', () => {
     const user = userEvent.setup();
     render(<MketyProductShowcase groups={showcaseGroups} />);
 
-    expect(screen.getByRole('tablist', { name: /explore mkety/i })).toBeInTheDocument();
+    const tablist = screen.getByRole('tablist', { name: /explore mkety/i });
+    expect(tablist).toBeInTheDocument();
+    expect(tablist).toHaveClass('overflow-x-auto');
+    expect(tablist).toHaveClass('touch-pan-x');
     expect(screen.getByRole('tab', { name: 'Platform' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Build and operate from one system')).toBeInTheDocument();
 

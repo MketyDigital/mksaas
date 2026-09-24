@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import {
@@ -11,6 +11,7 @@ import {
   platformPricingPlans,
   platformSiteSettings,
 } from '@/shared/db/schema/platform-content';
+import { publicAIMessages } from '@/shared/db/schema/public-assistant-memory';
 import { createLogger } from '@/shared/lib/logger';
 
 import {
@@ -96,6 +97,11 @@ export async function getPublishedPlatformSiteSettings() {
         socialImageUrl: row.socialImageUrl ?? undefined,
         contactEmail: row.contactEmail ?? undefined,
         contactHref: row.contactHref ?? undefined,
+        salesEmail: row.salesEmail ?? undefined,
+        telegramHref: row.telegramHref ?? undefined,
+        publicAiPrompt: row.publicAiPrompt ?? undefined,
+        publicAiFallbackMessage: row.publicAiFallbackMessage ?? undefined,
+        publicAiLeadCaptureEnabled: row.publicAiLeadCaptureEnabled,
         legalLinks: row.legalLinksJson ?? [],
       });
     },
@@ -369,4 +375,34 @@ export async function getPublishedHomepageContent() {
     faqItems: sections.faqItems,
     footerGroups: sections.footerGroups,
   };
+}
+
+
+export async function getRecentPublicAILeads(limit = 50) {
+  const rows = await db
+    .select({
+      conversationId: publicAIMessages.conversationId,
+      metadata: publicAIMessages.metadata,
+      createdAt: publicAIMessages.createdAt,
+    })
+    .from(publicAIMessages)
+    .where(eq(publicAIMessages.role, 'user'))
+    .orderBy(desc(publicAIMessages.createdAt))
+    .limit(Math.max(1, Math.min(limit, 200)));
+
+  return rows
+    .map((row) => {
+      const metadata = row.metadata ?? {};
+      if (metadata.leadCapture !== true) return null;
+      const email = typeof metadata.email === 'string' ? metadata.email : null;
+      const phone = typeof metadata.phone === 'string' ? metadata.phone : null;
+      if (!email && !phone) return null;
+      return {
+        conversationId: row.conversationId,
+        email,
+        phone,
+        createdAt: row.createdAt,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
 }

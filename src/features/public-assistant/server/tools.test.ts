@@ -15,7 +15,7 @@ describe('Public Mkety AI support tools', () => {
     expect(resolvePublicRoute('pricing')).toEqual({ label: 'Pricing', path: '/pricing' });
     expect(resolvePublicRoute('solutionhub')).toEqual({ label: 'SolutionHub', path: '/solutions' });
     expect(resolvePublicRoute('agent builder')).toEqual({ label: 'Platform', path: '/platform' });
-    expect(resolvePublicRoute('academy')).toEqual({ label: 'Mkety Academy', path: 'https://academy.mkety.com' });
+    expect(resolvePublicRoute('academy')).toEqual({ label: 'Academy', path: '/academy' });
     expect(resolvePublicRoute('trading')).toEqual({ label: 'Enterprise', path: '/enterprise' });
   });
 

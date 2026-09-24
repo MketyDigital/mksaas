@@ -19,7 +19,9 @@ describe('MketyPublicAssistant', () => {
 
     const launcher = screen.getByRole('button', { name: /ask mkety ai/i });
     expect(launcher).toHaveAttribute('data-surface', 'mkety-ai-command');
-    expect(launcher).toHaveClass('bg-transparent');
+    expect(launcher).toHaveClass('bg-background/95');
+    expect(launcher).toHaveClass('top-[4.5rem]');
+    expect(launcher.querySelector('img')).toHaveAttribute('src', '/mkety-logo.png');
     expect(launcher).toHaveClass('max-w-[560px]');
     expect(screen.queryByText(/openai|gemini|bedrock|vertex|model selector/i)).not.toBeInTheDocument();
   });

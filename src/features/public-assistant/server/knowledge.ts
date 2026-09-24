@@ -117,7 +117,7 @@ export async function getPublicProductKnowledge(product: string) {
       key: 'trading',
       title: trading?.title ?? 'Trading Workspace',
       summary: trading?.description ?? 'Trading is a specialized Mkety Custom / Enterprise product.',
-      path: 'https://trade.mkety.com',
+      path: '/enterprise',
       commercialModel: 'Custom / Enterprise',
     };
   }
@@ -139,6 +139,6 @@ export async function getPublicProductKnowledge(product: string) {
     key: slug,
     title: page.title,
     summary: bounded(`${page.headline}. ${page.intro}`),
-    path: slug === 'academy' ? 'https://academy.mkety.com' : `/${slug}`,
+    path: `/${slug}`,
   };
 }

@@ -169,6 +169,44 @@ jobs:
           fi
           echo 'auth.mkety.com is trusted by ZITADEL.'
 
+      - name: Ensure Mkety legal and support links in Login V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${ZITADEL_ISSUER%/}"
+          cat >/tmp/link-settings.json <<'JSON'
+          {
+            "ctx": { "instance": true },
+            "links": [
+              { "type": "LINK_TYPE_TERMS_OF_SERVICE", "url": "https://mkety.com/terms", "target": "LINK_TARGET_BLANK" },
+              { "type": "LINK_TYPE_PRIVACY_POLICY", "url": "https://mkety.com/privacy", "target": "LINK_TARGET_BLANK" },
+              { "type": "LINK_TYPE_HELP", "url": "https://mkety.com/docs", "target": "LINK_TARGET_BLANK" },
+              { "type": "LINK_TYPE_SUPPORT", "url": "mailto:support@mkety.com", "target": "LINK_TARGET_SELF" },
+              { "type": "LINK_TYPE_DOCS", "url": "https://mkety.com/docs", "target": "LINK_TARGET_BLANK" }
+            ]
+          }
+          JSON
+          curl --fail-with-body --silent --show-error -X POST             "$issuer/zitadel.settings.v2.SettingsService/SetLinkSettings"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data-binary @/tmp/link-settings.json >/tmp/link-settings-response.json
+
+          current="$(curl --fail-with-body --silent --show-error -X POST             "$issuer/zitadel.settings.v2.SettingsService/GetLinkSettings"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data '{"ctx":{"instance":true}}')"
+          LINKS="$current" node <<'NODE'
+          const payload=JSON.parse(process.env.LINKS||'{}');
+          const links=payload.settings?.links||[];
+          const expected=new Map([
+            ['LINK_TYPE_TERMS_OF_SERVICE','https://mkety.com/terms'],
+            ['LINK_TYPE_PRIVACY_POLICY','https://mkety.com/privacy'],
+            ['LINK_TYPE_HELP','https://mkety.com/docs'],
+            ['LINK_TYPE_SUPPORT','mailto:support@mkety.com'],
+            ['LINK_TYPE_DOCS','https://mkety.com/docs'],
+          ]);
+          for (const [type,url] of expected) {
+            if (!links.some((link)=>link.type===type && link.url===url)) {
+              throw new Error(`Missing Mkety Login V2 link setting: ${type}`);
+            }
+          }
+          console.log('Mkety Login V2 legal/support links verified.');
+          NODE
+
       - name: Create fresh login-client PAT
         id: pat
         shell: bash

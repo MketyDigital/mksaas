@@ -5,14 +5,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { cn } from '@/shared/lib/utils';
 
 import { DocsHeader } from './DocsHeader';
+import { MketyPublicAssistant } from '@/features/public-assistant/components/MketyPublicAssistant';
+
 import { DocsSearch } from './DocsSearch';
 import { DocsSidebar } from './DocsSidebar';
 
-interface DocsLayoutClientProps {
-  children: React.ReactNode;
+interface DocsTree {
+  categories: Array<{ key: string; title: string; description?: string; sortOrder: number }>;
+  articles: Array<{ categoryKey: string; slug: string; title: string; excerpt?: string; sortOrder: number }>;
 }
 
-export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
+interface DocsLayoutClientProps {
+  children: React.ReactNode;
+  docsTree: DocsTree;
+}
+
+export function DocsLayoutClient({ children, docsTree }: DocsLayoutClientProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -50,7 +58,7 @@ export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
               sidebarOpen ? 'translate-x-0' : '-translate-x-full',
             )}
           >
-            <DocsSidebar onNavigate={handleNavigate} />
+            <DocsSidebar docsTree={docsTree} onNavigate={handleNavigate} />
           </aside>
 
           {/* Mobile overlay backdrop */}
@@ -69,6 +77,7 @@ export function DocsLayoutClient({ children }: DocsLayoutClientProps) {
 
       {/* Search dialog */}
       <DocsSearch open={searchOpen} onOpenChange={setSearchOpen} />
+      <MketyPublicAssistant />
     </div>
   );
 }

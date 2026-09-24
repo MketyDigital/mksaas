@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm';
+
 import type { Database } from '@/shared/db';
+import { platformSiteSettings } from '@/shared/db/schema';
 
 import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
 import {
@@ -9,6 +12,7 @@ import {
 } from './memory';
 import { createPublicAIProviderAdapters } from './providers';
 import { buildPublicSystemPrompt, planPublicSupportTools, sanitizePublicAssistantAnswer } from './support';
+import { getPublicPricingKnowledge } from './knowledge';
 import { executePublicSupportTool, type PublicSupportToolName } from './tools';
 import { parsePublicAIProviderConfig, type PublicAssistantEnvironment } from '../config';
 import { getDefaultPublicAIModel } from '../models';
@@ -105,6 +109,67 @@ async function buildGroundedContext(input: {
   return contextParts.join('\n\n');
 }
 
+const PRICING_REQUEST_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription)\b/i;
+const ACADEMY_ACCESS_PATTERN = /\b(academy|training|education)\b/i;
+const ACCESS_REQUEST_PATTERN = /\b(where|access|open|visit|go to|link|website|url)\b/i;
+
+function normalizeMoneyLabel(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+async function ensureCriticalPublicFacts(message: string, answer: string) {
+  const additions: string[] = [];
+
+  if (PRICING_REQUEST_PATTERN.test(message)) {
+    const plans = (await getPublicPricingKnowledge()).filter((plan) => plan.key !== 'enterprise');
+    const missing = plans.filter((plan) => {
+      const price = normalizeMoneyLabel(plan.priceLabel);
+      return !answer.toLowerCase().includes(plan.name.toLowerCase()) || !answer.includes(price);
+    });
+
+    if (missing.length > 0) {
+      additions.push(
+        `Current self-service pricing: ${plans
+          .map((plan) => `${plan.name} — ${normalizeMoneyLabel(plan.priceLabel)}${plan.billingLabel ? ` ${plan.billingLabel}` : ''}`)
+          .join('; ')}.`,
+      );
+    }
+  }
+
+  if (
+    ACADEMY_ACCESS_PATTERN.test(message) &&
+    ACCESS_REQUEST_PATTERN.test(message) &&
+    !/academy\.mkety\.com/i.test(answer)
+  ) {
+    additions.push('Mkety Academy access: https://academy.mkety.com.');
+  }
+
+  return additions.length ? `${answer.trim()} ${additions.join(' ')}` : answer;
+}
+
+function detectLeadMetadata(message: string) {
+  const email = message.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0];
+  const phone = message.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0]?.trim();
+  if (!email && !phone) return undefined;
+  return { leadCapture: true, ...(email ? { email } : {}), ...(phone ? { phone } : {}) };
+}
+
+async function getPublicSupportSettings(database: Database) {
+  const row = await database.query.platformSiteSettings.findFirst({
+    where: eq(platformSiteSettings.environment, 'production'),
+  });
+  return {
+    supportEmail: row?.contactEmail ?? 'support@mkety.com',
+    salesEmail: row?.salesEmail ?? 'hello@mkety.com',
+    telegramHref: row?.telegramHref ?? 'https://t.me/mketyadmin',
+    promptExtension: row?.publicAiPrompt ?? undefined,
+    fallbackMessage:
+      row?.publicAiFallbackMessage ??
+      'Mkety AI is temporarily unavailable. You can continue with Mkety support by email or Telegram.',
+    leadCaptureEnabled: row?.publicAiLeadCaptureEnabled ?? true,
+  };
+}
+
 function resolveProviderTargets(environment: PublicAssistantEnvironment): PublicAIProviderTarget[] {
   const config = parsePublicAIProviderConfig(environment);
   const requestedProviders = [config.primaryProvider, ...config.fallbackProviders];
@@ -119,6 +184,42 @@ function resolveProviderTargets(environment: PublicAssistantEnvironment): Public
   });
 }
 
+function buildDeterministicSupportFallback(settings: {
+  fallbackMessage: string;
+  supportEmail: string;
+  salesEmail: string;
+  telegramHref: string;
+}) {
+  return [
+    settings.fallbackMessage,
+    settings.supportEmail ? `[Email Mkety support](mailto:${settings.supportEmail})` : null,
+    settings.telegramHref ? `[Message Mkety on Telegram](${settings.telegramHref})` : null,
+    settings.salesEmail ? `[Email Mkety sales](mailto:${settings.salesEmail})` : null,
+  ].filter(Boolean).join(' ');
+}
+
+async function returnDeterministicFallback(input: {
+  database: Database;
+  visitorId: string;
+  conversationId: string;
+  settings: {
+    fallbackMessage: string;
+    supportEmail: string;
+    salesEmail: string;
+    telegramHref: string;
+  };
+}) {
+  const answer = buildDeterministicSupportFallback(input.settings);
+  await appendPublicAIMessage(input.database, {
+    visitorId: input.visitorId,
+    conversationId: input.conversationId,
+    role: 'assistant',
+    content: answer,
+    metadata: { deterministicFallback: true },
+  });
+  return { answer, conversationId: input.conversationId };
+}
+
 export async function runMketyPublicAssistant(input: {
   database: Database;
   visitorId: string;
@@ -127,9 +228,6 @@ export async function runMketyPublicAssistant(input: {
   environment: PublicAssistantEnvironment;
 }) {
   const config = parsePublicAIProviderConfig(input.environment);
-  if (!config.enabled) {
-    throw new PublicAssistantRuntimeError('Mkety AI is currently unavailable.', 503);
-  }
 
   let conversationId = input.conversationId;
   if (conversationId) {
@@ -141,12 +239,25 @@ export async function runMketyPublicAssistant(input: {
     conversationId = conversation.id;
   }
 
+  const supportSettings = await getPublicSupportSettings(input.database);
+  const leadMetadata = supportSettings.leadCaptureEnabled ? detectLeadMetadata(input.message) : undefined;
+
   await appendPublicAIMessage(input.database, {
     visitorId: input.visitorId,
     conversationId,
     role: 'user',
     content: input.message,
+    metadata: leadMetadata,
   });
+
+  if (!config.enabled) {
+    return returnDeterministicFallback({
+      database: input.database,
+      visitorId: input.visitorId,
+      conversationId,
+      settings: supportSettings,
+    });
+  }
 
   const conversation = await getPublicAIConversation(input.database, input.visitorId, conversationId);
   if (!conversation) throw new PublicAssistantRuntimeError('Mkety AI conversation not found.', 404);
@@ -160,7 +271,12 @@ export async function runMketyPublicAssistant(input: {
   const targets = resolveProviderTargets(input.environment);
   const primary = targets[0];
   if (!primary) {
-    throw new PublicAssistantRuntimeError('Mkety AI provider is not configured.', 503);
+    return returnDeterministicFallback({
+      database: input.database,
+      visitorId: input.visitorId,
+      conversationId,
+      settings: supportSettings,
+    });
   }
 
   try {
@@ -169,6 +285,7 @@ export async function runMketyPublicAssistant(input: {
         messages: toProviderMessages(conversation.messages),
         system: buildPublicSystemPrompt(
           groundedContext || 'No additional public Mkety context was retrieved for this question.',
+          supportSettings,
         ),
         maxOutputTokens: 900,
       },
@@ -176,7 +293,10 @@ export async function runMketyPublicAssistant(input: {
       fallbacks: targets.slice(1),
     });
 
-    const answer = sanitizePublicAssistantAnswer(response.text);
+    const answer = await ensureCriticalPublicFacts(
+      input.message,
+      sanitizePublicAssistantAnswer(response.text),
+    );
     if (!answer) {
       throw new PublicAssistantRuntimeError('Mkety AI did not return a usable answer.', 503);
     }
@@ -198,7 +318,12 @@ export async function runMketyPublicAssistant(input: {
       conversationId,
     };
   } catch (error) {
-    if (error instanceof PublicAssistantRuntimeError) throw error;
-    throw new PublicAssistantRuntimeError('Mkety AI is temporarily unavailable. Please try again.', 503);
+    if (error instanceof PublicAssistantRuntimeError && error.status < 500) throw error;
+    return returnDeterministicFallback({
+      database: input.database,
+      visitorId: input.visitorId,
+      conversationId,
+      settings: supportSettings,
+    });
   }
 }

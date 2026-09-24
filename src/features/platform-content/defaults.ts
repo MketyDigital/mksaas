@@ -27,7 +27,14 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoDescription:
     'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
   contactEmail: 'support@mkety.com',
-  contactHref: '/contact',
+  contactHref: '/contact#mkety-ai',
+  salesEmail: 'hello@mkety.com',
+  telegramHref: 'https://t.me/mketyadmin',
+  publicAiPrompt:
+    'Use public Mkety documentation first for support questions. If documentation does not fully answer the visitor, answer from approved public Mkety context. Escalate to human support only when necessary.',
+  publicAiFallbackMessage:
+    'Mkety AI is temporarily unavailable. You can continue with Mkety support by email or Telegram, or leave your contact details in this chat and the team can follow up.',
+  publicAiLeadCaptureEnabled: true,
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
     { label: 'Terms', href: '/terms' },
@@ -169,7 +176,7 @@ export const defaultAcademySection: PlatformAcademySectionInput = {
       description: 'Follow practical learning paths designed to build demonstrable digital capability.',
     },
   ],
-  cta: { label: 'Explore Mkety Academy', href: 'https://academy.mkety.com' },
+  cta: { label: 'Ask Mkety AI about Academy', href: '/academy#mkety-ai' },
 };
 
 export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
@@ -318,7 +325,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'For requirements beyond the standard shared platform envelope, including dedicated infrastructure, specialized integrations, private runtimes, persistent services, and Trading.',
     highlighted: false,
     ctaLabel: 'Talk to Mkety Enterprise',
-    ctaHref: '/contact',
+    ctaHref: '/contact#mkety-ai',
     features: [
       'Custom implementation and managed delivery',
       'Dedicated or private infrastructure when required',
@@ -343,7 +350,7 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Where do I access Mkety Academy and Trading?',
     answer:
-      'Mkety Academy is available at academy.mkety.com. New Trading sales, custom pricing, and access requests start through Mkety Enterprise; customers with an approved commercial arrangement receive the appropriate Trading access separately.',
+      'Start Academy questions on the public Academy page and with Mkety AI. Mkety AI can explain published programmes, schedules, enrolment steps and capture follow-up details; the Academy access destination is provided separately after Mkety confirms the appropriate enrolment/access. New Trading sales, custom pricing, and access requests start through Mkety Enterprise.',
   },
 ];
 
@@ -363,7 +370,7 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
       { label: 'Academy', href: '/academy' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'About', href: '/about' },
-      { label: 'Contact', href: '/contact' },
+      { label: 'Contact', href: '/contact#mkety-ai' },
       { label: 'Docs', href: '/docs' },
     ],
   },
@@ -485,7 +492,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Mkety Academy',
     excerpt: 'Practical learning across engineering, trading, marketing, AI, automation, and certified digital skills.',
     bodyMarkdown:
-      '# Mkety Academy\n\nMkety Academy is available at https://academy.mkety.com. Its learning hubs include Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Academy course pricing and enrolment details are maintained by Mkety Academy and should be checked there for the latest information.',
+      '# Mkety Academy\n\nMkety Academy covers Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Start public Academy questions with Mkety AI on mkety.com so it can check published information, answer questions, capture follow-up details when appropriate, and escalate to the team. The Academy access destination is provided separately after Mkety confirms the appropriate enrolment/access.',
     sortOrder: 10,
   },
   {
@@ -503,7 +510,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Official Mkety web addresses',
     excerpt: 'The main customer-facing Mkety product addresses.',
     bodyMarkdown:
-      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website, `app.mkety.com` for the Mkety Platform application, `academy.mkety.com` for Mkety Academy, and `trade.mkety.com` for approved access to the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
+      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
     sortOrder: 10,
   },
   {
@@ -523,5 +530,95 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     bodyMarkdown:
       '# Privacy and access\n\nPublic Mkety pages and documentation contain general product information. Account, workspace, billing, deployment, and organization-specific information should only be accessed through the appropriate authenticated Mkety experience.',
     sortOrder: 20,
+  },
+  {
+    categoryKey: 'getting-started',
+    slug: 'choose-where-to-start',
+    title: 'Choose where to start',
+    excerpt: 'Pick Starter, a Workspace, Mkety One, Academy, or Enterprise based on what you need.',
+    bodyMarkdown:
+      '# Choose where to start\n\nUse Starter when your main goal is publishing websites and pages. Choose AI Workspace for agents and knowledge-powered experiences, Automation Workspace for workflows and integrations, and Deploy Workspace for lightweight applications, APIs and portals. Mkety One combines the standard self-service products. Use Mkety Academy when your goal is learning, and Enterprise when your requirement needs dedicated infrastructure, specialized integrations, persistent services, Trading, or other custom delivery.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'getting-started',
+    slug: 'account-workspace-and-checkout',
+    title: 'Account, workspace and checkout',
+    excerpt: 'How registration, workspace creation, checkout and activation fit together.',
+    bodyMarkdown:
+      '# Account, workspace and checkout\n\nFor self-service plans, choose a plan and billing term, sign in or create your Mkety account, choose or create a workspace, and then complete the authenticated checkout for that workspace. Plan access is activated from verified payment settlement; a browser return or success screen alone does not grant entitlements.',
+    sortOrder: 30,
+  },
+  {
+    categoryKey: 'platform',
+    slug: 'teams-and-access',
+    title: 'Teams and access',
+    excerpt: 'How Mkety keeps workspace access and administration scoped.',
+    bodyMarkdown:
+      '# Teams and access\n\nMkety work is scoped to organizations, workspaces and projects. Roles and permissions determine who can view or manage protected areas. Public Mkety AI never has access to private tenant, project, billing, deployment, file, agent or workflow information.',
+    sortOrder: 30,
+  },
+  {
+    categoryKey: 'platform',
+    slug: 'billing-and-subscription-terms',
+    title: 'Billing and subscription terms',
+    excerpt: 'Monthly, 3-month, 6-month and annual prepaid self-service terms.',
+    bodyMarkdown:
+      '# Billing and subscription terms\n\nSelf-service plans support 1, 3, 6 and 12 month prepaid terms. The approved subscription discounts are 0%, 5%, 10% and 15% respectively. The discount applies to the fixed subscription total, not automatically to metered usage, credits or pass-through provider charges. Enterprise and Trading use separately agreed commercial terms.',
+    sortOrder: 40,
+  },
+  {
+    categoryKey: 'workspaces',
+    slug: 'starter-publishing',
+    title: 'Starter publishing',
+    excerpt: 'Pages-first website and publishing capabilities in the Starter plan.',
+    bodyMarkdown:
+      '# Starter publishing\n\nStarter is the Pages-first Mkety plan for published websites and pages, landing pages, portfolios, simple business sites and supported blogs or documentation. It also covers supported custom domains, SSL and edge delivery, forms and integrations, basic analytics/project management, assets/storage and usage visibility. Starter is not sold as a VPS, CPU/RAM allocation or general-purpose server.',
+    sortOrder: 5,
+  },
+  {
+    categoryKey: 'workspaces',
+    slug: 'mkety-one',
+    title: 'Mkety One',
+    excerpt: 'The complete standard self-service Mkety bundle.',
+    bodyMarkdown:
+      '# Mkety One\n\nMkety One combines Starter plus AI Workspace, Automation Workspace and Deploy Workspace. It is designed for customers who want the standard publishing, agent, workflow and lightweight deployment capabilities together, with unified projects, workspace management, usage/credits visibility and team controls.',
+    sortOrder: 40,
+  },
+  {
+    categoryKey: 'solutions',
+    slug: 'shared-vs-enterprise-solutions',
+    title: 'Shared-platform vs Enterprise solutions',
+    excerpt: 'Know when a SolutionHub use case fits the shared platform and when it becomes Enterprise.',
+    bodyMarkdown:
+      '# Shared-platform vs Enterprise solutions\n\nShared-platform SolutionHub use cases include AI assistants, knowledge and document Q&A, support and lead qualification, webhook and scheduled automations, business websites, portals, lightweight CRM or project tools, dashboards and APIs. Complex ERP, substantial regulated-data systems, heavy browser automation, arbitrary containers, persistent services, private networking, dedicated environments, Trading infrastructure, high-throughput or strict-SLA requirements belong to Enterprise.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'academy',
+    slug: 'academy-learning-hubs',
+    title: 'Academy learning hubs',
+    excerpt: 'The practical learning areas represented across Mkety Academy.',
+    bodyMarkdown:
+      '# Academy learning hubs\n\nMkety Academy presents learning across Web & App Engineering, Trading Masterclass, Digital Funnel & Marketing, AI & Automation Lab, and Certified Digital Skills. Start with Mkety AI for current published programme, schedule, enrolment and pricing information. When an Academy access handoff is appropriate, Mkety provides the destination separately.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'enterprise',
+    slug: 'when-to-use-enterprise',
+    title: 'When to use Enterprise',
+    excerpt: 'Requirements that sit outside the standard self-service platform envelope.',
+    bodyMarkdown:
+      '# When to use Enterprise\n\nUse Enterprise for dedicated or private infrastructure, arbitrary containers, persistent services, special networking, high-throughput workloads, complex integrations, substantial regulated-data systems, strict latency or SLA requirements, browser automation, custom commercial delivery, or specialized Trading infrastructure. Enterprise scope and pricing are agreed for the specific project.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'trust',
+    slug: 'support-and-contact-safety',
+    title: 'Support and contact safety',
+    excerpt: 'Use Mkety AI and official support channels without sharing secrets.',
+    bodyMarkdown:
+      '# Support and contact safety\n\nStart public product, pricing, documentation, support and sales questions with Mkety AI. It searches approved public Mkety information first and can route you to human support when needed. You may voluntarily leave normal contact details for follow-up, but never send passwords, API keys, payment secrets, recovery codes or other sensitive credentials in a public support conversation.',
+    sortOrder: 30,
   },
 ];
