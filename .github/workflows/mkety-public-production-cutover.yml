@@ -778,6 +778,25 @@ jobs:
           done
 
 
+
+          curl -fsS 'https://mkety.com/academy' -o /tmp/mkety-academy-page.html
+          grep -Fq 'Courses &amp; tiers' /tmp/mkety-academy-page.html || grep -Fq 'Courses & tiers' /tmp/mkety-academy-page.html || { echo 'Academy page missing Courses & tiers section.'; false; }
+          grep -Fq 'Ready to learn?' /tmp/mkety-academy-page.html || { echo 'Academy page missing ready-to-learn handoff.'; false; }
+          grep -Fq 'Ask Mkety AI about Academy' /tmp/mkety-academy-page.html || { echo 'Academy page missing AI-first discovery CTA.'; false; }
+          grep -Fq 'academy.mkety.com' /tmp/mkety-academy-page.html || { echo 'Academy page missing learning-access destination.'; false; }
+
+          curl -fsS 'https://mkety.com/pricing' -o /tmp/mkety-pricing-page.html
+          grep -Fq '$5.99' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing USD currency symbol.'; false; }
+          grep -Fq 'Trading Workspace' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Workspace.'; false; }
+          grep -Fq 'Custom / Enterprise' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Custom / Enterprise positioning.'; false; }
+
+          curl -fsS 'https://mkety.com/workspaces' -o /tmp/mkety-workspaces-page.html
+          grep -Fq 'Trading Workspace' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Workspace.'; false; }
+          grep -Fq 'Custom / Enterprise' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Custom / Enterprise positioning.'; false; }
+
+          curl -fsS 'https://mkety.com/' -o /tmp/mkety-home-page.html
+          if grep -Fq 'academy.mkety.com' /tmp/mkety-home-page.html; then echo 'Homepage must not bypass AI-first Academy discovery.'; false; fi
+
           for image in class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg; do
             headers="$(mktemp)"
             code="$(curl -sS -D "$headers" -o /tmp/mkety-academy-image -w '%{http_code}' "https://mkety.com/academy-hubs/$image" || true)"
