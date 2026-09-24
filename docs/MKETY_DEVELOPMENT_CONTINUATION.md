@@ -1295,3 +1295,39 @@ The Mkety public production release is live and certified.
 The production release path now consistently uses `mkety-production-db-v2`; active diagnostic workflows were aligned to the same Hyperdrive authority. Historical references to `mkety-production-db` are not production authority.
 
 The public-site phase is complete. Continue authenticated application development from current `main`, preserving the production release controls and APP-07 approval boundary.
+
+
+## 2026-09-24 final public-site production closure
+
+The final public-site closure is merged and production-promoted.
+
+Production application release:
+- certified/released SHA: `ba1510d95c9c77ff9db7e95d2a5ae728e9d19b58`;
+- guarded launcher run: `35967374372` — success;
+- protected production cutover run: `35968252256` — success;
+- rollback-guarded live acceptance completed successfully after `mkety.com` and `www.mkety.com` were attached to the release Worker;
+- production database migration completed successfully;
+- production uses `MKETY_DB` through `mkety-production-db-v2`; the legacy direct database Worker secret remains removed.
+
+Final public contract now certified in candidate and production acceptance:
+- Explore Mkety tabs remain horizontally scrollable on mobile and content/card containers are viewport-constrained with overflow-safe wrapping;
+- collapsed Public Mkety AI bar sits below the header, uses a transparent background, and restores the Mkety logo;
+- Public AI is the primary public support/sales/contact entry, searches published docs first, can answer from public context, captures voluntary lead/contact details when enabled, has deterministic fallback, and escalates to configured Telegram/email human support;
+- Platform Control can update public support/sales emails, Telegram destination, Public AI prompt extension, fallback copy, lead-capture toggle, legal links, and public page/section payloads without code changes;
+- Docs sidebar and article routing are generated from the same published docs tree, rendered docs links are release-smoked, and article previous/next navigation is present;
+- login/signup preserve direct signin/signup intent into branded Mkety Auth; hosted auth link settings point to Mkety Terms, Privacy, Docs, and official support rather than ZITADEL legal destinations;
+- Academy uses the five approved local uploaded hub images `class1.jpg` through `class5.jpg`;
+- Academy public discovery/sales starts through Mkety.com/Public AI and official human support; `academy.mkety.com` remains the ready-to-learn sign-in/access handoff;
+- Academy public CMS supports course/tier card structures with independently editable tier title, description, price badge and CTA, including add/remove/reorder through the structured page payload;
+- Pricing currency rendering includes USD `$` and self-service prepaid terms remain 1/3/6/12 months with the approved discount ladder;
+- Trading Workspace is visibly presented as `Custom / Enterprise` on Workspaces and Pricing;
+- production acceptance explicitly fails on stale Academy tiers/ready-to-learn content, missing USD pricing, missing Trading Workspace, broken rendered docs links, missing Academy images, or a homepage Academy sales bypass.
+
+PR #100 (`fix: close final public mobile, Academy and pricing issues`) merged successfully. Its final exact head was `f689c34696e32ea25fdcf41b824b15f9b9b4ac41`; merge/release commit was `ba1510d95c9c77ff9db7e95d2a5ae728e9d19b58`.
+
+Known non-release blocker:
+- MegaLinter may remain red from the pre-existing repository-wide Checkov baseline; all functional public release gates, exact-SHA candidate checks, production migration, production preview, hostname cutover and live acceptance passed.
+
+### Next session
+
+Public-site work is closed unless a new production regression is observed. Resume authenticated app development from current `main`, using the existing APP-07 approval-gated Deploy foundation as the starting point. Do not reopen historical public branches or PR #78 wholesale.
