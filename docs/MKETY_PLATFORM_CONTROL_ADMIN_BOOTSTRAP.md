@@ -16,7 +16,7 @@ Example:
 
 `MKETY_PLATFORM_CONTROL_TENANT_SLUG=mkety-ops`
 
-Platform Control fails closed when this value is absent or when the current tenant slug does not match it. It also requires the signed-in email to be present in `MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS`.
+Platform Control fails closed when this value is absent or when the current tenant slug does not match it. It also requires the signed-in email to be present in `MKETY_PLATFORM_ADMIN_EMAILS`.
 
 A normal customer workspace administrator must never gain global Mkety CMS access merely because they own or administer their own workspace.
 
@@ -27,7 +27,7 @@ There is no hidden Mkety super-admin username/password and no authentication byp
 Bootstrap the first operator through the normal production identity flow:
 
 1. Configure `MKETY_PLATFORM_CONTROL_TENANT_SLUG` to the dedicated internal workspace slug you intend to use.
-2. Configure `MKETY_PLATFORM_CONTROL_OPERATOR_EMAILS` with the exact approved operator email(s).
+2. Configure `MKETY_PLATFORM_ADMIN_EMAILS` with the exact approved operator email(s).
 3. Open Mkety signup and create/sign in with one of those operator identities through Mkety Auth.
 4. Create the first workspace using the exact configured slug.
 5. First-workspace creation makes the creator the tenant `admin`.
