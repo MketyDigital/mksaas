@@ -1,6 +1,7 @@
 name: Mkety Public Cutover Launcher
 # final public production closure 2026-09-24
 # reuse push-gate evidence 2026-09-24
+# serialize content DB and candidate 2026-09-24
 
 # final public UX/support/docs/auth production release 2026-09-24
 # final certified production cutover 2026-09-23
@@ -109,8 +110,7 @@ jobs:
           dispatch_certification 'mkety-content-db-smoke.yml' 'mkety/cert-content-db'
           dispatch_certification 'mkety-public-ai-runtime-diagnostic.yml' 'mkety/cert-public-ai'
           dispatch_certification 'mkety-production-preflight.yml' 'mkety/cert-preflight'
-          dispatch_certification 'mkety-public-candidate-deploy.yml' 'mkety/cert-candidate'
-          publish_status pending "Certification workflows dispatched; waiting for exact-SHA success."
+          publish_status pending "Independent certification workflows dispatched; waiting for exact-SHA success."
 
           wait_for_workflow_success() {
             local workflow="$1"
@@ -154,6 +154,11 @@ jobs:
           wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke' 'mkety/cert-content-db'
           wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic' 'mkety/cert-public-ai'
           wait_for_workflow_success 'mkety-production-preflight.yml' 'production routing preflight' 'mkety/cert-preflight'
+
+          # Candidate and content DB share the staging database concurrency lane.
+          # Dispatch the candidate only after content DB certification is complete.
+          dispatch_certification 'mkety-public-candidate-deploy.yml' 'mkety/cert-candidate'
+          publish_status pending "Content DB certified; waiting for isolated public candidate."
           wait_for_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate' 'mkety/cert-candidate'
           publish_status pending "Exact-SHA certification passed; dispatching guarded production cutover."
 
