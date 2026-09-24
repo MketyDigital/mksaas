@@ -22,7 +22,7 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(source).toContain('max-w-full');
     expect(source).toContain('overflow-x-hidden');
     expect(source).toContain('box-border');
-    expect(source).toContain('lg:overflow-hidden');
+    expect(source).toContain('overflow-hidden rounded-[2rem]');
   });
 
   it('uses only the five real local Academy hub images', async () => {
