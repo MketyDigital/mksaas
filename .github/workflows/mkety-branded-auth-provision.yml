@@ -231,8 +231,11 @@ jobs:
             privacy_curl=$?
             set -e
             if [ "$privacy_curl" -ne 0 ] || [ "$privacy_status" -lt 200 ] || [ "$privacy_status" -ge 300 ]; then
-              STATUS="$privacy_status" node -e 'const fs=require("node:fs");let x={};try{x=JSON.parse(fs.readFileSync("/tmp/privacy-policy-response.json","utf8"))}catch{};console.log("ZITADEL_PRIVACY_UPDATE_SAFE "+JSON.stringify({http:process.env.STATUS,code:x.code??null,message:x.message??null}));'
-              exit 1
+              privacy_unchanged="$(STATUS="$privacy_status" node -e 'const fs=require("node:fs");let x={};try{x=JSON.parse(fs.readFileSync("/tmp/privacy-policy-response.json","utf8"))}catch{};console.log("ZITADEL_PRIVACY_UPDATE_SAFE "+JSON.stringify({http:process.env.STATUS,code:x.code??null,message:x.message??null}));process.stdout.write(Number(x.code)===9&&/PrivacyPolicy\.NotChanged|not changed/i.test(String(x.message||""))?"true":"false");' | tail -c 4)"
+              if [ "$privacy_unchanged" != true ]; then
+                exit 1
+              fi
+              echo 'Mkety privacy/legal policy already matches; continuing to verification.'
             fi
 
             current="$(curl --fail-with-body --silent --show-error \
