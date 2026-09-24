@@ -131,6 +131,26 @@ async function main() {
     JSON.stringify(workspacePayload).includes('/enterprise'),
     'public Trading sales should route through Enterprise',
   );
+  const academyPayload = homeSections.find((section) => section.sectionKey === 'academy')?.contentJson;
+  const faqPayload = homeSections.find((section) => section.sectionKey === 'faq')?.contentJson;
+  const academyText = JSON.stringify(academyPayload);
+  const faqText = JSON.stringify(faqPayload);
+  assertSmoke(
+    academyText.includes('/academy#mkety-ai') && academyText.includes('Ask Mkety AI about Academy'),
+    'homepage Academy must route through Mkety AI',
+  );
+  assertSmoke(
+    !academyText.includes('academy.mkety.com'),
+    'homepage Academy must not bypass Mkety AI with a direct Academy destination',
+  );
+  assertSmoke(
+    faqText.includes('Start Academy questions on the public Academy page and with Mkety AI'),
+    'homepage FAQ should describe the AI-first Academy flow',
+  );
+  assertSmoke(
+    !faqText.includes('academy.mkety.com'),
+    'homepage FAQ must not advertise the historical direct Academy destination',
+  );
   assertPublicCopySafe(homeSections, 'homepage sections');
 
   for (const slug of [
