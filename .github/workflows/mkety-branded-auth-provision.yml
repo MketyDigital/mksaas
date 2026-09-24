@@ -211,17 +211,7 @@ jobs:
           fi
 
           if [ "$link_status" = "404" ]; then
-            cat >/tmp/privacy-policy.json <<'JSON'
-            {
-              "tosLink": "https://mkety.com/terms",
-              "privacyLink": "https://mkety.com/privacy",
-              "helpLink": "https://mkety.com/docs",
-              "supportEmail": "support@mkety.com",
-              "docsLink": "https://mkety.com/docs",
-              "customLink": "",
-              "customLinkText": ""
-            }
-            JSON
+            printf '%s\n' '{"tosLink":"https://mkety.com/terms","privacyLink":"https://mkety.com/privacy","helpLink":"https://mkety.com/docs","supportEmail":"support@mkety.com","docsLink":"https://mkety.com/docs","customLink":"","customLinkText":""}' > /tmp/privacy-policy.json
             curl --fail-with-body --silent --show-error -X PUT \
               "$issuer/admin/v1/policies/privacy" \
               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
