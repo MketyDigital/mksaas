@@ -11,7 +11,7 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } fro
 import type { PlatformPricingPlanInput } from '../../../schemas';
 
 function formatUsd(amountMinor: bigint) {
-  return `${(Number(amountMinor) / 100).toFixed(2)}`;
+  return '$' + (Number(amountMinor) / 100).toFixed(2);
 }
 
 function withTerm(href: string, term: SelfServiceBillingTermKey) {
