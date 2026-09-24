@@ -1,5 +1,6 @@
 name: Mkety ZITADEL Branding
 # multipart asset upload verified
+# production branding refresh 2026-09-24
 
 on:
   push:
