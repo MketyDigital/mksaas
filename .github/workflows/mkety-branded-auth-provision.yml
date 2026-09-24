@@ -231,15 +231,7 @@ jobs:
             privacy_curl=$?
             set -e
             if [ "$privacy_curl" -ne 0 ] || [ "$privacy_status" -lt 200 ] || [ "$privacy_status" -ge 300 ]; then
-              STATUS="$privacy_status" node <<'NODE'
-            const fs=require('node:fs'); let x={};
-            try{x=JSON.parse(fs.readFileSync('/tmp/privacy-policy-response.json','utf8'))}catch{}
-            console.log('ZITADEL_PRIVACY_UPDATE_SAFE '+JSON.stringify({
-              http:process.env.STATUS,
-              code:x.code??null,
-              message:x.message??null,
-            }));
-NODE
+              STATUS="$privacy_status" node -e 'const fs=require("node:fs");let x={};try{x=JSON.parse(fs.readFileSync("/tmp/privacy-policy-response.json","utf8"))}catch{};console.log("ZITADEL_PRIVACY_UPDATE_SAFE "+JSON.stringify({http:process.env.STATUS,code:x.code??null,message:x.message??null}));'
               exit 1
             fi
 
