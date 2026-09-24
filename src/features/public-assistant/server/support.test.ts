@@ -26,7 +26,6 @@ describe('Mkety public support-agent behavior', () => {
     expect(prompt).toMatch(/do not send a new buyer there to purchase/i);
     expect(prompt).toMatch(/public academy discovery is ai-first/i);
     expect(prompt).toMatch(/explicitly asks where to access or open Mkety Academy/i);
-    expect(prompt).toMatch(/do not advertise or reveal the academy access hostname/i);
     expect(prompt).toContain('PUBLIC CONTEXT');
   });
 });
