@@ -37,9 +37,9 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
   if (!activeGroup) return null;
 
   return (
-    <section className="w-full min-w-0 overflow-x-hidden px-3 py-10 sm:px-4 md:py-16" aria-label="Mkety product experience">
-      <div className="container mx-auto w-full min-w-0 max-w-full overflow-x-hidden">
-        <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
+    <section className="box-border w-full min-w-0 max-w-[100vw] overflow-x-clip px-3 py-10 sm:px-4 md:py-16" aria-label="Mkety product experience">
+      <div className="container mx-auto box-border w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <div className="box-border w-full min-w-0 max-w-full overflow-visible rounded-[2rem] border lg:overflow-hidden border-primary/15 bg-card/75 shadow-[0_24px_80px_-32px_hsl(var(--primary)/0.35)] backdrop-blur-xl">
           <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
             <div className="border-b border-border/60 bg-muted/20 p-4 lg:border-b-0 lg:border-r lg:p-5">
               <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
@@ -90,11 +90,11 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
               id={`mkety-showcase-panel-${activeGroup.id}`}
               role="tabpanel"
               aria-labelledby={`mkety-showcase-tab-${activeGroup.id}`}
-              className="relative w-full min-w-0 max-w-full overflow-hidden p-3 sm:p-5 md:p-8"
+              className="relative box-border w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-visible p-3 sm:max-w-full sm:p-5 md:p-8"
             >
               <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-              <div className="relative grid w-full min-w-0 max-w-full grid-cols-1 gap-5 overflow-hidden xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
-                <div className="w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/70 p-4 shadow-sm sm:p-6">
+              <div className="relative grid box-border w-full min-w-0 max-w-full grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+                <div className="box-border w-full min-w-0 max-w-full overflow-visible rounded-3xl border bg-background/70 p-4 shadow-sm sm:p-6">
                   <div className="w-full min-w-0 max-w-full [overflow-wrap:anywhere]">
                     <p className="max-w-full text-xs font-semibold uppercase tracking-[0.22em] text-primary">
                       {activeGroup.eyebrow}
@@ -112,14 +112,14 @@ export function MketyProductShowcase({ groups }: MketyProductShowcaseProps) {
                   </Link>
                 </div>
 
-                <div className="grid w-full min-w-0 max-w-full grid-cols-1 auto-rows-[minmax(9rem,auto)] gap-3 overflow-hidden sm:grid-cols-2">
+                <div className="grid box-border w-full min-w-0 max-w-full grid-cols-1 auto-rows-[minmax(9rem,auto)] gap-3 sm:grid-cols-2">
                   {activeGroup.items.slice(0, 4).map((item, index) => {
                     const Icon = showcaseIcons[index] ?? LayoutGrid;
                     return (
                       <article
                         key={item.key}
                         className={cn(
-                          'group relative w-full min-w-0 max-w-full overflow-hidden rounded-3xl border bg-background/80 p-4 shadow-sm transition sm:p-5 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
+                          'group relative box-border w-full min-w-0 max-w-full overflow-visible rounded-3xl border bg-background/80 p-4 shadow-sm transition sm:p-5 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none',
                           index === 0 && activeGroup.items.length > 2 ? 'sm:row-span-2' : '',
                         )}
                       >
