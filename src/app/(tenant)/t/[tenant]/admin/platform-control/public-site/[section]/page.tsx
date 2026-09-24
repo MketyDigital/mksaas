@@ -33,7 +33,7 @@ const modules: Record<string, PublicSiteModule> = {
     title: 'Pages & Sections',
     description:
       'Manage Mkety public pages, page sections, ordering, CTAs, metadata, and the customer-facing copy used by Public Mkety AI.',
-    items: ['Platform', 'Workspaces', 'SolutionHub', 'Academy course/tier cards & price badges', 'Academy ready-to-learn access CTA', 'Pricing', 'Trading Workspace presentation', 'Enterprise', 'About', 'Contact'],
+    items: ['Platform', 'Workspaces', 'SolutionHub', 'Academy courses with multiple independent tier cards per course', 'Academy tier title/description/price badge/enrolment CTA', 'Academy course/tier add-remove-reorder controls through CMS payload', 'Academy ready-to-learn access CTA', 'Pricing', 'Trading Workspace presentation', 'Enterprise', 'About', 'Contact'],
     area: 'public-site',
     entityType: 'page',
     entityKey: 'public-pages',
