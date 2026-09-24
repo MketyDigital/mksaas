@@ -11,7 +11,7 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } fro
 import type { PlatformPricingPlanInput } from '../../../schemas';
 
 function formatUsd(amountMinor: bigint) {
-  return `${(Number(amountMinor) / 100).toFixed(2)}`;
+  return '$' + (Number(amountMinor) / 100).toFixed(2);
 }
 
 function withTerm(href: string, term: SelfServiceBillingTermKey) {
@@ -52,7 +52,12 @@ export function MketyPricingPlans({ plans }: { plans: PlatformPricingPlanInput[]
                 <CardTitle>
                   <h3>{plan.name}</h3>
                 </CardTitle>
-                <p className="text-2xl font-bold">{quote ? formatUsd(quote.amountMinor) : plan.priceLabel}</p>
+                <p
+                  className="text-2xl font-bold"
+                  data-plan-price={quote ? `${plan.key}:${formatUsd(quote.amountMinor)}` : undefined}
+                >
+                  {quote ? formatUsd(quote.amountMinor) : plan.priceLabel}
+                </p>
                 {quote ? (
                   <CardDescription>
                     total for {quote.term.months} month{quote.term.months === 1 ? '' : 's'}

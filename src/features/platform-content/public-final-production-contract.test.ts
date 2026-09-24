@@ -124,7 +124,8 @@ describe('final public production UX, support, docs and auth contract', () => {
 
   it('shows USD currency on calculated prepaid totals', async () => {
     const pricing = await read('src/features/platform-content/components/public/pages/MketyPricingPlans.tsx');
-    expect(pricing).toContain('return `${(Number(amountMinor) / 100).toFixed(2)}`;');
+    expect(pricing).toContain("return '$' + (Number(amountMinor) / 100).toFixed(2);");
+    expect(pricing).toContain('data-plan-price={quote ? `${plan.key}:${formatUsd(quote.amountMinor)}` : undefined}');
   });
 
   it('routes contact and Enterprise sales through Public AI first', async () => {
@@ -169,7 +170,8 @@ describe('final public production UX, support, docs and auth contract', () => {
       expect(source).toContain('Rendered docs link failed:');
       expect(source).toContain('Academy page missing Courses & tiers section.');
       expect(source).toContain('Academy page missing ready-to-learn handoff.');
-      expect(source).toContain('Pricing page missing USD currency symbol.');
+      expect(source).toContain('Starter price card missing exact USD-formatted $5.99 amount.');
+      expect(source).toContain('data-plan-price="starter:$5.99"');
       expect(source).toContain('Pricing page missing Trading Workspace.');
       expect(source).toContain('Workspaces page missing Trading Workspace.');
       expect(source).toContain('Homepage must not bypass AI-first Academy discovery.');
