@@ -134,35 +134,53 @@ jobs:
           }));
           NODE
 
-      - name: Verify live Mkety sign-in and signup stay on auth.mkety.com
+      - name: Verify live Mkety sign-in and signup resolve without an extra user choice
         shell: bash
         run: |
           set -euo pipefail
+
           verify_flow() {
             local intent="$1"
             local expected_path="$2"
             local ok=0
+
             for attempt in $(seq 1 15); do
               headers="/tmp/$intent.headers"
               first="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}'                 "https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=$intent" || true)"
               location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$headers")"
-              if [ "$first" -ge 300 ] 2>/dev/null && [ "$first" -lt 400 ] 2>/dev/null && [ -n "$location" ] && LOCATION="$location" EXPECTED_PATH="$expected_path" AUTH_ORIGIN="$AUTH_ORIGIN" node <<'NODE'
-          const u=new URL(process.env.LOCATION);
-          const requestId=u.searchParams.get('requestId')||'';
-          process.exit(
-            u.origin===process.env.AUTH_ORIGIN &&
-            u.pathname===process.env.EXPECTED_PATH &&
-            requestId.startsWith('oidc_') ? 0 : 1
-          );
-          NODE
-              then
-                echo "BRANDED_AUTH_REDIRECT_SAFE intent=$intent location=$location"
-                ok=1
-                break
+
+              initial_ok=false
+              if [ "$first" -ge 300 ] 2>/dev/null && [ "$first" -lt 400 ] 2>/dev/null && [ -n "$location" ]; then
+                initial_ok="$(LOCATION="$location" AUTH_ORIGIN="$AUTH_ORIGIN" node -e '
+                  try {
+                    const u=new URL(process.env.LOCATION);
+                    const supported =
+                      u.pathname === "/ui/v2/login/login" ||
+                      u.pathname === "/ui/v2/login/loginname" ||
+                      u.pathname === "/ui/v2/login/register";
+                    process.stdout.write(u.origin===process.env.AUTH_ORIGIN && supported ? "true" : "false");
+                  } catch { process.stdout.write("false"); }
+                ')"
               fi
-              echo "$intent propagation attempt $attempt/15 not ready."
+
+              if [ "$initial_ok" = true ]; then
+                final_url="$(curl -sS -L --connect-timeout 10 --max-time 30                   -o "/tmp/$intent.body" -w '%{url_effective}' "$location" || true)"
+                if FINAL_URL="$final_url" EXPECTED_PATH="$expected_path" AUTH_ORIGIN="$AUTH_ORIGIN" node -e '
+                  try {
+                    const u=new URL(process.env.FINAL_URL);
+                    process.exit(u.origin===process.env.AUTH_ORIGIN && u.pathname===process.env.EXPECTED_PATH ? 0 : 1);
+                  } catch { process.exit(1); }
+                '; then
+                  echo "BRANDED_AUTH_USER_FLOW_SAFE intent=$intent final=$final_url"
+                  ok=1
+                  break
+                fi
+              fi
+
+              echo "$intent user-flow attempt $attempt/15 not ready."
               sleep 4
             done
+
             [ "$ok" = 1 ]
           }
 
