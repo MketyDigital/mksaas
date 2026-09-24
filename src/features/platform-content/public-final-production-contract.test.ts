@@ -19,6 +19,10 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(source).toContain('break-words');
     expect(source).toContain('[overflow-wrap:anywhere]');
     expect(source).toContain('grid-cols-1');
+    expect(source).toContain('max-w-[100vw]');
+    expect(source).toContain('max-w-[calc(100vw-1.5rem)]');
+    expect(source).toContain('box-border');
+    expect(source).toContain('lg:overflow-hidden');
   });
 
   it('uses only the five real local Academy hub images', async () => {
@@ -34,6 +38,7 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(source).toContain("top-[4.5rem]");
     expect(source).toContain('/mkety-logo.png');
     expect(source).toContain('bg-transparent');
+    expect(source).not.toContain('shadow-primary/10 backdrop-blur-xl');
     expect(source).toContain("window.location.hash === '#mkety-ai'");
   });
 
@@ -62,7 +67,8 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(pages).toContain("label: 'Sign in to Mkety Academy'");
     expect(pages).toContain("href: 'https://academy.mkety.com'");
     expect(pages).toContain("badge: 'Ask AI for current options'");
-    expect(admin).toContain('Academy course/tier cards & price badges');
+    expect(admin).toContain('Academy courses with multiple independent tier cards per course');
+    expect(admin).toContain('Academy tier title/description/price badge/enrolment CTA');
     expect(admin).toContain('Academy ready-to-learn access CTA');
   });
 
