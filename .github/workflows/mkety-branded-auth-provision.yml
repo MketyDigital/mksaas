@@ -216,14 +216,35 @@ jobs:
           if [ "$link_status" = "404" ] || [ "$link_status" = "400" ]; then
             printf '%s\n' '{"tosLink":"https://mkety.com/terms","privacyLink":"https://mkety.com/privacy","helpLink":"https://mkety.com/docs","supportEmail":"support@mkety.com","docsLink":"https://mkety.com/docs","customLink":"","customLinkText":""}' > /tmp/privacy-policy.json
 
-            curl --fail-with-body --silent --show-error -X PUT \
-              "$issuer/policies/privacy" \
+            current_before="$(curl --fail-with-body --silent --show-error \
+              "$issuer/admin/v1/policies/privacy" \
+              -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
+              -H 'Accept: application/json')"
+            POLICY="$current_before" node -e 'const p=JSON.parse(process.env.POLICY||"{}").policy||{}; console.log("ZITADEL_PRIVACY_POLICY_STATE "+JSON.stringify({isDefault:p.isDefault===true}));'
+
+            set +e
+            privacy_status="$(curl --silent --show-error -o /tmp/privacy-policy-response.json -w '%{http_code}' -X PUT \
+              "$issuer/admin/v1/policies/privacy" \
               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
               -H 'Content-Type: application/json' \
-              --data-binary @/tmp/privacy-policy.json >/tmp/privacy-policy-response.json
+              --data-binary @/tmp/privacy-policy.json)"
+            privacy_curl=$?
+            set -e
+            if [ "$privacy_curl" -ne 0 ] || [ "$privacy_status" -lt 200 ] || [ "$privacy_status" -ge 300 ]; then
+              STATUS="$privacy_status" node <<'NODE'
+            const fs=require('node:fs'); let x={};
+            try{x=JSON.parse(fs.readFileSync('/tmp/privacy-policy-response.json','utf8'))}catch{}
+            console.log('ZITADEL_PRIVACY_UPDATE_SAFE '+JSON.stringify({
+              http:process.env.STATUS,
+              code:x.code??null,
+              message:x.message??null,
+            }));
+NODE
+              exit 1
+            fi
 
             current="$(curl --fail-with-body --silent --show-error \
-              "$issuer/policies/privacy" \
+              "$issuer/admin/v1/policies/privacy" \
               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" \
               -H 'Accept: application/json')"
             POLICY="$current" node -e 'const payload=JSON.parse(process.env.POLICY||"{}"); const policy=payload.policy||{}; const expected={tosLink:"https://mkety.com/terms",privacyLink:"https://mkety.com/privacy",helpLink:"https://mkety.com/docs",supportEmail:"support@mkety.com",docsLink:"https://mkety.com/docs"}; for (const [key,value] of Object.entries(expected)) { if (policy[key] !== value) throw new Error("Missing Mkety Login legal/support setting: "+key); } console.log("Mkety Login legal/support links verified through Admin v1 fallback.");'
