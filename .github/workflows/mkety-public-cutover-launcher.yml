@@ -1,4 +1,5 @@
 name: Mkety Public Cutover Launcher
+# final public forward-safety cutover 2026-09-24
 # final public closure ba1510d 2026-09-24
 # final public production closure 2026-09-24
 # reuse push-gate evidence 2026-09-24
@@ -27,10 +28,10 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: ba1510d95c9c77ff9db7e95d2a5ae728e9d19b58
+  VERIFIED_SHA: 1d70c4dad811a4a43ac8b4b1f217cf1ab30e8c8f
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
-  CERT_BRANCH: certify/ba1510d
+  CERT_BRANCH: certify/1d70c4d
   CUTOVER_MODE: worker-custom-domains-v7
 
 jobs:
