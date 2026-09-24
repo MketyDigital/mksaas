@@ -4,6 +4,7 @@ name: Mkety Public Cutover Launcher
 # final certified production cutover 2026-09-23
 # exact-SHA CI certification dispatch added 2026-09-24
 # release repinned to CI-dispatchable SHA 758ce73 2026-09-24
+# standalone exact-SHA test/typecheck/lint/build certification added 2026-09-24
 # vinext certification added 2026-09-23
 # certify public ui + academy assets follow-up 2026-09-20
 # rerun certified cutover with Platform Control production fallback 2026-09-23
@@ -22,10 +23,10 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: 758ce73b29571844f6f4991709e100934f990bbd
+  VERIFIED_SHA: f3d64d388fbcbf097f57df9c328351f5dc762c6a
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
-  CERT_BRANCH: certify/758ce73
+  CERT_BRANCH: certify/f3d64d3
   CUTOVER_MODE: worker-custom-domains-v7
 
 jobs:
@@ -102,6 +103,10 @@ jobs:
             echo "Dispatched $workflow on $CERT_BRANCH."
           }
 
+          dispatch_certification 'tests.yml' 'mkety/cert-tests'
+          dispatch_certification 'type-check.yml' 'mkety/cert-typecheck'
+          dispatch_certification 'lint.yml' 'mkety/cert-lint'
+          dispatch_certification 'build.yml' 'mkety/cert-build'
           dispatch_certification 'ci.yml' 'mkety/cert-ci'
           dispatch_certification 'mkety-cloudflare-vinext-smoke.yml' 'mkety/cert-vinext'
           dispatch_certification 'mkety-content-db-smoke.yml' 'mkety/cert-content-db'
@@ -143,6 +148,10 @@ jobs:
             return 1
           }
 
+          wait_for_workflow_success 'tests.yml' 'tests' 'mkety/cert-tests'
+          wait_for_workflow_success 'type-check.yml' 'typecheck' 'mkety/cert-typecheck'
+          wait_for_workflow_success 'lint.yml' 'lint' 'mkety/cert-lint'
+          wait_for_workflow_success 'build.yml' 'build' 'mkety/cert-build'
           wait_for_workflow_success 'ci.yml' 'CI' 'mkety/cert-ci'
           wait_for_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke' 'mkety/cert-vinext'
           wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke' 'mkety/cert-content-db'
