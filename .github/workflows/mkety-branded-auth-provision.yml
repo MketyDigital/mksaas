@@ -194,7 +194,9 @@ jobs:
           # ConnectRPC. Some hosted instances can lag that API while still
           # supporting the fully supported Admin v1 privacy-policy operation.
           # Prefer the new API, but fall back only when the endpoint itself is
-          # unavailable (HTTP 404). Other errors remain fail-closed.
+          # unavailable or unsupported by this hosted instance (HTTP 404/400).
+          # The Admin v1 privacy policy is the supported compatibility fallback;
+          # all other errors remain fail-closed.
           set +e
           link_status="$(curl --silent --show-error -o /tmp/link-settings-response.json -w '%{http_code}' \
             -X POST "$issuer/zitadel.settings.v2.SettingsService/SetLinkSettings" \
@@ -211,7 +213,7 @@ jobs:
             exit "$curl_status"
           fi
 
-          if [ "$link_status" = "404" ]; then
+          if [ "$link_status" = "404" ] || [ "$link_status" = "400" ]; then
             printf '%s\n' '{"tosLink":"https://mkety.com/terms","privacyLink":"https://mkety.com/privacy","helpLink":"https://mkety.com/docs","supportEmail":"support@mkety.com","docsLink":"https://mkety.com/docs","customLink":"","customLinkText":""}' > /tmp/privacy-policy.json
             curl --fail-with-body --silent --show-error -X PUT \
               "$issuer/admin/v1/policies/privacy" \
