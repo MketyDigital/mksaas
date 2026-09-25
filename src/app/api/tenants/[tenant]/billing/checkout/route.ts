@@ -5,10 +5,12 @@ import {
   isSelfServiceBillingPlanKey,
   isSelfServiceBillingTermKey,
 } from '@/features/billing/catalog/self-service-plans';
+import { createFlutterwaveStandardBillingAdapter } from '@/features/billing/gateways/flutterwave-standard';
 import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
 import { createSelfServiceCheckout } from '@/features/billing/server/self-service-checkout';
+import { isFlutterwaveSettlementCurrency } from '@/features/payments/flutterwave-currency';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -44,8 +46,18 @@ export async function POST(request: Request, context: RouteContext) {
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string; provider?: string })
-    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string; provider?: string });
+    ? ((await request.json().catch(() => ({}))) as {
+        planKey?: string;
+        termKey?: string;
+        provider?: string;
+        paymentCurrency?: string;
+      })
+    : (Object.fromEntries(await request.formData()) as {
+        planKey?: string;
+        termKey?: string;
+        provider?: string;
+        paymentCurrency?: string;
+      });
 
   const planKey = String(body.planKey ?? '');
   const termKey = String(body.termKey ?? '1m');
@@ -57,6 +69,11 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const provider = String(body.provider ?? 'nowpayments');
+  const paymentCurrency = String(body.paymentCurrency ?? 'USD').toUpperCase();
+  const flutterwaveHostedEnabled =
+    (process.env.FLUTTERWAVE_API_MODE ?? 'v4') === 'v3-hosted' &&
+    Boolean(process.env.FLUTTERWAVE_V3_SECRET_KEY && process.env.FLUTTERWAVE_V3_SECRET_HASH);
+
   const adapter =
     provider === 'nowpayments'
       ? process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
@@ -65,11 +82,19 @@ export async function POST(request: Request, context: RouteContext) {
             ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
           })
         : null
-      : provider === 'kora'
-        ? process.env.KORA_SECRET_KEY
-          ? createKoraBillingAdapter({ secretKey: process.env.KORA_SECRET_KEY })
+      : provider === 'flutterwave'
+        ? flutterwaveHostedEnabled && isFlutterwaveSettlementCurrency(paymentCurrency)
+          ? createFlutterwaveStandardBillingAdapter({
+              secretKey: process.env.FLUTTERWAVE_V3_SECRET_KEY,
+              settlementCurrency: paymentCurrency,
+              serializedRates: process.env.MKETY_FLUTTERWAVE_USD_RATES_JSON,
+            })
           : null
-        : null;
+        : provider === 'kora'
+          ? process.env.KORA_SECRET_KEY
+            ? createKoraBillingAdapter({ secretKey: process.env.KORA_SECRET_KEY })
+            : null
+          : null;
   if (!adapter) {
     return json({ success: false, message: 'Selected payment method is not configured.' }, 503);
   }
