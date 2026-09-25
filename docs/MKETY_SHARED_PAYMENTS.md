@@ -106,7 +106,7 @@ Before access/value is granted, Mkety must:
 
 Mkety subscription prices remain canonically USD.
 
-USD is always available. Additional collection currencies are exposed only when Mkety has an explicit commercial rate in `MKETY_PAYMENT_FX_RATES_JSON`.
+USD is always available. For non-USD collection, Mkety first checks `MKETY_PAYMENT_FX_RATES_JSON`. If there is no explicit commercial rate and Flutterwave v4 OAuth credentials are configured, Mkety can obtain a live v4 FX quote and lock that amount for checkout.
 
 The shared contract currently understands:
 
@@ -131,7 +131,9 @@ Example configuration:
 MKETY_PAYMENT_FX_RATES_JSON={"NGN":"1600","GHS":"15.5","KES":"130","GBP":"0.78","EUR":"0.92"}
 ```
 
-Each value means local collection-currency units per 1 USD of canonical Mkety price. Only configured currencies appear in the MkSaaS currency selector or are accepted for non-USD broker checkout. Mkety intentionally keeps this commercial-pricing table explicit rather than silently treating a transfer/remittance FX quote as a customer checkout price.
+Each value means local collection-currency units per 1 USD of canonical Mkety price. Explicit Mkety rates take priority over live provider FX. If no rate is configured and v4 OAuth is unavailable, that non-USD currency fails closed rather than guessing.
+
+When v4 OAuth is available, the full supported currency contract may be shown and the server can use Flutterwave's real-time v4 rate-conversion response as the fallback quote source. The exact amount returned by the server is then locked into the checkout record.
 
 Mkety calculates the provider quote server-side and persists both sides of the transaction:
 
@@ -247,7 +249,7 @@ Pay with Flutterwave in:
 USD | any Mkety-configured collection currencies
 ```
 
-Mkety shows the quoted local collection amount before redirect.
+Mkety shows the quoted local collection amount before redirect. The quote source is recorded as `identity`, `configured`, or `flutterwave-v4` for auditability.
 
 Flutterwave's hosted interface determines which enabled payment methods are valid for that selected currency. Mkety does not hard-code a promise that every rail will appear for every merchant/country.
 
@@ -408,14 +410,14 @@ NOWPAYMENTS_IPN_SECRET
 
 ### Flutterwave hosted fiat
 
-Visible when the hosted checkout and webhook path are complete:
+Visible when the hosted checkout and Standard webhook path are complete:
 
 ```text
 FLUTTERWAVE_STANDARD_SECRET_KEY
 FLUTTERWAVE_STANDARD_WEBHOOK_HASH
 ```
 
-Native-v4 verification/control additionally uses:
+Native-v4 verification/control and automatic live FX fallback use:
 
 ```text
 FLUTTERWAVE_CLIENT_ID
@@ -427,6 +429,12 @@ Media/shared broker additionally requires:
 
 ```text
 FLUTTERWAVE_CHECKOUT_BROKER_SECRET
+```
+
+Optional fixed commercial FX overrides:
+
+```text
+MKETY_PAYMENT_FX_RATES_JSON
 ```
 
 ### Kora
@@ -489,7 +497,7 @@ To make Flutterwave hosted checkout live:
 3. keep the central Flutterwave dashboard webhook at `https://mkety.com/api/payments/flutterwave/webhook`;
 4. configure the v4 Client ID/Secret/Webhook Secret for native-v4 verification;
 5. set a strong shared `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`;
-6. configure `MKETY_PAYMENT_FX_RATES_JSON` for every non-USD collection currency you want to expose;
+6. optionally configure `MKETY_PAYMENT_FX_RATES_JSON` for any currencies where Mkety wants a fixed/commercial rate instead of live v4 FX;
 7. add the matching Media broker values; Media does not receive the Standard secret/hash;
 8. run a real low-value test checkout in USD and each enabled collection currency before broad customer use.
 
