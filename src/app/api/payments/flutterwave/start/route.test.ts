@@ -4,22 +4,28 @@ import { POST } from './route';
 
 describe('POST /api/payments/flutterwave/start', () => {
   const previousBroker = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
-  const previousClientId = process.env.FLUTTERWAVE_CLIENT_ID;
-  const previousClientSecret = process.env.FLUTTERWAVE_CLIENT_SECRET;
-  const previousWebhookSecret = process.env.FLUTTERWAVE_WEBHOOK_SECRET;
+  const previousStandardSecret = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
+  const previousFetch = global.fetch;
 
   beforeEach(() => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = 'x'.repeat(40);
-    process.env.FLUTTERWAVE_CLIENT_ID = 'client-id';
-    process.env.FLUTTERWAVE_CLIENT_SECRET = 'client-secret';
-    process.env.FLUTTERWAVE_WEBHOOK_SECRET = 'webhook-secret';
+    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = 'FLWSECK_TEST-example';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'success',
+        data: { link: 'https://checkout.flutterwave.com/v3/hosted/pay/example' },
+      }),
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = previousFetch;
   });
 
   afterAll(() => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = previousBroker;
-    process.env.FLUTTERWAVE_CLIENT_ID = previousClientId;
-    process.env.FLUTTERWAVE_CLIENT_SECRET = previousClientSecret;
-    process.env.FLUTTERWAVE_WEBHOOK_SECRET = previousWebhookSecret;
+    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = previousStandardSecret;
   });
 
   function request(secret = 'x'.repeat(40)) {
@@ -48,16 +54,22 @@ describe('POST /api/payments/flutterwave/start', () => {
     expect(response.status).toBe(401);
   });
 
-  it('accepts the Media handoff but fails closed until a concrete v4 payment method exists', async () => {
+  it('creates a hosted Flutterwave checkout for the Media handoff', async () => {
     const response = await POST(request());
     const payload = await response.json();
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     expect(payload).toMatchObject({
-      success: false,
-      code: 'flutterwave_v4_payment_method_required',
+      success: true,
       reference: 'MKM-A83K27',
+      canonical_currency: 'USD',
+      provider_currency: 'USD',
+      checkout_url: 'https://checkout.flutterwave.com/v3/hosted/pay/example',
     });
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.flutterwave.com/v3/payments',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('rejects redirects outside the owning Mkety product', async () => {
