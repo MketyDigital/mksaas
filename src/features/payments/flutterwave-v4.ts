@@ -1,5 +1,5 @@
 const TOKEN_URL = 'https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token';
-const PRODUCTION_BASE_URL = 'https://api.flutterwave.com';
+const PRODUCTION_BASE_URL = 'https://f4bexperience.flutterwave.com';
 
 let cachedAccessToken: { value: string; expiresAt: number; clientId: string } | null = null;
 
