@@ -48,8 +48,7 @@ export function createFlutterwaveBillingAdapter(options: {
         canonicalAmountMinor: input.amountExpectedMinor,
         canonicalCurrency: 'USD',
         collectionCurrency,
-        secretKey: options.standardSecretKey,
-        fetchImpl: options.fetchImpl,
+        configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
       });
       const reference = createSaasFlutterwaveReference(input.checkoutId);
       const checkoutUrl = await createFlutterwaveHostedCheckout({
