@@ -12,6 +12,8 @@ on:
       - 'src/features/platform-content/**'
       - 'src/features/public-assistant/**'
       - 'src/features/enterprise-checkout/**'
+      - 'src/features/billing/**'
+      - 'src/features/payments/**'
       - 'scripts/migrate-mkety-platform-content.ts'
       - 'scripts/smoke-mkety-platform-content.ts'
       - 'wrangler.jsonc'
