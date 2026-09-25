@@ -1523,13 +1523,13 @@
           "name": "settlement_amount_expected_minor",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "settlement_currency": {
           "name": "settlement_currency",
           "type": "varchar(3)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
       "indexes": {
