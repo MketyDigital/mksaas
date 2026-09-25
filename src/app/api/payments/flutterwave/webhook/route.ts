@@ -1,3 +1,4 @@
+import { createMketyPaymentAttestation } from '@/features/payments/attestation';
 import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
 import { verifyFlutterwaveStandardTransaction } from '@/features/payments/flutterwave-standard';
 import { retrieveFlutterwaveV4Charge, verifyFlutterwaveV4Webhook } from '@/features/payments/flutterwave-v4';
@@ -24,6 +25,39 @@ type IgnoredFlutterwavePayment = {
   mode: 'v4' | 'standard';
   ignored: true;
 };
+
+
+function paymentAmountMinor(value: unknown): bigint {
+  const normalized = typeof value === 'number' ? value.toFixed(2) : String(value ?? '').trim();
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
+  if (!match) throw new Error('Invalid Flutterwave Standard webhook payment amount.');
+  return BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
+}
+
+function assertStandardWebhookMatchesVerified(payment: VerifiedFlutterwavePayment) {
+  if (payment.mode !== 'standard') return;
+  const rawData = payment.payload.data;
+  if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+    throw new Error('Invalid Flutterwave Standard webhook payment data.');
+  }
+  const data = rawData as Record<string, unknown>;
+  const rawReference = String(data.tx_ref ?? '');
+  const rawStatus = String(data.status ?? '');
+  const rawCurrency = String(data.currency ?? '').toUpperCase();
+  const verifiedCurrency = String(payment.verified.currency ?? '').toUpperCase();
+  const rawAmount = data.amount ?? data.charged_amount;
+  const verifiedAmount = payment.verified.amount ?? payment.verified.charged_amount;
+
+  if (
+    rawReference !== payment.reference ||
+    rawStatus !== 'successful' ||
+    payment.status !== 'success' ||
+    rawCurrency !== verifiedCurrency ||
+    paymentAmountMinor(rawAmount) !== paymentAmountMinor(verifiedAmount)
+  ) {
+    throw new Error('Flutterwave Standard webhook data does not match the verified transaction.');
+  }
+}
 
 type VerifiedFlutterwavePayment = {
   mode: 'v4' | 'standard';
@@ -127,12 +161,21 @@ export async function POST(request: Request) {
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
 
     if (route.source === 'media' || route.source === 'host') {
+      let attestation: string | undefined;
+      if (payment.mode === 'standard') {
+        assertStandardWebhookMatchesVerified(payment);
+        const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
+        if (!brokerSecret) throw new Error('Flutterwave Standard forwarding attestation is not configured.');
+        attestation = await createMketyPaymentAttestation(rawBody, brokerSecret);
+      }
+
       const forwarded = await forwardOriginalProviderWebhook({
         source: route.source,
         provider: 'flutterwave',
         rawBody,
         signature: payment.signature,
         signatureHeader: payment.signatureHeader,
+        attestation,
         contentType: request.headers.get('content-type'),
       });
       return json({ success: true, settled: false, routedTo: route.source, mode: payment.mode, ...forwarded });
