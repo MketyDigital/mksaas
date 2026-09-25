@@ -16,7 +16,7 @@ describe('Flutterwave Standard shared payments', () => {
         secretKey: 'secret',
         fetchImpl: jest.fn(),
       }),
-    ).resolves.toEqual({ amountMinor: 3999n, currency: 'USD', rate: '1' });
+    ).resolves.toEqual({ amountMinor: 3999n, currency: 'USD', rate: '1', source: 'identity' });
   });
 
   it('normalizes high-precision FX source amounts to payment precision', async () => {
@@ -40,9 +40,34 @@ describe('Flutterwave Standard shared payments', () => {
       fetchImpl: fetchMock,
     });
 
-    expect(quote).toEqual({ amountMinor: 5656294n, currency: 'NGN', rate: '0.000707' });
+    expect(quote).toEqual({
+      amountMinor: 5656295n,
+      currency: 'NGN',
+      rate: '0.000707',
+      source: 'flutterwave-transfer-rate',
+    });
     expect(String(fetchMock.mock.calls[0][0])).toContain('destination_currency=USD');
     expect(String(fetchMock.mock.calls[0][0])).toContain('source_currency=NGN');
+  });
+
+  it('uses an explicitly configured commercial FX rate without calling Flutterwave rates', async () => {
+    const fetchMock = jest.fn();
+    await expect(
+      quoteFlutterwaveCollection({
+        canonicalAmountMinor: 3999n,
+        canonicalCurrency: 'USD',
+        collectionCurrency: 'NGN',
+        secretKey: 'secret',
+        configuredRatesJson: '{"NGN":"1500"}',
+        fetchImpl: fetchMock,
+      }),
+    ).resolves.toEqual({
+      amountMinor: 5998500n,
+      currency: 'NGN',
+      rate: '1500',
+      source: 'configured',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('creates hosted checkout without exposing provider secrets in the payload', async () => {
