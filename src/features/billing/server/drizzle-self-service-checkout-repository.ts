@@ -127,6 +127,8 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
       .set({
         providerCheckoutId: input.providerCheckoutId ?? null,
         checkoutUrl: input.checkoutUrl,
+        providerAmountExpectedMinor: input.providerAmountExpectedMinor ?? null,
+        providerCurrency: input.providerCurrency ?? null,
         expiresAt: input.expiresAt ?? null,
         status: 'redirected',
         updatedAt: input.updatedAt,
