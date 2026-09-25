@@ -106,6 +106,8 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
           provider: input.provider,
           amountExpectedMinor: quote.amountMinor,
           currency: activeVersion.currency,
+          settlementAmountExpectedMinor: quote.amountMinor,
+          settlementCurrency: activeVersion.currency,
           status: 'created',
         })
         .returning({ id: billingCheckouts.id });
