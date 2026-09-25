@@ -40,9 +40,14 @@ export function createFlutterwaveStandardBillingAdapter(options: {
   return {
     provider: 'flutterwave',
     capabilities: {
-      hostedCheckout: true,
-      supportsAutomaticSettlement: true,
-      supportsSubscriptions: true,
+      supportsRecurring: false,
+      supportsAutoCharge: false,
+      supportsHostedSubscription: false,
+      supportsRecurringInvoice: false,
+      supportsWebhookVerification: true,
+      supportsRefunds: false,
+      supportsPartialPayment: false,
+      supportsMultipleCurrencies: true,
     },
 
     async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
