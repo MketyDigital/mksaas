@@ -67,6 +67,7 @@ export function createFlutterwaveBillingAdapter(options: {
           provider_amount_minor: quote.amountMinor.toString(),
           provider_currency: quote.currency,
           ...(quote.rate ? { fx_rate: quote.rate } : {}),
+          fx_source: quote.source,
         },
         secretKey: options.standardSecretKey,
         fetchImpl: options.fetchImpl,
