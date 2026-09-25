@@ -6,12 +6,14 @@ describe('POST /api/payments/flutterwave/start', () => {
   const previousBroker = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
   const previousStandardSecret = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
   const previousStandardHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  const previousFxRates = process.env.MKETY_PAYMENT_FX_RATES_JSON;
   const previousFetch = global.fetch;
 
   beforeEach(() => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = 'x'.repeat(40);
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = 'FLWSECK_TEST-example';
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = 'standard-hash';
+    process.env.MKETY_PAYMENT_FX_RATES_JSON = '{"NGN":"1500","GHS":"15","KES":"130"}';
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -29,6 +31,7 @@ describe('POST /api/payments/flutterwave/start', () => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = previousBroker;
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = previousStandardSecret;
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = previousStandardHash;
+    process.env.MKETY_PAYMENT_FX_RATES_JSON = previousFxRates;
   });
 
   function request(secret = 'x'.repeat(40)) {
@@ -77,6 +80,80 @@ describe('POST /api/payments/flutterwave/start', () => {
       'https://api.flutterwave.com/v3/payments',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+
+  it('quotes the live Media handoff into the requested local collection currency', async () => {
+    const ngnRequest = new Request('https://mkety.com/api/payments/flutterwave/start', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${'x'.repeat(40)}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'media',
+        reference: 'MKM-A83K27',
+        canonical_amount_usd: 39.99,
+        requested_payment_currency: 'NGN',
+        email: 'billing@example.com',
+        customer_name: 'Example Business',
+        invoice_id: 'invoice-1',
+        tenant_id: 'tenant-1',
+        redirect_url: 'https://media.mkety.com/billing?payment=processing&provider=flutterwave',
+      }),
+    });
+
+    const response = await POST(ngnRequest);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      amount: 59985,
+      checkout_amount: 59985,
+      currency: 'NGN',
+      checkout_currency: 'NGN',
+      fx_rate: '1500',
+      fx_source: 'configured',
+    });
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    const checkoutBody = JSON.parse(init.body);
+    expect(checkoutBody).toMatchObject({
+      amount: '59985.00',
+      currency: 'NGN',
+      tx_ref: 'MKM-A83K27',
+      meta: expect.objectContaining({
+        source: 'media',
+        provider_currency: 'NGN',
+        fx_rate: '1500',
+        fx_source: 'configured',
+      }),
+    });
+  });
+
+  it('fails closed when Media requests a collection currency without a Mkety FX quote', async () => {
+    process.env.MKETY_PAYMENT_FX_RATES_JSON = '{}';
+    const ngnRequest = new Request('https://mkety.com/api/payments/flutterwave/start', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${'x'.repeat(40)}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'media',
+        reference: 'MKM-A83K27',
+        canonical_amount_usd: 39.99,
+        requested_payment_currency: 'NGN',
+        email: 'billing@example.com',
+        invoice_id: 'invoice-1',
+        tenant_id: 'tenant-1',
+        redirect_url: 'https://media.mkety.com/billing?payment=processing&provider=flutterwave',
+      }),
+    });
+
+    const response = await POST(ngnRequest);
+    expect(response.status).toBe(502);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('rejects redirects outside the owning Mkety product', async () => {
