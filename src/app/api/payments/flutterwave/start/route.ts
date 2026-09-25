@@ -101,46 +101,10 @@ export async function POST(request: Request) {
     }
 
     // Flutterwave v4 OAuth credentials authenticate API calls, but v4 charge
-    // creation still requires a concrete payment method. The old method-agnostic
-    // hosted Standard checkout is a v3 flow. If a temporary v3 key is present,
-    // the broker can provide that hosted checkout without exposing credentials
-    // to the calling product.
-    const legacySecretKey = process.env.FLUTTERWAVE_V3_SECRET_KEY;
-    if (legacySecretKey) {
-      const response = await fetch('https://api.flutterwave.com/v3/payments', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${legacySecretKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tx_ref: reference,
-          amount: amount.toFixed(2),
-          currency,
-          redirect_url: redirectUrl,
-          customer: {
-            email,
-            ...(customerName ? { name: customerName } : {}),
-          },
-          customizations: {
-            title: source === 'media' ? 'Mkety Media' : 'Mkety',
-            description: `Mkety payment ${reference}`,
-          },
-          meta: metadata,
-        }),
-      });
-      const payload = (await response.json().catch(() => null)) as {
-        status?: string;
-        data?: { link?: string };
-      } | null;
-      const checkoutUrl = payload?.data?.link;
-      if (!response.ok || payload?.status !== 'success' || !checkoutUrl?.startsWith('https://')) {
-        throw new Error('Flutterwave hosted checkout creation failed.');
-      }
-
-      return json({ success: true, checkout_url: checkoutUrl, url: checkoutUrl, reference });
-    }
-
+    // creation still requires a concrete payment method. Mkety deliberately
+    // does not collect raw card details in this broker. Product callers keep
+    // the stable handoff contract while the customer-facing v4 payment-method
+    // experience is implemented separately.
     const v4Configured = Boolean(
       process.env.FLUTTERWAVE_CLIENT_ID &&
       process.env.FLUTTERWAVE_CLIENT_SECRET &&
@@ -155,7 +119,7 @@ export async function POST(request: Request) {
         success: false,
         code: 'flutterwave_v4_payment_method_required',
         message:
-          'Flutterwave v4 is configured for OAuth and webhook verification, but checkout requires an explicit v4 payment method flow.',
+          'Flutterwave v4 is configured for OAuth and shared webhook verification. A concrete v4 payment method must be selected before a charge can be created.',
         reference,
       },
       409,
