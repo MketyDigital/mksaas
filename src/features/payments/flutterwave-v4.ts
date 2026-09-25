@@ -1,5 +1,7 @@
 const TOKEN_URL = 'https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token';
-const PRODUCTION_BASE_URL = 'https://f4bexperience.flutterwave.com';
+const PRODUCTION_BASE_URL = 'https://api.flutterwave.com';
+
+let cachedAccessToken: { value: string; expiresAt: number; clientId: string } | null = null;
 
 function timingSafeEqualText(left: string, right: string) {
   if (left.length !== right.length) return false;
@@ -16,6 +18,15 @@ export async function getFlutterwaveV4AccessToken(input: {
   fetchImpl?: typeof fetch;
 }): Promise<string> {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const now = Date.now();
+  if (
+    cachedAccessToken &&
+    cachedAccessToken.clientId === input.clientId &&
+    cachedAccessToken.expiresAt - now > 60_000
+  ) {
+    return cachedAccessToken.value;
+  }
+
   const response = await fetchImpl(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -25,8 +36,14 @@ export async function getFlutterwaveV4AccessToken(input: {
       grant_type: 'client_credentials',
     }),
   });
-  const payload = (await response.json().catch(() => null)) as { access_token?: string } | null;
+  const payload = (await response.json().catch(() => null)) as { access_token?: string; expires_in?: number } | null;
   if (!response.ok || !payload?.access_token) throw new Error('Flutterwave v4 authentication failed.');
+  const expiresIn = Math.max(60, Number(payload.expires_in ?? 600));
+  cachedAccessToken = {
+    value: payload.access_token,
+    expiresAt: now + expiresIn * 1000,
+    clientId: input.clientId,
+  };
   return payload.access_token;
 }
 
