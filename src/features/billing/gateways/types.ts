@@ -21,6 +21,8 @@ export interface CreateCheckoutResult {
   providerCheckoutId?: string;
   checkoutUrl: string;
   expiresAt?: Date;
+  settlementAmountExpectedMinor?: bigint;
+  settlementCurrency?: string;
 }
 
 export interface VerifiedGatewayEvent {
