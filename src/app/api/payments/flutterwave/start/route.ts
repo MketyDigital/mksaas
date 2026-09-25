@@ -131,6 +131,8 @@ export async function POST(request: Request) {
       canonicalCurrency: 'USD',
       collectionCurrency,
       configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+      clientId: process.env.FLUTTERWAVE_CLIENT_ID,
+      clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
     });
     const checkoutUrl = await createFlutterwaveHostedCheckout({
       source: source as 'saas' | 'media' | 'host' | 'enterprise',
