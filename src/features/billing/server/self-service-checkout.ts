@@ -23,6 +23,8 @@ export interface SelfServiceCheckoutRepository {
     checkoutId: string;
     providerCheckoutId?: string;
     checkoutUrl: string;
+    providerAmountExpectedMinor?: bigint;
+    providerCurrency?: string;
     expiresAt?: Date;
     updatedAt: Date;
   }): Promise<void>;
@@ -47,6 +49,7 @@ export async function createSelfServiceCheckout(
       email: string;
       name?: string;
     };
+    collectionCurrency?: string;
     now?: Date;
   },
 ) {
@@ -78,6 +81,7 @@ export async function createSelfServiceCheckout(
       currency: prepared.currency,
       returnUrl: input.returnUrl,
       cancelUrl: input.cancelUrl,
+      collectionCurrency: input.collectionCurrency,
       customer: input.customer,
     });
 
@@ -85,6 +89,8 @@ export async function createSelfServiceCheckout(
       checkoutId: prepared.checkoutId,
       providerCheckoutId: gateway.providerCheckoutId,
       checkoutUrl: gateway.checkoutUrl,
+      providerAmountExpectedMinor: gateway.providerAmountExpectedMinor,
+      providerCurrency: gateway.providerCurrency,
       expiresAt: gateway.expiresAt,
       updatedAt: now,
     });
