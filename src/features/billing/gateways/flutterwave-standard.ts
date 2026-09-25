@@ -1,33 +1,14 @@
-import { buildMketyPaymentMetadata, createMketyPaymentReference } from '@/features/payments/reference';
-
-import type { BillingGatewayAdapter, CreateCheckoutInput, CreateCheckoutResult, VerifiedGatewayEvent } from '@/features/billing/gateways/types';
 import type { NormalizedSettlement } from '@/features/billing/domain/settlement';
+import type {
+  BillingGatewayAdapter,
+  CreateCheckoutInput,
+  CreateCheckoutResult,
+  VerifiedGatewayEvent,
+} from '@/features/billing/gateways/types';
 import type { FlutterwaveSettlementCurrency } from '@/features/payments/flutterwave-currency';
 import { quoteFlutterwaveSettlement } from '@/features/payments/flutterwave-currency';
-
-const STANDARD_URL = 'https://api.flutterwave.com/v3/payments';
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function buildPayloadHash(input: {
-  amount: string;
-  currency: string;
-  email: string;
-  reference: string;
-  secretKey: string;
-}): Promise<string> {
-  const secretHash = await sha256Hex(input.secretKey);
-  return sha256Hex(`${input.amount}${input.currency}${input.email}${input.reference}${secretHash}`);
-}
-
-function minorToDecimal(amountMinor: bigint): string {
-  const major = amountMinor / 100n;
-  const minor = (amountMinor % 100n).toString().padStart(2, '0');
-  return `${major}.${minor}`;
-}
+import { createFlutterwaveStandardHostedCheckout } from '@/features/payments/flutterwave-standard';
+import { buildMketyPaymentMetadata, createMketyPaymentReference } from '@/features/payments/reference';
 
 export function createFlutterwaveStandardBillingAdapter(options: {
   secretKey?: string;
@@ -35,8 +16,6 @@ export function createFlutterwaveStandardBillingAdapter(options: {
   serializedRates?: string;
   fetchImpl?: typeof fetch;
 }): BillingGatewayAdapter {
-  const fetchImpl = options.fetchImpl ?? fetch;
-
   return {
     provider: 'flutterwave',
     capabilities: {
@@ -61,52 +40,22 @@ export function createFlutterwaveStandardBillingAdapter(options: {
         serializedRates: options.serializedRates,
       });
       const reference = createMketyPaymentReference('saas', input.checkoutId);
-      const amount = minorToDecimal(quote.settlementAmountMinor);
-      const payloadHash = await buildPayloadHash({
-        amount,
-        currency: quote.settlementCurrency,
-        email: input.customer.email,
-        reference,
+      const { checkoutUrl } = await createFlutterwaveStandardHostedCheckout({
         secretKey: options.secretKey,
-      });
-
-      const response = await fetchImpl(STANDARD_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${options.secretKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tx_ref: reference,
-          amount,
-          currency: quote.settlementCurrency,
-          redirect_url: input.returnUrl,
-          customer: {
-            email: input.customer.email,
-            ...(input.customer.name ? { name: input.customer.name } : {}),
-          },
-          meta: buildMketyPaymentMetadata({
-            source: 'saas',
-            checkoutId: input.checkoutId,
-            tenantId: input.tenantId,
-          }),
-          customizations: {
-            title: 'Mkety',
-            description: 'Mkety subscription checkout',
-            logo: 'https://mkety.com/icon.png',
-          },
-          payload_hash: payloadHash,
+        reference,
+        amountMinor: quote.settlementAmountMinor,
+        currency: quote.settlementCurrency,
+        redirectUrl: input.returnUrl,
+        customer: input.customer,
+        metadata: buildMketyPaymentMetadata({
+          source: 'saas',
+          checkoutId: input.checkoutId,
+          tenantId: input.tenantId,
         }),
+        title: 'Mkety',
+        description: 'Mkety subscription checkout',
+        fetchImpl: options.fetchImpl,
       });
-
-      const payload = (await response.json().catch(() => null)) as {
-        status?: string;
-        data?: { link?: string };
-      } | null;
-      const checkoutUrl = payload?.data?.link;
-      if (!response.ok || payload?.status !== 'success' || !checkoutUrl?.startsWith('https://')) {
-        throw new Error('Flutterwave hosted checkout creation failed.');
-      }
 
       return {
         provider: 'flutterwave',
