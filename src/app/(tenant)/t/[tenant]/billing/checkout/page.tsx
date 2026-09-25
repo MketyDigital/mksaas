@@ -81,6 +81,8 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
         canonicalCurrency: 'USD',
         collectionCurrency: selectedCurrency,
         configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+        clientId: process.env.FLUTTERWAVE_CLIENT_ID,
+        clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
       });
     } catch {
       flutterwaveQuote = null;
