@@ -1,8 +1,5 @@
 import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
-import {
-  createFlutterwaveHostedCheckout,
-  verifyFlutterwaveStandardTransaction,
-} from '@/features/payments/flutterwave-standard';
+import { verifyFlutterwaveStandardTransaction } from '@/features/payments/flutterwave-standard';
 import { retrieveFlutterwaveV4Charge, verifyFlutterwaveV4Webhook } from '@/features/payments/flutterwave-v4';
 import { resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { routeVerifiedMketyPayment } from '@/features/payments/settlement-router';
