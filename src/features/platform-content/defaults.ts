@@ -510,8 +510,17 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Official Mkety web addresses',
     excerpt: 'The main customer-facing Mkety product addresses.',
     bodyMarkdown:
-      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
+      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. `media.mkety.com` is the official Mkety Media platform for discovering current media products, published features, plan details, and signup options. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
     sortOrder: 10,
+  },
+  {
+    categoryKey: 'domains',
+    slug: 'mkety-media',
+    title: 'Mkety Media',
+    excerpt: 'The official Mkety platform for current media products, features, plans, and signup.',
+    bodyMarkdown:
+      '# Mkety Media\n\nMkety Media is an official Mkety product platform available at `https://media.mkety.com`. Use the Media platform to discover the current Mkety Media product catalogue, review published product features and plan details, and create or join an account. Because media products, features and commercial terms can evolve independently, `media.mkety.com` is the canonical destination for current availability, plan details and signup.',
+    sortOrder: 20,
   },
   {
     categoryKey: 'trust',
