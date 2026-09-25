@@ -93,3 +93,54 @@ export async function retrieveFlutterwaveV4Charge(input: {
   }
   return payload.data;
 }
+
+
+export async function quoteFlutterwaveV4Collection(input: {
+  sourceCurrency: string;
+  destinationCurrency: string;
+  destinationAmount: string;
+  clientId: string;
+  clientSecret: string;
+  fetchImpl?: typeof fetch;
+  baseUrl?: string;
+}): Promise<{ sourceAmount: string; rate?: string }> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const accessToken = await getFlutterwaveV4AccessToken({
+    clientId: input.clientId,
+    clientSecret: input.clientSecret,
+    fetchImpl,
+  });
+  const response = await fetchImpl(`${input.baseUrl ?? PRODUCTION_BASE_URL}/transfers/rates`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'X-Trace-Id': crypto.randomUUID(),
+    },
+    body: JSON.stringify({
+      source: { currency: input.sourceCurrency },
+      destination: {
+        currency: input.destinationCurrency,
+        amount: Number(input.destinationAmount),
+      },
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        status?: string;
+        data?: {
+          rate?: string | number;
+          source?: { amount?: string | number; currency?: string };
+          destination?: { amount?: string | number; currency?: string };
+        };
+      }
+    | null;
+  const sourceAmount = payload?.data?.source?.amount;
+  if (!response.ok || payload?.status !== 'success' || sourceAmount == null) {
+    throw new Error('Flutterwave v4 FX quote failed.');
+  }
+  return {
+    sourceAmount: String(sourceAmount),
+    rate: payload?.data?.rate == null ? undefined : String(payload.data.rate),
+  };
+}
