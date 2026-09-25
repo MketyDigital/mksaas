@@ -3,22 +3,43 @@ import { buildMketyPaymentMetadata, createMketyPaymentReference } from './refere
 const STANDARD_ENDPOINT = 'https://api.flutterwave.com/v3/payments';
 const TRANSFER_RATES_ENDPOINT = 'https://api.flutterwave.com/v3/transfers/rates';
 
-export const MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES = ['USD','NGN','GHS','KES','GBP','EUR'] as const;
+export const MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR'] as const;
 export type MketyFlutterwaveCollectionCurrency = (typeof MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES)[number];
+export type MketyFlutterwaveFxQuoteSource = 'identity' | 'configured' | 'flutterwave-transfer-rate';
 
-function decimalToMinor(value: unknown): bigint {
+function decimalToMinorCeil(value: unknown): bigint {
   const numeric = typeof value === 'number' ? value : Number(String(value ?? '').trim());
   if (!Number.isFinite(numeric) || numeric <= 0) throw new Error('Flutterwave returned an invalid FX amount.');
-  const raw = numeric.toFixed(2);
-  const match = /^(\d+)\.(\d{2})$/.exec(raw);
-  if (!match) throw new Error('Flutterwave returned an invalid FX amount.');
-  return BigInt(match[1]) * 100n + BigInt(match[2]);
+  return BigInt(Math.ceil((numeric + Number.EPSILON) * 100));
 }
 
 function minorToDecimal(value: bigint): string {
   const units = value / 100n;
-  const cents = (value % 100n).toString().padStart(2,'0');
+  const cents = (value % 100n).toString().padStart(2, '0');
   return `${units}.${cents}`;
+}
+
+function configuredRateFor(currency: MketyFlutterwaveCollectionCurrency, rawJson?: string): string | null {
+  if (!rawJson || currency === 'USD') return null;
+  try {
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    const raw = parsed[currency];
+    const normalized = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : '';
+    if (!/^\d+(?:\.\d{1,8})?$/.test(normalized)) return null;
+    const numeric = Number(normalized);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+function applyConfiguredRate(canonicalAmountMinor: bigint, rate: string): bigint {
+  const [whole, fraction = ''] = rate.split('.');
+  const scale = 10n ** BigInt(fraction.length);
+  const numerator = BigInt(whole) * scale + BigInt(fraction || '0');
+  const raw = canonicalAmountMinor * numerator;
+  return (raw + scale - 1n) / scale;
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -46,10 +67,34 @@ export async function quoteFlutterwaveCollection(input: {
   canonicalCurrency: 'USD';
   collectionCurrency: MketyFlutterwaveCollectionCurrency;
   secretKey: string;
+  configuredRatesJson?: string;
   fetchImpl?: typeof fetch;
-}): Promise<{ amountMinor: bigint; currency: MketyFlutterwaveCollectionCurrency; rate?: string }> {
+}): Promise<{
+  amountMinor: bigint;
+  currency: MketyFlutterwaveCollectionCurrency;
+  rate?: string;
+  source: MketyFlutterwaveFxQuoteSource;
+}> {
   if (input.collectionCurrency === input.canonicalCurrency) {
-    return { amountMinor: input.canonicalAmountMinor, currency: input.collectionCurrency, rate: '1' };
+    return {
+      amountMinor: input.canonicalAmountMinor,
+      currency: input.collectionCurrency,
+      rate: '1',
+      source: 'identity',
+    };
+  }
+
+  const configuredRate = configuredRateFor(
+    input.collectionCurrency,
+    input.configuredRatesJson ?? process.env.MKETY_PAYMENT_FX_RATES_JSON,
+  );
+  if (configuredRate) {
+    return {
+      amountMinor: applyConfiguredRate(input.canonicalAmountMinor, configuredRate),
+      currency: input.collectionCurrency,
+      rate: configuredRate,
+      source: 'configured',
+    };
   }
 
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -61,15 +106,19 @@ export async function quoteFlutterwaveCollection(input: {
   const response = await fetchImpl(url, {
     headers: { Authorization: `Bearer ${input.secretKey}`, 'Content-Type': 'application/json' },
   });
-  const payload = (await response.json().catch(()=>null)) as any;
+  const payload = (await response.json().catch(() => null)) as
+    | { status?: string; data?: { rate?: string | number; source?: { amount?: string | number } } }
+    | null;
   const sourceAmount = payload?.data?.source?.amount;
   if (!response.ok || payload?.status !== 'success' || sourceAmount == null) {
     throw new Error('Flutterwave FX quote failed.');
   }
+
   return {
-    amountMinor: decimalToMinor(sourceAmount),
+    amountMinor: decimalToMinorCeil(sourceAmount),
     currency: input.collectionCurrency,
     rate: payload?.data?.rate == null ? undefined : String(payload.data.rate),
+    source: 'flutterwave-transfer-rate',
   };
 }
 
@@ -112,7 +161,7 @@ export async function createFlutterwaveHostedCheckout(input: {
       meta: input.metadata,
     }),
   });
-  const payload = (await response.json().catch(()=>null)) as any;
+  const payload = (await response.json().catch(() => null)) as { status?: string; data?: { link?: string } } | null;
   const link = String(payload?.data?.link ?? '');
   if (!response.ok || payload?.status !== 'success' || !link.startsWith('https://')) {
     throw new Error('Flutterwave hosted checkout creation failed.');
@@ -127,7 +176,6 @@ export function createSaasFlutterwaveReference(checkoutId: string) {
 export function createSaasFlutterwaveMetadata(checkoutId: string, tenantId: string) {
   return buildMketyPaymentMetadata({ source: 'saas', checkoutId, tenantId });
 }
-
 
 export async function verifyFlutterwaveStandardTransaction(input: {
   transactionId: string | number;
