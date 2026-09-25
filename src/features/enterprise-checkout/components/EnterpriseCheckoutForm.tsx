@@ -11,7 +11,7 @@ const scopes = [
 ] as const;
 
 export function EnterpriseCheckoutForm() {
-  const [provider, setProvider] = useState<'nowpayments' | 'kora' | 'selar'>('nowpayments');
+  const [provider, setProvider] = useState<'nowpayments' | 'selar'>('nowpayments');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -139,7 +139,7 @@ export function EnterpriseCheckoutForm() {
 
       <fieldset>
         <legend className="text-sm font-medium">Payment method</legend>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
           <button
             type="button"
             onClick={() => setProvider('nowpayments')}
@@ -147,14 +147,6 @@ export function EnterpriseCheckoutForm() {
           >
             <span className="block font-semibold">Crypto</span>
             <span className="mt-1 block text-sm text-muted-foreground">Secure hosted checkout via NOWPayments.</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setProvider('kora')}
-            className={`rounded-2xl border p-4 text-left ${provider === 'kora' ? 'border-primary bg-primary/5' : 'border-border'}`}
-          >
-            <span className="block font-semibold">Card / bank</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Hosted checkout via Kora when configured.</span>
           </button>
           <button
             type="button"
