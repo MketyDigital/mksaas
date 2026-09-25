@@ -26,20 +26,8 @@ export async function POST(request: Request) {
     });
 
     const reference = String(payload.data.reference ?? '');
+    if (!reference) return json({ success: false, message: 'Invalid webhook.' }, 400);
     const verified = await retrieveKoraCharge({ reference, secretKey });
-    const route = resolveMketyPaymentRoute(reference, verified);
-    if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
-
-    if (route.source === 'media' || route.source === 'host') {
-      const forwarded = await forwardOriginalProviderWebhook({
-        source: route.source,
-        provider: 'kora',
-        rawBody,
-        signature: signature ?? '',
-        contentType: request.headers.get('content-type'),
-      });
-      return json({ success: true, settled: false, routedTo: route.source, ...forwarded });
-    }
     const verifiedReference = String(verified.reference ?? '');
     if (verifiedReference !== reference) return json({ success: false, message: 'Payment reference mismatch.' }, 400);
 
@@ -49,6 +37,23 @@ export async function POST(request: Request) {
         : payload.event === 'charge.failed' || String(verified.status ?? '') === 'failed'
           ? 'failed'
           : 'pending';
+
+    const route = resolveMketyPaymentRoute(reference, verified);
+    if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
+
+    if (route.source === 'media' || route.source === 'host') {
+      if (status !== 'success') {
+        return json({ success: true, settled: false, routedTo: route.source, ignored: true, status });
+      }
+      const forwarded = await forwardOriginalProviderWebhook({
+        source: route.source,
+        provider: 'kora',
+        rawBody,
+        signature: signature ?? '',
+        contentType: request.headers.get('content-type'),
+      });
+      return json({ success: true, settled: false, routedTo: route.source, ...forwarded });
+    }
 
     const result = await routeVerifiedMketyPayment({
       source: route.source,
