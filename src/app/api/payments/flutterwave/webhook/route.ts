@@ -20,6 +20,11 @@ function timingSafeEqualText(left: string, right: string) {
   return difference === 0;
 }
 
+type IgnoredFlutterwavePayment = {
+  mode: 'v4' | 'standard';
+  ignored: true;
+};
+
 type VerifiedFlutterwavePayment = {
   mode: 'v4' | 'standard';
   payload: Record<string, unknown>;
@@ -34,7 +39,10 @@ type VerifiedFlutterwavePayment = {
   signatureHeader: 'flutterwave-signature' | 'verif-hash';
 };
 
-async function verifyIncomingFlutterwave(rawBody: string, request: Request): Promise<VerifiedFlutterwavePayment> {
+async function verifyIncomingFlutterwave(
+  rawBody: string,
+  request: Request,
+): Promise<VerifiedFlutterwavePayment | IgnoredFlutterwavePayment> {
   const v4Signature = request.headers.get('flutterwave-signature');
   if (v4Signature) {
     const clientId = process.env.FLUTTERWAVE_CLIENT_ID;
@@ -48,7 +56,7 @@ async function verifyIncomingFlutterwave(rawBody: string, request: Request): Pro
       secretHash: webhookSecret,
     });
     if (String(payload.type ?? '') !== 'charge.completed') {
-      throw new Error('Flutterwave event is not a charge completion.');
+      return { mode: 'v4', ignored: true };
     }
     const data = payload.data;
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Flutterwave webhook.');
@@ -80,7 +88,9 @@ async function verifyIncomingFlutterwave(rawBody: string, request: Request): Pro
   }
 
   const payload = JSON.parse(rawBody) as Record<string, unknown>;
-  if (String(payload.event ?? '') !== 'charge.completed') throw new Error('Flutterwave event is not a charge completion.');
+  if (String(payload.event ?? '') !== 'charge.completed') {
+    return { mode: 'standard', ignored: true };
+  }
   const data = payload.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Flutterwave webhook.');
   const transactionId = String((data as Record<string, unknown>).id ?? '');
@@ -110,6 +120,9 @@ export async function POST(request: Request) {
   try {
     const rawBody = await request.text();
     const payment = await verifyIncomingFlutterwave(rawBody, request);
+    if ('ignored' in payment) {
+      return json({ success: true, settled: false, ignored: true, mode: payment.mode });
+    }
     const route = resolveMketyPaymentRoute(payment.reference, payment.verified);
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
 
@@ -141,7 +154,10 @@ export async function POST(request: Request) {
     return json({ success: true, mode: payment.mode, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
-    if (/signature|reference mismatch|does not match|invalid payment|unknown Mkety|checkout reference|order reference|not a charge completion|invalid Flutterwave/i.test(message)) {
+    if (
+      error instanceof SyntaxError ||
+      /signature|reference mismatch|does not match|invalid payment|unknown Mkety|checkout reference|order reference|invalid Flutterwave/i.test(message)
+    ) {
       return json({ success: false, message: 'Invalid webhook.' }, 400);
     }
     if (/not configured/i.test(message)) return json({ success: false, message: 'Webhook is not configured.' }, 503);
