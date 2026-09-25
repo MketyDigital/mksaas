@@ -110,6 +110,17 @@ export async function getPublicPricingKnowledge() {
 export async function getPublicProductKnowledge(product: string) {
   const normalized = normalize(product);
 
+  if (normalized.includes('mkety media') || normalized.includes('media mkety') || normalized.includes('media mkety com')) {
+    return {
+      key: 'media',
+      title: 'Mkety Media',
+      summary:
+        'Mkety Media is the official Mkety media product platform. Visit it for the current media product catalogue, published features, plan details, and signup options.',
+      path: 'https://media.mkety.com',
+      commercialModel: 'See Mkety Media for current plans and signup',
+    };
+  }
+
   if (normalized.includes('trading')) {
     const homepage = await getPublishedHomepageContent();
     const trading = homepage.workspaces.items.find((item) => item.key === 'trading');
