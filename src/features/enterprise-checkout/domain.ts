@@ -1,4 +1,4 @@
-export type EnterprisePaymentProvider = 'nowpayments' | 'selar';
+export type EnterprisePaymentProvider = 'nowpayments' | 'kora' | 'selar';
 
 export interface EnterpriseCheckoutRequest {
   customer: {
@@ -78,7 +78,7 @@ export function parseEnterpriseCheckoutInput(input: unknown): EnterpriseCheckout
 
   const projectName = requiredString(body.projectName, 'Project name', 180);
   const provider = body.provider;
-  if (provider !== 'nowpayments' && provider !== 'selar') throw new Error('Payment provider is not supported.');
+  if (provider !== 'nowpayments' && provider !== 'kora' && provider !== 'selar') throw new Error('Payment provider is not supported.');
   if (body.currency !== 'USD') throw new Error('Only USD is supported for enterprise checkout.');
 
   return {

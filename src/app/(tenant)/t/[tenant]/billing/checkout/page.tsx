@@ -55,6 +55,12 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const quote = getSelfServiceBillingQuote(plan.key, termKey);
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
+  const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
+  const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
+  const paymentProviders = [
+    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Pay securely with supported digital assets.' }] : []),
+    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Pay through Kora hosted checkout.' }] : []),
+  ];
 
   return (
     <main className="min-h-screen bg-muted/20 px-4 py-12">
@@ -125,17 +131,29 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
           </ul>
 
           {!returned ? (
-            <form action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post" className="mt-8">
-              <input type="hidden" name="planKey" value={plan.key} />
-              <input type="hidden" name="termKey" value={termKey} />
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:opacity-95"
-              >
-                <CreditCard className="h-4 w-4" />
-                Continue to secure payment
-              </button>
-            </form>
+            <div className="mt-8 space-y-3">
+              {paymentProviders.length ? paymentProviders.map((provider, index) => (
+                <form key={provider.key} action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post">
+                  <input type="hidden" name="planKey" value={plan.key} />
+                  <input type="hidden" name="termKey" value={termKey} />
+                  <input type="hidden" name="provider" value={provider.key} />
+                  <button
+                    type="submit"
+                    className={index === 0
+                      ? "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:opacity-95"
+                      : "inline-flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 font-semibold transition hover:border-primary/60"}
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Continue to secure payment · {provider.label}
+                  </button>
+                  <p className="mt-1 text-center text-xs text-muted-foreground">{provider.detail}</p>
+                </form>
+              )) : (
+                <p className="rounded-xl border bg-muted/40 p-4 text-center text-sm text-muted-foreground">
+                  Secure payment methods are temporarily unavailable.
+                </p>
+              )}
+            </div>
           ) : (
             <Link
               href={`/t/${tenantSlug}`}

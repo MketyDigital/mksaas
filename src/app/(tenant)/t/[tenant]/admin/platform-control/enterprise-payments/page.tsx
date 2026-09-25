@@ -10,6 +10,11 @@ interface EnterprisePaymentsPageProps {
 export default async function EnterprisePaymentsPage({ params }: EnterprisePaymentsPageProps) {
   const { tenant } = await params;
   await requirePlatformControlAccess(tenant);
+  const providers = [
+    ...(process.env.NOWPAYMENTS_API_KEY ? ['nowpayments' as const] : []),
+    ...(process.env.KORA_SECRET_KEY ? ['kora' as const] : []),
+    ...(process.env.SELAR_ENTERPRISE_CHECKOUT_URL ? ['selar' as const] : []),
+  ];
 
   return (
     <div className="space-y-8">
@@ -25,7 +30,7 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
         </p>
       </div>
 
-      <AdminEnterprisePaymentLinkForm tenant={tenant} />
+      <AdminEnterprisePaymentLinkForm tenant={tenant} providers={providers} />
     </div>
   );
 }

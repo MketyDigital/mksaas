@@ -10,6 +10,10 @@ export interface CreateCheckoutInput {
   currency: string;
   returnUrl: string;
   cancelUrl: string;
+  customer?: {
+    email: string;
+    name?: string;
+  };
 }
 
 export interface CreateCheckoutResult {
