@@ -10,3 +10,9 @@ SET
   "settlement_currency" = "currency"
 WHERE "settlement_amount_expected_minor" IS NULL
    OR "settlement_currency" IS NULL;
+--> statement-breakpoint
+ALTER TABLE "saas_template"."billing_checkouts"
+ALTER COLUMN "settlement_amount_expected_minor" SET NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "saas_template"."billing_checkouts"
+ALTER COLUMN "settlement_currency" SET NOT NULL;
