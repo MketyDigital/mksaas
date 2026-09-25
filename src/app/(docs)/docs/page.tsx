@@ -1,9 +1,23 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { getPublishedDocsTree } from '@/features/platform-content/server/queries';
+import { buildMketyMetadata } from '@/features/platform-content/metadata';
+import { getPublishedDocsTree, getPublishedPlatformSiteSettings } from '@/features/platform-content/server/queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getPublishedPlatformSiteSettings();
+
+  return buildMketyMetadata({
+    settings,
+    path: '/docs',
+    title: 'Mkety Docs | Platform, Workspaces, Security & Enterprise',
+    description:
+      'Official Mkety documentation for the platform, AI and automation workspaces, deployment, Mkety Media, security, service levels, Enterprise, billing and product access.',
+  });
+}
 
 export default async function DocsIndexPage() {
   const tree = await getPublishedDocsTree();
