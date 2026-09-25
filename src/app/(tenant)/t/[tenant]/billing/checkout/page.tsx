@@ -144,7 +144,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                       : "inline-flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 font-semibold transition hover:border-primary/60"}
                   >
                     <CreditCard className="h-4 w-4" />
-                    {provider.label}
+                    Continue to secure payment · {provider.label}
                   </button>
                   <p className="mt-1 text-center text-xs text-muted-foreground">{provider.detail}</p>
                 </form>
