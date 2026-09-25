@@ -65,7 +65,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
       process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH,
   );
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
-  const flutterwaveCurrencies = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR'] as const;
+  const flutterwaveCurrencies = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR', 'ZAR', 'XAF', 'XOF', 'UGX', 'RWF', 'TZS'] as const;
   const selectedCurrency = flutterwaveCurrencies.includes(query.currency as (typeof flutterwaveCurrencies)[number])
     ? String(query.currency)
     : 'USD';
