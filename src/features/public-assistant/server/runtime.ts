@@ -41,6 +41,7 @@ function toProviderMessages(
 function inferPublicRouteDestination(message: string) {
   const normalized = message.toLowerCase();
   const candidates: Array<[RegExp, string]> = [
+    [/\b(mkety media|media\.mkety\.com)\b/, 'media'],
     [/\b(docs?|documentation)\b/, 'docs'],
     [/\b(price|pricing|plans?|billing|credits?)\b/, 'pricing'],
     [/\b(academy|training|education)\b/, 'academy'],
@@ -111,6 +112,8 @@ async function buildGroundedContext(input: {
 
 const PRICING_REQUEST_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription)\b/i;
 const ACADEMY_ACCESS_PATTERN = /\b(academy|training|education)\b/i;
+const MEDIA_REQUEST_PATTERN = /\b(mkety media|media\.mkety\.com)\b/i;
+const MEDIA_DESTINATION_REQUEST_PATTERN = /\b(where|access|open|visit|go to|link|website|url|products?|features?|plans?|pricing|signup|sign up|join)\b/i;
 const ACCESS_REQUEST_PATTERN = /\b(where|access|open|visit|go to|link|website|url)\b/i;
 
 function normalizeMoneyLabel(value: string) {
@@ -142,6 +145,16 @@ async function ensureCriticalPublicFacts(message: string, answer: string) {
     !/academy\.mkety\.com/i.test(answer)
   ) {
     additions.push('Mkety Academy access: https://academy.mkety.com.');
+  }
+
+  if (
+    MEDIA_REQUEST_PATTERN.test(message) &&
+    MEDIA_DESTINATION_REQUEST_PATTERN.test(message) &&
+    !/media\.mkety\.com/i.test(answer)
+  ) {
+    additions.push(
+      'Mkety Media: https://media.mkety.com for the current media products, published features, plan details, and signup.',
+    );
   }
 
   return additions.length ? `${answer.trim()} ${additions.join(' ')}` : answer;
