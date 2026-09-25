@@ -110,7 +110,17 @@ export async function getPublicPricingKnowledge() {
 export async function getPublicProductKnowledge(product: string) {
   const normalized = normalize(product);
 
-  if (normalized.includes('mkety media') || normalized.includes('media mkety') || normalized.includes('media mkety com')) {
+  if (
+    normalized.includes('mkety media') ||
+    normalized.includes('media mkety') ||
+    normalized.includes('media mkety com') ||
+    normalized.includes('media storage') ||
+    normalized.includes('media delivery') ||
+    normalized.includes('file storage') ||
+    normalized.includes('file hosting') ||
+    normalized.includes('image hosting') ||
+    normalized.includes('video hosting')
+  ) {
     return {
       key: 'media',
       title: 'Mkety Media',
