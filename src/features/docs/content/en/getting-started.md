@@ -11,6 +11,8 @@ Mkety Platform is the authenticated workspace for building and operating AI, aut
 
 The main application is available at `app.mkety.com`. Public product information, pricing and Enterprise enquiries remain on `mkety.com`.
 
+**Mkety Media** is an official Mkety product platform at `media.mkety.com`. Use it to discover the current media product catalogue, published features, plan details, and signup options.
+
 ---
 
 ## How Mkety Is Organized
