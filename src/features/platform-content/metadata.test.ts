@@ -56,7 +56,8 @@ describe('Mkety public metadata', () => {
 
     expect(JSON.stringify(metadata.openGraph?.images)).toContain('https://mkety.com/mkety-social-card.png');
     expect(JSON.stringify(metadata.icons)).toContain('/favicon.ico');
-    expect(JSON.stringify(metadata.icons)).toContain('/mkety-logo.png');
+    expect(JSON.stringify(metadata.icons)).toContain('/icon.png');
+    expect(JSON.stringify(metadata.icons)).toContain('/apple-icon.png');
   });
 
   it('publishes consistent Mkety ownership and technology metadata', () => {
