@@ -2,31 +2,32 @@
 
 ## Purpose
 
-Mkety owns the payment-routing boundary. Product applications should not infer ownership from a provider account or webhook URL.
+Mkety owns the reusable payment-provider boundary. Individual products keep ownership of their own invoices, subscriptions, entitlements, activation rules, and customer data.
 
-The central provider webhooks are:
+The central provider endpoints are:
 
-- `https://mkety.com/api/payments/flutterwave/webhook`
-- `https://mkety.com/api/payments/kora/webhook`
+- Flutterwave checkout broker: `https://mkety.com/api/payments/flutterwave/start`
+- Flutterwave webhook: `https://mkety.com/api/payments/flutterwave/webhook`
+- Kora webhook: `https://mkety.com/api/payments/kora/webhook`
 
-NOWPayments remains the primary crypto payment path and keeps its existing verified settlement routes.
+NOWPayments remains Mkety's primary/default crypto payment path. Flutterwave and Kora are additional fiat providers and are configuration-driven.
 
 ## Mkety-owned references
 
-Every newly integrated central payment should use a Mkety-owned source prefix:
+New shared-account transactions should carry a Mkety-owned reference:
 
 - Platform SaaS: `SAAS-MKS-...`
 - Mkety Media: `MEDIA-MKM-...`
 - Future Hosting: `HOST-MKH-...`
 - Enterprise: `ENT-MKE-...`
 
-When the local target is a UUID, Mkety compacts the UUID into the reference so the reference remains within Flutterwave's 42-character constraint and can be deterministically recovered.
+Where a local target is a UUID, Mkety compacts it so the reference remains within Flutterwave v4's 42-character reference constraint.
 
-References identify the owning Mkety product. They do not by themselves prove that a payment succeeded.
+Mkety Media currently has live invoice references in the form `MKM-XXXXXXXXXX`. Those references are not renamed. The shared router accepts the current `MKM-*` format only when independently verified provider metadata says `source=media`.
 
 ## Explicit metadata
 
-Provider requests should also include Mkety-owned metadata when the provider supports metadata:
+Every provider request should include Mkety-owned metadata where supported:
 
 ```json
 {
@@ -36,67 +37,176 @@ Provider requests should also include Mkety-owned metadata when the provider sup
 }
 ```
 
-For SaaS the equivalent fields are `source=saas`, `checkout_id`, and `tenant_id`.
-For Enterprise the equivalent field is `source=enterprise` plus `order_id`.
+For Platform SaaS use `source=saas`, `checkout_id`, and `tenant_id`.
+For Enterprise use `source=enterprise` and `order_id`.
 
-The central webhook uses a verified Mkety reference as the routing boundary and uses provider-returned metadata only for the target identifiers required by external product ledgers.
+Reference and metadata are checked together. Metadata cannot override a conflicting canonical reference prefix.
 
 ## Settlement rules
 
-A browser redirect is never proof of payment.
+A browser return is never proof of payment.
 
-Before value or access is delivered, Mkety must:
+Before Mkety grants value or access:
 
 1. verify the provider webhook signature;
-2. re-query the provider's transaction/charge API;
-3. verify the Mkety-owned reference;
-4. verify provider identity for the local checkout/order;
-5. verify exact expected currency and amount;
-6. apply settlement idempotently to the owning ledger.
+2. re-query the provider transaction/charge API;
+3. resolve the Mkety-owned source from reference + provider metadata;
+4. verify the local checkout/invoice/order exists;
+5. verify provider identity, currency, and exact expected amount;
+6. apply settlement idempotently in the owning product ledger.
 
-For Platform Billing and Enterprise orders, settlement is applied inside `mksaas`.
+Platform SaaS and Enterprise settlement remain inside `mksaas`.
 
-For independently deployed products such as Mkety Media, the central webhook sends a normalized settlement event to a server-owned URL configured by environment. That event is HMAC-SHA256 signed with a Mkety-only shared secret. The destination URL is never read from provider metadata.
+## Mkety Media shared-account routing
 
-## External product handoff
+Media owns its invoice/subscription/activation database. The central Mkety endpoint owns the shared provider account boundary.
 
-Mkety Media can later point Flutterwave and Kora notifications at the central Mkety webhook while retaining its own invoice/subscription database.
-
-Recommended Media creation contract:
-
-- reference: `MEDIA-MKM-<unique-token>`
-- metadata: `source=media`, `invoice_id=<media invoice id>`, `tenant_id=<media tenant id>`
-- provider notification URL: the corresponding central Mkety provider webhook.
-
-Central Mkety runtime configuration:
+For Flutterwave the dashboard webhook is:
 
 ```text
-MKETY_MEDIA_PAYMENT_SETTLEMENT_URL=https://media.mkety.com/api/billing/mkety-settlement
-MKETY_MEDIA_PAYMENT_SETTLEMENT_SECRET=<at least 32 random characters>
+https://mkety.com/api/payments/flutterwave/webhook
 ```
 
-The Media receiver must independently verify `X-Mkety-Payment-Signature`, check the target invoice and amount/currency against its own database, enforce event idempotency, and only then call its local settlement function.
+For a Media payment the flow is:
 
-The Media repository is not modified by this implementation.
+```text
+Flutterwave
+  -> mkety.com/api/payments/flutterwave/webhook
+  -> verify original v4 HMAC signature
+  -> re-query Flutterwave charge
+  -> resolve source=media
+  -> forward ORIGINAL raw body + ORIGINAL flutterwave-signature
+  -> media.mkety.com/api/billing/flutterwave/webhook
+  -> Media verifies the same signature again
+  -> Media re-queries Flutterwave again
+  -> Media verifies invoice reference/currency/amount
+  -> Media settles its invoice idempotently
+```
+
+The destination is server-owned. Mkety never reads a forwarding URL from customer/provider metadata.
+
+Default Media destination:
+
+```text
+https://media.mkety.com/api/billing/flutterwave/webhook
+```
+
+Optional override:
+
+```text
+MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL
+```
+
+Kora can use the same shared routing pattern with:
+
+```text
+https://mkety.com/api/payments/kora/webhook
+MKETY_MEDIA_KORA_WEBHOOK_URL
+```
+
+## Flutterwave v4 checkout broker
+
+Media calls:
+
+```text
+POST https://mkety.com/api/payments/flutterwave/start
+Authorization: Bearer <FLUTTERWAVE_CHECKOUT_BROKER_SECRET>
+```
+
+Handoff payload:
+
+```json
+{
+  "source": "media",
+  "reference": "MKM-A83K27",
+  "amount": 39.99,
+  "currency": "USD",
+  "email": "customer@example.com",
+  "customer_name": "Customer business",
+  "invoice_id": "media-invoice-id",
+  "tenant_id": "media-tenant-id",
+  "redirect_url": "https://media.mkety.com/billing?payment=processing&provider=flutterwave"
+}
+```
+
+The broker validates the source/reference pairing, amount, currency, customer identity, and product-owned redirect URL.
+
+### Important v4 checkout boundary
+
+Flutterwave v4 OAuth credentials do not provide the old v3 method-agnostic Standard hosted checkout. A v4 charge requires a concrete payment method. Mkety therefore does not fake a generic Flutterwave checkout URL and does not collect raw card data in this broker.
+
+Current v4 credentials enable:
+
+- OAuth client-credentials authentication;
+- central webhook verification;
+- provider charge re-query;
+- shared Mkety routing;
+- the authenticated Media-to-MkSaaS broker contract.
+
+The customer-facing Flutterwave button should be enabled only when Mkety implements/chooses a specific v4 payment-method UX. Card collection requires Flutterwave v4 encrypted card fields and the relevant encryption key. Until then, NOWPayments remains primary and Kora can provide hosted fiat checkout once Kora is configured.
 
 ## Provider availability
 
-Payment choices are fail-closed and configuration-driven.
+Provider options are fail-closed and environment-driven.
 
-- NOWPayments appears first/default when its API key and IPN secret are configured.
-- Kora appears when `KORA_SECRET_KEY` is configured.
-- Flutterwave v4 webhook/auth verification is enabled when all of:
-  - `FLUTTERWAVE_CLIENT_ID`
-  - `FLUTTERWAVE_CLIENT_SECRET`
-  - `FLUTTERWAVE_WEBHOOK_SECRET`
-  are configured.
+### NOWPayments
 
-Flutterwave v4 does not expose the old v3 method-agnostic Standard checkout through the v4 OAuth credentials. A v4 charge requires a concrete payment method/customer flow. Therefore Mkety must not display a generic Flutterwave button merely because the v4 credentials exist. Add the customer-facing Flutterwave method only together with the chosen v4 payment-method UX.
+Shown first/default when:
 
-## Kora
+```text
+NOWPAYMENTS_API_KEY
+NOWPAYMENTS_IPN_SECRET
+```
 
-Kora hosted checkout can be created server-side and redirects the customer to Kora. The webhook is HMAC verified and the transaction is re-queried by reference before settlement.
+### Kora
 
-## Flutterwave v4
+Shown when:
 
-Mkety uses the v4 OAuth2 client-credentials boundary and verifies `flutterwave-signature` over the raw webhook body. A webhook charge is re-queried before settlement. References must remain 6-42 characters and use only Flutterwave-supported characters.
+```text
+KORA_SECRET_KEY
+```
+
+Kora uses server-created hosted checkout. Its webhook is HMAC-SHA256 verified over the webhook `data` object and the charge is re-queried by reference before settlement.
+
+### Flutterwave v4
+
+Shared v4 auth/webhook boundary is enabled when:
+
+```text
+FLUTTERWAVE_CLIENT_ID
+FLUTTERWAVE_CLIENT_SECRET
+FLUTTERWAVE_WEBHOOK_SECRET
+FLUTTERWAVE_CHECKOUT_BROKER_SECRET
+```
+
+The broker secret is a Mkety-only internal secret shared between central MkSaaS and approved Mkety products such as Media. It is not a Flutterwave credential.
+
+## Media configuration
+
+On Media:
+
+```text
+FLUTTERWAVE_CLIENT_ID
+FLUTTERWAVE_CLIENT_SECRET
+FLUTTERWAVE_WEBHOOK_SECRET
+FLUTTERWAVE_CHECKOUT_BROKER_URL=https://mkety.com/api/payments/flutterwave/start
+FLUTTERWAVE_CHECKOUT_BROKER_SECRET=<same internal Mkety secret>
+```
+
+Flutterwave dashboard webhook:
+
+```text
+https://mkety.com/api/payments/flutterwave/webhook
+```
+
+Use the same `FLUTTERWAVE_WEBHOOK_SECRET` in central MkSaaS and Media so the unchanged forwarded event can be independently authenticated twice.
+
+## Security principles
+
+- Never trust a browser return as payment proof.
+- Never trust source metadata without verifying the provider event first.
+- Never accept a webhook-forward destination from request/provider metadata.
+- Never expose provider secret keys to the browser.
+- Never mark a payment settled solely from a webhook payload if the provider offers a transaction-query API.
+- Never silently switch a selected provider to a different provider.
+- Never display a payment provider merely because partial credentials exist.
