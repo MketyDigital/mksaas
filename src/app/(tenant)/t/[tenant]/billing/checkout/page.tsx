@@ -10,6 +10,10 @@ import {
   isSelfServiceBillingTermKey,
   SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
+import {
+  isMketyFlutterwaveCollectionCurrency,
+  quoteFlutterwaveCollection,
+} from '@/features/payments/flutterwave-standard';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -67,6 +71,25 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const selectedCurrency = flutterwaveCurrencies.includes(query.currency as (typeof flutterwaveCurrencies)[number])
     ? String(query.currency)
     : 'USD';
+
+  let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
+  if (
+    flutterwaveEnabled &&
+    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
+    isMketyFlutterwaveCollectionCurrency(selectedCurrency)
+  ) {
+    try {
+      flutterwaveQuote = await quoteFlutterwaveCollection({
+        canonicalAmountMinor: quote.amountMinor,
+        canonicalCurrency: 'USD',
+        collectionCurrency: selectedCurrency,
+        secretKey: process.env.FLUTTERWAVE_STANDARD_SECRET_KEY,
+      });
+    } catch {
+      flutterwaveQuote = null;
+    }
+  }
+
   const paymentProviders = [
     ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Primary payment method · supported digital assets.' }] : []),
     ...(flutterwaveEnabled ? [{ key: 'flutterwave', label: 'Card / local methods', detail: 'Flutterwave hosted checkout · methods depend on your selected currency and merchant availability.' }] : []),
@@ -149,6 +172,15 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                   <p className="mt-1 text-xs text-muted-foreground">
                     Mkety prices remain canonically USD. Choose the currency you want Flutterwave to collect; available payment methods are determined by that currency and your merchant account.
                   </p>
+                  {flutterwaveQuote ? (
+                    <p className="mt-3 text-sm font-semibold">
+                      Flutterwave collection amount: {new Intl.NumberFormat('en', {
+                        style: 'currency',
+                        currency: flutterwaveQuote.currency,
+                        maximumFractionDigits: 2,
+                      }).format(Number(flutterwaveQuote.amountMinor) / 100)}
+                    </p>
+                  ) : null}
                   <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
                     {flutterwaveCurrencies.map((currency) => (
                       <Link
