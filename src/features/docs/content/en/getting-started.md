@@ -11,8 +11,6 @@ Mkety Platform is the authenticated workspace for building and operating AI, aut
 
 The main application is available at `app.mkety.com`. Public product information, pricing and Enterprise enquiries remain on `mkety.com`.
 
-**Mkety Media** is an official standalone Mkety product at `media.mkety.com` for managed storage and delivery of images, videos and general files. It provides bucket organization, permanent cached delivery links, usage controls, team access, prepaid capacity, export tools and Enterprise options such as branded media domains and tailored infrastructure. Check the Media platform for current Starter, Growth and Business plan details, exact quotas, prices and signup.
-
 ---
 
 ## How Mkety Is Organized
