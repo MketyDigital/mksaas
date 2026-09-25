@@ -2,6 +2,7 @@ import {
   buildMketyPaymentMetadata,
   createMketyPaymentReference,
   parseMketyPaymentReference,
+  resolveMketyPaymentRoute,
 } from './reference';
 
 describe('Mkety payment references', () => {
@@ -37,6 +38,22 @@ describe('Mkety payment references', () => {
       invoice_id: 'invoice-1',
       tenant_id: 'tenant-1',
     });
+  });
+
+  it('resolves current Media MKM references only with explicit verified metadata', () => {
+    expect(resolveMketyPaymentRoute('MKM-A83K27', { meta: { source: 'media', invoice_id: 'inv-1' } })).toEqual({
+      source: 'media',
+      metadata: { source: 'media', invoice_id: 'inv-1' },
+    });
+    expect(resolveMketyPaymentRoute('MKM-A83K27')).toBeNull();
+  });
+
+  it('rejects metadata that conflicts with a canonical reference prefix', () => {
+    expect(() =>
+      resolveMketyPaymentRoute('SAAS-MKS-5e0d1f406bf54efdbd75a2223fb8ff91', {
+        meta: { source: 'media' },
+      }),
+    ).toThrow('conflicts');
   });
 
   it('rejects unknown prefixes', () => {
