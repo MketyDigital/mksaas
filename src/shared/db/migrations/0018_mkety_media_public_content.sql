@@ -18,11 +18,19 @@ SELECT
   'The official Mkety platform for current media products, features, plans, and signup.',
   '# Mkety Media
 
-Mkety Media is an official Mkety product platform available at `https://media.mkety.com`.
+Mkety Media is a standalone Mkety product for managed media storage and delivery at `https://media.mkety.com`.
 
-Use the Media platform to discover the current Mkety Media product catalogue, review published product features and plan details, and create or join an account.
+Upload images, videos and general files, organize them into buckets, and use permanent cached Mkety delivery URLs across websites, landing pages, applications, campaigns, training content and other systems.
 
-Because media products, features and commercial terms can evolve independently, `media.mkety.com` is the canonical destination for current availability, plan details and signup.',
+Core capabilities include secure direct and multipart uploads, bucket-based organization, storage/delivery/request usage monitoring, prepaid hard limits, team access within plan seat limits, self-service upgrades, extra prepaid capacity, and complete library export through JSON/CSV manifests and generated download-all scripts.
+
+Public plans are Starter, Growth and Business. Billing supports monthly, 3-month, 6-month and 12-month terms. Current prices, discounts and exact quotas are managed on the Media platform and should be checked there before purchase. Public plans are prepaid and hard-capped rather than creating unlimited post-paid overage.
+
+Enterprise is request-based and can use exact private pricing and quotas, extra team seats, branded media domains, assisted migration, retention/deletion-protection requirements, data-residency options, regional or dedicated infrastructure, private/signed delivery requirements, and contractual SLA terms where agreed.
+
+Customers retain ownership of uploaded content. Standard delivery URLs are public to anyone who has the URL; private or signed delivery is an Enterprise/custom requirement. Mkety Media also provides full-library portability so customers can export their inventory and move their files.
+
+Use `media.mkety.com` as the canonical source for current plan details, signup and product availability.',
   20,
   'published',
   now()
