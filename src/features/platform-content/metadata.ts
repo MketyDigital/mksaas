@@ -40,9 +40,7 @@ export function buildMketyMetadata({ settings, path, title, description }: Build
   const canonical = new URL(publicPath, MKETY_PUBLIC_ORIGIN).toString();
   const socialImage = getSocialImage(settings);
   const configuredIcon = settings.faviconUrl?.startsWith('https://') ? settings.faviconUrl : undefined;
-  const appleIcon = settings.logoUrl?.startsWith('https://')
-    ? settings.logoUrl
-    : `${MKETY_PUBLIC_ORIGIN}/mkety-logo.png`;
+  const appleIcon = `${MKETY_PUBLIC_ORIGIN}/apple-icon.png`;
 
   return {
     metadataBase: new URL(MKETY_PUBLIC_ORIGIN),
@@ -70,7 +68,7 @@ export function buildMketyMetadata({ settings, path, title, description }: Build
     icons: {
       icon: configuredIcon
         ? [{ url: configuredIcon }, { url: '/favicon.ico', type: 'image/x-icon' }]
-        : [{ url: '/favicon.ico', type: 'image/x-icon' }, { url: '/mkety-logo.png', type: 'image/png' }],
+        : [{ url: '/favicon.ico', type: 'image/x-icon' }, { url: '/icon.png', type: 'image/png' }],
       shortcut: configuredIcon ?? '/favicon.ico',
       apple: appleIcon,
     },
