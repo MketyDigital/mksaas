@@ -1,5 +1,6 @@
+import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
 import { retrieveFlutterwaveV4Charge, verifyFlutterwaveV4Webhook } from '@/features/payments/flutterwave-v4';
-import { parseMketyPaymentReference } from '@/features/payments/reference';
+import { resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { routeVerifiedMketyPayment } from '@/features/payments/settlement-router';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -24,6 +25,10 @@ export async function POST(request: Request) {
       signature: request.headers.get('flutterwave-signature'),
       secretHash,
     });
+    if (String(payload.type ?? '') !== 'charge.completed') {
+      return json({ success: true, settled: false, ignored: true });
+    }
+
     const data = payload.data;
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
       return json({ success: false, message: 'Invalid webhook.' }, 400);
@@ -34,8 +39,20 @@ export async function POST(request: Request) {
     if (!chargeId) return json({ success: false, message: 'Invalid webhook.' }, 400);
     const verified = await retrieveFlutterwaveV4Charge({ chargeId, clientId, clientSecret });
     const reference = String(verified.reference ?? '');
-    const route = parseMketyPaymentReference(reference);
+    const route = resolveMketyPaymentRoute(reference, verified);
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
+
+    const originalSignature = request.headers.get('flutterwave-signature') ?? '';
+    if (route.source === 'media' || route.source === 'host') {
+      const forwarded = await forwardOriginalProviderWebhook({
+        source: route.source,
+        provider: 'flutterwave',
+        rawBody,
+        signature: originalSignature,
+        contentType: request.headers.get('content-type'),
+      });
+      return json({ success: true, settled: false, routedTo: route.source, ...forwarded });
+    }
 
     const statusValue = String(verified.status ?? '');
     const status = statusValue === 'succeeded' ? 'success' : ['failed', 'voided'].includes(statusValue) ? 'failed' : 'pending';
