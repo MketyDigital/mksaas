@@ -62,3 +62,40 @@ export function buildMketyPaymentMetadata(input: {
     ...(input.orderId ? { order_id: input.orderId } : {}),
   };
 }
+
+
+function metadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+export function resolveMketyPaymentRoute(
+  reference: string,
+  providerData?: Record<string, unknown>,
+): {
+  source: MketyPaymentSource;
+  targetUuid?: string;
+  metadata: Record<string, unknown>;
+} | null {
+  const canonical = parseMketyPaymentReference(reference);
+  const meta = metadataRecord(providerData?.meta ?? providerData?.metadata);
+  const metadataSource =
+    meta.source === 'saas' || meta.source === 'media' || meta.source === 'host' || meta.source === 'enterprise'
+      ? (meta.source as MketyPaymentSource)
+      : undefined;
+
+  if (canonical) {
+    if (metadataSource && metadataSource !== canonical.source) {
+      throw new Error('Mkety payment source metadata conflicts with the payment reference.');
+    }
+    return { source: canonical.source, targetUuid: canonical.targetUuid, metadata: meta };
+  }
+
+  // Mkety Media currently issues MKM-* invoice references. Keep those stable;
+  // only accept them at the shared boundary when verified provider metadata
+  // explicitly identifies the owning Mkety product.
+  if (/^MKM-[A-Z0-9]{6,32}$/i.test(reference) && metadataSource === 'media') {
+    return { source: 'media', metadata: meta };
+  }
+
+  return metadataSource ? { source: metadataSource, metadata: meta } : null;
+}
