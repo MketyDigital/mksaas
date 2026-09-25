@@ -5,6 +5,7 @@ import {
   isSelfServiceBillingPlanKey,
   isSelfServiceBillingTermKey,
 } from '@/features/billing/catalog/self-service-plans';
+import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
 import { createSelfServiceCheckout } from '@/features/billing/server/self-service-checkout';
@@ -43,8 +44,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string })
-    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string });
+    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string; provider?: string })
+    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string; provider?: string });
 
   const planKey = String(body.planKey ?? '');
   const termKey = String(body.termKey ?? '1m');
@@ -55,10 +56,22 @@ export async function POST(request: Request, context: RouteContext) {
     return json({ success: false, message: 'Unknown billing term.' }, 400);
   }
 
-  const apiKey = process.env.NOWPAYMENTS_API_KEY;
-  const ipnSecret = process.env.NOWPAYMENTS_IPN_SECRET;
-  if (!apiKey || !ipnSecret) {
-    return json({ success: false, message: 'Self-service billing is not configured.' }, 503);
+  const provider = String(body.provider ?? 'nowpayments');
+  const adapter =
+    provider === 'nowpayments'
+      ? process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
+        ? createNowPaymentsBillingAdapter({
+            apiKey: process.env.NOWPAYMENTS_API_KEY,
+            ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+          })
+        : null
+      : provider === 'kora'
+        ? process.env.KORA_SECRET_KEY
+          ? createKoraBillingAdapter({ secretKey: process.env.KORA_SECRET_KEY })
+          : null
+        : null;
+  if (!adapter) {
+    return json({ success: false, message: 'Selected payment method is not configured.' }, 503);
   }
 
   const plan = getSelfServiceBillingPlan(planKey);
@@ -66,8 +79,6 @@ export async function POST(request: Request, context: RouteContext) {
   const encodedPlan = encodeURIComponent(plan.key);
   const encodedTerm = encodeURIComponent(termKey);
   const checkoutPage = `${requestOrigin}/t/${encodeURIComponent(tenantSlug)}/billing/checkout`;
-  const adapter = createNowPaymentsBillingAdapter({ apiKey, ipnSecret });
-
   try {
     const checkout = await createSelfServiceCheckout(
       drizzleSelfServiceCheckoutRepository,
@@ -78,6 +89,9 @@ export async function POST(request: Request, context: RouteContext) {
         termKey,
         returnUrl: `${checkoutPage}?plan=${encodedPlan}&term=${encodedTerm}&payment=returned`,
         cancelUrl: `${checkoutPage}?plan=${encodedPlan}&term=${encodedTerm}&payment=cancelled`,
+        customer: session.user.email
+          ? { email: session.user.email, name: session.user.name ?? undefined }
+          : undefined,
       },
     );
 
