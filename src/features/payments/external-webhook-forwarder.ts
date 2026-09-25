@@ -27,11 +27,13 @@ export async function forwardOriginalProviderWebhook(input: {
   rawBody: string;
   signature: string;
   contentType?: string | null;
+  signatureHeader?: 'flutterwave-signature' | 'verif-hash' | 'x-korapay-signature';
 }): Promise<{ forwarded: true; destination: string }> {
   const destination = destinationFor(input.source, input.provider);
   if (!destination) throw new Error(`${input.source} ${input.provider} webhook forwarding is not configured.`);
 
-  const signatureHeader = input.provider === 'flutterwave' ? 'flutterwave-signature' : 'x-korapay-signature';
+  const signatureHeader =
+    input.signatureHeader ?? (input.provider === 'flutterwave' ? 'flutterwave-signature' : 'x-korapay-signature');
   const response = await fetch(destination, {
     method: 'POST',
     headers: {
