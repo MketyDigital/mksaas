@@ -12,10 +12,7 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
   await requirePlatformControlAccess(tenant);
   const providers = [
     ...(process.env.NOWPAYMENTS_API_KEY ? ['nowpayments' as const] : []),
-    ...(process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
-    process.env.FLUTTERWAVE_CLIENT_ID &&
-    process.env.FLUTTERWAVE_CLIENT_SECRET &&
-    process.env.FLUTTERWAVE_WEBHOOK_SECRET
+    ...(process.env.FLUTTERWAVE_STANDARD_SECRET_KEY && process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
       ? ['flutterwave' as const]
       : []),
     ...(process.env.KORA_SECRET_KEY ? ['kora' as const] : []),
