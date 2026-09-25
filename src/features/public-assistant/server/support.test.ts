@@ -13,6 +13,12 @@ describe('Mkety public support-agent behavior', () => {
     );
   });
 
+  it('recognizes generic media-storage questions as Mkety product questions', () => {
+    expect(planPublicSupportTools('Do you offer media storage and file hosting?')).toEqual(
+      expect.arrayContaining(['search_public_docs', 'get_public_product_summary']),
+    );
+  });
+
   it('hard-bounds the agent to production-safe public informational support', () => {
     const prompt = buildPublicSystemPrompt('PUBLIC CONTEXT');
     expect(prompt).toMatch(/public-facing Mkety support assistant/i);
@@ -22,6 +28,8 @@ describe('Mkety public support-agent behavior', () => {
     expect(prompt).toMatch(/public Mkety information/i);
     expect(prompt).toMatch(/growth.*pro.*business.*not.*current/i);
     expect(prompt).toMatch(/academy\.mkety\.com/i);
+    expect(prompt).toMatch(/mkety media.*media\.mkety\.com/i);
+    expect(prompt).toMatch(/starter.*growth.*business/i);
     expect(prompt).toMatch(/trading.*sales.*pricing.*quotes.*access requests.*enterprise/i);
     expect(prompt).toMatch(/do not send a new buyer there to purchase/i);
     expect(prompt).toMatch(/public academy discovery is ai-first/i);
