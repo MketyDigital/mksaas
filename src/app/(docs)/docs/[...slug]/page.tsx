@@ -4,7 +4,12 @@ import { notFound } from 'next/navigation';
 
 import { DocsContent } from '@/features/docs/components/DocsContent';
 import { DocsTableOfContents } from '@/features/docs/components/DocsTableOfContents';
-import { getPublishedDocsArticle, getPublishedDocsTree } from '@/features/platform-content/server/queries';
+import { buildMketyMetadata } from '@/features/platform-content/metadata';
+import {
+  getPublishedDocsArticle,
+  getPublishedDocsTree,
+  getPublishedPlatformSiteSettings,
+} from '@/features/platform-content/server/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,24 +20,23 @@ interface DocsPageProps {
 export async function generateMetadata({ params }: DocsPageProps): Promise<Metadata> {
   const { slug: slugParts } = await params;
   const slug = slugParts.join('/');
-  const article = await getPublishedDocsArticle(slug);
+  const [article, settings] = await Promise.all([getPublishedDocsArticle(slug), getPublishedPlatformSiteSettings()]);
 
   if (!article) {
-    return {
+    return buildMketyMetadata({
+      settings,
+      path: '/docs',
       title: 'Not Found | Mkety Docs',
       description: 'The requested Mkety documentation page could not be found.',
-    };
+    });
   }
 
-  return {
-    title: `${article.title} | Mkety Docs`,
+  return buildMketyMetadata({
+    settings,
+    path: `/docs/${article.categoryKey}/${article.slug}`,
+    title: article.seoTitle ?? `${article.title} | Mkety Docs`,
     description: article.seoDescription ?? article.excerpt ?? `Mkety documentation — ${article.title}`,
-    openGraph: {
-      title: `${article.title} | Mkety Docs`,
-      description: article.seoDescription ?? article.excerpt ?? `Mkety documentation — ${article.title}`,
-      type: 'article',
-    },
-  };
+  });
 }
 
 export default async function DocsPage({ params }: DocsPageProps) {
