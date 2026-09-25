@@ -1,5 +1,6 @@
+import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
 import { retrieveKoraCharge, verifyKoraWebhook } from '@/features/payments/kora';
-import { parseMketyPaymentReference } from '@/features/payments/reference';
+import { resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { routeVerifiedMketyPayment } from '@/features/payments/settlement-router';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -14,19 +15,31 @@ export async function POST(request: Request) {
   if (!secretKey) return json({ success: false, message: 'Webhook is not configured.' }, 503);
 
   try {
-    const payload = (await request.json()) as { event?: string; data?: Record<string, unknown> };
+    const rawBody = await request.text();
+    const payload = JSON.parse(rawBody) as { event?: string; data?: Record<string, unknown> };
     if (!payload.data) return json({ success: false, message: 'Invalid webhook.' }, 400);
+    const signature = request.headers.get('x-korapay-signature');
     await verifyKoraWebhook({
       data: payload.data,
-      signature: request.headers.get('x-korapay-signature'),
+      signature,
       secretKey,
     });
 
     const reference = String(payload.data.reference ?? '');
-    const route = parseMketyPaymentReference(reference);
+    const verified = await retrieveKoraCharge({ reference, secretKey });
+    const route = resolveMketyPaymentRoute(reference, verified);
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
 
-    const verified = await retrieveKoraCharge({ reference, secretKey });
+    if (route.source === 'media' || route.source === 'host') {
+      const forwarded = await forwardOriginalProviderWebhook({
+        source: route.source,
+        provider: 'kora',
+        rawBody,
+        signature: signature ?? '',
+        contentType: request.headers.get('content-type'),
+      });
+      return json({ success: true, settled: false, routedTo: route.source, ...forwarded });
+    }
     const verifiedReference = String(verified.reference ?? '');
     if (verifiedReference !== reference) return json({ success: false, message: 'Payment reference mismatch.' }, 400);
 
