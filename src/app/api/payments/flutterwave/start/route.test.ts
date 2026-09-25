@@ -41,8 +41,8 @@ describe('POST /api/payments/flutterwave/start', () => {
       body: JSON.stringify({
         source: 'media',
         reference: 'MKM-A83K27',
-        amount: 39.99,
-        currency: 'USD',
+        canonical_amount_usd: 39.99,
+        requested_payment_currency: 'USD',
         email: 'billing@example.com',
         customer_name: 'Example Business',
         invoice_id: 'invoice-1',
@@ -67,6 +67,10 @@ describe('POST /api/payments/flutterwave/start', () => {
       reference: 'MKM-A83K27',
       canonical_currency: 'USD',
       provider_currency: 'USD',
+      currency: 'USD',
+      checkout_currency: 'USD',
+      amount: 39.99,
+      checkout_amount: 39.99,
       checkout_url: 'https://checkout.flutterwave.com/v3/hosted/pay/example',
     });
     expect(global.fetch).toHaveBeenCalledWith(
@@ -85,8 +89,8 @@ describe('POST /api/payments/flutterwave/start', () => {
       body: JSON.stringify({
         source: 'media',
         reference: 'MKM-A83K27',
-        amount: 39.99,
-        currency: 'USD',
+        canonical_amount_usd: 39.99,
+        requested_payment_currency: 'USD',
         email: 'billing@example.com',
         invoice_id: 'invoice-1',
         tenant_id: 'tenant-1',
