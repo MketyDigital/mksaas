@@ -25,6 +25,10 @@ export async function POST(request: Request) {
       secretKey,
     });
 
+    if (payload.event !== 'charge.success' && payload.event !== 'charge.failed') {
+      return json({ success: true, settled: false, ignored: true });
+    }
+
     const reference = String(payload.data.reference ?? '');
     if (!reference) return json({ success: false, message: 'Invalid webhook.' }, 400);
     const verified = await retrieveKoraCharge({ reference, secretKey });
