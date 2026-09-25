@@ -14,6 +14,8 @@ interface BrokerRequest {
   amount?: unknown;
   currency?: unknown;
   payment_currency?: unknown;
+  canonical_amount_usd?: unknown;
+  requested_payment_currency?: unknown;
   email?: unknown;
   customer_name?: unknown;
   invoice_id?: unknown;
@@ -87,9 +89,14 @@ export async function POST(request: Request) {
     }
 
     const reference = safeString(body.reference, 42);
-    const canonicalAmountMinor = parseAmountMinor(body.amount);
-    const canonicalCurrency = safeString(body.currency, 3).toUpperCase();
-    const collectionCurrency = safeString(body.payment_currency, 3).toUpperCase() || canonicalCurrency;
+    const canonicalAmountMinor = parseAmountMinor(body.canonical_amount_usd ?? body.amount);
+    const canonicalCurrency = body.canonical_amount_usd == null
+      ? safeString(body.currency, 3).toUpperCase()
+      : 'USD';
+    const collectionCurrency =
+      safeString(body.requested_payment_currency, 3).toUpperCase() ||
+      safeString(body.payment_currency, 3).toUpperCase() ||
+      canonicalCurrency;
     const email = safeString(body.email, 254).toLowerCase();
     const customerName = safeString(body.customer_name, 160);
     const redirectUrl = safeString(body.redirect_url, 500);
@@ -144,11 +151,16 @@ export async function POST(request: Request) {
       secretKey: standardSecretKey,
     });
 
+    const checkoutAmount = Number(quote.amountMinor) / 100;
     return json({
       success: true,
       url: checkoutUrl,
       checkout_url: checkoutUrl,
       reference,
+      amount: checkoutAmount,
+      checkout_amount: checkoutAmount,
+      currency: quote.currency,
+      checkout_currency: quote.currency,
       canonical_amount_minor: canonicalAmountMinor.toString(),
       canonical_currency: 'USD',
       provider_amount_minor: quote.amountMinor.toString(),
