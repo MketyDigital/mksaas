@@ -69,7 +69,8 @@ function timingSafeEqualText(left: string, right: string): boolean {
 export async function POST(request: Request) {
   const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
   const standardSecretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
-  if (!brokerSecret || !standardSecretKey) {
+  const standardWebhookHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  if (!brokerSecret || !standardSecretKey || !standardWebhookHash) {
     return json({ success: false, message: 'Flutterwave hosted checkout broker is not configured.' }, 503);
   }
 
