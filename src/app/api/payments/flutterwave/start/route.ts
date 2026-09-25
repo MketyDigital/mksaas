@@ -1,3 +1,4 @@
+import { createFlutterwaveStandardHostedCheckout } from '@/features/payments/flutterwave-standard';
 import { buildMketyPaymentMetadata, resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -31,6 +32,10 @@ function parseAmount(value: unknown): number {
     throw new Error('Invalid payment amount.');
   }
   return Math.round(amount * 100) / 100;
+}
+
+function amountToMinor(amount: number): bigint {
+  return BigInt(Math.round(amount * 100));
 }
 
 function isAllowedRedirect(value: string, source: string): boolean {
@@ -100,18 +105,43 @@ export async function POST(request: Request) {
       return json({ success: false, message: 'Mkety payment reference does not match the requested source.' }, 400);
     }
 
-    // Flutterwave v4 OAuth credentials authenticate API calls, but v4 charge
-    // creation still requires a concrete payment method. Mkety deliberately
-    // does not collect raw card details in this broker. Product callers keep
-    // the stable handoff contract while the customer-facing v4 payment-method
-    // experience is implemented separately.
+    const mode = process.env.FLUTTERWAVE_API_MODE ?? 'v4';
+
+    if (mode === 'v3-hosted') {
+      const secretKey = process.env.FLUTTERWAVE_V3_SECRET_KEY;
+      const secretHash = process.env.FLUTTERWAVE_V3_SECRET_HASH;
+      if (!secretKey || !secretHash) {
+        return json({ success: false, message: 'Flutterwave hosted checkout is not fully configured.' }, 503);
+      }
+
+      const { checkoutUrl } = await createFlutterwaveStandardHostedCheckout({
+        secretKey,
+        reference,
+        amountMinor: amountToMinor(amount),
+        currency,
+        redirectUrl,
+        customer: {
+          email,
+          ...(customerName ? { name: customerName } : {}),
+        },
+        metadata,
+        title: source === 'media' ? 'Mkety Media' : 'Mkety',
+        description: `Mkety payment ${reference}`,
+      });
+      return json({ success: true, checkout_url: checkoutUrl, url: checkoutUrl, reference });
+    }
+
+    // In v4 mode, OAuth/webhook verification is active but Flutterwave does not
+    // expose the v3 method-agnostic hosted Standard checkout. Mkety therefore
+    // fails closed rather than collecting raw card details or pretending that
+    // a universal hosted v4 checkout exists.
     const v4Configured = Boolean(
       process.env.FLUTTERWAVE_CLIENT_ID &&
       process.env.FLUTTERWAVE_CLIENT_SECRET &&
       process.env.FLUTTERWAVE_WEBHOOK_SECRET,
     );
     if (!v4Configured) {
-      return json({ success: false, message: 'Flutterwave is not configured.' }, 503);
+      return json({ success: false, message: 'Flutterwave v4 is not configured.' }, 503);
     }
 
     return json(
@@ -119,7 +149,7 @@ export async function POST(request: Request) {
         success: false,
         code: 'flutterwave_v4_payment_method_required',
         message:
-          'Flutterwave v4 is configured for OAuth and shared webhook verification. A concrete v4 payment method must be selected before a charge can be created.',
+          'Flutterwave v4 is configured for OAuth and shared webhook verification. A concrete v4 payment method flow must be selected before a charge can be created.',
         reference,
       },
       409,
