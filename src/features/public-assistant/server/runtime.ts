@@ -41,7 +41,7 @@ function toProviderMessages(
 function inferPublicRouteDestination(message: string) {
   const normalized = message.toLowerCase();
   const candidates: Array<[RegExp, string]> = [
-    [/\b(mkety media|media\.mkety\.com)\b/, 'media'],
+    [/\b(mkety media|media\.mkety\.com|media storage|media delivery|file storage|file hosting|image hosting|video hosting)\b/, 'media'],
     [/\b(docs?|documentation)\b/, 'docs'],
     [/\b(price|pricing|plans?|billing|credits?)\b/, 'pricing'],
     [/\b(academy|training|education)\b/, 'academy'],
@@ -112,7 +112,7 @@ async function buildGroundedContext(input: {
 
 const PRICING_REQUEST_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription)\b/i;
 const ACADEMY_ACCESS_PATTERN = /\b(academy|training|education)\b/i;
-const MEDIA_REQUEST_PATTERN = /\b(mkety media|media\.mkety\.com)\b/i;
+const MEDIA_REQUEST_PATTERN = /\b(mkety media|media\.mkety\.com|media storage|media delivery|file storage|file hosting|image hosting|video hosting)\b/i;
 const MEDIA_DESTINATION_REQUEST_PATTERN = /\b(where|access|open|visit|go to|link|website|url|products?|features?|plans?|pricing|signup|sign up|join)\b/i;
 const ACCESS_REQUEST_PATTERN = /\b(where|access|open|visit|go to|link|website|url)\b/i;
 
