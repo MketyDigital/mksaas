@@ -108,7 +108,7 @@ export function quoteFlutterwaveSettlement(input: {
 export function formatFlutterwaveSettlementAmount(amountMinor: bigint, currency: FlutterwaveSettlementCurrency): string {
   const major = amountMinor / 100n;
   const minor = (amountMinor % 100n).toString().padStart(2, '0');
-  return `${CURRENCY_SYMBOLS[currency]}${major.toLocaleString() }.${minor}`;
+  return `${CURRENCY_SYMBOLS[currency]}${major.toLocaleString()}.${minor}`;
 }
 
 export function getFlutterwaveCurrencyLabel(currency: FlutterwaveSettlementCurrency): string {
