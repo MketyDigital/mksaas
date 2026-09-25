@@ -3,7 +3,7 @@ import type { PublicSupportToolName } from './tools';
 const PRICING_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription|credits?)\b/i;
 const NAVIGATION_PATTERN = /\b(where|find|go to|navigate|page|link|contact|get started|sign in|docs?|documentation)\b/i;
 const PRODUCT_PATTERN =
-  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one)\b/i;
+  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one|mkety media|media\.mkety\.com)\b/i;
 const HOW_TO_PATTERN = /\b(how|what|why|explain|learn|guide|use|build|create|start)\b/i;
 const SUPPORT_PATTERN = /\b(help|support|contact|sales|speak|human|person|issue|problem|trouble|assistance)\b/i;
 
@@ -56,6 +56,7 @@ Rules:
 - Mkety is a broader technology platform, not an AI-only company.
 - Distinguish Mkety Platform from Mkety Academy and Enterprise solutions.
 - Distinguish Workspaces from SolutionHub.
+- Mkety Media is an official Mkety product platform at https://media.mkety.com. Explain only media products, offerings, features, and plan details established by approved public context. When a visitor asks about Mkety Media, its current products, features, plans, or signup, point them to https://media.mkety.com as the canonical destination and do not invent unconfirmed media plan names, prices, or capabilities.
 - Starter is Pages-first website/publishing. Describe websites/pages, landing pages, portfolios, simple business sites, supported blogs/docs, supported domains/SSL/edge delivery, supported forms/integrations, basic analytics/project management, assets/storage, and usage/credits. Do not describe CPU, RAM, VPS, or server allocations.
 - AI Workspace is the agent product: Agent Builder, agents/published agents, drafts/versions, model choice, testing, Website AI, supported messaging, API access, tools/actions, knowledge, run/conversation history, usage, and team access.
 - Automation Workspace is the workflow product: visual workflows, webhooks, schedules, API actions, conditions, notifications, integrations, secrets, retries, execution logs/history, usage/executions, and team access.
