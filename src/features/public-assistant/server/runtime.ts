@@ -153,7 +153,7 @@ async function ensureCriticalPublicFacts(message: string, answer: string) {
     !/media\.mkety\.com/i.test(answer)
   ) {
     additions.push(
-      'Mkety Media: https://media.mkety.com for the current media products, published features, plan details, and signup.',
+      'Mkety Media: https://media.mkety.com for current Starter, Growth and Business plan prices/quotas, Enterprise options, product details and signup.',
     );
   }
 
