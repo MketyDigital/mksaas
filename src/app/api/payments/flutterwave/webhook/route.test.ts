@@ -5,6 +5,7 @@ const mockRetrieve = jest.fn();
 const mockForward = jest.fn();
 const mockRoute = jest.fn();
 const mockStandardVerify = jest.fn();
+const mockAttestation = jest.fn();
 
 jest.mock('@/features/payments/flutterwave-v4', () => ({
   verifyFlutterwaveV4Webhook: mockVerify,
@@ -19,6 +20,9 @@ jest.mock('@/features/payments/external-webhook-forwarder', () => ({
 jest.mock('@/features/payments/settlement-router', () => ({
   routeVerifiedMketyPayment: mockRoute,
 }));
+jest.mock('@/features/payments/attestation', () => ({
+  createMketyPaymentAttestation: mockAttestation,
+}));
 
 import { POST } from './route';
 
@@ -28,6 +32,7 @@ describe('POST /api/payments/flutterwave/webhook', () => {
   const previousWebhookSecret = process.env.FLUTTERWAVE_WEBHOOK_SECRET;
   const previousStandardSecret = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
   const previousStandardHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  const previousBrokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -36,6 +41,8 @@ describe('POST /api/payments/flutterwave/webhook', () => {
     process.env.FLUTTERWAVE_WEBHOOK_SECRET = 'webhook-secret';
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = 'standard-secret';
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = 'standard-hash';
+    process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = 'b'.repeat(40);
+    mockAttestation.mockResolvedValue('signed-attestation');
   });
 
   afterAll(() => {
@@ -44,6 +51,7 @@ describe('POST /api/payments/flutterwave/webhook', () => {
     process.env.FLUTTERWAVE_WEBHOOK_SECRET = previousWebhookSecret;
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = previousStandardSecret;
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = previousStandardHash;
+    process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = previousBrokerSecret;
   });
 
   it('forwards the unchanged provider body and signature for a verified Media payment', async () => {
@@ -84,6 +92,7 @@ describe('POST /api/payments/flutterwave/webhook', () => {
       rawBody,
       signature: 'provider-signature',
       signatureHeader: 'flutterwave-signature',
+      attestation: undefined,
       contentType: 'application/json',
     });
     expect(mockRoute).not.toHaveBeenCalled();
@@ -131,7 +140,13 @@ describe('POST /api/payments/flutterwave/webhook', () => {
     const checkoutId = '5e0d1f40-6bf5-4efd-bd75-a2223fb8ff91';
     const rawBody = JSON.stringify({
       event: 'charge.completed',
-      data: { id: 88221 },
+      data: {
+        id: 88221,
+        tx_ref: 'SAAS-MKS-5e0d1f406bf54efdbd75a2223fb8ff91',
+        status: 'successful',
+        amount: 48.42,
+        currency: 'USD',
+      },
     });
     mockStandardVerify.mockResolvedValue({
       id: 88221,
@@ -166,4 +181,104 @@ describe('POST /api/payments/flutterwave/webhook', () => {
     );
   });
 
+  it('attests a verified Standard Media event before forwarding the unchanged body', async () => {
+    const rawBody = JSON.stringify({
+      event: 'charge.completed',
+      data: {
+        id: 991,
+        tx_ref: 'MKM-A83K27',
+        status: 'successful',
+        amount: 65000,
+        currency: 'NGN',
+      },
+    });
+    mockStandardVerify.mockResolvedValue({
+      id: 991,
+      tx_ref: 'MKM-A83K27',
+      status: 'successful',
+      amount: 65000,
+      currency: 'NGN',
+      meta: { source: 'media', invoice_id: 'invoice-1', tenant_id: 'tenant-1' },
+    });
+    mockForward.mockResolvedValue({
+      forwarded: true,
+      destination: 'https://media.mkety.com/api/billing/flutterwave/webhook',
+    });
+
+    const response = await POST(
+      new Request('https://mkety.com/api/payments/flutterwave/webhook', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'verif-hash': 'standard-hash',
+        },
+        body: rawBody,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockAttestation).toHaveBeenCalledWith(rawBody, 'b'.repeat(40));
+    expect(mockForward).toHaveBeenCalledWith({
+      source: 'media',
+      provider: 'flutterwave',
+      rawBody,
+      signature: 'standard-hash',
+      signatureHeader: 'verif-hash',
+      attestation: 'signed-attestation',
+      contentType: 'application/json',
+    });
+    expect(mockRoute).not.toHaveBeenCalled();
+  });
+
+  it('rejects Standard forwarding when webhook fields disagree with the re-queried transaction', async () => {
+    const rawBody = JSON.stringify({
+      event: 'charge.completed',
+      data: {
+        id: 992,
+        tx_ref: 'MKM-A83K27',
+        status: 'successful',
+        amount: 64000,
+        currency: 'NGN',
+      },
+    });
+    mockStandardVerify.mockResolvedValue({
+      id: 992,
+      tx_ref: 'MKM-A83K27',
+      status: 'successful',
+      amount: 65000,
+      currency: 'NGN',
+      meta: { source: 'media' },
+    });
+
+    const response = await POST(
+      new Request('https://mkety.com/api/payments/flutterwave/webhook', {
+        method: 'POST',
+        headers: { 'verif-hash': 'standard-hash' },
+        body: rawBody,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockAttestation).not.toHaveBeenCalled();
+    expect(mockForward).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges valid non-charge Flutterwave events without settlement', async () => {
+    const rawBody = JSON.stringify({ id: 'evt-other', type: 'customer.updated', data: { id: 'cus-1' } });
+    mockVerify.mockResolvedValue(JSON.parse(rawBody));
+
+    const response = await POST(
+      new Request('https://mkety.com/api/payments/flutterwave/webhook', {
+        method: 'POST',
+        headers: { 'flutterwave-signature': 'provider-signature' },
+        body: rawBody,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ success: true, ignored: true, settled: false });
+    expect(mockRetrieve).not.toHaveBeenCalled();
+    expect(mockForward).not.toHaveBeenCalled();
+    expect(mockRoute).not.toHaveBeenCalled();
+  });
 });
