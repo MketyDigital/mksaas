@@ -24,6 +24,8 @@ export interface SelfServiceCheckoutRepository {
     providerCheckoutId?: string;
     checkoutUrl: string;
     expiresAt?: Date;
+    settlementAmountExpectedMinor?: bigint;
+    settlementCurrency?: string;
     updatedAt: Date;
   }): Promise<void>;
 
@@ -86,6 +88,8 @@ export async function createSelfServiceCheckout(
       providerCheckoutId: gateway.providerCheckoutId,
       checkoutUrl: gateway.checkoutUrl,
       expiresAt: gateway.expiresAt,
+      settlementAmountExpectedMinor: gateway.settlementAmountExpectedMinor,
+      settlementCurrency: gateway.settlementCurrency,
       updatedAt: now,
     });
 
