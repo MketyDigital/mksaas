@@ -1,3 +1,4 @@
+import type { NormalizedSettlement } from '@/features/billing/domain/settlement';
 import {
   findBillingCheckoutSettlementContext,
   markBillingCheckoutAwaitingConfirmation,
@@ -6,7 +7,6 @@ import {
 } from '@/features/billing/server/drizzle-checkout-settlement';
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
-import type { NormalizedSettlement } from '@/features/billing/domain/settlement';
 import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server/repository';
 import { db } from '@/shared/db';
 
