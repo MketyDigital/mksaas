@@ -12,6 +12,8 @@ export interface BillingCheckoutSettlementContext {
   billingPeriodId: string;
   amountExpectedMinor: bigint;
   currency: string;
+  settlementAmountExpectedMinor: bigint;
+  settlementCurrency: string;
   provider: string;
 }
 
@@ -25,13 +27,20 @@ export async function findBillingCheckoutSettlementContext(
       billingPeriodId: billingCheckouts.billingPeriodId,
       amountExpectedMinor: billingCheckouts.amountExpectedMinor,
       currency: billingCheckouts.currency,
+      settlementAmountExpectedMinor: billingCheckouts.settlementAmountExpectedMinor,
+      settlementCurrency: billingCheckouts.settlementCurrency,
       provider: billingCheckouts.provider,
     })
     .from(billingCheckouts)
     .where(eq(billingCheckouts.id, checkoutId))
     .limit(1);
 
-  return checkout ?? null;
+  if (!checkout) return null;
+  return {
+    ...checkout,
+    settlementAmountExpectedMinor: checkout.settlementAmountExpectedMinor ?? checkout.amountExpectedMinor,
+    settlementCurrency: checkout.settlementCurrency ?? checkout.currency,
+  };
 }
 
 export async function markBillingCheckoutAwaitingConfirmation(
