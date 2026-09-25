@@ -23,12 +23,18 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
   const [article, settings] = await Promise.all([getPublishedDocsArticle(slug), getPublishedPlatformSiteSettings()]);
 
   if (!article) {
-    return buildMketyMetadata({
-      settings,
-      path: '/docs',
-      title: 'Not Found | Mkety Docs',
-      description: 'The requested Mkety documentation page could not be found.',
-    });
+    return {
+      ...buildMketyMetadata({
+        settings,
+        path: '/docs',
+        title: 'Not Found | Mkety Docs',
+        description: 'The requested Mkety documentation page could not be found.',
+      }),
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
   }
 
   return buildMketyMetadata({
