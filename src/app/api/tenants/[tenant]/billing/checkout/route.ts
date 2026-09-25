@@ -5,6 +5,7 @@ import {
   isSelfServiceBillingPlanKey,
   isSelfServiceBillingTermKey,
 } from '@/features/billing/catalog/self-service-plans';
+import { createFlutterwaveBillingAdapter } from '@/features/billing/gateways/flutterwave';
 import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
@@ -44,8 +45,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string; provider?: string })
-    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string; provider?: string });
+    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string; provider?: string; collectionCurrency?: string })
+    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string; provider?: string; collectionCurrency?: string });
 
   const planKey = String(body.planKey ?? '');
   const termKey = String(body.termKey ?? '1m');
@@ -65,11 +66,18 @@ export async function POST(request: Request, context: RouteContext) {
             ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
           })
         : null
-      : provider === 'kora'
-        ? process.env.KORA_SECRET_KEY
-          ? createKoraBillingAdapter({ secretKey: process.env.KORA_SECRET_KEY })
+      : provider === 'flutterwave'
+        ? process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
+          process.env.FLUTTERWAVE_CLIENT_ID &&
+          process.env.FLUTTERWAVE_CLIENT_SECRET &&
+          process.env.FLUTTERWAVE_WEBHOOK_SECRET
+          ? createFlutterwaveBillingAdapter({ standardSecretKey: process.env.FLUTTERWAVE_STANDARD_SECRET_KEY })
           : null
-        : null;
+        : provider === 'kora'
+          ? process.env.KORA_SECRET_KEY
+            ? createKoraBillingAdapter({ secretKey: process.env.KORA_SECRET_KEY })
+            : null
+          : null;
   if (!adapter) {
     return json({ success: false, message: 'Selected payment method is not configured.' }, 503);
   }
@@ -92,6 +100,7 @@ export async function POST(request: Request, context: RouteContext) {
         customer: session.user.email
           ? { email: session.user.email, name: session.user.name ?? undefined }
           : undefined,
+        collectionCurrency: provider === 'flutterwave' ? String(body.collectionCurrency ?? 'USD') : undefined,
       },
     );
 
