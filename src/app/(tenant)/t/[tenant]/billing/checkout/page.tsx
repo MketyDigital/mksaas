@@ -62,12 +62,20 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
-  const flutterwaveHostedEnabled =
+  const flutterwaveCredentialsReady =
     (process.env.FLUTTERWAVE_API_MODE ?? 'v4') === 'v3-hosted' &&
     Boolean(process.env.FLUTTERWAVE_V3_SECRET_KEY && process.env.FLUTTERWAVE_V3_SECRET_HASH);
-  const flutterwaveCurrencies = flutterwaveHostedEnabled
-    ? getEnabledFlutterwaveSettlementCurrencies(process.env.MKETY_FLUTTERWAVE_USD_RATES_JSON)
-    : [];
+  let flutterwaveCurrencies = [] as ReturnType<typeof getEnabledFlutterwaveSettlementCurrencies>;
+  if (flutterwaveCredentialsReady) {
+    try {
+      flutterwaveCurrencies = getEnabledFlutterwaveSettlementCurrencies(
+        process.env.MKETY_FLUTTERWAVE_USD_RATES_JSON,
+      );
+    } catch {
+      flutterwaveCurrencies = [];
+    }
+  }
+  const flutterwaveHostedEnabled = flutterwaveCredentialsReady && flutterwaveCurrencies.length > 0;
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
   const paymentProviders = [
     ...(nowPaymentsEnabled
