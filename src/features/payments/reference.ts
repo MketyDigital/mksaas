@@ -1,0 +1,64 @@
+export type MketyPaymentSource = 'saas' | 'media' | 'host' | 'enterprise';
+
+const SOURCE_PREFIX: Record<MketyPaymentSource, string> = {
+  saas: 'SAAS-MKS',
+  media: 'MEDIA-MKM',
+  host: 'HOST-MKH',
+  enterprise: 'ENT-MKE',
+};
+
+const UUID_COMPACT_PATTERN = /^[0-9a-f]{32}$/i;
+
+function compactUuid(value: string): string | null {
+  const compact = value.replace(/-/g, '');
+  return UUID_COMPACT_PATTERN.test(compact) ? compact.toLowerCase() : null;
+}
+
+function expandUuid(value: string): string | null {
+  if (!UUID_COMPACT_PATTERN.test(value)) return null;
+  const v = value.toLowerCase();
+  return `${v.slice(0, 8)}-${v.slice(8, 12)}-${v.slice(12, 16)}-${v.slice(16, 20)}-${v.slice(20)}`;
+}
+
+export function createMketyPaymentReference(source: MketyPaymentSource, targetId?: string): string {
+  const token = targetId ? compactUuid(targetId) : null;
+  const suffix = token ?? crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+  const reference = `${SOURCE_PREFIX[source]}-${suffix}`;
+  if (reference.length > 42) throw new Error('Mkety payment reference exceeds provider limits.');
+  return reference;
+}
+
+export function parseMketyPaymentReference(reference: string): {
+  source: MketyPaymentSource;
+  token: string;
+  targetUuid?: string;
+} | null {
+  for (const [source, prefix] of Object.entries(SOURCE_PREFIX) as Array<[MketyPaymentSource, string]>) {
+    const marker = `${prefix}-`;
+    if (!reference.startsWith(marker)) continue;
+    const token = reference.slice(marker.length);
+    if (!/^[a-zA-Z0-9-]{6,32}$/.test(token)) return null;
+    return {
+      source,
+      token,
+      targetUuid: expandUuid(token) ?? undefined,
+    };
+  }
+  return null;
+}
+
+export function buildMketyPaymentMetadata(input: {
+  source: MketyPaymentSource;
+  invoiceId?: string;
+  tenantId?: string;
+  checkoutId?: string;
+  orderId?: string;
+}) {
+  return {
+    source: input.source,
+    ...(input.invoiceId ? { invoice_id: input.invoiceId } : {}),
+    ...(input.tenantId ? { tenant_id: input.tenantId } : {}),
+    ...(input.checkoutId ? { checkout_id: input.checkoutId } : {}),
+    ...(input.orderId ? { order_id: input.orderId } : {}),
+  };
+}
