@@ -65,8 +65,11 @@ async function applySaasSettlement(input: {
     return { settled: false, status: 'pending' as const };
   }
 
-  if (input.currencyPaid !== context.currency || input.amountPaidMinor !== context.amountExpectedMinor) {
-    throw new Error('Provider settlement does not match the Mkety billing period.');
+  if (
+    input.currencyPaid !== context.settlementCurrency ||
+    input.amountPaidMinor !== context.settlementAmountExpectedMinor
+  ) {
+    throw new Error('Provider settlement does not match the Mkety checkout settlement quote.');
   }
 
   const settlement: NormalizedSettlement = {
@@ -77,8 +80,8 @@ async function applySaasSettlement(input: {
     billingPeriodId: context.billingPeriodId,
     amountExpectedMinor: context.amountExpectedMinor,
     currencyExpected: context.currency,
-    amountPaidMinor: input.amountPaidMinor,
-    currencyPaid: input.currencyPaid,
+    amountPaidMinor: context.amountExpectedMinor,
+    currencyPaid: context.currency,
     status: 'verified_success',
     occurredAt: input.occurredAt,
     rawReference: input.rawReference,
