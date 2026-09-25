@@ -43,6 +43,10 @@ export async function createSelfServiceCheckout(
     termKey: SelfServiceBillingTermKey;
     returnUrl: string;
     cancelUrl: string;
+    customer?: {
+      email: string;
+      name?: string;
+    };
     now?: Date;
   },
 ) {
@@ -74,6 +78,7 @@ export async function createSelfServiceCheckout(
       currency: prepared.currency,
       returnUrl: input.returnUrl,
       cancelUrl: input.cancelUrl,
+      customer: input.customer,
     });
 
     await repository.markCheckoutReady({
