@@ -28,7 +28,7 @@ export interface FlutterwaveSettlementQuote {
   rate: string;
 }
 
-function isCurrency(value: string): value is FlutterwaveSettlementCurrency {
+export function isFlutterwaveSettlementCurrency(value: string): value is FlutterwaveSettlementCurrency {
   return (FLUTTERWAVE_SETTLEMENT_CURRENCIES as readonly string[]).includes(value);
 }
 
@@ -65,7 +65,7 @@ export function getFlutterwaveSettlementRateMap(
 
   for (const [rawCurrency, rawRate] of Object.entries(parsed as Record<string, unknown>)) {
     const currency = rawCurrency.toUpperCase();
-    if (!isCurrency(currency) || currency === 'USD') continue;
+    if (!isFlutterwaveSettlementCurrency(currency) || currency === 'USD') continue;
     if (typeof rawRate !== 'string' && typeof rawRate !== 'number') continue;
     const value = String(rawRate);
     parsePositiveDecimal(value);
