@@ -22,7 +22,7 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: 'any',
       },
       {
-        src: '/mkety-logo.png',
+        src: '/icon.png',
         sizes: 'any',
         type: 'image/png',
         purpose: 'maskable',
