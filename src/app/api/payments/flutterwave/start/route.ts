@@ -165,6 +165,8 @@ export async function POST(request: Request) {
       canonical_currency: 'USD',
       provider_amount_minor: quote.amountMinor.toString(),
       provider_currency: quote.currency,
+      fx_rate: quote.rate ?? null,
+      fx_source: quote.source,
     });
   } catch (error) {
     logger.error(
