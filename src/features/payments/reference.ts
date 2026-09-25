@@ -90,10 +90,13 @@ export function resolveMketyPaymentRoute(
     return { source: canonical.source, targetUuid: canonical.targetUuid, metadata: meta };
   }
 
-  // Mkety Media currently issues MKM-* invoice references. Keep those stable;
-  // only accept them at the shared boundary when verified provider metadata
-  // explicitly identifies the owning Mkety product.
-  if (/^MKM-[A-Z0-9]{6,32}$/i.test(reference) && metadataSource === 'media') {
+  // Mkety Media currently issues MKM-* invoice references. These are already
+  // Mkety-owned references, so a verified provider transaction can route them
+  // to Media even when an older provider integration did not persist source metadata.
+  if (/^MKM-[A-Z0-9]{6,32}$/i.test(reference)) {
+    if (metadataSource && metadataSource !== 'media') {
+      throw new Error('Mkety payment source metadata conflicts with the Media payment reference.');
+    }
     return { source: 'media', metadata: meta };
   }
 
