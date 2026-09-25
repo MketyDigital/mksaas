@@ -3,7 +3,20 @@ import { buildMketyPaymentMetadata, createMketyPaymentReference } from './refere
 const STANDARD_ENDPOINT = 'https://api.flutterwave.com/v3/payments';
 const TRANSFER_RATES_ENDPOINT = 'https://api.flutterwave.com/v3/transfers/rates';
 
-export const MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR'] as const;
+export const MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES = [
+  'USD',
+  'NGN',
+  'GHS',
+  'KES',
+  'GBP',
+  'EUR',
+  'ZAR',
+  'XAF',
+  'XOF',
+  'UGX',
+  'RWF',
+  'TZS',
+] as const;
 export type MketyFlutterwaveCollectionCurrency = (typeof MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES)[number];
 export type MketyFlutterwaveFxQuoteSource = 'identity' | 'configured' | 'flutterwave-transfer-rate';
 
