@@ -27,6 +27,7 @@ export async function forwardOriginalProviderWebhook(input: {
   rawBody: string;
   signature: string;
   signatureHeader?: 'flutterwave-signature' | 'verif-hash' | 'x-korapay-signature';
+  attestation?: string;
   contentType?: string | null;
 }): Promise<{ forwarded: true; destination: string }> {
   const destination = destinationFor(input.source, input.provider);
@@ -39,6 +40,7 @@ export async function forwardOriginalProviderWebhook(input: {
     headers: {
       'Content-Type': input.contentType || 'application/json',
       [signatureHeader]: input.signature,
+      ...(input.attestation ? { 'x-mkety-payment-attestation': input.attestation } : {}),
       'X-Mkety-Webhook-Forwarded': '1',
     },
     body: input.rawBody,
