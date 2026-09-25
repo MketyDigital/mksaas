@@ -19,6 +19,22 @@ function minorToDecimal(value: bigint): string {
   return `${units}.${cents}`;
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function createFlutterwavePayloadHash(input: {
+  amount: string;
+  currency: string;
+  email: string;
+  reference: string;
+  secretKey: string;
+}) {
+  const hashedSecret = await sha256Hex(input.secretKey);
+  return sha256Hex(`${input.amount}${input.currency}${input.email}${input.reference}${hashedSecret}`);
+}
+
 export function isMketyFlutterwaveCollectionCurrency(value: string): value is MketyFlutterwaveCollectionCurrency {
   return (MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES as readonly string[]).includes(value);
 }
@@ -68,13 +84,22 @@ export async function createFlutterwaveHostedCheckout(input: {
   fetchImpl?: typeof fetch;
 }): Promise<string> {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const amount = minorToDecimal(input.amountMinor);
+  const payloadHash = await createFlutterwavePayloadHash({
+    amount,
+    currency: input.currency,
+    email: input.email,
+    reference: input.reference,
+    secretKey: input.secretKey,
+  });
   const response = await fetchImpl(STANDARD_ENDPOINT, {
     method: 'POST',
     headers: { Authorization: `Bearer ${input.secretKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       tx_ref: input.reference,
-      amount: minorToDecimal(input.amountMinor),
+      amount,
       currency: input.currency,
+      payload_hash: payloadHash,
       redirect_url: input.redirectUrl,
       customer: { email: input.email, ...(input.customerName ? { name: input.customerName } : {}) },
       customizations: {
@@ -99,4 +124,22 @@ export function createSaasFlutterwaveReference(checkoutId: string) {
 
 export function createSaasFlutterwaveMetadata(checkoutId: string, tenantId: string) {
   return buildMketyPaymentMetadata({ source: 'saas', checkoutId, tenantId });
+}
+
+
+export async function verifyFlutterwaveStandardTransaction(input: {
+  transactionId: string | number;
+  secretKey: string;
+  fetchImpl?: typeof fetch;
+}): Promise<Record<string, unknown>> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const response = await fetchImpl(
+    `https://api.flutterwave.com/v3/transactions/${encodeURIComponent(String(input.transactionId))}/verify`,
+    { headers: { Authorization: `Bearer ${input.secretKey}`, 'Content-Type': 'application/json' } },
+  );
+  const payload = (await response.json().catch(() => null)) as { status?: string; data?: Record<string, unknown> } | null;
+  if (!response.ok || payload?.status !== 'success' || !payload.data) {
+    throw new Error('Flutterwave Standard transaction verification failed.');
+  }
+  return payload.data;
 }
