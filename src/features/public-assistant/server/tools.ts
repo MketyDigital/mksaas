@@ -52,6 +52,19 @@ const ROUTE_ALIASES: Record<string, string> = {
 
 export function resolvePublicRoute(destination: string): { label: string; path: string } | null {
   const normalized = normalize(destination);
+  if (
+    normalized === 'media' ||
+    normalized.includes('mkety media') ||
+    normalized.includes('media mkety com') ||
+    normalized.includes('media storage') ||
+    normalized.includes('media delivery') ||
+    normalized.includes('file storage') ||
+    normalized.includes('file hosting') ||
+    normalized.includes('image hosting') ||
+    normalized.includes('video hosting')
+  ) {
+    return { label: 'Mkety Media', path: 'https://media.mkety.com' };
+  }
   const alias = Object.entries(ROUTE_ALIASES)
     .sort(([a], [b]) => b.length - a.length)
     .find(([key]) => normalized === key || normalized.includes(key));

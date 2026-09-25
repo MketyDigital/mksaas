@@ -3,7 +3,7 @@ import type { PublicSupportToolName } from './tools';
 const PRICING_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription|credits?)\b/i;
 const NAVIGATION_PATTERN = /\b(where|find|go to|navigate|page|link|contact|get started|sign in|docs?|documentation)\b/i;
 const PRODUCT_PATTERN =
-  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one)\b/i;
+  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one|mkety media|media\.mkety\.com|media storage|media delivery|file storage|file hosting|image hosting|video hosting)\b/i;
 const HOW_TO_PATTERN = /\b(how|what|why|explain|learn|guide|use|build|create|start)\b/i;
 const SUPPORT_PATTERN = /\b(help|support|contact|sales|speak|human|person|issue|problem|trouble|assistance)\b/i;
 
@@ -56,6 +56,7 @@ Rules:
 - Mkety is a broader technology platform, not an AI-only company.
 - Distinguish Mkety Platform from Mkety Academy and Enterprise solutions.
 - Distinguish Workspaces from SolutionHub.
+- Mkety Media is a standalone Mkety product at https://media.mkety.com for managed storage and delivery of images, videos and general files. It supports bucket organization, permanent cached delivery URLs, secure direct/multipart uploads, storage/delivery/request usage monitoring, prepaid hard limits, team access within plan limits, self-service upgrades, extra prepaid capacity, and full-library export. Public plans are Starter, Growth and Business with monthly, 3-month, 6-month and 12-month billing. Enterprise is request-based and can include custom limits/pricing, branded media domains, assisted migration, retention/deletion-protection requirements, data-residency options, regional/dedicated infrastructure, private/signed delivery, and contractual SLA terms where agreed. Standard delivery URLs are public to anyone who has the URL. Customers retain ownership of uploaded content. For current prices, discounts, exact quotas, availability or signup, point to https://media.mkety.com and do not invent values not established by approved public context.
 - Starter is Pages-first website/publishing. Describe websites/pages, landing pages, portfolios, simple business sites, supported blogs/docs, supported domains/SSL/edge delivery, supported forms/integrations, basic analytics/project management, assets/storage, and usage/credits. Do not describe CPU, RAM, VPS, or server allocations.
 - AI Workspace is the agent product: Agent Builder, agents/published agents, drafts/versions, model choice, testing, Website AI, supported messaging, API access, tools/actions, knowledge, run/conversation history, usage, and team access.
 - Automation Workspace is the workflow product: visual workflows, webhooks, schedules, API actions, conditions, notifications, integrations, secrets, retries, execution logs/history, usage/executions, and team access.

@@ -510,8 +510,17 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Official Mkety web addresses',
     excerpt: 'The main customer-facing Mkety product addresses.',
     bodyMarkdown:
-      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
+      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. `media.mkety.com` is the official Mkety Media platform for discovering current media products, published features, plan details, and signup options. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
     sortOrder: 10,
+  },
+  {
+    categoryKey: 'domains',
+    slug: 'mkety-media',
+    title: 'Mkety Media',
+    excerpt: 'The official Mkety platform for current media products, features, plans, and signup.',
+    bodyMarkdown:
+      '# Mkety Media\n\nMkety Media is a standalone Mkety product for managed media storage and delivery, available at `https://media.mkety.com`. Upload images, videos and general files, organize them into buckets, and use permanent cached Mkety delivery URLs across websites, landing pages, applications, campaigns, training content and other systems.\n\nCore capabilities include secure direct and multipart uploads, bucket-based organization, storage/delivery/request usage monitoring, prepaid hard limits, team access within plan seat limits, self-service upgrades, extra prepaid capacity, and complete library export through JSON/CSV manifests and generated download-all scripts.\n\nPublic plans are Starter, Growth and Business. Billing supports monthly, 3-month, 6-month and 12-month terms. Current prices, discounts and exact quotas are managed on the Media platform and should be checked there before purchase. Public plans are prepaid and hard-capped rather than creating unlimited post-paid overage.\n\nEnterprise is request-based and can use exact private pricing and quotas, extra team seats, branded media domains, assisted migration, retention/deletion-protection requirements, data-residency options, regional or dedicated infrastructure, private/signed delivery requirements, and contractual SLA terms where agreed.\n\nCustomers retain ownership of uploaded content. Standard delivery URLs are public to anyone who has the URL; private or signed delivery is an Enterprise/custom requirement. Mkety Media also provides full-library portability so customers can export their inventory and move their files.\n\nUse `media.mkety.com` as the canonical source for current plan details, signup and product availability.',
+    sortOrder: 20,
   },
   {
     categoryKey: 'trust',

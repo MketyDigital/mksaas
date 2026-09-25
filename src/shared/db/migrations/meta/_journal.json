@@ -127,6 +127,13 @@
       "when": 1790256000000,
       "tag": "0017_home_academy_ai_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790294400000,
+      "tag": "0018_mkety_media_public_content",
+      "breakpoints": true
     }
   ]
 }
