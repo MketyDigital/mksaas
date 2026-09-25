@@ -2,6 +2,7 @@
 
 import {
   createFlutterwaveHostedCheckout,
+  getEnabledMketyFlutterwaveCurrencies,
   quoteFlutterwaveCollection,
   verifyFlutterwaveStandardTransaction,
 } from './flutterwave-standard';
@@ -13,53 +14,17 @@ describe('Flutterwave Standard shared payments', () => {
         canonicalAmountMinor: 3999n,
         canonicalCurrency: 'USD',
         collectionCurrency: 'USD',
-        secretKey: 'secret',
-        fetchImpl: jest.fn(),
       }),
     ).resolves.toEqual({ amountMinor: 3999n, currency: 'USD', rate: '1', source: 'identity' });
   });
 
-  it('normalizes high-precision FX source amounts to payment precision', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: 'success',
-        data: {
-          rate: '0.000707',
-          source: { amount: '56562.942008' },
-          destination: { amount: '39.99', currency: 'USD' },
-        },
-      }),
-    });
-
-    const quote = await quoteFlutterwaveCollection({
-      canonicalAmountMinor: 3999n,
-      canonicalCurrency: 'USD',
-      collectionCurrency: 'NGN',
-      secretKey: 'secret',
-      fetchImpl: fetchMock,
-    });
-
-    expect(quote).toEqual({
-      amountMinor: 5656295n,
-      currency: 'NGN',
-      rate: '0.000707',
-      source: 'flutterwave-transfer-rate',
-    });
-    expect(String(fetchMock.mock.calls[0][0])).toContain('destination_currency=USD');
-    expect(String(fetchMock.mock.calls[0][0])).toContain('source_currency=NGN');
-  });
-
-  it('uses an explicitly configured commercial FX rate without calling Flutterwave rates', async () => {
-    const fetchMock = jest.fn();
+  it('uses an explicitly configured Mkety commercial FX rate', async () => {
     await expect(
       quoteFlutterwaveCollection({
         canonicalAmountMinor: 3999n,
         canonicalCurrency: 'USD',
         collectionCurrency: 'NGN',
-        secretKey: 'secret',
         configuredRatesJson: '{"NGN":"1500"}',
-        fetchImpl: fetchMock,
       }),
     ).resolves.toEqual({
       amountMinor: 5998500n,
@@ -67,7 +32,41 @@ describe('Flutterwave Standard shared payments', () => {
       rate: '1500',
       source: 'configured',
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rounds a configured collection quote upward to the smallest provider unit', async () => {
+    await expect(
+      quoteFlutterwaveCollection({
+        canonicalAmountMinor: 499n,
+        canonicalCurrency: 'USD',
+        collectionCurrency: 'GBP',
+        configuredRatesJson: '{"GBP":"0.78125"}',
+      }),
+    ).resolves.toEqual({
+      amountMinor: 390n,
+      currency: 'GBP',
+      rate: '0.78125',
+      source: 'configured',
+    });
+  });
+
+  it('fails closed when a requested local-currency rate is not configured', async () => {
+    await expect(
+      quoteFlutterwaveCollection({
+        canonicalAmountMinor: 3999n,
+        canonicalCurrency: 'USD',
+        collectionCurrency: 'NGN',
+        configuredRatesJson: '{}',
+      }),
+    ).rejects.toThrow('not configured');
+  });
+
+  it('only exposes USD plus explicitly configured collection currencies', () => {
+    expect(getEnabledMketyFlutterwaveCurrencies('{"NGN":"1500","KES":"130","BAD":"1"}')).toEqual([
+      'USD',
+      'NGN',
+      'KES',
+    ]);
   });
 
   it('creates hosted checkout without exposing provider secrets in the payload', async () => {
