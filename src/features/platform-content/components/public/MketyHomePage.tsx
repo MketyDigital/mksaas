@@ -236,6 +236,45 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
 
       <MketyProductShowcase groups={showcaseGroups} />
 
+      <section className="px-4 py-10 md:py-12">
+        <div className="container mx-auto">
+          <div className="grid gap-6 overflow-hidden rounded-[2rem] border border-primary/15 bg-gradient-to-br from-primary/[0.08] via-card/70 to-background p-6 shadow-sm md:p-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety Media</p>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Media products, by Mkety.</h2>
+              <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
+                Mkety Media is our official media platform. Explore the current media product catalogue, published
+                features, plan details, and signup options directly on the Media platform.
+              </p>
+              <Button asChild className="mt-6 rounded-xl">
+                <Link href="https://media.mkety.com">
+                  Explore Mkety Media
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <Card className="rounded-3xl border-primary/10 bg-background/80">
+                <CardHeader>
+                  <CardTitle className="text-base">Products & features</CardTitle>
+                  <CardDescription className="leading-6">
+                    See the current Mkety Media products and the published capabilities available with each offering.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              <Card className="rounded-3xl border-primary/10 bg-background/80">
+                <CardHeader>
+                  <CardTitle className="text-base">Plans & signup</CardTitle>
+                  <CardDescription className="leading-6">
+                    Review current plan details and join Mkety Media from the official media.mkety.com platform.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div id="platform">
         <PublicContentSection section={platformOverview} />
       </div>
