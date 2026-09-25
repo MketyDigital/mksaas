@@ -50,7 +50,44 @@ describe('Flutterwave Standard shared payments', () => {
     });
   });
 
-  it('fails closed when a requested local-currency rate is not configured', async () => {
+  it('falls back to live v4 FX when no explicit Mkety commercial rate exists', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: 'oauth-token', expires_in: 600 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'success',
+          data: {
+            rate: '0.000707',
+            source: { amount: '56562.942008', currency: 'NGN' },
+            destination: { amount: '39.99', currency: 'USD' },
+          },
+        }),
+      });
+
+    await expect(
+      quoteFlutterwaveCollection({
+        canonicalAmountMinor: 3999n,
+        canonicalCurrency: 'USD',
+        collectionCurrency: 'NGN',
+        configuredRatesJson: '{}',
+        clientId: 'standard-fx-client',
+        clientSecret: 'standard-fx-secret',
+        fetchImpl: fetchMock as typeof fetch,
+      }),
+    ).resolves.toEqual({
+      amountMinor: 5656295n,
+      currency: 'NGN',
+      rate: '0.000707',
+      source: 'flutterwave-v4',
+    });
+  });
+
+  it('fails closed when neither a configured rate nor v4 FX credentials exist', async () => {
     await expect(
       quoteFlutterwaveCollection({
         canonicalAmountMinor: 3999n,
@@ -61,11 +98,25 @@ describe('Flutterwave Standard shared payments', () => {
     ).rejects.toThrow('not configured');
   });
 
-  it('only exposes USD plus explicitly configured collection currencies', () => {
-    expect(getEnabledMketyFlutterwaveCurrencies('{"NGN":"1500","KES":"130","BAD":"1"}')).toEqual([
+  it('exposes configured currencies without v4, or the complete contract when live v4 FX is enabled', () => {
+    expect(getEnabledMketyFlutterwaveCurrencies('{"NGN":"1500","KES":"130","BAD":"1"}', false)).toEqual([
       'USD',
       'NGN',
       'KES',
+    ]);
+    expect(getEnabledMketyFlutterwaveCurrencies('{}', true)).toEqual([
+      'USD',
+      'NGN',
+      'GHS',
+      'KES',
+      'GBP',
+      'EUR',
+      'ZAR',
+      'XAF',
+      'XOF',
+      'UGX',
+      'RWF',
+      'TZS',
     ]);
   });
 
