@@ -45,6 +45,26 @@ describe('Mkety public metadata', () => {
     const metadata = buildMketyMetadata({ settings, path: '/' });
     const images = metadata.openGraph?.images;
 
-    expect(images).toEqual(expect.arrayContaining(['https://assets.example.com/mkety-share.png']));
+    expect(JSON.stringify(images)).toContain('https://assets.example.com/mkety-share.png');
+  });
+
+  it('falls back to Mkety-owned social and icon assets when CMS asset URLs are absent', () => {
+    const metadata = buildMketyMetadata({
+      settings: { ...settings, socialImageUrl: undefined, faviconUrl: undefined, logoUrl: undefined },
+      path: '/enterprise',
+    });
+
+    expect(JSON.stringify(metadata.openGraph?.images)).toContain('https://mkety.com/mkety-social-card.png');
+    expect(JSON.stringify(metadata.icons)).toContain('/favicon.ico');
+    expect(JSON.stringify(metadata.icons)).toContain('/mkety-logo.png');
+  });
+
+  it('publishes consistent Mkety ownership and technology metadata', () => {
+    const metadata = buildMketyMetadata({ settings, path: '/' });
+
+    expect(metadata.creator).toBe('Mkety');
+    expect(metadata.publisher).toBe('Mkety');
+    expect(metadata.category).toBe('technology');
+    expect(metadata.manifest).toBe('/manifest.webmanifest');
   });
 });
