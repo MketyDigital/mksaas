@@ -3,7 +3,7 @@ import type { PublicSupportToolName } from './tools';
 const PRICING_PATTERN = /\b(price|pricing|plan|plans|cost|billing|subscription|credits?)\b/i;
 const NAVIGATION_PATTERN = /\b(where|find|go to|navigate|page|link|contact|get started|sign in|docs?|documentation)\b/i;
 const PRODUCT_PATTERN =
-  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one|mkety media|media\.mkety\.com)\b/i;
+  /\b(platform|workspace|workspaces|ai|agent|automation|automate|deploy|solutionhub|solution hub|academy|enterprise|trading|mkety one|mkety media|media\.mkety\.com|media storage|media delivery|file storage|file hosting|image hosting|video hosting)\b/i;
 const HOW_TO_PATTERN = /\b(how|what|why|explain|learn|guide|use|build|create|start)\b/i;
 const SUPPORT_PATTERN = /\b(help|support|contact|sales|speak|human|person|issue|problem|trouble|assistance)\b/i;
 
