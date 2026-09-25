@@ -18,7 +18,7 @@ import type {
 export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   brandName: 'Mkety',
   logoUrl: 'https://mkety.com/mkety-logo.png',
-  faviconUrl: 'https://mkety.com/mkety-logo.png',
+  faviconUrl: 'https://mkety.com/favicon.ico',
   socialImageUrl: 'https://mkety.com/mkety-social-card.png',
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
