@@ -134,6 +134,13 @@
       "when": 1790294400000,
       "tag": "0018_mkety_media_public_content",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790379000000,
+      "tag": "0019_billing_checkout_settlement_quote",
+      "breakpoints": true
     }
   ]
 }
