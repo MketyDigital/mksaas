@@ -6,11 +6,13 @@ import { createEnterprisePaymentLink } from '@/features/enterprise-checkout/serv
 
 interface AdminEnterprisePaymentLinkFormProps {
   tenant: string;
-  providers: Array<'nowpayments' | 'kora' | 'selar'>;
+  providers: Array<'nowpayments' | 'flutterwave' | 'kora' | 'selar'>;
 }
 
 export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnterprisePaymentLinkFormProps) {
-  const [provider, setProvider] = useState<'nowpayments' | 'kora' | 'selar'>(providers[0] ?? 'nowpayments');
+  const [provider, setProvider] = useState<'nowpayments' | 'flutterwave' | 'kora' | 'selar'>(
+    providers[0] ?? 'nowpayments',
+  );
   const [result, setResult] = useState<{ orderId: string; redirectUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -136,6 +138,14 @@ export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnter
           >
             <span className="font-semibold">Crypto checkout</span>
             <span className="mt-1 block text-sm text-muted-foreground">Create a secure crypto payment link.</span>
+          </button> : null}
+          {providers.includes('flutterwave') ? <button
+            type="button"
+            onClick={() => setProvider('flutterwave')}
+            className={`rounded-xl border p-4 text-left ${provider === 'flutterwave' ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <span className="font-semibold">Flutterwave hosted checkout</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Create a secure card/local payment link.</span>
           </button> : null}
           {providers.includes('kora') ? <button
             type="button"
