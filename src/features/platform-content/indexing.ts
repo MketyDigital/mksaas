@@ -12,6 +12,16 @@ export function getMketySitemapEntries(): MetadataRoute.Sitemap {
   }));
 }
 
+export function getMketyDocsSitemapEntries(
+  articles: ReadonlyArray<{ categoryKey: string; slug: string }>,
+): MetadataRoute.Sitemap {
+  return articles.map((article) => ({
+    url: `${MKETY_PUBLIC_ORIGIN}/docs/${article.categoryKey}/${article.slug}`,
+    changeFrequency: 'weekly',
+    priority: article.categoryKey === 'trust' || article.categoryKey === 'getting-started' ? 0.7 : 0.6,
+  }));
+}
+
 export function getMketyRobotsPolicy(): MetadataRoute.Robots {
   return {
     rules: [

@@ -53,7 +53,7 @@ export async function GET() {
               marginBottom: 22,
             }}
           >
-            Technology platform
+            Mkety technology platform
           </div>
           <div
             style={{
@@ -75,7 +75,7 @@ export async function GET() {
               color: '#c9c9d2',
             }}
           >
-            AI, automation, deployment management, business solutions, practical learning, and Enterprise delivery.
+            AI, automation, deployment, media delivery, business systems, and Enterprise delivery — with clear controls and trusted infrastructure.
           </div>
         </div>
         <div style={{ display: 'flex', fontSize: 20, color: '#9696a3' }}>mkety.com</div>

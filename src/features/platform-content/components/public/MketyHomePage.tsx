@@ -3,6 +3,7 @@ import {
   BookOpen,
   Bot,
   CheckCircle2,
+  Cloud,
   Layers3,
   Rocket,
   Shield,
@@ -335,6 +336,42 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
         <PublicContentSection section={enterprise} />
       </div>
       <PublicContentSection section={trust} muted />
+
+      <section className="px-4 py-10 md:py-12">
+        <div className="container mx-auto">
+          <div className="overflow-hidden rounded-[2rem] border border-primary/15 bg-card/55 p-6 shadow-sm md:p-10">
+            <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+              <div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Cloud className="h-5 w-5" />
+                </div>
+                <p className="mt-5 text-sm font-semibold uppercase tracking-[0.25em] text-primary">
+                  Infrastructure ecosystem
+                </p>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">
+                  Built to operate across major cloud and AI ecosystems.
+                </h2>
+                <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
+                  Mkety uses and integrates with established infrastructure ecosystems across its products and delivery
+                  architecture. Provider availability varies by product, region, plan, workload and Enterprise scope.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {['Cloudflare', 'Oracle Cloud Infrastructure', 'AWS', 'Microsoft Azure', 'Google Cloud'].map(
+                  (provider) => (
+                    <div
+                      key={provider}
+                      className="flex min-h-20 items-center justify-center rounded-2xl border bg-background/80 px-4 text-center text-sm font-semibold"
+                    >
+                      {provider}
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section id="pricing" className="px-4 py-12 md:py-16">
         <div className="container mx-auto rounded-[2rem] border bg-card/60 p-6 shadow-sm md:p-10">

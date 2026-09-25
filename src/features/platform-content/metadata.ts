@@ -28,7 +28,9 @@ function normalizePublicPath(input: string) {
 }
 
 function getSocialImage(settings: PlatformSiteSettingsInput) {
-  return settings.socialImageUrl?.startsWith('https://') ? settings.socialImageUrl : undefined;
+  return settings.socialImageUrl?.startsWith('https://')
+    ? settings.socialImageUrl
+    : `${MKETY_PUBLIC_ORIGIN}/mkety-social-card.png`;
 }
 
 export function buildMketyMetadata({ settings, path, title, description }: BuildMketyMetadataInput): Metadata {
@@ -37,42 +39,65 @@ export function buildMketyMetadata({ settings, path, title, description }: Build
   const publicPath = normalizePublicPath(path);
   const canonical = new URL(publicPath, MKETY_PUBLIC_ORIGIN).toString();
   const socialImage = getSocialImage(settings);
-  const icon = settings.faviconUrl?.startsWith('https://')
-    ? settings.faviconUrl
-    : settings.logoUrl?.startsWith('https://')
-      ? settings.logoUrl
-      : undefined;
+  const configuredIcon = settings.faviconUrl?.startsWith('https://') ? settings.faviconUrl : undefined;
+  const appleIcon = settings.logoUrl?.startsWith('https://')
+    ? settings.logoUrl
+    : `${MKETY_PUBLIC_ORIGIN}/mkety-logo.png`;
 
   return {
     metadataBase: new URL(MKETY_PUBLIC_ORIGIN),
     applicationName: 'Mkety',
     title: resolvedTitle,
     description: resolvedDescription,
-    ...(icon
-      ? {
-          icons: {
-            icon,
-            shortcut: icon,
-            apple: icon,
-          },
-        }
-      : {}),
+    creator: 'Mkety',
+    publisher: 'Mkety',
+    category: 'technology',
+    keywords: [
+      'Mkety',
+      'AI agents',
+      'workflow automation',
+      'serverless deployment',
+      'business software',
+      'media storage and delivery',
+    ],
+    referrer: 'origin-when-cross-origin',
+    formatDetection: {
+      telephone: false,
+      email: false,
+      address: false,
+    },
+    manifest: '/manifest.webmanifest',
+    icons: {
+      icon: configuredIcon
+        ? [{ url: configuredIcon }, { url: '/favicon.ico', type: 'image/x-icon' }]
+        : [{ url: '/favicon.ico', type: 'image/x-icon' }, { url: '/mkety-logo.png', type: 'image/png' }],
+      shortcut: configuredIcon ?? '/favicon.ico',
+      apple: appleIcon,
+    },
     alternates: {
       canonical,
     },
     openGraph: {
       type: 'website',
       siteName: 'Mkety',
+      locale: 'en_US',
       title: resolvedTitle,
       description: resolvedDescription,
       url: canonical,
-      ...(socialImage ? { images: [socialImage] } : {}),
+      images: [
+        {
+          url: socialImage,
+          width: 1200,
+          height: 630,
+          alt: 'Mkety — build, automate, deploy, and operate',
+        },
+      ],
     },
     twitter: {
       card: 'summary_large_image',
       title: resolvedTitle,
       description: resolvedDescription,
-      ...(socialImage ? { images: [socialImage] } : {}),
+      images: [socialImage],
     },
   };
 }

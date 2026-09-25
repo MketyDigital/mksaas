@@ -18,14 +18,14 @@ import type {
 export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   brandName: 'Mkety',
   logoUrl: 'https://mkety.com/mkety-logo.png',
-  faviconUrl: 'https://mkety.com/mkety-logo.png',
+  faviconUrl: 'https://mkety.com/favicon.ico',
   socialImageUrl: 'https://mkety.com/mkety-social-card.png',
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
   accentColor: '#22D3EE',
-  defaultSeoTitle: 'Mkety | Build, automate, deploy, and operate',
+  defaultSeoTitle: 'Mkety | AI, Automation, Deployments, Media & Enterprise',
   defaultSeoDescription:
-    'Mkety is a technology platform for AI agents, automation, deployment, integrations, business solutions, and practical digital learning.',
+    'Build AI agents, automate workflows, deploy applications, manage media, and deliver custom business systems with Mkety.',
   contactEmail: 'support@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
@@ -33,7 +33,7 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   publicAiPrompt:
     'Use public Mkety documentation first for support questions. If documentation does not fully answer the visitor, answer from approved public Mkety context. Escalate to human support only when necessary.',
   publicAiFallbackMessage:
-    'Mkety AI is temporarily unavailable. You can continue with Mkety support by email or Telegram, or leave your contact details in this chat and the team can follow up.',
+    'Mkety AI is temporarily unavailable. You can continue through Mkety support by email, or leave your contact details in this chat and the team can follow up.',
   publicAiLeadCaptureEnabled: true,
   legalLinks: [
     { label: 'Privacy', href: '/privacy' },
@@ -201,29 +201,37 @@ export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
 };
 
 export const defaultTrustSection: PlatformTrustSectionInput = {
-  eyebrow: 'Trust',
-  title: 'Built for reliable, controlled operation.',
+  eyebrow: 'Security & Trust',
+  title: 'Clear boundaries for access, operations, data, and service commitments.',
   description:
-    'Mkety is designed around secure access, clear account boundaries, dependable operations, and transparent product controls.',
+    'Mkety is designed around scoped access, protected configuration, observable operations, data portability, and explicit Enterprise terms rather than hidden assumptions.',
   items: [
     {
       key: 'access',
-      title: 'Secure access',
-      description: 'Account and workspace access is protected with secure permissions and organization-level access controls.',
+      title: 'Scoped identity & access',
+      description:
+        'Organizations, workspaces, projects, roles, and permissions separate protected customer activity from the public Mkety experience.',
     },
     {
-      key: 'privacy',
-      title: 'Privacy-conscious',
-      description: 'Private account and workspace information is kept separate from public Mkety content.',
+      key: 'secrets',
+      title: 'Protected configuration',
+      description:
+        'Sensitive credentials and environment configuration use protected secret/configuration paths and are not intended for public support conversations.',
     },
     {
       key: 'operations',
-      title: 'Operational clarity',
+      title: 'Operational visibility',
       description:
-        'Usage, billing, deployments, and product access are presented through clear customer-facing controls.',
+        'Supported products expose relevant usage, run, deployment, status, history, billing, or capacity information so customers can understand what is operating.',
+    },
+    {
+      key: 'enterprise',
+      title: 'Contractable Enterprise controls',
+      description:
+        'Private or dedicated infrastructure, data-residency requirements, retention controls, migration assistance, private delivery, and service-level terms can be scoped where agreed.',
     },
   ],
-  cta: { label: 'Read the docs', href: '/docs' },
+  cta: { label: 'Security & Trust docs', href: '/docs/trust/security-and-reliability' },
 };
 
 export const defaultPricingPlans: PlatformPricingPlanInput[] = [
@@ -259,7 +267,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
       'Drafts, version history, model choice, and test playground',
       'Knowledge sources, storage, and retrieval',
       'Tools, actions, and API access',
-      'Website AI, Telegram, and supported messaging integrations',
+      'Website AI and supported messaging integrations',
       'Conversation/run history, usage, and team access',
     ],
   },
@@ -340,12 +348,37 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Is Mkety only an AI product?',
     answer:
-      'No. Mkety includes AI, automation, deployment, integrations, business solutions, practical learning, and enterprise implementation support.',
+      'No. Mkety includes AI, automation, deployment, media storage and delivery, integrations, business solutions, practical learning, and Enterprise implementation support.',
   },
   {
     question: 'Do I need Mkety One to use Mkety?',
     answer:
       'No. You can start with Starter or choose an individual AI, Automation, or Deploy Workspace. Mkety One combines Starter and all three self-service Workspaces in one bundle. Self-service plans can be paid monthly or prepaid for 3, 6, or 12 months, with progressively larger prepaid discounts.',
+  },
+  {
+    question: 'How does Mkety protect private customer information?',
+    answer:
+      'Public Mkety pages and Mkety AI are separated from authenticated organization, workspace, project, billing, deployment, file, agent, workflow, and other private customer information. Protected access is handled through the appropriate authenticated experience and scoped permissions.',
+  },
+  {
+    question: 'How are API keys, credentials, and deployment secrets handled?',
+    answer:
+      'Supported Mkety products use protected secret and environment-configuration paths for sensitive values. Passwords, API keys, payment secrets, and other credentials should never be pasted into public support conversations.',
+  },
+  {
+    question: 'Does Mkety provide an uptime or support SLA?',
+    answer:
+      'Standard self-service products operate under the applicable standard service terms. Enterprise customers can agree specific service-level, support-response, retention, availability, or operational commitments when those requirements are documented in the relevant order or agreement.',
+  },
+  {
+    question: 'Can Enterprise use private, dedicated, regional, or specialized infrastructure?',
+    answer:
+      'Yes, where the requirement is technically and commercially agreed. Enterprise can be scoped for private or dedicated infrastructure, regional or data-residency requirements, persistent services, containers, specialized networking, high-throughput workloads, private delivery, migration, retention, and other requirements outside the standard shared platform envelope.',
+  },
+  {
+    question: 'Can I move my data or media out of Mkety?',
+    answer:
+      'Portability depends on the product and data type. Mkety Media provides full-library inventory export and migration tooling, while Enterprise projects can include agreed migration and handoff requirements. Product-specific export options are documented in the relevant Mkety experience.',
   },
   {
     question: 'Where do I access Mkety Academy and Trading?',
@@ -371,6 +404,7 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'About', href: '/about' },
       { label: 'Contact', href: '/contact#mkety-ai' },
+      { label: 'Security & Trust', href: '/docs/trust/security-and-reliability' },
       { label: 'Docs', href: '/docs' },
     ],
   },
@@ -419,7 +453,12 @@ export const defaultDocsCategories: PlatformDocsCategoryInput[] = [
     description: 'The official web addresses for Mkety products and customer experiences.',
     sortOrder: 50,
   },
-  { key: 'trust', title: 'Security & Trust', description: 'High-level guidance for safe use of Mkety.', sortOrder: 60 },
+  {
+    key: 'trust',
+    title: 'Security, Trust & Service Levels',
+    description: 'Access boundaries, protected configuration, reliability, portability, and Enterprise service commitments.',
+    sortOrder: 60,
+  },
 ];
 
 export const defaultDocsArticles: PlatformDocsArticleInput[] = [
@@ -537,8 +576,35 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Privacy and access',
     excerpt: 'How to think about public and private information in Mkety.',
     bodyMarkdown:
-      '# Privacy and access\n\nPublic Mkety pages and documentation contain general product information. Account, workspace, billing, deployment, and organization-specific information should only be accessed through the appropriate authenticated Mkety experience.',
+      '# Privacy and access\n\nPublic Mkety pages and documentation contain general product information. Account, workspace, billing, deployment, and organization-specific information should only be accessed through the appropriate authenticated Mkety experience. Public Mkety AI does not receive private tenant, project, billing, deployment, file, agent, workflow, or organization data simply because a visitor asks for it.',
     sortOrder: 20,
+  },
+  {
+    categoryKey: 'trust',
+    slug: 'security-and-reliability',
+    title: 'Security and reliability',
+    excerpt: 'How Mkety approaches protected access, secrets, operational visibility, and reliable delivery.',
+    bodyMarkdown:
+      '# Security and reliability\n\nMkety separates public product information from authenticated customer operations. Organizations, workspaces, projects, roles, and permissions scope protected activity. Supported products use protected secret and environment-configuration paths for sensitive credentials, and customers should never place passwords, API keys, payment secrets, or other sensitive values into public support conversations.\n\nOperational controls vary by product and can include usage visibility, run and execution history, deployment status and logs, billing/capacity visibility, retries, monitoring, and managed delivery controls. Security and reliability requirements beyond the standard self-service platform can be scoped through Enterprise.\n\nMkety does not represent a certification, regulatory status, or guaranteed service level unless that claim is explicitly published by Mkety or written into an applicable customer agreement.',
+    sortOrder: 30,
+  },
+  {
+    categoryKey: 'trust',
+    slug: 'enterprise-service-levels',
+    title: 'Enterprise service levels and architecture',
+    excerpt: 'How dedicated infrastructure, data residency, retention, private delivery, and SLA requirements are handled.',
+    bodyMarkdown:
+      '# Enterprise service levels and architecture\n\nEnterprise is the route for requirements outside the standard shared platform envelope. Depending on the agreed solution, Mkety can scope private or dedicated infrastructure, regional or data-residency requirements, persistent services, containers, specialized networking, high-throughput workloads, assisted migration, retention or deletion-protection requirements, private or signed delivery, and tailored operational support.\n\nService-level commitments are contractual: uptime targets, response times, support coverage, retention rules, recovery expectations, and other guarantees apply only when they are explicitly agreed in the relevant Enterprise order or agreement. Mkety does not silently convert a standard self-service plan into a custom SLA.',
+    sortOrder: 40,
+  },
+  {
+    categoryKey: 'trust',
+    slug: 'data-portability',
+    title: 'Data portability and migration',
+    excerpt: 'How Mkety approaches export, migration, and customer handoff requirements.',
+    bodyMarkdown:
+      '# Data portability and migration\n\nPortability depends on the Mkety product and the data involved. Mkety Media provides complete library inventory export through JSON/CSV manifests and generated download-all tooling so customers can move their media. Other products expose product-specific data, history, or configuration through their supported interfaces. Enterprise engagements can include agreed migration, export, retention, handoff, or transition requirements when portability needs go beyond standard product controls.',
+    sortOrder: 50,
   },
   {
     categoryKey: 'getting-started',

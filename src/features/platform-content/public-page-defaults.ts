@@ -257,11 +257,11 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Enterprise',
     seoTitle: 'Mkety Enterprise | Custom systems and implementations',
     seoDescription:
-      'Mkety Enterprise delivers custom systems, integrations, managed implementations and specialized Trading infrastructure.',
+      'Mkety Enterprise delivers custom systems, managed implementations, private or dedicated infrastructure, specialized integrations and contractable service levels.',
     eyebrow: 'Enterprise',
     headline: 'Custom delivery for requirements beyond standard self-service.',
     intro:
-      'Use Mkety Enterprise for specialized systems, integrations, managed delivery, trading infrastructure and organization-specific requirements.',
+      'Use Mkety Enterprise for specialized systems, private or dedicated infrastructure, managed delivery, trading infrastructure, migration, data-residency requirements and organization-specific service commitments.',
     sections: [
       {
         eyebrow: 'Custom delivery',
@@ -283,9 +283,16 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             description: 'Dedicated systems and integrations designed around your organization.',
           },
           {
+            key: 'architecture',
+            title: 'Private & specialized architecture',
+            description:
+              'Scope dedicated or regional infrastructure, persistent services, containers, specialized networking, private delivery, high-throughput workloads, migration and retention requirements where agreed.',
+          },
+          {
             key: 'support',
-            title: 'Managed support',
-            description: 'Implementation and operational support tailored to enterprise requirements.',
+            title: 'Managed support & service levels',
+            description:
+              'Implementation, operational support, response expectations, retention controls and service-level commitments can be written into the applicable Enterprise order or agreement.',
           },
         ],
         cta: { label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' },
@@ -345,12 +352,6 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'enterprise',
             title: 'Enterprise & Partnerships',
             description: 'Start Enterprise, Trading, partnership and managed implementation enquiries with Mkety AI; it will escalate to sales when needed.',
-            href: '#mkety-ai',
-          },
-          {
-            key: 'telegram',
-            title: 'Telegram',
-            description: 'Mkety AI can route you to the configured Telegram support channel when a human conversation is needed.',
             href: '#mkety-ai',
           },
           {

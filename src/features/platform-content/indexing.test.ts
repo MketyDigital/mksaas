@@ -1,4 +1,4 @@
-import { getMketyRobotsPolicy, getMketySitemapEntries } from './indexing';
+import { getMketyDocsSitemapEntries, getMketyRobotsPolicy, getMketySitemapEntries } from './indexing';
 
 describe('Mkety public indexing controls', () => {
   it('sitemaps only canonical public routes', () => {
@@ -14,6 +14,27 @@ describe('Mkety public indexing controls', () => {
     expect(urls.some((url) => url.includes('/admin'))).toBe(false);
     expect(urls.some((url) => url.includes('/create-workspace'))).toBe(false);
     expect(urls.some((url) => url.includes('/app/'))).toBe(false);
+  });
+
+  it('includes canonical published docs article paths', () => {
+    const entries = getMketyDocsSitemapEntries([
+      { categoryKey: 'trust', slug: 'security-and-reliability' },
+      { categoryKey: 'platform', slug: 'projects-and-workspaces' },
+    ]);
+
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: 'https://mkety.com/docs/trust/security-and-reliability',
+          changeFrequency: 'weekly',
+          priority: 0.7,
+        }),
+        expect.objectContaining({
+          url: 'https://mkety.com/docs/platform/projects-and-workspaces',
+          priority: 0.6,
+        }),
+      ]),
+    );
   });
 
   it('allows the public site while blocking private application surfaces', () => {
