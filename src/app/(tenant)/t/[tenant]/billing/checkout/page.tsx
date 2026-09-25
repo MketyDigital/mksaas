@@ -10,6 +10,12 @@ import {
   isSelfServiceBillingTermKey,
   SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
+import {
+  formatFlutterwaveSettlementAmount,
+  getEnabledFlutterwaveSettlementCurrencies,
+  getFlutterwaveCurrencyLabel,
+  quoteFlutterwaveSettlement,
+} from '@/features/payments/flutterwave-currency';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -56,10 +62,29 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
+  const flutterwaveHostedEnabled =
+    (process.env.FLUTTERWAVE_API_MODE ?? 'v4') === 'v3-hosted' &&
+    Boolean(process.env.FLUTTERWAVE_V3_SECRET_KEY && process.env.FLUTTERWAVE_V3_SECRET_HASH);
+  const flutterwaveCurrencies = flutterwaveHostedEnabled
+    ? getEnabledFlutterwaveSettlementCurrencies(process.env.MKETY_FLUTTERWAVE_USD_RATES_JSON)
+    : [];
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
   const paymentProviders = [
-    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Pay securely with supported digital assets.' }] : []),
-    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Pay through Kora hosted checkout.' }] : []),
+    ...(nowPaymentsEnabled
+      ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Pay securely with supported digital assets.' }]
+      : []),
+    ...(flutterwaveHostedEnabled
+      ? [
+          {
+            key: 'flutterwave',
+            label: 'Card / bank / local methods',
+            detail: 'Choose a payment currency, then continue to Flutterwave secure hosted checkout.',
+          },
+        ]
+      : []),
+    ...(koraEnabled
+      ? [{ key: 'kora', label: 'Card / bank', detail: 'Pay through Kora hosted checkout.' }]
+      : []),
   ];
 
   return (
@@ -137,6 +162,33 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                   <input type="hidden" name="planKey" value={plan.key} />
                   <input type="hidden" name="termKey" value={termKey} />
                   <input type="hidden" name="provider" value={provider.key} />
+                  {provider.key === 'flutterwave' ? (
+                    <label className="mb-3 block rounded-xl border bg-muted/20 p-4 text-sm">
+                      <span className="font-medium">Payment currency</span>
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        Mkety keeps the plan price in USD. Choose the currency Flutterwave should collect for this checkout.
+                      </span>
+                      <select
+                        name="paymentCurrency"
+                        defaultValue="USD"
+                        className="mt-3 w-full rounded-lg border bg-background px-3 py-2"
+                      >
+                        {flutterwaveCurrencies.map((currency) => {
+                          const settlement = quoteFlutterwaveSettlement({
+                            canonicalUsdMinor: quote.amountMinor,
+                            currency,
+                            serializedRates: process.env.MKETY_FLUTTERWAVE_USD_RATES_JSON,
+                          });
+                          return (
+                            <option key={currency} value={currency}>
+                              {currency} — {getFlutterwaveCurrencyLabel(currency)} —{' '}
+                              {formatFlutterwaveSettlementAmount(settlement.settlementAmountMinor, currency)}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                  ) : null}
                   <button
                     type="submit"
                     className={index === 0
