@@ -62,9 +62,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
   const flutterwaveEnabled = Boolean(
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
-      process.env.FLUTTERWAVE_CLIENT_ID &&
-      process.env.FLUTTERWAVE_CLIENT_SECRET &&
-      process.env.FLUTTERWAVE_WEBHOOK_SECRET,
+      process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH,
   );
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
   const flutterwaveCurrencies = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR'] as const;
