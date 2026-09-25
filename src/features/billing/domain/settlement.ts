@@ -12,6 +12,8 @@ export interface NormalizedSettlement {
   currencyExpected: string;
   amountPaidMinor: bigint;
   currencyPaid: string;
+  providerAmountPaidMinor?: bigint;
+  providerCurrencyPaid?: string;
   status: NormalizedSettlementStatus;
   occurredAt: Date;
   rawReference?: string;
