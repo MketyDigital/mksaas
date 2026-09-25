@@ -11,6 +11,7 @@ import {
   SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
 import {
+  getEnabledMketyFlutterwaveCurrencies,
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
@@ -65,23 +66,21 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
       process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH,
   );
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
-  const flutterwaveCurrencies = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR', 'ZAR', 'XAF', 'XOF', 'UGX', 'RWF', 'TZS'] as const;
-  const selectedCurrency = flutterwaveCurrencies.includes(query.currency as (typeof flutterwaveCurrencies)[number])
+  const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies();
+  const selectedCurrency = flutterwaveCurrencies.includes(
+    query.currency as (typeof flutterwaveCurrencies)[number],
+  )
     ? String(query.currency)
     : 'USD';
 
   let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
-  if (
-    flutterwaveEnabled &&
-    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
-    isMketyFlutterwaveCollectionCurrency(selectedCurrency)
-  ) {
+  if (flutterwaveEnabled && isMketyFlutterwaveCollectionCurrency(selectedCurrency)) {
     try {
       flutterwaveQuote = await quoteFlutterwaveCollection({
         canonicalAmountMinor: quote.amountMinor,
         canonicalCurrency: 'USD',
         collectionCurrency: selectedCurrency,
-        secretKey: process.env.FLUTTERWAVE_STANDARD_SECRET_KEY,
+        configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
       });
     } catch {
       flutterwaveQuote = null;
@@ -168,7 +167,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                 <div className="rounded-2xl border bg-muted/30 p-4">
                   <p className="text-sm font-medium">Flutterwave payment currency</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Mkety prices remain canonically USD. Choose the currency you want Flutterwave to collect; available payment methods are determined by that currency and your merchant account.
+                    Mkety prices remain canonically USD. Choose an enabled collection currency; Mkety locks the quoted amount before redirecting to Flutterwave, and Flutterwave shows the payment methods available for that currency and merchant account.
                   </p>
                   {flutterwaveQuote ? (
                     <p className="mt-3 text-sm font-semibold">
