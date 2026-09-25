@@ -10,7 +10,10 @@ import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
 import { createSelfServiceCheckout } from '@/features/billing/server/self-service-checkout';
-import { isFlutterwaveSettlementCurrency } from '@/features/payments/flutterwave-currency';
+import {
+  getEnabledFlutterwaveSettlementCurrencies,
+  isFlutterwaveSettlementCurrency,
+} from '@/features/payments/flutterwave-currency';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -74,6 +77,20 @@ export async function POST(request: Request, context: RouteContext) {
     (process.env.FLUTTERWAVE_API_MODE ?? 'v4') === 'v3-hosted' &&
     Boolean(process.env.FLUTTERWAVE_V3_SECRET_KEY && process.env.FLUTTERWAVE_V3_SECRET_HASH);
 
+  let flutterwaveCurrencyEnabled = false;
+  if (provider === 'flutterwave' && flutterwaveHostedEnabled && isFlutterwaveSettlementCurrency(paymentCurrency)) {
+    try {
+      flutterwaveCurrencyEnabled = getEnabledFlutterwaveSettlementCurrencies(
+        process.env.MKETY_FLUTTERWAVE_USD_RATES_JSON,
+      ).includes(paymentCurrency);
+    } catch {
+      return json({ success: false, message: 'Flutterwave currency configuration is invalid.' }, 503);
+    }
+    if (!flutterwaveCurrencyEnabled) {
+      return json({ success: false, message: 'Selected Flutterwave payment currency is not enabled.' }, 400);
+    }
+  }
+
   const adapter =
     provider === 'nowpayments'
       ? process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
@@ -83,7 +100,7 @@ export async function POST(request: Request, context: RouteContext) {
           })
         : null
       : provider === 'flutterwave'
-        ? flutterwaveHostedEnabled && isFlutterwaveSettlementCurrency(paymentCurrency)
+        ? flutterwaveHostedEnabled && isFlutterwaveSettlementCurrency(paymentCurrency) && flutterwaveCurrencyEnabled
           ? createFlutterwaveStandardBillingAdapter({
               secretKey: process.env.FLUTTERWAVE_V3_SECRET_KEY,
               settlementCurrency: paymentCurrency,
