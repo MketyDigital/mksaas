@@ -7,10 +7,12 @@ export const MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES = ['USD','NGN','GHS','KES',
 export type MketyFlutterwaveCollectionCurrency = (typeof MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES)[number];
 
 function decimalToMinor(value: unknown): bigint {
-  const raw = typeof value === 'number' ? value.toFixed(2) : String(value ?? '').trim();
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
+  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (!Number.isFinite(numeric) || numeric <= 0) throw new Error('Flutterwave returned an invalid FX amount.');
+  const raw = numeric.toFixed(2);
+  const match = /^(\d+)\.(\d{2})$/.exec(raw);
   if (!match) throw new Error('Flutterwave returned an invalid FX amount.');
-  return BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2,'0') || '0');
+  return BigInt(match[1]) * 100n + BigInt(match[2]);
 }
 
 function minorToDecimal(value: bigint): string {
