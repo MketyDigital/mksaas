@@ -6,10 +6,11 @@ import { createEnterprisePaymentLink } from '@/features/enterprise-checkout/serv
 
 interface AdminEnterprisePaymentLinkFormProps {
   tenant: string;
+  providers: Array<'nowpayments' | 'kora' | 'selar'>;
 }
 
-export function AdminEnterprisePaymentLinkForm({ tenant }: AdminEnterprisePaymentLinkFormProps) {
-  const [provider, setProvider] = useState<'nowpayments' | 'selar'>('nowpayments');
+export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnterprisePaymentLinkFormProps) {
+  const [provider, setProvider] = useState<'nowpayments' | 'kora' | 'selar'>(providers[0] ?? 'nowpayments');
   const [result, setResult] = useState<{ orderId: string; redirectUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -127,23 +128,31 @@ export function AdminEnterprisePaymentLinkForm({ tenant }: AdminEnterprisePaymen
 
       <fieldset>
         <legend className="text-sm font-medium">Customer payment method</legend>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <button
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          {providers.includes('nowpayments') ? <button
             type="button"
             onClick={() => setProvider('nowpayments')}
             className={`rounded-xl border p-4 text-left ${provider === 'nowpayments' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
             <span className="font-semibold">Crypto checkout</span>
             <span className="mt-1 block text-sm text-muted-foreground">Create a secure crypto payment link.</span>
-          </button>
-          <button
+          </button> : null}
+          {providers.includes('kora') ? <button
+            type="button"
+            onClick={() => setProvider('kora')}
+            className={`rounded-xl border p-4 text-left ${provider === 'kora' ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <span className="font-semibold">Card / bank via Kora</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Create a hosted Kora payment link.</span>
+          </button> : null}
+          {providers.includes('selar') ? <button
             type="button"
             onClick={() => setProvider('selar')}
             className={`rounded-xl border p-4 text-left ${provider === 'selar' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
             <span className="font-semibold">Card / local checkout</span>
             <span className="mt-1 block text-sm text-muted-foreground">Create a secure card or local payment link.</span>
-          </button>
+          </button> : null}
         </div>
       </fieldset>
 
