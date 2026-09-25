@@ -83,7 +83,7 @@ describe('Mkety documented public commercial presentation', () => {
       'Drafts, version history, model choice, and test playground',
       'Knowledge sources, storage, and retrieval',
       'Tools, actions, and API access',
-      'Website AI, Telegram, and supported messaging integrations',
+      'Website AI and supported messaging integrations',
       'Conversation/run history, usage, and team access',
     ]);
     expect(pricingByKey.get('automation-workspace')?.features).toEqual([
