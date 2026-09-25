@@ -1,6 +1,7 @@
-import type { EnterpriseCheckoutProviderAdapter, ProviderCheckoutInput } from './types';
 import { buildMketyPaymentMetadata, createMketyPaymentReference } from '@/features/payments/reference';
+
 import { formatUsdMinorUnits } from '../domain';
+import type { EnterpriseCheckoutProviderAdapter, ProviderCheckoutInput } from './types';
 
 export function createKoraEnterpriseAdapter(options: {
   secretKey?: string;
