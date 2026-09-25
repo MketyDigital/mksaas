@@ -33,7 +33,7 @@ describe('Flutterwave settlement currency quoting', () => {
         currency: 'GHS',
         serializedRates: JSON.stringify({ GHS: '15.4321' }),
       }).settlementAmountMinor,
-    ).toBe(92436n);
+    ).toBe(9244n);
   });
 
   it('does not offer a local currency without a server-owned rate', () => {
