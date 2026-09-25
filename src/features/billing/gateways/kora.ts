@@ -1,6 +1,6 @@
-import type { NormalizedSettlement } from '../domain/settlement';
-import { createMketyPaymentReference, buildMketyPaymentMetadata } from '@/features/payments/reference';
+import { buildMketyPaymentMetadata, createMketyPaymentReference } from '@/features/payments/reference';
 
+import type { NormalizedSettlement } from '../domain/settlement';
 import { KORA_CAPABILITIES } from './kora-capabilities';
 import { toNormalizedSettlement } from './normalization';
 import type {
