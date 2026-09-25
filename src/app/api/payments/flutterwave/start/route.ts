@@ -130,7 +130,7 @@ export async function POST(request: Request) {
       canonicalAmountMinor,
       canonicalCurrency: 'USD',
       collectionCurrency,
-      secretKey: standardSecretKey,
+      configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
     });
     const checkoutUrl = await createFlutterwaveHostedCheckout({
       source: source as 'saas' | 'media' | 'host' | 'enterprise',
@@ -146,7 +146,8 @@ export async function POST(request: Request) {
         canonical_currency: 'USD',
         provider_amount_minor: quote.amountMinor.toString(),
         provider_currency: quote.currency,
-        ...(quote.rate ? { fx_rate: quote.rate } : {}),
+        fx_rate: quote.rate,
+        fx_source: quote.source,
       },
       secretKey: standardSecretKey,
     });
