@@ -115,9 +115,9 @@ export async function getPublicProductKnowledge(product: string) {
       key: 'media',
       title: 'Mkety Media',
       summary:
-        'Mkety Media is the official Mkety media product platform. Visit it for the current media product catalogue, published features, plan details, and signup options.',
+        'Mkety Media is managed media storage and delivery for images, videos and general files, with bucket organization, permanent cached links, usage controls, prepaid hard limits, team access, export tools, self-service plans and customizable Enterprise options.',
       path: 'https://media.mkety.com',
-      commercialModel: 'See Mkety Media for current plans and signup',
+      commercialModel: 'Starter, Growth and Business self-service plans; request-based Enterprise. See Mkety Media for current prices, quotas and signup.',
     };
   }
 
