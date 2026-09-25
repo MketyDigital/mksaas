@@ -5,11 +5,13 @@ import { POST } from './route';
 describe('POST /api/payments/flutterwave/start', () => {
   const previousBroker = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
   const previousStandardSecret = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
+  const previousStandardHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
   const previousFetch = global.fetch;
 
   beforeEach(() => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = 'x'.repeat(40);
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = 'FLWSECK_TEST-example';
+    process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = 'standard-hash';
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -26,6 +28,7 @@ describe('POST /api/payments/flutterwave/start', () => {
   afterAll(() => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = previousBroker;
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = previousStandardSecret;
+    process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = previousStandardHash;
   });
 
   function request(secret = 'x'.repeat(40)) {
