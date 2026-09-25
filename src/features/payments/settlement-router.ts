@@ -65,8 +65,13 @@ async function applySaasSettlement(input: {
     return { settled: false, status: 'pending' as const };
   }
 
-  if (input.currencyPaid !== context.currency || input.amountPaidMinor !== context.amountExpectedMinor) {
-    throw new Error('Provider settlement does not match the Mkety billing period.');
+  const providerCurrencyExpected = context.providerCurrency ?? context.currency;
+  const providerAmountExpectedMinor = context.providerAmountExpectedMinor ?? context.amountExpectedMinor;
+  if (
+    input.currencyPaid !== providerCurrencyExpected ||
+    input.amountPaidMinor < providerAmountExpectedMinor
+  ) {
+    throw new Error('Provider settlement does not match the Mkety billing checkout quote.');
   }
 
   const settlement: NormalizedSettlement = {
@@ -77,8 +82,10 @@ async function applySaasSettlement(input: {
     billingPeriodId: context.billingPeriodId,
     amountExpectedMinor: context.amountExpectedMinor,
     currencyExpected: context.currency,
-    amountPaidMinor: input.amountPaidMinor,
-    currencyPaid: input.currencyPaid,
+    amountPaidMinor: context.amountExpectedMinor,
+    currencyPaid: context.currency,
+    providerAmountPaidMinor: input.amountPaidMinor,
+    providerCurrencyPaid: input.currencyPaid,
     status: 'verified_success',
     occurredAt: input.occurredAt,
     rawReference: input.rawReference,
@@ -123,51 +130,6 @@ async function applyEnterpriseSettlement(input: {
     metadata: { lastProviderStatus: input.status },
   });
   return { settled: false, status: input.status };
-}
-
-async function deliverExternalSettlement(input: {
-  source: 'media' | 'host';
-  targetId: string;
-  provider: 'flutterwave' | 'kora';
-  reference: string;
-  providerPaymentId: string;
-  amountPaidMinor: bigint;
-  currencyPaid: string;
-  status: 'success' | 'pending' | 'failed';
-  providerData: Record<string, unknown>;
-}) {
-  const prefix = input.source === 'media' ? 'MKETY_MEDIA' : 'MKETY_HOST';
-  const url = process.env[`${prefix}_PAYMENT_SETTLEMENT_URL`];
-  const secret = process.env[`${prefix}_PAYMENT_SETTLEMENT_SECRET`];
-  if (!url || !secret) throw new Error(`${input.source} settlement delivery is not configured.`);
-  if (!input.targetId) throw new Error(`${input.source} payment target is missing.`);
-
-  const body = JSON.stringify({
-    source: input.source,
-    targetId: input.targetId,
-    provider: input.provider,
-    reference: input.reference,
-    providerPaymentId: input.providerPaymentId,
-    amountPaidMinor: input.amountPaidMinor.toString(),
-    currencyPaid: input.currencyPaid,
-    status: input.status,
-    providerData: input.providerData,
-  });
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
-  const signature = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Mkety-Payment-Signature': signature,
-    },
-    body,
-  });
-  if (!response.ok) throw new Error(`${input.source} settlement delivery failed.`);
-  return { settled: input.status === 'success', status: input.status };
 }
 
 export async function routeVerifiedMketyPayment(input: {
@@ -215,15 +177,7 @@ export async function routeVerifiedMketyPayment(input: {
     });
   }
 
-  return deliverExternalSettlement({
-    source: input.source,
-    targetId,
-    provider: input.provider,
-    reference: input.reference,
-    providerPaymentId: input.providerPaymentId,
-    amountPaidMinor,
-    currencyPaid,
-    status: input.status,
-    providerData: input.providerData,
-  });
+  throw new Error(
+    `${input.source} settlements must be handled through original provider-webhook forwarding.`,
+  );
 }
