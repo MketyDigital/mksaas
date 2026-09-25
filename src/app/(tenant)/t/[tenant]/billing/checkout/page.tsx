@@ -17,7 +17,7 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface PageProps {
   params: Promise<{ tenant: string }>;
-  searchParams: Promise<{ plan?: string; term?: string; payment?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string; payment?: string; currency?: string }>;
 }
 
 export const metadata = {
@@ -56,10 +56,21 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
+  const flutterwaveEnabled = Boolean(
+    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
+      process.env.FLUTTERWAVE_CLIENT_ID &&
+      process.env.FLUTTERWAVE_CLIENT_SECRET &&
+      process.env.FLUTTERWAVE_WEBHOOK_SECRET,
+  );
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
+  const flutterwaveCurrencies = ['USD', 'NGN', 'GHS', 'KES', 'GBP', 'EUR'] as const;
+  const selectedCurrency = flutterwaveCurrencies.includes(query.currency as (typeof flutterwaveCurrencies)[number])
+    ? String(query.currency)
+    : 'USD';
   const paymentProviders = [
-    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Pay securely with supported digital assets.' }] : []),
-    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Pay through Kora hosted checkout.' }] : []),
+    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Primary payment method · supported digital assets.' }] : []),
+    ...(flutterwaveEnabled ? [{ key: 'flutterwave', label: 'Card / local methods', detail: 'Flutterwave hosted checkout · methods depend on your selected currency and merchant availability.' }] : []),
+    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Kora hosted checkout.' }] : []),
   ];
 
   return (
@@ -131,12 +142,35 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
           </ul>
 
           {!returned ? (
-            <div className="mt-8 space-y-3">
+            <div className="mt-8 space-y-5">
+              {flutterwaveEnabled ? (
+                <div className="rounded-2xl border bg-muted/30 p-4">
+                  <p className="text-sm font-medium">Flutterwave payment currency</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Mkety prices remain canonically USD. Choose the currency you want Flutterwave to collect; available payment methods are determined by that currency and your merchant account.
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {flutterwaveCurrencies.map((currency) => (
+                      <Link
+                        key={currency}
+                        href={`/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&currency=${currency}`}
+                        className={currency === selectedCurrency ? 'rounded-lg border border-primary bg-primary/5 px-2 py-2 text-center text-xs font-semibold' : 'rounded-lg border px-2 py-2 text-center text-xs hover:border-primary/50'}
+                      >
+                        {currency}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               {paymentProviders.length ? paymentProviders.map((provider, index) => (
                 <form key={provider.key} action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post">
                   <input type="hidden" name="planKey" value={plan.key} />
                   <input type="hidden" name="termKey" value={termKey} />
                   <input type="hidden" name="provider" value={provider.key} />
+                  {provider.key === 'flutterwave' ? (
+                    <input type="hidden" name="collectionCurrency" value={selectedCurrency} />
+                  ) : null}
                   <button
                     type="submit"
                     className={index === 0
