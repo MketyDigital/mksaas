@@ -22,9 +22,15 @@ export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnter
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
     setError(null);
     setResult(null);
+
+    if (!providers.includes(provider)) {
+      setError('No payment provider is currently configured for Enterprise checkout.');
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
 
     startTransition(async () => {
       try {
@@ -185,10 +191,14 @@ export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnter
       </div>
 
       <button
-        disabled={isPending}
+        disabled={isPending || providers.length === 0}
         className="w-full rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-60"
       >
-        {isPending ? 'Creating payment link…' : 'Create payment link'}
+        {providers.length === 0
+          ? 'No payment provider configured'
+          : isPending
+            ? 'Creating payment link…'
+            : 'Create payment link'}
       </button>
     </form>
   );
