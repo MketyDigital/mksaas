@@ -4,38 +4,40 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const WORKFLOW_PATH = path.resolve(process.cwd(), '.github/workflows/mkety-public-production-cutover.yml');
-const CERTIFY_LAUNCHER_PATH = path.resolve(
-  process.cwd(),
-  '.github/workflows/mkety-certify-candidate-launcher.yml',
-);
-const CUTOVER_LAUNCHER_PATH = path.resolve(
-  process.cwd(),
-  '.github/workflows/mkety-public-cutover-launcher.yml',
-);
 const PRIVATE_DB_EXECUTOR_PATH = path.resolve(
   process.cwd(),
   '.github/workflows/mkety-coolify-production-db-executor.yml',
 );
+const CANDIDATE_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-public-candidate-deploy.yml',
+);
 
 describe('production cutover private database gate', () => {
-  it('authorizes the exact certified release before private DB mutation and Custom Domain cutover', async () => {
+  it('authorizes one exact integrated candidate before private DB mutation and Custom Domain deploy', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
     expect(workflow).toContain('authorize:');
     expect(workflow).toContain("CONFIRMATION != 'CUTOVER MKETY PUBLIC'");
-    expect(workflow).toContain("verify_workflow_success 'tests.yml' 'tests'");
-    expect(workflow).toContain("verify_workflow_success 'type-check.yml' 'typecheck'");
-    expect(workflow).toContain("verify_workflow_success 'lint.yml' 'lint'");
-    expect(workflow).toContain("verify_workflow_success 'build.yml' 'build'");
     expect(workflow).toContain("verify_workflow_success 'ci.yml' 'CI'");
-    expect(workflow).toContain("verify_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'");
-    expect(workflow).toContain("verify_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'");
-    expect(workflow).toContain("verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'");
-    expect(workflow).toContain("verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'");
-    expect(workflow).toContain("verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'");
+    expect(workflow).toContain(
+      "verify_workflow_success 'mkety-public-candidate-deploy.yml' 'integrated public candidate'",
+    );
+    expect(workflow).not.toContain("verify_workflow_success 'mkety-content-db-smoke.yml'");
+    expect(workflow).not.toContain("verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml'");
+    expect(workflow).not.toContain("verify_workflow_success 'mkety-production-preflight.yml'");
+    expect(workflow).not.toContain('Re-run exact-SHA quality gate');
 
-    expect(workflow).toContain("MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}");
-    expect(workflow).toContain("MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || 'support@mkety.com,hello@mkety.com' }}");
+    expect(workflow).toContain(
+      "MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG || vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}",
+    );
+    expect(workflow).toContain(
+      "MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || 'support@mkety.com,hello@mkety.com' }}",
+    );
+    expect(workflow).toContain(
+      'MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ secrets.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL || vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}',
+    );
+    expect(workflow).not.toContain('environment: production');
 
     expect(workflow).toContain('production-db:');
     expect(workflow).toContain('needs: authorize');
@@ -45,14 +47,14 @@ describe('production cutover private database gate', () => {
     expect(workflow).not.toContain('PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}');
 
     expect(workflow).toContain('needs: production-db');
-    expect(workflow).toContain('runs-on: ubuntu-latest');
-    expect(workflow).not.toContain('Migrate, seed, and smoke production content database');
-    expect(workflow).not.toContain('pnpm db:migrate\n');
+    expect(workflow).toContain('Verify Mkety Auth bindings survived production redeploy');
+    expect(workflow).toContain("'MKETY_AUTH_PROVIDER'");
+    expect(workflow).toContain("'MKETY_AUTH_SESSION_SECRET'");
+    expect(workflow).toContain("'NEXT_PUBLIC_APP_URL'");
 
     expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
     expect(workflow).toContain('Attach apex and www as Worker Custom Domains');
     expect(workflow).toContain('Business\\s+(?:plan|tier|workspace)');
-    // The acceptance check must not reject ordinary phrases such as "business sites".
     expect(workflow).not.toContain('\\b(Growth|Pro|Business)\\b');
     expect(workflow).toContain('for host in mkety.com www.mkety.com');
     expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
@@ -62,47 +64,29 @@ describe('production cutover private database gate', () => {
     expect(workflow).not.toContain("bind_pattern 'www.mkety.com/*'");
   });
 
-  it('pins candidate certification to the exact current public release SHA', async () => {
-    const workflow = await readFile(CERTIFY_LAUNCHER_PATH, 'utf8');
+  it('keeps the integrated candidate as the detailed certification boundary', async () => {
+    const workflow = await readFile(CANDIDATE_PATH, 'utf8');
 
-    expect(workflow).toContain('CANDIDATE_SHA: c823bc1d024bd5ffe43f727b9d3cfe1841538a4b');
-    expect(workflow).toContain('CERT_BRANCH: certify/c823bc1');
-    expect(workflow).toContain("dispatch 'mkety-content-db-smoke.yml'");
-    expect(workflow).toContain("dispatch 'mkety-public-ai-runtime-diagnostic.yml'");
-    expect(workflow).toContain("dispatch 'mkety-production-preflight.yml'");
-    expect(workflow).toContain("dispatch 'mkety-public-candidate-deploy.yml'");
-    expect(workflow).toContain("dispatch 'mkety-cloudflare-preview.yml'");
-  });
-
-  it('dispatches the guarded production cutover for the exact certified SHA', async () => {
-    const workflow = await readFile(CUTOVER_LAUNCHER_PATH, 'utf8');
-
-    const verifiedSha = workflow.match(/^\s*VERIFIED_SHA:\s*([0-9a-f]{40})\s*$/m)?.[1];
-    expect(verifiedSha).toMatch(/^[0-9a-f]{40}$/);
-    expect(workflow).toContain('CONFIRMATION: CUTOVER MKETY PUBLIC');
-    expect(workflow).toContain('actions: write');
-    expect(workflow).toContain('mkety-public-production-cutover.yml');
-    expect(workflow).toContain('"verified_sha": process.env.VERIFIED_SHA');
-    expect(workflow).toContain('"confirmation": process.env.CONFIRMATION');
-    expect(workflow).toContain('CUTOVER_MODE: worker-custom-domains-v7');
-    expect(workflow).toContain(`CERT_BRANCH: certify/${verifiedSha?.slice(0, 7)}`);
-    expect(workflow).toContain('dispatch_certification');
-    expect(workflow).toContain("dispatch_certification 'mkety-cloudflare-vinext-smoke.yml'");
-    expect(workflow).toContain("dispatch_certification 'mkety-content-db-smoke.yml'");
-    expect(workflow).toContain("dispatch_certification 'mkety-public-ai-runtime-diagnostic.yml'");
-    expect(workflow).toContain("dispatch_certification 'mkety-production-preflight.yml'");
-    expect(workflow).toContain("dispatch_certification 'mkety-public-candidate-deploy.yml'");
-    expect(workflow).toContain('wait_for_workflow_success');
-    expect(workflow).toContain("wait_for_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'");
-    expect(workflow).toContain("wait_for_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'");
-    expect(workflow).toContain("wait_for_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'");
-    expect(workflow).toContain("wait_for_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'");
-    expect(workflow).toContain("wait_for_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'");
+    expect(workflow).not.toContain('environment: staging');
+    expect(workflow).toContain('Run tests');
+    expect(workflow).toContain('Run type-check');
+    expect(workflow).toContain('Run lint');
+    expect(workflow).toContain('Check vinext compatibility');
+    expect(workflow).toContain('Apply and verify connected Mkety content database');
+    expect(workflow).toContain('Verify NOWPayments API key without creating a payment');
+    expect(workflow).toContain('Deploy isolated candidate Worker');
+    expect(workflow).toContain('Smoke candidate public routes and production copy');
+    expect(workflow).toContain('Smoke Enterprise payment safety boundary');
+    expect(workflow).toContain('Smoke Public Mkety AI memory support and privacy boundary');
+    expect(workflow).toContain(
+      'MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ secrets.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL || vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}',
+    );
   });
 
   it('upserts and verifies the Coolify migration secret without blindly replaying creates', async () => {
     const workflow = await readFile(PRIVATE_DB_EXECUTOR_PATH, 'utf8');
 
+    expect(workflow).not.toContain('environment: production');
     expect(workflow).toContain('List current migration environment');
     expect(workflow).toContain('create_database_env');
     expect(workflow).toContain('update_database_env');
