@@ -81,8 +81,6 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
         canonicalCurrency: 'USD',
         collectionCurrency: selectedCurrency,
         configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
-        clientId: process.env.FLUTTERWAVE_CLIENT_ID,
-        clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
       });
     } catch {
       flutterwaveQuote = null;
@@ -183,7 +181,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                     </p>
                   ) : (
                     <p className="mt-3 text-sm text-muted-foreground">
-                      A live quote is not currently available for {selectedCurrency}. Choose another currency or use another payment method.
+                      A Mkety collection rate is not currently configured for {selectedCurrency}. Choose another currency or use another payment method.
                     </p>
                   )}
                   <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
