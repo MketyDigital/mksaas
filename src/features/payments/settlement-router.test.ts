@@ -63,8 +63,7 @@ describe('routeVerifiedMketyPayment', () => {
       occurredAt: new Date('2026-09-25T12:00:00.000Z'),
     });
 
-    expect(mockApplySettlement).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(mockApplySettlement.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
         amountExpectedMinor: 3999n,
         currencyExpected: 'USD',
@@ -73,8 +72,8 @@ describe('routeVerifiedMketyPayment', () => {
         providerAmountPaidMinor: 5656294n,
         providerCurrencyPaid: 'NGN',
       }),
-      expect.any(Date),
     );
+    expect(mockApplySettlement.mock.calls[0]?.[2]).toEqual(expect.any(Date));
     expect(mockMarkCompleted).toHaveBeenCalled();
   });
 
