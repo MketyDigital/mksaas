@@ -2,7 +2,6 @@ import { notFound, redirect } from 'next/navigation';
 
 import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server/repository';
 import { KoraEmbeddedLauncher } from '@/features/payments/components/KoraEmbeddedLauncher';
-import { buildMketyPaymentMetadata } from '@/features/payments/reference';
 
 interface PageProps {
   searchParams: Promise<{ orderId?: string }>;
@@ -42,10 +41,7 @@ export default async function EnterpriseKoraPage({ searchParams }: PageProps) {
           customerName: order.customerName,
           notificationUrl: 'https://mkety.com/api/payments/kora/webhook',
           redirectPath: `/payment/enterprise/success?orderId=${encodeURIComponent(order.id)}`,
-          metadata: buildMketyPaymentMetadata({
-            source: 'enterprise',
-            orderId: order.id,
-          }),
+          metadata: { source: 'enterprise' },
         }}
       />
     </main>
