@@ -36,9 +36,15 @@ const protectedActionsByModule: Record<string, string[]> = {
 };
 
 export default async function PlatformControlModulePage({ params }: PlatformControlModulePageProps) {
-  const { tenant, module: moduleKey } = await params;
+  const { tenant, module: routeModuleKey } = await params;
   await requirePlatformControlAccess(tenant);
 
+  const moduleAliases: Record<string, string> = {
+    plans: 'plans-entitlements',
+    billing: 'billing-ledger',
+    security: 'security-audit',
+  };
+  const moduleKey = moduleAliases[routeModuleKey] ?? routeModuleKey;
   const controlModule = await getPublishedControlCenterModule(moduleKey);
 
   if (!controlModule) {
