@@ -52,7 +52,7 @@ describe('NOWPayments Billing adapter', () => {
     expect(result).toMatchObject({
       provider: 'nowpayments',
       providerCheckoutId: '12345',
-      checkoutUrl: 'https://nowpayments.io/payment/?iid=12345',
+      checkoutUrl: 'https://mkety.example/payment/nowpayments?iid=12345',
     });
 
     const request = fetchImpl.mock.calls[0];

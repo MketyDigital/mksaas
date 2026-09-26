@@ -29,7 +29,11 @@ describe('NOWPayments enterprise adapter', () => {
       success_url: 'https://mkety.com/payment/enterprise/success?orderId=MKETY-ENT-123',
       cancel_url: 'https://mkety.com/payment/enterprise/cancelled?orderId=MKETY-ENT-123',
     });
-    expect(result.status).toBe('checkout_created');
+    expect(result).toMatchObject({
+      status: 'checkout_created',
+      providerCheckoutReference: 'invoice-1',
+      redirectUrl: 'https://mkety.com/payment/nowpayments?iid=invoice-1',
+    });
   });
 
   it('fails closed when the API key is missing', async () => {

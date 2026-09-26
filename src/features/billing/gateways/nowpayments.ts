@@ -81,10 +81,16 @@ export function createNowPaymentsBillingAdapter(
         throw new Error('NOWPayments returned an invalid invoice URL.');
       }
 
+      if (payload.id == null) {
+        throw new Error('NOWPayments returned an invalid invoice identifier.');
+      }
+      const invoiceId = String(payload.id);
+      const checkoutOrigin = new URL(input.returnUrl).origin;
+
       return {
         provider: 'nowpayments',
-        providerCheckoutId: payload.id == null ? undefined : String(payload.id),
-        checkoutUrl: payload.invoice_url,
+        providerCheckoutId: invoiceId,
+        checkoutUrl: `${checkoutOrigin}/payment/nowpayments?iid=${encodeURIComponent(invoiceId)}`,
       };
     },
 

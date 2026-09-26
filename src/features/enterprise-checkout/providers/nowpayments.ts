@@ -39,10 +39,15 @@ export function createNowPaymentsAdapter(options: CreateNowPaymentsAdapterOption
         throw new Error('NOWPayments returned an invalid invoice URL.');
       }
 
+      if (data.id == null) {
+        throw new Error('NOWPayments returned an invalid invoice identifier.');
+      }
+      const invoiceId = String(data.id);
+
       return {
         provider: 'nowpayments',
-        redirectUrl: data.invoice_url,
-        providerCheckoutReference: data.id == null ? undefined : String(data.id),
+        redirectUrl: `https://mkety.com/payment/nowpayments?iid=${encodeURIComponent(invoiceId)}`,
+        providerCheckoutReference: invoiceId,
         status: 'checkout_created' as const,
       };
     },
