@@ -69,7 +69,7 @@ async function applySaasSettlement(input: {
   const providerAmountExpectedMinor = context.providerAmountExpectedMinor ?? context.amountExpectedMinor;
   if (
     input.currencyPaid !== providerCurrencyExpected ||
-    input.amountPaidMinor < providerAmountExpectedMinor
+    input.amountPaidMinor !== providerAmountExpectedMinor
   ) {
     throw new Error('Provider settlement does not match the Mkety billing checkout quote.');
   }
