@@ -13,6 +13,7 @@ import { randomBytes } from 'crypto';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
+import { sendTransactionalEmail } from '@/shared/lib/email/brevo';
 import { logger } from '@/shared/lib/logger';
 import { requireTenantAdmin } from '@/shared/lib/rbac';
 
@@ -185,6 +186,32 @@ export async function createInvite(
       })
       .returning();
 
+    const inviteUrl = buildInviteUrl(tenantSlug, invite.token);
+    try {
+      await sendTransactionalEmail({
+        to: [
+          {
+            email: invite.email,
+            name: [invite.firstName, invite.lastName].filter(Boolean).join(' ') || undefined,
+          },
+        ],
+        subject: `You're invited to ${tenant.name} on Mkety`,
+        textContent: [
+          `You've been invited to join ${tenant.name} on Mkety.`,
+          '',
+          invite.message ? `Message: ${invite.message}` : '',
+          `Accept invitation: ${inviteUrl}`,
+          '',
+          `This invitation expires on ${invite.expiresAt.toISOString()}.`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        tags: ['tenant-invite'],
+      });
+    } catch (emailError) {
+      logger.error({ error: emailError, inviteId: invite.id }, 'Failed to send tenant invitation email');
+    }
+
     revalidatePath(`/t/${tenantSlug}/admin/members`);
 
     return {
@@ -209,7 +236,7 @@ export async function createInvite(
               email: inviter.email,
             }
           : null,
-        inviteUrl: buildInviteUrl(tenantSlug, invite.token),
+        inviteUrl,
       },
     };
   } catch (error) {
@@ -392,6 +419,32 @@ export async function resendInvite(
       .where(eq(schema.tenantInvitations.id, inviteId))
       .returning();
 
+    const resendUrl = buildInviteUrl(tenantSlug, updated.token);
+    try {
+      await sendTransactionalEmail({
+        to: [
+          {
+            email: updated.email,
+            name: [updated.firstName, updated.lastName].filter(Boolean).join(' ') || undefined,
+          },
+        ],
+        subject: `Reminder: you're invited to ${tenant.name} on Mkety`,
+        textContent: [
+          `Your invitation to join ${tenant.name} on Mkety has been renewed.`,
+          '',
+          updated.message ? `Message: ${updated.message}` : '',
+          `Accept invitation: ${resendUrl}`,
+          '',
+          `This invitation expires on ${updated.expiresAt.toISOString()}.`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        tags: ['tenant-invite-resend'],
+      });
+    } catch (emailError) {
+      logger.error({ error: emailError, inviteId: updated.id }, 'Failed to resend tenant invitation email');
+    }
+
     revalidatePath(`/t/${tenantSlug}/admin/members`);
 
     return {
@@ -416,7 +469,7 @@ export async function resendInvite(
               email: invite.invitedBy.email,
             }
           : null,
-        inviteUrl: buildInviteUrl(tenantSlug, updated.token),
+        inviteUrl: resendUrl,
       },
     };
   } catch (error) {
