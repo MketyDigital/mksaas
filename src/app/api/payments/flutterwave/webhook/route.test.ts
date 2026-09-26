@@ -4,6 +4,7 @@ const mockForward = jest.fn();
 const mockRoute = jest.fn();
 const mockStandardVerify = jest.fn();
 const mockAttestation = jest.fn();
+const mockMarkVerified = jest.fn();
 
 jest.mock('@/features/payments/flutterwave-standard', () => ({
   verifyFlutterwaveStandardTransaction: mockStandardVerify,
@@ -13,6 +14,9 @@ jest.mock('@/features/payments/external-webhook-forwarder', () => ({
 }));
 jest.mock('@/features/payments/settlement-router', () => ({
   routeVerifiedMketyPayment: mockRoute,
+}));
+jest.mock('@/features/payments/server/flutterwave-inline-session', () => ({
+  markFlutterwaveInlineSessionVerified: mockMarkVerified,
 }));
 jest.mock('@/features/payments/attestation', () => ({
   createMketyPaymentAttestation: mockAttestation,
@@ -31,6 +35,7 @@ describe('POST /api/payments/flutterwave/webhook', () => {
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = 'standard-hash';
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = 'b'.repeat(40);
     mockAttestation.mockResolvedValue('signed-attestation');
+    mockMarkVerified.mockResolvedValue(undefined);
   });
 
   afterAll(() => {
@@ -107,6 +112,7 @@ describe('POST /api/payments/flutterwave/webhook', () => {
       }),
     );
     expect(mockForward).not.toHaveBeenCalled();
+    expect(mockMarkVerified).toHaveBeenCalledWith('SAAS-MKS-5e0d1f406bf54efdbd75a2223fb8ff91');
   });
 
   it('attests a verified Media payment before forwarding the exact original body', async () => {
@@ -153,6 +159,7 @@ describe('POST /api/payments/flutterwave/webhook', () => {
       contentType: 'application/json',
     });
     expect(mockRoute).not.toHaveBeenCalled();
+    expect(mockMarkVerified).toHaveBeenCalledWith('MKM-A83K27');
   });
 
   it('rejects forwarding when the webhook fields disagree with the verified transaction', async () => {
