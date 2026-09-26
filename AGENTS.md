@@ -1741,8 +1741,9 @@ Agent / Infrastructure Secrets
 ├── ZITADEL
 │
 ├── Payments
-│   ├── Selar
-│   └── NOWPayments
+│   ├── NOWPayments
+│   ├── Flutterwave v3
+│   └── Kora
 │
 └── AI Providers
     ├── OpenAI/Azure OpenAI
@@ -2163,8 +2164,9 @@ Production hardening
 
 This batch must integrate:
 
-* Selar
 * NOWPayments
+* Flutterwave v3
+* Kora
 * Mkety payment abstraction
 * worker architecture
 * usage
@@ -2898,9 +2900,9 @@ Then expose stable interfaces to other products/projects.
 
 # 122. PAYMENT REUSE PRINCIPLE
 
-The Selar/NOWPayments integration should be implemented once as the Mkety payment infrastructure.
+The NOWPayments / Flutterwave v3 / Kora integration is implemented behind the shared Mkety payment boundary.
 
-Other products should call the Mkety payment interface.
+Other products should call the Mkety payment interface rather than duplicating provider secrets, checkout pricing, or settlement logic.
 
 This is especially important for:
 
@@ -3334,20 +3336,29 @@ STATUS: IMPLEMENTATION REQUIRED
 
 ---
 
-## Selar
+## NOWPayments
 
 ```text
-STATUS: PROVIDER SELECTED
-STATUS: REUSABLE MKETY PAYMENT IMPLEMENTATION REQUIRED
+STATUS: ACTIVE PRIMARY/DEFAULT CRYPTO PROVIDER
+STATUS: VERIFIED SETTLEMENT IMPLEMENTED
 ```
 
 ---
 
-## NOWPayments
+## Flutterwave v3
 
 ```text
-STATUS: PROVIDER SELECTED
-STATUS: REUSABLE MKETY PAYMENT IMPLEMENTATION REQUIRED
+STATUS: ACTIVE OPTIONAL FIAT PROVIDER WHEN FULLY CONFIGURED
+STATUS: INLINE + STANDARD-BROKER + VERIFIED SETTLEMENT IMPLEMENTED
+```
+
+---
+
+## Kora
+
+```text
+STATUS: ACTIVE OPTIONAL FIAT PROVIDER WHEN FULLY CONFIGURED
+STATUS: EMBEDDED CHECKOUT + VERIFIED SETTLEMENT IMPLEMENTED
 ```
 
 ---
