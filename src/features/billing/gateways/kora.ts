@@ -1,6 +1,5 @@
-import { buildMketyPaymentMetadata, createMketyPaymentReference } from '@/features/payments/reference';
+import { createMketyPaymentReference } from '@/features/payments/reference';
 
-import type { NormalizedSettlement } from '../domain/settlement';
 import { KORA_CAPABILITIES } from './kora-capabilities';
 import { toNormalizedSettlement } from './normalization';
 import type {
@@ -9,6 +8,7 @@ import type {
   CreateCheckoutResult,
   VerifiedGatewayEvent,
 } from './types';
+import type { NormalizedSettlement } from '../domain/settlement';
 
 function returnPathFromUrl(value: string): string {
   const url = new URL(value);
