@@ -2,6 +2,7 @@ import { createMketyPaymentAttestation } from '@/features/payments/attestation';
 import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
 import { verifyFlutterwaveStandardTransaction } from '@/features/payments/flutterwave-standard';
 import { resolveMketyPaymentRoute } from '@/features/payments/reference';
+import { markFlutterwaveInlineSessionVerified } from '@/features/payments/server/flutterwave-inline-session';
 import { routeVerifiedMketyPayment } from '@/features/payments/settlement-router';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -105,6 +106,9 @@ export async function POST(request: Request) {
         attestation,
         contentType: request.headers.get('content-type'),
       });
+      if (String(verified.status ?? '') === 'successful') {
+        await markFlutterwaveInlineSessionVerified(reference).catch(() => undefined);
+      }
       return json({ success: true, settled: false, routedTo: route.source, mode: 'v3', ...forwarded });
     }
 
@@ -122,6 +126,9 @@ export async function POST(request: Request) {
       providerData: verified,
     });
 
+    if (statusValue === 'successful') {
+      await markFlutterwaveInlineSessionVerified(reference).catch(() => undefined);
+    }
     return json({ success: true, mode: 'v3', ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
