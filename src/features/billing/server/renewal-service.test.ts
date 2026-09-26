@@ -23,7 +23,7 @@ const subscription: RenewalSubscription = {
   billingPeriodId: 'period-next',
   status: 'active',
   autoRenew: true,
-  gatewayProvider: 'selar',
+  gatewayProvider: 'flutterwave',
 };
 
 function makeRepository() {
