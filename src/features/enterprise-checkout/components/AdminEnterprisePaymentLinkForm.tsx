@@ -6,11 +6,11 @@ import { createEnterprisePaymentLink } from '@/features/enterprise-checkout/serv
 
 interface AdminEnterprisePaymentLinkFormProps {
   tenant: string;
-  providers: Array<'nowpayments' | 'flutterwave' | 'kora' | 'selar'>;
+  providers: Array<'nowpayments' | 'flutterwave' | 'kora'>;
 }
 
 export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnterprisePaymentLinkFormProps) {
-  const [provider, setProvider] = useState<'nowpayments' | 'flutterwave' | 'kora' | 'selar'>(
+  const [provider, setProvider] = useState<'nowpayments' | 'flutterwave' | 'kora'>(
     providers[0] ?? 'nowpayments',
   );
   const [result, setResult] = useState<{ orderId: string; redirectUrl: string } | null>(null);
@@ -144,8 +144,8 @@ export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnter
             onClick={() => setProvider('flutterwave')}
             className={`rounded-xl border p-4 text-left ${provider === 'flutterwave' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
-            <span className="font-semibold">Flutterwave hosted checkout</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Create a secure card/local payment link.</span>
+            <span className="font-semibold">Flutterwave Inline</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Open Flutterwave securely over the Mkety payment page.</span>
           </button> : null}
           {providers.includes('kora') ? <button
             type="button"
@@ -153,15 +153,7 @@ export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnter
             className={`rounded-xl border p-4 text-left ${provider === 'kora' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
             <span className="font-semibold">Card / bank via Kora</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Create a hosted Kora payment link.</span>
-          </button> : null}
-          {providers.includes('selar') ? <button
-            type="button"
-            onClick={() => setProvider('selar')}
-            className={`rounded-xl border p-4 text-left ${provider === 'selar' ? 'border-primary bg-primary/5' : 'border-border'}`}
-          >
-            <span className="font-semibold">Card / local checkout</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Create a secure card or local payment link.</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Open Kora securely inside the Mkety payment page.</span>
           </button> : null}
         </div>
       </fieldset>
