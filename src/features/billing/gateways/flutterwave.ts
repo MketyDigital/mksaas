@@ -1,10 +1,10 @@
 import {
-  createFlutterwaveHostedCheckout,
   createSaasFlutterwaveMetadata,
   createSaasFlutterwaveReference,
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 
 import type { NormalizedSettlement } from '../domain/settlement';
 import type { GatewayCapabilities } from '../domain/types';
@@ -26,16 +26,23 @@ const FLUTTERWAVE_CAPABILITIES: GatewayCapabilities = {
   supportsMultipleCurrencies: true,
 };
 
+function returnPathFromUrl(value: string): string {
+  const url = new URL(value);
+  return `${url.pathname}${url.search}`;
+}
+
 export function createFlutterwaveBillingAdapter(options: {
+  publicKey?: string;
   standardSecretKey?: string;
-  fetchImpl?: typeof fetch;
 }): BillingGatewayAdapter {
   return {
     provider: 'flutterwave',
     capabilities: FLUTTERWAVE_CAPABILITIES,
 
     async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
-      if (!options.standardSecretKey) throw new Error('Flutterwave hosted checkout is not configured.');
+      if (!options.publicKey || !options.standardSecretKey) {
+        throw new Error('Flutterwave Inline is not configured.');
+      }
       if (!input.customer?.email) throw new Error('Flutterwave checkout requires a customer email.');
       if (input.currency !== 'USD') throw new Error('Mkety canonical Flutterwave billing currently requires USD pricing.');
 
@@ -44,38 +51,23 @@ export function createFlutterwaveBillingAdapter(options: {
         throw new Error('Selected Flutterwave collection currency is not supported.');
       }
 
+      const settings = await getMketyPaymentSettings();
       const quote = await quoteFlutterwaveCollection({
         canonicalAmountMinor: input.amountExpectedMinor,
         canonicalCurrency: 'USD',
         collectionCurrency,
-        configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+        configuredRates: settings.flutterwave.fxRates,
+        markupBps: settings.flutterwave.fxMarkupBps,
       });
       const reference = createSaasFlutterwaveReference(input.checkoutId);
-      const checkoutUrl = await createFlutterwaveHostedCheckout({
-        source: 'saas',
-        reference,
-        amountMinor: quote.amountMinor,
-        currency: quote.currency,
-        email: input.customer.email,
-        customerName: input.customer.name,
-        redirectUrl: input.returnUrl,
-        metadata: {
-          ...createSaasFlutterwaveMetadata(input.checkoutId, input.tenantId),
-          canonical_amount_minor: input.amountExpectedMinor.toString(),
-          canonical_currency: input.currency,
-          provider_amount_minor: quote.amountMinor.toString(),
-          provider_currency: quote.currency,
-          ...(quote.rate ? { fx_rate: quote.rate } : {}),
-          fx_source: quote.source,
-        },
-        secretKey: options.standardSecretKey,
-        fetchImpl: options.fetchImpl,
-      });
+      const launcher = new URL('/payments/flutterwave/inline', input.returnUrl);
+      launcher.searchParams.set('checkout', input.checkoutId);
+      launcher.searchParams.set('returnPath', returnPathFromUrl(input.returnUrl));
 
       return {
         provider: 'flutterwave',
         providerCheckoutId: reference,
-        checkoutUrl,
+        checkoutUrl: launcher.toString(),
         providerAmountExpectedMinor: quote.amountMinor,
         providerCurrency: quote.currency,
       };
@@ -90,3 +82,5 @@ export function createFlutterwaveBillingAdapter(options: {
     },
   };
 }
+
+export { createSaasFlutterwaveMetadata };
