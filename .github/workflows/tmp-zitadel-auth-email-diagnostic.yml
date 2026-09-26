@@ -1,0 +1,128 @@
+name: Temporary ZITADEL Auth Email Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/zitadel-auth-email-20260926
+    paths:
+      - '.github/workflows/tmp-zitadel-auth-email-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
+      ALL_VARS_JSON: ${{ toJSON(vars) }}
+    steps:
+      - name: Resolve repository configuration aliases without printing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE' > /tmp/resolved.env
+          const secrets=JSON.parse(process.env.ALL_SECRETS_JSON||'{}');
+          const vars=JSON.parse(process.env.ALL_VARS_JSON||'{}');
+          const pick=(names)=>{
+            for(const n of names){
+              if(typeof secrets[n]==='string' && secrets[n].trim()) return ['secret',n,secrets[n]];
+              if(typeof vars[n]==='string' && vars[n].trim()) return ['var',n,vars[n]];
+            }
+            return [null,null,''];
+          };
+          const map={
+            ZITADEL_MANAGEMENT_TOKEN:['ZITADEL_MANAGEMENT_PAT','ZITADEL_MANAGEMENT_TOKEN','ZITADEL_PAT','ZITADEL_TOKEN'],
+            MKETY_AUTH_ISSUER:['ZITADEL_URL','MKETY_AUTH_ISSUER','ZITADEL_ISSUER'],
+            ZITADEL_PROJECT_ID:['ZITADEL_PROJECT_ID'],
+          };
+          for(const [target,names] of Object.entries(map)){
+            const [kind,name,value]=pick(names);
+            if(value){
+              process.stdout.write(target+'='+JSON.stringify(value)+'\n');
+              process.stderr.write('resolved '+target+' from '+kind+':'+name+'\n');
+            }else{
+              process.stderr.write('missing '+target+' aliases '+names.join(',')+'\n');
+            }
+          }
+          const emailKeys=Object.keys(secrets).filter(k=>/(BREVO|SMTP|EMAIL|MAIL)/i.test(k)).sort();
+          const authKeys=Object.keys(secrets).filter(k=>/(ZITADEL|MKETY_AUTH)/i.test(k)).sort();
+          process.stderr.write('EMAIL_SECRET_KEYS_SAFE '+JSON.stringify(emailKeys)+'\n');
+          process.stderr.write('AUTH_SECRET_KEYS_SAFE '+JSON.stringify(authKeys)+'\n');
+          NODE
+          cat /tmp/resolved.env >> "$GITHUB_ENV"
+
+      - name: Inspect ZITADEL registration, login-name, domains and active email provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          for n in ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            [ -n "${!n:-}" ] || { echo "::error::Missing $n"; exit 1; }
+            echo "::add-mask::${!n}"
+          done
+          issuer="${MKETY_AUTH_ISSUER%/}"
+
+          project="$(curl --fail-with-body --silent --show-error -X POST             "$issuer/zitadel.project.v2.ProjectService/GetProject"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data "{\"projectId\":\"$ZITADEL_PROJECT_ID\"}")"
+          org_id="$(PROJECT="$project" node -e "const x=JSON.parse(process.env.PROJECT||'{}');if(!x.project?.organizationId)process.exit(1);process.stdout.write(x.project.organizationId)")"
+          echo "::add-mask::$org_id"
+
+          login_v2="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/login?ctx.orgId=$org_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          domain="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/domain?ctx.orgId=$org_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          login_v1="$(curl --fail-with-body --silent --show-error "$issuer/management/v1/policies/login" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $org_id")"
+          domains="$(curl --fail-with-body --silent --show-error -X POST "$issuer/v2/organizations/$org_id/domains/search" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
+
+          email_code="$(curl --silent --show-error -o /tmp/email-provider.json -w '%{http_code}' "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Accept: application/json' || true)"
+          smtp_code="$(curl --silent --show-error -o /tmp/smtp-provider.json -w '%{http_code}' "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Accept: application/json' || true)"
+
+          LOGIN_V2="$login_v2" DOMAIN="$domain" LOGIN_V1="$login_v1" DOMAINS="$domains" EMAIL_CODE="$email_code" SMTP_CODE="$smtp_code" node <<'NODE'
+          const fs=require('node:fs');
+          const v2=JSON.parse(process.env.LOGIN_V2||'{}').settings||{};
+          const v1=JSON.parse(process.env.LOGIN_V1||'{}').policy||{};
+          const domain=JSON.parse(process.env.DOMAIN||'{}').settings||{};
+          const domains=JSON.parse(process.env.DOMAINS||'{}');
+          let email={}; try{email=JSON.parse(fs.readFileSync('/tmp/email-provider.json','utf8')||'{}')}catch{}
+          let smtp={}; try{smtp=JSON.parse(fs.readFileSync('/tmp/smtp-provider.json','utf8')||'{}')}catch{}
+          const cfg=email.config||{};
+          const smtpCfg=cfg.smtp||smtp.smtpConfig||{};
+          const safe={
+            login:{
+              allowRegister:v1.allowRegister ?? v2.allowRegister ?? null,
+              allowUsernamePassword:v1.allowUsernamePassword ?? v2.allowUsernamePassword ?? null,
+              allowLocalAuthentication:v2.allowLocalAuthentication ?? null,
+              disableLoginWithEmail:v2.disableLoginWithEmail ?? null,
+              ignoreUnknownUsernames:v1.ignoreUnknownUsernames ?? v2.ignoreUnknownUsernames ?? null,
+              allowDomainDiscovery:v1.allowDomainDiscovery ?? v2.allowDomainDiscovery ?? null,
+            },
+            domain:{
+              loginNameIncludesDomain:domain.loginNameIncludesDomain ?? null,
+            },
+            orgDomains:(domains.domains||[]).map(d=>({domain:d.domain,isPrimary:d.isPrimary,isVerified:d.isVerified})),
+            emailProvider:{
+              emailEndpointHttp:process.env.EMAIL_CODE,
+              legacySmtpEndpointHttp:process.env.SMTP_CODE,
+              activeId:cfg.id||smtpCfg.id||null,
+              state:cfg.state||smtpCfg.state||null,
+              description:cfg.description||smtpCfg.description||null,
+              kind:cfg.smtp?'smtp':cfg.http?'http':smtp.smtpConfig?'smtp-legacy':'unknown',
+              host:smtpCfg.host||null,
+              senderAddress:smtpCfg.senderAddress||null,
+              senderName:smtpCfg.senderName||null,
+              tls:typeof smtpCfg.tls==='boolean'?smtpCfg.tls:null,
+              userConfigured:Boolean(smtpCfg.user),
+            }
+          };
+          console.log('ZITADEL_AUTH_EMAIL_DIAGNOSTIC_SAFE '+JSON.stringify(safe));
+          NODE
+
+      - name: Probe Mkety and branded auth front channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in             'https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin'             'https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signup'             'https://auth.mkety.com/ui/v2/login/ready'             'https://auth.mkety.com/ui/v2/login'; do
+            headers=/tmp/h; body=/tmp/b
+            code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url" || true)"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$headers")"
+            safe_location="$(LOCATION="$location" node -e "try{const u=new URL(process.env.LOCATION);console.log(u.origin+u.pathname+(u.searchParams.get('prompt')?'?prompt='+u.searchParams.get('prompt'):''))}catch{console.log(process.env.LOCATION?'relative':'')}")"
+            echo "FRONTCHANNEL_SAFE $url HTTP=$code LOCATION=$safe_location"
+          done
