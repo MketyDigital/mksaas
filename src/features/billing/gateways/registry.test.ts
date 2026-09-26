@@ -1,6 +1,5 @@
 import { NOWPAYMENTS_CAPABILITIES } from './nowpayments-capabilities';
 import { BillingGatewayRegistry } from './registry';
-import { SELAR_CAPABILITIES } from './selar-capabilities';
 import type { BillingGatewayAdapter } from './types';
 
 function makeAdapter(provider: string): BillingGatewayAdapter {
@@ -31,11 +30,11 @@ function makeAdapter(provider: string): BillingGatewayAdapter {
 describe('BillingGatewayRegistry', () => {
   it('returns the exact registered provider adapter', () => {
     const registry = new BillingGatewayRegistry();
-    const adapter = makeAdapter('selar');
+    const adapter = makeAdapter('flutterwave');
 
     registry.register(adapter);
 
-    expect(registry.get('selar')).toBe(adapter);
+    expect(registry.get('flutterwave')).toBe(adapter);
   });
 
   it('fails closed for an unknown provider', () => {
@@ -55,13 +54,6 @@ describe('BillingGatewayRegistry', () => {
 });
 
 describe('initial gateway capability profiles', () => {
-  it('models Selar as recurring-capable with verified-webhook support', () => {
-    expect(SELAR_CAPABILITIES.supportsRecurring).toBe(true);
-    expect(SELAR_CAPABILITIES.supportsAutoCharge).toBe(true);
-    expect(SELAR_CAPABILITIES.supportsHostedSubscription).toBe(true);
-    expect(SELAR_CAPABILITIES.supportsWebhookVerification).toBe(true);
-  });
-
   it('does not claim every NOWPayments checkout is automatically chargeable', () => {
     expect(NOWPAYMENTS_CAPABILITIES.supportsRecurring).toBe(true);
     expect(NOWPAYMENTS_CAPABILITIES.supportsRecurringInvoice).toBe(true);
