@@ -1127,15 +1127,17 @@ Candidate: `https://mkety-public-candidate.dry-glitter-7e16.workers.dev`.
 
 The candidate returned HTTP 200 for the full required public route set plus sitemap/robots, verified NOWPayments credentials without creating a payment, passed the Enterprise exact-amount/payment-safety boundary, and passed Public Mkety AI provider, memory, New Chat isolation, commercial-grounding, Academy, Enterprise-first Trading, and private-source checks.
 
-### Remaining commercial blocker before Mkety can be called fully self-service
+### Payment continuation boundary
 
-Starter, AI Workspace, Automation Workspace, Deploy Workspace, and Mkety One do not yet have a live self-service Billing checkout. The Billing NOWPayments/Selar adapters intentionally still reject live `createCheckout` calls. Public CTAs therefore correctly onboard users instead of falsely claiming payment completion.
+MKSaaS Billing is the authoritative billing implementation for fixed-price self-service plans. NOWPayments is the primary/default crypto path. Flutterwave is v3-only: Mkety-owned payment pages use Flutterwave Inline, while the central cross-product broker may use the v3 Standard API when another Mkety product needs a hosted link. Kora uses Checkout Standard embedded in Mkety-owned payment pages.
 
-MKSaaS Billing is the authoritative billing implementation. Any remaining self-service checkout work must extend its existing gateway, checkout, verified-settlement, ledger, and Entitlements boundaries directly. Do not introduce a parallel or legacy-repository billing dependency.
+Flutterwave non-USD commercial FX rates and optional markup are database-managed in Platform Control -> Payments. Do not restore `MKETY_PAYMENT_FX_RATES_JSON`, Selar, or a parallel Flutterwave v4 runtime.
 
-Enterprise negotiated-payment links remain a separate valid operational flow and are not a substitute for self-service subscription checkout.
+Every provider path must keep browser return non-authoritative, verify provider signatures, re-query the transaction/charge server-side where required, validate the stored reference/amount/currency, and settle idempotently before Billing/Entitlements grants value.
 
-After self-service Billing checkout is verified, resume APP-07 Deployments/Cloud from the merged Cloudflare candidate-adapter state with an authorized, audited, non-production customer invocation path. Production deployment, DNS/custom domains, OCI/Coolify mutation, and rollback execution remain out of scope until their later explicit safety gates.
+Enterprise negotiated-payment links remain a separate valid operational flow and are not a substitute for self-service subscription pricing.
+
+After payment verification is green, resume APP-07 Deployments/Cloud from the merged Cloudflare candidate-adapter state with an authorized, audited, non-production customer invocation path. Production deployment, DNS/custom domains, OCI/Coolify mutation, and rollback execution remain out of scope until their later explicit safety gates.
 ## Self-service Billing checkpoint
 
 The next production-readiness priority after PR #79 has been implemented on PR #80.
