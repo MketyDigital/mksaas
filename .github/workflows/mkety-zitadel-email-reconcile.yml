@@ -18,7 +18,7 @@ jobs:
       ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
       MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
-      SMTP_HOST: ${{ secrets.BREVO_SMTP_HOST }}
+      SMTP_HOST: ${{ secrets.BREVO_SMTP_HOST || 'smtp-relay.brevo.com:587' }}
       SMTP_USER: ${{ secrets.BREVO_SMTP_LOGIN }}
       SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY }}
       SMTP_SENDER_EMAIL: ${{ secrets.BREVO_SENDER_EMAIL }}
@@ -61,7 +61,7 @@ jobs:
 
           email_code="$(curl --silent --show-error -o /tmp/email-provider.json -w '%{http_code}' "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Accept: application/json' || true)"
 
-          LOGIN_V2="$login_v2" DOMAIN="$domain" LOGIN_V1="$login_v1" EMAIL_CODE="$email_code" node <<'NODE' > /tmp/zitadel-safe.json
+          LOGIN_V2="$login_v2" DOMAIN="$domain" LOGIN_V1="$login_v1" EMAIL_CODE="$email_code" node <<'NODE'
           const fs=require('node:fs');
           const v2=JSON.parse(process.env.LOGIN_V2||'{}').settings||{};
           const v1p=JSON.parse(process.env.LOGIN_V1||'{}');
