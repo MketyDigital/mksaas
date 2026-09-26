@@ -1,0 +1,273 @@
+name: Mkety ZITADEL Auth and Brevo Email Reconcile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mkety-zitadel-email-reconcile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      SMTP_HOST: ${{ secrets.BREVO_SMTP_HOST }}
+      SMTP_USER: ${{ secrets.BREVO_SMTP_LOGIN }}
+      SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY }}
+      SMTP_SENDER_EMAIL: ${{ secrets.BREVO_SENDER_EMAIL }}
+      SMTP_SENDER_NAME: ${{ secrets.BREVO_SENDER_NAME }}
+      SMTP_REPLY_TO: ${{ secrets.BREVO_REPLY_TO_EMAIL }}
+      PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required auth configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for n in ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            if [ -z "${!n:-}" ]; then
+              echo "::error::Missing required repository secret for $n"
+              missing=1
+            else
+              echo "::add-mask::${!n}"
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Inspect live ZITADEL registration and email-provider state
+        shell: bash
+        run: |
+          set -euo pipefail
+          issuer="${MKETY_AUTH_ISSUER%/}"
+
+          project="$(curl --fail-with-body --silent --show-error -X POST             "$issuer/zitadel.project.v2.ProjectService/GetProject"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN"             -H 'Connect-Protocol-Version: 1'             -H 'Content-Type: application/json'             --data "{\"projectId\":\"$ZITADEL_PROJECT_ID\"}")"
+          org_id="$(PROJECT="$project" node -e "const x=JSON.parse(process.env.PROJECT||'{}');if(!x.project?.organizationId)process.exit(1);process.stdout.write(x.project.organizationId)")"
+          echo "::add-mask::$org_id"
+          echo "ORG_ID=$org_id" >> "$GITHUB_ENV"
+
+          login_v2="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/login?ctx.orgId=$org_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          domain="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/domain?ctx.orgId=$org_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          login_v1="$(curl --fail-with-body --silent --show-error "$issuer/management/v1/policies/login" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $org_id")"
+
+          email_code="$(curl --silent --show-error -o /tmp/email-provider.json -w '%{http_code}' "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Accept: application/json' || true)"
+
+          LOGIN_V2="$login_v2" DOMAIN="$domain" LOGIN_V1="$login_v1" EMAIL_CODE="$email_code" node <<'NODE' > /tmp/zitadel-safe.json
+          const fs=require('node:fs');
+          const v2=JSON.parse(process.env.LOGIN_V2||'{}').settings||{};
+          const v1p=JSON.parse(process.env.LOGIN_V1||'{}');
+          const v1=v1p.policy||{};
+          const domain=JSON.parse(process.env.DOMAIN||'{}').settings||{};
+          let email={}; try{email=JSON.parse(fs.readFileSync('/tmp/email-provider.json','utf8')||'{}')}catch{}
+          const cfg=email.config||{};
+          const smtp=cfg.smtp||{};
+          const safe={
+            login:{
+              allowRegister:v1.allowRegister ?? v2.allowRegister ?? null,
+              allowUsernamePassword:v1.allowUsernamePassword ?? v2.allowUsernamePassword ?? null,
+              allowLocalAuthentication:v2.allowLocalAuthentication ?? null,
+              disableLoginWithEmail:v2.disableLoginWithEmail ?? null,
+              ignoreUnknownUsernames:v1.ignoreUnknownUsernames ?? v2.ignoreUnknownUsernames ?? null,
+              allowDomainDiscovery:v1.allowDomainDiscovery ?? v2.allowDomainDiscovery ?? null,
+              isDefault:v1.isDefault ?? v1p.isDefault ?? null
+            },
+            domain:{loginNameIncludesDomain:domain.loginNameIncludesDomain ?? null},
+            emailProvider:{
+              endpointHttp:process.env.EMAIL_CODE,
+              activeId:cfg.id||null,
+              state:cfg.state||null,
+              description:cfg.description||null,
+              kind:cfg.smtp?'smtp':cfg.http?'http':'unknown',
+              host:smtp.host||null,
+              senderAddress:smtp.senderAddress||null,
+              senderName:smtp.senderName||null,
+              tls:typeof smtp.tls==='boolean'?smtp.tls:null,
+              userConfigured:Boolean(smtp.user)
+            }
+          };
+          fs.writeFileSync('/tmp/zitadel-safe.json',JSON.stringify(safe,null,2));
+          console.log('ZITADEL_AUTH_EMAIL_STATE_SAFE '+JSON.stringify(safe));
+          NODE
+
+      - name: Ensure self-registration and username/password are enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          allow="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowRegister))")"
+          userpass="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowUsernamePassword))")"
+          if [ "$allow" = true ] && [ "$userpass" = true ]; then
+            echo 'ZITADEL self-registration and username/password already enabled.'
+            exit 0
+          fi
+
+          issuer="${MKETY_AUTH_ISSUER%/}"
+          current="$(curl --fail-with-body --silent --show-error "$issuer/management/v1/policies/login"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID")"
+          CURRENT="$current" node <<'NODE' >/tmp/login-policy.json
+          const x=JSON.parse(process.env.CURRENT||'{}').policy||{};
+          const out={
+            allowUsernamePassword:true,
+            allowRegister:true,
+            allowExternalIdp:x.allowExternalIdp ?? false,
+            forceMfa:x.forceMfa ?? false,
+            passwordlessType:x.passwordlessType || 'PASSWORDLESS_TYPE_NOT_ALLOWED',
+            hidePasswordReset:x.hidePasswordReset ?? false,
+            ignoreUnknownUsernames:x.ignoreUnknownUsernames ?? false
+          };
+          for(const k of ['defaultRedirectUri','passwordCheckLifetime','externalLoginCheckLifetime','mfaInitSkipLifetime','secondFactorCheckLifetime','multiFactorCheckLifetime']){
+            if(x[k]!==undefined && x[k]!==null && x[k]!=='') out[k]=x[k];
+          }
+          process.stdout.write(JSON.stringify(out));
+          NODE
+          code="$(curl --silent --show-error -o /tmp/login-repair.json -w '%{http_code}' -X PUT "$issuer/management/v1/policies/login"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID"             -H 'Content-Type: application/json' --data-binary @/tmp/login-policy.json)"
+          if [ "$code" = 400 ] || [ "$code" = 404 ]; then
+            code="$(curl --silent --show-error -o /tmp/login-repair.json -w '%{http_code}' -X POST "$issuer/management/v1/policies/login"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID"               -H 'Content-Type: application/json' --data-binary @/tmp/login-policy.json)"
+          fi
+          [ "$code" = 200 ] || { echo "::error::Could not enable ZITADEL self-registration (HTTP $code)."; exit 1; }
+
+      - name: Inspect configured Mkety operator identity without exposing email
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="${PLATFORM_ADMIN_EMAILS%%,*}"
+          if [ -z "$candidate" ]; then
+            echo 'MKETY_PLATFORM_ADMIN_EMAILS is empty; operator identity lookup skipped.'
+            exit 0
+          fi
+          echo "::add-mask::$candidate"
+          issuer="${MKETY_AUTH_ISSUER%/}"
+          users="$(curl --fail-with-body --silent --show-error -X POST "$issuer/v2/users"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'             --data '{"query":{"limit":200}}')"
+          USERS="$users" CANDIDATE="$candidate" node <<'NODE'
+          const p=JSON.parse(process.env.USERS||'{}');
+          const users=Array.isArray(p.result)?p.result:(Array.isArray(p.users)?p.users:[]);
+          const needle=String(process.env.CANDIDATE||'').trim().toLowerCase();
+          const matches=users.filter(u=>{
+            const vals=[u.username,u.userName,u.preferredLoginName,u.human?.email?.email,u.human?.email?.address,...(Array.isArray(u.loginNames)?u.loginNames:[])].filter(Boolean).map(v=>String(v).toLowerCase());
+            return vals.includes(needle);
+          });
+          const safe=matches.map(u=>({
+            idPresent:Boolean(u.id||u.userId),
+            state:u.state||u.details?.state||null,
+            emailVerified:u.human?.email?.isVerified ?? u.human?.email?.verified ?? null,
+            usernameLooksLikeEmail:/@/.test(String(u.username||u.userName||u.preferredLoginName||'')),
+            loginNameCount:Array.isArray(u.loginNames)?u.loginNames.length:null
+          }));
+          console.log('ZITADEL_OPERATOR_IDENTITY_SAFE '+JSON.stringify({matchCount:matches.length,matches:safe}));
+          NODE
+
+      - name: Validate Brevo repository secrets
+        id: brevo
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for n in SMTP_HOST SMTP_USER SMTP_PASSWORD SMTP_SENDER_EMAIL; do
+            if [ -z "${!n:-}" ]; then missing+=("$n"); else echo "::add-mask::${!n}"; fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::warning::Brevo SMTP is not fully configured. Missing expected repository secrets for: ${missing[*]}"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Test Brevo SMTP through ZITADEL
+        if: steps.brevo.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sender_name="${SMTP_SENDER_NAME:-Mkety}"
+          reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
+          receiver="${PLATFORM_ADMIN_EMAILS%%,*}"
+          [ -n "$receiver" ] || receiver="$SMTP_SENDER_EMAIL"
+          echo "::add-mask::$receiver"
+
+          HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" RECEIVER="$receiver" node <<'NODE' >/tmp/smtp-test.json
+          process.stdout.write(JSON.stringify({
+            senderAddress:process.env.SENDER,
+            senderName:process.env.SENDER_NAME,
+            tls:true,
+            host:process.env.HOST,
+            user:process.env.USER,
+            password:process.env.PASSWORD,
+            replyToAddress:process.env.REPLY,
+            receiverAddress:process.env.RECEIVER,
+            description:'Mkety Brevo SMTP',
+            plain:{}
+          }));
+          NODE
+          issuer="${MKETY_AUTH_ISSUER%/}"
+          code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}'             -X POST "$issuer/admin/v1/email/smtp/_test"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/smtp-test.json)"
+          if [ "$code" != 200 ]; then
+            node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/smtp-test-response.json','utf8'))}catch{};console.log('BREVO_SMTP_TEST_SAFE '+JSON.stringify({http:process.env.CODE||'',code:x.code||null,message:String(x.message||'').slice(0,240)}))" CODE="$code"
+            echo "::error::Brevo SMTP test through ZITADEL failed HTTP $code."
+            exit 1
+          fi
+          echo 'Brevo SMTP test through ZITADEL succeeded.'
+
+      - name: Create/update and activate Brevo provider
+        if: steps.brevo.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sender_name="${SMTP_SENDER_NAME:-Mkety}"
+          reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
+          HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" node <<'NODE' >/tmp/smtp-provider.json
+          process.stdout.write(JSON.stringify({
+            senderAddress:process.env.SENDER,
+            senderName:process.env.SENDER_NAME,
+            tls:true,
+            host:process.env.HOST,
+            user:process.env.USER,
+            password:process.env.PASSWORD,
+            replyToAddress:process.env.REPLY,
+            description:'Mkety Brevo SMTP',
+            plain:{}
+          }));
+          NODE
+          issuer="${MKETY_AUTH_ISSUER%/}"
+          search="$(curl --fail-with-body --silent --show-error -X POST "$issuer/admin/v1/email/_search"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
+          provider_id="$(SEARCH="$search" node -e "const x=JSON.parse(process.env.SEARCH||'{}');const a=Array.isArray(x.result)?x.result:[];const m=a.filter(p=>p.description==='Mkety Brevo SMTP');if(m.length>1)process.exit(2);process.stdout.write(m[0]?.id||'')")"
+          if [ -n "$provider_id" ]; then
+            echo "::add-mask::$provider_id"
+            code="$(curl --silent --show-error -o /tmp/provider-write.json -w '%{http_code}'               -X PUT "$issuer/admin/v1/email/smtp/$provider_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/smtp-provider.json)"
+          else
+            code="$(curl --silent --show-error -o /tmp/provider-write.json -w '%{http_code}'               -X POST "$issuer/admin/v1/email/smtp"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/smtp-provider.json)"
+            provider_id="$(node -e "const x=require('/tmp/provider-write.json');process.stdout.write(x.id||'')")"
+            [ -n "$provider_id" ] && echo "::add-mask::$provider_id"
+          fi
+          [ "$code" = 200 ] || { echo "::error::Writing Brevo SMTP provider failed HTTP $code."; exit 1; }
+          [ -n "$provider_id" ] || { echo "::error::Brevo provider id missing."; exit 1; }
+
+          code="$(curl --silent --show-error -o /tmp/provider-activate.json -w '%{http_code}'             -X POST "$issuer/admin/v1/email/$provider_id/_activate"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
+          [ "$code" = 200 ] || { echo "::error::Activating Brevo SMTP provider failed HTTP $code."; exit 1; }
+
+          active="$(curl --fail-with-body --silent --show-error "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          ACTIVE="$active" node <<'NODE'
+          const x=JSON.parse(process.env.ACTIVE||'{}').config||{};
+          const smtp=x.smtp||{};
+          const safe={description:x.description||null,state:x.state||null,kind:x.smtp?'smtp':x.http?'http':'unknown',host:smtp.host||null,senderAddress:smtp.senderAddress||null,tls:smtp.tls??null};
+          console.log('ZITADEL_ACTIVE_EMAIL_PROVIDER_SAFE '+JSON.stringify(safe));
+          if(x.description!=='Mkety Brevo SMTP' || !x.smtp) throw new Error('Brevo SMTP did not become active');
+          NODE
+
+      - name: Probe branded auth front channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          for spec in             'signin|https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin'             'signup|https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signup'             'ready|https://auth.mkety.com/ui/v2/login/ready'; do
+            name="${spec%%|*}"; url="${spec#*|}"
+            headers="/tmp/$name.headers"; body="/tmp/$name.body"
+            code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url" || true)"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$headers")"
+            safe_location="$(LOCATION="$location" node -e "try{const u=new URL(process.env.LOCATION);console.log(u.origin+u.pathname+(u.searchParams.get('prompt')?'?prompt='+u.searchParams.get('prompt'):''))}catch{console.log(process.env.LOCATION?'relative':'')}")"
+            echo "AUTH_ROUTE_SAFE name=$name HTTP=$code LOCATION=$safe_location"
+          done
