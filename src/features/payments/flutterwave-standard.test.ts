@@ -96,7 +96,7 @@ describe('Flutterwave v3 shared payments', () => {
     expect(payload).toMatchObject({
       publicKey: 'FLWPUBK_TEST-public',
       reference: 'SAAS-MKS-ABC123',
-      amount: '39.99',
+      amount: 39.99,
       currency: 'USD',
       email: 'billing@example.com',
       metadata: { source: 'saas' },
