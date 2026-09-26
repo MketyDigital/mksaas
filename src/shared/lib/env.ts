@@ -65,6 +65,14 @@ export const env = createEnv({
     MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL: z.url().optional(),
     MKETY_HOST_KORA_WEBHOOK_URL: z.url().optional(),
 
+    // Mkety transactional application email (Brevo HTTP API). ZITADEL auth/OTP
+    // email uses the same Brevo account through SMTP, but remains configured
+    // independently at the identity-provider layer.
+    BREVO_API_KEY: z.string().optional(),
+    BREVO_SENDER_EMAIL: z.string().email().optional(),
+    BREVO_SENDER_NAME: z.string().default('Mkety'),
+    BREVO_REPLY_TO_EMAIL: z.string().email().optional(),
+
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_REGION: z.string().optional().default('us-east-1'),
@@ -145,6 +153,10 @@ export const env = createEnv({
     MKETY_MEDIA_KORA_WEBHOOK_URL: process.env.MKETY_MEDIA_KORA_WEBHOOK_URL,
     MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL: process.env.MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL,
     MKETY_HOST_KORA_WEBHOOK_URL: process.env.MKETY_HOST_KORA_WEBHOOK_URL,
+    BREVO_API_KEY: process.env.BREVO_API_KEY,
+    BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL,
+    BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME,
+    BREVO_REPLY_TO_EMAIL: process.env.BREVO_REPLY_TO_EMAIL,
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
     AWS_REGION: process.env.AWS_REGION,
