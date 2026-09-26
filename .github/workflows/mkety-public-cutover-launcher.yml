@@ -7,6 +7,7 @@ name: Mkety Public Cutover Launcher
 # reuse push-gate evidence 2026-09-24
 # serialize content DB and candidate 2026-09-24
 # certify Mkety Media public/auth cleanup 2026-09-25
+# certify shared payments release 2026-09-26
 # certify public SEO trust social identity + uploaded icons 2026-09-25
 
 # final public UX/support/docs/auth production release 2026-09-24
@@ -32,10 +33,10 @@ permissions:
   statuses: write
 
 env:
-  VERIFIED_SHA: 912a0f8b22512c933d90ac581d12b1baf92446fb
+  VERIFIED_SHA: c69eb3a9301f09e1df1452ea8c4214170800a42c
   CONFIRMATION: CUTOVER MKETY PUBLIC
   RELEASE_BRANCH: feat/mkety-public-site-production
-  CERT_BRANCH: certify/912a0f8
+  CERT_BRANCH: certify/c69eb3a
   CUTOVER_MODE: worker-custom-domains-v7
 
 jobs:
