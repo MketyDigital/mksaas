@@ -4,18 +4,18 @@
 
 Current implementation state:
 
-| Area | State |
-| --- | --- |
-| NOWPayments | Primary/default crypto path; existing verified settlement remains authoritative |
-| Flutterwave hosted checkout | Implemented through Flutterwave Standard when Standard secret + webhook hash are configured |
-| Flutterwave v4 OAuth | Implemented with Client ID + Client Secret and short-lived access-token reuse |
-| Flutterwave v4 webhook | Implemented using raw-body HMAC-SHA256/Base64 `flutterwave-signature` verification |
-| Flutterwave Standard webhook | Implemented on the same central URL using `verif-hash` plus server-side transaction verification |
-| Flutterwave local-currency checkout | Implemented for USD plus any configured Mkety collection currencies; current contract supports NGN, GHS, KES, GBP, EUR, ZAR, XAF, XOF, UGX, RWF, and TZS |
-| Kora hosted checkout | Implemented; becomes visible only when `KORA_SECRET_KEY` is configured |
-| Kora webhook | Implemented with HMAC-SHA256 `x-korapay-signature` verification + charge re-query |
-| Mkety Media routing | Implemented through original-provider-webhook forwarding; Media keeps its own invoice/subscription ledger |
-| Direct v4 card collection inside Mkety | Not used; Mkety does not collect raw card details |
+| Area                                   | State                                                                                                                                                    |
+|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| NOWPayments                            | Primary/default crypto path; existing verified settlement remains authoritative                                                                          |
+| Flutterwave hosted checkout            | Implemented through Flutterwave Standard when Standard secret + webhook hash are configured                                                              |
+| Flutterwave v4 OAuth                   | Implemented with Client ID + Client Secret and short-lived access-token reuse                                                                            |
+| Flutterwave v4 webhook                 | Implemented using raw-body HMAC-SHA256/Base64 `flutterwave-signature` verification                                                                       |
+| Flutterwave Standard webhook           | Implemented on the same central URL using `verif-hash` plus server-side transaction verification                                                         |
+| Flutterwave local-currency checkout    | Implemented for USD plus any configured Mkety collection currencies; current contract supports NGN, GHS, KES, GBP, EUR, ZAR, XAF, XOF, UGX, RWF, and TZS |
+| Kora hosted checkout                   | Implemented; becomes visible only when `KORA_SECRET_KEY` is configured                                                                                   |
+| Kora webhook                           | Implemented with HMAC-SHA256 `x-korapay-signature` verification + charge re-query                                                                        |
+| Mkety Media routing                    | Implemented through original-provider-webhook forwarding; Media keeps its own invoice/subscription ledger                                                |
+| Direct v4 card collection inside Mkety | Not used; Mkety does not collect raw card details                                                                                                        |
 
 NOWPayments remains first/default. Flutterwave and Kora are additional fiat paths.
 
@@ -437,7 +437,7 @@ Optional fixed commercial FX overrides:
 MKETY_PAYMENT_FX_RATES_JSON
 ```
 
-### Kora
+### Kora availability
 
 Visible when:
 
