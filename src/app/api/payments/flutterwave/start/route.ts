@@ -1,5 +1,6 @@
 import {
   createFlutterwaveHostedCheckout,
+  createFlutterwaveInlinePayload,
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
@@ -24,6 +25,7 @@ interface BrokerRequest {
   checkout_id?: unknown;
   order_id?: unknown;
   redirect_url?: unknown;
+  checkout_experience?: unknown;
 }
 
 function json(data: unknown, status = 200) {
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
   const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
   const standardSecretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
   const standardWebhookHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  const publicKey = process.env.FLUTTERWAVE_PUBLIC_KEY;
   if (!brokerSecret || !standardSecretKey || !standardWebhookHash) {
     return json({ success: false, message: 'Flutterwave hosted checkout broker is not configured.' }, 503);
   }
@@ -135,6 +138,52 @@ export async function POST(request: Request) {
       configuredRates: paymentSettings.flutterwave.fxRates,
       markupBps: paymentSettings.flutterwave.fxMarkupBps,
     });
+    const paymentMetadata = {
+      ...metadata,
+      canonical_amount_minor: canonicalAmountMinor.toString(),
+      canonical_currency: 'USD',
+      provider_amount_minor: quote.amountMinor.toString(),
+      provider_currency: quote.currency,
+      fx_rate: quote.rate,
+      fx_markup_bps: quote.markupBps,
+      fx_source: quote.source,
+    };
+    const checkoutExperience = safeString(body.checkout_experience, 16).toLowerCase();
+    const checkoutAmount = Number(quote.amountMinor) / 100;
+
+    if (checkoutExperience === 'inline') {
+      if (!publicKey) return json({ success: false, message: 'Flutterwave Inline is not configured.' }, 503);
+      const parsedRedirect = new URL(redirectUrl);
+      const inline = await createFlutterwaveInlinePayload({
+        reference,
+        amountMinor: quote.amountMinor,
+        currency: quote.currency,
+        email,
+        customerName: customerName || undefined,
+        redirectPath: `${parsedRedirect.pathname}${parsedRedirect.search}`,
+        metadata: paymentMetadata,
+        publicKey,
+        secretKey: standardSecretKey,
+      });
+      return json({
+        success: true,
+        checkout_experience: 'inline',
+        inline,
+        reference,
+        amount: checkoutAmount,
+        checkout_amount: checkoutAmount,
+        currency: quote.currency,
+        checkout_currency: quote.currency,
+        canonical_amount_minor: canonicalAmountMinor.toString(),
+        canonical_currency: 'USD',
+        provider_amount_minor: quote.amountMinor.toString(),
+        provider_currency: quote.currency,
+        fx_rate: quote.rate ?? null,
+        fx_markup_bps: quote.markupBps,
+        fx_source: quote.source,
+      });
+    }
+
     const checkoutUrl = await createFlutterwaveHostedCheckout({
       source: source as 'saas' | 'media' | 'host' | 'enterprise',
       reference,
@@ -143,22 +192,13 @@ export async function POST(request: Request) {
       email,
       customerName: customerName || undefined,
       redirectUrl,
-      metadata: {
-        ...metadata,
-        canonical_amount_minor: canonicalAmountMinor.toString(),
-        canonical_currency: 'USD',
-        provider_amount_minor: quote.amountMinor.toString(),
-        provider_currency: quote.currency,
-        fx_rate: quote.rate,
-        fx_markup_bps: quote.markupBps,
-        fx_source: quote.source,
-      },
+      metadata: paymentMetadata,
       secretKey: standardSecretKey,
     });
 
-    const checkoutAmount = Number(quote.amountMinor) / 100;
     return json({
       success: true,
+      checkout_experience: 'hosted',
       url: checkoutUrl,
       checkout_url: checkoutUrl,
       reference,
