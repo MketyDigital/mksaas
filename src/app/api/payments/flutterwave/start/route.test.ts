@@ -12,6 +12,7 @@ describe('POST /api/payments/flutterwave/start', () => {
   const previousBroker = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
   const previousStandardSecret = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
   const previousStandardHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  const previousPublicKey = process.env.FLUTTERWAVE_PUBLIC_KEY;
   const previousFetch = global.fetch;
 
   beforeEach(() => {
@@ -19,6 +20,7 @@ describe('POST /api/payments/flutterwave/start', () => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = 'x'.repeat(40);
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = 'FLWSECK_TEST-example';
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = 'standard-hash';
+    process.env.FLUTTERWAVE_PUBLIC_KEY = 'FLWPUBK_TEST-example';
     mockPaymentSettings.mockResolvedValue({
       baseCurrency: 'USD',
       nowpayments: { checkoutExperience: 'hosted' },
@@ -46,6 +48,7 @@ describe('POST /api/payments/flutterwave/start', () => {
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = previousBroker;
     process.env.FLUTTERWAVE_STANDARD_SECRET_KEY = previousStandardSecret;
     process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH = previousStandardHash;
+    process.env.FLUTTERWAVE_PUBLIC_KEY = previousPublicKey;
   });
 
   function request(secret = 'x'.repeat(40)) {
@@ -94,6 +97,51 @@ describe('POST /api/payments/flutterwave/start', () => {
       'https://api.flutterwave.com/v3/payments',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('returns a signed Flutterwave Inline payload for Media without exposing the secret key', async () => {
+    const inlineRequest = new Request('https://mkety.com/api/payments/flutterwave/start', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${'x'.repeat(40)}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'media',
+        reference: 'MKM-A83K27',
+        canonical_amount_usd: 39.99,
+        requested_payment_currency: 'USD',
+        email: 'billing@example.com',
+        customer_name: 'Example Business',
+        invoice_id: 'invoice-1',
+        tenant_id: 'tenant-1',
+        redirect_url: 'https://media.mkety.com/billing?payment=processing&provider=flutterwave',
+        checkout_experience: 'inline',
+      }),
+    });
+
+    const response = await POST(inlineRequest);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      success: true,
+      checkout_experience: 'inline',
+      reference: 'MKM-A83K27',
+      checkout_amount: 39.99,
+      checkout_currency: 'USD',
+      inline: {
+        publicKey: 'FLWPUBK_TEST-example',
+        reference: 'MKM-A83K27',
+        amount: 39.99,
+        currency: 'USD',
+        email: 'billing@example.com',
+        redirectPath: '/billing?payment=processing&provider=flutterwave',
+      },
+    });
+    expect(typeof payload.inline.payloadHash).toBe('string');
+    expect(payload.inline.secretKey).toBeUndefined();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('quotes the Media handoff from database-managed local collection pricing', async () => {
