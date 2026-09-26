@@ -15,6 +15,7 @@ import {
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -60,13 +61,15 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const quote = getSelfServiceBillingQuote(plan.key, termKey);
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
+  const paymentSettings = await getMketyPaymentSettings();
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
   const flutterwaveEnabled = Boolean(
-    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
+    process.env.FLUTTERWAVE_PUBLIC_KEY &&
+      process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
       process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH,
   );
-  const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
-  const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies();
+  const koraEnabled = Boolean(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY);
+  const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates);
   const selectedCurrency = flutterwaveCurrencies.includes(
     query.currency as (typeof flutterwaveCurrencies)[number],
   )
@@ -80,7 +83,8 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
         canonicalAmountMinor: quote.amountMinor,
         canonicalCurrency: 'USD',
         collectionCurrency: selectedCurrency,
-        configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+        configuredRates: paymentSettings.flutterwave.fxRates,
+        markupBps: paymentSettings.flutterwave.fxMarkupBps,
       });
     } catch {
       flutterwaveQuote = null;
@@ -90,9 +94,9 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const paymentProviders = [
     ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Primary payment method · supported digital assets.' }] : []),
     ...(flutterwaveEnabled && flutterwaveQuote
-      ? [{ key: 'flutterwave', label: 'Card / local methods', detail: 'Flutterwave hosted checkout · methods depend on your selected currency and merchant availability.' }]
+      ? [{ key: 'flutterwave', label: 'Card / local methods', detail: 'Flutterwave v3 Inline opens securely over Mkety · methods depend on your currency and merchant availability.' }]
       : []),
-    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Kora hosted checkout.' }] : []),
+    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Kora secure checkout is embedded inside Mkety.' }] : []),
   ];
 
   return (
@@ -169,7 +173,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                 <div className="rounded-2xl border bg-muted/30 p-4">
                   <p className="text-sm font-medium">Flutterwave payment currency</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Mkety prices remain canonically USD. Choose an enabled collection currency; Mkety locks the quoted amount before redirecting to Flutterwave, and Flutterwave shows the payment methods available for that currency and merchant account.
+                    Mkety prices remain canonically USD. Choose a configured collection currency; Mkety locks the quoted amount before opening Flutterwave Inline, and Flutterwave shows the payment methods available for that currency and merchant account.
                   </p>
                   {flutterwaveQuote ? (
                     <p className="mt-3 text-sm font-semibold">
