@@ -1,3 +1,11 @@
+/**
+ * FUTURE-ONLY Flutterwave v4 adapter helpers.
+ *
+ * Mkety's active production Flutterwave integration is v3 Inline. Nothing in the
+ * active checkout or webhook path may import this module. When Mkety deliberately
+ * migrates to v4, switch the complete adapter/version boundary atomically instead
+ * of running v3 and v4 payment flows together.
+ */
 const TOKEN_URL = 'https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token';
 const PRODUCTION_BASE_URL = 'https://f4bexperience.flutterwave.com';
 
