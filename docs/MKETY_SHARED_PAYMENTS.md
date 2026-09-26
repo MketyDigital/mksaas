@@ -191,7 +191,7 @@ FLUTTERWAVE_CLIENT_SECRET
 FLUTTERWAVE_WEBHOOK_SECRET
 ```
 
-OAuth access tokens are short lived and are refreshed/reused server-side before expiry.
+OAuth access tokens are short lived and are refreshed/reused server-side before expiry. Native v4 production API calls use Flutterwave's documented production host `https://f4bexperience.flutterwave.com`; Flutterwave Standard remains on the separate `https://api.flutterwave.com/v3` API.
 
 The v4 webhook signature is:
 
