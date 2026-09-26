@@ -4,6 +4,7 @@ import {
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
 import { buildMketyPaymentMetadata, resolveMketyPaymentRoute } from '@/features/payments/reference';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { createLogger } from '@/shared/lib/logger';
 
 const logger = createLogger({ module: 'mkety-flutterwave-checkout-broker' });
@@ -126,11 +127,13 @@ export async function POST(request: Request) {
       return json({ success: false, message: 'Mkety payment reference does not match the requested source.' }, 400);
     }
 
+    const paymentSettings = await getMketyPaymentSettings();
     const quote = await quoteFlutterwaveCollection({
       canonicalAmountMinor,
       canonicalCurrency: 'USD',
       collectionCurrency,
-      configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+      configuredRates: paymentSettings.flutterwave.fxRates,
+      markupBps: paymentSettings.flutterwave.fxMarkupBps,
     });
     const checkoutUrl = await createFlutterwaveHostedCheckout({
       source: source as 'saas' | 'media' | 'host' | 'enterprise',
@@ -147,6 +150,7 @@ export async function POST(request: Request) {
         provider_amount_minor: quote.amountMinor.toString(),
         provider_currency: quote.currency,
         fx_rate: quote.rate,
+        fx_markup_bps: quote.markupBps,
         fx_source: quote.source,
       },
       secretKey: standardSecretKey,
@@ -167,6 +171,7 @@ export async function POST(request: Request) {
       provider_amount_minor: quote.amountMinor.toString(),
       provider_currency: quote.currency,
       fx_rate: quote.rate ?? null,
+      fx_markup_bps: quote.markupBps,
       fx_source: quote.source,
     });
   } catch (error) {

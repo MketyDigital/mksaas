@@ -7,6 +7,8 @@ import {
   platformWorkspaceCards,
 } from '@/shared/db/schema/platform-app-experience';
 
+import { DEFAULT_MKETY_PAYMENT_SETTINGS } from '@/features/payments/config';
+
 import { platformControlModules } from '../control-center-registry';
 import { defaultAppExperience } from '../defaults';
 
@@ -103,6 +105,9 @@ export async function seedDefaultPlatformAppExperience(): Promise<AppExperienceS
           editableScope: controlModule.editableScope,
           protectedScope: controlModule.protectedScope,
           implementationNotes: controlModule.implementationNotes,
+          ...(controlModule.key === 'payments'
+            ? { paymentConfig: DEFAULT_MKETY_PAYMENT_SETTINGS }
+            : {}),
         },
         publishedAt: new Date(),
       });

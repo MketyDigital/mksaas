@@ -2,12 +2,13 @@
 
 import {
   createFlutterwaveHostedCheckout,
+  createFlutterwaveInlinePayload,
   getEnabledMketyFlutterwaveCurrencies,
   quoteFlutterwaveCollection,
   verifyFlutterwaveStandardTransaction,
 } from './flutterwave-standard';
 
-describe('Flutterwave Standard shared payments', () => {
+describe('Flutterwave v3 shared payments', () => {
   it('uses the canonical amount unchanged for USD collection', async () => {
     await expect(
       quoteFlutterwaveCollection({
@@ -15,37 +16,46 @@ describe('Flutterwave Standard shared payments', () => {
         canonicalCurrency: 'USD',
         collectionCurrency: 'USD',
       }),
-    ).resolves.toEqual({ amountMinor: 3999n, currency: 'USD', rate: '1', source: 'identity' });
+    ).resolves.toEqual({
+      amountMinor: 3999n,
+      currency: 'USD',
+      rate: '1',
+      markupBps: 0,
+      source: 'identity',
+    });
   });
 
-  it('uses an explicitly configured Mkety commercial FX rate', async () => {
+  it('uses a database-configured Mkety commercial FX rate', async () => {
     await expect(
       quoteFlutterwaveCollection({
         canonicalAmountMinor: 3999n,
         canonicalCurrency: 'USD',
         collectionCurrency: 'NGN',
-        configuredRatesJson: '{"NGN":"1500"}',
+        configuredRates: { NGN: '1500' },
       }),
     ).resolves.toEqual({
       amountMinor: 5998500n,
       currency: 'NGN',
       rate: '1500',
+      markupBps: 0,
       source: 'configured',
     });
   });
 
-  it('rounds a configured collection quote upward to the smallest provider unit', async () => {
+  it('applies the configured FX markup and rounds upward to the smallest provider unit', async () => {
     await expect(
       quoteFlutterwaveCollection({
         canonicalAmountMinor: 499n,
         canonicalCurrency: 'USD',
         collectionCurrency: 'GBP',
-        configuredRatesJson: '{"GBP":"0.78125"}',
+        configuredRates: { GBP: '0.78125' },
+        markupBps: 200,
       }),
     ).resolves.toEqual({
-      amountMinor: 390n,
+      amountMinor: 398n,
       currency: 'GBP',
       rate: '0.78125',
+      markupBps: 200,
       source: 'configured',
     });
   });
@@ -56,21 +66,62 @@ describe('Flutterwave Standard shared payments', () => {
         canonicalAmountMinor: 3999n,
         canonicalCurrency: 'USD',
         collectionCurrency: 'NGN',
-        configuredRatesJson: '{}',
+        configuredRates: {},
       }),
     ).rejects.toThrow('not configured');
   });
 
   it('exposes only USD plus explicitly priced Mkety collection currencies', () => {
-    expect(getEnabledMketyFlutterwaveCurrencies('{"NGN":"1500","KES":"130","BAD":"1"}')).toEqual([
+    expect(getEnabledMketyFlutterwaveCurrencies({ NGN: '1500', KES: '130' })).toEqual([
       'USD',
       'NGN',
       'KES',
     ]);
-    expect(getEnabledMketyFlutterwaveCurrencies('{}')).toEqual(['USD']);
+    expect(getEnabledMketyFlutterwaveCurrencies({})).toEqual(['USD']);
   });
 
-  it('creates hosted checkout without exposing provider secrets in the payload', async () => {
+  it('creates a server-hashed Inline payload without exposing the secret key', async () => {
+    const payload = await createFlutterwaveInlinePayload({
+      reference: 'SAAS-MKS-ABC123',
+      amountMinor: 3999n,
+      currency: 'USD',
+      email: 'billing@example.com',
+      customerName: 'Example',
+      redirectPath: '/t/example/billing/checkout?payment=returned',
+      metadata: { source: 'saas' },
+      publicKey: 'FLWPUBK_TEST-public',
+      secretKey: 'FLWSECK_TEST-private',
+    });
+
+    expect(payload).toMatchObject({
+      publicKey: 'FLWPUBK_TEST-public',
+      reference: 'SAAS-MKS-ABC123',
+      amount: 39.99,
+      currency: 'USD',
+      email: 'billing@example.com',
+      metadata: { source: 'saas' },
+    });
+    expect(payload.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(payload)).not.toContain('FLWSECK_TEST-private');
+  });
+
+  it('hashes whole-unit Inline amounts exactly as they are sent to Flutterwave', async () => {
+    const payload = await createFlutterwaveInlinePayload({
+      reference: 'SAAS-MKS-WHOLE10',
+      amountMinor: 1000n,
+      currency: 'USD',
+      email: 'billing@example.com',
+      redirectPath: '/return',
+      metadata: { source: 'saas' },
+      publicKey: 'FLWPUBK_TEST-public',
+      secretKey: 'FLWSECK_TEST-private',
+    });
+
+    expect(payload.amount).toBe(10);
+    expect(payload.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('keeps the hosted v3 checkout helper for shared product broker flows', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -80,14 +131,14 @@ describe('Flutterwave Standard shared payments', () => {
     });
 
     const link = await createFlutterwaveHostedCheckout({
-      source: 'saas',
-      reference: 'SAAS-MKS-ABC123',
+      source: 'media',
+      reference: 'MEDIA-MKM-ABC123',
       amountMinor: 3999n,
       currency: 'USD',
       email: 'billing@example.com',
       customerName: 'Example',
-      redirectUrl: 'https://mkety.com/return',
-      metadata: { source: 'saas' },
+      redirectUrl: 'https://media.mkety.com/billing',
+      metadata: { source: 'media' },
       secretKey: 'FLWSECK_TEST-private',
       fetchImpl: fetchMock,
     });
@@ -96,17 +147,17 @@ describe('Flutterwave Standard shared payments', () => {
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(init.body);
     expect(body).toMatchObject({
-      tx_ref: 'SAAS-MKS-ABC123',
+      tx_ref: 'MEDIA-MKM-ABC123',
       amount: '39.99',
       currency: 'USD',
       customer: { email: 'billing@example.com', name: 'Example' },
-      meta: { source: 'saas' },
+      meta: { source: 'media' },
     });
     expect(body.payload_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(body)).not.toContain('FLWSECK_TEST-private');
   });
 
-  it('re-queries Standard transactions before settlement', async () => {
+  it('re-queries v3 transactions before settlement', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({

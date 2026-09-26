@@ -116,13 +116,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
       NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
-      FLUTTERWAVE_CLIENT_ID: ${{ secrets.FLUTTERWAVE_CLIENT_ID }}
-      FLUTTERWAVE_CLIENT_SECRET: ${{ secrets.FLUTTERWAVE_CLIENT_SECRET }}
-      FLUTTERWAVE_WEBHOOK_SECRET: ${{ secrets.FLUTTERWAVE_WEBHOOK_SECRET }}
+      FLUTTERWAVE_PUBLIC_KEY: ${{ secrets.FLUTTERWAVE_PUBLIC_KEY }}
       FLUTTERWAVE_STANDARD_SECRET_KEY: ${{ secrets.FLUTTERWAVE_STANDARD_SECRET_KEY }}
       FLUTTERWAVE_STANDARD_WEBHOOK_HASH: ${{ secrets.FLUTTERWAVE_STANDARD_WEBHOOK_HASH }}
       FLUTTERWAVE_CHECKOUT_BROKER_SECRET: ${{ secrets.FLUTTERWAVE_CHECKOUT_BROKER_SECRET }}
-      MKETY_PAYMENT_FX_RATES_JSON: ${{ vars.MKETY_PAYMENT_FX_RATES_JSON }}
+      KORA_PUBLIC_KEY: ${{ secrets.KORA_PUBLIC_KEY }}
       KORA_SECRET_KEY: ${{ secrets.KORA_SECRET_KEY }}
       MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}
       MKETY_MEDIA_KORA_WEBHOOK_URL: ${{ vars.MKETY_MEDIA_KORA_WEBHOOK_URL }}
@@ -175,7 +173,7 @@ jobs:
             echo 'MKETY_PUBLIC_AI_VISITOR_SECRET must contain at least 32 characters.'
             exit 1
           fi
-          echo 'Hosted checkout providers such as Selar are optional and must be configured through the admin/payment-provider catalog, not as a cutover prerequisite.'
+          echo 'Flutterwave and Kora remain optional until their complete provider credentials are configured; payment business settings are managed in Platform Control.'
 
       - name: Verify SHA is current release-branch head and all blocking gates are green
         shell: bash
@@ -541,13 +539,11 @@ jobs:
           }
           put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
           put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
-          put_secret FLUTTERWAVE_CLIENT_ID "${FLUTTERWAVE_CLIENT_ID:-}"
-          put_secret FLUTTERWAVE_CLIENT_SECRET "${FLUTTERWAVE_CLIENT_SECRET:-}"
-          put_secret FLUTTERWAVE_WEBHOOK_SECRET "${FLUTTERWAVE_WEBHOOK_SECRET:-}"
+          put_secret FLUTTERWAVE_PUBLIC_KEY "${FLUTTERWAVE_PUBLIC_KEY:-}"
           put_secret FLUTTERWAVE_STANDARD_SECRET_KEY "${FLUTTERWAVE_STANDARD_SECRET_KEY:-}"
           put_secret FLUTTERWAVE_STANDARD_WEBHOOK_HASH "${FLUTTERWAVE_STANDARD_WEBHOOK_HASH:-}"
           put_secret FLUTTERWAVE_CHECKOUT_BROKER_SECRET "${FLUTTERWAVE_CHECKOUT_BROKER_SECRET:-}"
-          put_secret MKETY_PAYMENT_FX_RATES_JSON "${MKETY_PAYMENT_FX_RATES_JSON:-}"
+          put_secret KORA_PUBLIC_KEY "${KORA_PUBLIC_KEY:-}"
           put_secret KORA_SECRET_KEY "${KORA_SECRET_KEY:-}"
           put_secret MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL "${MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL:-}"
           put_secret MKETY_MEDIA_KORA_WEBHOOK_URL "${MKETY_MEDIA_KORA_WEBHOOK_URL:-}"
@@ -951,7 +947,7 @@ jobs:
             echo "- Verified Worker preview: \`$PREVIEW_URL\`"
             echo "- Public Mkety AI primary provider family: \`$PUBLIC_AI_PRIMARY\`"
             echo '- Required exact-SHA workflows: green before cutover.'
-            echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; hosted checkout providers are optional/admin-configured.'
+            echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; Flutterwave/Kora are optional until fully configured.'
             echo '- Database runtime: MKETY_DB Hyperdrive binding; private production database credentials are not attached to the Worker.'
             echo '- Live hostname mutation: only mkety.com and www.mkety.com Worker Custom Domains, with automatic rollback on partial attachment failure.'
             echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'

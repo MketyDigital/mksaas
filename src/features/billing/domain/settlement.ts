@@ -1,4 +1,4 @@
-export type SettlementSource = 'selar' | 'nowpayments' | 'flutterwave' | 'kora' | 'manual';
+export type SettlementSource = 'nowpayments' | 'flutterwave' | 'kora' | 'manual';
 
 export type NormalizedSettlementStatus = 'verified_success' | 'verified_failure';
 

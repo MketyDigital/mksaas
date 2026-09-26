@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
+import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
@@ -46,13 +48,20 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const actions = protectedActionsByModule[controlModule.key] ?? ['Review configuration', 'Manage approved settings'];
   const isAppExperience = controlModule.key === 'app-experience';
   const isDeployments = controlModule.key === 'deployments-domains';
+  const isPayments = controlModule.key === 'payments';
   let deploymentApprovalRows = null;
+  let paymentSettings = null;
 
   if (isDeployments) {
     await requirePermission(tenant, 'platform:deployments');
     const tenantRecord = await getTenantBySlug(tenant);
     if (!tenantRecord) notFound();
     deploymentApprovalRows = await getDeploymentApprovalQueue(tenantRecord.id);
+  }
+
+  if (isPayments) {
+    await requirePermission(tenant, 'platform:billing');
+    paymentSettings = await getMketyPaymentSettings();
   }
 
   return (
@@ -83,7 +92,23 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         <DeploymentApprovalQueue rows={deploymentApprovalRows} tenantSlug={tenant} />
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {isPayments && paymentSettings ? (
+        <PaymentSettingsForm
+          tenant={tenant}
+          settings={paymentSettings}
+          readiness={{
+            nowpayments: Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET),
+            flutterwave: Boolean(
+              process.env.FLUTTERWAVE_PUBLIC_KEY &&
+              process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
+              process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
+            ),
+            kora: Boolean(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY),
+          }}
+        />
+      ) : null}
+
+      {!isPayments ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle>Controlled module surface</CardTitle>
@@ -127,7 +152,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
             <p>Domain routing must follow the approved Mkety map: mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, and *.mkety.app.</p>
           </CardContent>
         </Card>
-      </div>
+      </div> : null}
     </div>
   );
 }

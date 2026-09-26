@@ -124,30 +124,31 @@ Public Mkety AI must ground itself only in approved public CMS/docs/pricing/prod
 
 ## 6. Enterprise payment production contract
 
-Public production requires both Enterprise payment gateways to be configured and safely verified:
-
-### NOWPayments
-
-Required runtime values:
+NOWPayments remains the required production payment-readiness check and the primary/default crypto path:
 
 ```text
 NOWPAYMENTS_API_KEY
 NOWPAYMENTS_IPN_SECRET
 ```
 
-The public candidate must verify the webhook secret/fail-closed runtime without creating a real invoice solely for CI. Browser return/success never confirms payment. Only a verified final provider event may confirm an Enterprise order.
-
-### Selar
-
-Required runtime value:
+Flutterwave and Kora are additional payment providers and are exposed only when their complete credentials are configured:
 
 ```text
-SELAR_ENTERPRISE_CHECKOUT_URL
+FLUTTERWAVE_PUBLIC_KEY
+FLUTTERWAVE_STANDARD_SECRET_KEY
+FLUTTERWAVE_STANDARD_WEBHOOK_HASH
+
+KORA_PUBLIC_KEY
+KORA_SECRET_KEY
 ```
 
-It must be HTTPS. Candidate verification may create a hosted checkout URL/order without completing payment and must prove the order remains pending/unconfirmed.
+Flutterwave uses v3 only. Mkety-owned payment pages use Flutterwave Inline; the central cross-product broker may use the Flutterwave v3 Standard API to return a provider-hosted link to products that cannot render the Mkety checkout page. Do not reintroduce Flutterwave v4 beside this active v3 integration.
 
-Both gateways are required for public cutover. `NOWPayments OR Selar` is no longer an acceptable promotion condition.
+Kora uses Checkout Standard in a provider-controlled iframe/modal embedded in Mkety-owned payment pages.
+
+Flutterwave non-USD commercial FX rates and optional markup are business settings stored through Platform Control -> Payments. They are not runtime environment variables.
+
+Candidate verification must remain non-charging wherever possible. Browser return/success never confirms payment. Only a verified provider event, followed by the required server-side provider re-query and exact reference/amount/currency checks, may confirm an Enterprise order or settle a subscription.
 
 ## 7. Cutover rule
 
@@ -159,7 +160,7 @@ No `mkety.com` production cutover until the exact candidate SHA proves all of th
 - no internal engineering/repository/development leakage in public content;
 - Public Mkety AI canonical pricing/domain grounding plus private-source refusal;
 - Public AI memory and New Chat isolation;
-- both NOWPayments and Selar readiness gates;
+- NOWPayments readiness plus fail-closed verification for every enabled Flutterwave/Kora path;
 - Enterprise payments remain non-entitling/non-provisioning until verified payment confirmation;
 - routing/DNS guardrails and unrelated Cloudflare resources remain preserved.
 

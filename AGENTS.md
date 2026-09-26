@@ -1146,9 +1146,12 @@ Mkety Billing
 ├── Invoices
 ├── Audit Logs
 └── Payments
-     ├── Selar
-     └── NOWPayments
+     ├── NOWPayments
+     ├── Flutterwave v3
+     └── Kora
 ```
+
+NOWPayments is the primary/default crypto collection path. Flutterwave and Kora provide additional fiat/card/local-method collection when fully configured.
 
 ---
 
@@ -1156,13 +1159,7 @@ Mkety Billing
 
 The payment architecture should be reusable.
 
-Do not implement:
-
-```text
-Customer App → Selar directly
-Trading → Selar directly
-Platform → Selar directly
-```
+Do not couple a product directly to a provider or let product/customer input become payment authority.
 
 Instead:
 
@@ -1171,30 +1168,38 @@ Product / Project
        ↓
 Mkety Billing / Payment Interface
        ↓
-Mkety Payment Worker
+Shared Mkety Payment Boundary
        ↓
 Provider Adapter
-       ├── Selar
-       └── NOWPayments
+       ├── NOWPayments
+       ├── Flutterwave v3
+       └── Kora
 ```
+
+Provider secrets, webhook verification, settlement, and canonical pricing remain server-owned. Browser success/return never grants value.
 
 This allows provider implementations to be changed without rewriting every product.
 
 ---
 
-# 40. SELAR / NOWPAYMENTS
+# 40. PAYMENT PROVIDERS
 
-Initial payment providers:
+Current payment providers:
 
-* Selar
-* NOWPayments
+* NOWPayments — primary/default crypto path.
+* Flutterwave v3 — Inline on Mkety-owned checkout pages; v3 Standard API only where the central cross-product checkout broker must return a provider-hosted link.
+* Kora Checkout Standard — provider-controlled iframe/modal embedded on Mkety-owned checkout pages when fully configured.
 
-The existing Mkety/reference implementation should be treated as the behavioral reference for the payment flow.
+Flutterwave v4 must not be mixed into the active v3 account/integration. Any future v4 migration is a deliberate replacement project, not a parallel runtime path.
+
+Commercial FX configuration for Flutterwave non-USD collection is stored in Mkety's database-backed Payments control surface. Do not restore environment-variable FX pricing as a second authority.
 
 The implementation must preserve:
 
 * webhook handling
-* payment verification
+* provider signature verification
+* server-side transaction/charge re-query
+* exact amount/currency/reference validation
 * transaction recording
 * subscription/payment state
 * appropriate product entitlement
@@ -1736,8 +1741,9 @@ Agent / Infrastructure Secrets
 ├── ZITADEL
 │
 ├── Payments
-│   ├── Selar
-│   └── NOWPayments
+│   ├── NOWPayments
+│   ├── Flutterwave v3
+│   └── Kora
 │
 └── AI Providers
     ├── OpenAI/Azure OpenAI
@@ -2158,8 +2164,9 @@ Production hardening
 
 This batch must integrate:
 
-* Selar
 * NOWPayments
+* Flutterwave v3
+* Kora
 * Mkety payment abstraction
 * worker architecture
 * usage
@@ -2893,9 +2900,9 @@ Then expose stable interfaces to other products/projects.
 
 # 122. PAYMENT REUSE PRINCIPLE
 
-The Selar/NOWPayments integration should be implemented once as the Mkety payment infrastructure.
+The NOWPayments / Flutterwave v3 / Kora integration is implemented behind the shared Mkety payment boundary.
 
-Other products should call the Mkety payment interface.
+Other products should call the Mkety payment interface rather than duplicating provider secrets, checkout pricing, or settlement logic.
 
 This is especially important for:
 
@@ -3329,20 +3336,29 @@ STATUS: IMPLEMENTATION REQUIRED
 
 ---
 
-## Selar
+## NOWPayments
 
 ```text
-STATUS: PROVIDER SELECTED
-STATUS: REUSABLE MKETY PAYMENT IMPLEMENTATION REQUIRED
+STATUS: ACTIVE PRIMARY/DEFAULT CRYPTO PROVIDER
+STATUS: VERIFIED SETTLEMENT IMPLEMENTED
 ```
 
 ---
 
-## NOWPayments
+## Flutterwave v3
 
 ```text
-STATUS: PROVIDER SELECTED
-STATUS: REUSABLE MKETY PAYMENT IMPLEMENTATION REQUIRED
+STATUS: ACTIVE OPTIONAL FIAT PROVIDER WHEN FULLY CONFIGURED
+STATUS: INLINE + STANDARD-BROKER + VERIFIED SETTLEMENT IMPLEMENTED
+```
+
+---
+
+## Kora
+
+```text
+STATUS: ACTIVE OPTIONAL FIAT PROVIDER WHEN FULLY CONFIGURED
+STATUS: EMBEDDED CHECKOUT + VERIFIED SETTLEMENT IMPLEMENTED
 ```
 
 ---

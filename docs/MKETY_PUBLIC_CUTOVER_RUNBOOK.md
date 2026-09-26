@@ -22,7 +22,7 @@ Production cutover is blocked until all of the following are true:
 10. At least one dedicated `MKETY_PUBLIC_*` AI provider is configured and returns a real grounded answer.
 11. Public AI same-browser memory, restored history and New Chat isolation pass.
 12. Public AI correctly states the canonical public commercial matrix and Academy/Trading domains, does not present removed plans, and refuses private repository/source disclosure.
-13. NOWPayments production credentials are configured and safely verified; hosted checkout providers such as Selar are optional and are governed by the admin/payment-provider catalog.
+13. NOWPayments production credentials are configured and safely verified; Flutterwave and Kora are optional until their complete credentials are configured and are governed by the Mkety payment boundary.
 14. Enterprise checkout remains non-entitling/non-provisioning until verified provider confirmation.
 15. Read-only production preflight records current `mkety.com`/`www.mkety.com` DNS, Worker Custom Domain, and Worker Route state and preserves unrelated routes, including unrelated legacy learning routes.
 16. `mkety.com/*` and `www.mkety.com/*` Worker Routes are absent; apex/www production promotion uses Worker Custom Domains only.
@@ -46,7 +46,7 @@ NOWPAYMENTS_API_KEY
 NOWPAYMENTS_IPN_SECRET
 ```
 
-Hosted checkout providers such as Selar are optional and must be configured through the admin/payment-provider catalog rather than hard-coded as a cutover prerequisite.
+Flutterwave and Kora are optional cutover providers. When enabled, Flutterwave requires its v3 public key, Standard secret key and webhook hash; Kora requires its public and secret keys. Business FX settings remain database-managed in Platform Control rather than deployment variables.
 
 Candidate verification must remain non-charging:
 
@@ -98,7 +98,7 @@ Do not log Cloudflare tokens, database URLs, AI credentials, payment credentials
 2. Re-run the isolated candidate deployment including public-content, Public AI and Enterprise payment-safety smoke checks.
 3. Re-run read-only routing preflight and record rollback state.
 4. Deploy the generated server Worker using the verified vinext server config, never an asset-only deployment.
-5. Run production migrations/seed/smoke from the ephemeral private-DB executor, then attach only the `MKETY_DB` Hyperdrive binding plus dedicated Public Mkety AI and NOWPayments secrets to the Worker; never attach the private production `DATABASE_URL` to the Worker.
+5. Run production migrations/seed/smoke from the ephemeral private-DB executor, then attach only the `MKETY_DB` Hyperdrive binding plus dedicated Public Mkety AI, NOWPayments, and any fully configured optional Flutterwave/Kora runtime credentials to the Worker; never attach the private production `DATABASE_URL` to the Worker.
 6. Confirm Worker deployment and Hyperdrive-backed smoke succeed before adding domain traffic.
 7. Attach `mkety.com` and `www.mkety.com` to the verified production Worker through Cloudflare Worker Custom Domains.
 8. Do not create or update apex/www Worker Routes; verify the complete Worker Route set remains unchanged before and after attachment.
@@ -145,7 +145,7 @@ Also verify:
 - New Chat creates a distinct conversation;
 - no tenant/private AI data is required;
 - no model/provider selector is exposed;
-- NOWPayments is configured and candidate-verified; any enabled hosted checkout provider remains governed by the admin/payment-provider catalog;
+- NOWPayments is configured and candidate-verified; any enabled Flutterwave/Kora path is fully configured, fail-closed, and settlement remains server-verified;
 - Enterprise orders remain pending until verified payment confirmation;
 - no stale template branding is public;
 - no public CTA routes to an internal origin hostname;

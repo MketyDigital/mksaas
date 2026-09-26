@@ -43,13 +43,11 @@ jobs:
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
       NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
-      FLUTTERWAVE_CLIENT_ID: ${{ secrets.FLUTTERWAVE_CLIENT_ID }}
-      FLUTTERWAVE_CLIENT_SECRET: ${{ secrets.FLUTTERWAVE_CLIENT_SECRET }}
-      FLUTTERWAVE_WEBHOOK_SECRET: ${{ secrets.FLUTTERWAVE_WEBHOOK_SECRET }}
+      FLUTTERWAVE_PUBLIC_KEY: ${{ secrets.FLUTTERWAVE_PUBLIC_KEY }}
       FLUTTERWAVE_STANDARD_SECRET_KEY: ${{ secrets.FLUTTERWAVE_STANDARD_SECRET_KEY }}
       FLUTTERWAVE_STANDARD_WEBHOOK_HASH: ${{ secrets.FLUTTERWAVE_STANDARD_WEBHOOK_HASH }}
       FLUTTERWAVE_CHECKOUT_BROKER_SECRET: ${{ secrets.FLUTTERWAVE_CHECKOUT_BROKER_SECRET }}
-      MKETY_PAYMENT_FX_RATES_JSON: ${{ vars.MKETY_PAYMENT_FX_RATES_JSON }}
+      KORA_PUBLIC_KEY: ${{ secrets.KORA_PUBLIC_KEY }}
       KORA_SECRET_KEY: ${{ secrets.KORA_SECRET_KEY }}
       MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}
       MKETY_MEDIA_KORA_WEBHOOK_URL: ${{ vars.MKETY_MEDIA_KORA_WEBHOOK_URL }}
@@ -160,7 +158,7 @@ jobs:
             fi
           done
           echo 'nowpayments_ready=true' >> "$GITHUB_OUTPUT"
-          echo 'NOWPayments is configured for candidate verification. Hosted checkout providers such as Selar are optional and admin-configured.'
+          echo 'NOWPayments is configured for candidate verification. Flutterwave and Kora are optional until their complete provider credentials are configured; NOWPayments remains the required primary crypto path.'
 
       - name: Verify NOWPayments API key without creating a payment
         shell: bash
@@ -240,13 +238,11 @@ jobs:
           put_secret DATABASE_URL "$STAGING_DATABASE_URL"
           put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
           put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
-          put_secret FLUTTERWAVE_CLIENT_ID "${FLUTTERWAVE_CLIENT_ID:-}"
-          put_secret FLUTTERWAVE_CLIENT_SECRET "${FLUTTERWAVE_CLIENT_SECRET:-}"
-          put_secret FLUTTERWAVE_WEBHOOK_SECRET "${FLUTTERWAVE_WEBHOOK_SECRET:-}"
+          put_secret FLUTTERWAVE_PUBLIC_KEY "${FLUTTERWAVE_PUBLIC_KEY:-}"
           put_secret FLUTTERWAVE_STANDARD_SECRET_KEY "${FLUTTERWAVE_STANDARD_SECRET_KEY:-}"
           put_secret FLUTTERWAVE_STANDARD_WEBHOOK_HASH "${FLUTTERWAVE_STANDARD_WEBHOOK_HASH:-}"
           put_secret FLUTTERWAVE_CHECKOUT_BROKER_SECRET "${FLUTTERWAVE_CHECKOUT_BROKER_SECRET:-}"
-          put_secret MKETY_PAYMENT_FX_RATES_JSON "${MKETY_PAYMENT_FX_RATES_JSON:-}"
+          put_secret KORA_PUBLIC_KEY "${KORA_PUBLIC_KEY:-}"
           put_secret KORA_SECRET_KEY "${KORA_SECRET_KEY:-}"
           put_secret MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL "${MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL:-}"
           put_secret MKETY_MEDIA_KORA_WEBHOOK_URL "${MKETY_MEDIA_KORA_WEBHOOK_URL:-}"
@@ -379,7 +375,7 @@ jobs:
           if [ "$webhook_code" != '400' ]; then echo "Configured NOWPayments webhook expected HTTP 400 for invalid signature; received $webhook_code."; exit 1; fi
           node -e "const x=require('/tmp/mkety-enterprise-webhook.json'); if(x.success!==false||!String(x.message||'').match(/invalid webhook/i)) process.exit(1)"
 
-          echo 'Enterprise payment safety passed: customer-set amounts are blocked, NOWPayments API/IPN credentials are active, hosted checkout providers are optional/admin-configured, and payment confirmation remains separate from entitlement grants.'
+          echo 'Enterprise payment safety passed: customer-set amounts are blocked, NOWPayments API/IPN credentials are active, Flutterwave/Kora are optional until fully configured, and payment confirmation remains separate from entitlement grants.'
 
       - name: Smoke Public Mkety AI memory support and privacy boundary
         shell: bash
