@@ -6,7 +6,7 @@ import { useState } from 'react';
 interface FlutterwaveInlinePayload {
   publicKey: string;
   reference: string;
-  amount: string;
+  amount: number;
   currency: string;
   email: string;
   customerName?: string;
@@ -35,7 +35,7 @@ export function FlutterwaveInlineLauncher({ payload }: { payload: FlutterwaveInl
     window.FlutterwaveCheckout({
       public_key: payload.publicKey,
       tx_ref: payload.reference,
-      amount: Number(payload.amount),
+      amount: payload.amount,
       currency: payload.currency,
       redirect_url: `${window.location.origin}${payload.redirectPath}`,
       payload_hash: payload.payloadHash,
