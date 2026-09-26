@@ -124,9 +124,9 @@ export async function createFlutterwaveInlinePayload(input: {
   publicKey: string;
   secretKey: string;
 }) {
-  const amount = minorToDecimal(input.amountMinor);
+  const amount = Number(minorToDecimal(input.amountMinor));
   const payloadHash = await createFlutterwavePayloadHash({
-    amount,
+    amount: String(amount),
     currency: input.currency,
     email: input.email,
     reference: input.reference,
