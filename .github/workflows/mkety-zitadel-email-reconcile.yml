@@ -153,13 +153,22 @@ jobs:
             const vals=[u.username,u.userName,u.preferredLoginName,u.human?.email?.email,u.human?.email?.address,...(Array.isArray(u.loginNames)?u.loginNames:[])].filter(Boolean).map(v=>String(v).toLowerCase());
             return vals.includes(needle);
           });
-          const safe=matches.map(u=>({
-            idPresent:Boolean(u.id||u.userId),
-            state:u.state||u.details?.state||null,
-            emailVerified:u.human?.email?.isVerified ?? u.human?.email?.verified ?? null,
-            usernameLooksLikeEmail:/@/.test(String(u.username||u.userName||u.preferredLoginName||'')),
-            loginNameCount:Array.isArray(u.loginNames)?u.loginNames.length:null
-          }));
+          const projectOrg=String(process.env.ORG_ID||'');
+          const safe=matches.map(u=>{
+            const org=String(u.organizationId||u.organization?.id||u.details?.resourceOwner||'');
+            const loginNames=Array.isArray(u.loginNames)?u.loginNames.map(String):[];
+            return {
+              idPresent:Boolean(u.id||u.userId),
+              state:u.state||u.details?.state||null,
+              emailVerified:u.human?.email?.isVerified ?? u.human?.email?.verified ?? null,
+              inMketyProjectOrg:Boolean(projectOrg && org===projectOrg),
+              hasOrganization:Boolean(org),
+              usernameLooksLikeEmail:/@/.test(String(u.username||u.userName||u.preferredLoginName||'')),
+              loginNameCount:loginNames.length,
+              loginNameEqualsEmail:loginNames.some(v=>v.toLowerCase()===needle),
+              hasQualifiedLoginName:loginNames.some(v=>v.toLowerCase()!==needle)
+            };
+          });
           console.log('ZITADEL_OPERATOR_IDENTITY_SAFE '+JSON.stringify({matchCount:matches.length,matches:safe}));
           NODE
 
