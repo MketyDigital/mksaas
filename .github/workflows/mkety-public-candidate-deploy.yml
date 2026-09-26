@@ -318,7 +318,7 @@ jobs:
           grep -Fq 'academy.mkety.com' /tmp/mkety-academy-page.html || { echo 'Academy page missing learning-access destination.'; exit 1; }
 
           curl -fsS "$CANDIDATE_URL/pricing" -o /tmp/mkety-pricing-page.html
-          grep -Fq 'data-plan-price="starter:$5.99"' /tmp/mkety-pricing-page.html || { echo 'Starter price card missing exact USD-formatted $5.99 amount.'; exit 1; }
+          grep -Fq "data-plan-price=\"starter:\$5.99\"" /tmp/mkety-pricing-page.html || { echo "Starter price card missing exact USD-formatted \$5.99 amount."; exit 1; }
           grep -Fq 'Trading Workspace' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Workspace.'; exit 1; }
           grep -Fq 'Custom / Enterprise' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Custom / Enterprise positioning.'; exit 1; }
 
