@@ -35,6 +35,13 @@ const protectedActionsByModule: Record<string, string[]> = {
   'security-audit': ['View audit events', 'Review role changes', 'Inspect session/security activity', 'Monitor sensitive operations'],
 };
 
+async function withAdminTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 export default async function PlatformControlModulePage({ params }: PlatformControlModulePageProps) {
   const { tenant, module: routeModuleKey } = await params;
   await requirePlatformControlAccess(tenant);
@@ -62,12 +69,12 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     await requirePermission(tenant, 'platform:deployments');
     const tenantRecord = await getTenantBySlug(tenant);
     if (!tenantRecord) notFound();
-    deploymentApprovalRows = await getDeploymentApprovalQueue(tenantRecord.id);
+    deploymentApprovalRows = await withAdminTimeout(getDeploymentApprovalQueue(tenantRecord.id), []);
   }
 
   if (isPayments) {
     await requirePermission(tenant, 'platform:billing');
-    paymentSettings = await getMketyPaymentSettings();
+    paymentSettings = await withAdminTimeout(getMketyPaymentSettings(), null);
   }
 
   return (
