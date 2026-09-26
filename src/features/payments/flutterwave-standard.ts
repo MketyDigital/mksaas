@@ -1,4 +1,3 @@
-import { quoteFlutterwaveV4Collection } from './flutterwave-v4';
 import { buildMketyPaymentMetadata, createMketyPaymentReference } from './reference';
 
 const STANDARD_ENDPOINT = 'https://api.flutterwave.com/v3/payments';
@@ -18,7 +17,7 @@ export const MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES = [
   'TZS',
 ] as const;
 export type MketyFlutterwaveCollectionCurrency = (typeof MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES)[number];
-export type MketyFlutterwaveFxQuoteSource = 'identity' | 'configured' | 'flutterwave-v4';
+export type MketyFlutterwaveFxQuoteSource = 'identity' | 'configured';
 
 function minorToDecimal(value: bigint): string {
   const units = value / 100n;
@@ -67,19 +66,11 @@ export function getConfiguredMketyFxRates(rawJson = process.env.MKETY_PAYMENT_FX
 
 export function getEnabledMketyFlutterwaveCurrencies(
   rawJson = process.env.MKETY_PAYMENT_FX_RATES_JSON,
-  liveFxEnabled = Boolean(process.env.FLUTTERWAVE_CLIENT_ID && process.env.FLUTTERWAVE_CLIENT_SECRET),
 ): MketyFlutterwaveCollectionCurrency[] {
-  if (liveFxEnabled) return [...MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES];
   const configured = getConfiguredMketyFxRates(rawJson);
   return MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES.filter(
     (currency) => currency === 'USD' || Boolean(configured[currency]),
   );
-}
-
-function decimalToMinorCeil(value: unknown): bigint {
-  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').trim());
-  if (!Number.isFinite(numeric) || numeric <= 0) throw new Error('Flutterwave returned an invalid FX amount.');
-  return BigInt(Math.ceil((numeric + Number.EPSILON) * 100));
 }
 
 function applyConfiguredRate(canonicalAmountMinor: bigint, rate: string): bigint {
@@ -95,9 +86,6 @@ export async function quoteFlutterwaveCollection(input: {
   canonicalCurrency: 'USD';
   collectionCurrency: MketyFlutterwaveCollectionCurrency;
   configuredRatesJson?: string;
-  clientId?: string;
-  clientSecret?: string;
-  fetchImpl?: typeof fetch;
 }): Promise<{
   amountMinor: bigint;
   currency: MketyFlutterwaveCollectionCurrency;
@@ -118,25 +106,7 @@ export async function quoteFlutterwaveCollection(input: {
     };
   }
 
-  if (!input.clientId || !input.clientSecret) {
-    throw new Error(`Mkety checkout FX rate is not configured for ${input.collectionCurrency}.`);
-  }
-
-  const liveQuote = await quoteFlutterwaveV4Collection({
-    sourceCurrency: input.collectionCurrency,
-    destinationCurrency: input.canonicalCurrency,
-    destinationAmount: minorToDecimal(input.canonicalAmountMinor),
-    clientId: input.clientId,
-    clientSecret: input.clientSecret,
-    fetchImpl: input.fetchImpl,
-  });
-
-  return {
-    amountMinor: decimalToMinorCeil(liveQuote.sourceAmount),
-    currency: input.collectionCurrency,
-    rate: liveQuote.rate ?? '',
-    source: 'flutterwave-v4',
-  };
+  throw new Error(`Mkety checkout FX rate is not configured for ${input.collectionCurrency}.`);
 }
 
 export async function createFlutterwaveHostedCheckout(input: {

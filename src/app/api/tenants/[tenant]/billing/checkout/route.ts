@@ -71,8 +71,6 @@ export async function POST(request: Request, context: RouteContext) {
           process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
           ? createFlutterwaveBillingAdapter({
               standardSecretKey: process.env.FLUTTERWAVE_STANDARD_SECRET_KEY,
-              clientId: process.env.FLUTTERWAVE_CLIENT_ID,
-              clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
             })
           : null
         : provider === 'kora'

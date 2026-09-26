@@ -28,8 +28,6 @@ const FLUTTERWAVE_CAPABILITIES: GatewayCapabilities = {
 
 export function createFlutterwaveBillingAdapter(options: {
   standardSecretKey?: string;
-  clientId?: string;
-  clientSecret?: string;
   fetchImpl?: typeof fetch;
 }): BillingGatewayAdapter {
   return {
@@ -51,9 +49,6 @@ export function createFlutterwaveBillingAdapter(options: {
         canonicalCurrency: 'USD',
         collectionCurrency,
         configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
-        clientId: options.clientId,
-        clientSecret: options.clientSecret,
-        fetchImpl: options.fetchImpl,
       });
       const reference = createSaasFlutterwaveReference(input.checkoutId);
       const checkoutUrl = await createFlutterwaveHostedCheckout({
