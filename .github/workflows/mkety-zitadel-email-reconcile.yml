@@ -29,6 +29,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Report configured email-related repository secret names safely
+        shell: bash
+        env:
+          SECRET_CONTEXT_JSON: ${{ toJSON(secrets) }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const secrets=JSON.parse(process.env.SECRET_CONTEXT_JSON||'{}');
+          const names=Object.keys(secrets).filter((name)=>/(BREVO|SMTP|EMAIL|MAIL)/i.test(name)).sort();
+          console.log('EMAIL_REPOSITORY_SECRET_NAMES_SAFE '+JSON.stringify(names));
+          NODE
+
       - name: Validate required auth configuration
         shell: bash
         run: |
