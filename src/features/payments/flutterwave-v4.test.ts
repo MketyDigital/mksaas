@@ -51,7 +51,7 @@ describe('Flutterwave v4 webhook verification', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://api.flutterwave.com/transfers/rates',
+      'https://f4bexperience.flutterwave.com/transfers/rates',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer oauth-token' }),
