@@ -144,8 +144,8 @@ export function AdminEnterprisePaymentLinkForm({ tenant, providers }: AdminEnter
             onClick={() => setProvider('flutterwave')}
             className={`rounded-xl border p-4 text-left ${provider === 'flutterwave' ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
-            <span className="font-semibold">Flutterwave hosted checkout</span>
-            <span className="mt-1 block text-sm text-muted-foreground">Create a secure card/local payment link.</span>
+            <span className="font-semibold">Flutterwave Inline</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Create a secure Mkety payment link that opens Flutterwave Inline.</span>
           </button> : null}
           {providers.includes('kora') ? <button
             type="button"
