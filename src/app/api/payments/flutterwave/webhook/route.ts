@@ -1,5 +1,4 @@
 import { createMketyPaymentAttestation } from '@/features/payments/attestation';
-import { createMketyPaymentAttestation } from '@/features/payments/attestation';
 import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
 import { verifyFlutterwaveStandardTransaction } from '@/features/payments/flutterwave-standard';
 import { retrieveFlutterwaveV4Charge, verifyFlutterwaveV4Webhook } from '@/features/payments/flutterwave-v4';
@@ -22,16 +21,10 @@ function timingSafeEqualText(left: string, right: string) {
   return difference === 0;
 }
 
-
-function decimalToMinor(value: unknown): bigint {
-  const normalized =
-    typeof value === 'number'
-      ? value.toFixed(2)
-      : typeof value === 'string'
-        ? value.trim()
-        : '';
+function paymentAmountMinor(value: unknown): bigint {
+  const normalized = typeof value === 'number' ? value.toFixed(2) : String(value ?? '').trim();
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
-  if (!match) throw new Error('Invalid Flutterwave payment amount.');
+  if (!match) throw new Error('Invalid Flutterwave Standard webhook payment amount.');
   return BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
 }
 
@@ -39,29 +32,30 @@ function assertStandardWebhookMatchesVerified(
   payload: Record<string, unknown>,
   verified: Record<string, unknown>,
 ): void {
-  const data = payload.data;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('Invalid Flutterwave webhook.');
+  const rawData = payload.data;
+  if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+    throw new Error('Invalid Flutterwave Standard webhook payment data.');
   }
-  const webhookData = data as Record<string, unknown>;
-  const webhookId = String(webhookData.id ?? '');
+
+  const data = rawData as Record<string, unknown>;
+  const webhookId = String(data.id ?? '');
   const verifiedId = String(verified.id ?? '');
-  const webhookReference = String(webhookData.tx_ref ?? '');
+  const webhookReference = String(data.tx_ref ?? '');
   const verifiedReference = String(verified.tx_ref ?? '');
-  const webhookCurrency = String(webhookData.currency ?? '').toUpperCase();
-  const verifiedCurrency = String(verified.currency ?? '').toUpperCase();
-  const webhookStatus = String(webhookData.status ?? '');
+  const webhookStatus = String(data.status ?? '');
   const verifiedStatus = String(verified.status ?? '');
+  const webhookCurrency = String(data.currency ?? '').toUpperCase();
+  const verifiedCurrency = String(verified.currency ?? '').toUpperCase();
 
   if (
     !webhookId ||
     webhookId !== verifiedId ||
     !webhookReference ||
     webhookReference !== verifiedReference ||
-    webhookCurrency !== verifiedCurrency ||
     webhookStatus !== verifiedStatus ||
-    decimalToMinor(webhookData.amount ?? webhookData.charged_amount) !==
-      decimalToMinor(verified.amount ?? verified.charged_amount)
+    webhookCurrency !== verifiedCurrency ||
+    paymentAmountMinor(data.amount ?? data.charged_amount) !==
+      paymentAmountMinor(verified.amount ?? verified.charged_amount)
   ) {
     throw new Error('Flutterwave Standard webhook does not match the verified transaction.');
   }
@@ -71,39 +65,6 @@ type IgnoredFlutterwavePayment = {
   mode: 'v4' | 'standard';
   ignored: true;
 };
-
-
-function paymentAmountMinor(value: unknown): bigint {
-  const normalized = typeof value === 'number' ? value.toFixed(2) : String(value ?? '').trim();
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
-  if (!match) throw new Error('Invalid Flutterwave Standard webhook payment amount.');
-  return BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
-}
-
-function assertStandardWebhookMatchesVerified(payment: VerifiedFlutterwavePayment) {
-  if (payment.mode !== 'standard') return;
-  const rawData = payment.payload.data;
-  if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
-    throw new Error('Invalid Flutterwave Standard webhook payment data.');
-  }
-  const data = rawData as Record<string, unknown>;
-  const rawReference = String(data.tx_ref ?? '');
-  const rawStatus = String(data.status ?? '');
-  const rawCurrency = String(data.currency ?? '').toUpperCase();
-  const verifiedCurrency = String(payment.verified.currency ?? '').toUpperCase();
-  const rawAmount = data.amount ?? data.charged_amount;
-  const verifiedAmount = payment.verified.amount ?? payment.verified.charged_amount;
-
-  if (
-    rawReference !== payment.reference ||
-    rawStatus !== 'successful' ||
-    payment.status !== 'success' ||
-    rawCurrency !== verifiedCurrency ||
-    paymentAmountMinor(rawAmount) !== paymentAmountMinor(verifiedAmount)
-  ) {
-    throw new Error('Flutterwave Standard webhook data does not match the verified transaction.');
-  }
-}
 
 type VerifiedFlutterwavePayment = {
   mode: 'v4' | 'standard';
@@ -138,6 +99,7 @@ async function verifyIncomingFlutterwave(
     if (String(payload.type ?? '') !== 'charge.completed') {
       return { mode: 'v4', ignored: true };
     }
+
     const data = payload.data;
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Flutterwave webhook.');
     const chargeId = String((data as Record<string, unknown>).id ?? '');
@@ -160,10 +122,15 @@ async function verifyIncomingFlutterwave(
     };
   }
 
-  const legacySignature = request.headers.get('verif-hash');
-  const legacyHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  const standardSignature = request.headers.get('verif-hash');
+  const standardHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
   const standardSecretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
-  if (!legacySignature || !legacyHash || !standardSecretKey || !timingSafeEqualText(legacySignature, legacyHash)) {
+  if (
+    !standardSignature ||
+    !standardHash ||
+    !standardSecretKey ||
+    !timingSafeEqualText(standardSignature, standardHash)
+  ) {
     throw new Error('Invalid Flutterwave webhook signature.');
   }
 
@@ -171,6 +138,7 @@ async function verifyIncomingFlutterwave(
   if (String(payload.event ?? '') !== 'charge.completed') {
     return { mode: 'standard', ignored: true };
   }
+
   const data = payload.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Flutterwave webhook.');
   const transactionId = String((data as Record<string, unknown>).id ?? '');
@@ -181,6 +149,7 @@ async function verifyIncomingFlutterwave(
     secretKey: standardSecretKey,
   });
   assertStandardWebhookMatchesVerified(payload, verified);
+
   const statusValue = String(verified.status ?? '');
   return {
     mode: 'standard',
@@ -192,7 +161,7 @@ async function verifyIncomingFlutterwave(
     eventId: String(verified.id ?? transactionId),
     amount: verified.amount ?? verified.charged_amount,
     currency: verified.currency,
-    signature: legacySignature,
+    signature: standardSignature,
     signatureHeader: 'verif-hash',
   };
 }
@@ -204,13 +173,13 @@ export async function POST(request: Request) {
     if ('ignored' in payment) {
       return json({ success: true, settled: false, ignored: true, mode: payment.mode });
     }
+
     const route = resolveMketyPaymentRoute(payment.reference, payment.verified);
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
 
     if (route.source === 'media' || route.source === 'host') {
       let attestation: string | undefined;
       if (payment.mode === 'standard') {
-        assertStandardWebhookMatchesVerified(payment);
         const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
         if (!brokerSecret) throw new Error('Flutterwave Standard forwarding attestation is not configured.');
         attestation = await createMketyPaymentAttestation(rawBody, brokerSecret);
@@ -246,7 +215,9 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : '';
     if (
       error instanceof SyntaxError ||
-      /signature|reference mismatch|does not match|invalid payment|unknown Mkety|checkout reference|order reference|invalid Flutterwave/i.test(message)
+      /signature|reference mismatch|does not match|invalid payment|unknown Mkety|checkout reference|order reference|invalid Flutterwave/i.test(
+        message,
+      )
     ) {
       return json({ success: false, message: 'Invalid webhook.' }, 400);
     }
