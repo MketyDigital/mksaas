@@ -1,64 +1,115 @@
 # Mkety Shared Payments
 
-## Status
+## Current production architecture
 
-Current implementation state:
+Mkety uses one shared payment boundary at `mkety.com` while each Mkety product keeps ownership of its own invoices, subscriptions, entitlements, and fulfilment.
 
-| Area                                   | State                                                                                                                                                    |
-|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| NOWPayments                            | Primary/default crypto path; existing verified settlement remains authoritative                                                                          |
-| Flutterwave hosted checkout            | Implemented through Flutterwave Standard when Standard secret + webhook hash are configured                                                              |
-| Flutterwave v4 OAuth                   | Implemented with Client ID + Client Secret and short-lived access-token reuse                                                                            |
-| Flutterwave v4 webhook                 | Implemented using raw-body HMAC-SHA256/Base64 `flutterwave-signature` verification                                                                       |
-| Flutterwave Standard webhook           | Implemented on the same central URL using `verif-hash` plus server-side transaction verification                                                         |
-| Flutterwave local-currency checkout    | Implemented for USD plus any configured Mkety collection currencies; current contract supports NGN, GHS, KES, GBP, EUR, ZAR, XAF, XOF, UGX, RWF, and TZS |
-| Kora hosted checkout                   | Implemented; becomes visible only when `KORA_SECRET_KEY` is configured                                                                                   |
-| Kora webhook                           | Implemented with HMAC-SHA256 `x-korapay-signature` verification + charge re-query                                                                        |
-| Mkety Media routing                    | Implemented through original-provider-webhook forwarding; Media keeps its own invoice/subscription ledger                                                |
-| Direct v4 card collection inside Mkety | Not used; Mkety does not collect raw card details                                                                                                        |
+Current provider priority:
 
-NOWPayments remains first/default. Flutterwave and Kora are additional fiat paths.
+1. NOWPayments — primary/default crypto path.
+2. Flutterwave — additional fiat/local-payment path.
+3. Kora — additional fiat/local-payment path when merchant verification and credentials are ready.
 
-## Architectural rule
+Provider visibility is environment-driven. A provider is not shown merely because code for it exists.
 
-Mkety owns the reusable provider boundary. Each product owns its own commercial ledger.
+## Flutterwave version policy
+
+The active Flutterwave integration is **v3 only**.
+
+Flutterwave currently states that v3 and v4 should not be used simultaneously for the same integration. Mkety therefore does not mix v4 OAuth/webhook flows with v3 Inline/Standard settlement.
+
+Active Flutterwave credentials:
 
 ```text
-Provider account / webhook
-        |
-        v
-mkety.com shared payments boundary
-        |
-        +-- SaaS ----------> MkSaaS billing ledger
-        +-- Enterprise ----> MkSaaS enterprise order ledger
-        +-- Media ---------> original provider webhook forwarded to Media
-        +-- future Host ---> original provider webhook forwarded to Host
+FLUTTERWAVE_PUBLIC_KEY
+FLUTTERWAVE_STANDARD_SECRET_KEY
+FLUTTERWAVE_STANDARD_WEBHOOK_HASH
+FLUTTERWAVE_CHECKOUT_BROKER_SECRET
 ```
 
-A provider account or webhook URL never determines product ownership by itself.
+The public key is client-safe and is used only by Flutterwave Inline. The secret key, webhook hash, and broker secret remain server-side.
+
+Reserved future v4 credentials may remain documented for a later full-version migration:
+
+```text
+FLUTTERWAVE_CLIENT_ID
+FLUTTERWAVE_CLIENT_SECRET
+FLUTTERWAVE_WEBHOOK_SECRET
+```
+
+They are **not part of the active runtime payment path**. A future v4 migration should replace the v3 provider adapter as one atomic version change; it should not run alongside v3.
+
+## Why Inline is preferred
+
+Mkety prefers Flutterwave Inline because it gives customers a smoother Mkety-branded journey while Flutterwave still owns the sensitive payment interface.
+
+The customer journey is:
+
+```text
+Mkety checkout
+   ↓
+choose Flutterwave + payment currency
+   ↓
+Mkety locks reference / amount / currency / metadata
+   ↓
+mkety.com/pay/flutterwave?session=<opaque-id>
+   ↓
+Flutterwave Inline opens over Mkety
+   ↓
+customer pays with methods Flutterwave makes available
+   ↓
+Flutterwave webhook
+   ↓
+Mkety re-verifies transaction server-side
+   ↓
+settle owning Mkety product
+```
+
+Mkety never accepts raw card number, CVV, or expiry data.
+
+Flutterwave Standard remains a same-v3 hosted fallback helper in code, but Inline is the preferred active experience.
+
+## Shared ownership model
+
+```text
+Flutterwave / Kora / NOWPayments
+             |
+             v
+       mkety.com
+  shared payment boundary
+             |
+      +------+-------+---------+
+      |              |         |
+    SaaS          Enterprise  Media
+      |              |         |
+ MkSaaS ledger  order ledger   media.mkety.com
+                                owns invoice,
+                                subscription,
+                                plan, activation
+```
+
+A provider account never decides product ownership. Mkety does.
 
 ## Mkety-owned references
 
-New shared-account transactions should use these prefixes:
+Canonical new prefixes:
 
-- Platform SaaS: `SAAS-MKS-...`
-- Mkety Media: `MEDIA-MKM-...`
-- Future Hosting: `HOST-MKH-...`
+- SaaS: `SAAS-MKS-...`
+- Media: `MEDIA-MKM-...`
+- future Hosting: `HOST-MKH-...`
 - Enterprise: `ENT-MKE-...`
 
-UUID targets are compacted when possible so references stay within provider limits.
-
-Mkety Media already has invoice references such as:
+Mkety Media already uses invoice references such as:
 
 ```text
 MKM-A83K27
 ```
 
-Those existing references remain valid and route to Media directly after provider verification. If provider metadata is present, it must agree with the reference. Metadata cannot override a conflicting canonical prefix.
+Those remain supported. A verified `MKM-*` reference routes to Media. If provider metadata is present and conflicts with the reference, the event is rejected.
 
-## Explicit metadata
+## Provider metadata
 
-Provider requests should carry Mkety-owned metadata where supported.
+Where supported, transactions also carry explicit Mkety metadata.
 
 Media:
 
@@ -70,7 +121,7 @@ Media:
 }
 ```
 
-Platform SaaS:
+SaaS:
 
 ```json
 {
@@ -89,26 +140,13 @@ Enterprise:
 }
 ```
 
-## Settlement invariants
+Reference and metadata are consistency signals, not substitutes for provider verification.
 
-A browser return is never proof of payment.
+## Flutterwave customer currency model
 
-Before access/value is granted, Mkety must:
+Mkety product prices remain canonically USD.
 
-1. verify the provider webhook signature;
-2. re-query the provider transaction/charge API;
-3. resolve the Mkety source from verified reference + metadata;
-4. locate the owning checkout/order/invoice;
-5. verify provider, status, expected currency, and expected amount;
-6. apply settlement idempotently in the owning ledger.
-
-### Local-currency collections
-
-Mkety subscription prices remain canonically USD.
-
-USD is always available. For non-USD collection, Mkety first checks `MKETY_PAYMENT_FX_RATES_JSON`. If there is no explicit commercial rate and Flutterwave v4 OAuth credentials are configured, Mkety can obtain a live v4 FX quote and lock that amount for checkout.
-
-The shared contract currently understands:
+Flutterwave collection currency is separate. The current supported Mkety currency catalogue is:
 
 ```text
 USD
@@ -123,164 +161,153 @@ XOF
 UGX
 RWF
 TZS
+EGP
+MWK
 ```
 
-Example configuration:
+Flutterwave ultimately determines which payment rails are available for the selected currency and merchant account.
+
+Examples:
 
 ```text
-MKETY_PAYMENT_FX_RATES_JSON={"NGN":"1600","GHS":"15.5","KES":"130","GBP":"0.78","EUR":"0.92"}
+NGN → card / bank transfer / USSD / other enabled NGN methods
+GHS → card / Mobile Money where enabled
+KES → card / M-Pesa where enabled
+GBP/EUR/USD → applicable enabled methods
 ```
 
-Each value means local collection-currency units per 1 USD of canonical Mkety price. Explicit Mkety rates take priority over live provider FX. If no rate is configured and v4 OAuth is unavailable, that non-USD currency fails closed rather than guessing.
+Mkety does not promise that every rail appears for every currency or account.
 
-When v4 OAuth is available, the full supported currency contract may be shown and the server can use Flutterwave's real-time v4 rate-conversion response as the fallback quote source. The exact amount returned by the server is then locked into the checkout record.
+## FX configuration lives in Platform Control
 
-Mkety calculates the provider quote server-side and persists both sides of the transaction:
+FX is business configuration, not a secret.
+
+Do **not** use an FX environment variable.
+
+Platform Control → Enterprise Payments exposes:
+
+- enabled Flutterwave collection currencies;
+- one base rate per non-USD currency, expressed as local currency units per 1 USD;
+- one optional global FX markup/buffer percentage.
+
+Example:
 
 ```text
-Canonical Mkety price:
+NGN  1 USD = 1600
+GHS  1 USD = 15.50
+KES  1 USD = 130
+GBP  1 USD = 0.78
+EUR  1 USD = 0.92
+
+FX markup = 2%
+```
+
+Mkety rounds the final collection amount upward to the smallest supported two-decimal provider unit so the canonical price is never under-collected.
+
+USD always uses a 1:1 rate and no markup.
+
+A non-USD currency may be enabled before a rate is entered, but checkout fails closed for that currency until a valid rate exists.
+
+Changing FX configuration does not require a code deployment.
+
+## Local-currency accounting
+
+Mkety stores both sides of a local-currency checkout.
+
+Example:
+
+```text
+Canonical Mkety amount:
 USD 39.99
 
-Provider collection quote:
-NGN <quoted amount>
+Provider collection amount:
+NGN 65,000.00
 ```
 
-The checkout record stores:
+Billing checkout stores:
 
 - canonical amount/currency;
-- provider amount/currency.
+- provider quoted amount/currency.
 
-On settlement, Mkety verifies the actual provider payment against the stored provider quote. Only after that validation does Mkety apply the canonical USD billing settlement.
+Settlement stores:
 
-The settlement record retains the original provider amount/currency for auditability.
+- canonical amount/currency applied to the Mkety ledger;
+- actual provider amount/currency for audit.
 
-This means a local-currency payment is never falsely recorded as though Flutterwave literally collected USD.
+The webhook must match or exceed the stored provider quote in the exact stored provider currency before the canonical USD settlement is applied.
 
-## Flutterwave architecture
+## Inline checkout session security
 
-### Customer collection
+Flutterwave Inline parameters are not trusted from query strings.
 
-Mkety deliberately uses Flutterwave's hosted Standard checkout for the customer-facing multi-method payment UI.
+Mkety creates a short-lived server-side checkout session containing:
 
-Why:
+- provider;
+- Mkety source;
+- reference;
+- canonical amount/currency;
+- collection amount/currency;
+- customer email/name;
+- redirect URL;
+- Mkety metadata;
+- Flutterwave `payload_hash`;
+- expiry.
 
-- customer card details stay with Flutterwave;
-- Mkety does not need PCI-scoped raw card collection;
-- Flutterwave can display payment methods applicable to the selected transaction currency and merchant-account configuration;
-- v4 remains available for modern API/control-plane operations.
-
-Hosted checkout creation uses:
+The customer receives only:
 
 ```text
-FLUTTERWAVE_STANDARD_SECRET_KEY
+https://mkety.com/pay/flutterwave?session=<opaque UUID>
 ```
 
-The central hosted-checkout endpoint is:
+The payment page loads the server-owned session and renders Flutterwave Inline using:
+
+- `FLUTTERWAVE_PUBLIC_KEY`;
+- the locked transaction reference;
+- locked amount/currency;
+- locked customer information;
+- locked metadata;
+- the server-generated `payload_hash`.
+
+The secret key never reaches the browser.
+
+Successful verified payments close the Inline session so the same launcher URL cannot be reused as a fresh payment session.
+
+## Flutterwave webhook
+
+Flutterwave dashboard webhook:
+
+```text
+https://mkety.com/api/payments/flutterwave/webhook
+```
+
+Active v3 webhook contract:
+
+1. require `verif-hash`;
+2. timing-safely compare it with `FLUTTERWAVE_STANDARD_WEBHOOK_HASH`;
+3. ignore unrelated valid event types with HTTP 200;
+4. for `charge.completed`, re-query the transaction using `FLUTTERWAVE_STANDARD_SECRET_KEY`;
+5. require webhook and verified transaction ID, reference, status, currency, and amount to agree;
+6. resolve Mkety product ownership;
+7. settle locally or forward to the owning product;
+8. keep settlement idempotent.
+
+Browser redirects and Inline callbacks are never proof of payment.
+
+## Media broker contract
+
+Mkety Media delegates Flutterwave launch to:
 
 ```text
 POST https://mkety.com/api/payments/flutterwave/start
 ```
 
-### Flutterwave v4 control plane
-
-Native v4 support uses:
+Authentication:
 
 ```text
-FLUTTERWAVE_CLIENT_ID
-FLUTTERWAVE_CLIENT_SECRET
-FLUTTERWAVE_WEBHOOK_SECRET
+Authorization: Bearer <FLUTTERWAVE_CHECKOUT_BROKER_SECRET>
 ```
 
-OAuth access tokens are short lived and are refreshed/reused server-side before expiry. Native v4 production API calls use Flutterwave's documented production host `https://f4bexperience.flutterwave.com`; Flutterwave Standard remains on the separate `https://api.flutterwave.com/v3` API.
-
-The v4 webhook signature is:
-
-```text
-flutterwave-signature
-HMAC-SHA256(raw request body, FLUTTERWAVE_WEBHOOK_SECRET)
-Base64 output
-```
-
-After signature verification Mkety re-queries the charge before settlement.
-
-### Flutterwave Standard webhook compatibility
-
-Flutterwave Standard currently documents the legacy:
-
-```text
-verif-hash
-```
-
-contract.
-
-Mkety therefore supports both signature modes on one URL:
-
-```text
-https://mkety.com/api/payments/flutterwave/webhook
-```
-
-Standard compatibility uses:
-
-```text
-FLUTTERWAVE_STANDARD_SECRET_KEY
-FLUTTERWAVE_STANDARD_WEBHOOK_HASH
-```
-
-For a Standard event Mkety:
-
-1. timing-safely verifies `verif-hash`;
-2. re-queries `/v3/transactions/{id}/verify`;
-3. verifies source/reference/amount/currency;
-4. settles or forwards to the owning Mkety product.
-
-For a native v4 event Mkety uses the v4 HMAC signature and v4 charge-retrieval flow instead.
-
-## Flutterwave currency/payment-method UX
-
-The checkout page keeps the canonical product price visible in USD and lets the customer choose a collection currency.
-
-Example:
-
-```text
-Business
-Canonical price: $39.99
-
-Pay with Flutterwave in:
-USD | any Mkety-configured collection currencies
-```
-
-Mkety shows the quoted local collection amount before redirect. The quote source is recorded as `identity`, `configured`, or `flutterwave-v4` for auditability.
-
-Flutterwave's hosted interface determines which enabled payment methods are valid for that selected currency. Mkety does not hard-code a promise that every rail will appear for every merchant/country.
-
-Examples of the intended experience:
-
-```text
-NGN -> card / transfer / USSD / other enabled NGN rails
-GHS -> card / Mobile Money where enabled
-KES -> card / M-Pesa where enabled
-GBP -> applicable GBP methods
-EUR -> applicable EUR methods
-USD -> applicable USD methods
-```
-
-Exact methods remain controlled by Flutterwave account/currency availability.
-
-## Mkety Media shared-account flow
-
-The Flutterwave dashboard webhook remains one central URL:
-
-```text
-https://mkety.com/api/payments/flutterwave/webhook
-```
-
-Media launches checkout through:
-
-```text
-https://mkety.com/api/payments/flutterwave/start
-```
-
-Media sends the final shared broker contract:
+Media request:
 
 ```json
 {
@@ -289,7 +316,7 @@ Media sends the final shared broker contract:
   "canonical_amount_usd": 39.99,
   "requested_payment_currency": "NGN",
   "email": "customer@example.com",
-  "customer_name": "Example Business",
+  "customer_name": "Customer business",
   "invoice_id": "media-invoice-id",
   "tenant_id": "media-tenant-id",
   "redirect_url": "https://media.mkety.com/billing?payment=processing&provider=flutterwave",
@@ -297,80 +324,85 @@ Media sends the final shared broker contract:
 }
 ```
 
-The broker does not trust `media_webhook_url` as a routing destination; forwarding destinations are server-owned. The field is accepted only for contract compatibility. A successful broker response includes:
+The broker does not trust `media_webhook_url` as a destination. Routing destinations are server-owned.
+
+Response:
 
 ```json
 {
-  "checkout_url": "https://...",
+  "checkout_url": "https://mkety.com/pay/flutterwave?session=...",
   "checkout_amount": 65000,
   "checkout_currency": "NGN"
 }
 ```
 
-The aliases `url`, `amount`, and `currency` are returned as well. Media stores that exact quoted amount/currency before redirecting the customer.
+Aliases `url`, `amount`, and `currency` are also returned for compatibility.
 
-The broker authenticates Media with:
+Media stores the exact returned checkout amount/currency on its invoice before redirecting the customer.
+
+## Media webhook attestation
+
+Flutterwave sends one webhook to MkSaaS.
+
+For a verified Media v3 payment, central Mkety:
+
+1. validates the original `verif-hash`;
+2. re-queries the Flutterwave transaction;
+3. requires webhook and verified transaction details to agree;
+4. resolves the reference as Media;
+5. computes:
 
 ```text
-Authorization: Bearer <FLUTTERWAVE_CHECKOUT_BROKER_SECRET>
+Base64(
+  HMAC-SHA256(
+    originalRawBody,
+    FLUTTERWAVE_CHECKOUT_BROKER_SECRET
+  )
+)
 ```
 
-### Webhook routing to Media
+6. forwards the original raw body unchanged;
+7. preserves the original `verif-hash`;
+8. adds:
 
-For a verified Media event, central Mkety always forwards the original unchanged raw request body and the original provider signature/header name to:
+```text
+x-mkety-payment-attestation: <generated HMAC>
+```
+
+to:
 
 ```text
 https://media.mkety.com/api/billing/flutterwave/webhook
 ```
 
-For native v4 events:
+Media validates the Mkety attestation and checks the stored quoted amount/currency before settling its own invoice.
+
+Media does not need the Flutterwave v3 secret key or webhook hash.
+
+## Media environment
+
+For the current shared v3 architecture, Media needs:
 
 ```text
-flutterwave-signature: <original Flutterwave signature>
-```
-
-Media independently verifies the v4 HMAC and re-queries the v4 charge before settlement.
-
-For Flutterwave Standard events, central Mkety first:
-
-1. timing-safely validates `verif-hash`;
-2. re-queries the Flutterwave transaction using the central-only `FLUTTERWAVE_STANDARD_SECRET_KEY`;
-3. requires webhook and verified transaction status/reference/currency/amount to agree;
-4. signs the unchanged raw body with `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`.
-
-It then forwards:
-
-```text
-verif-hash: <original Flutterwave value>
-x-mkety-payment-attestation: Base64(HMAC-SHA256(rawBody, FLUTTERWAVE_CHECKOUT_BROKER_SECRET))
-```
-
-Media validates the Mkety attestation, checks the exact stored checkout amount/currency, and settles its own ledger. The Standard secret key never needs to exist in Media.
-
-There is no second normalized central-settlement protocol for Media.
-
-### Media Flutterwave environment
-
-Primary/shared v4 values:
-
-```text
-FLUTTERWAVE_CLIENT_ID
-FLUTTERWAVE_CLIENT_SECRET
-FLUTTERWAVE_WEBHOOK_SECRET
-
 FLUTTERWAVE_CHECKOUT_BROKER_URL=https://mkety.com/api/payments/flutterwave/start
-FLUTTERWAVE_CHECKOUT_BROKER_SECRET=<same internal Mkety broker secret>
+FLUTTERWAVE_CHECKOUT_BROKER_SECRET=<same internal Mkety secret>
 ```
 
-Media does **not** need `FLUTTERWAVE_STANDARD_SECRET_KEY`, `FLUTTERWAVE_V3_SECRET_KEY`, or a Standard webhook hash. Standard verification remains centralized on MkSaaS. Media validates the internal attestation with the same `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`.
+The final Media implementation may retain dormant v4 credentials for its own future migration code, but they are not required by the active central v3 flow.
 
-No Encryption Key is required because Mkety/Media do not directly collect/encrypt card details in this architecture.
+## Enterprise Flutterwave
+
+Enterprise negotiated orders remain canonically USD in this release.
+
+Flutterwave Enterprise links use the same Mkety Inline launcher and same v3 webhook verification path.
+
+This intentionally avoids silently introducing a second FX ledger for manually negotiated Enterprise amounts.
 
 ## Kora
 
-Kora uses hosted Checkout Redirect.
+Kora remains an independent additional provider.
 
-Enabled when:
+It becomes visible only when:
 
 ```text
 KORA_SECRET_KEY
@@ -382,62 +414,49 @@ Central webhook:
 https://mkety.com/api/payments/kora/webhook
 ```
 
-Before settlement Mkety:
+Before settlement, Mkety:
 
-1. verifies `x-korapay-signature` as HMAC-SHA256 over the webhook `data` object;
-2. re-queries Kora by the Mkety reference;
-3. verifies reference/status/amount/currency;
+1. verifies `x-korapay-signature`;
+2. re-queries the charge/reference;
+3. verifies status/reference/amount/currency;
 4. settles locally or forwards the original webhook to the owning product.
 
-Media Kora destination defaults to:
+Media destination defaults to:
 
 ```text
 https://media.mkety.com/api/billing/kora/webhook
 ```
 
-Kora remains hidden until the account secret exists. This allows the integration to remain deployed while merchant verification is pending.
+Kora can remain deployed but hidden while account verification is pending.
 
 ## Provider availability
 
-### NOWPayments — primary/default
+### NOWPayments
 
-Visible first when:
+Primary/default. Visible when:
 
 ```text
 NOWPAYMENTS_API_KEY
 NOWPAYMENTS_IPN_SECRET
 ```
 
-### Flutterwave hosted fiat
+### Flutterwave
 
-Visible when the hosted checkout and Standard webhook path are complete:
+Visible only when the complete active v3 setup exists:
 
 ```text
+FLUTTERWAVE_PUBLIC_KEY
 FLUTTERWAVE_STANDARD_SECRET_KEY
 FLUTTERWAVE_STANDARD_WEBHOOK_HASH
 ```
 
-Native-v4 verification/control and automatic live FX fallback use:
-
-```text
-FLUTTERWAVE_CLIENT_ID
-FLUTTERWAVE_CLIENT_SECRET
-FLUTTERWAVE_WEBHOOK_SECRET
-```
-
-Media/shared broker additionally requires:
+Shared Media/other-product broker additionally requires:
 
 ```text
 FLUTTERWAVE_CHECKOUT_BROKER_SECRET
 ```
 
-Optional fixed commercial FX overrides:
-
-```text
-MKETY_PAYMENT_FX_RATES_JSON
-```
-
-### Kora availability
+### Kora
 
 Visible when:
 
@@ -445,19 +464,18 @@ Visible when:
 KORA_SECRET_KEY
 ```
 
-## Central MkSaaS production secrets
+## Production configuration checklist
+
+Central MkSaaS:
 
 ```text
 NOWPAYMENTS_API_KEY
 NOWPAYMENTS_IPN_SECRET
 
-FLUTTERWAVE_CLIENT_ID
-FLUTTERWAVE_CLIENT_SECRET
-FLUTTERWAVE_WEBHOOK_SECRET
+FLUTTERWAVE_PUBLIC_KEY
 FLUTTERWAVE_STANDARD_SECRET_KEY
 FLUTTERWAVE_STANDARD_WEBHOOK_HASH
 FLUTTERWAVE_CHECKOUT_BROKER_SECRET
-MKETY_PAYMENT_FX_RATES_JSON
 
 KORA_SECRET_KEY
 ```
@@ -471,39 +489,55 @@ MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL
 MKETY_HOST_KORA_WEBHOOK_URL
 ```
 
-Provider secrets remain server-side only.
+FX rates and markup are stored in Platform Control/database and are not environment variables.
 
-## Security rules
+## Future v4 migration boundary
 
-- Never trust a browser redirect as proof of payment.
-- Never expose provider secret keys in client code.
-- Never trust `source` metadata before verifying the provider event.
-- Never allow provider/customer metadata to choose a forwarding destination.
-- Never grant access before provider re-query and amount/currency verification.
-- Never expose Flutterwave purely because partial credentials exist.
-- Never record a local-currency provider payment as though that provider literally collected USD.
-- Never collect raw card details in Mkety unless a deliberate PCI-compliant direct-card project is approved.
-- Keep webhook processing idempotent.
-- Keep NOWPayments as the primary/default option unless the commercial policy is intentionally changed.
+The v4 helper module is intentionally dormant.
 
-## Remaining operational steps
+When Mkety later chooses to move to v4/direct-charge/orchestrator flows:
 
-Code can be merged independently of merchant verification because provider visibility is environment-driven.
+1. decide the full customer payment-method UI and compliance boundary;
+2. implement the v4 checkout adapter;
+3. switch the active provider version as one atomic release;
+4. replace v3 webhook verification with v4 webhook verification;
+5. keep the existing Mkety references, metadata, checkout ownership, provider quote persistence, and settlement contracts;
+6. do not run active v3 and v4 payment flows simultaneously.
 
-To make Flutterwave hosted checkout live:
+The purpose of the current abstraction is to make that migration a provider-adapter change, not a billing-ledger rewrite.
 
-1. add the production Standard Secret Key;
-2. set the dashboard webhook secret hash in `FLUTTERWAVE_STANDARD_WEBHOOK_HASH`;
-3. keep the central Flutterwave dashboard webhook at `https://mkety.com/api/payments/flutterwave/webhook`;
-4. configure the v4 Client ID/Secret/Webhook Secret for native-v4 verification;
-5. set a strong shared `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`;
-6. optionally configure `MKETY_PAYMENT_FX_RATES_JSON` for any currencies where Mkety wants a fixed/commercial rate instead of live v4 FX;
-7. add the matching Media broker values; Media does not receive the Standard secret/hash;
-8. run a real low-value test checkout in USD and each enabled collection currency before broad customer use.
+## Security invariants
 
-To make Kora live after verification:
+- Never trust browser redirects or Inline callbacks as proof of payment.
+- Never expose the Flutterwave secret key.
+- Never collect raw card details in Mkety for the current integration.
+- Never infer product ownership from a provider account alone.
+- Never allow caller-provided metadata to choose a forwarding URL.
+- Never grant value before server-side provider re-query and amount/currency/reference validation.
+- Never treat local-currency collection as though Flutterwave literally collected USD.
+- Never enable a non-USD currency without a valid admin FX rate.
+- Never mix active Flutterwave v3 and v4 flows.
+- Keep all settlement processing idempotent.
+- Keep NOWPayments first/default unless commercial policy explicitly changes.
+
+## Operational activation
+
+To activate Flutterwave v3 Inline:
+
+1. switch the Flutterwave account/API key view to v3 if necessary;
+2. add the v3 public key;
+3. add the v3 secret key;
+4. choose a random webhook secret hash and configure the same value in Flutterwave and `FLUTTERWAVE_STANDARD_WEBHOOK_HASH`;
+5. set a strong 32+ character `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`;
+6. configure the Flutterwave dashboard webhook as `https://mkety.com/api/payments/flutterwave/webhook`;
+7. configure the same broker URL/secret in Media;
+8. enter non-USD rates/markup in Platform Control;
+9. run low-value USD and selected local-currency transactions;
+10. confirm SaaS and Media activation only after verified webhooks.
+
+To activate Kora after merchant verification:
 
 1. add `KORA_SECRET_KEY`;
-2. configure the Kora dashboard webhook to `https://mkety.com/api/payments/kora/webhook`;
-3. run a low-value hosted checkout and verify central/local settlement;
-4. only then treat Kora as production-verified.
+2. configure `https://mkety.com/api/payments/kora/webhook` in Kora;
+3. run a low-value checkout;
+4. confirm central verification and owning-product settlement before broad use.
