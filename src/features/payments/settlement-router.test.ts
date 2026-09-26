@@ -96,6 +96,25 @@ describe('routeVerifiedMketyPayment', () => {
     expect(mockApplySettlement).not.toHaveBeenCalled();
   });
 
+  it('rejects a provider amount above the locked local-currency quote', async () => {
+    await expect(
+      routeVerifiedMketyPayment({
+        source: 'saas',
+        targetUuid: '5e0d1f40-6bf5-4efd-bd75-a2223fb8ff91',
+        provider: 'flutterwave',
+        reference: 'SAAS-MKS-5e0d1f406bf54efdbd75a2223fb8ff91',
+        providerPaymentId: 'payment-1',
+        providerEventId: 'event-1',
+        amount: '60000.00',
+        currency: 'NGN',
+        status: 'success',
+        providerData: {},
+      }),
+    ).rejects.toThrow('checkout quote');
+
+    expect(mockApplySettlement).not.toHaveBeenCalled();
+  });
+
   it('rejects a provider currency different from the stored quote', async () => {
     await expect(
       routeVerifiedMketyPayment({
