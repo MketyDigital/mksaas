@@ -278,7 +278,7 @@ The executor now:
 
 The Worker itself remains private-credential-free: production migrations use the ephemeral private-DB executor; Worker runtime uses only the `MKETY_DB` Hyperdrive binding.
 
-NOWPayments remains the required production cutover payment check. Hosted checkout providers such as Selar are optional/admin-configured and are not hard-coded cutover prerequisites.
+NOWPayments remains the required production cutover payment check. Flutterwave v3 and Kora are optional until their complete credentials are configured; Flutterwave collection FX rates and markup are database-managed in Platform Control.
 
 ## Production/environment/DB state
 
@@ -693,9 +693,9 @@ Candidate evidence from run `35393687516`:
 
 Enterprise negotiated payments are operational through the protected admin-issued exact-amount flow.
 
-Fixed-price self-service plans are **not yet fully purchasable**. The shared Billing domain exists, but its live NOWPayments and Selar `createCheckout` adapters intentionally remain disabled. Public Starter, AI Workspace, Automation Workspace, Deploy Workspace, and Mkety One CTAs therefore route honestly through account onboarding rather than pretending a purchase has completed.
+Fixed-price self-service checkout now lives directly in MKSaaS Billing. NOWPayments remains the primary/default crypto path; Flutterwave v3 Inline and Kora embedded checkout become available only when fully configured. All three paths create pending billing state first and activate value only after verified, idempotent settlement through the Mkety Billing/Entitlements boundary.
 
-The next production-readiness slice must integrate the existing verified Mkety shared billing-service contract from the managed-hosting billing Worker rather than inventing a parallel checkout architecture. Only after verified settlement flows into Mkety Billing/Entitlements should fixed-price plans be described as live self-service purchases.
+Payment presentation may be native to Mkety, but provider UI remains provider-controlled and Mkety does not collect raw card details.
 
 No production DNS/custom-domain mutation, production Deploy execution, OCI/Coolify mutation, or customer infrastructure provisioning was introduced by PR #79.
 
