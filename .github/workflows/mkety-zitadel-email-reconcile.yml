@@ -166,7 +166,9 @@ jobs:
               usernameLooksLikeEmail:/@/.test(String(u.username||u.userName||u.preferredLoginName||'')),
               loginNameCount:loginNames.length,
               loginNameEqualsEmail:loginNames.some(v=>v.toLowerCase()===needle),
-              hasQualifiedLoginName:loginNames.some(v=>v.toLowerCase()!==needle)
+              hasQualifiedLoginName:loginNames.some(v=>v.toLowerCase()!==needle),
+              createdAt:u.details?.creationDate||u.creationDate||null,
+              changedAt:u.details?.changeDate||u.changeDate||null
             };
           });
           console.log('ZITADEL_OPERATOR_IDENTITY_SAFE '+JSON.stringify({matchCount:matches.length,matches:safe}));
