@@ -105,6 +105,22 @@ describe('Flutterwave v3 shared payments', () => {
     expect(JSON.stringify(payload)).not.toContain('FLWSECK_TEST-private');
   });
 
+  it('hashes whole-unit Inline amounts exactly as they are sent to Flutterwave', async () => {
+    const payload = await createFlutterwaveInlinePayload({
+      reference: 'SAAS-MKS-WHOLE10',
+      amountMinor: 1000n,
+      currency: 'USD',
+      email: 'billing@example.com',
+      redirectPath: '/return',
+      metadata: { source: 'saas' },
+      publicKey: 'FLWPUBK_TEST-public',
+      secretKey: 'FLWSECK_TEST-private',
+    });
+
+    expect(payload.amount).toBe(10);
+    expect(payload.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it('keeps the hosted v3 checkout helper for shared product broker flows', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
