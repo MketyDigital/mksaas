@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
 import { AdminEnterprisePaymentLinkForm } from '@/features/enterprise-checkout/components/AdminEnterprisePaymentLinkForm';
+import { FlutterwavePaymentSettingsForm } from '@/features/payments/components/FlutterwavePaymentSettingsForm';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { requirePermission } from '@/shared/lib/permissions';
 
 interface EnterprisePaymentsPageProps {
   params: Promise<{ tenant: string }>;
@@ -10,6 +13,8 @@ interface EnterprisePaymentsPageProps {
 export default async function EnterprisePaymentsPage({ params }: EnterprisePaymentsPageProps) {
   const { tenant } = await params;
   await requirePlatformControlAccess(tenant);
+  await requirePermission(tenant, 'platform:billing');
+  const paymentSettings = await getMketyPaymentSettings();
   const providers = [
     ...(process.env.NOWPAYMENTS_API_KEY ? ['nowpayments' as const] : []),
     ...(process.env.FLUTTERWAVE_STANDARD_SECRET_KEY && process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
@@ -33,6 +38,7 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
         </p>
       </div>
 
+      <FlutterwavePaymentSettingsForm tenant={tenant} settings={paymentSettings} />
       <AdminEnterprisePaymentLinkForm tenant={tenant} providers={providers} />
     </div>
   );
