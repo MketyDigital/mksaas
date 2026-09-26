@@ -71,7 +71,7 @@ describe('admin-issued Enterprise payment links', () => {
         email: 'buyer@example.com',
         projectName: 'Custom Project',
         amount: '1000.00',
-        provider: 'selar',
+        provider: 'flutterwave',
       }),
     ).rejects.toThrow('Forbidden');
 
