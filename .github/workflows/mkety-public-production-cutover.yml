@@ -86,16 +86,12 @@ jobs:
           NODE
           }
 
-          verify_workflow_success 'tests.yml' 'tests'
-          verify_workflow_success 'type-check.yml' 'typecheck'
-          verify_workflow_success 'lint.yml' 'lint'
-          verify_workflow_success 'build.yml' 'build'
+          # Keep production promotion lean: CI proves repository quality and the
+          # integrated Public Candidate already reruns tests/typecheck/lint/Vinext,
+          # connected content DB smoke, NOWPayments credential validation,
+          # Cloudflare build/deploy, public-route checks, payment safety and Public AI.
           verify_workflow_success 'ci.yml' 'CI'
-          verify_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'
-          verify_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
-          verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
-          verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
-          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'integrated public candidate'
 
   production-db:
     needs: authorize
@@ -122,11 +118,11 @@ jobs:
       FLUTTERWAVE_CHECKOUT_BROKER_SECRET: ${{ secrets.FLUTTERWAVE_CHECKOUT_BROKER_SECRET }}
       KORA_PUBLIC_KEY: ${{ secrets.KORA_PUBLIC_KEY }}
       KORA_SECRET_KEY: ${{ secrets.KORA_SECRET_KEY }}
-      MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}
-      MKETY_MEDIA_KORA_WEBHOOK_URL: ${{ vars.MKETY_MEDIA_KORA_WEBHOOK_URL }}
-      MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL: ${{ vars.MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL }}
-      MKETY_HOST_KORA_WEBHOOK_URL: ${{ vars.MKETY_HOST_KORA_WEBHOOK_URL }}
-      MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}
+      MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ secrets.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL || vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}
+      MKETY_MEDIA_KORA_WEBHOOK_URL: ${{ secrets.MKETY_MEDIA_KORA_WEBHOOK_URL || vars.MKETY_MEDIA_KORA_WEBHOOK_URL }}
+      MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL: ${{ secrets.MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL || vars.MKETY_HOST_FLUTTERWAVE_WEBHOOK_URL }}
+      MKETY_HOST_KORA_WEBHOOK_URL: ${{ secrets.MKETY_HOST_KORA_WEBHOOK_URL || vars.MKETY_HOST_KORA_WEBHOOK_URL }}
+      MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG || vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}
       MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || 'support@mkety.com,hello@mkety.com' }}
       MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
       MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
@@ -299,15 +295,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Re-run exact-SHA quality gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm test
-          pnpm type-check
-          pnpm lint
-          pnpx vinext check
 
       - name: Resolve Mkety production Hyperdrive
         id: hyperdrive
