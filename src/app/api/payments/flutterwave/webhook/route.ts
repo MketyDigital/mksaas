@@ -1,7 +1,6 @@
 import { createMketyPaymentAttestation } from '@/features/payments/attestation';
 import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
 import { verifyFlutterwaveStandardTransaction } from '@/features/payments/flutterwave-standard';
-import { retrieveFlutterwaveV4Charge, verifyFlutterwaveV4Webhook } from '@/features/payments/flutterwave-v4';
 import { resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { routeVerifiedMketyPayment } from '@/features/payments/settlement-router';
 import { createLogger } from '@/shared/lib/logger';
@@ -62,12 +61,12 @@ function assertStandardWebhookMatchesVerified(
 }
 
 type IgnoredFlutterwavePayment = {
-  mode: 'v4' | 'standard';
+  mode: 'standard';
   ignored: true;
 };
 
 type VerifiedFlutterwavePayment = {
-  mode: 'v4' | 'standard';
+  mode: 'standard';
   payload: Record<string, unknown>;
   verified: Record<string, unknown>;
   reference: string;
@@ -77,51 +76,13 @@ type VerifiedFlutterwavePayment = {
   amount: unknown;
   currency: unknown;
   signature: string;
-  signatureHeader: 'flutterwave-signature' | 'verif-hash';
+  signatureHeader: 'verif-hash';
 };
 
 async function verifyIncomingFlutterwave(
   rawBody: string,
   request: Request,
 ): Promise<VerifiedFlutterwavePayment | IgnoredFlutterwavePayment> {
-  const v4Signature = request.headers.get('flutterwave-signature');
-  if (v4Signature) {
-    const clientId = process.env.FLUTTERWAVE_CLIENT_ID;
-    const clientSecret = process.env.FLUTTERWAVE_CLIENT_SECRET;
-    const webhookSecret = process.env.FLUTTERWAVE_WEBHOOK_SECRET;
-    if (!clientId || !clientSecret || !webhookSecret) throw new Error('Flutterwave v4 webhook is not configured.');
-
-    const payload = await verifyFlutterwaveV4Webhook({
-      rawBody,
-      signature: v4Signature,
-      secretHash: webhookSecret,
-    });
-    if (String(payload.type ?? '') !== 'charge.completed') {
-      return { mode: 'v4', ignored: true };
-    }
-
-    const data = payload.data;
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Flutterwave webhook.');
-    const chargeId = String((data as Record<string, unknown>).id ?? '');
-    if (!chargeId) throw new Error('Invalid Flutterwave webhook.');
-
-    const verified = await retrieveFlutterwaveV4Charge({ chargeId, clientId, clientSecret });
-    const statusValue = String(verified.status ?? '');
-    return {
-      mode: 'v4',
-      payload,
-      verified,
-      reference: String(verified.reference ?? ''),
-      status: statusValue === 'succeeded' ? 'success' : ['failed', 'voided'].includes(statusValue) ? 'failed' : 'pending',
-      paymentId: String(verified.id ?? chargeId),
-      eventId: String(payload.id ?? verified.id ?? chargeId),
-      amount: verified.amount,
-      currency: verified.currency,
-      signature: v4Signature,
-      signatureHeader: 'flutterwave-signature',
-    };
-  }
-
   const standardSignature = request.headers.get('verif-hash');
   const standardHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
   const standardSecretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
@@ -178,12 +139,9 @@ export async function POST(request: Request) {
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
 
     if (route.source === 'media' || route.source === 'host') {
-      let attestation: string | undefined;
-      if (payment.mode === 'standard') {
-        const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
-        if (!brokerSecret) throw new Error('Flutterwave Standard forwarding attestation is not configured.');
-        attestation = await createMketyPaymentAttestation(rawBody, brokerSecret);
-      }
+      const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
+      if (!brokerSecret) throw new Error('Flutterwave Standard forwarding attestation is not configured.');
+      const attestation = await createMketyPaymentAttestation(rawBody, brokerSecret);
 
       const forwarded = await forwardOriginalProviderWebhook({
         source: route.source,
