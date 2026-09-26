@@ -5,8 +5,8 @@ import { platformAppControlCenterModules } from '@/shared/db/schema/platform-app
 
 import {
   DEFAULT_MKETY_PAYMENT_SETTINGS,
-  normalizeMketyPaymentSettings,
   type MketyPaymentSettings,
+  normalizeMketyPaymentSettings,
 } from './config';
 
 export async function getMketyPaymentSettings(): Promise<MketyPaymentSettings> {
