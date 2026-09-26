@@ -113,14 +113,15 @@ jobs:
           console.log('ZITADEL_AUTH_EMAIL_STATE_SAFE '+JSON.stringify(safe));
           NODE
 
-      - name: Ensure self-registration and username/password are enabled
+      - name: Ensure registration, password and email login are enabled
         shell: bash
         run: |
           set -euo pipefail
           allow="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowRegister))")"
           userpass="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowUsernamePassword))")"
-          if [ "$allow" = true ] && [ "$userpass" = true ]; then
-            echo 'ZITADEL self-registration and username/password already enabled.'
+          email_disabled="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.disableLoginWithEmail))")"
+          if [ "$allow" = true ] && [ "$userpass" = true ] && [ "$email_disabled" = false ]; then
+            echo 'ZITADEL registration, username/password and email login already enabled.'
             exit 0
           fi
 
@@ -135,7 +136,10 @@ jobs:
             forceMfa:x.forceMfa ?? false,
             passwordlessType:x.passwordlessType || 'PASSWORDLESS_TYPE_NOT_ALLOWED',
             hidePasswordReset:x.hidePasswordReset ?? false,
-            ignoreUnknownUsernames:x.ignoreUnknownUsernames ?? false
+            ignoreUnknownUsernames:x.ignoreUnknownUsernames ?? false,
+            disableLoginWithEmail:false,
+            disableLoginWithPhone:x.disableLoginWithPhone ?? false,
+            allowDomainDiscovery:x.allowDomainDiscovery ?? false
           };
           for(const k of ['defaultRedirectUri','passwordCheckLifetime','externalLoginCheckLifetime','mfaInitSkipLifetime','secondFactorCheckLifetime','multiFactorCheckLifetime']){
             if(x[k]!==undefined && x[k]!==null && x[k]!=='') out[k]=x[k];
@@ -146,7 +150,21 @@ jobs:
           if [ "$code" = 400 ] || [ "$code" = 404 ]; then
             code="$(curl --silent --show-error -o /tmp/login-repair.json -w '%{http_code}' -X POST "$issuer/management/v1/policies/login"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID"               -H 'Content-Type: application/json' --data-binary @/tmp/login-policy.json)"
           fi
-          [ "$code" = 200 ] || { echo "::error::Could not enable ZITADEL self-registration (HTTP $code)."; exit 1; }
+          [ "$code" = 200 ] || { echo "::error::Could not reconcile ZITADEL login policy (HTTP $code)."; exit 1; }
+
+          verify="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/login?ctx.orgId=$ORG_ID" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          VERIFY="$verify" node <<'NODE'
+          const x=JSON.parse(process.env.VERIFY||'{}').settings||{};
+          console.log('ZITADEL_EMAIL_LOGIN_POLICY_SAFE '+JSON.stringify({
+            allowRegister:x.allowRegister??null,
+            allowUsernamePassword:x.allowUsernamePassword??null,
+            allowLocalAuthentication:x.allowLocalAuthentication??null,
+            disableLoginWithEmail:x.disableLoginWithEmail??null
+          }));
+          if(x.allowRegister!==true || x.allowUsernamePassword!==true || x.disableLoginWithEmail===true){
+            throw new Error('ZITADEL email-login policy did not converge');
+          }
+          NODE
 
       - name: Inspect configured Mkety operator identity without exposing email
         shell: bash
