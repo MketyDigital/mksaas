@@ -2,7 +2,6 @@ import { and, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { KoraEmbeddedLauncher } from '@/features/payments/components/KoraEmbeddedLauncher';
-import { buildMketyPaymentMetadata } from '@/features/payments/reference';
 import { db } from '@/shared/db';
 import { billingCheckouts, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -78,11 +77,7 @@ export default async function KoraEmbeddedPage({ searchParams }: PageProps) {
           customerName: session.user.name ?? session.user.email ?? 'Mkety customer',
           notificationUrl: 'https://mkety.com/api/payments/kora/webhook',
           redirectPath: returnPath,
-          metadata: buildMketyPaymentMetadata({
-            source: 'saas',
-            checkoutId: checkout.id,
-            tenantId: checkout.tenantId,
-          }),
+          metadata: { source: 'saas' },
         }}
       />
     </main>
