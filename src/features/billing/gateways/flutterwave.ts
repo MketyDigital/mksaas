@@ -1,10 +1,10 @@
 import {
-  createFlutterwaveHostedCheckout,
   createSaasFlutterwaveMetadata,
   createSaasFlutterwaveReference,
   isMketyFlutterwaveCollectionCurrency,
-  quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
+import { createFlutterwaveInlineSession } from '@/features/payments/server/flutterwave-inline-session';
+import { getMketyPaymentSettings, quoteMketyFlutterwaveCurrency } from '@/features/payments/settings';
 
 import type { NormalizedSettlement } from '../domain/settlement';
 import type { GatewayCapabilities } from '../domain/types';
@@ -27,15 +27,16 @@ const FLUTTERWAVE_CAPABILITIES: GatewayCapabilities = {
 };
 
 export function createFlutterwaveBillingAdapter(options: {
-  standardSecretKey?: string;
-  fetchImpl?: typeof fetch;
+  publicKey?: string;
+  secretKey?: string;
+  origin?: string;
 }): BillingGatewayAdapter {
   return {
     provider: 'flutterwave',
     capabilities: FLUTTERWAVE_CAPABILITIES,
 
     async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
-      if (!options.standardSecretKey) throw new Error('Flutterwave hosted checkout is not configured.');
+      if (!options.publicKey || !options.secretKey) throw new Error('Flutterwave Inline is not configured.');
       if (!input.customer?.email) throw new Error('Flutterwave checkout requires a customer email.');
       if (input.currency !== 'USD') throw new Error('Mkety canonical Flutterwave billing currently requires USD pricing.');
 
@@ -44,40 +45,46 @@ export function createFlutterwaveBillingAdapter(options: {
         throw new Error('Selected Flutterwave collection currency is not supported.');
       }
 
-      const quote = await quoteFlutterwaveCollection({
+      const settings = await getMketyPaymentSettings();
+      const quote = quoteMketyFlutterwaveCurrency({
         canonicalAmountMinor: input.amountExpectedMinor,
-        canonicalCurrency: 'USD',
         collectionCurrency,
-        configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+        settings,
       });
       const reference = createSaasFlutterwaveReference(input.checkoutId);
-      const checkoutUrl = await createFlutterwaveHostedCheckout({
+      const metadata = {
+        ...createSaasFlutterwaveMetadata(input.checkoutId, input.tenantId),
+        canonical_amount_minor: input.amountExpectedMinor.toString(),
+        canonical_currency: input.currency,
+        provider_amount_minor: quote.amountMinor.toString(),
+        provider_currency: quote.currency,
+        fx_rate: quote.baseRate,
+        fx_markup_bps: quote.markupBps,
+        fx_source: quote.source,
+      };
+      const session = await createFlutterwaveInlineSession({
         source: 'saas',
         reference,
-        amountMinor: quote.amountMinor,
-        currency: quote.currency,
+        canonicalAmountMinor: input.amountExpectedMinor,
+        canonicalCurrency: 'USD',
+        collectionAmountMinor: quote.amountMinor,
+        collectionCurrency: quote.currency,
         email: input.customer.email,
         customerName: input.customer.name,
         redirectUrl: input.returnUrl,
-        metadata: {
-          ...createSaasFlutterwaveMetadata(input.checkoutId, input.tenantId),
-          canonical_amount_minor: input.amountExpectedMinor.toString(),
-          canonical_currency: input.currency,
-          provider_amount_minor: quote.amountMinor.toString(),
-          provider_currency: quote.currency,
-          ...(quote.rate ? { fx_rate: quote.rate } : {}),
-          fx_source: quote.source,
-        },
-        secretKey: options.standardSecretKey,
-        fetchImpl: options.fetchImpl,
+        metadata,
+        publicKey: options.publicKey,
+        secretKey: options.secretKey,
+        origin: options.origin,
       });
 
       return {
         provider: 'flutterwave',
         providerCheckoutId: reference,
-        checkoutUrl,
+        checkoutUrl: session.url,
         providerAmountExpectedMinor: quote.amountMinor,
         providerCurrency: quote.currency,
+        expiresAt: session.expiresAt,
       };
     },
 
