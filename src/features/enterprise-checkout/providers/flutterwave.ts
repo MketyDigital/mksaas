@@ -1,7 +1,6 @@
 import { createFlutterwaveHostedCheckout } from '@/features/payments/flutterwave-standard';
 import { buildMketyPaymentMetadata, createMketyPaymentReference } from '@/features/payments/reference';
 
-import { formatUsdMinorUnits } from '../domain';
 import type { EnterpriseCheckoutProviderAdapter, ProviderCheckoutInput } from './types';
 
 export function createFlutterwaveEnterpriseAdapter(options: {
