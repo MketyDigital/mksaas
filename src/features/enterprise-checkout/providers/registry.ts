@@ -8,6 +8,7 @@ import type { EnterprisePaymentProvider } from '../domain';
 interface EnterpriseProviderEnvironment {
   [key: string]: string | undefined;
   NOWPAYMENTS_API_KEY?: string;
+  FLUTTERWAVE_PUBLIC_KEY?: string;
   FLUTTERWAVE_STANDARD_SECRET_KEY?: string;
   FLUTTERWAVE_STANDARD_WEBHOOK_HASH?: string;
   KORA_SECRET_KEY?: string;
