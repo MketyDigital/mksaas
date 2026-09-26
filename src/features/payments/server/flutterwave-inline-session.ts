@@ -125,3 +125,16 @@ export async function getFlutterwaveInlineSession(input: {
     },
   };
 }
+
+
+export async function markFlutterwaveInlineSessionVerified(reference: string, updatedAt = new Date()) {
+  await db
+    .update(paymentCheckoutSessions)
+    .set({ status: 'verified', updatedAt })
+    .where(
+      and(
+        eq(paymentCheckoutSessions.provider, 'flutterwave'),
+        eq(paymentCheckoutSessions.reference, reference),
+      ),
+    );
+}
