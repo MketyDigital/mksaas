@@ -263,11 +263,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for spec in             'signin|https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin'             'signup|https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signup'             'ready|https://auth.mkety.com/ui/v2/login/ready'; do
-            name="${spec%%|*}"; url="${spec#*|}"
-            headers="/tmp/$name.headers"; body="/tmp/$name.body"
+          for spec in \
+            'signin|https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin|/ui/v2/login/loginname' \
+            'signup|https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signup|/ui/v2/login/register'; do
+            name="${spec%%|*}"
+            rest="${spec#*|}"
+            url="${rest%%|*}"
+            expected="${rest##*|}"
+            headers="/tmp/$name.headers"
+            body="/tmp/$name.body"
             code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url" || true)"
             location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$headers")"
-            safe_location="$(LOCATION="$location" node -e "try{const u=new URL(process.env.LOCATION);console.log(u.origin+u.pathname+(u.searchParams.get('prompt')?'?prompt='+u.searchParams.get('prompt'):''))}catch{console.log(process.env.LOCATION?'relative':'')}")"
-            echo "AUTH_ROUTE_SAFE name=$name HTTP=$code LOCATION=$safe_location"
+            first_safe="$(LOCATION="$location" node -e "try{const u=new URL(process.env.LOCATION);console.log(u.origin+u.pathname)}catch{console.log(process.env.LOCATION?'relative':'')}")"
+            final_url="$(curl -sS -L --connect-timeout 8 --max-time 30 -o "/tmp/$name.final.body" -w '%{url_effective}' "$location" || true)"
+            FINAL_URL="$final_url" EXPECTED="$expected" NAME="$name" node <<'NODE'
+          const raw=process.env.FINAL_URL||'';
+          let out={intent:process.env.NAME,finalOrigin:null,finalPath:null,expected:process.env.EXPECTED,matches:false};
+          try {
+            const u=new URL(raw);
+            out.finalOrigin=u.origin;
+            out.finalPath=u.pathname;
+            out.matches=u.origin==='https://auth.mkety.com' && u.pathname===process.env.EXPECTED;
+          } catch {}
+          console.log('AUTH_FINAL_ROUTE_SAFE '+JSON.stringify(out));
+          NODE
+            echo "AUTH_ROUTE_SAFE name=$name HTTP=$code FIRST=$first_safe"
           done
+
+          ready="$(curl -sS --connect-timeout 8 --max-time 20 -o /dev/null -w '%{http_code}' 'https://auth.mkety.com/ui/v2/login/ready' || true)"
+          echo "AUTH_READY_SAFE HTTP=$ready"
+
