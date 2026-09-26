@@ -1,9 +1,7 @@
-import {
-  createFlutterwaveHostedCheckout,
-  isMketyFlutterwaveCollectionCurrency,
-  quoteFlutterwaveCollection,
-} from '@/features/payments/flutterwave-standard';
+import { isMketyFlutterwaveCollectionCurrency } from '@/features/payments/flutterwave-standard';
 import { buildMketyPaymentMetadata, resolveMketyPaymentRoute } from '@/features/payments/reference';
+import { createFlutterwaveInlineSession } from '@/features/payments/server/flutterwave-inline-session';
+import { getMketyPaymentSettings, quoteMketyFlutterwaveCurrency } from '@/features/payments/settings';
 import { createLogger } from '@/shared/lib/logger';
 
 const logger = createLogger({ module: 'mkety-flutterwave-checkout-broker' });
@@ -23,6 +21,7 @@ interface BrokerRequest {
   checkout_id?: unknown;
   order_id?: unknown;
   redirect_url?: unknown;
+  media_webhook_url?: unknown;
 }
 
 function json(data: unknown, status = 200) {
@@ -70,10 +69,11 @@ function timingSafeEqualText(left: string, right: string): boolean {
 
 export async function POST(request: Request) {
   const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
-  const standardSecretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
-  const standardWebhookHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
-  if (!brokerSecret || !standardSecretKey || !standardWebhookHash) {
-    return json({ success: false, message: 'Flutterwave hosted checkout broker is not configured.' }, 503);
+  const publicKey = process.env.FLUTTERWAVE_PUBLIC_KEY;
+  const secretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
+  const webhookHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  if (!brokerSecret || !publicKey || !secretKey || !webhookHash) {
+    return json({ success: false, message: 'Flutterwave Inline broker is not configured.' }, 503);
   }
 
   const suppliedSecret = bearerToken(request);
@@ -126,19 +126,19 @@ export async function POST(request: Request) {
       return json({ success: false, message: 'Mkety payment reference does not match the requested source.' }, 400);
     }
 
-    const quote = await quoteFlutterwaveCollection({
+    const settings = await getMketyPaymentSettings();
+    const quote = quoteMketyFlutterwaveCurrency({
       canonicalAmountMinor,
-      canonicalCurrency: 'USD',
       collectionCurrency,
-      configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
-      clientId: process.env.FLUTTERWAVE_CLIENT_ID,
-      clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
+      settings,
     });
-    const checkoutUrl = await createFlutterwaveHostedCheckout({
+    const session = await createFlutterwaveInlineSession({
       source: source as 'saas' | 'media' | 'host' | 'enterprise',
       reference,
-      amountMinor: quote.amountMinor,
-      currency: quote.currency,
+      canonicalAmountMinor,
+      canonicalCurrency: 'USD',
+      collectionAmountMinor: quote.amountMinor,
+      collectionCurrency: quote.currency,
       email,
       customerName: customerName || undefined,
       redirectUrl,
@@ -148,17 +148,20 @@ export async function POST(request: Request) {
         canonical_currency: 'USD',
         provider_amount_minor: quote.amountMinor.toString(),
         provider_currency: quote.currency,
-        fx_rate: quote.rate,
+        fx_rate: quote.baseRate,
+        fx_markup_bps: quote.markupBps,
         fx_source: quote.source,
       },
-      secretKey: standardSecretKey,
+      publicKey,
+      secretKey,
+      origin: new URL(request.url).origin,
     });
 
     const checkoutAmount = Number(quote.amountMinor) / 100;
     return json({
       success: true,
-      url: checkoutUrl,
-      checkout_url: checkoutUrl,
+      url: session.url,
+      checkout_url: session.url,
       reference,
       amount: checkoutAmount,
       checkout_amount: checkoutAmount,
@@ -168,7 +171,8 @@ export async function POST(request: Request) {
       canonical_currency: 'USD',
       provider_amount_minor: quote.amountMinor.toString(),
       provider_currency: quote.currency,
-      fx_rate: quote.rate ?? null,
+      fx_rate: quote.baseRate,
+      fx_markup_bps: quote.markupBps,
       fx_source: quote.source,
     });
   } catch (error) {
