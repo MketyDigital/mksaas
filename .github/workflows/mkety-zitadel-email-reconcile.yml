@@ -18,12 +18,12 @@ jobs:
       ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
       MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
-      SMTP_HOST: ${{ secrets.BREVO_SMTP_HOST || 'smtp-relay.brevo.com:587' }}
-      SMTP_USER: ${{ secrets.BREVO_SMTP_LOGIN }}
-      SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY }}
-      SMTP_SENDER_EMAIL: ${{ secrets.BREVO_SENDER_EMAIL }}
-      SMTP_SENDER_NAME: ${{ secrets.BREVO_SENDER_NAME }}
-      SMTP_REPLY_TO: ${{ secrets.BREVO_REPLY_TO_EMAIL }}
+      SMTP_HOST: ${{ secrets.BREVO_SMTP_HOST || secrets.BREVO_SMTP_SERVER || secrets.SMTP_HOST || secrets.SMTP_SERVER || 'smtp-relay.brevo.com:587' }}
+      SMTP_USER: ${{ secrets.BREVO_SMTP_LOGIN || secrets.BREVO_SMTP_USER || secrets.BREVO_SMTP_USERNAME || secrets.SMTP_USER || secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}
+      SMTP_SENDER_EMAIL: ${{ secrets.BREVO_SENDER_EMAIL || secrets.BREVO_FROM_EMAIL || secrets.SMTP_SENDER_EMAIL || secrets.SMTP_FROM_EMAIL || secrets.EMAIL_FROM }}
+      SMTP_SENDER_NAME: ${{ secrets.BREVO_SENDER_NAME || secrets.SMTP_SENDER_NAME || secrets.EMAIL_FROM_NAME || 'Mkety' }}
+      SMTP_REPLY_TO: ${{ secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}
       PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS }}
 
     steps:
@@ -60,16 +60,18 @@ jobs:
           login_v1="$(curl --fail-with-body --silent --show-error "$issuer/management/v1/policies/login" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $org_id")"
 
           email_code="$(curl --silent --show-error -o /tmp/email-provider.json -w '%{http_code}' "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Accept: application/json' || true)"
+          smtp_code="$(curl --silent --show-error -o /tmp/legacy-smtp-provider.json -w '%{http_code}' "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Accept: application/json' || true)"
 
-          LOGIN_V2="$login_v2" DOMAIN="$domain" LOGIN_V1="$login_v1" EMAIL_CODE="$email_code" node <<'NODE'
+          LOGIN_V2="$login_v2" DOMAIN="$domain" LOGIN_V1="$login_v1" EMAIL_CODE="$email_code" SMTP_CODE="$smtp_code" node <<'NODE'
           const fs=require('node:fs');
           const v2=JSON.parse(process.env.LOGIN_V2||'{}').settings||{};
           const v1p=JSON.parse(process.env.LOGIN_V1||'{}');
           const v1=v1p.policy||{};
           const domain=JSON.parse(process.env.DOMAIN||'{}').settings||{};
           let email={}; try{email=JSON.parse(fs.readFileSync('/tmp/email-provider.json','utf8')||'{}')}catch{}
+          let legacy={}; try{legacy=JSON.parse(fs.readFileSync('/tmp/legacy-smtp-provider.json','utf8')||'{}')}catch{}
           const cfg=email.config||{};
-          const smtp=cfg.smtp||{};
+          const smtp=cfg.smtp||legacy.smtpConfig||{};
           const safe={
             login:{
               allowRegister:v1.allowRegister ?? v2.allowRegister ?? null,
@@ -83,10 +85,11 @@ jobs:
             domain:{loginNameIncludesDomain:domain.loginNameIncludesDomain ?? null},
             emailProvider:{
               endpointHttp:process.env.EMAIL_CODE,
-              activeId:cfg.id||null,
-              state:cfg.state||null,
-              description:cfg.description||null,
-              kind:cfg.smtp?'smtp':cfg.http?'http':'unknown',
+              legacySmtpHttp:process.env.SMTP_CODE,
+              activeId:cfg.id||smtp.id||null,
+              state:cfg.state||smtp.state||null,
+              description:cfg.description||smtp.description||null,
+              kind:cfg.smtp?'smtp':cfg.http?'http':legacy.smtpConfig?'smtp-legacy':'unknown',
               host:smtp.host||null,
               senderAddress:smtp.senderAddress||null,
               senderName:smtp.senderName||null,
@@ -293,6 +296,10 @@ jobs:
           NODE
           issuer="${MKETY_AUTH_ISSUER%/}"
           code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}'             -X POST "$issuer/admin/v1/email/smtp/_test"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/smtp-test.json)"
+          if [ "$code" = 404 ]; then
+            node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-test.json','utf8'));delete x.plain;fs.writeFileSync('/tmp/smtp-test-legacy.json',JSON.stringify(x))"
+            code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}'               -X POST "$issuer/admin/v1/smtp/_test"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/smtp-test-legacy.json)"
+          fi
           if [ "$code" != 200 ]; then
             node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/smtp-test-response.json','utf8'))}catch{};console.log('BREVO_SMTP_TEST_SAFE '+JSON.stringify({http:process.env.CODE||'',code:x.code||null,message:String(x.message||'').slice(0,240)}))" CODE="$code"
             echo "::error::Brevo SMTP test through ZITADEL failed HTTP $code."
@@ -321,6 +328,29 @@ jobs:
           }));
           NODE
           issuer="${MKETY_AUTH_ISSUER%/}"
+          email_probe="$(curl --silent --show-error -o /tmp/current-email.json -w '%{http_code}' "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" || true)"
+          if [ "$email_probe" = 404 ]; then
+            legacy_current="$(curl --silent --show-error -o /tmp/current-smtp.json -w '%{http_code}' "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" || true)"
+            provider_id=""
+            if [ "$legacy_current" = 200 ]; then provider_id="$(node -e "const x=require('/tmp/current-smtp.json');process.stdout.write(x.smtpConfig?.id||'')")"; fi
+            node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-provider.json','utf8'));delete x.plain;fs.writeFileSync('/tmp/smtp-provider-legacy.json',JSON.stringify(x))"
+            if [ -n "$provider_id" ]; then
+              echo "::add-mask::$provider_id"
+              code="$(curl --silent --show-error -o /tmp/provider-write.json -w '%{http_code}' -X PUT "$issuer/admin/v1/smtp/$provider_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/smtp-provider-legacy.json)"
+            else
+              code="$(curl --silent --show-error -o /tmp/provider-write.json -w '%{http_code}' -X POST "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/smtp-provider-legacy.json)"
+              provider_id="$(node -e "const x=require('/tmp/provider-write.json');process.stdout.write(x.id||'')")"
+              [ -n "$provider_id" ] && echo "::add-mask::$provider_id"
+            fi
+            [ "$code" = 200 ] || { echo "::error::Writing legacy Brevo SMTP provider failed HTTP $code."; exit 1; }
+            [ -n "$provider_id" ] || { echo "::error::Legacy Brevo provider id missing."; exit 1; }
+            code="$(curl --silent --show-error -o /tmp/provider-activate.json -w '%{http_code}' -X POST "$issuer/admin/v1/smtp/$provider_id/_activate" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
+            [ "$code" = 200 ] || { echo "::error::Activating legacy Brevo SMTP provider failed HTTP $code."; exit 1; }
+            active="$(curl --fail-with-body --silent --show-error "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+            ACTIVE="$active" node -e "const x=JSON.parse(process.env.ACTIVE||'{}').smtpConfig||{};console.log('ZITADEL_ACTIVE_SMTP_LEGACY_SAFE '+JSON.stringify({state:x.state||null,description:x.description||null,host:x.host||null,senderAddress:x.senderAddress||null,tls:x.tls??null}));if(!x.id)process.exit(1)"
+            exit 0
+          fi
+
           search="$(curl --fail-with-body --silent --show-error -X POST "$issuer/admin/v1/email/_search"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
           provider_id="$(SEARCH="$search" node -e "const x=JSON.parse(process.env.SEARCH||'{}');const a=Array.isArray(x.result)?x.result:[];const m=a.filter(p=>p.description==='Mkety Brevo SMTP');if(m.length>1)process.exit(2);process.stdout.write(m[0]?.id||'')")"
           if [ -n "$provider_id" ]; then
