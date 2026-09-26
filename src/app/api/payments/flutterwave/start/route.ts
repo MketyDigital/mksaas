@@ -1,3 +1,8 @@
+import {
+  createFlutterwaveHostedCheckout,
+  isMketyFlutterwaveCollectionCurrency,
+  quoteFlutterwaveCollection,
+} from '@/features/payments/flutterwave-standard';
 import { buildMketyPaymentMetadata, resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -8,6 +13,9 @@ interface BrokerRequest {
   reference?: unknown;
   amount?: unknown;
   currency?: unknown;
+  payment_currency?: unknown;
+  canonical_amount_usd?: unknown;
+  requested_payment_currency?: unknown;
   email?: unknown;
   customer_name?: unknown;
   invoice_id?: unknown;
@@ -25,12 +33,13 @@ function safeString(value: unknown, maxLength: number): string {
   return typeof value === 'string' && value.trim().length <= maxLength ? value.trim() : '';
 }
 
-function parseAmount(value: unknown): number {
-  const amount = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
-    throw new Error('Invalid payment amount.');
-  }
-  return Math.round(amount * 100) / 100;
+function parseAmountMinor(value: unknown): bigint {
+  const raw = typeof value === 'number' ? value.toFixed(2) : String(value ?? '').trim();
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
+  if (!match) throw new Error('Invalid payment amount.');
+  const amount = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
+  if (amount <= 0n || amount > 100_000_000n) throw new Error('Invalid payment amount.');
+  return amount;
 }
 
 function isAllowedRedirect(value: string, source: string): boolean {
@@ -61,7 +70,11 @@ function timingSafeEqualText(left: string, right: string): boolean {
 
 export async function POST(request: Request) {
   const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
-  if (!brokerSecret) return json({ success: false, message: 'Flutterwave checkout broker is not configured.' }, 503);
+  const standardSecretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
+  const standardWebhookHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
+  if (!brokerSecret || !standardSecretKey || !standardWebhookHash) {
+    return json({ success: false, message: 'Flutterwave hosted checkout broker is not configured.' }, 503);
+  }
 
   const suppliedSecret = bearerToken(request);
   if (!suppliedSecret || !timingSafeEqualText(suppliedSecret, brokerSecret)) {
@@ -76,15 +89,28 @@ export async function POST(request: Request) {
     }
 
     const reference = safeString(body.reference, 42);
-    const amount = parseAmount(body.amount);
-    const currency = safeString(body.currency, 3).toUpperCase();
+    const canonicalAmountMinor = parseAmountMinor(body.canonical_amount_usd ?? body.amount);
+    const canonicalCurrency = body.canonical_amount_usd == null
+      ? safeString(body.currency, 3).toUpperCase()
+      : 'USD';
+    const collectionCurrency =
+      safeString(body.requested_payment_currency, 3).toUpperCase() ||
+      safeString(body.payment_currency, 3).toUpperCase() ||
+      canonicalCurrency;
     const email = safeString(body.email, 254).toLowerCase();
     const customerName = safeString(body.customer_name, 160);
     const redirectUrl = safeString(body.redirect_url, 500);
+
     if (!reference || !/^[a-zA-Z0-9-]{6,42}$/.test(reference)) {
       return json({ success: false, message: 'Invalid Mkety payment reference.' }, 400);
     }
-    if (!/^[A-Z]{3}$/.test(currency) || !email || !redirectUrl || !isAllowedRedirect(redirectUrl, source)) {
+    if (
+      canonicalCurrency !== 'USD' ||
+      !isMketyFlutterwaveCollectionCurrency(collectionCurrency) ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      !redirectUrl ||
+      !isAllowedRedirect(redirectUrl, source)
+    ) {
       return json({ success: false, message: 'Invalid checkout request.' }, 400);
     }
 
@@ -100,30 +126,51 @@ export async function POST(request: Request) {
       return json({ success: false, message: 'Mkety payment reference does not match the requested source.' }, 400);
     }
 
-    // Flutterwave v4 OAuth credentials authenticate API calls, but v4 charge
-    // creation still requires a concrete payment method. Mkety deliberately
-    // does not collect raw card details in this broker. Product callers keep
-    // the stable handoff contract while the customer-facing v4 payment-method
-    // experience is implemented separately.
-    const v4Configured = Boolean(
-      process.env.FLUTTERWAVE_CLIENT_ID &&
-      process.env.FLUTTERWAVE_CLIENT_SECRET &&
-      process.env.FLUTTERWAVE_WEBHOOK_SECRET,
-    );
-    if (!v4Configured) {
-      return json({ success: false, message: 'Flutterwave is not configured.' }, 503);
-    }
-
-    return json(
-      {
-        success: false,
-        code: 'flutterwave_v4_payment_method_required',
-        message:
-          'Flutterwave v4 is configured for OAuth and shared webhook verification. A concrete v4 payment method must be selected before a charge can be created.',
-        reference,
+    const quote = await quoteFlutterwaveCollection({
+      canonicalAmountMinor,
+      canonicalCurrency: 'USD',
+      collectionCurrency,
+      configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+      clientId: process.env.FLUTTERWAVE_CLIENT_ID,
+      clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
+    });
+    const checkoutUrl = await createFlutterwaveHostedCheckout({
+      source: source as 'saas' | 'media' | 'host' | 'enterprise',
+      reference,
+      amountMinor: quote.amountMinor,
+      currency: quote.currency,
+      email,
+      customerName: customerName || undefined,
+      redirectUrl,
+      metadata: {
+        ...metadata,
+        canonical_amount_minor: canonicalAmountMinor.toString(),
+        canonical_currency: 'USD',
+        provider_amount_minor: quote.amountMinor.toString(),
+        provider_currency: quote.currency,
+        fx_rate: quote.rate,
+        fx_source: quote.source,
       },
-      409,
-    );
+      secretKey: standardSecretKey,
+    });
+
+    const checkoutAmount = Number(quote.amountMinor) / 100;
+    return json({
+      success: true,
+      url: checkoutUrl,
+      checkout_url: checkoutUrl,
+      reference,
+      amount: checkoutAmount,
+      checkout_amount: checkoutAmount,
+      currency: quote.currency,
+      checkout_currency: quote.currency,
+      canonical_amount_minor: canonicalAmountMinor.toString(),
+      canonical_currency: 'USD',
+      provider_amount_minor: quote.amountMinor.toString(),
+      provider_currency: quote.currency,
+      fx_rate: quote.rate ?? null,
+      fx_source: quote.source,
+    });
   } catch (error) {
     logger.error(
       { errorName: error instanceof Error ? error.name : 'UnknownError' },

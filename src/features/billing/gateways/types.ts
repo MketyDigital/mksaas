@@ -10,6 +10,7 @@ export interface CreateCheckoutInput {
   currency: string;
   returnUrl: string;
   cancelUrl: string;
+  collectionCurrency?: string;
   customer?: {
     email: string;
     name?: string;
@@ -20,6 +21,8 @@ export interface CreateCheckoutResult {
   provider: string;
   providerCheckoutId?: string;
   checkoutUrl: string;
+  providerAmountExpectedMinor?: bigint;
+  providerCurrency?: string;
   expiresAt?: Date;
 }
 

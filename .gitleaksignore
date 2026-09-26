@@ -1,0 +1,3 @@
+# Historical test-fixture false positives. These are synthetic values in payment reference tests, not credentials.
+65adf9b1dad4fd0e480a33b2eeb0f727b3923a1c:src/features/payments/reference.test.ts:generic-api-key:17
+39e56babfb3b9ce6494fd415fa682bb58538d3d2:src/features/payments/reference.test.ts:generic-api-key:16

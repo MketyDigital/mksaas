@@ -44,6 +44,35 @@ describe('forwardOriginalProviderWebhook', () => {
     );
   });
 
+  it('preserves Standard verif-hash and adds only the internal Mkety attestation', async () => {
+    process.env.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL =
+      'https://media.mkety.com/api/billing/flutterwave/webhook';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true });
+    global.fetch = fetchMock as typeof fetch;
+    const rawBody = '{"event":"charge.completed","data":{"id":91}}';
+
+    await forwardOriginalProviderWebhook({
+      source: 'media',
+      provider: 'flutterwave',
+      rawBody,
+      signature: 'original-verif-hash',
+      signatureHeader: 'verif-hash',
+      attestation: 'mkety-attestation',
+      contentType: 'application/json',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://media.mkety.com/api/billing/flutterwave/webhook',
+      expect.objectContaining({
+        body: rawBody,
+        headers: expect.objectContaining({
+          'verif-hash': 'original-verif-hash',
+          'x-mkety-payment-attestation': 'mkety-attestation',
+        }),
+      }),
+    );
+  });
+
   it('never accepts an HTTP forwarding destination', async () => {
     process.env.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL = 'http://media.mkety.com/webhook';
 

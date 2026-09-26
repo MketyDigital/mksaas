@@ -10,6 +10,11 @@ import {
   isSelfServiceBillingTermKey,
   SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
+import {
+  getEnabledMketyFlutterwaveCurrencies,
+  isMketyFlutterwaveCollectionCurrency,
+  quoteFlutterwaveCollection,
+} from '@/features/payments/flutterwave-standard';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -17,7 +22,7 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface PageProps {
   params: Promise<{ tenant: string }>;
-  searchParams: Promise<{ plan?: string; term?: string; payment?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string; payment?: string; currency?: string }>;
 }
 
 export const metadata = {
@@ -56,10 +61,40 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
+  const flutterwaveEnabled = Boolean(
+    process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
+      process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH,
+  );
   const koraEnabled = Boolean(process.env.KORA_SECRET_KEY);
+  const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies();
+  const selectedCurrency = flutterwaveCurrencies.includes(
+    query.currency as (typeof flutterwaveCurrencies)[number],
+  )
+    ? String(query.currency)
+    : 'USD';
+
+  let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
+  if (flutterwaveEnabled && isMketyFlutterwaveCollectionCurrency(selectedCurrency)) {
+    try {
+      flutterwaveQuote = await quoteFlutterwaveCollection({
+        canonicalAmountMinor: quote.amountMinor,
+        canonicalCurrency: 'USD',
+        collectionCurrency: selectedCurrency,
+        configuredRatesJson: process.env.MKETY_PAYMENT_FX_RATES_JSON,
+        clientId: process.env.FLUTTERWAVE_CLIENT_ID,
+        clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
+      });
+    } catch {
+      flutterwaveQuote = null;
+    }
+  }
+
   const paymentProviders = [
-    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Pay securely with supported digital assets.' }] : []),
-    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Pay through Kora hosted checkout.' }] : []),
+    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Primary payment method · supported digital assets.' }] : []),
+    ...(flutterwaveEnabled && flutterwaveQuote
+      ? [{ key: 'flutterwave', label: 'Card / local methods', detail: 'Flutterwave hosted checkout · methods depend on your selected currency and merchant availability.' }]
+      : []),
+    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Kora hosted checkout.' }] : []),
   ];
 
   return (
@@ -131,12 +166,48 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
           </ul>
 
           {!returned ? (
-            <div className="mt-8 space-y-3">
+            <div className="mt-8 space-y-5">
+              {flutterwaveEnabled ? (
+                <div className="rounded-2xl border bg-muted/30 p-4">
+                  <p className="text-sm font-medium">Flutterwave payment currency</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Mkety prices remain canonically USD. Choose an enabled collection currency; Mkety locks the quoted amount before redirecting to Flutterwave, and Flutterwave shows the payment methods available for that currency and merchant account.
+                  </p>
+                  {flutterwaveQuote ? (
+                    <p className="mt-3 text-sm font-semibold">
+                      Flutterwave collection amount: {new Intl.NumberFormat('en', {
+                        style: 'currency',
+                        currency: flutterwaveQuote.currency,
+                        maximumFractionDigits: 2,
+                      }).format(Number(flutterwaveQuote.amountMinor) / 100)}
+                    </p>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      A live quote is not currently available for {selectedCurrency}. Choose another currency or use another payment method.
+                    </p>
+                  )}
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {flutterwaveCurrencies.map((currency) => (
+                      <Link
+                        key={currency}
+                        href={`/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&currency=${currency}`}
+                        className={currency === selectedCurrency ? 'rounded-lg border border-primary bg-primary/5 px-2 py-2 text-center text-xs font-semibold' : 'rounded-lg border px-2 py-2 text-center text-xs hover:border-primary/50'}
+                      >
+                        {currency}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               {paymentProviders.length ? paymentProviders.map((provider, index) => (
                 <form key={provider.key} action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post">
                   <input type="hidden" name="planKey" value={plan.key} />
                   <input type="hidden" name="termKey" value={termKey} />
                   <input type="hidden" name="provider" value={provider.key} />
+                  {provider.key === 'flutterwave' ? (
+                    <input type="hidden" name="collectionCurrency" value={selectedCurrency} />
+                  ) : null}
                   <button
                     type="submit"
                     className={index === 0
