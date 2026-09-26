@@ -210,16 +210,10 @@ jobs:
           NODE
           }
 
-          verify_workflow_success 'tests.yml' 'tests'
-          verify_workflow_success 'type-check.yml' 'typecheck'
-          verify_workflow_success 'lint.yml' 'lint'
-          verify_workflow_success 'build.yml' 'build'
+          # The integrated candidate already performs the detailed quality,
+          # database, provider, route, payment-safety and Public AI checks.
           verify_workflow_success 'ci.yml' 'CI'
-          verify_workflow_success 'mkety-cloudflare-vinext-smoke.yml' 'Cloudflare vinext smoke'
-          verify_workflow_success 'mkety-content-db-smoke.yml' 'content DB smoke'
-          verify_workflow_success 'mkety-public-ai-runtime-diagnostic.yml' 'Public AI runtime diagnostic'
-          verify_workflow_success 'mkety-production-preflight.yml' 'production routing preflight'
-          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'public candidate'
+          verify_workflow_success 'mkety-public-candidate-deploy.yml' 'integrated public candidate'
 
       - name: Checkout exact verified SHA
         uses: actions/checkout@v4
