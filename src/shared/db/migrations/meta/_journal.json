@@ -134,6 +134,13 @@
       "when": 1790294400000,
       "tag": "0018_mkety_media_public_content",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790380800000,
+      "tag": "0019_shared_payment_collection_currency",
+      "breakpoints": true
     }
   ]
 }

@@ -15,14 +15,14 @@ export interface EnterprisePaymentLinkInput {
   projectName: string;
   projectDescription?: string;
   amount: string;
-  provider: 'nowpayments' | 'kora' | 'selar';
+  provider: 'nowpayments' | 'flutterwave' | 'kora' | 'selar';
   installmentLabel?: string;
 }
 
 export interface EnterprisePaymentLinkResult {
   ok: true;
   orderId: string;
-  provider: 'nowpayments' | 'kora' | 'selar';
+  provider: 'nowpayments' | 'flutterwave' | 'kora' | 'selar';
   redirectUrl: string;
   status: 'checkout_created' | 'awaiting_confirmation';
 }

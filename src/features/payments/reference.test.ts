@@ -40,12 +40,16 @@ describe('Mkety payment references', () => {
     });
   });
 
-  it('resolves current Media MKM references only with explicit verified metadata', () => {
+  it('routes current Media MKM references and rejects conflicting source metadata', () => {
     expect(resolveMketyPaymentRoute('MKM-A83K27', { meta: { source: 'media', invoice_id: 'inv-1' } })).toEqual({
       source: 'media',
       metadata: { source: 'media', invoice_id: 'inv-1' },
     });
-    expect(resolveMketyPaymentRoute('MKM-A83K27')).toBeNull();
+    expect(resolveMketyPaymentRoute('MKM-A83K27')).toEqual({
+      source: 'media',
+      metadata: {},
+    });
+    expect(() => resolveMketyPaymentRoute('MKM-A83K27', { meta: { source: 'saas' } })).toThrow('conflicts');
   });
 
   it('rejects metadata that conflicts with a canonical reference prefix', () => {
@@ -54,6 +58,10 @@ describe('Mkety payment references', () => {
         meta: { source: 'media' },
       }),
     ).toThrow('conflicts');
+  });
+
+  it('does not route an unknown reference from metadata alone', () => {
+    expect(resolveMketyPaymentRoute('OTHER-123456', { meta: { source: 'enterprise', order_id: 'MKETY-ENT-123' } })).toBeNull();
   });
 
   it('rejects unknown prefixes', () => {

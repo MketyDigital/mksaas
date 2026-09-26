@@ -16,6 +16,8 @@ export const billingCheckouts = appSchema.table(
     providerCheckoutId: text('provider_checkout_id'),
     amountExpectedMinor: bigint('amount_expected_minor', { mode: 'bigint' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
+    providerAmountExpectedMinor: bigint('provider_amount_expected_minor', { mode: 'bigint' }),
+    providerCurrency: varchar('provider_currency', { length: 3 }),
     status: varchar('status', { length: 24 }).notNull().default('created'),
     checkoutUrl: text('checkout_url'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
