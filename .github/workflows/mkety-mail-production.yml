@@ -28,6 +28,7 @@ env:
   MAIL_CONTENT_WORKER: mkety-mail-content
   MAIL_EVENT_QUEUE: mkety-mail-events
   MAIL_EVENT_DEAD_QUEUE: mkety-mail-events-dead
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
 
 jobs:
   authorize:
@@ -108,6 +109,60 @@ jobs:
           [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'CLOUDFLARE_API_TOKEN missing'; exit 1; }
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'CLOUDFLARE_ACCOUNT_ID missing'; exit 1; }
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID" >/tmp/cf-account.json
+
+      - name: Resolve production Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" NAME="$MKETY_HYPERDRIVE_NAME" node <<'NODE' >/tmp/mkety-mail-hyperdrive-id
+          const x=JSON.parse(process.env.HYPERDRIVES||'{}');
+          const matches=(x.result||[]).filter((item)=>item.name===process.env.NAME);
+          if(!x.success||matches.length!==1||!matches[0]?.id) throw new Error('Expected exactly one production Mkety Hyperdrive.');
+          process.stdout.write(matches[0].id);
+          NODE
+          echo "id=$(cat /tmp/mkety-mail-hyperdrive-id)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and deploy exact Mkety application SHA
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          if(!process.env.MKETY_HYPERDRIVE_ID) throw new Error('Missing production Hyperdrive id.');
+          config.name=process.env.PRODUCTION_WORKER_NAME;
+          config.workers_dev=true;
+          config.preview_urls=true;
+          config.keep_vars=true;
+          config.vars={...(config.vars||{}),SKIP_ENV_VALIDATION:'true'};
+          config.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
+          NODE
+          pnpm build
+          pnpm run deploy --dry-run
+          pnpm run deploy
+
+      - name: Verify central Mkety auth bindings survived app deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --format json >/tmp/mkety-mail-app-secrets.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/mkety-mail-app-secrets.json','utf8');
+          const start=raw.indexOf('[');
+          const rows=start>=0?JSON.parse(raw.slice(start)):[];
+          const names=new Set(rows.map((row)=>row.name));
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET','NEXT_PUBLIC_APP_URL'];
+          const missing=required.filter((name)=>!names.has(name));
+          if(missing.length) throw new Error('Mkety app deploy lost required Auth bindings: '+missing.join(', '));
+          NODE
 
       - name: Provision R2 and queues idempotently
         id: infra
