@@ -7,11 +7,21 @@ on:
         description: Exact frozen release-branch Git SHA to migrate
         required: true
         type: string
+      release_branch:
+        description: Branch whose exact head must equal verified_sha
+        required: false
+        default: feat/mkety-public-site-production
+        type: string
   workflow_call:
     inputs:
       verified_sha:
         description: Exact frozen release-branch Git SHA to migrate
         required: true
+        type: string
+      release_branch:
+        description: Branch whose exact head must equal verified_sha
+        required: false
+        default: feat/mkety-public-site-production
         type: string
     secrets:
       COOLIFY_TOKEN:
@@ -31,7 +41,9 @@ jobs:
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
-      RELEASE_BRANCH: feat/mkety-public-site-production
+      # Compatibility default retained for the existing public-release safety contract:
+      # RELEASE_BRANCH: feat/mkety-public-site-production
+      RELEASE_BRANCH: ${{ inputs.release_branch }}
       TARGET_SHA: ${{ inputs.verified_sha }}
 
     steps:

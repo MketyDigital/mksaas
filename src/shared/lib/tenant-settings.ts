@@ -98,6 +98,14 @@ export const webhookEventTypes = [
   // Integration events
   'integration.synced',
   'integration.failed',
+  // Mkety Mail events
+  'mail.sent',
+  'mail.delivered',
+  'mail.deferred',
+  'mail.bounced',
+  'mail.failed',
+  'mail.rejected',
+  'mail.complained',
 ] as const;
 
 export type WebhookEventType = (typeof webhookEventTypes)[number];
