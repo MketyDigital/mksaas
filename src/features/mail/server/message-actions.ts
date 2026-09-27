@@ -9,6 +9,7 @@ import { mailDomains, mailMailboxes, mailMailboxMembers, mailMessages, mailSuppr
 
 import { pushMailQueueBatch } from './cloudflare';
 import { fetchMailText } from './content';
+import { getMailSendCapacity } from './sending-policy';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function validEmail(value:string){
@@ -73,6 +74,8 @@ export async function composeMail(tenantSlug:string,formData:FormData){
   if(!to||!subject||!text) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=details`);
   if(await suppressed(auth.tenant.id,to)) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=suppressed`);
   if(!auth.domain.sendingEnabled) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=domain`);
+  const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
+  if(!capacity.allowed) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=limit`);
 
   const from=`${auth.mailbox.localPart}@${auth.domain.domain}`;
   const [message]=await db.insert(mailMessages).values({
@@ -120,6 +123,8 @@ export async function replyToMail(tenantSlug:string,formData:FormData){
   if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!auth.domain.sendingEnabled) return;
   const to=validEmail(original.fromAddress);
   if(!to||await suppressed(auth.tenant.id,to)) return;
+  const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
+  if(!capacity.allowed) return;
 
   const from=`${auth.mailbox.localPart}@${auth.domain.domain}`;
   const subject=/^re:/i.test(original.subject||'')?String(original.subject):`Re: ${original.subject||''}`;
@@ -159,6 +164,8 @@ export async function forwardMail(tenantSlug:string,formData:FormData){
   const auth=await authorizeMailbox(tenantSlug,original.mailboxId);
   if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!auth.domain.sendingEnabled) return;
   if(await suppressed(auth.tenant.id,to)) return;
+  const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
+  if(!capacity.allowed) return;
 
   const originalBody=await fetchMailText(original.textR2Key);
   const quoted=[
