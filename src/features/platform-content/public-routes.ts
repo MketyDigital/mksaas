@@ -14,6 +14,8 @@ export const MKETY_PUBLIC_ROUTES = [
   { path: '/academy', key: 'academy', label: 'Academy', sitemap: true, priority: 0.8 },
   { path: '/pricing', key: 'pricing', label: 'Pricing', sitemap: true, priority: 0.8 },
   { path: '/enterprise', key: 'enterprise', label: 'Enterprise', sitemap: true, priority: 0.8 },
+  { path: '/trust', key: 'trust', label: 'Trust', sitemap: true, priority: 0.8 },
+  { path: '/infrastructure', key: 'infrastructure', label: 'Infrastructure', sitemap: true, priority: 0.7 },
   { path: '/about', key: 'about', label: 'About', sitemap: true, priority: 0.6 },
   { path: '/docs', key: 'docs', label: 'Docs', sitemap: true, priority: 0.8 },
   { path: '/privacy', key: 'privacy', label: 'Privacy', sitemap: true, priority: 0.3 },
