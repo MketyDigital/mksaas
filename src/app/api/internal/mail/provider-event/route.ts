@@ -2,6 +2,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/shared/db/cloudflare';
+import { tenants } from '@/shared/db/schema';
+import { emitWebhookEvent } from '@/shared/services/webhook-service';
 import {
   mailCustomerUpdateRecipients,
   mailCustomerUpdates,
@@ -118,6 +120,18 @@ export async function POST(request:Request){
       }).onConflictDoNothing({target:[mailSuppressions.tenantId,mailSuppressions.email]});
     }
   });
+
+  const tenant=await db.query.tenants.findFirst({where:eq(tenants.id,tenantId),columns:{slug:true}});
+  if(tenant?.slug){
+    await emitWebhookEvent(tenant.slug,`mail.${type}`,{
+      providerMessageId,
+      recipient,
+      type,
+      occurredAt:occurredAt.toISOString(),
+      messageId:message?.id||null,
+      customerUpdateRecipientId:updateRecipient?.id||null,
+    }).catch(()=>undefined);
+  }
 
   return NextResponse.json({ok:true});
 }
