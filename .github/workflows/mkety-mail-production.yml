@@ -99,17 +99,23 @@ jobs:
             return 1
           }
 
-          workflow_only_hotfix='no'
-          commit="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$VERIFIED_SHA")"
-          WORKFLOW_COMMIT="$commit" node <<'NODE' >/tmp/mail-release-proof
+          proof_sha="$VERIFIED_SHA"
+          for depth in $(seq 1 8); do
+            commit="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$proof_sha")"
+            next_parent="$(WORKFLOW_COMMIT="$commit" node <<'NODE'
           const x=JSON.parse(process.env.WORKFLOW_COMMIT||'{}');
           const files=(x.files||[]).map((f)=>f.filename).sort();
           const parents=x.parents||[];
           const onlyMailWorkflow=files.length===1&&files[0]==='.github/workflows/mkety-mail-production.yml'&&parents[0]?.sha;
           if(onlyMailWorkflow) process.stdout.write(parents[0].sha);
           NODE
-          parent_sha="$(cat /tmp/mail-release-proof)"
-          if [ -n "$parent_sha" ]; then workflow_only_hotfix='yes'; fi
+            )"
+            [ -n "$next_parent" ] || break
+            proof_sha="$next_parent"
+          done
+          if [ "$proof_sha" != "$VERIFIED_SHA" ]; then
+            echo "Workflow-only hotfix chain detected; infrastructure proof base is $proof_sha."
+          fi
 
           verify_infra_proof() {
             workflow="$1"
@@ -119,10 +125,10 @@ jobs:
               echo "Verified successful $label for exact SHA."
               return 0
             fi
-            if [ "$workflow_only_hotfix" = 'yes' ]; then
-              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$parent_sha&status=success&per_page=20")"
+            if [ "$proof_sha" != "$VERIFIED_SHA" ]; then
+              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$proof_sha&status=success&per_page=20")"
               if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
-                echo "Verified inherited $label proof from immediate parent $parent_sha for workflow-only hotfix."
+                echo "Verified inherited $label proof from last non-workflow release $proof_sha."
                 return 0
               fi
             fi
