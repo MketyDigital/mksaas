@@ -11,18 +11,22 @@ export function MketyPublicAuthActions() {
   useEffect(() => {
     let active = true;
 
-    fetch('/api/auth/session', {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-    })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((session) => {
+    async function loadSession() {
+      try {
+        const response = await fetch('/api/auth/session', {
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response) return;
+        const session = response.ok ? await response.json() : null;
         if (active) setAuthenticated(Boolean(session?.user));
-      })
-      .catch(() => {
+      } catch {
         if (active) setAuthenticated(false);
-      });
+      }
+    }
+
+    void loadSession();
 
     return () => {
       active = false;
