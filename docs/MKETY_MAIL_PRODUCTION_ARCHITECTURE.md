@@ -302,3 +302,14 @@ The Migration Baseline and Cloudflare vinext Smoke proof workflows were certifie
 `26f0cead52d9ee69932af8ed419ed97f12413330`
 
 This retry remains subject to all existing guarded production checks and must stop on any failed permission, migration, deployment, binding, or smoke gate.
+
+
+## Production completion trigger 2 — 2026-09-27
+
+Second guarded Mail production attempt after merge of the migration-baseline proof inheritance repair.
+
+Exact pre-trigger main SHA:
+
+`f9fddbe7265731413b31c0ce660df3963fac87a1`
+
+All existing release gates remain mandatory; this documentation commit exists only to activate the repository's guarded `[mail-production]` push path.
