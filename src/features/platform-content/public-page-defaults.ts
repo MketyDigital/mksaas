@@ -60,7 +60,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Provider flexibility',
         title: 'Mkety abstracts the provider layer so your product is not tied to one AI vendor.',
         description:
-          'Mkety AI is built around provider adapters and approved current model registries. Today the repository supports OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock, with provider routing kept behind Mkety interfaces.',
+          'Mkety AI is built around approved provider routes and current model governance. Today Mkety supports OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock, with provider selection kept behind one Mkety experience.',
         items: [
           {
             key: 'ai-provider-routing',
@@ -143,7 +143,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'AI Workspace',
         title: 'Choose models through Mkety, not around Mkety.',
         description:
-          'The current Mkety AI provider layer has executable adapters for OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock. Bedrock also provides access to supported Anthropic and Amazon model families through that provider route.',
+          'The current Mkety AI provider layer supports OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock. Bedrock also provides access to supported Anthropic and Amazon model families through that provider route.',
         items: [
           {
             key: 'openai-family',
