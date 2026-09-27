@@ -57,6 +57,10 @@ jobs:
     outputs:
       verified_sha: ${{ steps.release.outputs.sha }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Validate exact main SHA and release authorization
         id: release
         shell: bash
@@ -134,7 +138,39 @@ jobs:
           verify_success lint.yml Lint
           verify_success tests.yml Tests
           verify_success build.yml Build
-          verify_infra_proof mkety-migration-baseline.yml Migration-Baseline
+
+          verify_migration_proof() {
+            workflow='mkety-migration-baseline.yml'
+            label='Migration-Baseline'
+
+            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+            if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+              echo "Verified successful $label for exact SHA."
+              return 0
+            fi
+
+            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=20")"
+            printf '%s' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const x=JSON.parse(s||'{}');for(const r of x.workflow_runs||[])if(r.head_sha)console.log(r.head_sha)})" >/tmp/mail-migration-proof-candidates
+
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              git cat-file -e "$candidate^{commit}" 2>/dev/null || continue
+              git merge-base --is-ancestor "$candidate" "$VERIFIED_SHA" || continue
+
+              changed="$(git diff --name-only "$candidate" "$VERIFIED_SHA")"
+              if printf '%s\n' "$changed" | grep -Eq '^(src/shared/db/migrations/|migrations/|scripts/check-migration-baseline\.ts$|src/shared/db/__tests__/migration-baseline\.test\.ts$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/mkety-migration-baseline\.yml$)'; then
+                continue
+              fi
+
+              echo "Verified inherited $label proof from ancestor $candidate; no migration-baseline trigger paths changed afterward."
+              return 0
+            done </tmp/mail-migration-proof-candidates
+
+            echo "No acceptable $label proof found."
+            return 1
+          }
+
+          verify_migration_proof
           verify_infra_proof mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
 
   production-db:
