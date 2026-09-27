@@ -26,6 +26,13 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   const session = await auth(request);
   let effectivePathname = pathname;
   const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
+  const apiHost=(process.env.MKETY_API_HOST||'api.mkety.com').toLowerCase();
+
+  if(hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/mail/')){
+    const url=new URL(request.url);
+    url.pathname='/api'+pathname;
+    return NextResponse.rewrite(url);
+  }
 
   if(hostname.toLowerCase()===mailHost && pathname==='/'){
     const url=new URL(request.url);
@@ -52,6 +59,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     const isKnownAppHost =
       hostname === appHost ||
       hostname.toLowerCase() === mailHost ||
+      hostname.toLowerCase() === apiHost ||
       hostname === vercelHost ||
       hostname.endsWith('.vercel.app') ||
       hostname.endsWith('.workers.dev');
