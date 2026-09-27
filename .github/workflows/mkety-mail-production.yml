@@ -1,6 +1,25 @@
 name: Mkety Mail Production
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-mail-production.yml'
+      - '.github/workflows/mkety-coolify-production-db-executor.yml'
+      - 'src/app/**/mail/**'
+      - 'src/app/api/mail/**'
+      - 'src/app/api/v1/mail/**'
+      - 'src/app/api/internal/mail/**'
+      - 'src/features/mail/**'
+      - 'src/shared/db/schema/mail.ts'
+      - 'src/shared/db/migrations/0020_mkety_mail_foundation.sql'
+      - 'src/shared/db/migrations/meta/0020_snapshot.json'
+      - 'src/shared/lib/tenant-settings.ts'
+      - 'src/features/admin/services/webhook-admin-service.ts'
+      - 'src/proxy.ts'
+      - 'workers/mail-*/**'
+      - 'docs/MKETY_MAIL_*.md'
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -32,19 +51,33 @@ env:
 
 jobs:
   authorize:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[mail-production]')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
+    outputs:
+      verified_sha: ${{ steps.release.outputs.sha }}
     steps:
-      - name: Validate exact main SHA and confirmation
+      - name: Validate exact main SHA and release authorization
+        id: release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERIFIED_SHA: ${{ inputs.verified_sha }}
+          VERIFIED_SHA_INPUT: ${{ needs.authorize.outputs.verified_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          PUSH_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            VERIFIED_SHA="$VERIFIED_SHA_INPUT"
+            [ "$CONFIRMATION" = 'DEPLOY MKETY MAIL' ] || { echo 'Confirmation phrase did not match.'; exit 1; }
+          else
+            VERIFIED_SHA="$PUSH_SHA"
+            printf '%s' "$PUSH_MESSAGE" | grep -Fq '[mail-production]' || { echo 'Push is not an authorized Mail production merge.'; exit 1; }
+          fi
           [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'verified_sha must be a 40-character SHA.'; exit 1; }
-          [ "$CONFIRMATION" = 'DEPLOY MKETY MAIL' ] || { echo 'Confirmation phrase did not match.'; exit 1; }
+          echo "sha=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
 
           main="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main")"
           head="$(MAIN="$main" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
@@ -53,11 +86,17 @@ jobs:
           verify_success() {
             workflow="$1"
             label="$2"
-            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'               "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
-            RESPONSE="$response" LABEL="$label" node <<'NODE'
-          const x=JSON.parse(process.env.RESPONSE||'{}');
-          if(!Array.isArray(x.workflow_runs)||!x.workflow_runs.length) throw new Error('Missing successful '+process.env.LABEL+' for exact SHA.');
-          NODE
+            for attempt in $(seq 1 60); do
+              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+              if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+                echo "Verified successful $label for exact SHA."
+                return 0
+              fi
+              echo "Waiting for $label on exact SHA ($attempt/60)..."
+              sleep 15
+            done
+            echo "Missing successful $label for exact SHA after bounded wait."
+            return 1
           }
 
           verify_success ci.yml CI
@@ -72,7 +111,7 @@ jobs:
     needs: authorize
     uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
     with:
-      verified_sha: ${{ inputs.verified_sha }}
+      verified_sha: ${{ needs.authorize.outputs.verified_sha }}
       release_branch: main
     secrets:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
@@ -84,11 +123,11 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      VERIFIED_SHA: ${{ inputs.verified_sha }}
+      VERIFIED_SHA: ${{ needs.authorize.outputs.verified_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.verified_sha }}
+          ref: ${{ needs.authorize.outputs.verified_sha }}
           fetch-depth: 1
 
       - uses: pnpm/action-setup@v4
