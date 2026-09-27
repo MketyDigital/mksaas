@@ -38,6 +38,10 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
   });
   if(!domain) redirect(`/t/${tenantSlug}/mail/mailboxes?error=domain`);
 
+  if(catchAll){
+    await db.update(mailMailboxes).set({catchAll:false,updatedAt:new Date()}).where(and(eq(mailMailboxes.tenantId,tenant.id),eq(mailMailboxes.domainId,domain.id),eq(mailMailboxes.catchAll,true)));
+  }
+
   const [mailbox]=await db.insert(mailMailboxes).values({
     tenantId:tenant.id,
     workspaceId:workspace.id,
