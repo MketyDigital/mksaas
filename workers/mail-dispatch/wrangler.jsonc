@@ -26,5 +26,11 @@
     {
       "name": "EMAIL"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MAIL_STORAGE",
+      "bucket_name": "mkety-mail-storage"
+    }
   ]
 }
