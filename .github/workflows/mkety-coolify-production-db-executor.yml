@@ -41,6 +41,8 @@ jobs:
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      # Compatibility default retained for the existing public-release safety contract:
+      # RELEASE_BRANCH: feat/mkety-public-site-production
       RELEASE_BRANCH: ${{ inputs.release_branch }}
       TARGET_SHA: ${{ inputs.verified_sha }}
 
