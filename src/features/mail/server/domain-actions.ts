@@ -15,7 +15,7 @@ function normalizeDomain(value:string){
 }
 
 export async function addMailDomain(tenantSlug:string,formData:FormData){
-  const {actor,tenant}=await requireMailWorkspaceAccess(tenantSlug);
+  const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
   if(!workspace) redirect(`/t/${tenantSlug}/mail`);
 
