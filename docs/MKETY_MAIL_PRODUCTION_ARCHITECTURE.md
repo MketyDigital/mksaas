@@ -313,3 +313,14 @@ Exact pre-trigger main SHA:
 `f9fddbe7265731413b31c0ce660df3963fac87a1`
 
 All existing release gates remain mandatory; this documentation commit exists only to activate the repository's guarded `[mail-production]` push path.
+
+
+## Production completion trigger 3 — serialized release
+
+Final guarded production attempt after the Mail release workflow gained concurrency serialization and a final main-head revalidation.
+
+Exact pre-trigger main SHA:
+
+`06d8019c49c097cb6183d8a0b948c0477933876f`
+
+This run is authorized only for the exact resulting main SHA and must cancel/replace any older in-progress Mail production run.
