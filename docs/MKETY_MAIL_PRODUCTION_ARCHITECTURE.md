@@ -293,3 +293,12 @@ Exact pre-trigger main SHA:
 `37179f1fbc620bc963fef91ef8ee0bb9b5f1aded`
 
 The production workflow must still enforce its existing exact-SHA quality, migration, Cloudflare permission, infrastructure, deployment, auth-binding and smoke gates. A failed gate is not authorization to bypass or weaken the gate.
+
+
+## Production completion retry — aligned proof base
+
+The Migration Baseline and Cloudflare vinext Smoke proof workflows were certified together on:
+
+`26f0cead52d9ee69932af8ed419ed97f12413330`
+
+This retry remains subject to all existing guarded production checks and must stop on any failed permission, migration, deployment, binding, or smoke gate.
