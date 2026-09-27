@@ -22,7 +22,8 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
   const domainId=String(formData.get('domainId')||'');
   const localPart=cleanLocalPart(String(formData.get('localPart')||''));
   const displayName=String(formData.get('displayName')||'').trim().slice(0,255);
-  const type=String(formData.get('type')||'personal')==='shared'?'shared':'personal';
+  const requestedType=String(formData.get('type')||'personal');
+  const type=['personal','shared','alias'].includes(requestedType)?requestedType:'personal';
   const forwardingAddress=String(formData.get('forwardingAddress')||'').trim().toLowerCase();
   const catchAll=String(formData.get('catchAll')||'')==='yes';
 
@@ -30,6 +31,9 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     redirect(`/t/${tenantSlug}/mail/mailboxes?error=address`);
   }
   if(forwardingAddress&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forwardingAddress)){
+    redirect(`/t/${tenantSlug}/mail/mailboxes?error=forward`);
+  }
+  if(type==='alias'&&!forwardingAddress){
     redirect(`/t/${tenantSlug}/mail/mailboxes?error=forward`);
   }
 
