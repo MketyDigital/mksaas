@@ -107,8 +107,10 @@ jobs:
           const x=JSON.parse(fs.readFileSync('/tmp/mail-proof-commit.json','utf8'));
           const files=(x.files||[]).map((f)=>f.filename).sort();
           const parents=x.parents||[];
-          const onlyMailWorkflow=files.length===1&&files[0]==='.github/workflows/mkety-mail-production.yml'&&parents[0]?.sha;
-          if(onlyMailWorkflow) process.stdout.write(parents[0].sha);
+          const proofNeutral=files.length>0&&files.every((file)=>
+            file==='.github/workflows/mkety-mail-production.yml'||file.startsWith('docs/MKETY_MAIL_')
+          )&&parents[0]?.sha;
+          if(proofNeutral) process.stdout.write(parents[0].sha);
           NODE
             )"
             [ -n "$next_parent" ] || break
