@@ -1,7 +1,5 @@
 import Link from 'next/link';
 
-import { Button } from '@/shared/components/ui';
-
 import { MketyPublicAuthActions } from './MketyPublicAuthActions';
 
 import { dedupePublicNavigation } from './public-navigation';
