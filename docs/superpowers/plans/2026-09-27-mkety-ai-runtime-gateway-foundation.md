@@ -319,3 +319,28 @@ Mail production completion was advanced and verified through the guarded workflo
 Latest guarded Mail run observed: workflow run #11 (36358054268), exact head 32416bb09f32fc8b7157083647b7203f0cebbc0a.
 
 AI implementation remains gated until the Cloudflare repository token is updated and the Mail production workflow completes green. Do not bypass the permission preflight.
+
+
+## Execution gate update — Mail production blocker
+
+Mkety AI implementation remains gated behind Mail production completion.
+
+Latest authoritative Mail release evidence:
+
+- Mail production workflow run: `36358566312`;
+- exact release authorization: passed;
+- production PostgreSQL migration: passed;
+- Cloudflare account credential verification: passed;
+- R2 permission preflight: **failed HTTP 403**;
+- missing required permission: **Workers R2 Storage Write** on the repository `CLOUDFLARE_API_TOKEN`;
+- all later Mail infrastructure/deployment/smoke steps were skipped.
+
+Mail release-workflow safety fixes are completed and merged on main:
+
+- #142 shell-portable proof walk;
+- #143 safe migration-baseline proof inheritance;
+- #144 serialized production runs + final main-head revalidation.
+
+**Do not start AI-01 code implementation until the Cloudflare token permission is corrected, the guarded Mail production release succeeds, and Mail production functional acceptance is completed.**
+
+AI architecture/commercial/provider planning remains complete enough to start immediately once this gate clears.
