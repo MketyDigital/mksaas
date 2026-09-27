@@ -8,6 +8,7 @@ import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMailboxMembers, mailMessages, mailSuppressions } from '@/shared/db/schema';
 
 import { pushMailQueueBatch } from './cloudflare';
+import { fetchMailText } from './content';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function validEmail(value:string){
@@ -145,6 +146,54 @@ export async function replyToMail(tenantSlug:string,formData:FormData){
     subject,
     text,
     ...(original.internetMessageId?{headers:{'In-Reply-To':original.internetMessageId,'References':original.internetMessageId}}:{}),
+  }]);
+  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
+}
+
+export async function forwardMail(tenantSlug:string,formData:FormData){
+  const messageId=String(formData.get('messageId')||'');
+  const to=validEmail(String(formData.get('to')||''));
+  const note=String(formData.get('message')||'').trim().slice(0,100_000);
+  const original=await db.query.mailMessages.findFirst({where:eq(mailMessages.id,messageId)});
+  if(!original||!to) return;
+  const auth=await authorizeMailbox(tenantSlug,original.mailboxId);
+  if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!auth.domain.sendingEnabled) return;
+  if(await suppressed(auth.tenant.id,to)) return;
+
+  const originalBody=await fetchMailText(original.textR2Key);
+  const quoted=[
+    note,
+    '',
+    '---------- Forwarded message ----------',
+    `From: ${original.fromAddress}`,
+    `Subject: ${original.subject||'(no subject)'}`,
+    '',
+    originalBody||original.preview||'',
+  ].join('\n').trim().slice(0,200_000);
+
+  const from=`${auth.mailbox.localPart}@${auth.domain.domain}`;
+  const subject=/^fwd:/i.test(original.subject||'')?String(original.subject):`Fwd: ${original.subject||''}`;
+  const [forwarded]=await db.insert(mailMessages).values({
+    tenantId:auth.tenant.id,
+    mailboxId:auth.mailbox.id,
+    direction:'outbound',
+    fromAddress:from,
+    toJson:[to],
+    subject,
+    preview:quoted.slice(0,240),
+    status:'queued',
+    folder:'sent',
+  }).returning();
+
+  await pushMailQueueBatch([{
+    kind:'inbox',
+    tenantId:auth.tenant.id,
+    messageId:forwarded.id,
+    mailboxId:auth.mailbox.id,
+    from:{email:from,name:auth.mailbox.displayName||undefined},
+    to:{email:to},
+    subject,
+    text:quoted,
   }]);
   revalidatePath(`/t/${tenantSlug}/mail/inbox`);
 }
