@@ -42,12 +42,12 @@ export async function enableCloudflareEmailSending(zoneId:string,domain:string){
     method:'POST',
     body:JSON.stringify({name:domain}),
   });
-  return payload?.result as Record<string,unknown>|null||null;
+  return (payload?.result as Record<string,unknown>|undefined)||null;
 }
 
 export async function getCloudflareEmailRouting(zoneId:string){
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing`);
-  return payload?.result as Record<string,unknown>|null||null;
+  return (payload?.result as Record<string,unknown>|undefined)||null;
 }
 
 export async function sendCloudflareEmail(input:{
