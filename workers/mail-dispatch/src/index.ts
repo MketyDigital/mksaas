@@ -1,3 +1,13 @@
+type QueueMessage<T>={
+  body:T;
+  ack():void;
+  retry(options?:{delaySeconds?:number}):void;
+};
+
+type QueueBatch<T>={
+  messages:Array<QueueMessage<T>>;
+};
+
 type MailJob={
   kind:'customer_update';
   tenantId:string;
@@ -57,7 +67,7 @@ export default {
   async fetch():Promise<Response>{
     return new Response('Mkety Mail dispatch',{status:200});
   },
-  async queue(batch:MessageBatch<MailJob>,env:Env):Promise<void>{
+  async queue(batch:QueueBatch<MailJob>,env:Env):Promise<void>{
     for(const message of batch.messages){
       try{
         await send(env,message.body);
