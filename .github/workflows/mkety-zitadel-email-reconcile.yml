@@ -132,7 +132,7 @@ jobs:
           const out={
             allowUsernamePassword:true,
             allowRegister:true,
-            allowExternalIdp:x.allowExternalIdp ?? false,
+            allowExternalIdp:true,
             forceMfa:x.forceMfa ?? false,
             passwordlessType:x.passwordlessType || 'PASSWORDLESS_TYPE_NOT_ALLOWED',
             hidePasswordReset:x.hidePasswordReset ?? false,
@@ -159,10 +159,11 @@ jobs:
             allowRegister:x.allowRegister??null,
             allowUsernamePassword:x.allowUsernamePassword??null,
             allowLocalAuthentication:x.allowLocalAuthentication??null,
-            disableLoginWithEmail:x.disableLoginWithEmail??null
+            disableLoginWithEmail:x.disableLoginWithEmail??null,
+            allowExternalIdp:x.allowExternalIdp??null
           }));
-          if(x.allowRegister!==true || x.allowUsernamePassword!==true || x.disableLoginWithEmail===true){
-            throw new Error('ZITADEL email-login policy did not converge');
+          if(x.allowRegister!==true || x.allowUsernamePassword!==true || x.disableLoginWithEmail===true || x.allowExternalIdp!==true){
+            throw new Error('ZITADEL login policy did not converge for email/password and external IdP');
           }
           NODE
 
