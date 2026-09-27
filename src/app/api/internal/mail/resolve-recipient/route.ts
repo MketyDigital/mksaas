@@ -19,8 +19,11 @@ export async function POST(request:Request){
   const domainName=recipient.slice(at+1);
   const domain=await db.query.mailDomains.findFirst({where:and(eq(mailDomains.domain,domainName),eq(mailDomains.routingEnabled,true))});
   if(!domain) return NextResponse.json({ok:false,accepted:false},{status:404});
-  const mailbox=await db.query.mailMailboxes.findFirst({
+  let mailbox=await db.query.mailMailboxes.findFirst({
     where:and(eq(mailMailboxes.tenantId,domain.tenantId),eq(mailMailboxes.domainId,domain.id),eq(mailMailboxes.localPart,localPart),eq(mailMailboxes.status,'active')),
+  });
+  mailbox??=await db.query.mailMailboxes.findFirst({
+    where:and(eq(mailMailboxes.tenantId,domain.tenantId),eq(mailMailboxes.domainId,domain.id),eq(mailMailboxes.catchAll,true),eq(mailMailboxes.status,'active')),
   });
   if(!mailbox) return NextResponse.json({ok:false,accepted:false},{status:404});
   return NextResponse.json({
