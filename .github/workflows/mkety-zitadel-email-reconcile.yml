@@ -114,6 +114,22 @@ jobs:
           console.log('ZITADEL_AUTH_EMAIL_STATE_SAFE '+JSON.stringify(safe));
           NODE
 
+          idps="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/login/idps?ctx.orgId=$org_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          IDPS="$idps" node <<'NODE'
+          const x=JSON.parse(process.env.IDPS||'{}');
+          const providers=Array.isArray(x.identityProviders)?x.identityProviders:[];
+          const safe=providers.map((p)=>({
+            id:p.id||null,
+            name:p.name||null,
+            type:p.type||null,
+            creationAllowed:p.options?.isCreationAllowed??null,
+            linkingAllowed:p.options?.isLinkingAllowed??null,
+            autoCreation:p.options?.isAutoCreation??null,
+            autoUpdate:p.options?.isAutoUpdate??null,
+          }));
+          console.log('ZITADEL_ACTIVE_IDPS_SAFE '+JSON.stringify(safe));
+          NODE
+
       - name: Ensure registration, password and email login are enabled
         shell: bash
         run: |
@@ -122,7 +138,7 @@ jobs:
           userpass="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowUsernamePassword))")"
           email_disabled="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.disableLoginWithEmail))")"
           external_idp="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowExternalIdp))")"
-          if [ "$allow" = true ] && [ "$userpass" = true ] && [ "$email_disabled" = false ] && [ "$external_idp" = true ]; then
+          if [ "$allow" = true ] && [ "$userpass" = true ] && [ "$email_disabled" != true ] && [ "$external_idp" = true ]; then
             echo 'ZITADEL registration, username/password, email login and external IdP login already enabled.'
             exit 0
           fi
