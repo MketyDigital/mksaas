@@ -307,3 +307,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS "mail_app_passwords_hash_uidx" ON "saas_templa
 CREATE INDEX IF NOT EXISTS "mail_app_passwords_tenant_idx" ON "saas_template"."mail_app_passwords" ("tenant_id");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "mail_app_passwords_mailbox_idx" ON "saas_template"."mail_app_passwords" ("mailbox_id");
+
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "saas_template"."mail_attachments" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL REFERENCES "saas_template"."tenants"("id") ON DELETE cascade,
+  "message_id" uuid NOT NULL REFERENCES "saas_template"."mail_messages"("id") ON DELETE cascade,
+  "filename" text,
+  "content_type" varchar(255),
+  "content_id" text,
+  "size_bytes" bigint DEFAULT 0 NOT NULL,
+  "r2_key" text NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_attachments_message_idx" ON "saas_template"."mail_attachments" ("message_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_attachments_tenant_idx" ON "saas_template"."mail_attachments" ("tenant_id");
