@@ -36,6 +36,7 @@ export default async function MailboxesPage({params,searchParams}:{params:Promis
           <label className="text-sm font-medium">Display name<input className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="displayName" placeholder="Your Company"/></label>
           <label className="text-sm font-medium">Mailbox type<select className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="type"><option value="personal">Personal</option><option value="shared">Shared team inbox</option></select></label>
           <label className="text-sm font-medium md:col-span-2">Optional forwarding address<input className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="forwardingAddress" type="email" placeholder="owner@gmail.com"/></label>
+          <label className="flex items-start gap-3 rounded-xl border p-4 text-sm md:col-span-2"><input type="checkbox" name="catchAll" value="yes" className="mt-1"/><span>Use this as the catch-all inbox for addresses on this domain that do not have their own mailbox.</span></label>
           <div className="md:col-span-2"><button className="rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">Create mailbox</button></div>
         </form>}
       </CardContent>
