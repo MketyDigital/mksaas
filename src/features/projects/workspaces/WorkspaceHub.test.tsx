@@ -22,8 +22,8 @@ describe('WorkspaceHub', () => {
     expect(screen.getByText('Planned next')).toBeInTheDocument();
     expect(screen.getByText('Enterprise only')).toBeInTheDocument();
     expect(screen.getByText('Protected')).toBeInTheDocument();
-    expect(screen.getByText('Available now').previousElementSibling).toHaveTextContent('1');
-    expect(screen.getByText('Planned next').previousElementSibling).toHaveTextContent('3');
+    expect(screen.getByText('Available now').previousElementSibling).toHaveTextContent('4');
+    expect(screen.getByText('Planned next').previousElementSibling).toHaveTextContent('0');
     expect(screen.getByText('Enterprise only').previousElementSibling).toHaveTextContent('1');
     expect(screen.getByText('Protected').previousElementSibling).toHaveTextContent('0');
   });
