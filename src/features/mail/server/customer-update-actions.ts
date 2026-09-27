@@ -15,6 +15,7 @@ import {
 } from '@/shared/db/schema';
 
 import { pushMailQueueBatch } from './cloudflare';
+import { getMailSendCapacity } from './sending-policy';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function chunks<T>(values:T[],size:number){
@@ -52,6 +53,11 @@ export async function createCustomerUpdate(tenantSlug:string,formData:FormData){
   const suppressed=new Set(suppressions.map((row)=>row.email.toLowerCase()));
   const recipients=contacts.filter((contact)=>!suppressed.has(contact.email.toLowerCase())).slice(0,3000);
   if(!recipients.length) redirect(`/t/${tenantSlug}/mail/customer-updates?error=recipients`);
+  const capacity=await getMailSendCapacity(tenant.id,domain.id,recipients.length);
+  if(!capacity.allowed){
+    const reason=capacity.reason==='warmup'?'warmup':'limit';
+    redirect(`/t/${tenantSlug}/mail/customer-updates?error=${reason}&remaining=${capacity.remaining}`);
+  }
 
   const [update]=await db.insert(mailCustomerUpdates).values({
     tenantId:tenant.id,
