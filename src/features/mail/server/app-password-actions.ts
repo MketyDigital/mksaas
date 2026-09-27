@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import { mailAppPasswords, mailMailboxMembers, mailMailboxes } from '@/shared/db/schema';
@@ -44,7 +44,7 @@ export async function createMailAppPassword(tenantSlug:string,_state:State,formD
   }
   const secret='mkmail-'+hex(bytes(12));
   const passwordHash=await ssha256(secret);
-  await db.update(mailAppPasswords).set({revokedAt:new Date()}).where(and(eq(mailAppPasswords.tenantId,tenant.id),eq(mailAppPasswords.mailboxId,mailbox.id),eq(mailAppPasswords.userId,actor.userId),eq(mailAppPasswords.revokedAt,null)));
+  await db.update(mailAppPasswords).set({revokedAt:new Date()}).where(and(eq(mailAppPasswords.tenantId,tenant.id),eq(mailAppPasswords.mailboxId,mailbox.id),eq(mailAppPasswords.userId,actor.userId),isNull(mailAppPasswords.revokedAt)));
   await db.insert(mailAppPasswords).values({
     tenantId:tenant.id,mailboxId:mailbox.id,userId:actor.userId,name,passwordPrefix:secret.slice(0,12),passwordHash,
   });
