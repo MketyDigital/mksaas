@@ -7,7 +7,13 @@ import { redirect } from 'next/navigation';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
 
-import { enableCloudflareEmailRouting, enableCloudflareEmailSending, findCloudflareZone, getCloudflareEmailRouting } from './cloudflare';
+import {
+  enableCloudflareEmailRouting,
+  enableCloudflareEmailSending,
+  ensureCloudflareEmailEventSubscription,
+  findCloudflareZone,
+  getCloudflareEmailRouting,
+} from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function normalizeDomain(value:string){
@@ -40,6 +46,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
       routingEnabled=Boolean(routing?.enabled);
       const sending=await enableCloudflareEmailSending(zone.id,domain);
       sendingEnabled=Boolean(sending?.enabled);
+      if(sendingEnabled) await ensureCloudflareEmailEventSubscription(zone.id,domain);
     }
   }catch{
     // A customer domain outside Mkety's Cloudflare account remains in guided setup.
