@@ -1,0 +1,28 @@
+import { desc, eq } from 'drizzle-orm';
+import { Code2 } from 'lucide-react';
+
+import { CreateMailApiKeyForm } from '@/features/mail/components/CreateMailApiKeyForm';
+import { revokeMailApiKey } from '@/features/mail/server/api-key-actions';
+import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { PageHeader } from '@/shared/components/ui/page-header';
+import { db } from '@/shared/db/cloudflare';
+import { mailApiKeys } from '@/shared/db/schema';
+
+export const dynamic='force-dynamic';
+
+export default async function MailDeveloperPage({params}:{params:Promise<{tenant:string}>}){
+  const {tenant}=await params;
+  const access=await requireMailWorkspaceAccess(tenant);
+  const keys=await db.query.mailApiKeys.findMany({where:eq(mailApiKeys.tenantId,access.tenant.id),orderBy:[desc(mailApiKeys.createdAt)]});
+  const revoke=revokeMailApiKey.bind(null,tenant);
+  return <div className="space-y-8">
+    <PageHeader variant="hero" icon={<Code2 className="h-5 w-5"/>} title="Transactional email" description="Send receipts, OTPs, confirmations and business notifications from your applications."/>
+
+    <Card className="rounded-2xl"><CardHeader><CardTitle>API keys</CardTitle><CardDescription>Keys are tenant-scoped, stored hashed and shown in full only once.</CardDescription></CardHeader><CardContent><CreateMailApiKeyForm tenant={tenant}/><div className="mt-6 divide-y">{keys.map((key)=><div className="flex items-center justify-between gap-4 py-3" key={key.id}><div><p className="font-medium">{key.name}</p><p className="text-xs text-muted-foreground">{key.keyPrefix}… · {key.revokedAt?'Revoked':'Active'}</p></div>{!key.revokedAt&&<form action={revoke}><input type="hidden" name="id" value={key.id}/><button className="text-sm text-muted-foreground hover:text-foreground">Revoke</button></form>}</div>)}{!keys.length&&<p className="py-5 text-sm text-muted-foreground">No API keys yet.</p>}</div></CardContent></Card>
+
+    <Card className="rounded-2xl"><CardHeader><CardTitle>Send endpoint</CardTitle><CardDescription>Use this for transactional messages from your website or application.</CardDescription></CardHeader><CardContent><code className="block rounded-xl bg-muted p-4 text-sm">POST https://api.mkety.com/v1/mail/send</code><p className="mt-3 text-sm text-muted-foreground">Authorization: Bearer mk_mail_live_…</p></CardContent></Card>
+
+    <Card className="rounded-2xl"><CardHeader><CardTitle>SMTP</CardTitle><CardDescription>Authenticated Mkety SMTP for existing applications and common frameworks.</CardDescription></CardHeader><CardContent><p className="font-medium">smtp.mkety.com</p><p className="text-sm text-muted-foreground">TLS · app credentials · no Cloudflare credentials exposed</p><p className="mt-2 text-xs text-muted-foreground">SMTP gateway activation follows the same tenant and sender verification rules as the API.</p></CardContent></Card>
+  </div>;
+}
