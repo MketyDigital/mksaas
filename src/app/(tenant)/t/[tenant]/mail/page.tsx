@@ -43,13 +43,13 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
   }
 
   const items=[
-    {title:'Professional Email',description:'Connect your business domain and create mailboxes.',icon:Globe2,status:workspace.onboardingStep==='domain'?'Start here':'Ready'},
-    {title:'Inbox',description:'Receive, read, reply, forward, archive and search.',icon:Inbox,status:'Included'},
-    {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included'},
-    {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included'},
-    {title:'Transactional Email',description:'API, SMTP, templates, webhooks and delivery logs.',icon:Code2,status:'Included'},
-    {title:'Mail Apps',description:'Apple Mail, Outlook, Gmail mobile and Thunderbird through Mkety.',icon:Smartphone,status:'Included'},
-    {title:'Marketing',description:'Newsletters, promotions and campaign automation.',icon:Megaphone,status:'Coming Soon'},
+    {title:'Professional Email',description:'Connect your business domain and create mailboxes.',icon:Globe2,status:workspace.onboardingStep==='domain'?'Start here':'Ready',href:`/t/${tenant}/mail/mailboxes`},
+    {title:'Inbox',description:'Receive, read, reply, forward, archive and search.',icon:Inbox,status:'Included',href:`/t/${tenant}/mail/inbox`},
+    {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included',href:`/t/${tenant}/mail/shared`},
+    {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included',href:`/t/${tenant}/mail/customer-updates`},
+    {title:'Transactional Email',description:'API, SMTP, templates, webhooks and delivery logs.',icon:Code2,status:'Included',href:`/t/${tenant}/mail/developer`},
+    {title:'Mail Apps',description:'Apple Mail, Outlook, Gmail mobile and Thunderbird through Mkety.',icon:Smartphone,status:'Included',href:`/t/${tenant}/mail/apps`},
+    {title:'Marketing',description:'Newsletters, promotions and campaign automation.',icon:Megaphone,status:'Coming Soon',href:''},
   ];
 
   return <div className="space-y-8">
@@ -66,7 +66,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
     </Card>}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {items.map(({title,description,icon:Icon,status})=><Card key={title} className="rounded-2xl">
+      {items.map(({title,description,icon:Icon,status,href})=><Card key={title} className="rounded-2xl">
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="h-5 w-5"/></div>
@@ -75,6 +75,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
           <CardTitle className="pt-2">{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </CardHeader>
+        {href&&<CardContent><a className="text-sm font-semibold text-primary" href={href}>Open →</a></CardContent>}
       </Card>)}
     </div>
   </div>;
