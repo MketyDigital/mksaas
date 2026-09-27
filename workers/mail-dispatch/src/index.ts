@@ -8,21 +8,42 @@ type QueueBatch<T>={
   messages:Array<QueueMessage<T>>;
 };
 
+type MailAddress={email:string;name?:string};
+
 type MailJob={
-  kind:'customer_update';
+  kind:'customer_update'|'transactional'|'inbox';
   tenantId:string;
-  updateId:string;
-  recipientId:string;
-  from:{email:string;name?:string};
-  to:{email:string;name?:string};
+  messageId?:string;
+  updateId?:string;
+  recipientId?:string;
+  from:MailAddress;
+  to:MailAddress;
+  cc?:MailAddress[];
+  bcc?:MailAddress[];
+  replyTo?:MailAddress;
   subject:string;
   html?:string;
   text?:string;
+  headers?:Record<string,string>;
+};
+
+type EmailSendResult={messageId:string};
+type EmailBinding={
+  send(message:{
+    from:string|MailAddress;
+    to:string|MailAddress|Array<string|MailAddress>;
+    cc?:Array<string|MailAddress>;
+    bcc?:Array<string|MailAddress>;
+    replyTo?:string|MailAddress;
+    subject:string;
+    html?:string;
+    text?:string;
+    headers?:Record<string,string>;
+  }):Promise<EmailSendResult>;
 };
 
 type Env={
-  CLOUDFLARE_ACCOUNT_ID:string;
-  CLOUDFLARE_API_TOKEN:string;
+  EMAIL:EmailBinding;
   MKETY_MAIL_INTERNAL_SECRET:string;
   MKETY_MAIL_CALLBACK_URL:string;
 };
@@ -32,7 +53,9 @@ async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';provide
     method:'POST',
     headers:{authorization:`Bearer ${env.MKETY_MAIL_INTERNAL_SECRET}`,'content-type':'application/json'},
     body:JSON.stringify({
+      kind:job.kind,
       tenantId:job.tenantId,
+      messageId:job.messageId,
       updateId:job.updateId,
       recipientId:job.recipientId,
       recipient:job.to.email,
@@ -43,24 +66,23 @@ async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';provide
 }
 
 async function send(env:Env,job:MailJob){
-  const response=await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)}/email/sending/send`,{
-    method:'POST',
-    headers:{authorization:`Bearer ${env.CLOUDFLARE_API_TOKEN}`,'content-type':'application/json'},
-    body:JSON.stringify({
+  try{
+    const result=await env.EMAIL.send({
       from:job.from,
-      to:[job.to],
+      to:job.to,
+      ...(job.cc?.length?{cc:job.cc}:{}),
+      ...(job.bcc?.length?{bcc:job.bcc}:{}),
+      ...(job.replyTo?{replyTo:job.replyTo}:{}),
       subject:job.subject,
       ...(job.html?{html:job.html}:{}),
       ...(job.text?{text:job.text}:{}),
-    }),
-  });
-  const payload=await response.json().catch(()=>null) as {success?:boolean;result?:{id?:string};errors?:Array<{code?:number;message?:string}>}|null;
-  if(!response.ok||payload?.success===false){
-    const error=payload?.errors?.[0];
-    await report(env,job,{status:'failed',errorCode:String(error?.code||response.status)});
-    return;
+      ...(job.headers?{headers:job.headers}:{}),
+    });
+    await report(env,job,{status:'sent',providerMessageId:result.messageId});
+  }catch(error){
+    const code=typeof error==='object'&&error&&'code' in error?String((error as {code?:unknown}).code||'send_failed'):'send_failed';
+    await report(env,job,{status:'failed',errorCode:code});
   }
-  await report(env,job,{status:'sent',providerMessageId:String(payload?.result?.id||'')||undefined});
 }
 
 export default {
