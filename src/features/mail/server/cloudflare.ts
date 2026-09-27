@@ -80,6 +80,46 @@ export async function getCloudflareEmailRouting(zoneId:string){
   return (payload?.result as Record<string,unknown>|undefined)||null;
 }
 
+
+export async function ensureCloudflareEmailEventSubscription(zoneId:string,domain:string){
+  const {accountId}=env();
+  const queueId=process.env.MKETY_MAIL_EVENT_QUEUE_ID||'';
+  if(!accountId||!queueId) return null;
+
+  const listed=await cfFetch(`/accounts/${encodeURIComponent(accountId)}/event_subscriptions/subscriptions?per_page=100`);
+  const rows=Array.isArray(listed?.result)?listed.result as Array<{
+    id?:string;
+    source?:{type?:string;zone_id?:string;zoneId?:string;domain?:string};
+    destination?:{type?:string;queue_id?:string};
+  }>:[];
+  const existing=rows.find((row)=>
+    row.source?.type==='email.sending'&&
+    (row.source.zone_id===zoneId||row.source.zoneId===zoneId)&&
+    row.source.domain===domain&&
+    row.destination?.queue_id===queueId
+  );
+  if(existing) return existing;
+
+  const created=await cfFetch(`/accounts/${encodeURIComponent(accountId)}/event_subscriptions/subscriptions`,{
+    method:'POST',
+    body:JSON.stringify({
+      name:`Mkety Mail · ${domain}`,
+      enabled:true,
+      source:{type:'email.sending',zone_id:zoneId,domain},
+      destination:{type:'queues.queue',queue_id:queueId},
+      events:[
+        'message.delivered',
+        'message.deferred',
+        'message.bounced',
+        'message.failed',
+        'message.rejected',
+        'message.complained',
+      ],
+    }),
+  });
+  return created?.result||null;
+}
+
 export async function sendCloudflareEmail(input:{
   from:{email:string;name?:string};
   to:Array<{email:string;name?:string}>;
