@@ -282,3 +282,14 @@ The customer sees business language only:
 - Create API key
 
 DNS, MX, DKIM, R2, Workers, queues and Cloudflare credentials remain implementation details.
+
+
+## Production completion trigger — 2026-09-27
+
+This proof-neutral documentation update records the guarded Mail production completion attempt after merge of PR #142.
+
+Exact pre-trigger main SHA:
+
+`37179f1fbc620bc963fef91ef8ee0bb9b5f1aded`
+
+The production workflow must still enforce its existing exact-SHA quality, migration, Cloudflare permission, infrastructure, deployment, auth-binding and smoke gates. A failed gate is not authorization to bypass or weaken the gate.
