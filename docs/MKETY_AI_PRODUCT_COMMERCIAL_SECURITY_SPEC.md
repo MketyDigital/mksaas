@@ -213,11 +213,17 @@ Supported provider modes:
 
 Mkety pays upstream inference and charges customer usage according to the Mkety rate card.
 
-Initial managed models should be intentionally small in number and expandable. Candidate starting catalog:
+Initial managed models should be intentionally small in number and expandable.
 
-- Gemma 4 as a low-cost multimodal/open model route.
-- A second current open multimodal/reasoning model selected by implementation-time capability, stability and cost tests.
-- additional models added only through the controlled catalog.
+**Day-one managed-provider policy:**
+
+- Cloudflare Workers AI hosted open models only for Mkety-managed inference.
+- Initial routes: `@cf/google/gemma-4-26b-a4b-it` and `@cf/qwen/qwen3.8-27b`.
+- Third-party frontier models are **not** to be purchased through Cloudflare Unified Billing/prepaid AI Gateway credits as a normal Mkety-managed route.
+- OpenAI, Anthropic, Gemini, xAI and similar third-party providers are supported through **customer BYOK** where enabled.
+- Mkety may later operate its own private/self-hosted model endpoint on OCI, AWS, Azure or another approved GPU platform.
+- Additional Workers AI open models may be added through the controlled model catalog after cost/capability review.
+- Cloudflare Workers AI billing should use standard Workers AI billing unless an explicit future architecture decision changes it; do not silently switch the gateway to prepaid Unified Billing.
 
 Expose stable aliases:
 
@@ -226,6 +232,36 @@ Expose stable aliases:
 - `mkety/vision`
 - `mkety/reasoning`
 - `mkety/private/<deployment>`
+
+### 4.1.1 Day-one Workers AI cost baseline — verified 2026-09-27
+
+Current Cloudflare Workers AI published unit pricing:
+
+| Model | Input | Output | Cached input | Primary role |
+| --- | ---: | ---: | ---: | --- |
+| `@cf/google/gemma-4-26b-a4b-it` | $0.10 / 1M tokens | $0.30 / 1M tokens | not separately listed | economical default / vision / tools |
+| `@cf/qwen/qwen3.8-27b` | $0.45 / 1M tokens | $3.20 / 1M tokens | $0.05 / 1M tokens | higher-capability reasoning / vision / tools |
+
+Cloudflare currently meters Workers AI in neurons internally and publishes equivalent per-model token pricing. The account receives a 10,000-neuron daily free allocation; usage above that allocation on Workers Paid is billed at the model's published unit economics. The free allocation is an infrastructure benefit and must never be promised as a customer entitlement.
+
+Illustrative raw upstream cost, excluding Worker requests, storage, Gateway, retrieval, tools, payment fees and Mkety margin:
+
+| Workload example | Tokens | Gemma 4 raw cost | Qwen 3.8 raw cost |
+| --- | --- | ---: | ---: |
+| Light chat | 1,000 in / 300 out | ~$0.00019 | ~$0.00141 |
+| Normal chat | 2,000 in / 500 out | ~$0.00035 | ~$0.00250 |
+| RAG-style answer | 5,000 in / 800 out | ~$0.00074 | ~$0.00481 |
+| Heavy agent turn | 10,000 in / 2,000 out | ~$0.00160 | ~$0.01090 |
+
+For 1,000 "normal chat" turns at the example size, raw model inference is approximately $0.35 on Gemma 4 versus $2.50 on Qwen 3.8 before all other Mkety costs.
+
+Commercial consequences:
+
+- `mkety/default` should initially prefer Gemma 4 for ordinary workloads unless evaluation quality says otherwise.
+- Qwen 3.8 should be a higher-capability route rather than the universal default because its output cost is materially higher.
+- model aliases and policy routing should decide whether a request truly needs Qwen;
+- Enterprise and API rate cards should price against measured blended workloads, not merely multiply provider token rates;
+- image/vision inputs, long contexts, reasoning behavior and agent tool loops must be benchmarked before publishing final credit conversion.
 
 ### 4.2 Customer BYOK
 
@@ -305,9 +341,35 @@ subscription/platform fee
 
 Provider cost and customer charge are separate immutable facts.
 
-### 6.2 Preserve existing Mkety Platform plans
+### 6.2 Preserve and blend the existing Mkety Platform/Public AI implementation
 
-Current Platform catalog remains authoritative, including the existing AI Workspace plan. AI-specific metering should layer underneath it rather than replacing it.
+Current Platform and Public AI contracts remain authoritative. This Enterprise/runtime project is an extension and consolidation layer, not a replacement product redesign.
+
+Existing self-service pricing remains:
+
+- Starter — $5.99/month.
+- AI Workspace — $16.99/month.
+- Automation Workspace — $16.99/month.
+- Deploy Workspace — $9.99/month.
+- Mkety One — $49/month.
+- Enterprise — Custom.
+
+Existing AI Workspace positioning remains: Agent Builder, agents/published agents, drafts/versions, model choice, testing, Website AI, supported messaging integrations, API access, tools/actions, knowledge, run/conversation history, usage and team access.
+
+Existing Public Mkety AI remains a public-only assistant with its own memory, public knowledge/tools and hard isolation from tenant/private state. The user sees one Mkety AI and does not choose providers/models.
+
+The central Mkety AI runtime should progressively become the shared low-level inference/control service underneath these existing surfaces while preserving their product boundaries:
+
+```text
+Public Mkety AI      -> public-only policy/knowledge -> central inference transport
+AI Workspace         -> tenant policy/knowledge/tools -> central runtime
+Enterprise           -> tenant managed channels/config -> central runtime
+Developer API        -> tenant API key/project policy -> central runtime
+```
+
+Do not make Public AI capable of reaching tenant knowledge simply because both eventually share inference transport. Do not remove existing Workspace behavior before parity tests.
+
+AI-specific metering should layer underneath the existing subscriptions rather than replacing them.
 
 The existing fixed subscription term structure remains:
 
@@ -1197,3 +1259,43 @@ The next code slice should remain narrow and production-safe:
 10. only then wire Workers AI/AI Gateway in a non-production environment.
 
 No production DNS, provider billing, paid inference, dedicated GPU provisioning or production Agent Builder rerouting should occur in this first code slice.
+
+
+## 27. Explicit exclusion: Cloudflare Unified Billing frontier-model resale
+
+Mkety's day-one managed inference must **not** depend on Cloudflare Unified Billing for third-party frontier models.
+
+Cloudflare Unified Billing can purchase prepaid credits and use Cloudflare-managed credentials for supported third-party providers. That is specifically not the intended Mkety product path because:
+
+- it introduces a Cloudflare credit balance and 5% credit-purchase fee;
+- it can create a negative credit balance in rare cases;
+- it obscures the cleaner distinction between Mkety-managed Workers AI, customer BYOK, and Mkety private models;
+- Mkety does not need Cloudflare to resell OpenAI/Anthropic/Gemini/xAI on its behalf.
+
+Allowed day-one provider paths are therefore:
+
+1. **Workers AI standard billing** for approved Cloudflare-hosted open models, initially Gemma 4 and Qwen 3.8 27B.
+2. **BYOK** for customer-owned third-party provider accounts.
+3. **Private/self-hosted HTTPS provider** when Mkety later operates models on OCI/AWS/Azure/etc.
+4. Explicit controlled hybrid combinations of the above.
+
+AI Gateway remains useful for observability, routing, caching, guardrails, DLP, BYOK secret handling and custom providers. Its Unified Billing capability should remain disabled/not relied upon unless a future documented decision deliberately changes this rule.
+
+## 28. Public/Workspace/Enterprise blending rule
+
+The major net-new product work in this initiative is the **Enterprise/shared AI server + developer PaaS layer**.
+
+Do not reopen already-settled Public Mkety AI or normal AI Workspace product architecture except where needed to connect them safely to the central runtime.
+
+Implementation order after Mail is stabilized:
+
+1. build central runtime/API foundation;
+2. add Workers AI Gemma/Qwen routes;
+3. add BYOK;
+4. prove Public AI transport compatibility without weakening public/private isolation;
+5. prove AI Workspace agent/runtime parity;
+6. migrate first-party consumers incrementally;
+7. deliver Enterprise logical configurations/channels/demo;
+8. add private/self-hosted inference when economics or customer requirements justify it.
+
+The existing Public AI provider adapters may remain operational during migration. The target state is shared transport/control, not forced simultaneous replacement.
