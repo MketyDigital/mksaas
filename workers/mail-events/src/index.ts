@@ -1,3 +1,13 @@
+type QueueMessage<T>={
+  body:T;
+  ack():void;
+  retry(options?:{delaySeconds?:number}):void;
+};
+
+type QueueBatch<T>={
+  messages:Array<QueueMessage<T>>;
+};
+
 type MailEvent={
   type:string;
   source?:{type?:string;domain?:string;zoneId?:string};
@@ -14,7 +24,7 @@ export default {
   async fetch():Promise<Response>{
     return new Response('Mkety Mail events',{status:200});
   },
-  async queue(batch:MessageBatch<MailEvent>,env:Env):Promise<void>{
+  async queue(batch:QueueBatch<MailEvent>,env:Env):Promise<void>{
     for(const message of batch.messages){
       try{
         const response=await fetch(env.MKETY_MAIL_EVENT_CALLBACK_URL,{
