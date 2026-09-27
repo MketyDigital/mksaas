@@ -124,6 +124,22 @@ export const mailMessages = appSchema.table('mail_messages', {
   index('mail_messages_created_idx').on(table.createdAt),
 ]);
 
+
+export const mailAttachments = appSchema.table('mail_attachments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  messageId: uuid('message_id').notNull().references(() => mailMessages.id, { onDelete: 'cascade' }),
+  filename: text('filename'),
+  contentType: varchar('content_type', { length: 255 }),
+  contentId: text('content_id'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+  r2Key: text('r2_key').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('mail_attachments_message_idx').on(table.messageId),
+  index('mail_attachments_tenant_idx').on(table.tenantId),
+]);
+
 export const mailContacts = appSchema.table('mail_contacts', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
