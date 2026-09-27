@@ -55,6 +55,7 @@ export default {
       internetMessageId:message.headers.get('message-id')||'',
       rawR2Key:rawKey,
       rawSize:message.rawSize,
+      automated:Boolean(message.headers.get('x-mkety-auto-reply')||message.headers.get('auto-submitted')),
     });
     if(!ingest.ok) throw new Error('Mkety Mail ingest failed.');
   },
