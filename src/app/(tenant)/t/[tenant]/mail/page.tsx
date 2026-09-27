@@ -1,4 +1,4 @@
-import { Mail, Send, Users, Globe2, Code2, Inbox, Smartphone, Megaphone } from 'lucide-react';
+import { Code2, Globe2, Inbox, Mail, Megaphone, Send, Smartphone, Users } from 'lucide-react';
 
 import { enableMketyMail } from '@/features/mail/server/actions';
 import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
