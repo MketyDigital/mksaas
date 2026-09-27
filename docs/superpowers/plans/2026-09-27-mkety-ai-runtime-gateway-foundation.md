@@ -6,7 +6,7 @@ This plan implements the design in `docs/MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.m
 
 ## Goal
 
-Create a safe first foundation for a Mkety-owned AI API/runtime that can later power AI Workspace and Enterprise AI Instances while supporting Cloudflare Workers AI, BYOK and approved private/self-hosted providers.
+Create a safe first foundation for the central multi-tenant Mkety AI service that powers Mkety first-party AI, AI Workspace, the standalone developer API and shared Enterprise AI configurations while supporting Cloudflare Workers AI, BYOK and approved private/self-hosted providers.
 
 ## First implementation slice
 
@@ -127,6 +127,36 @@ Before managed inference:
 
 A later provider adapter must not bypass this service.
 
+## Team / PBAC slice
+
+Before exposing tenant administration for the AI product:
+
+- reuse existing tenant memberships/invitations and database-resolved PBAC;
+- add AI-specific permission keys;
+- add role bundles only as convenience defaults;
+- test that builders, developers, knowledge managers, channel managers, billing admins and read-only analysts cannot cross their granted boundaries;
+- do not build a second AI-only membership system.
+
+## Commercial / usage slice
+
+The detailed policy is in `docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`.
+
+Implement in stages:
+
+- recurring plan allowance using the existing Usage/Credits primitives;
+- effective-dated AI rate cards;
+- normalized provider-cost records separated from customer charge;
+- purchased top-up credits as an explicit extension to current Credits;
+- hard-stop default for self-service managed inference;
+- optional customer-authorized top-up;
+- BYOK continuation where policy permits;
+- controlled postpaid overage only for contracted/approved customers;
+- usage warning thresholds;
+- Enterprise demo grants with hard expiry/quota;
+- payment settlement only through the shared NOWPayments/Flutterwave v3/Kora boundary.
+
+Do not implement expiring multi-bucket credits by mutating the current single projected balance. Extend the ledger/bucket model deliberately with migrations and tests.
+
 ## Cloudflare slice after foundation
 
 Once the foundation is green:
@@ -163,11 +193,12 @@ After the Mkety AI runtime has production-like tests:
 8. migrate published/automation consumers;
 9. remove direct provider paths only after parity and rollback evidence.
 
-## Enterprise instance slice
+## Shared Enterprise SaaS/PaaS slice
 
 After the runtime/API is stable:
 
-- instance CRUD/versioning;
+- tenant-scoped enterprise configuration CRUD/versioning on the shared central runtime;
+- no one-Worker-per-customer provisioning by default;
 - attach published agent;
 - website channel;
 - Telegram channel;
@@ -206,3 +237,23 @@ Before enabling any paid Mkety-managed inference:
 - no change to Trading execution authority;
 - no bulk social integrations;
 - no production reroute of existing Agent Builder.
+
+
+## Research/design progress — 2026-09-27
+
+Completed:
+
+- authority audit across mksaas, Trading and mklms;
+- clarified central shared runtime vs dedicated Enterprise infrastructure;
+- researched current Workers AI, AI Gateway, BYOK, dynamic routing, spend limits, caching, guardrails, DLP, logging/analytics, OpenTelemetry and custom providers;
+- reconciled existing Mkety tenant PBAC;
+- reconciled existing shared payment boundary;
+- reconciled Billing -> Entitlements -> Usage/Credits;
+- documented commercial families, overages, top-ups, demo behavior, security, limits, caching, reliability, observability, conversation/handoff, knowledge/RAG and Enterprise roadmap;
+- created `docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`.
+
+Current next step:
+
+**AI-01 code foundation** — AI PBAC permissions, additive AI schemas, hashed AI API keys, model catalog/aliases, route/rate/budget records, provider-neutral runtime contract, budget authorization seam, models endpoint, chat-completions endpoint using a fake/non-billable adapter in tests, and isolation/security tests.
+
+After AI-01 is green, proceed to non-production Workers AI + AI Gateway integration. Do not enable paid production inference as part of AI-01.
