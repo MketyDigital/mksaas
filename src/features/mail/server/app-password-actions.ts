@@ -3,7 +3,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
-import { mailAppPasswords, mailMailboxMembers, mailMailboxes } from '@/shared/db/schema';
+import { mailAppPasswords, mailMailboxes, mailMailboxMembers } from '@/shared/db/schema';
 
 import { requireMailWorkspaceAccess } from './workspace';
 
