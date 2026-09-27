@@ -185,6 +185,30 @@ jobs:
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'CLOUDFLARE_ACCOUNT_ID missing'; exit 1; }
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID" >/tmp/cf-account.json
 
+      - name: Verify Mail infrastructure permissions before deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+
+          check_permission() {
+            label="$1"
+            permission="$2"
+            url="$3"
+            code="$(curl -sS -o /tmp/mail-permission.json -w '%{http_code}' "${auth[@]}" "$url")"
+            if [ "$code" != '200' ]; then
+              echo "::error::$label permission check failed with HTTP $code. Update the repository CLOUDFLARE_API_TOKEN to include: $permission."
+              exit 1
+            fi
+          }
+
+          check_permission 'R2' 'Workers R2 Storage Write' "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets"
+          check_permission 'Queues' 'Queues Edit' "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/queues"
+          check_permission 'Event subscriptions' 'Queues Edit (or Workers Scripts Write)' "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/event_subscriptions/subscriptions?per_page=1"
+
+          echo 'Mail infrastructure permission preflight passed.'
+
       - name: Resolve production Hyperdrive
         id: hyperdrive
         shell: bash
