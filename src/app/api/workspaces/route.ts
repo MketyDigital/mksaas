@@ -60,19 +60,20 @@ export async function POST(request: Request) {
         profileInitialized: true,
       }).returning();
 
-      const [membership] = await tx.insert(schema.tenantMemberships).values({
-        tenantId: created.id,
-        userId: session.user.id,
-        personId: person.id,
-        role: 'admin',
-      }).returning();
-
       const [adminRole] = await tx.insert(schema.roles).values({
         tenantId: created.id,
         name: 'Admin',
         slug: 'admin',
         description: 'Full workspace administration access',
         isSystem: true,
+      }).returning();
+
+      const [membership] = await tx.insert(schema.tenantMemberships).values({
+        tenantId: created.id,
+        userId: session.user.id,
+        personId: person.id,
+        role: 'admin',
+        primaryRoleId: adminRole.id,
       }).returning();
 
       await tx.insert(schema.tenantMembershipRoles).values({ membershipId: membership.id, roleId: adminRole.id });
