@@ -1,3 +1,5 @@
+import { parseMime } from './mime';
+
 type MailHeaders={
   get(name:string):string|null;
 };
@@ -60,15 +62,41 @@ export default {
       await message.forward(resolved.forwardingAddress);
     }
 
-    const rawKey=`mail/${resolved.tenantId}/${resolved.mailboxId}/${crypto.randomUUID()}.eml`;
-    await env.MAIL_STORAGE.put(rawKey,message.raw,{
+    const messageObjectId=crypto.randomUUID();
+    const baseKey=`mail/${resolved.tenantId}/${resolved.mailboxId}/${messageObjectId}`;
+    const rawKey=`${baseKey}/raw.eml`;
+    const rawBuffer=await new Response(message.raw as BodyInit).arrayBuffer();
+    const rawBytes=new Uint8Array(rawBuffer);
+    const parsed=parseMime(rawBytes);
+
+    await env.MAIL_STORAGE.put(rawKey,rawBuffer,{
       httpMetadata:{contentType:'message/rfc822'},
-      customMetadata:{
-        tenantId:resolved.tenantId,
-        mailboxId:resolved.mailboxId,
-      },
+      customMetadata:{tenantId:resolved.tenantId,mailboxId:resolved.mailboxId},
     });
 
+    let htmlR2Key:string|undefined;
+    let textR2Key:string|undefined;
+    if(parsed.html){
+      htmlR2Key=`${baseKey}/body.html`;
+      await env.MAIL_STORAGE.put(htmlR2Key,parsed.html,{httpMetadata:{contentType:'text/html; charset=utf-8'}});
+    }
+    if(parsed.text){
+      textR2Key=`${baseKey}/body.txt`;
+      await env.MAIL_STORAGE.put(textR2Key,parsed.text,{httpMetadata:{contentType:'text/plain; charset=utf-8'}});
+    }
+
+    const attachmentManifest:Array<{filename:string;contentType:string;r2Key:string;size:number}>=[];
+    for(let index=0;index<parsed.attachments.length;index++){
+      const attachment=parsed.attachments[index];
+      const attachmentKey=`${baseKey}/attachments/${String(index+1).padStart(3,'0')}-${attachment.filename}`;
+      await env.MAIL_STORAGE.put(attachmentKey,attachment.bytes,{httpMetadata:{contentType:attachment.contentType}});
+      attachmentManifest.push({filename:attachment.filename,contentType:attachment.contentType,r2Key:attachmentKey,size:attachment.bytes.byteLength});
+    }
+    if(attachmentManifest.length){
+      await env.MAIL_STORAGE.put(`${baseKey}/attachments.json`,JSON.stringify(attachmentManifest),{httpMetadata:{contentType:'application/json'}});
+    }
+
+    const preview=(parsed.text||parsed.html.replace(/<[^>]+>/g,' ')).replace(/\s+/g,' ').trim().slice(0,240);
     const ingest=await internal(env,env.MKETY_MAIL_INGEST_URL,{
       tenantId:resolved.tenantId,
       mailboxId:resolved.mailboxId,
@@ -77,6 +105,10 @@ export default {
       subject:message.headers.get('subject')||'',
       internetMessageId:message.headers.get('message-id')||'',
       rawR2Key:rawKey,
+      htmlR2Key,
+      textR2Key,
+      preview,
+      attachmentCount:attachmentManifest.length,
       rawSize:message.rawSize,
       automated:Boolean(message.headers.get('x-mkety-auto-reply')||message.headers.get('auto-submitted')),
     });
