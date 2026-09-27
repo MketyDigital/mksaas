@@ -1,0 +1,271 @@
+# Mkety Mail Production Architecture
+
+## Product model
+
+Mkety Mail is one product with two entry points:
+
+- Standalone: `mail.mkety.com`
+- Native Mkety tenant: `/t/{tenant}/mail`
+
+Both use the same Mkety identity, tenant, roles, billing identity and Mail backend.
+
+## Data architecture
+
+### PostgreSQL via Hyperdrive — source of truth
+
+Authoritative records live in Mkety's existing PostgreSQL database:
+
+- Mail workspace
+- domains
+- mailboxes
+- mailbox members
+- threads
+- message metadata
+- contacts
+- templates
+- suppressions
+- API keys
+- app passwords
+- customer updates and per-recipient state
+- delivery events
+- automation rules
+- shared-inbox notes/assignment state
+- quotas and usage counters
+
+D1 is intentionally not the source of truth for Mkety Mail. Splitting tenant/auth/billing across Postgres and D1 would create duplicate identity and synchronization risk.
+
+### R2 — mail content and attachments
+
+Bucket: `mkety-mail-storage`
+
+R2 stores:
+
+- raw RFC822/MIME messages
+- parsed HTML/text bodies
+- attachments
+- large generated exports
+
+Postgres stores only R2 object keys and searchable metadata.
+
+### KV — ephemeral acceleration only
+
+A dedicated Mail KV namespace may be used for:
+
+- rate-limit counters
+- temporary ownership challenges
+- autoconfiguration cache
+- anti-abuse flags
+- short-lived idempotency/cache markers
+
+KV is not authoritative storage for messages, users, domains, billing or contacts.
+
+### Queues — Customer Updates
+
+Queue: `mkety-mail-send`
+Dead-letter queue: `mkety-mail-dead`
+
+A Customer Update is expanded to one job per recipient. No 50-recipient shared-To/BCC batches are used.
+
+Benefits:
+- privacy
+- retries
+- independent delivery status
+- throttling
+- suppression enforcement
+- circuit-breaker support
+
+### Cloudflare Email Service
+
+Cloudflare Email Routing is the inbound transport.
+Cloudflare Email Sending is the transactional/operational outbound transport.
+
+Customers never receive Mkety's Cloudflare credentials.
+
+## Runtime components
+
+### Main Mkety application
+
+Responsibilities:
+- authentication and tenant isolation
+- onboarding
+- domains/mailboxes
+- contacts/templates
+- shared inbox UX
+- Customer Update creation
+- transactional REST API
+- analytics
+- suppressions
+- automation configuration
+- billing and entitlements
+
+### Mail ingress Worker
+
+Worker: `mkety-mail-ingress`
+
+Responsibilities:
+- receive Cloudflare-routed inbound messages
+- resolve recipient against Mkety
+- reject unknown recipients
+- optional external forwarding
+- write raw MIME into R2
+- notify Mkety ingest API
+
+### Mail dispatch Worker
+
+Worker: `mkety-mail-dispatch`
+
+Responsibilities:
+- consume `mkety-mail-send`
+- deliver one recipient per job
+- retry transient failures
+- report results to Mkety
+- send terminal failures to DLQ
+
+### Mail-app gateway
+
+Hosts:
+- `imap.mkety.com:993`
+- `smtp.mkety.com`
+
+This is a dedicated TCP service because standard HTTP Workers cannot expose a conventional public IMAP listener.
+
+Authentication uses revocable Mkety Mail app passwords, never the user's main Mkety password.
+
+Mail clients:
+- Apple Mail
+- Outlook
+- Gmail mobile third-party account
+- Thunderbird
+- standards-compatible IMAP/SMTP clients
+
+Autoconfiguration:
+- `autoconfig.mkety.com`
+- `autodiscover.mkety.com`
+
+## Product domains
+
+- `mkety.com/mail` — public product page
+- `mail.mkety.com` — Mail application
+- `api.mkety.com/v1/mail` — developer API
+- `smtp.mkety.com` — SMTP submission
+- `imap.mkety.com` — IMAP
+- `autoconfig.mkety.com` — Mozilla/standard autoconfig
+- `autodiscover.mkety.com` — Outlook autodiscovery
+
+## One-click Mkety integration
+
+Existing Mkety/MkSaaS/Enterprise customers do not create another identity.
+
+```
+Existing tenant
+  ↓
+Enable Mkety Mail
+  ↓
+mail_workspaces row using same tenant_id
+  ↓
+existing members/roles remain authoritative
+  ↓
+connect domain
+  ↓
+create mailboxes
+```
+
+No cross-product API keys are required between MkSaaS and Mkety Mail because they share the central tenant boundary.
+
+## Media native integration pattern
+
+Mkety Media currently remains an isolated product runtime. The safe long-term connection pattern is the same model used by Mail:
+
+1. Central Mkety tenant/auth/billing remain authoritative.
+2. A tenant enables Media from the Mkety workspace.
+3. Mkety issues a product-scoped handoff/session to Media.
+4. Media maps that handoff to its isolated runtime tenant.
+5. Entitlements and billing originate from central Mkety.
+6. Media keeps only Media-specific operational/storage data.
+7. No duplicate customer passwords are created.
+8. Existing standalone Media accounts are migrated by verified email/account ownership and linked to a central Mkety user/tenant.
+9. Product-specific webhooks remain isolated and fail-closed.
+10. The integration is rolled out behind an entitlement/feature flag with reversible mapping.
+
+Recommended future identifiers:
+- central `tenant_id`
+- central `user_id`
+- Media external product tenant ID
+- immutable mapping table
+- product audience `mkety-media`
+
+This allows Media to stay independently deployable while feeling like one-click native Mkety.
+
+## Security requirements
+
+- tenant ID on every tenant-owned Mail table
+- verified sender-domain ownership
+- scoped hashed API keys
+- salted hashed app passwords
+- suppression check before every send
+- per-tenant quotas
+- new-domain warm-up
+- complaint/bounce circuit breakers
+- signed internal Worker callbacks
+- secret rotation
+- no customer Cloudflare API tokens stored by default
+- R2 objects namespaced by tenant/mailbox
+- internal endpoints authenticated by dedicated Mail secret
+- idempotent delivery callbacks
+- audit trail for sensitive operations
+- dead-letter review path
+
+## Customer Updates boundary
+
+Available at launch:
+- operational/service/customer communications to existing customers or legitimate business contacts
+- max initial audience: 3,000 active non-suppressed contacts per update
+- one recipient per queued job
+
+Coming Soon:
+- promotional newsletters
+- promotions/offers
+- marketing automations
+- A/B campaign testing
+
+Marketing must use a marketing-capable engine when introduced.
+
+## Production readiness checklist
+
+- [ ] migration baseline green
+- [ ] typecheck green
+- [ ] lint green
+- [ ] tests green
+- [ ] build green
+- [ ] Cloudflare/Vinext smoke green
+- [ ] production Postgres migration applied
+- [ ] R2 bucket provisioned
+- [ ] send queue and DLQ provisioned
+- [ ] ingress Worker deployed with internal secret
+- [ ] dispatch Worker deployed with internal secret
+- [ ] Cloudflare Email Sending credential validated
+- [ ] Mail application runtime receives Mail internal secret
+- [ ] mail.mkety.com attached and smoke tested
+- [ ] autoconfig/autodiscover hosts attached and smoke tested
+- [ ] inbound domain routing smoke test
+- [ ] outbound transactional smoke test
+- [ ] Customer Update queue smoke test
+- [ ] suppression smoke test
+- [ ] app-password creation/revocation smoke test
+- [ ] IMAP/SMTP gateway acceptance test
+- [ ] rollback evidence retained
+
+## Launch UX principle
+
+The customer sees business language only:
+
+- Connect domain
+- Create business email
+- Open inbox
+- Add team
+- Import customers
+- Send customer update
+- Connect Gmail/Outlook/Apple Mail
+- Create API key
+
+DNS, MX, DKIM, R2, Workers, queues and Cloudflare credentials remain implementation details.
