@@ -614,7 +614,7 @@ jobs:
           done
 
           curl -fsS "$PREVIEW_URL/sitemap.xml" -o /tmp/mkety-preview-sitemap.xml
-          for path in / /platform /workspaces /solutions /academy /pricing /enterprise /trust /infrastructure /about /docs /privacy /terms /contact; do
+          for path in / /platform /workspaces /solutions /academy /pricing /enterprise /mail /trust /infrastructure /about /docs /privacy /terms /contact; do
             expected="https://mkety.com${path}"
             grep -Fq "<loc>$expected</loc>" /tmp/mkety-preview-sitemap.xml || {
               echo "Production preview sitemap missing $expected"
