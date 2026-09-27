@@ -565,6 +565,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
               'Supported customer-owned domains can be mapped to eligible deployments with managed routing and HTTPS.',
           },
           {
+            key: 'mail-domain',
+            title: 'mail.mkety.com',
+            description:
+              'Authenticated Mkety Mail entry point for professional business email, shared inboxes, customer updates and transactional email using the same Mkety identity and tenant boundary.',
+            href: '/mail',
+          },
+          {
             key: 'api-domain',
             title: 'api.mkety.com',
             description:
