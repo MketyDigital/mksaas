@@ -22,10 +22,16 @@ export async function POST(request:Request){
     return NextResponse.json({ok:false},{status:400});
   }
 
+  const tenantId=payload.tenantId;
+  const updateId=payload.updateId;
+  const recipientId=payload.recipientId;
+  const recipientAddress=payload.recipient;
+  const status=payload.status;
+
   const recipient=await db.query.mailCustomerUpdateRecipients.findFirst({
-    where:eq(mailCustomerUpdateRecipients.id,payload.recipientId),
+    where:eq(mailCustomerUpdateRecipients.id,recipientId),
   });
-  if(!recipient||recipient.tenantId!==payload.tenantId||recipient.updateId!==payload.updateId){
+  if(!recipient||recipient.tenantId!==tenantId||recipient.updateId!==updateId){
     return NextResponse.json({ok:false},{status:404});
   }
   if(recipient.status!=='pending') return NextResponse.json({ok:true,duplicate:true});
@@ -33,26 +39,26 @@ export async function POST(request:Request){
   const now=new Date();
   await db.transaction(async(tx)=>{
     await tx.update(mailCustomerUpdateRecipients).set({
-      status:payload.status,
+      status,
       providerMessageId:payload.providerMessageId||null,
       errorCode:payload.errorCode||null,
-      sentAt:payload.status==='sent'?now:null,
+      sentAt:status==='sent'?now:null,
     }).where(eq(mailCustomerUpdateRecipients.id,recipient.id));
 
     await tx.insert(mailDeliveryEvents).values({
-      tenantId:payload.tenantId,
+      tenantId,
       updateRecipientId:recipient.id,
       providerEventId:payload.providerMessageId||null,
-      eventType:payload.status,
-      recipient:payload.recipient,
+      eventType:status,
+      recipient:recipientAddress,
       payload:{errorCode:payload.errorCode||null},
       occurredAt:now,
     });
 
     await tx.update(mailCustomerUpdates).set({
-      ...(payload.status==='failed'?{failedCount:sql`${mailCustomerUpdates.failedCount}+1`}:{ }),
+      ...(status==='failed'?{failedCount:sql`${mailCustomerUpdates.failedCount}+1`}:{ }),
       updatedAt:now,
-    }).where(eq(mailCustomerUpdates.id,payload.updateId));
+    }).where(eq(mailCustomerUpdates.id,updateId));
   });
 
   return NextResponse.json({ok:true});
