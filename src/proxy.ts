@@ -27,6 +27,19 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   let effectivePathname = pathname;
   const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
   const apiHost=(process.env.MKETY_API_HOST||'api.mkety.com').toLowerCase();
+  const autoconfigHost=(process.env.MKETY_MAIL_AUTOCONFIG_HOST||'autoconfig.mkety.com').toLowerCase();
+  const autodiscoverHost=(process.env.MKETY_MAIL_AUTODISCOVER_HOST||'autodiscover.mkety.com').toLowerCase();
+
+  if(hostname.toLowerCase()===autoconfigHost){
+    const url=new URL(request.url);
+    url.pathname='/api/mail/autoconfig';
+    return NextResponse.rewrite(url);
+  }
+  if(hostname.toLowerCase()===autodiscoverHost&&pathname.toLowerCase()==='/autodiscover/autodiscover.xml'){
+    const url=new URL(request.url);
+    url.pathname='/api/mail/autodiscover';
+    return NextResponse.rewrite(url);
+  }
 
   if(hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/mail/')){
     const url=new URL(request.url);
@@ -60,6 +73,8 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
       hostname === appHost ||
       hostname.toLowerCase() === mailHost ||
       hostname.toLowerCase() === apiHost ||
+      hostname.toLowerCase() === autoconfigHost ||
+      hostname.toLowerCase() === autodiscoverHost ||
       hostname === vercelHost ||
       hostname.endsWith('.vercel.app') ||
       hostname.endsWith('.workers.dev');
