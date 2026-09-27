@@ -130,6 +130,40 @@ jobs:
           console.log('ZITADEL_ACTIVE_IDPS_SAFE '+JSON.stringify(safe));
           NODE
 
+          instance_idps="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/login/idps?ctx.instance=true" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
+          INSTANCE_IDPS="$instance_idps" node <<'NODE'
+          const x=JSON.parse(process.env.INSTANCE_IDPS||'{}');
+          const providers=Array.isArray(x.identityProviders)?x.identityProviders:[];
+          const safe=providers.map((p)=>({
+            id:p.id||null,
+            name:p.name||null,
+            type:p.type||null,
+            creationAllowed:p.options?.isCreationAllowed??null,
+            linkingAllowed:p.options?.isLinkingAllowed??null,
+            autoCreation:p.options?.isAutoCreation??null,
+            autoUpdate:p.options?.isAutoUpdate??null,
+          }));
+          console.log('ZITADEL_INSTANCE_ACTIVE_IDPS_SAFE '+JSON.stringify(safe));
+          NODE
+
+          configured_org_idps="$(curl --fail-with-body --silent --show-error -X POST "$issuer/management/v1/idps/templates/_search" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $org_id" -H 'Content-Type: application/json' --data '{"query":{"limit":100}}')"
+          CONFIGURED_ORG_IDPS="$configured_org_idps" node <<'NODE'
+          const x=JSON.parse(process.env.CONFIGURED_ORG_IDPS||'{}');
+          const providers=Array.isArray(x.result)?x.result:[];
+          const safe=providers.map((p)=>({
+            id:p.id||null,
+            name:p.name||null,
+            state:p.state||null,
+            owner:p.owner||null,
+            type:p.type||null,
+            creationAllowed:p.config?.options?.isCreationAllowed??null,
+            linkingAllowed:p.config?.options?.isLinkingAllowed??null,
+            autoCreation:p.config?.options?.isAutoCreation??null,
+            autoUpdate:p.config?.options?.isAutoUpdate??null,
+          }));
+          console.log('ZITADEL_ORG_IDP_INVENTORY_SAFE '+JSON.stringify(safe));
+          NODE
+
       - name: Ensure registration, password and email login are enabled
         shell: bash
         run: |
@@ -336,6 +370,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          email_state="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.state||''))")"
+          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ]; then
+            echo 'Brevo SMTP provider is already active in ZITADEL; skipping obsolete credential-retest endpoint.'
+            exit 0
+          fi
           sender_name="${SMTP_SENDER_NAME:-Mkety}"
           reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
           receiver="${PLATFORM_ADMIN_EMAILS%%,*}"
@@ -374,6 +413,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          email_state="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.state||''))")"
+          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ]; then
+            echo 'Brevo SMTP provider is already active in ZITADEL; no provider mutation required.'
+            exit 0
+          fi
           sender_name="${SMTP_SENDER_NAME:-Mkety}"
           reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
           HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" node <<'NODE' >/tmp/smtp-provider.json
