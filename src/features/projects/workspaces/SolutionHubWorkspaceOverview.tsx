@@ -1,95 +1,157 @@
-type SolutionHubCapabilityStatus = 'planned' | 'protected';
+import Link from 'next/link';
 
-type SolutionHubCapability = {
-  key: 'templates' | 'ready-made-solutions' | 'blueprints' | 'enterprise-requests' | 'academy-linked' | 'install-flow';
-  title: string;
-  description: string;
-  status: SolutionHubCapabilityStatus;
-  statusLabel: string;
+import {
+  getSolutionHubEntriesByClass,
+  getSolutionHubEntryCtaLabel,
+  getSolutionHubEntryDestination,
+} from './solutionhub/catalog';
+
+type SolutionHubWorkspaceOverviewProps = {
+  projectSlug: string;
+  tenantSlug: string;
 };
 
-export function buildSolutionHubCapabilities(): SolutionHubCapability[] {
-  return [
-    {
-      key: 'templates',
-      title: 'Templates',
-      description: 'Package reusable project starters for AI agents, automations, websites, apps, and business workflows.',
-      status: 'planned',
-      statusLabel: 'Planned',
-    },
-    {
-      key: 'ready-made-solutions',
-      title: 'Ready-made solutions',
-      description: 'Present complete business systems that customers can request, adapt, or deploy through Mkety-assisted delivery.',
-      status: 'planned',
-      statusLabel: 'Planned',
-    },
-    {
-      key: 'blueprints',
-      title: 'Blueprints',
-      description: 'Expose implementation maps for common systems before turning them into installable product packages.',
-      status: 'planned',
-      statusLabel: 'Planned',
-    },
-    {
-      key: 'enterprise-requests',
-      title: 'Enterprise requests',
-      description: 'Route complex custom work into a reviewed request path instead of pretending everything is self-service.',
-      status: 'protected',
-      statusLabel: 'Protected',
-    },
-    {
-      key: 'academy-linked',
-      title: 'Academy-linked solutions',
-      description: 'Connect training, playbooks, and guided implementation paths without merging Mkety Academy into the Platform core.',
-      status: 'planned',
-      statusLabel: 'Planned',
-    },
-    {
-      key: 'install-flow',
-      title: 'Install/request flow',
-      description: 'Reserve future install, clone, request, and approval flows until billing, entitlement, and tenant-safety rules exist.',
-      status: 'protected',
-      statusLabel: 'Protected',
-    },
-  ];
-}
-
-export function SolutionHubWorkspaceOverview() {
-  const capabilities = buildSolutionHubCapabilities();
+export function SolutionHubWorkspaceOverview({
+  projectSlug,
+  tenantSlug,
+}: SolutionHubWorkspaceOverviewProps) {
+  const sharedEntries = getSolutionHubEntriesByClass('shared-platform');
+  const enterpriseEntries = getSolutionHubEntriesByClass('enterprise-custom');
+  const context = { projectSlug, tenantSlug };
 
   return (
-    <section aria-labelledby="solutionhub-workspace-overview-heading" className="rounded-2xl border bg-card p-5 md:p-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="space-y-6">
+      <section
+        aria-labelledby="solutionhub-workspace-overview-heading"
+        className="rounded-2xl border bg-card p-5 md:p-6"
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">SolutionHub</p>
+            <h2
+              className="mt-1 text-xl font-semibold"
+              id="solutionhub-workspace-overview-heading"
+            >
+              Start from a proven solution path
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Explore common Mkety solution patterns, then continue in the workspace that actually
+              builds the capability. SolutionHub does not silently install infrastructure or bypass
+              project, entitlement, billing, or approval boundaries.
+            </p>
+          </div>
+          <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">
+            Catalog available
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-2xl font-semibold">{sharedEntries.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Shared-platform paths</p>
+          </div>
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-2xl font-semibold">{enterpriseEntries.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Enterprise / Custom paths</p>
+          </div>
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-2xl font-semibold">0</p>
+            <p className="mt-1 text-xs text-muted-foreground">One-click installs enabled</p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="solutionhub-shared-heading" className="space-y-4">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">SolutionHub foundation</p>
-          <h2 className="mt-1 text-xl font-semibold" id="solutionhub-workspace-overview-heading">
-            Package repeatable business systems safely
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Class A · Shared platform
+          </p>
+          <h2 className="mt-1 text-lg font-semibold" id="solutionhub-shared-heading">
+            Build with existing Mkety workspaces
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            This overview defines the SolutionHub catalog surface while keeping install, clone, enterprise request,
-            entitlement, and billing-sensitive behavior inactive until their backend rules exist.
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            These bounded solution patterns fit Mkety shared/serverless capabilities. Opening one
+            takes you to the relevant project workspace; it does not auto-create billable resources.
           </p>
         </div>
-        <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">Catalog planned</span>
-      </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {capabilities.map((capability) => (
-          <article key={capability.key} className="h-full rounded-xl border bg-background p-4">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="font-medium">{capability.title}</h3>
-              <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{capability.statusLabel}</span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{capability.description}</p>
-          </article>
-        ))}
-      </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {sharedEntries.map((entry) => (
+            <article className="flex h-full flex-col rounded-2xl border bg-card p-5" key={entry.key}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {entry.category}
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold">{entry.title}</h3>
+                </div>
+                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">
+                  Shared
+                </span>
+              </div>
+              <p className="mt-3 flex-1 text-sm leading-6 text-muted-foreground">
+                {entry.description}
+              </p>
+              <Link
+                className="mt-5 w-fit rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                href={getSolutionHubEntryDestination(entry, context)}
+              >
+                {getSolutionHubEntryCtaLabel(entry)}
+              </Link>
+            </article>
+          ))}
+        </div>
+      </section>
 
-      <p className="mt-5 text-xs leading-5 text-muted-foreground">
-        SolutionHub remains a catalog foundation in this branch. Future slices should add tenant-scoped catalog records,
-        install/request reviews, entitlement checks, billing boundaries, and audit trails before any solution can be cloned or installed.
+      <section
+        aria-labelledby="solutionhub-enterprise-heading"
+        className="space-y-4 rounded-2xl border border-dashed bg-card p-5 md:p-6"
+      >
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Class B · Enterprise / Custom
+          </p>
+          <h2 className="mt-1 text-lg font-semibold" id="solutionhub-enterprise-heading">
+            Requirements that need reviewed delivery
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Dedicated infrastructure, regulated or substantial data systems, complex transactional
+            platforms, persistent services, private networking, strict SLA needs, and specialized
+            Trading remain reviewed Enterprise work.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {enterpriseEntries.map((entry) => (
+            <article className="flex h-full flex-col rounded-xl border bg-background p-4" key={entry.key}>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="font-medium">{entry.title}</h3>
+                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">
+                  Custom
+                </span>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{entry.description}</p>
+              {entry.enterpriseReason ? (
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {entry.enterpriseReason}
+                </p>
+              ) : null}
+              <Link
+                className="mt-4 w-fit rounded-md border px-3 py-2 text-sm font-medium"
+                href={getSolutionHubEntryDestination(entry, context)}
+              >
+                {getSolutionHubEntryCtaLabel(entry)}
+              </Link>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <p className="text-xs leading-5 text-muted-foreground">
+        SolutionHub is now an authenticated discovery and routing surface. Clone/install,
+        provisioning, entitlement mutation, checkout creation, and infrastructure allocation remain
+        disabled until a later audited implementation introduces those contracts explicitly.
       </p>
-    </section>
+    </div>
   );
 }
