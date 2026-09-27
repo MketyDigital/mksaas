@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
+import { applyInboundMailAutomation } from '@/features/mail/server/automation-actions';
 import { db } from '@/shared/db/cloudflare';
 import { mailMailboxes, mailMessages, mailThreads } from '@/shared/db/schema';
 
@@ -9,7 +10,7 @@ export async function POST(request:Request){
   if(!secret||request.headers.get('authorization')!==`Bearer ${secret}`) return NextResponse.json({ok:false},{status:401});
   const body=await request.json().catch(()=>null) as {
     tenantId?:string;mailboxId?:string;from?:string;to?:string;subject?:string;
-    internetMessageId?:string;rawR2Key?:string;rawSize?:number;
+    internetMessageId?:string;rawR2Key?:string;rawSize?:number;automated?:boolean;
   }|null;
   if(!body?.tenantId||!body.mailboxId||!body.from||!body.to||!body.rawR2Key) return NextResponse.json({ok:false},{status:400});
   const mailbox=await db.query.mailMailboxes.findFirst({where:eq(mailMailboxes.id,body.mailboxId)});
@@ -39,6 +40,15 @@ export async function POST(request:Request){
     folder:'inbox',
     receivedAt:now,
   }).returning();
+
+  await applyInboundMailAutomation({
+    tenantId:body.tenantId,
+    mailboxId:body.mailboxId,
+    threadId:thread.id,
+    from:String(body.from).toLowerCase(),
+    subject:String(body.subject||''),
+    automated:Boolean(body.automated),
+  }).catch(()=>undefined);
 
   return NextResponse.json({ok:true,messageId:message.id});
 }
