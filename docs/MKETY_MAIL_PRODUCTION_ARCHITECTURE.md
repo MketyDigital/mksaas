@@ -230,6 +230,19 @@ Coming Soon:
 
 Marketing must use a marketing-capable engine when introduced.
 
+## Cloudflare CI token permissions
+
+The repository `CLOUDFLARE_API_TOKEN` used by the Mkety Mail production workflow must be scoped to the Mkety Cloudflare account and include the permissions required by the existing Mkety deployment plus:
+
+- **Workers R2 Storage Write** — list/create/manage the Mail R2 bucket.
+- **Queues Edit** — create/list Mail send, delivery-event and dead-letter queues, publish jobs and manage queue subscriptions.
+- **Email Sending: Edit** — use Cloudflare Email Service sending for onboarded domains.
+- **Zone Settings Write** — enable Email Routing DNS for customer domains.
+- **Email Routing Rules Write** — create/update inbound routing rules when Mkety automates mailbox delivery.
+- **Email Routing Addresses Write** — create forwarding destinations when external-inbox forwarding is used.
+
+The production workflow fails before application deployment if R2/Queues/Event Subscription permissions are absent. Never broaden the token to unrelated Cloudflare accounts.
+
 ## Production readiness checklist
 
 - [ ] migration baseline green
