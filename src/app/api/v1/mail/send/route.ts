@@ -66,6 +66,7 @@ export async function POST(request:Request){
       kind:'transactional',
       tenantId:key.tenantId,
       messageId:message.id,
+      mailboxId:mailbox.id,
       from:{email:from,name:mailbox.displayName||undefined},
       to:{email:to},
       subject,
