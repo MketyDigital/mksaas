@@ -263,6 +263,44 @@ Commercial consequences:
 - Enterprise and API rate cards should price against measured blended workloads, not merely multiply provider token rates;
 - image/vision inputs, long contexts, reasoning behavior and agent tool loops must be benchmarked before publishing final credit conversion.
 
+### 4.1.2 Provisional Mkety managed-inference rate floor
+
+Use an internal target gross-margin floor of approximately **65% before non-model operating costs**, which is roughly a 3x multiplier on raw model inference. This is a planning floor, not yet approved public pricing.
+
+Provisional managed-inference reference:
+
+| Model | Raw input / 1M | Raw output / 1M | Provisional Mkety input / 1M | Provisional Mkety output / 1M |
+| --- | ---: | ---: | ---: | ---: |
+| Gemma 4 | $0.10 | $0.30 | $0.30 | $0.90 |
+| Qwen 3.8 27B | $0.45 | $3.20 | $1.35 | $9.60 |
+
+Qwen cached input raw pricing is $0.05/M; a provisional 3x reference would be $0.15/M cached input.
+
+At the illustrative 2,000-input/500-output "normal chat" workload:
+
+- Gemma raw ~= $0.00035; provisional managed inference ~= $0.00105 per turn, or ~= $1.05 per 1,000 turns.
+- Qwen raw ~= $0.00250; provisional managed inference ~= $0.00750 per turn, or ~= $7.50 per 1,000 turns.
+
+This inference rate is **not the whole Enterprise price**. Enterprise pricing must recover and monetize:
+
+- central runtime/Worker operations;
+- knowledge ingestion/vector/search/storage;
+- file/R2/storage;
+- channel delivery;
+- tool/API execution;
+- observability/log retention;
+- human handoff/operator inbox;
+- domains/branding;
+- support/SLA;
+- implementation and integrations;
+- payment fees/tax/FX exposure;
+- abuse/fraud reserve;
+- future provider price changes.
+
+Before public launch, benchmark real p50/p95 workloads and either confirm or raise these floors. Never automatically reduce an effective-dated customer rate because an upstream provider temporarily discounts its model.
+
+For BYOK, do not apply a fake provider-token markup. Recover Mkety value through the subscription/platform fee and any explicitly priced Mkety-owned operations (RAG, storage, channels, tools, runs, observability, etc.).
+
 ### 4.2 Customer BYOK
 
 Customer supplies provider credentials.
@@ -1299,3 +1337,17 @@ Implementation order after Mail is stabilized:
 8. add private/self-hosted inference when economics or customer requirements justify it.
 
 The existing Public AI provider adapters may remain operational during migration. The target state is shared transport/control, not forced simultaneous replacement.
+
+
+## 29. Verified external references — 2026-09-27
+
+Implementation-time revalidation remains mandatory. Current research references:
+
+- Cloudflare Workers AI Gemma 4 model page: https://developers.cloudflare.com/ai/models/%40cf/google/gemma-4-26b-a4b-it/
+- Cloudflare Workers AI Qwen 3.8 27B model page: https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/
+- Cloudflare Workers AI pricing: https://developers.cloudflare.com/workers-ai/platform/pricing/
+- Cloudflare AI Gateway BYOK: https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/
+- Cloudflare AI Gateway Unified Billing: https://developers.cloudflare.com/ai-gateway/features/unified-billing/
+- Cloudflare AI Gateway Custom Providers: https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/
+
+These references support the provider/cost assumptions in this design but are not substitutes for release-time verification.
