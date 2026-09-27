@@ -1,7 +1,8 @@
 import Link from 'next/link';
 
 import { Button } from '@/shared/components/ui';
-import { auth } from '@/shared/lib/auth';
+
+import { MketyPublicAuthActions } from './MketyPublicAuthActions';
 
 import { dedupePublicNavigation } from './public-navigation';
 import type { PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../schemas';
@@ -21,8 +22,7 @@ function PublicNavLink({ item, className }: { item: PlatformNavigationItemInput;
   );
 }
 
-export async function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderProps) {
-  const session = await auth();
+export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderProps) {
   const headerItems = dedupePublicNavigation(navigation.filter((item) => item.area === 'header'));
   const utilityItems = headerItems.filter((item) => item.href === '/docs').slice(0, 1);
 
@@ -45,25 +45,7 @@ export async function MketyPublicHeader({ settings, navigation }: MketyPublicHea
               className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:inline-flex"
             />
           ))}
-          {session?.user ? (
-            <>
-              <Button asChild variant="ghost" className="px-3">
-                <Link href="/settings">Account</Link>
-              </Button>
-              <Button asChild className="rounded-xl">
-                <Link href="/app">Dashboard</Link>
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button asChild variant="ghost" className="px-3">
-                <Link href="/login">Sign In</Link>
-              </Button>
-              <Button asChild className="hidden rounded-xl sm:inline-flex">
-                <Link href="/signup">Get Started</Link>
-              </Button>
-            </>
-          )}
+          <MketyPublicAuthActions />
         </div>
       </div>
     </header>
