@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -27,6 +27,6 @@ export async function saveMailTemplate(tenantSlug:string,formData:FormData){
 export async function deleteMailTemplate(tenantSlug:string,formData:FormData){
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const id=String(formData.get('id')||'');
-  await db.delete(mailTemplates).where(eq(mailTemplates.id,id));
+  await db.delete(mailTemplates).where(and(eq(mailTemplates.id,id),eq(mailTemplates.tenantId,tenant.id)));
   revalidatePath(`/t/${tenantSlug}/mail/templates`);
 }
