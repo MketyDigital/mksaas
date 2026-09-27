@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { fetchAttachmentManifest, fetchMailContent } from '@/features/mail/server/content';
 import { db } from '@/shared/db/cloudflare';
-import { mailMailboxMembers, mailMailboxes, mailMessages, tenantMemberships } from '@/shared/db/schema';
+import { mailMailboxes, mailMailboxMembers, mailMessages, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
