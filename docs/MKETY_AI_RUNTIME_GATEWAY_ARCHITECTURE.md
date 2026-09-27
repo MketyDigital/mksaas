@@ -239,9 +239,12 @@ Cloudflare Workers AI is one managed-provider path, not the only provider.
 
 For the initial managed catalog:
 
-- Gemma 4 can be offered as an economical multimodal option where its current Workers AI capability remains available.
-- GPT-OSS can be offered for supported text/reasoning/Responses use cases, but should not be labeled as the vision default unless a specific selected GPT-OSS model actually provides vision.
-- The second default multimodal route should be selected from the current model catalog based on verified vision, tool calling, context, latency, stability and price at implementation time.
+- `@cf/google/gemma-4-26b-a4b-it` is the initial economical multimodal/open route.
+- `@cf/qwen/qwen3.8-27b` is the initial higher-capability multimodal/reasoning route.
+- Gemma 4 published pricing verified 2026-09-27: $0.10/M input tokens and $0.30/M output tokens.
+- Qwen 3.8 27B published pricing verified 2026-09-27: $0.45/M input, $3.20/M output and $0.05/M cached input tokens.
+- Additional managed models require explicit cost/capability review rather than automatic exposure.
+- Third-party frontier models should enter through customer BYOK, not Cloudflare Unified Billing, unless a later authority deliberately changes this rule.
 - Model IDs and prices must never be permanently hard-coded into public commercial copy. They belong in a controlled model/rate catalog.
 
 The implementation must revalidate currently available model capabilities and prices before production enablement.
@@ -533,7 +536,7 @@ An Enterprise instance may attach:
 
 Private tenant knowledge must never leak into Public Mkety AI or another tenant.
 
-Public Mkety AI remains a distinct public-only trust boundary even if it later consumes the common inference transport.
+Public Mkety AI remains a distinct public-only trust boundary even if it later consumes the common inference transport. Its already-implemented provider gateway, browser memory, public-only knowledge/tools and one-assistant/no-model-picker product contract remain intact during migration.
 
 ## 17. Relationship to existing Mkety products
 
@@ -797,3 +800,14 @@ Preserve these core rules from that specification:
 - cache keys and storage must preserve tenant isolation;
 - browser-facing widgets use restricted publishable/signed credentials, not unrestricted secret API keys;
 - dedicated Enterprise infrastructure is an optional isolation/capacity tier.
+
+
+## 26. Existing product compatibility baseline
+
+This runtime project must blend with, not redesign, the current Mkety commercial/product contract:
+
+- AI Workspace remains $16.99/month under the current commercial source of truth.
+- AI Workspace remains the self-service Agent Builder/agents/knowledge/tools/models/publishing/integrations/API/history/usage/team product.
+- Public Mkety AI remains an isolated public support assistant and never inherits tenant data.
+- Existing direct provider adapters remain valid migration-era implementation until the shared runtime proves parity.
+- Enterprise/shared runtime and developer API are the principal net-new architecture in this workstream.
