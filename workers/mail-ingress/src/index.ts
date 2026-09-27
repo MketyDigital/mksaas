@@ -1,5 +1,28 @@
+type MailHeaders={
+  get(name:string):string|null;
+};
+
+type MailRaw=ReadableStream<Uint8Array>|ArrayBuffer|Uint8Array|string;
+
+type EmailMessage={
+  to:string;
+  from:string;
+  raw:MailRaw;
+  rawSize:number;
+  headers:MailHeaders;
+  forward(address:string):Promise<void>;
+  setReject(reason:string):void;
+};
+
+type MailBucket={
+  put(key:string,value:MailRaw,options?:{
+    httpMetadata?:{contentType?:string};
+    customMetadata?:Record<string,string>;
+  }):Promise<unknown>;
+};
+
 type Env={
-  MAIL_STORAGE:R2Bucket;
+  MAIL_STORAGE:MailBucket;
   MKETY_MAIL_INTERNAL_SECRET:string;
   MKETY_MAIL_RESOLVE_URL:string;
   MKETY_MAIL_INGEST_URL:string;
@@ -25,7 +48,7 @@ export default {
   async fetch():Promise<Response>{
     return new Response('Mkety Mail ingress',{status:200});
   },
-  async email(message:ForwardableEmailMessage,env:Env):Promise<void>{
+  async email(message:EmailMessage,env:Env):Promise<void>{
     const resolvedResponse=await internal(env,env.MKETY_MAIL_RESOLVE_URL,{recipient:message.to});
     const resolved=await resolvedResponse.json().catch(()=>null) as Resolution|null;
     if(!resolvedResponse.ok||!resolved?.accepted||!resolved.tenantId||!resolved.mailboxId){
