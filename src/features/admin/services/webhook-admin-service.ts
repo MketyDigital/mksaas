@@ -491,6 +491,10 @@ export async function getAvailableEventTypes(): Promise<{ value: string; label: 
       events: ['integration.synced', 'integration.failed'],
       label: 'Integrations',
     },
+    mail: {
+      events: ['mail.sent','mail.delivered','mail.deferred','mail.bounced','mail.failed','mail.rejected','mail.complained'],
+      label: 'Mkety Mail',
+    },
   };
 
   const result: { value: string; label: string; category: string }[] = [];
