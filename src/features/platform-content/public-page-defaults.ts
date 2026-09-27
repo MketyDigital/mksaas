@@ -60,13 +60,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Provider flexibility',
         title: 'Mkety abstracts the provider layer so your product is not tied to one AI vendor.',
         description:
-          'Mkety AI is built around approved provider routes and current model governance. Today Mkety supports OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock, with provider selection kept behind one Mkety experience.',
+          'Mkety AI is built around approved provider routes and current model governance. Customers use one Mkety experience while Mkety can route supported AI workloads across direct, cloud-hosted and edge AI providers according to the configured environment.',
         items: [
           {
             key: 'ai-provider-routing',
             title: 'Multiple AI provider paths',
             description:
-              'Use Mkety-supported model routes across OpenAI, Azure OpenAI, Gemini, Vertex AI, Workers AI, and Bedrock without rebuilding the surrounding agent, knowledge, tool, project, and usage experience.',
+              'Use Mkety-supported model routes across multiple direct, cloud-hosted and edge AI providers without rebuilding the surrounding agent, knowledge, tool, project, and usage experience.',
           },
           {
             key: 'model-operations',
@@ -143,31 +143,31 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'AI Workspace',
         title: 'Choose models through Mkety, not around Mkety.',
         description:
-          'The current Mkety AI provider layer supports OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock. Bedrock also provides access to supported Anthropic and Amazon model families through that provider route.',
+          'The current Mkety AI provider layer supports multiple approved provider routes and model families behind one Mkety experience. Detailed provider compatibility and infrastructure information is published separately for technical evaluation.',
         items: [
           {
             key: 'openai-family',
-            title: 'OpenAI & Azure OpenAI',
+            title: 'Direct & managed model providers',
             description:
-              'Approved current OpenAI model families are available through both direct OpenAI and Azure OpenAI provider paths where configured.',
+              'Mkety can use approved direct and managed-cloud model routes while keeping the surrounding agent, knowledge, tool and project experience consistent.',
           },
           {
             key: 'google-family',
-            title: 'Gemini & Vertex AI',
+            title: 'Cloud AI provider routes',
             description:
-              'Google model routes are supported through Gemini API and Vertex AI so Mkety can fit direct and Google Cloud operating requirements.',
+              'Mkety supports approved cloud AI provider routes for organizations that need provider-specific cloud operating requirements.',
           },
           {
-            key: 'cloudflare-ai',
-            title: 'Workers AI',
+            key: 'edge-ai',
+            title: 'Edge AI routes',
             description:
-              'Mkety supports Cloudflare Workers AI as an AI execution path. Mkety is also designed to add AI Gateway routing for observability, control and multi-provider operations as that workstream is promoted.',
+              'Mkety supports approved edge AI execution paths and is designed for centralized gateway-style observability and multi-provider control as those capabilities are promoted.',
           },
           {
-            key: 'bedrock',
-            title: 'AWS Bedrock',
+            key: 'model-catalog',
+            title: 'Curated model catalog',
             description:
-              'AWS Bedrock is supported as a provider path for approved Bedrock-hosted model families, including supported Anthropic Claude and Amazon Nova models in the current registry.',
+              'Mkety validates approved stable and limited-access model choices centrally so customers can use supported model families without hard-coding provider-specific model selection throughout their applications.',
           },
         ],
       },
@@ -175,7 +175,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Deploy Workspace',
         title: 'Mkety-managed edge and application delivery.',
         description:
-          'Deploy is presented as a Mkety product. Under the hood, the current production architecture uses Cloudflare edge services for appropriate serverless, routing, DNS, CDN, storage and custom-hostname workloads, with OCI used for persistent backend and compute requirements.',
+          'Deploy is presented as a Mkety product. Mkety combines managed edge/serverless delivery with persistent backend infrastructure so lightweight application traffic, routing and delivery can remain separate from workloads that require durable compute or data services.',
         items: [
           {
             key: 'edge-runtime',
@@ -200,7 +200,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'persistent',
             title: 'Persistent workloads when required',
             description:
-              'Workloads that need persistent compute, databases, Redis, containers or specialized networking can use Mkety-managed OCI-backed infrastructure or Enterprise architecture where appropriate.',
+              'Workloads that need persistent compute, databases, caching, containers or specialized networking can use Mkety-managed persistent infrastructure or Enterprise architecture where appropriate.',
           },
         ],
         cta: { label: 'How Mkety infrastructure works', href: '/infrastructure' },
@@ -505,6 +505,38 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Provider-aware, Mkety-owned architecture',
             description:
               'Underlying providers can supply infrastructure capabilities while Mkety owns the product model, authorization, billing, deployment orchestration, customer controls and service boundaries.',
+          },
+        ],
+      },
+      {
+        eyebrow: 'AI provider compatibility',
+        title: 'Multiple AI provider paths behind one Mkety experience.',
+        description:
+          'For technical evaluation, the current Mkety AI runtime has supported provider paths for OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock. Bedrock also exposes approved Anthropic Claude and Amazon Nova model families in the current Mkety model catalog.',
+        items: [
+          {
+            key: 'openai-azure',
+            title: 'OpenAI & Azure OpenAI',
+            description:
+              'Mkety supports approved OpenAI model families through direct OpenAI and Azure OpenAI routes where configured.',
+          },
+          {
+            key: 'google-ai',
+            title: 'Gemini & Vertex AI',
+            description:
+              'Mkety supports Google AI through direct Gemini and Vertex AI routes for different deployment and governance requirements.',
+          },
+          {
+            key: 'workers-ai',
+            title: 'Cloudflare Workers AI',
+            description:
+              'Mkety supports Workers AI as an edge AI execution path. Cloudflare AI Gateway is the planned centralized gateway layer for additional observability and provider routing after the current Mail workstream.',
+          },
+          {
+            key: 'bedrock',
+            title: 'AWS Bedrock',
+            description:
+              'Mkety supports approved Bedrock model routes, including supported Anthropic Claude and Amazon Nova families in the current model catalog.',
           },
         ],
       },
