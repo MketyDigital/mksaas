@@ -62,7 +62,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERIFIED_SHA_INPUT: ${{ needs.authorize.outputs.verified_sha }}
+          VERIFIED_SHA_INPUT: ${{ inputs.verified_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
           EVENT_NAME: ${{ github.event_name }}
           PUSH_SHA: ${{ github.sha }}
