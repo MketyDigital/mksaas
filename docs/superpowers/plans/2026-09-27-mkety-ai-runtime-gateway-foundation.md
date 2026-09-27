@@ -270,3 +270,29 @@ Provider scope is locked for initial implementation:
 - no Cloudflare Unified Billing frontier-model resale path.
 
 Existing Public Mkety AI and AI Workspace are migration targets/first-party clients, not greenfield products to redesign. Preserve current pricing and behavior until deliberate commercial/product changes are approved.
+
+
+## Progress update — 2026-09-27 late session
+
+AI planning is now commercially reconciled with current `main`:
+
+- current Public Mkety AI implementation/trust boundary reviewed;
+- current AI Workspace behavior and $16.99/month commercial contract reviewed;
+- current self-service 1/3/6/12-month billing terms preserved;
+- initial managed provider scope locked to Workers AI Gemma 4 + Qwen 3.8 27B;
+- Cloudflare Unified Billing/frontier-model resale explicitly excluded;
+- third-party frontier providers remain BYOK;
+- private OCI/AWS/Azure/etc. model endpoint remains future-compatible;
+- exact current Workers AI unit costs documented;
+- provisional ~65% pre-overhead gross-margin floor documented as a 3x planning reference;
+- Enterprise remains the major net-new product layer.
+
+Operational gate checked against current repository state:
+
+- `main` remains `ac674ea97abdfdb4f853e72b0ff93b30a6f10614`;
+- PR #142 remains open/mergeable and its Typecheck, Lint, CI, Build, Tests and PR Validation checks are green;
+- its only failed check is the known repository-wide MegaLinter baseline;
+- PRs #140/#141/#139 remain open in the expected state;
+- PR #142 diff is limited to the Mail production workflow shell-portability repair.
+
+**Current blocker before Mail can continue:** the Cloudflare API token permissions must be changed in Cloudflare. No connected Cloudflare management capability is available in this session, and the token value/permissions must not be exposed or guessed. Per the Mail handoff, do not merge #142 or start the guarded Mail production release until that token permission step is completed/confirmed.
