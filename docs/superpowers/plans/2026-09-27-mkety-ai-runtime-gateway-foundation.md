@@ -162,12 +162,13 @@ Do not implement expiring multi-bucket credits by mutating the current single pr
 Once the foundation is green:
 
 1. create the Workers AI adapter;
-2. route it through Cloudflare AI Gateway;
+2. route it through Cloudflare AI Gateway using standard Workers AI billing, not Unified Billing;
 3. configure a non-production gateway;
-4. add current model catalog values only after live documentation/API verification;
-5. run tiny controlled inference acceptance;
-6. verify normalized usage and Cloudflare/provider cost;
-7. keep production enablement off until explicitly promoted.
+4. seed `@cf/google/gemma-4-26b-a4b-it` and `@cf/qwen/qwen3.8-27b` after re-verifying current pricing/capabilities;
+5. explicitly prevent reliance on Cloudflare-managed third-party frontier credentials/Unified Billing;
+6. run tiny controlled inference acceptance;
+7. verify normalized usage and actual Cloudflare cost;
+8. keep production enablement off until explicitly promoted.
 
 ## BYOK slice
 
@@ -257,3 +258,15 @@ Current next step:
 **AI-01 code foundation** — AI PBAC permissions, additive AI schemas, hashed AI API keys, model catalog/aliases, route/rate/budget records, provider-neutral runtime contract, budget authorization seam, models endpoint, chat-completions endpoint using a fake/non-billable adapter in tests, and isolation/security tests.
 
 After AI-01 is green, proceed to non-production Workers AI + AI Gateway integration. Do not enable paid production inference as part of AI-01.
+
+**Execution-order gate:** this AI implementation does not start until the currently active Mkety Mail production-completion workstream is finished, verified, and its follow-up PR sequence is reconciled. AI design/documentation may continue on this feature branch, but code implementation waits behind that operational gate.
+
+Provider scope is locked for initial implementation:
+
+- Workers AI hosted Gemma 4;
+- Workers AI hosted Qwen 3.8 27B;
+- customer BYOK for third-party frontier providers;
+- private/self-hosted HTTPS model endpoint later;
+- no Cloudflare Unified Billing frontier-model resale path.
+
+Existing Public Mkety AI and AI Workspace are migration targets/first-party clients, not greenfield products to redesign. Preserve current pricing and behavior until deliberate commercial/product changes are approved.
