@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, Boxes, Github, Globe, LayoutDashboard, User, WalletCards } from 'lucide-react';
+import { Bot, Boxes, Github, Globe, LayoutDashboard, Mail, User, WalletCards } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { SidebarNavItem } from '../SidebarNavItem';
@@ -21,6 +21,7 @@ export function MyViewNav({ basePath, onItemClick }: MyViewNavProps) {
       <SidebarNavItem href={`${basePath}/assistant`} label={t('assistant')} icon={Bot} iconTint="assistant" onClick={onItemClick} />
       <SidebarNavItem href={`${basePath}/projects`} label="Projects" icon={Boxes} iconTint="primary" onClick={onItemClick} />
       <SidebarNavItem href={`${basePath}/wallet`} label="Wallet" icon={WalletCards} iconTint="primary" onClick={onItemClick} />
+      <SidebarNavItem href={`${basePath}/mail`} label="Mail" icon={Mail} iconTint="primary" onClick={onItemClick} />
 
       <SidebarSeparator />
 
