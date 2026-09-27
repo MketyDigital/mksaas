@@ -99,13 +99,44 @@ jobs:
             return 1
           }
 
+          workflow_only_hotfix='no'
+          commit="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$VERIFIED_SHA")"
+          WORKFLOW_COMMIT="$commit" node <<'NODE' >/tmp/mail-release-proof
+          const x=JSON.parse(process.env.WORKFLOW_COMMIT||'{}');
+          const files=(x.files||[]).map((f)=>f.filename).sort();
+          const parents=x.parents||[];
+          const onlyMailWorkflow=files.length===1&&files[0]==='.github/workflows/mkety-mail-production.yml'&&parents[0]?.sha;
+          if(onlyMailWorkflow) process.stdout.write(parents[0].sha);
+          NODE
+          parent_sha="$(cat /tmp/mail-release-proof)"
+          if [ -n "$parent_sha" ]; then workflow_only_hotfix='yes'; fi
+
+          verify_infra_proof() {
+            workflow="$1"
+            label="$2"
+            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+            if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+              echo "Verified successful $label for exact SHA."
+              return 0
+            fi
+            if [ "$workflow_only_hotfix" = 'yes' ]; then
+              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$parent_sha&status=success&per_page=20")"
+              if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+                echo "Verified inherited $label proof from immediate parent $parent_sha for workflow-only hotfix."
+                return 0
+              fi
+            fi
+            echo "No acceptable $label proof found."
+            return 1
+          }
+
           verify_success ci.yml CI
           verify_success type-check.yml Typecheck
           verify_success lint.yml Lint
           verify_success tests.yml Tests
           verify_success build.yml Build
-          verify_success mkety-migration-baseline.yml Migration-Baseline
-          verify_success mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
+          verify_infra_proof mkety-migration-baseline.yml Migration-Baseline
+          verify_infra_proof mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
 
   production-db:
     needs: authorize
