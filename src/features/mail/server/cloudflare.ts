@@ -88,6 +88,7 @@ export async function sendCloudflareEmail(input:{
   text?:string;
   cc?:Array<{email:string;name?:string}>;
   bcc?:Array<{email:string;name?:string}>;
+  headers?:Record<string,string>;
 }){
   const {accountId}=env();
   if(!accountId) throw new Error('Cloudflare account ID is not configured.');
