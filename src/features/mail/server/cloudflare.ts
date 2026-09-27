@@ -29,6 +29,21 @@ export async function findCloudflareZone(domain:string){
   return zone?{id:String(zone.id),name:String(zone.name)}:null;
 }
 
+
+export async function createCloudflareEmailWorkerRule(zoneId:string,address:string,workerName='mkety-mail-ingress'){
+  const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing/rules`,{
+    method:'POST',
+    body:JSON.stringify({
+      name:`Mkety Mail · ${address}`,
+      enabled:true,
+      matchers:[{type:'literal',field:'to',value:address}],
+      actions:[{type:'worker',value:[workerName]}],
+      source:'api',
+    }),
+  });
+  return (payload?.result as {id?:string}|undefined)||null;
+}
+
 export async function enableCloudflareEmailRouting(zoneId:string,domain:string){
   return cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing/dns`,{
     method:'POST',
