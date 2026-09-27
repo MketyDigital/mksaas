@@ -245,3 +245,51 @@ export const mailDeliveryEvents = appSchema.table('mail_delivery_events', {
   index('mail_delivery_events_tenant_idx').on(table.tenantId, table.occurredAt),
   index('mail_delivery_events_message_idx').on(table.messageId),
 ]);
+
+
+export const mailThreadNotes = appSchema.table('mail_thread_notes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  threadId: uuid('thread_id').notNull().references(() => mailThreads.id, { onDelete: 'cascade' }),
+  authorUserId: text('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('mail_thread_notes_thread_idx').on(table.threadId, table.createdAt),
+  index('mail_thread_notes_tenant_idx').on(table.tenantId),
+]);
+
+export const mailAutomationRules = appSchema.table('mail_automation_rules', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  mailboxId: uuid('mailbox_id').references(() => mailMailboxes.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  triggerType: varchar('trigger_type', { length: 64 }).notNull(),
+  triggerValue: text('trigger_value'),
+  actionType: varchar('action_type', { length: 64 }).notNull(),
+  actionValue: text('action_value'),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('mail_automation_rules_tenant_idx').on(table.tenantId),
+  index('mail_automation_rules_mailbox_idx').on(table.mailboxId),
+]);
+
+export const mailAppPasswords = appSchema.table('mail_app_passwords', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  mailboxId: uuid('mailbox_id').notNull().references(() => mailMailboxes.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 128 }).notNull(),
+  passwordPrefix: varchar('password_prefix', { length: 32 }).notNull(),
+  passwordHash: varchar('password_hash', { length: 128 }).notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('mail_app_passwords_hash_uidx').on(table.passwordHash),
+  index('mail_app_passwords_tenant_idx').on(table.tenantId),
+  index('mail_app_passwords_mailbox_idx').on(table.mailboxId),
+]);
