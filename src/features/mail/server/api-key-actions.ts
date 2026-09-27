@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import { mailApiKeys } from '@/shared/db/schema';
@@ -43,5 +43,5 @@ export async function revokeMailApiKey(tenantSlug:string,formData:FormData){
   const {tenant,membership}=await requireMailWorkspaceAccess(tenantSlug);
   if(!['admin','manager'].includes(String(membership.role))) return;
   const id=String(formData.get('id')||'');
-  await db.update(mailApiKeys).set({revokedAt:new Date()}).where(eq(mailApiKeys.id,id));
+  await db.update(mailApiKeys).set({revokedAt:new Date()}).where(and(eq(mailApiKeys.id,id),eq(mailApiKeys.tenantId,tenant.id)));
 }
