@@ -64,6 +64,8 @@ const SEARCHABLE_PUBLIC_PAGE_SLUGS = [
   'academy',
   'pricing',
   'enterprise',
+  'trust',
+  'infrastructure',
   'about',
   'contact',
 ] as const;
@@ -149,6 +151,8 @@ export async function getPublicProductKnowledge(product: string) {
     [['solutionhub', 'solution hub', 'solutions', 'templates'], 'solutions'],
     [['academy', 'training', 'education'], 'academy'],
     [['enterprise', 'custom'], 'enterprise'],
+    [['trust', 'security', 'privacy', 'identity', 'tenant isolation'], 'trust'],
+    [['infrastructure', 'cloudflare', 'oci', 'edge', 'workers', 'mkety app', 'custom domains'], 'infrastructure'],
   ];
   const slug = aliases.find(([names]) => names.some((name) => normalized.includes(name)))?.[1];
   if (!slug) return null;

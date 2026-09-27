@@ -11,6 +11,8 @@ describe('Mkety public pages admin collection', () => {
       'academy',
       'pricing',
       'enterprise',
+      'trust',
+      'infrastructure',
       'about',
       'contact',
     ]);

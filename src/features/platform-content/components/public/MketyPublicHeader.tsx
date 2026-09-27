@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Button } from '@/shared/components/ui';
+import { MketyPublicAuthActions } from './MketyPublicAuthActions';
 
 import { dedupePublicNavigation } from './public-navigation';
 import type { PlatformNavigationItemInput, PlatformSiteSettingsInput } from '../../schemas';
@@ -43,12 +43,7 @@ export function MketyPublicHeader({ settings, navigation }: MketyPublicHeaderPro
               className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:inline-flex"
             />
           ))}
-          <Button asChild variant="ghost" className="px-3">
-            <Link href="/login">Sign In</Link>
-          </Button>
-          <Button asChild className="hidden rounded-xl sm:inline-flex">
-            <Link href="/signup">Get Started</Link>
-          </Button>
+          <MketyPublicAuthActions />
         </div>
       </div>
     </header>

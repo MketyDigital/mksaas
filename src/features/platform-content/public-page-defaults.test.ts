@@ -1,7 +1,7 @@
 import { getDefaultPublicPage, MKETY_PUBLIC_PAGE_DEFAULTS } from './public-page-defaults';
 
 describe('Mkety dedicated public page defaults', () => {
-  it.each(['platform', 'workspaces', 'solutions', 'academy', 'pricing', 'enterprise', 'about', 'contact'])(
+  it.each(['platform', 'workspaces', 'solutions', 'academy', 'pricing', 'enterprise', 'trust', 'infrastructure', 'about', 'contact'])(
     'provides meaningful content for %s',
     (slug) => {
       const page = getDefaultPublicPage(slug);

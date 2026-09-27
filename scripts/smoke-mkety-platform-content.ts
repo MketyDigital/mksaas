@@ -52,9 +52,7 @@ const forbiddenPublicPatterns: Array<[RegExp, string]> = [
   [/\bmksaas\b/i, 'internal application references'],
   [/\bpull request\b/i, 'pull-request references'],
   [/\borigin\.mkety\.com\b/i, 'internal origin hostname'],
-  [/\bcloudflare\b/i, 'hosting-provider implementation details'],
-  [/\bvercel\b/i, 'hosting-provider implementation details'],
-  [/\bOCI\b/, 'infrastructure-provider implementation details'],
+  [/\bvercel\b/i, 'retired production-provider assumptions'],
 ];
 
 function assertPublicCopySafe(value: unknown, label: string) {
@@ -160,6 +158,8 @@ async function main() {
     'academy',
     'pricing',
     'enterprise',
+    'trust',
+    'infrastructure',
     'about',
     'contact',
     'privacy',
