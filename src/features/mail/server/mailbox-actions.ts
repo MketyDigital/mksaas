@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMailboxMembers, mailWorkspaces } from '@/shared/db/schema';
 
-import { createCloudflareEmailWorkerRule } from './cloudflare';
+import { createCloudflareEmailWorkerRule, setCloudflareEmailCatchAll } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function cleanLocalPart(value:string){
@@ -24,6 +24,7 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
   const displayName=String(formData.get('displayName')||'').trim().slice(0,255);
   const type=String(formData.get('type')||'personal')==='shared'?'shared':'personal';
   const forwardingAddress=String(formData.get('forwardingAddress')||'').trim().toLowerCase();
+  const catchAll=String(formData.get('catchAll')||'')==='yes';
 
   if(!localPart||!/^[a-z0-9](?:[a-z0-9._+-]{0,126}[a-z0-9])?$/.test(localPart)){
     redirect(`/t/${tenantSlug}/mail/mailboxes?error=address`);
@@ -45,13 +46,15 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     displayName:displayName||null,
     type,
     forwardingAddress:forwardingAddress||null,
+    catchAll,
     createdByUserId:actor.userId,
   }).onConflictDoNothing({target:[mailMailboxes.domainId,mailMailboxes.localPart]}).returning();
 
   if(mailbox){
     if(domain.routingEnabled&&domain.cloudflareZoneId){
       try{
-        await createCloudflareEmailWorkerRule(domain.cloudflareZoneId,`${localPart}@${domain.domain}`);
+        if(catchAll) await setCloudflareEmailCatchAll(domain.cloudflareZoneId);
+        else await createCloudflareEmailWorkerRule(domain.cloudflareZoneId,`${localPart}@${domain.domain}`);
       }catch{
         await db.update(mailMailboxes).set({status:'routing_pending',updatedAt:new Date()}).where(eq(mailMailboxes.id,mailbox.id));
       }
