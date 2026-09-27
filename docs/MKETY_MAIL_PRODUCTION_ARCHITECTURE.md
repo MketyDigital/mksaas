@@ -324,3 +324,49 @@ Exact pre-trigger main SHA:
 `06d8019c49c097cb6183d8a0b948c0477933876f`
 
 This run is authorized only for the exact resulting main SHA and must cancel/replace any older in-progress Mail production run.
+
+
+## Production completion status — authoritative serialized attempt
+
+Authoritative guarded run:
+
+- workflow: Mkety Mail Production
+- run: 36358566312
+- release SHA: `e6bf486de993046bedbd6f32e901d43159c16081`
+
+Verified:
+
+- exact release authorization: success;
+- stale-release/migration-proof guards: success;
+- production PostgreSQL migration: success;
+- ephemeral migration host cleanup: success;
+- Cloudflare account credential verification: success.
+
+Current blocker:
+
+- **Workers R2 Storage Write** is missing from the repository `CLOUDFLARE_API_TOKEN`;
+- the R2 permission probe returned **HTTP 403**;
+- the permission preflight failed closed.
+
+Because the preflight failed, the workflow skipped:
+
+- production Hyperdrive resolution for the Mail deploy stage;
+- exact `mkety-platform` application redeploy;
+- auth-binding post-deploy verification;
+- R2 bucket provisioning;
+- Mail queues/DLQs;
+- Mail Worker deployment;
+- Mail runtime secret attachment;
+- Mail domain attachment;
+- production Mail smoke;
+- deployment evidence publication.
+
+No bypass is authorized. The next production action is to update the existing repository Cloudflare token with the required R2 permission (and retain the full Mail permission set), then rerun the guarded `[mail-production]` flow.
+
+Release-workflow hardening completed during this attempt:
+
+- PR #142: shell-portable proof walk;
+- PR #143: migration-baseline proof inheritance only across unchanged baseline-trigger paths;
+- PR #144: serialized Mail production runs, independent exact quality gates, and final main-head revalidation.
+
+Do not restart Mail architecture design. Do not begin the Mkety AI implementation workstream until this Mail infrastructure release is completed and the required production functional tests pass.
