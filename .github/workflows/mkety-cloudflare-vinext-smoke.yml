@@ -49,3 +49,5 @@ jobs:
         run: pnpm run deploy --dry-run
 
 # verification refresh: 2026-09-27 mail production proof
+
+# combined proof refresh: 2026-09-27
