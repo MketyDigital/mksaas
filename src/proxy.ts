@@ -11,6 +11,7 @@ function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/' ||
     pathname === '/login' ||
+    pathname === '/mail' ||
     pathname === '/api/health' ||
     pathname.startsWith('/docs') ||
     pathname.startsWith('/api/docs') ||
@@ -24,6 +25,14 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   const { pathname, hostname } = nextUrl;
   const session = await auth(request);
   let effectivePathname = pathname;
+  const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
+
+  if(hostname.toLowerCase()===mailHost && pathname==='/'){
+    const url=new URL(request.url);
+    url.pathname=session?'/mail/app':'/login';
+    url.search='';
+    return NextResponse.redirect(url);
+  }
 
   const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
   if (canonicalPublicUrl) {
@@ -42,6 +51,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
     const isKnownAppHost =
       hostname === appHost ||
+      hostname.toLowerCase() === mailHost ||
       hostname === vercelHost ||
       hostname.endsWith('.vercel.app') ||
       hostname.endsWith('.workers.dev');
