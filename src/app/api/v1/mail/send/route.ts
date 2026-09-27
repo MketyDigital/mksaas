@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { authenticateMailApiKey } from '@/features/mail/server/api-auth';
+import { getMailSendCapacity } from '@/features/mail/server/sending-policy';
 import { pushMailQueueBatch } from '@/features/mail/server/cloudflare';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMessages, mailSuppressions } from '@/shared/db/schema';
@@ -41,6 +42,9 @@ export async function POST(request:Request){
     where:and(eq(mailMailboxes.tenantId,key.tenantId),eq(mailMailboxes.domainId,domain.id),eq(mailMailboxes.localPart,localPart),eq(mailMailboxes.status,'active')),
   });
   if(!mailbox) return NextResponse.json({ok:false,error:'sender_not_allowed'},{status:403});
+
+  const capacity=await getMailSendCapacity(key.tenantId,domain.id,1);
+  if(!capacity.allowed) return NextResponse.json({ok:false,error:capacity.reason==='warmup'?'sender_warmup':'daily_limit',remaining:capacity.remaining},{status:429});
 
   const suppression=await db.query.mailSuppressions.findFirst({
     where:and(eq(mailSuppressions.tenantId,key.tenantId),eq(mailSuppressions.email,to)),
