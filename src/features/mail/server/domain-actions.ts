@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
 
-import { enableCloudflareEmailRouting, findCloudflareZone, getCloudflareEmailRouting } from './cloudflare';
+import { enableCloudflareEmailRouting, enableCloudflareEmailSending, findCloudflareZone, getCloudflareEmailRouting } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function normalizeDomain(value:string){
@@ -30,6 +30,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
 
   let zoneId:string|null=null;
   let routingEnabled=false;
+  let sendingEnabled=false;
   try{
     const zone=await findCloudflareZone(domain);
     if(zone){
@@ -37,6 +38,8 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
       await enableCloudflareEmailRouting(zone.id,domain);
       const routing=await getCloudflareEmailRouting(zone.id);
       routingEnabled=Boolean(routing?.enabled);
+      const sending=await enableCloudflareEmailSending(zone.id,domain);
+      sendingEnabled=Boolean(sending?.enabled);
     }
   }catch{
     // A customer domain outside Mkety's Cloudflare account remains in guided setup.
@@ -46,11 +49,14 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     tenantId:tenant.id,
     workspaceId:workspace.id,
     domain,
-    status:routingEnabled?'routing_ready':'pending',
+    status:routingEnabled&&sendingEnabled?'ready':routingEnabled?'routing_ready':'pending',
     cloudflareZoneId:zoneId,
     routingEnabled,
+    sendingEnabled,
     mxStatus:routingEnabled?'verified':'pending',
-    spfStatus:routingEnabled?'verified':'pending',
+    spfStatus:routingEnabled||sendingEnabled?'verified':'pending',
+    dkimStatus:sendingEnabled?'verified':'pending',
+    dmarcStatus:sendingEnabled?'verified':'pending',
   }).returning();
 
   if(routingEnabled&&created){
