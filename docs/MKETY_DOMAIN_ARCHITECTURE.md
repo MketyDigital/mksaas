@@ -48,6 +48,10 @@ The public website CMS and docs experience belong to `mkety.com`. Public content
 
 Dashboard, workspaces, customer administration, Platform Control Center, and authenticated product operations belong to `app.mkety.com`.
 
+### Mkety Mail
+
+`mail.mkety.com` is the authenticated Mkety Mail entry point. It reuses central Mkety identity, tenant and billing boundaries while Mail-specific transport and storage components remain independently deployable. The public product overview is `https://mkety.com/mail`.
+
 ### API
 
 External and platform-level APIs should use `api.mkety.com` as the conceptual boundary. Internal app route handlers may still exist in the Next.js application, but the architecture should not blur public website routes with API product routes.
@@ -72,6 +76,7 @@ The Platform Control Center should expose a Domains & Routing module that helps 
 
 - public website domain status for `mkety.com`
 - platform application status for `app.mkety.com`
+- Mail application status for `mail.mkety.com`
 - API routing status for `api.mkety.com`
 - origin/routing readiness for `origin.mkety.com`
 - customer app hostnames under `*.mkety.app`
