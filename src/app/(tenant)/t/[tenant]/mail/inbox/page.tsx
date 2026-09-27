@@ -6,7 +6,7 @@ import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
 import { db } from '@/shared/db/cloudflare';
-import { mailDomains, mailMailboxMembers, mailMailboxes, mailMessages } from '@/shared/db/schema';
+import { mailDomains, mailMailboxes, mailMailboxMembers, mailMessages } from '@/shared/db/schema';
 
 export const dynamic='force-dynamic';
 
