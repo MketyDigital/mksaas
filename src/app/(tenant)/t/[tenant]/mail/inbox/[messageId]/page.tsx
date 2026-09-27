@@ -8,7 +8,7 @@ import { forwardMail, moveMailMessage, replyToMail, toggleMailStar } from '@/fea
 import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db/cloudflare';
-import { mailMailboxMembers, mailMailboxes, mailMessages } from '@/shared/db/schema';
+import { mailMailboxes, mailMailboxMembers, mailMessages } from '@/shared/db/schema';
 
 export const dynamic='force-dynamic';
 
