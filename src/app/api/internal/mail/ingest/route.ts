@@ -1,0 +1,44 @@
+import { eq } from 'drizzle-orm';
+import { NextResponse } from 'next/server';
+
+import { db } from '@/shared/db/cloudflare';
+import { mailMailboxes, mailMessages, mailThreads } from '@/shared/db/schema';
+
+export async function POST(request:Request){
+  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  if(!secret||request.headers.get('authorization')!==`Bearer ${secret}`) return NextResponse.json({ok:false},{status:401});
+  const body=await request.json().catch(()=>null) as {
+    tenantId?:string;mailboxId?:string;from?:string;to?:string;subject?:string;
+    internetMessageId?:string;rawR2Key?:string;rawSize?:number;
+  }|null;
+  if(!body?.tenantId||!body.mailboxId||!body.from||!body.to||!body.rawR2Key) return NextResponse.json({ok:false},{status:400});
+  const mailbox=await db.query.mailMailboxes.findFirst({where:eq(mailMailboxes.id,body.mailboxId)});
+  if(!mailbox||mailbox.tenantId!==body.tenantId) return NextResponse.json({ok:false},{status:404});
+
+  const now=new Date();
+  const [thread]=await db.insert(mailThreads).values({
+    tenantId:body.tenantId,
+    mailboxId:body.mailboxId,
+    subject:String(body.subject||'').slice(0,500)||null,
+    status:'open',
+    lastMessageAt:now,
+  }).returning();
+
+  const [message]=await db.insert(mailMessages).values({
+    tenantId:body.tenantId,
+    mailboxId:body.mailboxId,
+    threadId:thread.id,
+    direction:'inbound',
+    internetMessageId:String(body.internetMessageId||'').slice(0,1000)||null,
+    fromAddress:String(body.from).toLowerCase().slice(0,320),
+    toJson:[String(body.to).toLowerCase().slice(0,320)],
+    subject:String(body.subject||'').slice(0,500)||null,
+    preview:null,
+    rawR2Key:String(body.rawR2Key),
+    status:'received',
+    folder:'inbox',
+    receivedAt:now,
+  }).returning();
+
+  return NextResponse.json({ok:true,messageId:message.id});
+}
