@@ -13,14 +13,19 @@ async function cfFetch(path:string,init:RequestInit={}){
     ...init,
     headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',...(init.headers||{})},
   });
-  const payload=await response.json().catch(()=>null) as any;
+  const payload=await response.json().catch(()=>null) as {
+    success?:boolean;
+    errors?:Array<{message?:string}>;
+    result?:unknown;
+  }|null;
   if(!response.ok||payload?.success===false) throw new Error(String(payload?.errors?.[0]?.message||'Cloudflare request failed.'));
   return payload;
 }
 
 export async function findCloudflareZone(domain:string){
   const payload=await cfFetch('/zones?name='+encodeURIComponent(domain)+'&status=active&per_page=10');
-  const zone=Array.isArray(payload?.result)?payload.result[0]:null;
+  const result=Array.isArray(payload?.result)?payload.result as Array<{id?:string;name?:string}>:[];
+  const zone=result[0]||null;
   return zone?{id:String(zone.id),name:String(zone.name)}:null;
 }
 
@@ -37,12 +42,12 @@ export async function enableCloudflareEmailSending(zoneId:string,domain:string){
     method:'POST',
     body:JSON.stringify({name:domain}),
   });
-  return payload?.result||null;
+  return payload?.result as Record<string,unknown>|null||null;
 }
 
 export async function getCloudflareEmailRouting(zoneId:string){
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing`);
-  return payload?.result||null;
+  return payload?.result as Record<string,unknown>|null||null;
 }
 
 export async function sendCloudflareEmail(input:{
