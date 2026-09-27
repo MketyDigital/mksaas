@@ -30,6 +30,21 @@ export async function findCloudflareZone(domain:string){
 }
 
 
+
+export async function setCloudflareEmailCatchAll(zoneId:string,workerName='mkety-mail-ingress'){
+  const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing/rules/catch_all`,{
+    method:'PUT',
+    body:JSON.stringify({
+      name:'Mkety Mail catch-all',
+      enabled:true,
+      matchers:[{type:'all'}],
+      actions:[{type:'worker',value:[workerName]}],
+      source:'api',
+    }),
+  });
+  return (payload?.result as {id?:string}|undefined)||null;
+}
+
 export async function createCloudflareEmailWorkerRule(zoneId:string,address:string,workerName='mkety-mail-ingress'){
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing/rules`,{
     method:'POST',
