@@ -296,3 +296,26 @@ Operational gate checked against current repository state:
 - PR #142 diff is limited to the Mail production workflow shell-portability repair.
 
 **Current blocker before Mail can continue:** the Cloudflare API token permissions must be changed in Cloudflare. No connected Cloudflare management capability is available in this session, and the token value/permissions must not be exposed or guessed. Per the Mail handoff, do not merge #142 or start the guarded Mail production release until that token permission step is completed/confirmed.
+
+
+## Mail gate update — 2026-09-27 23:25 UTC
+
+Mail production completion was advanced and verified through the guarded workflow before AI implementation:
+
+- PR #142 merged;
+- current Mail proof logic includes merged PR #143;
+- exact current production trigger reached authorization successfully;
+- exact-SHA CI/Typecheck/Lint/Tests/Build passed after resolving GitHub concurrency cancellation;
+- Migration Baseline proof passed;
+- Cloudflare vinext Smoke proof passed;
+- production database migration/deploy verification passed;
+- ephemeral migration host cleanup passed;
+- Cloudflare account credential verification passed;
+- Mail infrastructure permission preflight failed safely at the first infrastructure permission check:
+  - **R2 permission check: HTTP 403**
+  - required permission: **Workers R2 Storage Write**
+- Hyperdrive resolution, app deploy, R2/Queues provisioning, Mail Worker deploy, secrets, domains and production smoke were therefore correctly skipped.
+
+Latest guarded Mail run observed: workflow run #11 (36358054268), exact head 32416bb09f32fc8b7157083647b7203f0cebbc0a.
+
+AI implementation remains gated until the Cloudflare repository token is updated and the Mail production workflow completes green. Do not bypass the permission preflight.
