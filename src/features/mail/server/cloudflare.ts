@@ -31,6 +31,15 @@ export async function enableCloudflareEmailRouting(zoneId:string,domain:string){
   });
 }
 
+
+export async function enableCloudflareEmailSending(zoneId:string,domain:string){
+  const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains`,{
+    method:'POST',
+    body:JSON.stringify({name:domain}),
+  });
+  return payload?.result||null;
+}
+
 export async function getCloudflareEmailRouting(zoneId:string){
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing`);
   return payload?.result||null;
