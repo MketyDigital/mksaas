@@ -56,6 +56,40 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         ],
         cta: { label: 'Explore Workspaces', href: '/workspaces' },
       },
+      {
+        eyebrow: 'Provider flexibility',
+        title: 'Mkety abstracts the provider layer so your product is not tied to one AI vendor.',
+        description:
+          'Mkety AI is built around provider adapters and approved current model registries. Today the repository supports OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock, with provider routing kept behind Mkety interfaces.',
+        items: [
+          {
+            key: 'ai-provider-routing',
+            title: 'Multiple AI provider paths',
+            description:
+              'Use Mkety-supported model routes across OpenAI, Azure OpenAI, Gemini, Vertex AI, Workers AI, and Bedrock without rebuilding the surrounding agent, knowledge, tool, project, and usage experience.',
+          },
+          {
+            key: 'model-operations',
+            title: 'Current-model governance',
+            description:
+              'Mkety keeps an approved model registry so current stable and limited-access models can be validated centrally instead of scattering model IDs throughout customer applications.',
+          },
+          {
+            key: 'provider-growth',
+            title: 'Designed for provider expansion',
+            description:
+              'The provider boundary is designed to add approved provider routes such as direct Anthropic, OpenRouter, Groq, and other supported model services without changing the customer-facing Mkety product model.',
+          },
+          {
+            key: 'infrastructure',
+            title: 'Mkety-managed infrastructure boundary',
+            description:
+              'Mkety presents one operating experience while using selected cloud, edge, identity, storage, database, and payment infrastructure behind protected service boundaries.',
+            href: '/infrastructure',
+          },
+        ],
+        cta: { label: 'Explore Infrastructure', href: '/infrastructure' },
+      },
     ],
   },
   {
@@ -78,21 +112,21 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'ai',
             title: 'AI Workspace',
             description:
-              'Build and publish AI agents with knowledge, tools/actions, model choice, testing, drafts/versions, Website AI, supported messaging channels, API access, run history, and usage visibility.',
+              'Build and publish AI agents with knowledge/RAG, tools and actions, model choice, testing, versions, Website AI, supported channels, API access, run history, token/usage visibility, and project-scoped controls.',
             href: '/app',
           },
           {
             key: 'automation',
             title: 'Automation Workspace',
             description:
-              'Build visual workflows with webhooks, schedules, API actions, conditions, notifications, integrations, secrets, retries, execution logs/history, and usage visibility.',
+              'Build workflows with manual, webhook and scheduled triggers, API/HTTP actions, transforms, conditions, agent actions, variables, protected secrets, retries, failure recording, execution history, and usage visibility.',
             href: '/app',
           },
           {
             key: 'deploy',
             title: 'Deploy Workspace',
             description:
-              'Deploy lightweight web apps, APIs, portals, and serverless workloads through Mkety managed edge/serverless deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
+              'Deploy lightweight web apps, APIs, portals and serverless workloads with preview and production environments, environment variables, secrets, custom domains, HTTPS, logs, deployment status/history, routing and usage visibility.',
             href: '/app',
           },
           {
@@ -104,6 +138,72 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             badge: 'Custom / Enterprise',
           },
         ],
+      },
+      {
+        eyebrow: 'AI Workspace',
+        title: 'Choose models through Mkety, not around Mkety.',
+        description:
+          'The current Mkety AI provider layer has executable adapters for OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare Workers AI, and AWS Bedrock. Bedrock also provides access to supported Anthropic and Amazon model families through that provider route.',
+        items: [
+          {
+            key: 'openai-family',
+            title: 'OpenAI & Azure OpenAI',
+            description:
+              'Approved current OpenAI model families are available through both direct OpenAI and Azure OpenAI provider paths where configured.',
+          },
+          {
+            key: 'google-family',
+            title: 'Gemini & Vertex AI',
+            description:
+              'Google model routes are supported through Gemini API and Vertex AI so Mkety can fit direct and Google Cloud operating requirements.',
+          },
+          {
+            key: 'cloudflare-ai',
+            title: 'Workers AI',
+            description:
+              'Mkety supports Cloudflare Workers AI as an AI execution path. Mkety is also designed to add AI Gateway routing for observability, control and multi-provider operations as that workstream is promoted.',
+          },
+          {
+            key: 'bedrock',
+            title: 'AWS Bedrock',
+            description:
+              'AWS Bedrock is supported as a provider path for approved Bedrock-hosted model families, including supported Anthropic Claude and Amazon Nova models in the current registry.',
+          },
+        ],
+      },
+      {
+        eyebrow: 'Deploy Workspace',
+        title: 'Mkety-managed edge and application delivery.',
+        description:
+          'Deploy is presented as a Mkety product. Under the hood, the current production architecture uses Cloudflare edge services for appropriate serverless, routing, DNS, CDN, storage and custom-hostname workloads, with OCI used for persistent backend and compute requirements.',
+        items: [
+          {
+            key: 'edge-runtime',
+            title: 'Edge/serverless runtime',
+            description:
+              'Deploy lightweight web applications, APIs, routing logic and supported serverless workloads through Mkety-managed edge deployment.',
+          },
+          {
+            key: 'preview-production',
+            title: 'Preview and production',
+            description:
+              'Use isolated preview deployments before production promotion, with deployment state, history and verification boundaries.',
+          },
+          {
+            key: 'domains',
+            title: 'Mkety and custom domains',
+            description:
+              'Customer applications can use approved *.mkety.app deployment hostnames and supported custom domains with HTTPS and routing managed through Mkety.',
+            href: '/infrastructure',
+          },
+          {
+            key: 'persistent',
+            title: 'Persistent workloads when required',
+            description:
+              'Workloads that need persistent compute, databases, Redis, containers or specialized networking can use Mkety-managed OCI-backed infrastructure or Enterprise architecture where appropriate.',
+          },
+        ],
+        cta: { label: 'How Mkety infrastructure works', href: '/infrastructure' },
       },
     ],
   },
@@ -296,6 +396,150 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           },
         ],
         cta: { label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' },
+      },
+    ],
+  },
+  {
+    slug: 'trust',
+    title: 'Mkety Trust',
+    seoTitle: 'Mkety Trust | Security, identity, data and operational controls',
+    seoDescription:
+      'Review Mkety security, identity, tenant isolation, protected configuration, payments, operational visibility, portability and Enterprise control boundaries.',
+    eyebrow: 'Trust',
+    headline: 'Clear technical and operational boundaries customers can verify.',
+    intro:
+      'Mkety is built around scoped identity, tenant and project isolation, protected secrets, verified payment settlement, observable operations, explicit infrastructure boundaries, and data portability rather than hidden assumptions.',
+    sections: [
+      {
+        eyebrow: 'Identity & access',
+        title: 'Access is scoped by user, organization, project, role and entitlement.',
+        description:
+          'Mkety uses a dedicated identity foundation and Mkety-owned application sessions while keeping authorization, tenant membership and purchased entitlements separate concerns.',
+        items: [
+          {
+            key: 'identity',
+            title: 'Managed identity',
+            description:
+              'Authentication is handled through the Mkety identity boundary while Mkety applications maintain their own protected session and authorization state.',
+          },
+          {
+            key: 'tenant-isolation',
+            title: 'Tenant and project isolation',
+            description:
+              'Customer resources are scoped to organizations and projects, with server-side authorization required before protected resources are accessed.',
+          },
+          {
+            key: 'roles',
+            title: 'Roles and permissions',
+            description:
+              'Workspace membership, roles and permissions are maintained by Mkety and are not inferred only from external identity-provider claims.',
+          },
+        ],
+      },
+      {
+        eyebrow: 'Operations & commercial safety',
+        title: 'Sensitive operations fail closed and remain auditable.',
+        description:
+          'Secrets stay server-side, payment settlement requires verified provider evidence, important administrative actions are designed for auditability, and usage/billing state is kept separate from browser redirects or unverified client events.',
+        items: [
+          {
+            key: 'secrets',
+            title: 'Protected secrets',
+            description:
+              'API keys, provider credentials, webhook secrets and runtime configuration are stored in protected server-side configuration paths rather than public content or browser bundles.',
+          },
+          {
+            key: 'payments',
+            title: 'Verified payments',
+            description:
+              'Mkety payment flows use server-side provider verification, exact amount/reference validation, idempotency and auditable settlement boundaries.',
+          },
+          {
+            key: 'portability',
+            title: 'Portability and migration',
+            description:
+              'Mkety products expose product-specific export and portability controls, with Enterprise migration, retention and handoff requirements available where agreed.',
+          },
+        ],
+        cta: { label: 'View Infrastructure', href: '/infrastructure' },
+      },
+    ],
+  },
+  {
+    slug: 'infrastructure',
+    title: 'Mkety Infrastructure',
+    seoTitle: 'Mkety Infrastructure | Edge, cloud, deployment and provider architecture',
+    seoDescription:
+      'See how Mkety combines managed edge/serverless delivery, persistent cloud infrastructure, customer deployment domains, storage, databases and provider abstractions.',
+    eyebrow: 'Infrastructure',
+    headline: 'Mkety operates as one platform across selected edge and cloud infrastructure.',
+    intro:
+      'Customers use Mkety products and controls rather than raw provider consoles. Mkety currently combines Cloudflare for appropriate edge, routing, serverless, storage and delivery workloads with OCI for persistent backend and compute requirements, while keeping architecture portable where practical.',
+    sections: [
+      {
+        eyebrow: 'Current foundation',
+        title: 'Edge where appropriate. Persistent compute where required.',
+        description:
+          'The production architecture separates lightweight edge/serverless workloads from persistent backend services so each workload can run in the appropriate operating environment.',
+        items: [
+          {
+            key: 'edge',
+            title: 'Mkety edge delivery',
+            description:
+              'Mkety uses Cloudflare capabilities where appropriate for DNS, CDN, Workers, routing, custom hostnames, R2 object storage and other edge delivery functions.',
+          },
+          {
+            key: 'persistent',
+            title: 'Mkety persistent infrastructure',
+            description:
+              'OCI-backed services provide persistent compute for components such as PostgreSQL, Redis, managed application services and workloads that do not belong in an edge runtime.',
+          },
+          {
+            key: 'database',
+            title: 'Database connectivity',
+            description:
+              'Mkety uses protected database connectivity and pooling boundaries rather than exposing customer-facing database endpoints as part of the public application surface.',
+          },
+          {
+            key: 'portable',
+            title: 'Provider-aware, Mkety-owned architecture',
+            description:
+              'Underlying providers can supply infrastructure capabilities while Mkety owns the product model, authorization, billing, deployment orchestration, customer controls and service boundaries.',
+          },
+        ],
+      },
+      {
+        eyebrow: 'Customer applications',
+        title: 'mkety.app is the deployment namespace, not the Mkety dashboard.',
+        description:
+          'The authenticated customer control plane belongs to app.mkety.com. Customer applications, generated sites, APIs and preview environments may use approved *.mkety.app hostnames or supported custom domains.',
+        items: [
+          {
+            key: 'platform-domain',
+            title: 'app.mkety.com',
+            description:
+              'Authenticated Mkety Platform where customers manage workspaces, projects, usage, billing, teams and supported product operations.',
+          },
+          {
+            key: 'deployment-domain',
+            title: '*.mkety.app',
+            description:
+              'Customer-facing preview and production application hostnames created through Mkety Deploy. The apex mkety.app should explain this deployment namespace and point customers back to Mkety Platform.',
+          },
+          {
+            key: 'custom-domains',
+            title: 'Custom domains',
+            description:
+              'Supported customer-owned domains can be mapped to eligible deployments with managed routing and HTTPS.',
+          },
+          {
+            key: 'api-domain',
+            title: 'api.mkety.com',
+            description:
+              'Reserved as the public/platform API boundary for supported APIs, integrations, webhooks and service entry points.',
+          },
+        ],
+        cta: { label: 'Explore Deploy Workspace', href: '/workspaces' },
       },
     ],
   },
