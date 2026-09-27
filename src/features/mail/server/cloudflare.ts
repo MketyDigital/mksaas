@@ -67,3 +67,16 @@ export async function sendCloudflareEmail(input:{
   });
   return payload?.result||payload;
 }
+
+export async function pushMailQueueBatch(messages:Array<Record<string,unknown>>){
+  const {accountId}=env();
+  const queueId=process.env.MKETY_MAIL_QUEUE_ID||'';
+  if(!accountId||!queueId) throw new Error('Mkety Mail dispatch queue is not configured.');
+  const payload=await cfFetch(`/accounts/${encodeURIComponent(accountId)}/queues/${encodeURIComponent(queueId)}/messages/batch`,{
+    method:'POST',
+    body:JSON.stringify({
+      messages:messages.map((body)=>({body,content_type:'json'})),
+    }),
+  });
+  return payload?.result||payload;
+}
