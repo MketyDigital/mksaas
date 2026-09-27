@@ -15,7 +15,7 @@ It has three simultaneous roles without collapsing their security boundaries:
 
 1. the inference/runtime layer consumed by the existing Mkety Platform AI Workspace;
 2. a developer-facing SaaS/PaaS API that customers can integrate like an OpenAI-compatible model provider;
-3. an Enterprise AI-instance product for branded assistants, customer domains, messaging channels, private/BYOK providers, and managed deployments.
+3. a standalone multi-tenant Enterprise AI SaaS/PaaS product that provisions customer AI configurations, channels, domains, knowledge and policies on the same central Mkety AI service by default.
 
 Mkety remains broader than AI. Mkety AI is a major Platform capability and enterprise service, not a replacement for the Platform, Academy, Trading, Mail, Media, or other Mkety products.
 
@@ -71,11 +71,15 @@ The existing Agent Builder, agents, knowledge, tools, model selection, testing, 
 
 Their provider execution should progressively move behind the shared Mkety AI Runtime rather than each feature directly owning external-provider credentials and provider-specific routing.
 
-### 3.3 Enterprise AI Instance
+### 3.3 Enterprise AI on the shared central runtime
 
-An Enterprise AI Instance is a customer-owned logical deployment/configuration, not necessarily a dedicated compute process.
+The default Enterprise product is **not one Worker/runtime per enterprise customer**.
 
-It may include:
+Mkety operates one central multi-tenant AI service (or a small horizontally-scaled pool of equivalent central runtime instances for capacity/availability). Mkety itself is also a tenant/first-party consumer of this service.
+
+Each enterprise customer receives an isolated tenant configuration on that shared service: brand, assistant configuration, knowledge, tools, channels, domains, provider policy, budgets and audit state. A separate Worker, VM, GPU endpoint, database or dedicated AI stack is provisioned only when an Enterprise contract requires materially greater isolation, throughput, regional placement, security controls, private networking or dedicated capacity.
+
+The shared Enterprise configuration may include:
 
 - customer name, brand and assistant identity;
 - custom instructions and behavior;
@@ -95,11 +99,21 @@ It may include:
 
 ## 4. Runtime architecture
 
+The central service is both:
+
+- **Mkety's own AI server/runtime** for Public Mkety AI, AI Workspace and approved internal products; and
+- **a standalone multi-tenant SaaS/PaaS AI product** sold to external businesses and developers.
+
+The same runtime contract serves first-party and third-party tenants without sharing private tenant state.
+
 ```text
-Client / Agent / Enterprise Channel
-             |
-             v
-      Mkety AI Edge API
+Mkety Public AI / AI Workspace / Automation / approved Mkety products
+External developers / Enterprise websites / Telegram / customer apps
+                              |
+                              v
+                    Central Mkety AI Service
+                              |
+                       Mkety AI Edge API
              |
       Auth / tenant / key
              |
@@ -412,7 +426,11 @@ ai_provider_connections
 
 Never render stored secret values in Platform Control, AI Workspace, logs, error messages, exports or support tooling.
 
-## 13. Enterprise AI Instances
+## 13. Shared Enterprise tenant configurations
+
+The normal Enterprise unit is a tenant-scoped AI configuration on the central Mkety AI service, not a dedicated infrastructure instance.
+
+"Instance" in product/UI language may still mean a named customer assistant/application configuration, but it must not imply dedicated compute. Many customer configurations may execute on the same Mkety AI Worker/runtime pool.
 
 Conceptual entities:
 
@@ -441,7 +459,7 @@ The preferred relationship is:
 Agent definition/version
        |
        v
-Enterprise AI Instance
+Enterprise AI configuration on central runtime
        |
        +-- Website
        +-- Telegram
@@ -543,24 +561,28 @@ MkLMS can consume Mkety AI for approved white-label tutor, support, course Q&A, 
 
 Mail/Media may consume AI through supported internal/API contracts, but Mkety AI does not absorb their independent product responsibilities.
 
-## 18. Enterprise isolation modes
+## 18. Enterprise isolation and scaling modes
 
-Offer multiple deployment/isolation levels rather than pretending every Enterprise customer needs dedicated infrastructure.
+The **default and primary product** is Shared Managed.
 
-### Shared managed
+### Shared managed — default
 
-- shared Worker/runtime;
-- strict tenant/project isolation;
-- customer configuration and secrets separated;
-- normal SaaS economics.
+- one central Mkety AI service or horizontally-scaled equivalent runtime pool;
+- Mkety's own AI workloads and external customer workloads use the same runtime contract;
+- strict tenant/project/customer isolation;
+- logical customer AI configurations rather than one Worker per customer;
+- customer configuration, knowledge, channels and secrets separated;
+- shared Workers AI / AI Gateway / private-model routing infrastructure;
+- normal SaaS/PaaS economics;
+- scale the central runtime horizontally before creating customer-specific stacks.
 
-### Isolated runtime
+### Isolated runtime — exception
 
 - dedicated Worker/service and/or database/secret namespace where required;
 - customer domain;
 - stronger operational isolation.
 
-### Dedicated/private infrastructure
+### Dedicated/private infrastructure — exception
 
 - dedicated GPU/model endpoint;
 - private database/networking;
@@ -652,9 +674,10 @@ Do not make raw infrastructure tokens, provider secrets, signing keys or unrestr
 - preserve existing behavior during migration;
 - remove duplicated direct-provider decisions only after parity tests.
 
-### Phase AI-05 — Enterprise instances
+### Phase AI-05 — shared Enterprise SaaS/PaaS
 
-- instance/version model;
+- multi-tenant enterprise configuration/version model;
+- do not provision one Worker per customer by default;
 - managed `*.mkety.app` hostname;
 - Website AI channel;
 - Telegram channel;
@@ -713,3 +736,42 @@ Each phase requires:
 10. Billing/Entitlements/Usage/Credits remain Mkety-owned shared commercial primitives.
 11. Provider/model details remain replaceable behind Mkety model aliases and routing policy.
 12. Enterprise dedicated infrastructure is available when justified, not the default for every AI customer.
+13. The normal Enterprise product runs on the same central multi-tenant Mkety AI service that supplies Mkety's own AI consumers.
+14. Scale is achieved first by horizontally scaling the shared Mkety AI runtime/provider layer, not by cloning a full AI stack for every customer.
+15. A customer-facing "AI instance" normally means logical configuration/isolation, not dedicated compute.
+
+
+## 24. Central-service clarification — 2026-09-27
+
+The intended commercial/runtime model is:
+
+```text
+                         ONE MKETY AI PLATFORM
+                                |
+                  +-------------+-------------+
+                  |                           |
+            First-party Mkety             External tenants
+                  |                           |
+      +-----------+-----------+        +------+----------------+
+      |           |           |        |      |                |
+ Public AI   AI Workspace  Products   API  Enterprise bots  Websites/etc.
+                  |                           |
+                  +-------------+-------------+
+                                |
+                      Central runtime/router
+                                |
+          +---------------------+----------------------+
+          |                     |                      |
+     Workers AI             AI Gateway             Private model
+   managed models           + BYOK                OCI/AWS/Azure GPU
+          |                     |                      |
+          +---------------------+----------------------+
+                                |
+                       Usage/Billing/Policy
+```
+
+Initial deployment may use Workers AI for almost all inference because it avoids early GPU infrastructure and idle-capacity cost. The architecture must nevertheless keep the model-provider boundary portable from the first release so an OpenAI-compatible private inference endpoint on OCI, AWS, Azure or another approved host can later replace or supplement Workers AI without changing customer API keys, customer integrations, enterprise channels or the public Mkety AI contract.
+
+A private/self-hosted transition should be driven by measured economics, capacity, privacy or Enterprise requirements rather than performed prematurely.
+
+The first shared managed model set should be small and purposeful. As of the 2026-09-27 design review, Gemma 4 is an approved initial candidate and the second initial open model should be selected from the current Workers AI catalog based on capability/cost testing immediately before enablement. The catalog must remain expandable rather than hard-limited to two models.
