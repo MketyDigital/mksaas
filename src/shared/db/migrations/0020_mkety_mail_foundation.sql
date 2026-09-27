@@ -255,3 +255,55 @@ CREATE TABLE IF NOT EXISTS "saas_template"."mail_delivery_events" (
 CREATE INDEX IF NOT EXISTS "mail_delivery_events_tenant_idx" ON "saas_template"."mail_delivery_events" ("tenant_id","occurred_at");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "mail_delivery_events_message_idx" ON "saas_template"."mail_delivery_events" ("message_id");
+
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "saas_template"."mail_thread_notes" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL REFERENCES "saas_template"."tenants"("id") ON DELETE cascade,
+  "thread_id" uuid NOT NULL REFERENCES "saas_template"."mail_threads"("id") ON DELETE cascade,
+  "author_user_id" text REFERENCES "saas_template"."users"("id") ON DELETE set null,
+  "body" text NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_thread_notes_thread_idx" ON "saas_template"."mail_thread_notes" ("thread_id","created_at");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_thread_notes_tenant_idx" ON "saas_template"."mail_thread_notes" ("tenant_id");
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "saas_template"."mail_automation_rules" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL REFERENCES "saas_template"."tenants"("id") ON DELETE cascade,
+  "mailbox_id" uuid REFERENCES "saas_template"."mail_mailboxes"("id") ON DELETE cascade,
+  "name" varchar(255) NOT NULL,
+  "enabled" boolean DEFAULT true NOT NULL,
+  "trigger_type" varchar(64) NOT NULL,
+  "trigger_value" text,
+  "action_type" varchar(64) NOT NULL,
+  "action_value" text,
+  "created_by_user_id" text REFERENCES "saas_template"."users"("id") ON DELETE set null,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_automation_rules_tenant_idx" ON "saas_template"."mail_automation_rules" ("tenant_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_automation_rules_mailbox_idx" ON "saas_template"."mail_automation_rules" ("mailbox_id");
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "saas_template"."mail_app_passwords" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL REFERENCES "saas_template"."tenants"("id") ON DELETE cascade,
+  "mailbox_id" uuid NOT NULL REFERENCES "saas_template"."mail_mailboxes"("id") ON DELETE cascade,
+  "user_id" text NOT NULL REFERENCES "saas_template"."users"("id") ON DELETE cascade,
+  "name" varchar(128) NOT NULL,
+  "password_prefix" varchar(32) NOT NULL,
+  "password_hash" varchar(128) NOT NULL,
+  "last_used_at" timestamp with time zone,
+  "revoked_at" timestamp with time zone,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "mail_app_passwords_hash_uidx" ON "saas_template"."mail_app_passwords" ("password_hash");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_app_passwords_tenant_idx" ON "saas_template"."mail_app_passwords" ("tenant_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "mail_app_passwords_mailbox_idx" ON "saas_template"."mail_app_passwords" ("mailbox_id");
