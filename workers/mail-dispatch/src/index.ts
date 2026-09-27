@@ -14,6 +14,7 @@ type MailJob={
   kind:'customer_update'|'transactional'|'inbox';
   tenantId:string;
   messageId?:string;
+  mailboxId?:string;
   updateId?:string;
   recipientId?:string;
   from:MailAddress;
@@ -42,13 +43,18 @@ type EmailBinding={
   }):Promise<EmailSendResult>;
 };
 
+type MailBucket={
+  put(key:string,value:string,options?:{httpMetadata?:{contentType?:string}}):Promise<unknown>;
+};
+
 type Env={
   EMAIL:EmailBinding;
+  MAIL_STORAGE:MailBucket;
   MKETY_MAIL_INTERNAL_SECRET:string;
   MKETY_MAIL_CALLBACK_URL:string;
 };
 
-async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';providerMessageId?:string;errorCode?:string}){
+async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';providerMessageId?:string;errorCode?:string;textR2Key?:string;htmlR2Key?:string}){
   const response=await fetch(env.MKETY_MAIL_CALLBACK_URL,{
     method:'POST',
     headers:{authorization:`Bearer ${env.MKETY_MAIL_INTERNAL_SECRET}`,'content-type':'application/json'},
@@ -56,6 +62,7 @@ async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';provide
       kind:job.kind,
       tenantId:job.tenantId,
       messageId:job.messageId,
+      mailboxId:job.mailboxId,
       updateId:job.updateId,
       recipientId:job.recipientId,
       recipient:job.to.email,
@@ -66,6 +73,19 @@ async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';provide
 }
 
 async function send(env:Env,job:MailJob){
+  let textR2Key:string|undefined;
+  let htmlR2Key:string|undefined;
+  if(job.messageId&&job.mailboxId){
+    const base=`mail/${job.tenantId}/${job.mailboxId}/outbound/${job.messageId}`;
+    if(job.text){
+      textR2Key=`${base}/body.txt`;
+      await env.MAIL_STORAGE.put(textR2Key,job.text,{httpMetadata:{contentType:'text/plain; charset=utf-8'}});
+    }
+    if(job.html){
+      htmlR2Key=`${base}/body.html`;
+      await env.MAIL_STORAGE.put(htmlR2Key,job.html,{httpMetadata:{contentType:'text/html; charset=utf-8'}});
+    }
+  }
   try{
     const result=await env.EMAIL.send({
       from:job.from,
@@ -78,10 +98,10 @@ async function send(env:Env,job:MailJob){
       ...(job.text?{text:job.text}:{}),
       ...(job.headers?{headers:job.headers}:{}),
     });
-    await report(env,job,{status:'sent',providerMessageId:result.messageId});
+    await report(env,job,{status:'sent',providerMessageId:result.messageId,textR2Key,htmlR2Key});
   }catch(error){
     const code=typeof error==='object'&&error&&'code' in error?String((error as {code?:unknown}).code||'send_failed'):'send_failed';
-    await report(env,job,{status:'failed',errorCode:code});
+    await report(env,job,{status:'failed',errorCode:code,textR2Key,htmlR2Key});
   }
 }
 
