@@ -277,8 +277,8 @@ jobs:
         run: |
           set -euo pipefail
           routes=(
-            '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise'
-            '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt'
+            '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise' '/trust' '/infrastructure'
+            '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt' '/llms.txt'
           )
           quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|mksaas|origin\.mkety\.com'
           for route in "${routes[@]}"; do
