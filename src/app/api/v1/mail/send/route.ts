@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { authenticateMailApiKey } from '@/features/mail/server/api-auth';
-import { sendCloudflareEmail } from '@/features/mail/server/cloudflare';
+import { pushMailQueueBatch } from '@/features/mail/server/cloudflare';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMessages, mailSuppressions } from '@/shared/db/schema';
 
@@ -62,21 +62,20 @@ export async function POST(request:Request){
   }).returning();
 
   try{
-    const result=await sendCloudflareEmail({
+    await pushMailQueueBatch([{
+      kind:'transactional',
+      tenantId:key.tenantId,
+      messageId:message.id,
       from:{email:from,name:mailbox.displayName||undefined},
-      to:[{email:to}],
+      to:{email:to},
       subject,
       ...(text?{text}:{}),
       ...(html?{html}:{}),
-    }) as {id?:string}|null;
-    await db.update(mailMessages).set({
-      providerMessageId:result?.id?String(result.id):null,
-      status:'sent',
-      sentAt:new Date(),
-    }).where(eq(mailMessages.id,message.id));
-    return NextResponse.json({ok:true,id:message.id,providerMessageId:result?.id||null});
+    }]);
+    await db.update(mailMessages).set({status:'queued'}).where(eq(mailMessages.id,message.id));
+    return NextResponse.json({ok:true,id:message.id,status:'queued'},{status:202});
   }catch{
     await db.update(mailMessages).set({status:'failed'}).where(eq(mailMessages.id,message.id));
-    return NextResponse.json({ok:false,error:'send_failed',id:message.id},{status:502});
+    return NextResponse.json({ok:false,error:'queue_failed',id:message.id},{status:502});
   }
 }
