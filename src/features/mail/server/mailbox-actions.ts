@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { db } from '@/shared/db/cloudflare';
-import { mailDomains, mailMailboxMembers, mailMailboxes, mailWorkspaces } from '@/shared/db/schema';
+import { mailDomains, mailMailboxes, mailMailboxMembers, mailWorkspaces } from '@/shared/db/schema';
 
 import { requireMailWorkspaceAccess } from './workspace';
 
