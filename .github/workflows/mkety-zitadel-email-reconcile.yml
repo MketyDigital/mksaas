@@ -90,6 +90,7 @@ jobs:
               allowUsernamePassword:v1.allowUsernamePassword ?? v2.allowUsernamePassword ?? null,
               allowLocalAuthentication:v2.allowLocalAuthentication ?? null,
               disableLoginWithEmail:v2.disableLoginWithEmail ?? null,
+              allowExternalIdp:v1.allowExternalIdp ?? v2.allowExternalIdp ?? null,
               ignoreUnknownUsernames:v1.ignoreUnknownUsernames ?? v2.ignoreUnknownUsernames ?? null,
               allowDomainDiscovery:v1.allowDomainDiscovery ?? v2.allowDomainDiscovery ?? null,
               isDefault:v1.isDefault ?? v1p.isDefault ?? null
@@ -120,8 +121,9 @@ jobs:
           allow="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowRegister))")"
           userpass="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowUsernamePassword))")"
           email_disabled="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.disableLoginWithEmail))")"
-          if [ "$allow" = true ] && [ "$userpass" = true ] && [ "$email_disabled" = false ]; then
-            echo 'ZITADEL registration, username/password and email login already enabled.'
+          external_idp="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.login.allowExternalIdp))")"
+          if [ "$allow" = true ] && [ "$userpass" = true ] && [ "$email_disabled" = false ] && [ "$external_idp" = true ]; then
+            echo 'ZITADEL registration, username/password, email login and external IdP login already enabled.'
             exit 0
           fi
 
@@ -146,11 +148,24 @@ jobs:
           }
           process.stdout.write(JSON.stringify(out));
           NODE
-          code="$(curl --silent --show-error -o /tmp/login-repair.json -w '%{http_code}' -X PUT "$issuer/management/v1/policies/login"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID"             -H 'Content-Type: application/json' --data-binary @/tmp/login-policy.json)"
-          if [ "$code" = 400 ] || [ "$code" = 404 ]; then
-            code="$(curl --silent --show-error -o /tmp/login-repair.json -w '%{http_code}' -X POST "$issuer/management/v1/policies/login"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID"               -H 'Content-Type: application/json' --data-binary @/tmp/login-policy.json)"
+          is_default="$(CURRENT="$current" node -e "const x=JSON.parse(process.env.CURRENT||'{}');process.stdout.write(String(x.isDefault ?? x.policy?.isDefault ?? false))")"
+          method=PUT
+          if [ "$is_default" = true ]; then method=POST; fi
+
+          code="$(curl --silent --show-error -o /tmp/login-repair.json -w '%{http_code}' -X "$method" "$issuer/management/v1/policies/login"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID"             -H 'Content-Type: application/json' --data-binary @/tmp/login-policy.json)"
+
+          if [ "$code" = 409 ]; then
+            verify_conflict="$(curl --fail-with-body --silent --show-error "$issuer/management/v1/policies/login" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H "x-zitadel-orgid: $ORG_ID")"
+            conflict_ok="$(VERIFY_CONFLICT="$verify_conflict" node -e "const x=JSON.parse(process.env.VERIFY_CONFLICT||'{}').policy||{};process.stdout.write(String(x.allowRegister===true && x.allowUsernamePassword===true && x.allowExternalIdp===true && x.disableLoginWithEmail!==true))")"
+            if [ "$conflict_ok" != true ]; then
+              echo "::error::ZITADEL login policy returned HTTP 409 and effective policy is not yet correct."
+              exit 1
+            fi
+            echo 'ZITADEL returned HTTP 409 but the effective login policy is already correct.'
+          elif [ "$code" != 200 ]; then
+            echo "::error::Could not reconcile ZITADEL login policy (HTTP $code)."
+            exit 1
           fi
-          [ "$code" = 200 ] || { echo "::error::Could not reconcile ZITADEL login policy (HTTP $code)."; exit 1; }
 
           verify="$(curl --fail-with-body --silent --show-error "$issuer/v2/settings/login?ctx.orgId=$ORG_ID" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
           VERIFY="$verify" node <<'NODE'
