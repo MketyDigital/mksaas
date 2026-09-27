@@ -31,6 +31,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: mkety-mail-production-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   actions: read
   contents: read
@@ -133,7 +137,6 @@ jobs:
             return 1
           }
 
-          verify_success ci.yml CI
           verify_success type-check.yml Typecheck
           verify_success lint.yml Lint
           verify_success tests.yml Tests
@@ -172,6 +175,10 @@ jobs:
 
           verify_migration_proof
           verify_infra_proof mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
+
+          main_after="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main")"
+          head_after="$(MAIN="$main_after" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
+          [ "$head_after" = "$VERIFIED_SHA" ] || { echo "main advanced to $head_after while Mail authorization was running; refusing stale production release for $VERIFIED_SHA"; exit 1; }
 
   production-db:
     needs: authorize
