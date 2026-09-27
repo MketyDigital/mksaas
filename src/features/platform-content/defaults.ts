@@ -48,6 +48,7 @@ export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
   { label: 'Academy', href: '/academy', area: 'header', enabled: true, external: false, sortOrder: 40 },
   { label: 'Pricing', href: '/pricing', area: 'header', enabled: true, external: false, sortOrder: 50 },
   { label: 'Enterprise', href: '/enterprise', area: 'header', enabled: true, external: false, sortOrder: 60 },
+  { label: 'Trust', href: '/trust', area: 'header', enabled: true, external: false, sortOrder: 65 },
   { label: 'Docs', href: '/docs', area: 'header', enabled: true, external: false, sortOrder: 70 },
 ];
 
@@ -231,7 +232,7 @@ export const defaultTrustSection: PlatformTrustSectionInput = {
         'Private or dedicated infrastructure, data-residency requirements, retention controls, migration assistance, private delivery, and service-level terms can be scoped where agreed.',
     },
   ],
-  cta: { label: 'Security & Trust docs', href: '/docs/trust/security-and-reliability' },
+  cta: { label: 'Security & Trust', href: '/trust' },
 };
 
 export const defaultPricingPlans: PlatformPricingPlanInput[] = [
