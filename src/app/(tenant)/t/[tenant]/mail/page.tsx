@@ -48,7 +48,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
     {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included',href:`/t/${tenant}/mail/shared`},
     {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included',href:`/t/${tenant}/mail/customer-updates`},
     {title:'Transactional Email',description:'API, SMTP, templates, webhooks and delivery logs.',icon:Code2,status:'Included',href:`/t/${tenant}/mail/developer`},
-    {title:'Mail Apps',description:'Apple Mail, Outlook, Gmail mobile and Thunderbird through Mkety.',icon:Smartphone,status:'Included',href:`/t/${tenant}/mail/apps`},
+    {title:'Mail Apps',description:'Apple Mail, Outlook, Gmail mobile and Thunderbird setup with secure app passwords.',icon:Smartphone,status:'Setup ready',href:`/t/${tenant}/mail/apps`},
     {title:'Marketing',description:'Newsletters, promotions and campaign automation.',icon:Megaphone,status:'Coming Soon',href:''},
   ];
 
