@@ -18,7 +18,11 @@ export default function MketyMailPublicPage(){
       </div>
     </div>
     <div className="mt-16 grid gap-4 md:grid-cols-3">
-      {[['Professional inbox',Inbox,'Create hello@, sales@ and support@ on your business domain.'],['Team inboxes',Users,'Handle support, sales and orders together without forwarding chains.'],['Customer communication',Send,'Transactional email and safe customer updates in one business workspace.']].map(([title,Icon,description]:any)=><div className="rounded-2xl border bg-card p-6" key={title}><Icon className="h-6 w-6 text-primary"/><h2 className="mt-4 text-lg font-semibold">{title}</h2><p className="mt-2 text-sm text-muted-foreground">{description}</p></div>)}
+      {([
+        {title:'Professional inbox',Icon:Inbox,description:'Create hello@, sales@ and support@ on your business domain.'},
+        {title:'Team inboxes',Icon:Users,description:'Handle support, sales and orders together without forwarding chains.'},
+        {title:'Customer communication',Icon:Send,description:'Transactional email and safe customer updates in one business workspace.'},
+      ]).map(({title,Icon,description})=><div className="rounded-2xl border bg-card p-6" key={title}><Icon className="h-6 w-6 text-primary"/><h2 className="mt-4 text-lg font-semibold">{title}</h2><p className="mt-2 text-sm text-muted-foreground">{description}</p></div>)}
     </div>
     <div className="mt-12 rounded-2xl border bg-muted/30 p-6"><p className="font-semibold">Marketing — Coming Soon</p><p className="mt-1 text-sm text-muted-foreground">Newsletters, promotions and campaign automation will be added through a dedicated marketing engine. Core business email and customer communication remain separate and protected.</p></div>
   </main>;
