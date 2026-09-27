@@ -6,6 +6,8 @@
 > Governing authority: `AGENTS.md` and `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`
 >
 > This document does not supersede `AGENTS.md`. If there is a conflict, `AGENTS.md` wins until the authority is deliberately updated.
+>
+> Detailed product, team/RBAC, pricing, overage, payments, cache, security, reliability and operations policy is defined in `docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`.
 
 ## 1. Product intent
 
@@ -775,3 +777,23 @@ Initial deployment may use Workers AI for almost all inference because it avoids
 A private/self-hosted transition should be driven by measured economics, capacity, privacy or Enterprise requirements rather than performed prematurely.
 
 The first shared managed model set should be small and purposeful. As of the 2026-09-27 design review, Gemma 4 is an approved initial candidate and the second initial open model should be selected from the current Workers AI catalog based on capability/cost testing immediately before enablement. The catalog must remain expandable rather than hard-limited to two models.
+
+
+## 25. Commercial/security companion specification
+
+The detailed launch design for team membership, AI-specific PBAC, plan families, included usage, prepaid top-ups, overage modes, NOWPayments/Flutterwave/Kora settlement, enterprise demos, caching, abuse protection, DLP/guardrails, reliability, observability, human handoff, knowledge/RAG, model evaluation and Enterprise security is maintained in:
+
+`docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`
+
+Preserve these core rules from that specification:
+
+- reuse Mkety tenant membership/invitations/PBAC;
+- managed AI is never unlimited variable-cost inference;
+- self-service managed AI hard-stops by default when authorized credits are exhausted;
+- BYOK may continue only under explicit route policy and must not silently spend Mkety credentials;
+- Enterprise postpaid overage requires an approved credit limit/contract;
+- fixed subscription discounts do not automatically discount variable AI usage;
+- provider infrastructure limits never define the customer commercial contract;
+- cache keys and storage must preserve tenant isolation;
+- browser-facing widgets use restricted publishable/signed credentials, not unrestricted secret API keys;
+- dedicated Enterprise infrastructure is an optional isolation/capacity tier.
