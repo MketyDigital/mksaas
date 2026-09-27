@@ -11,6 +11,8 @@ const body = `# Mkety
 - https://mkety.com/docs — public documentation
 - https://mkety.com/pricing — public self-service pricing
 - https://mkety.com/enterprise — custom and Enterprise delivery
+- https://mkety.com/mail — Mkety Mail product overview
+- https://mail.mkety.com — authenticated Mkety Mail workspace entry
 - https://app.mkety.com — authenticated Mkety Platform control plane
 - https://media.mkety.com — Mkety Media
 - https://trade.mkety.com — specialized Trading access
@@ -39,6 +41,7 @@ Mkety presents one product/control layer while using selected infrastructure pro
 ## Important boundaries
 - mkety.com is public and indexable.
 - app.mkety.com is the authenticated customer platform.
+- mail.mkety.com is the authenticated Mkety Mail entry point and reuses Mkety identity/tenant boundaries.
 - mkety.app is reserved for customer application/deployment namespaces rather than the Mkety dashboard.
 - Provider credentials and secrets are never public.
 - Browser payment redirects do not settle payments; settlement requires verified server-side provider evidence.
