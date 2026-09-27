@@ -23,6 +23,8 @@ export default async function MailDeveloperPage({params}:{params:Promise<{tenant
 
     <Card className="rounded-2xl"><CardHeader><CardTitle>Send endpoint</CardTitle><CardDescription>Use this for transactional messages from your website or application.</CardDescription></CardHeader><CardContent><code className="block rounded-xl bg-muted p-4 text-sm">POST https://api.mkety.com/v1/mail/send</code><p className="mt-3 text-sm text-muted-foreground">Authorization: Bearer mk_mail_live_…</p></CardContent></Card>
 
+    <Card className="rounded-2xl"><CardHeader><CardTitle>Webhooks</CardTitle><CardDescription>Receive signed delivery, bounce, failure and complaint events in your own application.</CardDescription></CardHeader><CardContent><a className="inline-flex rounded-xl border px-4 py-2.5 font-semibold" href={`/t/${tenant}/admin/integrations/webhooks`}>Manage webhooks</a><p className="mt-3 text-xs text-muted-foreground">Available Mail events include sent, delivered, deferred, bounced, failed, rejected and complained.</p></CardContent></Card>
+
     <Card className="rounded-2xl"><CardHeader><CardTitle>SMTP</CardTitle><CardDescription>Authenticated Mkety SMTP for existing applications and common frameworks.</CardDescription></CardHeader><CardContent><p className="font-medium">smtp.mkety.com</p><p className="text-sm text-muted-foreground">TLS · app credentials · no Cloudflare credentials exposed</p><p className="mt-2 text-xs text-muted-foreground">SMTP gateway activation follows the same tenant and sender verification rules as the API.</p></CardContent></Card>
   </div>;
 }
