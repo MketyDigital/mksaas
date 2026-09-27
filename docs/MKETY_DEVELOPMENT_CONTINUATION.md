@@ -1333,3 +1333,19 @@ Known non-release blocker:
 ### Next session
 
 Public-site work is closed unless a new production regression is observed. Resume authenticated app development from current `main`, using the existing APP-07 approval-gated Deploy foundation as the starting point. Do not reopen historical public branches or PR #78 wholesale.
+
+## 2026-09-27 authenticated SolutionHub catalog foundation
+
+SolutionHub is now an authenticated discovery/catalog surface rather than a planned-only capability map.
+
+Current bounded contract:
+- code-owned entries are classified as shared-platform or Enterprise/Custom;
+- shared-platform examples route only into existing project-scoped AI, Automation, or Deploy workspaces;
+- current shared examples include Customer Support AI, AI Knowledge Assistant, Lead Capture Automation, Telegram Workflow, Marketing Automation, and Business Website;
+- complex ERP, substantial regulated-data systems, private/dedicated runtime requirements, and Trading Automation route to Enterprise;
+- no one-click install, clone, provisioning, entitlement mutation, billing mutation, infrastructure allocation, production deployment, DNS mutation, or Trading execution is introduced;
+- SolutionHub continues to inherit existing tenant/project authorization;
+- Automation, Deploy, and SolutionHub registry availability reflects their currently implemented safe surfaces.
+
+Any future install/provision capability must add tenant/project-scoped persistence, entitlement/billing checks, approval/audit, idempotent provisioning state, and rollback/recovery before mutation is enabled.
+
