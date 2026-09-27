@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMailboxMembers, mailWorkspaces } from '@/shared/db/schema';
 
+import { createCloudflareEmailWorkerRule } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function cleanLocalPart(value:string){
@@ -48,6 +49,13 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
   }).onConflictDoNothing({target:[mailMailboxes.domainId,mailMailboxes.localPart]}).returning();
 
   if(mailbox){
+    if(domain.routingEnabled&&domain.cloudflareZoneId){
+      try{
+        await createCloudflareEmailWorkerRule(domain.cloudflareZoneId,`${localPart}@${domain.domain}`);
+      }catch{
+        await db.update(mailMailboxes).set({status:'routing_pending',updatedAt:new Date()}).where(eq(mailMailboxes.id,mailbox.id));
+      }
+    }
     await db.insert(mailMailboxMembers).values({
       tenantId:tenant.id,
       mailboxId:mailbox.id,
