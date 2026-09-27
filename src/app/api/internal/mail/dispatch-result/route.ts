@@ -18,12 +18,15 @@ export async function POST(request:Request){
     kind?:'customer_update'|'transactional'|'inbox';
     tenantId?:string;
     messageId?:string;
+    mailboxId?:string;
     updateId?:string;
     recipientId?:string;
     recipient?:string;
     status?:'sent'|'failed';
     providerMessageId?:string;
     errorCode?:string;
+    textR2Key?:string;
+    htmlR2Key?:string;
   }|null;
   if(!payload?.kind||!payload.tenantId||!payload.recipient||!payload.status){
     return NextResponse.json({ok:false},{status:400});
@@ -81,6 +84,8 @@ export async function POST(request:Request){
     await tx.update(mailMessages).set({
       providerMessageId:payload.providerMessageId||message.providerMessageId,
       status,
+      textR2Key:payload.textR2Key||message.textR2Key,
+      htmlR2Key:payload.htmlR2Key||message.htmlR2Key,
       sentAt:status==='sent'?now:message.sentAt,
     }).where(and(eq(mailMessages.id,message.id),eq(mailMessages.tenantId,tenantId)));
 
