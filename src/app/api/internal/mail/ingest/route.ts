@@ -10,7 +10,7 @@ export async function POST(request:Request){
   if(!secret||request.headers.get('authorization')!==`Bearer ${secret}`) return NextResponse.json({ok:false},{status:401});
   const body=await request.json().catch(()=>null) as {
     tenantId?:string;mailboxId?:string;from?:string;to?:string;subject?:string;
-    internetMessageId?:string;rawR2Key?:string;rawSize?:number;automated?:boolean;
+    internetMessageId?:string;rawR2Key?:string;htmlR2Key?:string;textR2Key?:string;preview?:string;attachmentCount?:number;rawSize?:number;automated?:boolean;
   }|null;
   if(!body?.tenantId||!body.mailboxId||!body.from||!body.to||!body.rawR2Key) return NextResponse.json({ok:false},{status:400});
   const mailbox=await db.query.mailMailboxes.findFirst({where:eq(mailMailboxes.id,body.mailboxId)});
@@ -34,8 +34,10 @@ export async function POST(request:Request){
     fromAddress:String(body.from).toLowerCase().slice(0,320),
     toJson:[String(body.to).toLowerCase().slice(0,320)],
     subject:String(body.subject||'').slice(0,500)||null,
-    preview:null,
+    preview:String(body.preview||'').slice(0,240)||null,
     rawR2Key:String(body.rawR2Key),
+    htmlR2Key:String(body.htmlR2Key||'')||null,
+    textR2Key:String(body.textR2Key||'')||null,
     status:'received',
     folder:'inbox',
     receivedAt:now,
