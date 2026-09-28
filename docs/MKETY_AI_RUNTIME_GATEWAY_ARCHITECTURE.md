@@ -1,13 +1,21 @@
 # Mkety AI Runtime, Gateway & Enterprise AI Architecture
 
-> Status: design foundation
-> Branch: `feat/mkety-ai-runtime-gateway-foundation-20260927`
+> Status: implemented foundation + PR #159 completion candidate; production managed inference remains gated
+> Active completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159
 > Date: 2026-09-27
 > Governing authority: `AGENTS.md` and `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`
 >
 > This document does not supersede `AGENTS.md`. If there is a conflict, `AGENTS.md` wins until the authority is deliberately updated.
 >
 > Detailed product, team/RBAC, pricing, overage, payments, cache, security, reliability and operations policy is defined in `docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`.
+
+## 2026-09-28 implementation authority update
+
+The AI-01 foundation and the Enterprise AI completion candidate are implemented. The authoritative continuation is PR #159 plus `docs/handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`.
+
+The current managed-model decision is intentionally incomplete: Gemma 4 is the initial candidate, while GLM-5.3 Flash and Qwen 3.8 27B compete for the second slot through the guarded paid benchmark. Production `customerInferenceEnabled` remains off until the live benchmark/accounting/domain/registrar gates and explicit production promotion are recorded.
+
+The implemented launch channel registry additionally includes Discord and LinkedIn Page Community. LinkedIn is limited to approved organization community/comment workflows, and Microsoft Teams remains outbound workflow/webhook only until inbound Bot Framework identity verification exists.
 
 ## 1. Product intent
 
