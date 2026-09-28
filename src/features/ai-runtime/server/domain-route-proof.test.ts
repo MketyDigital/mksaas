@@ -14,7 +14,7 @@ describe('Enterprise AI live hostname route proof', () => {
     await expect(probeEnterpriseAiHostnameRoute(
       'ai.starpipsforex.com',
       'tenant-starpips',
-      fetchImpl as typeof fetch,
+      fetchImpl as unknown as typeof fetch,
     )).resolves.toEqual({
       ok: true,
       hostname: 'ai.starpipsforex.com',
@@ -44,7 +44,7 @@ describe('Enterprise AI live hostname route proof', () => {
     await expect(probeEnterpriseAiHostnameRoute(
       'ai.starpipsforex.com',
       'tenant-starpips',
-      fetchImpl as typeof fetch,
+      fetchImpl as unknown as typeof fetch,
     )).resolves.toEqual({
       ok: false,
       hostname: 'ai.starpipsforex.com',
@@ -61,14 +61,14 @@ describe('Enterprise AI live hostname route proof', () => {
     await expect(probeEnterpriseAiHostnameRoute(
       'ai.starpipsforex.com',
       'tenant-starpips',
-      httpFailure as typeof fetch,
+      httpFailure as unknown as typeof fetch,
     )).resolves.toMatchObject({ ok: false, reason: 'route_probe_http_error' });
 
     const networkFailure = jest.fn(async () => { throw new Error('network unavailable'); });
     await expect(probeEnterpriseAiHostnameRoute(
       'ai.starpipsforex.com',
       'tenant-starpips',
-      networkFailure as typeof fetch,
+      networkFailure as unknown as typeof fetch,
     )).resolves.toMatchObject({ ok: false, reason: 'route_probe_failed' });
   });
 });
