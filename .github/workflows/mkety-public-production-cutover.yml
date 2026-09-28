@@ -953,6 +953,43 @@ jobs:
           trap - ERR
           echo 'Production acceptance passed. Apex/www Worker Custom Domains retained on the exact verified Worker.'
 
+
+      - name: Notify IndexNow after successful live acceptance
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/mkety-indexnow.json <<'JSON'
+          {
+            "host": "mkety.com",
+            "key": "c90e032d536bd79e43f57cfcad580d7e",
+            "keyLocation": "https://mkety.com/c90e032d536bd79e43f57cfcad580d7e.txt",
+            "urlList": [
+              "https://mkety.com/",
+              "https://mkety.com/platform",
+              "https://mkety.com/workspaces",
+              "https://mkety.com/solutions",
+              "https://mkety.com/academy",
+              "https://mkety.com/pricing",
+              "https://mkety.com/enterprise",
+              "https://mkety.com/mail",
+              "https://mkety.com/trust",
+              "https://mkety.com/infrastructure",
+              "https://mkety.com/about",
+              "https://mkety.com/docs",
+              "https://mkety.com/privacy",
+              "https://mkety.com/terms",
+              "https://mkety.com/contact",
+              "https://mkety.com/sitemap.xml"
+            ]
+          }
+          JSON
+          code="$(curl --connect-timeout 10 --max-time 30 -sS -o /tmp/mkety-indexnow-response -w '%{http_code}'             -H 'Content-Type: application/json; charset=utf-8'             --data @/tmp/mkety-indexnow.json             'https://api.indexnow.org/indexnow' || true)"
+          case "$code" in
+            200|202) echo "IndexNow accepted Mkety public release notification (HTTP $code)." ;;
+            *) echo "IndexNow notification was not accepted (HTTP $code); release remains healthy because indexing notification is non-blocking." ;;
+          esac
+
       - name: Publish cutover evidence and rollback instructions
         env:
           VERIFIED_SHA: ${{ inputs.verified_sha }}
