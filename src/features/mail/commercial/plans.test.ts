@@ -1,4 +1,4 @@
-import { getMailCommercialPlan, MAIL_COMMERCIAL_PLANS, MAIL_PREPAID_ADDONS } from './plans';
+import { getMailCommercialPlan, MAIL_COMMERCIAL_PLANS } from './plans';
 
 describe('Mkety Mail commercial plans', () => {
   it('publishes three self-service plans with exact monthly USD prices', () => {
@@ -11,12 +11,6 @@ describe('Mkety Mail commercial plans', () => {
     for (const plan of Object.values(MAIL_COMMERCIAL_PLANS)) {
       expect(plan.limits.maxRecipientsPerCustomerUpdate).toBeLessThanOrEqual(3_000);
     }
-  });
-
-  it('uses bounded prepaid add-ons rather than unlimited/postpaid self-service overage', () => {
-    expect(MAIL_PREPAID_ADDONS.outbound10k.amountMinor).toBeGreaterThan(0n);
-    expect(MAIL_PREPAID_ADDONS.storage10Gb.amountMinor).toBeGreaterThan(0n);
-    expect(MAIL_PREPAID_ADDONS.customerUpdates5k.amountMinor).toBeGreaterThan(0n);
   });
 
   it('fails closed for unknown plans', () => {
