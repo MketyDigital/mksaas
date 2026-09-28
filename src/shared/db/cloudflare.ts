@@ -2,11 +2,12 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 import { getRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';
+import { getRequestDatabaseContext } from './request-context';
 import * as schema from './schema';
 
 function createCloudflareDatabase() {
   const connectionString = getRuntimeDatabaseConnectionString();
-  const conn = postgres(connectionString, { max: undefined });
+  const conn = postgres(connectionString, { max: 1, prepare: false });
   return drizzle(conn, { schema });
 }
 
@@ -21,7 +22,7 @@ export function getCloudflareDatabase(): CloudflareDatabase {
 
 export const db = new Proxy({} as CloudflareDatabase, {
   get(_target, property) {
-    const database = getCloudflareDatabase();
+    const database = getRequestDatabaseContext<CloudflareDatabase>() ?? getCloudflareDatabase();
     const value = Reflect.get(database as object, property, database);
 
     return typeof value === 'function' ? value.bind(database) : value;
