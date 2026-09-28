@@ -180,6 +180,9 @@ export async function POST(request: Request) {
   }
 
   if (parsed.data.provider_connection_id) {
+    if (!policy.customerInferenceEnabled) {
+      return errorResponse(503, 'runtime_disabled', 'Enterprise AI customer inference is not enabled yet.');
+    }
     if (parsed.data.tools?.length) {
       return errorResponse(400, 'byok_tools_not_supported', 'Tool calling is not enabled for this BYOK provider route yet.');
     }
