@@ -9,8 +9,10 @@ describe('Public Mkety AI September 2026 model registry', () => {
       'gemini',
       'openai',
       'vertex',
+      'workers-ai',
     ]);
 
+    expect(getPublicAIModelDefinition('workers-ai', '@cf/google/gemma-4-26b-a4b-it')?.status).toBe('current-stable');
     expect(getPublicAIModelDefinition('openai', 'gpt-5.6-terra')?.status).toBe('current-stable');
     expect(getPublicAIModelDefinition('gemini', 'gemini-3.8-flash')?.status).toBe('current-stable');
     expect(getPublicAIModelDefinition('vertex', 'gemini-3.8-flash')?.status).toBe('current-stable');
