@@ -1,4 +1,4 @@
-export type PublicAIProviderId = 'openai' | 'azure-openai' | 'gemini' | 'vertex' | 'cloudflare-ai' | 'bedrock';
+export type PublicAIProviderId = 'workers-ai' | 'openai' | 'azure-openai' | 'gemini' | 'vertex' | 'cloudflare-ai' | 'bedrock';
 
 export type PublicAIModelStatus = 'current-stable' | 'current-limited';
 
@@ -13,6 +13,13 @@ interface PublicAIProviderModelDefinition {
 }
 
 export const PUBLIC_AI_MODEL_REGISTRY: Record<PublicAIProviderId, PublicAIProviderModelDefinition> = {
+  'workers-ai': {
+    defaultModel: '@cf/google/gemma-4-26b-a4b-it',
+    models: [
+      { id: '@cf/google/gemma-4-26b-a4b-it', status: 'current-stable' },
+      { id: '@cf/zai-org/glm-5.3-flash', status: 'current-stable' },
+    ],
+  },
   openai: {
     defaultModel: 'gpt-5.6-luna',
     models: [
