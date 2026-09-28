@@ -1,3 +1,26 @@
+# 2026-09-28 exact session handoff pointer
+
+Authoritative dated handoff:
+`docs/handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`
+
+Current handoff/docs branch head at the time this pointer was written:
+`fa10bce4b0a274df5eb318fbfaf51c1e3a621043`
+
+Certified implementation SHA immediately before the docs-only handoff commit:
+`6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`
+
+Verified on that implementation SHA:
+- CI run `36415088209` — success (build, type-check, tests, lint);
+- Migration Baseline `36415088127` — success;
+- Platform Core Workspaces Smoke `36415088120` — success;
+- Cloudflare vinext Smoke `36415088190` — success;
+- Content DB Smoke `36415088033` — success.
+
+PR #159 remains draft intentionally. Production Enterprise AI inference remains fail-closed pending the manual paid model benchmark, tiny live provider/accounting acceptance, real customer-domain white-label acceptance, registrar/reseller adapter verification and guarded production promotion.
+
+First action in the next session: check the latest PR #159 head and workflow conclusions, then read the dated handoff before making runtime changes.
+
+
 # 2026-09-28 Platform, Mail and Enterprise AI completion update
 
 Current completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159.
