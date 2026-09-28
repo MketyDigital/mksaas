@@ -1,10 +1,16 @@
+import { waitUntil } from 'cloudflare:workers';
 import { and, eq } from 'drizzle-orm';
 
 import { revealChannelCredentials } from '@/features/ai-runtime/channels/credentials';
 import {
+  normalizeDiscordInteraction,
+  verifyAndExtractLinkedInCommunityNotifications,
   verifyAndNormalizeEnterpriseAiInbound,
+  verifyDiscordInteraction,
+  verifyLinkedInWebhookChallenge,
   verifyMetaWebhookChallenge,
 } from '@/features/ai-runtime/channels/inbound';
+import { resolveLinkedInCommunityNotification } from '@/features/ai-runtime/channels/linkedin-community';
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
@@ -55,16 +61,25 @@ export async function GET(
   if (!connection?.secretRef) return new Response('Not found', { status: 404 });
 
   const channel = await authorizeConnection(connection);
-  if (!channel || !['whatsapp', 'instagram', 'facebook_messenger'].includes(channel.key)) {
-    return new Response('Not found', { status: 404 });
-  }
+  if (!channel) return new Response('Not found', { status: 404 });
 
   try {
-    const challenge = verifyMetaWebhookChallenge(new URL(request.url), revealChannelCredentials(connection.secretRef));
-    return new Response(challenge, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
+    const credentials = revealChannelCredentials(connection.secretRef);
+    const url = new URL(request.url);
+
+    if (['whatsapp', 'instagram', 'facebook_messenger'].includes(channel.key)) {
+      const challenge = verifyMetaWebhookChallenge(url, credentials);
+      return new Response(challenge, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+
+    if (channel.key === 'linkedin_page') {
+      return Response.json(verifyLinkedInWebhookChallenge(url, credentials));
+    }
+
+    return new Response('Not found', { status: 404 });
   } catch {
     return new Response('Forbidden', { status: 403 });
   }
@@ -90,10 +105,126 @@ export async function POST(
     return Response.json({ ok: false }, { status: 413 });
   }
 
+  const credentials = revealChannelCredentials(connection.secretRef);
+
+  if (channel.key === 'discord') {
+    let payload: Record<string, unknown>;
+    try {
+      verifyDiscordInteraction(rawBody, request.headers, credentials);
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {
+      return Response.json({ ok: false }, { status: 401 });
+    }
+
+    if (payload.type === 1) return Response.json({ type: 1 });
+
+    let inbound;
+    try {
+      inbound = normalizeDiscordInteraction(payload);
+    } catch {
+      return Response.json({
+        type: 4,
+        data: { content: 'Send your question with the configured AI command.', flags: 64 },
+      });
+    }
+
+    const applicationId = String(payload.application_id ?? '');
+    const interactionToken = String(payload.token ?? '');
+    if (!applicationId || !interactionToken) {
+      return Response.json({ ok: false }, { status: 400 });
+    }
+
+    waitUntil((async () => {
+      try {
+        const turn = await runEnterpriseAiManagedChannelTurn({
+          tenantId: connection.tenantId!,
+          projectId: connection.projectId,
+          connectionId: connection.id,
+          providerMessageId: inbound.providerMessageId,
+          senderId: inbound.senderId,
+          text: inbound.text,
+          requestedModel:
+            typeof connection.metadata.modelAlias === 'string'
+              ? connection.metadata.modelAlias
+              : undefined,
+        });
+        if (turn.kind !== 'completed' || !turn.text) return;
+        await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: turn.text, allowed_mentions: { parse: [] } }),
+        });
+      } catch {
+        await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'The AI request could not be completed safely.' }),
+        }).catch(() => undefined);
+      }
+    })());
+
+    return Response.json({ type: 5 });
+  }
+
+  if (channel.key === 'linkedin_page') {
+    let notifications;
+    try {
+      notifications = verifyAndExtractLinkedInCommunityNotifications({
+        rawBody,
+        headers: request.headers,
+        credentials,
+      });
+    } catch {
+      return Response.json({ ok: false }, { status: 401 });
+    }
+
+    const version =
+      typeof connection.metadata.linkedinVersion === 'string'
+        ? connection.metadata.linkedinVersion
+        : '202609';
+
+    for (const notification of notifications) {
+      waitUntil((async () => {
+        const inbound = await resolveLinkedInCommunityNotification({
+          notification,
+          credentials,
+          version,
+        });
+        if (!inbound) return;
+        const turn = await runEnterpriseAiManagedChannelTurn({
+          tenantId: connection.tenantId!,
+          projectId: connection.projectId,
+          connectionId: connection.id,
+          providerMessageId: inbound.providerMessageId,
+          senderId: inbound.senderId,
+          text: inbound.text,
+          requestedModel:
+            typeof connection.metadata.modelAlias === 'string'
+              ? connection.metadata.modelAlias
+              : undefined,
+        });
+        if (turn.kind === 'completed' && turn.text) {
+          await deliverEnterpriseAiChannelMessage(
+            {
+              channel: channel.key,
+              endpointUrl: connection.endpointUrl,
+              metadata: connection.metadata,
+              credentials,
+            },
+            {
+              recipientId: inbound.replyRecipientId,
+              text: turn.text,
+            },
+          );
+        }
+      })().catch(() => undefined));
+    }
+
+    return Response.json({ ok: true, accepted: notifications.length }, { status: 202 });
+  }
+
   let inbound;
-  let credentials;
   try {
-    credentials = revealChannelCredentials(connection.secretRef);
     inbound = verifyAndNormalizeEnterpriseAiInbound({
       channel: channel.key,
       rawBody,
