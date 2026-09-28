@@ -693,29 +693,99 @@ Save to Mkety Media
 
 ---
 
-## Plans and metering
+## Plans, pricing, usage, limits and overage
 
-Possible commercial dimensions:
+Mkety Mail is a separately entitled Mkety product/workspace. It is not automatically included in Starter, AI Workspace, Automation Workspace, Deploy Workspace or Mkety One.
 
-- mailboxes,
-- domains,
-- team seats,
-- storage,
-- monthly transactional sends,
-- monthly Customer Update recipients/messages,
-- API volume,
-- shared inboxes,
-- retention period.
+A normal Mkety tenant can subscribe to Mail as a separate workspace/add-on. Enterprise customers can receive Mail through an Enterprise order/contract. Existing Mkety identity, tenant membership, PBAC, Billing and shared payment settlement are reused.
 
-Potential plan families:
+### Public self-service plans
 
-- Starter
-- Business
-- Team
-- Pro
-- Enterprise
+| Plan | Monthly price | Domains | Mailboxes | Team seats | Shared inboxes | Storage | Outbound messages / month | Customer Update deliveries / month | Max recipients per Customer Update |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Mail Starter | $4.99 | 1 | 3 | 3 | 1 | 5 GB | 2,000 | 500 | 500 |
+| Mail Growth | $9.99 | 3 | 10 | 10 | 3 | 25 GB | 10,000 | 3,000 | 3,000 |
+| Mail Business | $24.99 | 10 | 50 | 25 | 10 | 100 GB | 50,000 | 15,000 | 3,000 |
+| Enterprise Mail | Custom | Custom | Custom | Custom | Custom | Custom | Custom | Custom | Contract/safety policy |
 
-Avoid pricing purely by “emails sent”; value should come from the business workflow layer.
+Self-service Mail uses the standard Mkety prepaid term ladder:
+
+- 1 month: 0% discount;
+- 3 months: 5%;
+- 6 months: 10%;
+- 12 months: 15%.
+
+The discount applies to the fixed Mail subscription portion. It does not automatically discount prepaid capacity packs or negotiated Enterprise usage.
+
+### Included product capability
+
+All paid self-service Mail plans include the supported core product:
+
+- professional mailboxes;
+- aliases and forwarding;
+- inbox/sent/drafts/archive/trash/starred;
+- shared inbox workflows within plan limits;
+- templates;
+- contacts;
+- Customer Updates within plan quota;
+- transactional REST API;
+- SMTP/app-password capability where production-certified;
+- signed webhooks;
+- delivery/bounce/complaint analytics;
+- suppressions;
+- domain onboarding;
+- R2-backed message/attachment storage;
+- warm-up/reputation protection.
+
+Marketing campaigns remain Coming Soon and are not part of the current included sending allowance.
+
+### Prepaid overage / capacity packs
+
+Self-service Mail does not create surprise postpaid overage. When an included limit is exhausted, the operation fails closed unless the tenant upgrades or buys an approved prepaid capacity pack.
+
+Current prepaid pack references:
+
+- extra 10 GB Mail storage: $2;
+- extra 10,000 outbound messages: $3;
+- extra 5,000 Customer Update deliveries: $3;
+- extra 5 mailboxes: $2;
+- extra 5 team seats: $3.
+
+Capacity packs increase commercial allowance only; they never bypass domain warm-up, complaint/bounce protection, recipient-source rules, provider/account limits, abuse controls or other safety ceilings.
+
+### Usage visibility
+
+Customer-facing Mail usage shows only commercial/product information relevant to that tenant, such as:
+
+- current plan;
+- included quota;
+- used amount;
+- remaining amount;
+- prepaid packs;
+- plan renewal/billing term;
+- hard-limit/warm-up status;
+- relevant sending/storage history.
+
+Raw Cloudflare/provider cost, internal platform cost, global account capacity, other tenants, internal reputation scoring and operations-only telemetry are visible only to authorized Mkety platform/admin/ops surfaces.
+
+### Enterprise Mail
+
+Enterprise Mail is request/contract based and can include:
+
+- custom domains/mailboxes/seats/storage;
+- higher approved sending allowances;
+- additional shared inboxes;
+- dedicated or isolated sending arrangements where justified;
+- assisted migration;
+- custom retention/deletion requirements;
+- private integrations;
+- custom reporting/audit export;
+- regional/dedicated infrastructure where technically appropriate;
+- contractual SLA/support terms.
+
+Enterprise Mail still uses Mkety tenant identity, Billing/Enterprise settlement, audited entitlements and the same safety/reputation boundaries unless the customer contract explicitly provisions isolated infrastructure.
+
+Avoid pricing Mail purely by emails sent; the subscription monetizes the complete business communication workflow while usage ceilings protect deliverability and infrastructure.
 
 ---
 
