@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
+import { requireEntitlement } from '@/features/entitlements/server/authorization';
 import { db } from '@/shared/db/cloudflare';
 import { mailWorkspaces, tenantMemberships } from '@/shared/db/schema';
 import { requireTenantMembership } from '@/shared/lib/permissions';
@@ -25,12 +26,13 @@ export async function requireMailWorkspaceAccess(tenantSlug:string){
 
 export async function enableMailWorkspace(tenantSlug:string){
   const {actor,tenant}=await requireMailWorkspaceAccess(tenantSlug);
+  await requireEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' });
   const existing=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
   if(existing) return existing;
   const [created]=await db.insert(mailWorkspaces).values({
     tenantId:tenant.id,
     status:'active',
-    planKey:'starter',
+    planKey:'mail-starter',
     onboardingStep:'domain',
     enabledByUserId:actor.userId,
   }).onConflictDoNothing({target:mailWorkspaces.tenantId}).returning();
