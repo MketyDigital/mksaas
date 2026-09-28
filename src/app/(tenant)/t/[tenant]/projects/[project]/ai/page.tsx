@@ -1,4 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
+import Link from 'next/link';
 
 import { createAgent } from '@/features/projects/actions';
 import { requireProjectAccess } from '@/features/projects/server/access';
@@ -35,6 +36,15 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
       workspace={getProjectWorkspaceByKey('ai')}
     >
       <AiWorkspaceStatusPanel agentCount={projectAgents.length} canManage={access.canManage} knowledgeStatus={knowledgeStatus} />
+
+      <section className="flex flex-wrap gap-3 rounded-2xl border bg-card p-4">
+        <Link className="rounded-lg border px-4 py-2 text-sm font-semibold" href={`/t/${access.tenant.slug}/projects/${access.project.slug}/ai/providers`}>
+          Providers / BYOK
+        </Link>
+        <Link className="rounded-lg border px-4 py-2 text-sm font-semibold" href={`/t/${access.tenant.slug}/assistant`}>
+          Workspace assistant
+        </Link>
+      </section>
 
       <AiWorkspaceReadiness agentCount={projectAgents.length} canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
 
