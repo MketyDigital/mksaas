@@ -26,6 +26,8 @@ describe('AI commercial admission route safety', () => {
     expect(settlement).toBeGreaterThan(providerExecution);
     expect(route).toContain("status: 'reconciliation_required'");
     expect(route).toContain('The request will not be sent upstream again.');
+    expect(route).toContain("providerOutcome: 'unknown_after_dispatch'");
+    expect(route).toContain('It will not be sent upstream again.');
   });
 
   it('snapshots exact commercial rate, usage, provider cost and settlement state', async () => {
