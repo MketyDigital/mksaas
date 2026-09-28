@@ -402,6 +402,22 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           'Enterprise projects are scoped and commercially agreed before Mkety issues exact-amount payment links and provisions the appropriate product or workspace access.',
         items: [
           {
+            key: 'enterprise-ai-product',
+            title: 'Enterprise AI',
+            description:
+              'Separately entitled branded AI for production channels, custom domains, API/PaaS use, human handoff, contracted limits, advanced security, private or dedicated model routing and custom integrations.',
+            href: 'https://ai.mkety.com',
+            badge: 'Enterprise AI',
+          },
+          {
+            key: 'enterprise-mail-product',
+            title: 'Enterprise Mail',
+            description:
+              'Custom business-email capacity, migration, retention, isolated sending arrangements, private integrations and contractual support/service levels where agreed.',
+            href: '/mail',
+            badge: 'Enterprise Mail',
+          },
+          {
             key: 'trading',
             title: 'Trading infrastructure',
             description:
