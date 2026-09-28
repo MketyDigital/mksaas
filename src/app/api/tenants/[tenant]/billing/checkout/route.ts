@@ -121,7 +121,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Checkout could not be created.';
-    const status = /already has a current Mkety subscription/i.test(message) ? 409 : 502;
+    const status = /already has a current Mkety .*subscription/i.test(message) ? 409 : 502;
     return json({ success: false, message }, status);
   }
 }
