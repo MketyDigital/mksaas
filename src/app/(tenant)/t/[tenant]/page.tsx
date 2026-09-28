@@ -6,6 +6,7 @@ import {
   ChartNoAxesCombined,
   CreditCard,
   FolderKanban,
+  Image,
   Mail,
   Rocket,
   Sparkles,
@@ -144,7 +145,25 @@ export default async function TenantDashboard({ params }: TenantDashboardProps) 
               <p className="mt-3 font-semibold">Enterprise AI</p>
               <p className="mt-1 text-sm text-muted-foreground">Customer AI, channels, domains, branding and usage.</p>
             </Link>
+          ) : (
+            <a className="rounded-2xl border bg-card p-5 hover:border-primary/50" href="https://mkety.com/enterprise">
+              <Bot className="h-5 w-5 text-primary" />
+              <p className="mt-3 font-semibold">Enterprise AI</p>
+              <p className="mt-1 text-sm text-muted-foreground">Request branded customer AI, channels, domains and enterprise controls.</p>
+            </a>
+          )}
+          {!hasMail ? (
+            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/billing/checkout?plan=mail-starter`}>
+              <Mail className="h-5 w-5 text-primary" />
+              <p className="mt-3 font-semibold">Add Mkety Mail</p>
+              <p className="mt-1 text-sm text-muted-foreground">Add professional business email to this workspace.</p>
+            </Link>
           ) : null}
+          <a className="rounded-2xl border bg-card p-5 hover:border-primary/50" href="https://media.mkety.com">
+            <Image className="h-5 w-5 text-primary" />
+            <p className="mt-3 font-semibold">Mkety Media</p>
+            <p className="mt-1 text-sm text-muted-foreground">Open managed media storage, delivery and its existing product billing.</p>
+          </a>
         </div>
       </section>
 
