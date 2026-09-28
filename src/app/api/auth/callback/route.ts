@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       httpOnly: true,
       secure: env.NODE_ENV === 'production',
       sameSite: 'lax',
+      domain: env.NODE_ENV === 'production' ? env.MKETY_AUTH_COOKIE_DOMAIN : undefined,
       path: '/',
       maxAge: MKETY_SESSION_MAX_AGE_SECONDS,
     });
