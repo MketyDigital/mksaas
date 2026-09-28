@@ -136,3 +136,85 @@ CREATE UNIQUE INDEX IF NOT EXISTS "ai_requests_tenant_idempotency_uidx" ON "saas
 CREATE INDEX IF NOT EXISTS "ai_requests_tenant_started_idx" ON "saas_template"."ai_requests" ("tenant_id","started_at");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ai_requests_project_started_idx" ON "saas_template"."ai_requests" ("project_id","started_at");
+
+--> statement-breakpoint
+INSERT INTO "saas_template"."permissions" ("key","name","category")
+SELECT seed.key, seed.name, 'ai'
+FROM (VALUES
+  ('ai:read','View Enterprise AI'),
+  ('ai:agents:manage','Manage AI agents'),
+  ('ai:keys:manage','Manage AI API keys'),
+  ('ai:models:read','View AI models'),
+  ('ai:models:manage','Manage AI models and routes'),
+  ('ai:knowledge:manage','Manage AI knowledge'),
+  ('ai:channels:manage','Manage AI channels'),
+  ('ai:usage:read','View AI usage'),
+  ('ai:billing:manage','Manage AI budgets and billing controls'),
+  ('ai:security:manage','Manage AI security policies')
+) AS seed(key,name)
+WHERE NOT EXISTS (
+  SELECT 1 FROM "saas_template"."permissions" p WHERE p."tenant_id" IS NULL AND p."key" = seed.key
+);
+--> statement-breakpoint
+INSERT INTO "saas_template"."ai_models"
+  ("provider_key","native_model","display_name","status","managed","enabled","capabilities","limits","provider_cost_metadata")
+SELECT
+  'cloudflare-workers-ai',
+  '@cf/google/gemma-4-26b-a4b-it',
+  'Gemma 4 26B A4B',
+  'candidate',
+  true,
+  false,
+  '{"text":true,"vision":true,"embeddings":false,"tools":true,"reasoning":true,"structuredOutput":true}'::jsonb,
+  '{"contextTokens":256000}'::jsonb,
+  '{"inputPerMillionUsd":0.10,"outputPerMillionUsd":0.30,"verifiedOn":"2026-09-28"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM "saas_template"."ai_models" WHERE "provider_key"='cloudflare-workers-ai' AND "native_model"='@cf/google/gemma-4-26b-a4b-it'
+);
+--> statement-breakpoint
+INSERT INTO "saas_template"."ai_models"
+  ("provider_key","native_model","display_name","status","managed","enabled","capabilities","limits","provider_cost_metadata")
+SELECT
+  'cloudflare-workers-ai',
+  '@cf/zai-org/glm-5.3-flash',
+  'GLM-5.3 Flash',
+  'candidate',
+  true,
+  false,
+  '{"text":true,"vision":true,"embeddings":false,"tools":true,"reasoning":true,"structuredOutput":true}'::jsonb,
+  '{"contextTokens":1310720}'::jsonb,
+  '{"inputPerMillionUsd":0.15,"outputPerMillionUsd":0.50,"cachedInputPerMillionUsd":0.03,"verifiedOn":"2026-09-28"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM "saas_template"."ai_models" WHERE "provider_key"='cloudflare-workers-ai' AND "native_model"='@cf/zai-org/glm-5.3-flash'
+);
+--> statement-breakpoint
+INSERT INTO "saas_template"."ai_models"
+  ("provider_key","native_model","display_name","status","managed","enabled","capabilities","limits","provider_cost_metadata")
+SELECT
+  'cloudflare-workers-ai',
+  '@cf/qwen/qwen3.8-27b',
+  'Qwen 3.8 27B',
+  'candidate',
+  true,
+  false,
+  '{"text":true,"vision":true,"embeddings":false,"tools":true,"reasoning":true,"structuredOutput":true}'::jsonb,
+  '{"contextTokens":262144}'::jsonb,
+  '{"inputPerMillionUsd":0.45,"outputPerMillionUsd":3.20,"cachedInputPerMillionUsd":0.05,"verifiedOn":"2026-09-28"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM "saas_template"."ai_models" WHERE "provider_key"='cloudflare-workers-ai' AND "native_model"='@cf/qwen/qwen3.8-27b'
+);
+--> statement-breakpoint
+INSERT INTO "saas_template"."ai_model_aliases" ("alias","model_id","stable")
+SELECT 'mkety-gemma', m."id", false FROM "saas_template"."ai_models" m
+WHERE m."native_model"='@cf/google/gemma-4-26b-a4b-it'
+AND NOT EXISTS (SELECT 1 FROM "saas_template"."ai_model_aliases" a WHERE a."alias"='mkety-gemma');
+--> statement-breakpoint
+INSERT INTO "saas_template"."ai_model_aliases" ("alias","model_id","stable")
+SELECT 'mkety-glm-flash', m."id", false FROM "saas_template"."ai_models" m
+WHERE m."native_model"='@cf/zai-org/glm-5.3-flash'
+AND NOT EXISTS (SELECT 1 FROM "saas_template"."ai_model_aliases" a WHERE a."alias"='mkety-glm-flash');
+--> statement-breakpoint
+INSERT INTO "saas_template"."ai_model_aliases" ("alias","model_id","stable")
+SELECT 'mkety-qwen', m."id", false FROM "saas_template"."ai_models" m
+WHERE m."native_model"='@cf/qwen/qwen3.8-27b'
+AND NOT EXISTS (SELECT 1 FROM "saas_template"."ai_model_aliases" a WHERE a."alias"='mkety-qwen');
