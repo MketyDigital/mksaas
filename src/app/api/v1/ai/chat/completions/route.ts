@@ -104,6 +104,22 @@ function requestFingerprintFromMetadata(metadata: unknown) {
   return typeof value === 'string' ? value : null;
 }
 
+async function findExistingRequest(tenantId: string, idempotencyKey: string): Promise<DuplicateRequestRecord | null> {
+  const [row] = await db
+    .select({
+      id: aiRequests.id,
+      errorCode: aiRequests.errorCode,
+      providerCostMetadata: aiRequests.providerCostMetadata,
+    })
+    .from(aiRequests)
+    .where(and(
+      eq(aiRequests.tenantId, tenantId),
+      eq(aiRequests.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
 function duplicateResponse(existing: DuplicateRequestRecord) {
   const messages: Record<string, string> = {
     runtime_disabled: 'Enterprise AI customer inference is not enabled yet.',
@@ -173,17 +189,7 @@ export async function POST(request: Request) {
     body: parsed.data,
   }));
 
-  const existing = await db.query.aiRequests.findFirst({
-    where: and(
-      eq(aiRequests.tenantId, key.tenantId),
-      eq(aiRequests.idempotencyKey, idempotencyKey),
-    ),
-    columns: {
-      id: true,
-      errorCode: true,
-      providerCostMetadata: true,
-    },
-  });
+  const existing = await findExistingRequest(key.tenantId, idempotencyKey);
 
   if (existing) {
     const existingFingerprint = requestFingerprintFromMetadata(existing.providerCostMetadata);
@@ -227,17 +233,7 @@ export async function POST(request: Request) {
         startedAt,
       });
     } catch {
-      const raced = await db.query.aiRequests.findFirst({
-        where: and(
-          eq(aiRequests.tenantId, key.tenantId),
-          eq(aiRequests.idempotencyKey, idempotencyKey),
-        ),
-        columns: {
-          id: true,
-          errorCode: true,
-          providerCostMetadata: true,
-        },
-      });
+      const raced = await findExistingRequest(key.tenantId, idempotencyKey);
       const racedFingerprint = raced
         ? requestFingerprintFromMetadata(raced.providerCostMetadata)
         : null;
