@@ -171,10 +171,17 @@ export const drizzleAiCreditReservationSource: AiCreditReservationSource = {
               .where(and(eq(aiRequests.id, scope.requestId), eq(aiRequests.tenantId, tenantId)))
               .limit(1);
             if (!requestRow) return false;
-            if (scope.projectId && requestRow.projectId && requestRow.projectId !== scope.projectId) {
+            if (scope.projectId && requestRow.projectId !== scope.projectId) {
               return false;
             }
-            if (scope.apiKeyId && requestRow.apiKeyId && requestRow.apiKeyId !== scope.apiKeyId) {
+            if (scope.apiKeyId && requestRow.apiKeyId !== scope.apiKeyId) {
+              return false;
+            }
+            if (
+              apiKeyRow?.projectId &&
+              requestRow.projectId &&
+              apiKeyRow.projectId !== requestRow.projectId
+            ) {
               return false;
             }
           }
