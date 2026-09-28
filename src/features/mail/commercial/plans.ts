@@ -96,3 +96,10 @@ export function getMailCommercialPlan(value: string) {
   if (!isMailPlanKey(value)) throw new Error('Unknown Mkety Mail plan.');
   return MAIL_COMMERCIAL_PLANS[value];
 }
+
+
+export function normalizeMailPlanKey(value: string | null | undefined): MailPlanKey {
+  if (value === 'starter') return 'mail-starter';
+  if (isMailPlanKey(String(value ?? ''))) return value as MailPlanKey;
+  return 'mail-starter';
+}
