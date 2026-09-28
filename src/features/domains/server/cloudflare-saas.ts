@@ -92,3 +92,62 @@ export async function retryCloudflareSaasHostnameValidation(id: string) {
     },
   );
 }
+
+
+type CloudflareDnsRecord = {
+  id: string;
+  name: string;
+  type: string;
+  content: string;
+  proxied?: boolean;
+};
+
+async function upsertManagedMketyAppCname(hostname: string, target: string) {
+  const zoneId = env('MKETY_APP_ZONE_ID');
+  const query = new URLSearchParams({ type: 'CNAME', name: hostname });
+  const existing = await cf<CloudflareDnsRecord[]>(`/zones/${zoneId}/dns_records?${query.toString()}`);
+  const body = JSON.stringify({
+    type: 'CNAME',
+    name: hostname,
+    content: target,
+    ttl: 1,
+    proxied: false,
+    comment: 'Mkety Enterprise AI managed hostname',
+  });
+
+  if (existing.length > 1) throw new Error('Managed hostname has conflicting DNS records.');
+  if (existing[0]) {
+    return cf<CloudflareDnsRecord>(`/zones/${zoneId}/dns_records/${existing[0].id}`, {
+      method: 'PUT',
+      body,
+    });
+  }
+  return cf<CloudflareDnsRecord>(`/zones/${zoneId}/dns_records`, {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function provisionMketyAppManagedHostname(subdomain: string) {
+  const normalized = subdomain.trim().toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized)) {
+    throw new Error('Managed subdomain is invalid.');
+  }
+  const hostname = `${normalized}.mkety.app`;
+  const customHostname = await createCloudflareSaasHostname(hostname);
+  await upsertManagedMketyAppCname(hostname, customHostname.cnameTarget);
+
+  let current = await retryCloudflareSaasHostnameValidation(customHostname.id);
+  if (current.status !== 'active' || current.ssl?.status !== 'active') {
+    current = await getCloudflareSaasHostname(customHostname.id);
+  }
+
+  return {
+    id: customHostname.id,
+    hostname,
+    cnameTarget: customHostname.cnameTarget,
+    status: current.status,
+    sslStatus: current.ssl?.status ?? null,
+    ready: current.status === 'active' && current.ssl?.status === 'active',
+  };
+}
