@@ -45,6 +45,12 @@ export async function getEnterpriseAiSolutionTemplate(key: string) {
   };
 }
 
+export async function getEnterpriseAiSolutionInstance(tenantId: string, id: string) {
+  return db.query.aiSolutionInstances.findFirst({
+    where: and(eq(aiSolutionInstances.tenantId, tenantId), eq(aiSolutionInstances.id, id)),
+  });
+}
+
 export async function listEnterpriseAiSolutionInstances(tenantId: string) {
   return db.select().from(aiSolutionInstances)
     .where(eq(aiSolutionInstances.tenantId, tenantId))
