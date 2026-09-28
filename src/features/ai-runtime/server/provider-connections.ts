@@ -6,6 +6,7 @@ import {
   type CentralAiProviderCredentials,
 } from '@/features/ai-runtime/providers/external';
 import type { CentralAiProviderId } from '@/features/ai-runtime/providers/external-types';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections, projects } from '@/shared/db/schema';
 import { env } from '@/shared/lib/env';
@@ -171,6 +172,10 @@ export async function resolveByokProviderConnection(input: {
   projectId?: string | null;
   connectionId: string;
 }) {
+  if (!(await hasEntitlement({ tenantId: input.tenantId, entitlement: 'ai.byok' }))) {
+    throw new Error('BYOK provider access is not enabled for this tenant.');
+  }
+
   const row = await db.query.aiProviderConnections.findFirst({
     where: and(
       eq(aiProviderConnections.id, input.connectionId),
