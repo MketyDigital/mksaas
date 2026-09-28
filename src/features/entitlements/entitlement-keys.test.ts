@@ -14,6 +14,14 @@ describe('entitlement keys', () => {
       'ai.private_model',
       'ai.channel.website',
       'ai.channel.telegram',
+      'ai.channel.whatsapp',
+      'ai.channel.instagram',
+      'ai.channel.facebook_messenger',
+      'ai.channel.slack',
+      'ai.channel.microsoft_teams',
+      'ai.channel.custom_webhook',
+      'ai.whitelabel',
+      'ai.domain.purchase',
     ]));
   });
 
