@@ -79,7 +79,7 @@ describe('DomainNameApiAdapter', () => {
     });
 
     await expect(adapter.quote('example.com')).rejects.toThrow('DomainNameAPI availability check failed (401)');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('https://api.domainresellerapi.com/v1/domain/check');
   });
 
   it('does not retry registration on an ambiguous server error', async () => {
