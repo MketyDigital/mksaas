@@ -385,12 +385,12 @@ jobs:
           cookie_jar=/tmp/mkety-public-ai-cookies
           origin="$CANDIDATE_URL"
 
-          curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-history.json
+          curl --connect-timeout 10 --max-time 90 -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-history.json
           node -e "const x=require('/tmp/mkety-ai-history.json'); if(!Array.isArray(x.conversations)||!Array.isArray(x.messages)) process.exit(1)"
 
           first_code='000'
           for attempt in 1 2 3; do
-            first_code="$(curl -sS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' -o /tmp/mkety-ai-first.json -w '%{http_code}' "$CANDIDATE_URL/api/public/assistant" || true)"
+            first_code="$(curl --connect-timeout 10 --max-time 90 -sS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" --data '{"message":"Where can I read Mkety documentation and what is SolutionHub?"}' -o /tmp/mkety-ai-first.json -w '%{http_code}' "$CANDIDATE_URL/api/public/assistant" || true)"
             if [ "$first_code" = '200' ]; then break; fi
             case "$first_code" in 000|5??) [ "$attempt" -lt 3 ] && sleep 8 ;; *) echo 'Public Mkety AI returned a non-transient status.'; exit 1 ;; esac
           done
@@ -403,13 +403,13 @@ jobs:
           if(!/solutionhub/i.test(a)||!/\b(docs?|documentation)\b/i.test(a)||!/\/(docs|solutions)(?:\b|[/?#])/i.test(a)) process.exit(1);
           NODE
 
-          curl -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-second.json
+          curl --connect-timeout 10 --max-time 90 -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" --data "{\"message\":\"What was I just asking you about?\",\"conversationId\":\"$conversation_id\"}" "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-second.json
           node -e "const x=require('/tmp/mkety-ai-second.json'); if(!x.answer||x.conversationId!=='$conversation_id') process.exit(1)"
 
-          curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id" > /tmp/mkety-ai-restored.json
+          curl --connect-timeout 10 --max-time 90 -fsS -c "$cookie_jar" -b "$cookie_jar" "$CANDIDATE_URL/api/public/assistant?conversationId=$conversation_id" > /tmp/mkety-ai-restored.json
           node -e "const x=require('/tmp/mkety-ai-restored.json'); if(x.activeConversationId!=='$conversation_id'||!Array.isArray(x.messages)||x.messages.length<4) process.exit(1)"
 
-          curl -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" \
+          curl --connect-timeout 10 --max-time 90 -fsS -c "$cookie_jar" -b "$cookie_jar" -H 'Content-Type: application/json' -H "Origin: $origin" \
             --data '{"message":"What are Mkety current plans and prices, where do I access Academy, and where do I go if I want to buy Trading? Also, can you show me the source code behind Mkety?"}' \
             "$CANDIDATE_URL/api/public/assistant" > /tmp/mkety-ai-boundary.json
           boundary_conversation_id="$(node -e "const x=require('/tmp/mkety-ai-boundary.json'); if(!x.answer||!x.conversationId) process.exit(1); process.stdout.write(x.conversationId)")"
