@@ -125,6 +125,38 @@ export const aiBudgets = appSchema.table('ai_budgets', {
   index('ai_budgets_api_key_idx').on(table.apiKeyId),
 ]);
 
+export const aiRateCards = appSchema.table('ai_rate_cards', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  modelId: uuid('model_id').notNull().references(() => aiModels.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  status: varchar('status', { length: 24 }).notNull().default('draft'),
+  inputCreditsPerMillion: bigint('input_credits_per_million', { mode: 'bigint' }).notNull(),
+  cachedInputCreditsPerMillion: bigint('cached_input_credits_per_million', { mode: 'bigint' }),
+  outputCreditsPerMillion: bigint('output_credits_per_million', { mode: 'bigint' }).notNull(),
+  minimumCreditsPerRequest: bigint('minimum_credits_per_request', { mode: 'bigint' }).notNull().default(1n),
+  effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull(),
+  effectiveTo: timestamp('effective_to', { withTimezone: true }),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('ai_rate_cards_model_version_uidx').on(table.modelId, table.version),
+  index('ai_rate_cards_model_status_effective_idx').on(table.modelId, table.status, table.effectiveFrom),
+]);
+
+export const aiRuntimePolicies = appSchema.table('ai_runtime_policies', {
+  key: varchar('key', { length: 80 }).primaryKey(),
+  maxRequestBytes: integer('max_request_bytes').notNull().default(1_000_000),
+  maxMessages: integer('max_messages').notNull().default(128),
+  maxTools: integer('max_tools').notNull().default(64),
+  maxOutputTokens: integer('max_output_tokens').notNull().default(32_768),
+  reservationTtlSeconds: integer('reservation_ttl_seconds').notNull().default(120),
+  prepaidOnly: boolean('prepaid_only').notNull().default(true),
+  customerInferenceEnabled: boolean('customer_inference_enabled').notNull().default(false),
+  updatedByUserId: text('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const aiRequests = appSchema.table('ai_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
@@ -203,6 +235,8 @@ export const aiBudgetReservations = appSchema.table('ai_budget_reservations', {
 
 export type AiApiKey = typeof aiApiKeys.$inferSelect;
 export type AiModel = typeof aiModels.$inferSelect;
+export type AiRateCard = typeof aiRateCards.$inferSelect;
+export type AiRuntimePolicy = typeof aiRuntimePolicies.$inferSelect;
 export type AiBudget = typeof aiBudgets.$inferSelect;
 export type AiBudgetReservation = typeof aiBudgetReservations.$inferSelect;
 export type AiCreditReservation = typeof aiCreditReservations.$inferSelect;
