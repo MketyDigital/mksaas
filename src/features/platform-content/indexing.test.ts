@@ -22,7 +22,7 @@ describe('Mkety public indexing controls', () => {
 
     expect(publicEntry?.lastModified).toEqual(expect.any(Date));
     expect(docsEntry?.lastModified).toEqual(expect.any(Date));
-    expect(publicEntry?.lastModified?.toISOString()).toBe('2026-09-28T03:24:08.000Z');
+    expect(new Date(String(publicEntry?.lastModified)).toISOString()).toBe('2026-09-28T03:24:08.000Z');
   });
 
   it('includes canonical published docs article paths', () => {
