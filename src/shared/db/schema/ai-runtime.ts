@@ -237,3 +237,25 @@ export const aiBudgetReservations = appSchema.table('ai_budget_reservations', {
   reservedCredits: bigint('reserved_credits', { mode: 'bigint' }).notNull(),
   reservedRequests: bigint('reserved_requests', { mode: 'bigint' }).notNull().default(1n),
   settledCredits: bigint('settled_credits', { mode: 'bigint' }),
+  settledRequests: bigint('settled_requests', { mode: 'bigint' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  settledAt: timestamp('settled_at', { withTimezone: true }),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  releaseReason: varchar('release_reason', { length: 80 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('ai_budget_reservations_budget_idempotency_uidx').on(table.budgetId, table.idempotencyKey),
+  index('ai_budget_reservations_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
+  index('ai_budget_reservations_request_idx').on(table.requestId),
+  index('ai_budget_reservations_credit_reservation_idx').on(table.creditReservationId),
+]);
+
+
+export type AiApiKey = typeof aiApiKeys.$inferSelect;
+export type AiModel = typeof aiModels.$inferSelect;
+export type AiRateCard = typeof aiRateCards.$inferSelect;
+export type AiRuntimePolicy = typeof aiRuntimePolicies.$inferSelect;
+export type AiBudget = typeof aiBudgets.$inferSelect;
+export type AiBudgetReservation = typeof aiBudgetReservations.$inferSelect;
+export type AiCreditReservation = typeof aiCreditReservations.$inferSelect;
