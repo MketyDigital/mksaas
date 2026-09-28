@@ -80,7 +80,7 @@ jobs:
           for path in /login /signup; do
             headers="/tmp/${path#/}.headers"
             body="/tmp/${path#/}.body"
-            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o "$body" -w '%{http_code}' "https://mkety.com$path" || true)"
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o "$body" -w '%{http_code}' "https://app.mkety.com$path" || true)"
             ct="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
             cd="$(awk 'BEGIN{IGNORECASE=1} /^content-disposition:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); v=$0} END{print v}' "$headers")"
             printf 'BEFORE %s HTTP %s type=%s disposition=%s bytes=%s\n' "$path" "$code" "$ct" "$cd" "$(wc -c < "$body" | tr -d ' ')"
@@ -147,14 +147,14 @@ jobs:
           set -euo pipefail
           for path in /login /signup; do
             headers="/tmp/${path#/}.headers"
-            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' "https://mkety.com$path")"
+            code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' "https://app.mkety.com$path")"
             location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
             echo "$path -> HTTP $code"
             [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ]
             LOCATION="$location" node <<'NODE'
           const raw=process.env.LOCATION||'';
-          const u=new URL(raw,'https://mkety.com');
-          if(u.origin!=='https://mkety.com') throw new Error('Auth entry redirect escaped Mkety application origin');
+          const u=new URL(raw,'https://app.mkety.com');
+          if(u.origin!=='https://app.mkety.com') throw new Error('Auth entry redirect escaped Mkety application origin');
           if(!u.pathname.startsWith('/api/auth/login')) throw new Error('Unexpected Mkety auth entry redirect');
           NODE
           done
@@ -164,7 +164,7 @@ jobs:
         run: |
           set -euo pipefail
           headers=/tmp/auth-login.headers
-          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/api/auth/login?returnTo=/select-tenant&intent=signin')"
+          status="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin')"
           location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
           echo "/api/auth/login -> HTTP $status"
           if [ "$status" = '000' ]; then
