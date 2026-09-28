@@ -1,15 +1,16 @@
-import type { AiProviderAdapter, AiRuntimeRequest, AiRuntimeResult } from './contracts';
+import type { AiRuntimeProviderAdapter, AiRuntimeRequest, AiRuntimeResult } from '../runtime/types';
 
-export class FakeAiProviderAdapter implements AiProviderAdapter {
-  readonly providerKey = 'fake';
+export class FakeAiProviderAdapter implements AiRuntimeProviderAdapter {
+  readonly key = 'fake';
 
-  async generate(input: AiRuntimeRequest, route: { nativeModel: string }): Promise<AiRuntimeResult> {
+  async complete(_request: AiRuntimeRequest, nativeModel: string): Promise<AiRuntimeResult> {
     return {
       requestId: crypto.randomUUID(),
-      model: route.nativeModel,
-      content: 'Non-billable Mkety AI test response.',
+      provider: this.key,
+      nativeModel,
+      text: 'Non-billable Mkety AI test response.',
       finishReason: 'stop',
-      usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 },
+      usage: { inputTokens: 1n, cachedInputTokens: 0n, outputTokens: 1n },
     };
   }
 }
