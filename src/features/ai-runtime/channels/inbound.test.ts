@@ -1,7 +1,9 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
 
 import {
+  verifyAndExtractLinkedInCommunityNotifications,
   verifyAndNormalizeEnterpriseAiInbound,
+  verifyLinkedInWebhookChallenge,
   verifyMetaWebhookChallenge,
 } from './inbound';
 
@@ -113,5 +115,68 @@ describe('Enterprise AI channel inbound verification', () => {
       }),
       credentials: { webhookSecret: 'hook-secret' },
     }).conversationId).toBe('thread-1');
+  });
+  it('verifies Discord Ed25519 interaction signatures before normalization', () => {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const der = publicKey.export({ format: 'der', type: 'spki' });
+    const rawPublicKey = Buffer.from(der).subarray(-32).toString('hex');
+    const timestamp = '1727517600';
+    const rawBody = JSON.stringify({
+      type: 2,
+      id: 'interaction-1',
+      application_id: 'app-1',
+      channel_id: 'channel-1',
+      member: { user: { id: 'user-1' } },
+      data: { options: [{ type: 3, name: 'question', value: 'How can you help?' }] },
+    });
+    const signature = sign(null, Buffer.from(timestamp + rawBody), privateKey).toString('hex');
+
+    const result = verifyAndNormalizeEnterpriseAiInbound({
+      channel: 'discord',
+      rawBody,
+      headers: new Headers({
+        'x-signature-ed25519': signature,
+        'x-signature-timestamp': timestamp,
+      }),
+      credentials: { publicKey: rawPublicKey },
+    });
+    expect(result).toMatchObject({
+      senderId: 'user-1',
+      providerMessageId: 'interaction-1',
+      text: 'How can you help?',
+    });
+  });
+
+  it('verifies LinkedIn challenge and notification HMAC', () => {
+    const challengeUrl = new URL('https://example.test/hook?challengeCode=abc123');
+    expect(verifyLinkedInWebhookChallenge(challengeUrl, { clientSecret: 'linkedin-secret' })).toEqual({
+      challengeCode: 'abc123',
+      challengeResponse: createHmac('sha256', 'linkedin-secret').update('abc123').digest('hex'),
+    });
+
+    const rawBody = JSON.stringify({
+      notifications: [{
+        notificationId: 'notification-1',
+        action: 'COMMENT',
+        organizationalEntity: 'urn:li:organization:123',
+        sourcePost: 'urn:li:share:456',
+        generatedActivity: 'urn:li:comment:(urn:li:share:456,789)',
+      }],
+    });
+    const signature = createHmac('sha256', 'linkedin-secret')
+      .update(`hmacsha256=${rawBody}`)
+      .digest('hex');
+
+    expect(verifyAndExtractLinkedInCommunityNotifications({
+      rawBody,
+      headers: new Headers({ 'x-li-signature': signature }),
+      credentials: { clientSecret: 'linkedin-secret' },
+    })).toEqual([{
+      notificationId: 'notification-1',
+      action: 'COMMENT',
+      organizationUrn: 'urn:li:organization:123',
+      sourcePostUrn: 'urn:li:share:456',
+      generatedActivityUrn: 'urn:li:comment:(urn:li:share:456,789)',
+    }]);
   });
 });
