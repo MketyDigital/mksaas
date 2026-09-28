@@ -12,7 +12,6 @@ import {
   LockKeyhole,
   Mail,
   MessagesSquare,
-  Send,
   ServerCog,
   ShieldCheck,
   Smartphone,
