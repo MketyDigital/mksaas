@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       verified_sha:
-        description: Exact certified SHA from hotfix/app-mkety-com-20260928
+        description: Exact certified PR #160 head SHA
         required: true
         type: string
       confirmation:
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  HOTFIX_BRANCH: hotfix/app-mkety-com-20260928
+  HOTFIX_PR_REF: refs/pull/160/head
   APP_WORKER_NAME: mkety-app-host
   MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
   MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
@@ -55,14 +55,14 @@ jobs:
           ref: ${{ inputs.verified_sha }}
           fetch-depth: 1
 
-      - name: Verify SHA belongs to hotfix branch tip
+      - name: Verify SHA matches the persistent PR 160 head ref
         shell: bash
         run: |
           set -euo pipefail
-          remote_tip="$(git ls-remote origin "refs/heads/$HOTFIX_BRANCH" | awk '{print $1}')"
-          [ -n "$remote_tip" ] || { echo "Hotfix branch was not found." >&2; exit 1; }
-          [ "$remote_tip" = "${{ inputs.verified_sha }}" ] || {
-            echo "Refusing repair: verified SHA is not the current hotfix branch tip." >&2
+          certified_head="$(git ls-remote origin "$HOTFIX_PR_REF" | awk '{print $1}')"
+          [ -n "$certified_head" ] || { echo "PR #160 head ref was not found." >&2; exit 1; }
+          [ "$certified_head" = "${{ inputs.verified_sha }}" ] || {
+            echo "Refusing repair: verified SHA does not match the certified PR #160 head ref." >&2
             exit 1
           }
 
