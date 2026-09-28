@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   return Response.json({
     object: 'list',
     data: models.map((model) => ({
-      id: aliasesByModel.get(model.id)?.find((alias) => alias.startsWith('mkety-')) ?? model.nativeModel,
+      id: aliasesByModel.get(model.id)?.[0] ?? model.nativeModel,
       object: 'model',
       owned_by: 'mkety',
       provider: model.providerKey,
