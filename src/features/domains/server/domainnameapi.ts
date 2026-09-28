@@ -157,11 +157,26 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
         period: String(years),
         command: 'create',
       });
-      const fallback = await this.request(`/api/domain/check?${params.toString()}`, { method: 'GET' });
-      if (!fallback.response.ok) {
-        throw new Error(`DomainNameAPI availability check failed (${fallback.response.status}).`);
+      const legacyBasic = await this.request(`/api/domain/check?${params.toString()}`, { method: 'GET' });
+      if (legacyBasic.response.ok) {
+        payload = legacyBasic.payload;
+      } else if (legacyBasic.response.status === 404 || legacyBasic.response.status === 405) {
+        const v1 = await this.request('/v1/domain/check', {
+          method: 'POST',
+          body: JSON.stringify({
+            resellerId: this.config.username.trim(),
+            apiKey: this.config.apiToken.trim(),
+            domainName: domain,
+            period: years,
+          }),
+        });
+        if (!v1.response.ok) {
+          throw new Error(`DomainNameAPI availability check failed (${v1.response.status}).`);
+        }
+        payload = v1.payload;
+      } else {
+        throw new Error(`DomainNameAPI availability check failed (${legacyBasic.response.status}).`);
       }
-      payload = fallback.payload;
     } else {
       throw new Error(`DomainNameAPI availability check failed (${modern.response.status}).`);
     }
@@ -191,7 +206,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     const domain = normalizeDomain(input.domain);
     void input.idempotencyKey; // Mkety owns idempotency; DomainNameAPI does not document a stable idempotency header.
     const payload = await this.mutation(
-      ['/api/v1/domains/register', '/v1/domain/register'],
+      ['/v1/domain/register', '/api/v1/domains/register'],
       {
         domainName: domain,
         period: input.years,
@@ -221,9 +236,24 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
   }): Promise<RegisteredDomain> {
     const domain = normalizeDomain(input.providerDomainRef);
     void input.idempotencyKey;
+
+    let currentExpiryDate: string | undefined;
+    const info = await this.request(
+      `/api/v1/domains/info?domainName=${encodeURIComponent(domain)}`,
+      { method: 'GET' },
+    );
+    if (info.response.ok) {
+      const value = findValue(info.payload, ['expiryDate', 'expiresAt', 'expirationDate']);
+      if (typeof value === 'string' && value.trim()) currentExpiryDate = value.trim();
+    }
+
     const payload = await this.mutation(
-      ['/api/v1/domains/renew', '/v1/domain/renew'],
-      { domainName: domain, period: input.years },
+      ['/v1/domain/renew', '/api/v1/domains/renew'],
+      {
+        domainName: domain,
+        period: input.years,
+        ...(currentExpiryDate ? { currentExpiryDate } : {}),
+      },
     );
     const status = successStatus(findValue(payload, ['status', 'success']));
     if (status === false) throw new Error('DomainNameAPI did not confirm domain renewal.');
@@ -235,23 +265,3 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
   }
 }
 
-export function createDomainNameApiAdapterFromEnvironment(environment: NodeJS.ProcessEnv = process.env) {
-  const username = environment.DOMAINNAMEAPI_USERNAME?.trim();
-  const apiToken = environment.DOMAINNAMEAPI_API_TOKEN?.trim();
-  if (!username || !apiToken) return null;
-
-  const mode = environment.DOMAINNAMEAPI_ENVIRONMENT === 'production' ? 'production' : 'ote';
-  const nameServers = (environment.DOMAINNAMEAPI_NAMESERVERS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  return new DomainNameApiAdapter({
-    username,
-    apiToken,
-    environment: mode,
-    baseUrl: environment.DOMAINNAMEAPI_BASE_URL?.trim() || undefined,
-    nameServers,
-    whoisPrivacy: environment.DOMAINNAMEAPI_WHOIS_PRIVACY !== 'false',
-  });
-}
