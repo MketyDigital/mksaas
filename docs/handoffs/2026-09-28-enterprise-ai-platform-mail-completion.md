@@ -199,6 +199,18 @@ Current `main` base used by PR #159:
 8. Keep `customerInferenceEnabled` OFF in production until the production acceptance gate explicitly passes.
 9. After Enterprise AI promotion, continue with any remaining performance/UX polish on `app.mkety.com` and Mail only from the new `main`; do not revive stale branches.
 
+## Gate-tooling audit follow-up
+
+Repository audit of the remaining live gates confirmed:
+
+- `.github/workflows/mkety-ai-model-benchmark.yml` is the intended guarded paid benchmark path. It requires the explicit `RUN_SMALL_PAID_BENCHMARK` confirmation and an isolated non-production AI Gateway using standard/postpaid Workers AI billing.
+- Platform Control intentionally cannot enable customer inference. `updateAiRuntimePolicy` preserves the existing enable state on ordinary limit edits, `disableEnterpriseAiInference` can fail closed immediately, and the contract test explicitly forbids an `enableEnterpriseAiInference` application action. Final enablement therefore remains a separate audited release/operator promotion after every live gate passes.
+- No concrete registrar/reseller provider adapter is present in source. The provider-neutral `DomainResellerAdapter` throws until a real server-side adapter is configured, and no provider-specific registrar integration was identifiable during the repository audit.
+- There is no dedicated one-click workflow for the tiny end-to-end commercial inference acceptance. That acceptance must use a deliberately prepared non-production tenant/API key/model route/rate card/credits/budgets and preserve DB plus AI Gateway/provider evidence. Do not weaken the production fail-closed switch just to make this test easier.
+- The real customer-domain acceptance cannot be synthesized from repository state; it requires an actual controlled hostname/CNAME and must prove HTTPS, tenant-bound route identity, branded login and cross-tenant isolation.
+
+These are release gates, not reasons to add unsafe self-service activation controls.
+
 ## Open PR state at handoff
 
 - #159 — active authoritative completion PR — DRAFT.
