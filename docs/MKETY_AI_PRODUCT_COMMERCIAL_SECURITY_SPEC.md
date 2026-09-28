@@ -1600,3 +1600,14 @@ Mkety tenant
 ```
 
 The future Media integration should follow the same central-product pattern while retaining Media's isolated operational runtime/storage. This gives users one Mkety identity, team, billing and entitlement system without scattering product ownership or forcing all products into one runtime.
+
+
+## 2026-09-28 Enterprise customer experience and margin policy
+
+Enterprise customer-facing billing/usage must be understandable without technical knowledge. At minimum show the active plan/contract label, subscription state, current billing period/renewal context, prepaid credits remaining, requests/usage for the current period and customer credits consumed. Raw provider account secrets, other-tenant usage and internal infrastructure capacity remain operations-only.
+
+Provider cost and customer charge are separate records. For managed Workers AI, persist normalized actual token usage and a verification-dated provider-cost estimate/measurement. Pricing must cover provider spend, shared platform overhead, payment/FX/support/observability/domain/channel costs and profit. The default planning floor is a 65% provider-level gross-margin target plus a 15% overhead reserve, but public prices are set only from representative workload measurements and current verified provider rates.
+
+White-label access is separately entitlement-controlled. It may remove Mkety branding from the customer's Enterprise AI application/login presentation and use a verified customer hostname while identity, billing, commercial admission and audit remain centrally enforced.
+
+Day-one channel families are Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. Additional channels must plug into the shared channel adapter/security/accounting/handoff contracts rather than duplicating runtime or tenant state.
