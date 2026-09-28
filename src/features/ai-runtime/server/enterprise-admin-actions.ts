@@ -3,7 +3,7 @@
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
-import { createCloudflareSaasHostname } from '@/features/domains/server/cloudflare-saas';
+import { createCloudflareSaasHostname, getCloudflareSaasHostname } from '@/features/domains/server/cloudflare-saas';
 import { getTenantSettings, updateTenantSettings } from '@/features/admin/services/settings-service';
 import { hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { buildEnterpriseAiDnsInstructions } from '@/features/ai-runtime/server/enterprise-hostnames';
@@ -111,4 +111,45 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
 
   revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
   return buildEnterpriseAiDnsInstructions(hostname, provisioned.cnameTarget);
+}
+
+
+export async function refreshEnterpriseAiHostname(tenantSlug: string, formData: FormData) {
+  await requirePermission(tenantSlug, 'ai:enterprise:admin');
+  const tenant = await getTenantBySlug(tenantSlug);
+  if (!tenant) throw new Error('Workspace not found.');
+
+  const hostname = normalizeHostname(formData.get('hostname'));
+  const domain = await db.query.customDomains.findFirst({ where: eq(customDomains.hostname, hostname) });
+  if (!domain || domain.tenantId !== tenant.id || domain.provider !== 'cloudflare-for-saas') {
+    throw new Error('Connected Enterprise AI hostname was not found.');
+  }
+
+  let metadata: {
+    purpose?: string;
+    cnameTarget?: string;
+    cloudflareCustomHostnameId?: string;
+    sslStatus?: string | null;
+  } = {};
+  try {
+    metadata = domain.providerVerified ? JSON.parse(domain.providerVerified) : {};
+  } catch {
+    metadata = {};
+  }
+  if (metadata.purpose !== 'enterprise-ai' || !metadata.cloudflareCustomHostnameId) {
+    throw new Error('Hostname provisioning metadata is incomplete.');
+  }
+
+  const current = await getCloudflareSaasHostname(metadata.cloudflareCustomHostnameId);
+  const verified = current.status === 'active' && current.ssl?.status === 'active';
+  await db.update(customDomains).set({
+    status: verified ? 'verified' : 'pending',
+    providerVerified: JSON.stringify({
+      ...metadata,
+      sslStatus: current.ssl?.status ?? null,
+    }),
+    updatedAt: new Date(),
+  }).where(eq(customDomains.id, domain.id));
+
+  revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
 }
