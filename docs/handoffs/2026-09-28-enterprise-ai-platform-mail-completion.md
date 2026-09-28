@@ -1,3 +1,13 @@
+## 2026-09-28 post-hotfix reconciliation and exact-head verification
+
+- PR #160 merged to main as `909c3d31a524075763c0a1c7d7985f89254e0b3a`; its guarded app.mkety.com repair workflow has not yet been executed in production.
+- PR #159 was reconciled with that main through merge commit `f70a37414ac9e3494cb638274322babbdf76747e`; it is 0 behind main and mergeable.
+- Exact-head CI `36475433490`, migration baseline `36475433506`, AI workspace smoke `36475433627`, Platform workspace smoke `36475433433`, vinext smoke `36475433555`, live-gate diagnostic `36475433650`, and app-host diagnostic `36475433582` all passed.
+- Integrated Public Candidate run `36475433480`, attempt 3, passed the complete sequence including connected database verification, isolated Worker deployment, real managed-AI commercial/accounting acceptance, public/docs routes, Enterprise payment safety, and Public Mkety AI privacy/commercial grounding. Attempt 2 had failed only on one HTTP 000 docs-link transport timeout; the unchanged retry passed, confirming it was transient.
+- DomainNameAPI live credentials are present, but the safe quote-only provider probe currently receives HTTP 401. No registrar mutation was performed. Genuine OT&E lifecycle acceptance remains external and incomplete.
+- Real customer white-label hostname acceptance remains deliberately deferred until an actual controlled customer hostname is connected.
+- Production Enterprise customer inference remains OFF and must stay OFF until the external promotion evidence is intentionally completed.
+
 ## 2026-09-28 final central-AI / live-gate repository certification
 
 Certified implementation SHA: `de0cc9c27cb5d6b10b5c3561dbb365573584e53f`.
