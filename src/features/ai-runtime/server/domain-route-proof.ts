@@ -13,11 +13,12 @@ type RouteProof = {
 export async function probeEnterpriseAiHostnameRoute(
   hostname: string,
   expectedTenantId: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<RouteProof> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
   try {
-    const response = await fetch(
+    const response = await fetchImpl(
       `https://${hostname}/api/v1/ai/domain-route-proof`,
       {
         method: 'GET',
