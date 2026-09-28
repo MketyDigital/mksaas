@@ -52,34 +52,33 @@ Support organization structures that businesses commonly need:
 - environment promotion controls
 - tenant export, archive, suspension, and secure deletion
 
-## 2. AI workspace and conversational experiences
+## 2. Business interaction surfaces
 
-Enterprise users should be able to operate AI through:
+Enterprise Mkety AI is not a standalone general-purpose chat product. Interaction is attached to configured business solutions, channels, workflows, staff tools and embedded experiences.
 
-- private chats
-- team/shared conversations
-- project conversations
-- persistent workspaces
-- conversation folders, labels, search, and pinning
-- reusable instructions and profiles
-- conversation branching
-- editable drafts
-- citations and source inspection
-- file/image/audio/video inputs
+Supported interaction capabilities may include:
+
+- Website AI and embedded assistants
+- WhatsApp, Telegram and other approved messaging channels
+- customer-support and team-helpdesk conversations
+- authenticated portal assistants
+- operator inbox and human handoff
+- persistent customer/session context where configured
+- citations and source inspection where configured
+- file/image/audio/video inputs where the selected solution supports them
 - document generation and transformation
 - tables, structured output, forms, and JSON
-- voice input/output
+- voice input/output where commercially supported
 - real-time and asynchronous jobs
 - multilingual interaction
-- tone/style controls
-- reusable prompt templates
-- prompt variables
-- organization-approved prompt libraries
-- conversation retention policies
+- tone/style and brand-voice controls
+- reusable instructions/templates owned by the business solution
+- conversation/session retention policies
 - legal hold/export where required
 - sensitive-conversation restrictions
-- share links with policy controls
-- internal-only and external-safe response modes
+- external-safe vs internal-only response modes
+
+The normal Mkety AI Workspace remains the interactive builder/playground environment. Enterprise reuses shared runtime primitives without duplicating that end-user product surface.
 
 ## 3. Agents and digital workers
 
