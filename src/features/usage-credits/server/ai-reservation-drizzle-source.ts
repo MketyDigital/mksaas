@@ -2,8 +2,8 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import {
-  type AiCreditReservation,
   aiApiKeys,
+  type AiCreditReservation,
   aiCreditReservations,
   aiRequests,
 } from '@/shared/db/schema/ai-runtime';
