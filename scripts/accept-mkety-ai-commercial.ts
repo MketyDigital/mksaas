@@ -13,10 +13,17 @@ function bigintValue(value: unknown, label: string) {
   catch { throw new Error(label + ' is not a valid bigint.'); }
 }
 
-async function responseJson(response: Response) {
+async function responseJson(response: Response, label = 'Acceptance endpoint') {
   const text = await response.text();
-  try { return JSON.parse(text) as Json; }
-  catch { throw new Error('Acceptance endpoint returned non-JSON HTTP ' + response.status + '.'); }
+  try {
+    return JSON.parse(text) as Json;
+  } catch {
+    const diagnostic = text.replace(/\s+/g, ' ').trim().slice(0, 500);
+    throw new Error(
+      label + ' returned non-JSON HTTP ' + response.status +
+      (diagnostic ? ': ' + JSON.stringify(diagnostic) : '.'),
+    );
+  }
 }
 
 const baseUrl = required('AI_ACCEPTANCE_BASE_URL').replace(/\/+$/, '');
