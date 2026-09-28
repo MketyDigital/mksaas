@@ -31,8 +31,12 @@ export async function authorizeAiBudget(input: {
   const budget = eligible[0];
   if (!budget) return { ok: false, code: 'budget_missing' };
 
-  const requestsExhausted = budget.maxRequests !== null && budget.usedRequests >= budget.maxRequests;
-  const creditsExhausted = budget.maxCredits !== null && budget.usedCredits >= budget.maxCredits;
+  const requestsExhausted =
+    budget.maxRequests !== null &&
+    budget.usedRequests + budget.reservedRequests >= budget.maxRequests;
+  const creditsExhausted =
+    budget.maxCredits !== null &&
+    budget.usedCredits + budget.reservedCredits >= budget.maxCredits;
   if (budget.hardStop && (requestsExhausted || creditsExhausted)) {
     return { ok: false, code: 'budget_exhausted' };
   }
