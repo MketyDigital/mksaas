@@ -28,6 +28,8 @@ describe('app.mkety.com production repair workflow', () => {
     expect(workflow).toContain('restore()');
     expect(workflow).toContain("hostname:'app.mkety.com'");
     expect(workflow).toContain("service:process.env.WORKER");
+    expect(workflow).toContain("if: failure() && steps.bind.outputs.bound == 'true'");
+    expect(workflow).toContain('Live acceptance failed; restored the pre-repair app.mkety.com DNS state.');
   });
 
   it('verifies root, app login and ZITADEL first-hop behavior after attachment', async () => {
