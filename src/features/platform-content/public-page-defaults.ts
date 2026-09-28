@@ -360,7 +360,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'mkety-mail-plans',
             title: 'Mkety Mail',
             description:
-              'Separate Mail subscriptions start at $4.99/month with clear domain, mailbox, seat, storage and sending limits, prepaid add-on capacity, and Enterprise Mail for custom requirements.',
+              'Separate Mail subscriptions start at $4.99/month with clear domain, mailbox, seat, storage and sending limits. Customers can upgrade plans for more capacity, while Enterprise Mail covers custom requirements.',
             href: '/mail',
             badge: 'Separate product',
           },
