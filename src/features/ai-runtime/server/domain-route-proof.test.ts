@@ -2,13 +2,13 @@ import { probeEnterpriseAiHostnameRoute } from './domain-route-proof';
 
 describe('Enterprise AI live hostname route proof', () => {
   it('accepts only the exact hostname and expected tenant id', async () => {
-    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({
+    const fetchImpl = jest.fn(async () => ({
       ok: true,
-      hostname: 'ai.starpipsforex.com',
-      tenant_id: 'tenant-starpips',
-    }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
+      json: async () => ({
+        ok: true,
+        hostname: 'ai.starpipsforex.com',
+        tenant_id: 'tenant-starpips',
+      }),
     }));
 
     await expect(probeEnterpriseAiHostnameRoute(
@@ -32,13 +32,13 @@ describe('Enterprise AI live hostname route proof', () => {
   });
 
   it('rejects cross-tenant route proof even when HTTPS responds successfully', async () => {
-    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({
+    const fetchImpl = jest.fn(async () => ({
       ok: true,
-      hostname: 'ai.starpipsforex.com',
-      tenant_id: 'tenant-other',
-    }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
+      json: async () => ({
+        ok: true,
+        hostname: 'ai.starpipsforex.com',
+        tenant_id: 'tenant-other',
+      }),
     }));
 
     await expect(probeEnterpriseAiHostnameRoute(
@@ -54,7 +54,10 @@ describe('Enterprise AI live hostname route proof', () => {
   });
 
   it('fails closed on redirects, HTTP failures and network failures', async () => {
-    const httpFailure = jest.fn(async () => new Response('bad gateway', { status: 502 }));
+    const httpFailure = jest.fn(async () => ({
+      ok: false,
+      json: async () => ({ error: 'bad gateway' }),
+    }));
     await expect(probeEnterpriseAiHostnameRoute(
       'ai.starpipsforex.com',
       'tenant-starpips',
