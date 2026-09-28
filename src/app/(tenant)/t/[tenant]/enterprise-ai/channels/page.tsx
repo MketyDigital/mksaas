@@ -3,12 +3,30 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
+import {
+  disableEnterpriseAiChannelConnection,
+  listEnterpriseAiChannelConnections,
+  saveEnterpriseAiChannelConnection,
+} from '@/features/ai-runtime/channels/server/connections';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+} from '@/shared/components/ui';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
 export const dynamic = 'force-dynamic';
+
+function channelKey(providerKey: string) {
+  return providerKey.startsWith('channel:') ? providerKey.slice('channel:'.length) : providerKey;
+}
 
 export default async function EnterpriseAiChannelsPage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: tenantSlug } = await params;
@@ -17,34 +35,116 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
   if (!tenant) redirect('/select-tenant');
   if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
 
+  const connections = await listEnterpriseAiChannelConnections(tenant.id);
+  const connectionByChannel = new Map(connections.map((item) => [channelKey(item.providerKey), item]));
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <div>
         <Link href={`/t/${tenantSlug}/enterprise-ai`} className="text-sm text-muted-foreground">← Enterprise AI</Link>
         <div className="mt-2 flex items-center gap-3"><MessageSquareMore className="h-7 w-7 text-primary" /><h1 className="text-3xl font-bold">Channels</h1></div>
-        <p className="mt-2 max-w-3xl text-muted-foreground">Connect the same approved AI solution to the places your customers and team already use. Each connection remains tenant-scoped and entitlement-controlled.</p>
+        <p className="mt-2 max-w-3xl text-muted-foreground">
+          Connect the same approved AI solution to the places your customers and team already use. Credentials are encrypted server-side and each installation stays inside this workspace.
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {ENTERPRISE_AI_CHANNELS.map((channel) => (
-          <Card className="rounded-2xl" key={channel.key}>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div><CardTitle>{channel.label}</CardTitle><CardDescription className="mt-2">{channel.customerSetup.join(' → ')}</CardDescription></div>
-                <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">Day one</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex flex-wrap gap-2">
-                {channel.supportsInbound ? <span className="rounded-full bg-muted px-2.5 py-1">Inbound</span> : null}
-                {channel.supportsOutbound ? <span className="rounded-full bg-muted px-2.5 py-1">Outbound</span> : null}
-                {channel.supportsHumanHandoff ? <span className="rounded-full bg-muted px-2.5 py-1">Human handoff</span> : null}
-              </div>
-              <p className="flex items-center gap-2 text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-primary" /> Credentials are referenced server-side; raw provider secrets are never stored in customer-visible configuration.</p>
-              <p className="text-xs text-muted-foreground">Access key: {channel.entitlement}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {ENTERPRISE_AI_CHANNELS.map((channel) => {
+          const connection = connectionByChannel.get(channel.key);
+          const metadata = connection?.metadata ?? {};
+          const value = (key: string) => typeof metadata[key] === 'string' ? metadata[key] as string : '';
+
+          return (
+            <Card className="rounded-2xl" key={channel.key}>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>{channel.label}</CardTitle>
+                    <CardDescription className="mt-2">{channel.customerSetup.join(' → ')}</CardDescription>
+                  </div>
+                  <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">
+                    {connection?.status === 'active' ? 'Connected' : 'Available'}
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <div className="flex flex-wrap gap-2">
+                  {channel.supportsInbound ? <span className="rounded-full bg-muted px-2.5 py-1">Inbound</span> : null}
+                  {channel.supportsOutbound ? <span className="rounded-full bg-muted px-2.5 py-1">Outbound</span> : null}
+                  {channel.supportsHumanHandoff ? <span className="rounded-full bg-muted px-2.5 py-1">Human handoff</span> : null}
+                </div>
+
+                <p className="flex items-center gap-2 text-muted-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  {connection?.secretConfigured ? 'Credentials are securely configured.' : 'No raw provider secret is shown after saving.'}
+                </p>
+
+                <details className="rounded-xl border p-4" open={!connection}>
+                  <summary className="cursor-pointer font-semibold">{connection ? 'Update connection' : 'Connect channel'}</summary>
+                  <form action={saveEnterpriseAiChannelConnection.bind(null, tenantSlug)} className="mt-4 grid gap-3">
+                    <input type="hidden" name="channel" value={channel.key} />
+
+                    {channel.key === 'telegram' ? (
+                      <>
+                        <div><Label htmlFor={`${channel.key}-botToken`}>Bot token</Label><Input id={`${channel.key}-botToken`} name="botToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'Telegram bot token'} /></div>
+                        <div><Label htmlFor={`${channel.key}-webhookSecret`}>Webhook secret</Label><Input id={`${channel.key}-webhookSecret`} name="webhookSecret" type="password" autoComplete="off" className="mt-1" placeholder="Webhook verification secret" /></div>
+                        <div><Label htmlFor={`${channel.key}-channelId`}>Default chat/channel ID</Label><Input id={`${channel.key}-channelId`} name="channelId" defaultValue={value('channelId')} className="mt-1" /></div>
+                      </>
+                    ) : null}
+
+                    {channel.key === 'whatsapp' ? (
+                      <>
+                        <div><Label htmlFor={`${channel.key}-accessToken`}>Access token</Label><Input id={`${channel.key}-accessToken`} name="accessToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'Meta access token'} /></div>
+                        <div><Label htmlFor={`${channel.key}-appSecret`}>App secret</Label><Input id={`${channel.key}-appSecret`} name="appSecret" type="password" autoComplete="off" className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-verificationToken`}>Webhook verification token</Label><Input id={`${channel.key}-verificationToken`} name="verificationToken" type="password" autoComplete="off" className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-phoneNumberId`}>Phone number ID</Label><Input id={`${channel.key}-phoneNumberId`} name="phoneNumberId" defaultValue={value('phoneNumberId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-endpoint`}>Messaging endpoint</Label><Input id={`${channel.key}-endpoint`} name="endpointUrl" defaultValue={connection?.endpointUrl ?? ''} className="mt-1" placeholder="https://graph.facebook.com/.../messages" /></div>
+                      </>
+                    ) : null}
+
+                    {(channel.key === 'instagram' || channel.key === 'facebook_messenger') ? (
+                      <>
+                        <div><Label htmlFor={`${channel.key}-accessToken`}>Page/account access token</Label><Input id={`${channel.key}-accessToken`} name="accessToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'Meta access token'} /></div>
+                        <div><Label htmlFor={`${channel.key}-appSecret`}>App secret</Label><Input id={`${channel.key}-appSecret`} name="appSecret" type="password" autoComplete="off" className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-verificationToken`}>Webhook verification token</Label><Input id={`${channel.key}-verificationToken`} name="verificationToken" type="password" autoComplete="off" className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-pageId`}>Page/account ID</Label><Input id={`${channel.key}-pageId`} name="pageId" defaultValue={value('pageId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-endpoint`}>Messaging endpoint</Label><Input id={`${channel.key}-endpoint`} name="endpointUrl" defaultValue={connection?.endpointUrl ?? ''} className="mt-1" /></div>
+                      </>
+                    ) : null}
+
+                    {channel.key === 'slack' ? (
+                      <>
+                        <div><Label htmlFor={`${channel.key}-accessToken`}>Bot access token</Label><Input id={`${channel.key}-accessToken`} name="accessToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'xoxb-...'} /></div>
+                        <div><Label htmlFor={`${channel.key}-signingSecret`}>Signing secret</Label><Input id={`${channel.key}-signingSecret`} name="signingSecret" type="password" autoComplete="off" className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-channelId`}>Default channel ID</Label><Input id={`${channel.key}-channelId`} name="channelId" defaultValue={value('channelId')} className="mt-1" /></div>
+                      </>
+                    ) : null}
+
+                    {(channel.key === 'microsoft_teams' || channel.key === 'custom_webhook') ? (
+                      <>
+                        <div><Label htmlFor={`${channel.key}-endpoint`}>{channel.key === 'microsoft_teams' ? 'Teams workflow/webhook URL' : 'Webhook URL'}</Label><Input id={`${channel.key}-endpoint`} name="endpointUrl" defaultValue={connection?.endpointUrl ?? ''} className="mt-1" /></div>
+                        {channel.key === 'custom_webhook' ? <div><Label htmlFor={`${channel.key}-webhookSecret`}>Signing secret</Label><Input id={`${channel.key}-webhookSecret`} name="webhookSecret" type="password" autoComplete="off" className="mt-1" /></div> : null}
+                      </>
+                    ) : null}
+
+                    {channel.key === 'website' ? (
+                      <div><Label htmlFor={`${channel.key}-displayName`}>Widget name</Label><Input id={`${channel.key}-displayName`} name="displayName" defaultValue={value('displayName')} className="mt-1" placeholder="Customer Support" /></div>
+                    ) : null}
+
+                    <Button type="submit">{connection ? 'Save changes' : 'Connect'}</Button>
+                  </form>
+                </details>
+
+                {connection ? (
+                  <form action={disableEnterpriseAiChannelConnection.bind(null, tenantSlug)}>
+                    <input type="hidden" name="connectionId" value={connection.id} />
+                    <Button variant="outline" type="submit">Disable connection</Button>
+                  </form>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <Card className="rounded-2xl">
