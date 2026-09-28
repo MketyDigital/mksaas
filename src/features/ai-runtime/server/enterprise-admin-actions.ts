@@ -109,8 +109,6 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
     },
   });
 
-  // Keep DNS guidance deterministic and derivable from persisted metadata.
-  buildEnterpriseAiDnsInstructions(hostname, provisioned.cnameTarget);
   revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
 }
 
