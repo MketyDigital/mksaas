@@ -13,6 +13,12 @@ describe('Mkety public support-agent behavior', () => {
     );
   });
 
+  it('recognizes Mkety Mail and business-email questions as Mkety product questions', () => {
+    expect(planPublicSupportTools('What are the Mkety Mail plans for business email?')).toEqual(
+      expect.arrayContaining(['search_public_docs', 'get_public_product_summary', 'get_public_pricing']),
+    );
+  });
+
   it('recognizes generic media-storage questions as Mkety product questions', () => {
     expect(planPublicSupportTools('Do you offer media storage and file hosting?')).toEqual(
       expect.arrayContaining(['search_public_docs', 'get_public_product_summary']),
@@ -26,9 +32,11 @@ describe('Mkety public support-agent behavior', () => {
     expect(prompt).toMatch(/do not disclose.*repositories.*github/i);
     expect(prompt).toMatch(/do not repeat or name.*source-control/i);
     expect(prompt).toMatch(/public Mkety information/i);
-    expect(prompt).toMatch(/growth.*pro.*business.*not.*current/i);
+    expect(prompt).toMatch(/growth.*pro.*business.*not.*current.*platform/i);
     expect(prompt).toMatch(/academy\.mkety\.com/i);
     expect(prompt).toMatch(/mkety media.*media\.mkety\.com/i);
+    expect(prompt).toMatch(/mail starter.*\$4\.99.*mail growth.*\$9\.99.*mail business.*\$24\.99/i);
+    expect(prompt).toMatch(/enterprise mkety ai.*separate.*normal ai workspace/i);
     expect(prompt).toMatch(/starter.*growth.*business/i);
     expect(prompt).toMatch(/trading.*sales.*pricing.*quotes.*access requests.*enterprise/i);
     expect(prompt).toMatch(/do not send a new buyer there to purchase/i);
