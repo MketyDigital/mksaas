@@ -35,39 +35,43 @@ function isProvider(value: unknown): value is PublicAIProviderId {
 }
 
 export async function getDynamicPublicAiConfig(): Promise<DynamicPublicAiConfig | null> {
-  const row = await db.query.platformAppControlCenterModules.findFirst({
-    where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
-    columns: { metadataJson: true },
-  });
-  const metadata = row?.metadataJson;
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
-  const raw = (metadata as Record<string, unknown>).publicAiConfig;
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  try {
+    const row = await db.query.platformAppControlCenterModules.findFirst({
+      where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
+      columns: { metadataJson: true },
+    });
+    const metadata = row?.metadataJson;
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+    const raw = (metadata as Record<string, unknown>).publicAiConfig;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 
-  const value = raw as Record<string, unknown>;
-  const primaryProvider = isProvider(value.primaryProvider) ? value.primaryProvider : 'openai';
-  const fallbackProviders = Array.isArray(value.fallbackProviders)
-    ? value.fallbackProviders.filter(isProvider)
-        .filter((provider, index, providers) => provider !== primaryProvider && providers.indexOf(provider) === index)
-    : [];
+    const value = raw as Record<string, unknown>;
+    const primaryProvider = isProvider(value.primaryProvider) ? value.primaryProvider : 'openai';
+    const fallbackProviders = Array.isArray(value.fallbackProviders)
+      ? value.fallbackProviders.filter(isProvider)
+          .filter((provider, index, providers) => provider !== primaryProvider && providers.indexOf(provider) === index)
+      : [];
 
-  const models: Partial<Record<PublicAIProviderId, string>> = {};
-  if (value.models && typeof value.models === 'object' && !Array.isArray(value.models)) {
-    for (const provider of PROVIDERS) {
-      const model = (value.models as Record<string, unknown>)[provider];
-      if (typeof model === 'string' && model.trim()) {
-        assertCurrentPublicAIModel(provider, model.trim());
-        models[provider] = model.trim();
+    const models: Partial<Record<PublicAIProviderId, string>> = {};
+    if (value.models && typeof value.models === 'object' && !Array.isArray(value.models)) {
+      for (const provider of PROVIDERS) {
+        const model = (value.models as Record<string, unknown>)[provider];
+        if (typeof model === 'string' && model.trim()) {
+          assertCurrentPublicAIModel(provider, model.trim());
+          models[provider] = model.trim();
+        }
       }
     }
-  }
 
-  return {
-    enabled: value.enabled === true,
-    primaryProvider,
-    fallbackProviders,
-    models,
-  };
+    return {
+      enabled: value.enabled === true,
+      primaryProvider,
+      fallbackProviders,
+      models,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getPublicAiControlOverview() {
