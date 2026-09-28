@@ -1,3 +1,4 @@
+import type { CentralAiProviderId } from '@/features/ai-runtime/providers/external-types';
 import { getDefaultPublicAIModel, type PublicAIProviderId } from '@/features/public-assistant/models';
 import {
   disablePublicAiProviderConnection,
@@ -116,7 +117,7 @@ export function PublicAiControlPanel({
                 <p className="font-semibold">{connection.providerKey}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{connection.status} · updated {connection.updatedAt.toLocaleString()}</p>
                 {connection.status === 'active' ? (
-                  <form className="mt-3" action={disablePublicAiProviderConnection.bind(null, tenant, connection.providerKey as PublicAIProviderId)}>
+                  <form className="mt-3" action={disablePublicAiProviderConnection.bind(null, tenant, connection.providerKey as CentralAiProviderId)}>
                     <button className="text-sm font-semibold text-destructive">Disable</button>
                   </form>
                 ) : null}
