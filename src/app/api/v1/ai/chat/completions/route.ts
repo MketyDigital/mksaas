@@ -86,7 +86,7 @@ function duplicateResponse(existing: typeof aiRequests.$inferSelect) {
     commercial_reconciliation_required: 'This request is awaiting commercial reconciliation.',
   };
   const code = existing.errorCode ?? 'duplicate_request';
-  const status = code === 'runtime_disabled' || code === 'provider_unavailable' ? 503 : 409;
+  const status = code === 'runtime_disabled' || code === 'provider_unavailable' || code === 'commercial_reconciliation_required' ? 503 : 409;
   return errorResponse(
     status,
     code,
