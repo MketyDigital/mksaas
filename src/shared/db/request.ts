@@ -3,15 +3,16 @@ import postgres from 'postgres';
 
 import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection.cloudflare';
 import type { Database } from './index';
+import { runWithRequestDatabaseContext } from './request-context';
 import * as schema from './schema';
 
 export async function withRequestDatabase<T>(work: (database: Database) => Promise<T>): Promise<T> {
   const connectionString = getRuntimeDatabaseConnectionString();
-  const client = postgres(connectionString, { max: 1 });
+  const client = postgres(connectionString, { max: 1, prepare: false });
   const database = drizzle(client, { schema }) as Database;
 
   try {
-    return await work(database);
+    return await runWithRequestDatabaseContext(database as object, () => work(database));
   } finally {
     await client.end();
   }
