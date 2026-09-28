@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
 import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
+import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
+import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
@@ -71,10 +73,12 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const isPayments = controlModule.key === 'payments';
   const isMailOperations = controlModule.key === 'mail-operations';
   const isAiOperations = controlModule.key === 'ai-operations';
+  const isDomainsRouting = controlModule.key === 'domains-routing';
   let deploymentApprovalRows = null;
   let paymentSettings = null;
   let mailOperations = null;
   let aiCommercialOverview = null;
+  let domainResellerConnections = null;
 
   if (isDeployments) {
     await requirePermission(tenant, 'platform:deployments');
@@ -96,6 +100,11 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   if (isAiOperations) {
     await requirePermission(tenant, 'platform:plans');
     aiCommercialOverview = await withAdminTimeout(getAiCommercialControlOverview(), null);
+  }
+
+  if (isDomainsRouting) {
+    await requirePermission(tenant, 'platform:deployments');
+    domainResellerConnections = await withAdminTimeout(getDomainResellerConnections(), []);
   }
 
   return (
@@ -145,6 +154,10 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
 
       {isAiOperations && aiCommercialOverview ? (
         <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
+      ) : null}
+
+      {isDomainsRouting && domainResellerConnections ? (
+        <DomainResellerControlPanel tenant={tenant} connections={domainResellerConnections} />
       ) : null}
 
       {isMailOperations && mailOperations ? (
@@ -274,7 +287,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         </div>
       ) : null}
 
-      {!isPayments && !isMailOperations && !isAiOperations ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {!isPayments && !isMailOperations && !isAiOperations && !isDomainsRouting ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle>Controlled module surface</CardTitle>
