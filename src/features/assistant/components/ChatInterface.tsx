@@ -6,7 +6,7 @@ import { DefaultChatTransport } from 'ai';
 import { Brain, Briefcase, GraduationCap, Loader2, Send, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -31,6 +31,7 @@ interface ChatInterfaceProps {
   capabilities?: AssistantCapability[];
   /** Called when a new conversation is created (after first response and URL update). */
   onConversationCreated?: (id: string) => void;
+  providerOptions?: Array<{ id: string; providerKey: string }>;
 }
 
 export function ChatInterface({
@@ -40,24 +41,37 @@ export function ChatInterface({
   suggestedQuestions,
   capabilities,
   onConversationCreated,
+  providerOptions = [],
 }: ChatInterfaceProps) {
   const t = useTranslations('assistant');
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
+  const [providerConnectionId, setProviderConnectionId] = useState('');
+  const [modelOverride, setModelOverride] = useState('');
   const { slug: tenantSlug } = useTenant();
   const [clientNewChatId] = useState<string | null>(() => (conversationId === undefined ? crypto.randomUUID() : null));
   const hasNotifiedNewConversationRef = useRef(false);
 
   const requestId = conversationId ?? clientNewChatId ?? undefined;
 
+  const transport = useMemo(
+    () => new DefaultChatTransport({
+      api: '/api/chat',
+      body: {
+        tenantSlug,
+        id: requestId,
+        providerConnectionId: providerConnectionId || null,
+        model: modelOverride.trim() || null,
+      },
+    }),
+    [tenantSlug, requestId, providerConnectionId, modelOverride],
+  );
+
   const { messages, sendMessage, status, setMessages } = useChat({
     id: requestId,
     messages: initialMessages,
-    transport: new DefaultChatTransport({
-      api: '/api/chat',
-      body: { tenantSlug, id: requestId },
-    }),
+    transport,
   });
 
   // After first message in a new chat, update URL so refresh keeps the same conversation
@@ -244,6 +258,33 @@ export function ChatInterface({
 
       {/* Input area */}
       <div className="border-t bg-card p-3 lg:p-4 relative z-50">
+        <div className="mx-auto mb-2 flex max-w-4xl flex-wrap gap-2">
+          <select
+            aria-label="AI provider"
+            className="rounded-lg border bg-background px-3 py-2 text-xs"
+            disabled={isLoading}
+            onChange={(event) => {
+              setProviderConnectionId(event.target.value);
+              setModelOverride('');
+            }}
+            value={providerConnectionId}
+          >
+            <option value="">Mkety managed AI</option>
+            {providerOptions.map((option) => (
+              <option key={option.id} value={option.id}>BYOK · {option.providerKey}</option>
+            ))}
+          </select>
+          {providerConnectionId ? (
+            <Input
+              aria-label="Provider model override"
+              className="h-9 max-w-sm rounded-lg text-xs"
+              disabled={isLoading}
+              onChange={(event) => setModelOverride(event.target.value)}
+              placeholder="Optional provider model"
+              value={modelOverride}
+            />
+          ) : null}
+        </div>
         <form onSubmit={handleSubmit} className="mx-auto max-w-4xl flex gap-2" aria-label="Send message">
           <div className="relative flex-1">
             <Input
