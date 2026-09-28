@@ -1019,6 +1019,62 @@ Implement:
 
 Idempotency keys protect billable non-stream and asynchronous operations from duplicate charging.
 
+### 11.1 Cloudflare state and delivery primitives
+
+Use each Cloudflare primitive for the job it is actually good at. None replaces the authoritative Mkety database/commercial ledger.
+
+**PostgreSQL through the existing Mkety database gateway remains authoritative for:**
+
+- tenant/project ownership;
+- API-key records and revocation state;
+- Billing subscriptions and settlement;
+- Entitlements;
+- Usage/Credits and charge idempotency;
+- model/route configuration source of truth;
+- budgets and approved overage policy;
+- durable audit records.
+
+**Workers KV may be used only for read-heavy, safely stale acceleration such as:**
+
+- model catalog snapshots;
+- route/config snapshots with short TTL and version keys;
+- feature/config flags;
+- tenant-safe exact-response cache metadata;
+- public/static knowledge cache metadata.
+
+KV is eventually consistent, so it must never be the final authority for revocation, entitlement, balance, budget authorization or duplicate-charge prevention. Sensitive authorization changes must read through to the authoritative store or use a version/invalidation design that fails closed.
+
+**Durable Objects are optional coordination primitives, sharded by a natural boundary rather than globally. Appropriate uses include:**
+
+- per-tenant / per-project / per-key rate windows;
+- short-lived in-flight request coordination;
+- streaming session coordination where shared state is actually required;
+- circuit-breaker/health coordination when strong single-key ordering is useful;
+- write serialization before publishing derived cache state.
+
+Do not send every AI request through one global Durable Object. A global object would become a bottleneck and single hot coordination point.
+
+**Workers Cache API / AI Gateway caching may accelerate only cache-eligible requests** under the tenant-safe cache rules above. Authorization, entitlement and budget checks happen before serving any tenant-private cached AI result unless the cached object itself is a deliberately public artifact in a public namespace.
+
+**AI Gateway is the provider-edge control layer** for observability, approved caching, rate controls, bounded retries and explicit model/provider fallback. Mkety's own runtime policy remains authoritative, especially for commercial mode, tenant isolation and whether a fallback is allowed to spend a Mkety-managed credential.
+
+**Cloudflare Queues + DLQ are for asynchronous, replay-safe work**, such as non-interactive indexing, post-response analytics/accounting repair, evaluation jobs and other bounded background operations. A queue must not turn a non-idempotent inference/tool action into an automatic retry loop.
+
+This layering is intended to provide low latency without weakening correctness:
+
+```text
+Request
+  -> stateless edge validation
+  -> authoritative auth / entitlement / budget decision
+  -> optional tenant-safe coordination (Durable Object)
+  -> versioned read cache where safe (KV / Cache / AI Gateway)
+  -> provider route
+  -> authoritative usage/accounting write
+  -> async replay-safe follow-up through Queue/DLQ where needed
+```
+
+A cache or coordination outage should degrade to the authoritative path where safe. An authoritative database/commercial decision outage should fail closed for billable managed inference rather than guess.
+
 ## 12. Observability and analytics
 
 Customer-visible:
