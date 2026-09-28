@@ -11,6 +11,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/sha
 
 type Overview = Awaited<ReturnType<typeof getAiCommercialControlOverview>>;
 
+function formatUsdMicros(value: bigint) {
+  const whole = value / 1_000_000n;
+  const cents = ((value % 1_000_000n) * 100n) / 1_000_000n;
+  return `${whole.toString()}.${cents.toString().padStart(2, '0')}`;
+}
+
 export function AiCommercialControlPanel({
   tenant,
   overview,
@@ -49,6 +55,34 @@ export function AiCommercialControlPanel({
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active rate cards</p>
             <p className="mt-2 font-semibold">{activeRateCards.length}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>30-day cost & pricing floor</CardTitle>
+          <CardDescription>
+            Internal profitability inputs from recorded provider usage. Provider cost is never exposed to customers; customer pricing still comes from versioned rate cards and approved commercial terms.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {overview.profitability.length ? overview.profitability.map((row) => (
+            <div className="grid gap-2 rounded-xl border p-4 text-sm md:grid-cols-6" key={`${row.tenantId}:${row.modelAlias}`}>
+              <div className="md:col-span-2">
+                <p className="font-semibold">{row.tenantName ?? row.tenantId}</p>
+                <p className="font-mono text-xs text-muted-foreground">{row.modelAlias}</p>
+              </div>
+              <div><p className="text-xs text-muted-foreground">Requests</p><p className="font-semibold">{row.requests.toString()}</p></div>
+              <div><p className="text-xs text-muted-foreground">Credits charged</p><p className="font-semibold">{row.settledCredits.toString()}</p></div>
+              <div><p className="text-xs text-muted-foreground">Provider cost</p><p className="font-semibold">{formatUsdMicros(row.providerCostUsdMicros)}</p></div>
+              <div><p className="text-xs text-muted-foreground">Minimum revenue floor</p><p className="font-semibold">{formatUsdMicros(row.minimumRevenueUsdMicros)}</p></div>
+            </div>
+          )) : (
+            <p className="text-sm text-muted-foreground">No settled Enterprise AI provider usage has been recorded in the last 30 days.</p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            The floor uses the current internal 65% gross-margin target plus 15% overhead reserve. It is a planning guardrail, not a customer invoice and not a substitute for plan-level economics.
+          </p>
         </CardContent>
       </Card>
 
