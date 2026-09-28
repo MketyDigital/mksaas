@@ -1,8 +1,10 @@
 import { and, count, eq, gte } from 'drizzle-orm';
 
-import { getMailCommercialPlan, normalizeMailPlanKey } from '@/features/mail/commercial/plans';
+import { getMailCommercialPlan } from '@/features/mail/commercial/plans';
 import { db } from '@/shared/db/cloudflare';
 import { mailCustomerUpdateRecipients, mailDomains, mailMessages, mailWorkspaces } from '@/shared/db/schema';
+
+import { resolveTenantMailPlanKey } from './commercial';
 
 export type MailCapacity={
   allowed:boolean;
@@ -48,7 +50,8 @@ export async function getMailSendCapacity(
   ]);
   if(!domain||!workspace) return {allowed:false,limit:0,used:0,remaining:0,reason:'daily_limit',period:'daily'};
 
-  const plan=getMailCommercialPlan(normalizeMailPlanKey(workspace.planKey));
+  const planKey=await resolveTenantMailPlanKey(tenantId,workspace.planKey);
+  const plan=getMailCommercialPlan(planKey);
   const sinceDay=new Date(Date.now()-24*60*60*1000);
   const sinceMonth=startOfUtcMonth();
 
