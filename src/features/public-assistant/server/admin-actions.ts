@@ -5,9 +5,9 @@ import { revalidatePath } from 'next/cache';
 
 import type { CentralAiProviderId } from '@/features/ai-runtime/providers/external-types';
 import {
+  type ByokProviderInput,
   disableSystemAiProviderConnection,
   saveSystemAiProviderConnection,
-  type ByokProviderInput,
 } from '@/features/ai-runtime/server/provider-connections';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import {
