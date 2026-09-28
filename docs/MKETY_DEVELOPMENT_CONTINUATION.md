@@ -26,6 +26,15 @@ The public candidate now performs the complete connected acceptance sequence:
 
 The real commercial inference/accounting gate is therefore CLOSED on this implementation SHA.
 
+Acceptance evidence from Public Candidate run `36463882316`:
+- request `3c764161-8c05-4d5c-99a7-e4dc1505c91e`;
+- `mkety-economy` -> `@cf/google/gemma-4-26b-a4b-it` via `workers-ai`;
+- 24 input tokens / 8 output tokens / 0 cached input tokens;
+- 3 credits reserved / 2 credits settled;
+- provider cost 6 micro-USD / minimum revenue floor 21 micro-USD;
+- one budget reservation settled;
+- exact idempotent replay blocked without provider redispatch.
+
 Managed-model benchmark remains closed by run `36425084523`:
 - `mkety-economy` -> Gemma 4;
 - `mkety-smart` -> GLM-5.3 Flash;
@@ -66,7 +75,7 @@ Repository-side release tooling is now complete:
 - `.github/workflows/mkety-enterprise-ai-white-label-domain-acceptance.yml` / `scripts/accept-enterprise-ai-white-label-domain.ts`: read-only real-host acceptance for CNAME, HTTPS tenant proof, database tenant ownership, configured white-label login identity and wrong-tenant-path isolation.
 - `.github/workflows/mkety-enterprise-ai-inference-promotion.yml` / `scripts/promote-enterprise-ai-inference.ts`: separate production operator enable/disable path. Enablement requires benchmark, commercial, domain and registrar evidence plus managed-route/rate/prepaid readiness. The application UI remains disable-only.
 
-Production `customerInferenceEnabled` remains OFF. PR #159 must remain draft until the three remaining real-environment acceptances are run and recorded: tiny commercial/accounting acceptance, DomainNameAPI OT&E/lifecycle acceptance, and a real customer white-label hostname acceptance. Only then may the guarded production promotion workflow be used.
+Production `customerInferenceEnabled` remains OFF. PR #159 must remain draft until the two remaining external real-environment acceptances are run and recorded: DomainNameAPI OT&E/lifecycle acceptance and a real customer white-label hostname acceptance. The managed commercial/accounting acceptance is already closed by run `36463882316`. Only after the external evidence is recorded may the guarded production promotion workflow be used.
 
 ## 2026-09-28 central AI runtime and dynamic-configuration authority
 
@@ -84,7 +93,7 @@ This section supersedes earlier statements below that describe Workspace AI, Ent
 - A guarded DomainNameAPI OT&E workflow exists for read-only transport/authentication verification. Production registrar mutations remain gated until OT&E lifecycle acceptance is recorded.
 - Production Enterprise customer inference remains OFF. The shared runtime itself is not globally disabled by that Enterprise kill switch; the Enterprise commercial/API boundary enforces `customerInferenceEnabled` so Public/Workspace/internal isolated consumers are not incorrectly disabled.
 
-Remaining release evidence is live rather than architectural: exact-head repository certification, tiny non-production managed commercial/accounting acceptance, DomainNameAPI OT&E/lifecycle verification with the real reseller account, a real customer white-label hostname/login isolation test, and explicit production Enterprise inference promotion.
+Remaining release evidence is external/live rather than architectural: DomainNameAPI OT&E/lifecycle verification with the real reseller account, a real customer white-label hostname/login isolation test, the separate app.mkety.com production repair execution, and explicit production Enterprise inference promotion. Exact-head repository certification and the tiny managed commercial/accounting acceptance are already closed.
 
 
 
