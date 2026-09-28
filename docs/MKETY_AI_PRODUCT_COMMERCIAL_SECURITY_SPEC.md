@@ -119,30 +119,24 @@ Customers may create custom roles using the existing PBAC capability.
 
 ### 3.1 AI Console — `ai.mkety.com`
 
-Recommended navigation:
+Recommended Enterprise navigation:
 
-- Overview
-- Playground
-- Agents / Applications
-- Knowledge
-- Tools / Actions
-- Models
-- Providers / BYOK
-- API Keys
+- Home
+- Business Solutions
 - Channels
-- Domains
-- Conversations / Human Handoff
-- Runs / Traces
-- Usage / Costs
-- Budgets / Limits
+- Knowledge
+- Team Inbox / Human Handoff
+- Usage & Plan
+- Branding & Domain
 - Team / Roles
 - Security
-- Webhooks
 - Billing
 - Audit
-- Developer Docs
+- Developer & Advanced
 
-The console must adapt to entitlements: normal Workspace customers see only relevant capabilities; Enterprise and developer customers see advanced controls.
+Enterprise Mkety AI does not expose a generic ChatGPT-style chat or playground as a standalone product surface. Conversational behavior exists only inside configured business solutions and connected channels such as Website AI, WhatsApp, Telegram, team helpdesk or another supported destination. The normal Mkety AI Workspace owns the interactive builder/playground experience.
+
+The console adapts to entitlements and role. Non-technical customers see business outcomes and guided setup first. Developer/model/API/routing controls stay under Developer & Advanced.
 
 ### 3.2 Developer API
 
