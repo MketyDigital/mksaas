@@ -148,6 +148,13 @@
       "when": 1790467200000,
       "tag": "0020_mkety_mail_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790554200000,
+      "tag": "0021_mkety_ai_runtime_foundation",
+      "breakpoints": true
     }
   ]
 }
