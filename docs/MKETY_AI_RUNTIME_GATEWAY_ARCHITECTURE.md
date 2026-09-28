@@ -871,3 +871,25 @@ Before any Enterprise inference/channel/action operation, the runtime must resol
 Only then may the runtime invoke the model/channel/tool.
 
 This keeps Enterprise commercial enforcement independent from ordinary AI Workspace access while still reusing the same low-level runtime.
+
+
+## 2026-09-28 white-label, domain and execution clarification
+
+Enterprise AI customer applications are logical tenant configurations on the shared Mkety AI runtime unless a dedicated contract explicitly requires isolated infrastructure.
+
+White-label tenants may fully replace customer-facing Enterprise AI product identity: product/brand name, logos, favicon, colors, support/legal links and customer login presentation. White-label does not create a new tenant, user directory, ledger or AI runtime.
+
+Hostname hierarchy:
+
+- canonical Enterprise console: `ai.mkety.com`;
+- managed customer fallback: `<tenant>.mkety.app`;
+- customer-owned hostname: Cloudflare for SaaS custom hostname mapped to the same tenant;
+- future Mkety-purchased domain: registrar/reseller adapter -> DNS/custom-hostname provisioning -> same tenant.
+
+Customer-owned hostname setup should normally require one CNAME record. Mkety owns certificate provisioning, hostname verification, routing and rollback.
+
+Managed provider execution is now explicitly:
+
+`auth/entitlement -> model/rate policy -> credit reservation -> all budgets -> Workers AI + AI Gateway -> normalized usage -> exact settlement -> provider-cost record`.
+
+An upstream success followed by local accounting failure is a reconciliation state, never permission to replay the upstream request.
