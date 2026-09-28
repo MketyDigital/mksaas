@@ -6,6 +6,8 @@ import { mailWorkspaces, tenantMemberships } from '@/shared/db/schema';
 import { requireTenantMembership } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
+import { resolveTenantMailPlanKey } from './commercial';
+
 export async function getMailWorkspace(tenantSlug:string){
   const tenant=await getTenantBySlug(tenantSlug);
   if(!tenant) return null;
@@ -29,10 +31,11 @@ export async function enableMailWorkspace(tenantSlug:string){
   await requireEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' });
   const existing=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
   if(existing) return existing;
+  const planKey=await resolveTenantMailPlanKey(tenant.id);
   const [created]=await db.insert(mailWorkspaces).values({
     tenantId:tenant.id,
     status:'active',
-    planKey:'mail-starter',
+    planKey,
     onboardingStep:'domain',
     enabledByUserId:actor.userId,
   }).onConflictDoNothing({target:mailWorkspaces.tenantId}).returning();
