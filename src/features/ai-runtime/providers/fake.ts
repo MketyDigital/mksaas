@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { AiProviderAdapter, AiRuntimeRequest, AiRuntimeResult } from './contracts';
 
 export class FakeAiProviderAdapter implements AiProviderAdapter {
@@ -7,7 +5,7 @@ export class FakeAiProviderAdapter implements AiProviderAdapter {
 
   async generate(input: AiRuntimeRequest, route: { nativeModel: string }): Promise<AiRuntimeResult> {
     return {
-      requestId: randomUUID(),
+      requestId: crypto.randomUUID(),
       model: route.nativeModel,
       content: 'Non-billable Mkety AI test response.',
       finishReason: 'stop',
