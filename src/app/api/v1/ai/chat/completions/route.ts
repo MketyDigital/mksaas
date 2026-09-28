@@ -363,25 +363,33 @@ export async function POST(request: Request) {
       metadata: { requestId },
     }, resolved.model.nativeModel);
   } catch {
-    try {
-      await releaseAiCommercialRequest({ admission, reason: 'provider_failed' });
-    } catch {
-      await db
-        .update(aiRequests)
-        .set({
-          status: 'reconciliation_required',
-          errorCode: 'commercial_reconciliation_required',
-          completedAt: new Date(),
-        })
-        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
-      return errorResponse(503, 'commercial_reconciliation_required', 'Provider failed and commercial holds require reconciliation.', requestId);
-    }
-
+    // Once provider invocation begins, an exception can be ambiguous: the upstream
+    // provider may have accepted or completed work even if the Worker lost the
+    // response. Preserve commercial holds and require reconciliation rather than
+    // releasing value and risking untracked provider spend.
     await db
       .update(aiRequests)
-      .set({ status: 'provider_failed', errorCode: 'provider_failed', completedAt: new Date() })
+      .set({
+        status: 'reconciliation_required',
+        errorCode: 'provider_outcome_unknown',
+        providerCostMetadata: {
+          requestFingerprint,
+          inputTokenUpperBound: inputTokenUpperBound.toString(),
+          effectiveMaxOutput,
+          creditReservationId: admission.creditReservation.id,
+          budgetReservationIds: admission.budgetReservations.map((item) => item.id),
+          providerOutcome: 'unknown_after_dispatch',
+        },
+        completedAt: new Date(),
+      })
       .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
-    return errorResponse(502, 'provider_failed', 'The managed AI provider could not complete the request.', requestId);
+
+    return errorResponse(
+      503,
+      'provider_outcome_unknown',
+      'The provider outcome is unknown and the request is awaiting reconciliation. It will not be sent upstream again.',
+      requestId,
+    );
   }
 
   const actualCredits = calculateAiCredits({
