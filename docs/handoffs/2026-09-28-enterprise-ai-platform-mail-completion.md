@@ -1,3 +1,17 @@
+# 2026-09-28 continuation audit follow-up
+
+A continuation audit started from PR #159 docs-only head `8dfa0d61296177e6ca59e8ff77a732cdfc579984`.
+
+Verified after the original handoff:
+- Public Candidate Deploy run `36415088152` completed successfully, including tests, type-check, lint, vinext compatibility, content DB application/smoke, isolated Worker deploy, public-route smoke, payment-safety smoke and Public Mkety AI privacy/memory smoke.
+- PR #159 remains open, mergeable and draft.
+- The completion branch was 0 commits behind `main` when this continuation audit began.
+- Documentation authority was reconciled across `AGENTS.md`, `docs/README.md`, the AI runtime architecture, commercial/security spec, Enterprise capability map and the active superpowers plan. The launch channel contract now matches the implementation, and the second managed model remains benchmark-selected rather than documentation-selected.
+
+The remaining blockers are live/external gates only: the guarded paid managed-model benchmark, a tiny real Workers AI + AI Gateway commercial-accounting acceptance, a real customer-domain white-label/isolation acceptance, concrete registrar/reseller adapter verification, and explicit guarded production promotion. Production `customerInferenceEnabled` remains OFF.
+
+Use PR #159 itself for the latest docs-only branch head. The immutable implementation certification anchor remains `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`.
+
 # Mkety completion handoff — 2026-09-28
 
 ## Requested
@@ -110,7 +124,7 @@ Exact-head verification:
 - Mkety Platform Core Workspaces Smoke — SUCCESS — run `36415088120`
 - Mkety Cloudflare vinext Smoke — SUCCESS — run `36415088190`
 - Mkety Content DB Smoke — SUCCESS — run `36415088033`
-- Public Candidate Deploy — run `36415088152` was still IN PROGRESS at handoff time. Do not record it as passed until its final conclusion is checked.
+- Public Candidate Deploy — SUCCESS — run `36415088152`.
 
 Branch relation at handoff:
 - branch is ahead of current `main` by 167 commits;
@@ -139,8 +153,10 @@ PR #159 remains **DRAFT** intentionally because the paid/live external acceptanc
 Current authoritative continuation branch:
 `feat/enterprise-ai-complete-platform-20260928`
 
-Current exact head:
+Certified implementation head:
 `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`
+
+The PR may have newer docs-only continuation commits; use PR #159 for the current branch head.
 
 Current `main` base used by PR #159:
 `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`
@@ -154,15 +170,14 @@ Current `main` base used by PR #159:
 - Registrar checkout is not production-ready until the actual configured reseller/provider is bound to the adapter and tested.
 - PR #147 is the only other open PR currently visible. It is historical Mail/public release-certification work and must not be merged as a substitute for #159.
 - Stale AI PRs #145, #154, #157 and #158 are historical/superseded and must not be merged.
-- Public Candidate Deploy run `36415088152` was still running at handoff time; first action next session is to check its conclusion.
+- Public Candidate Deploy run `36415088152` later completed successfully.
 
 ## Exact next steps
 
-1. Check workflow run `36415088152` and record its final Public Candidate Deploy conclusion.
-2. Re-read this file plus `docs/CURRENT_WORKSTREAM_STATUS.md`, `docs/MKETY_DEVELOPMENT_CONTINUATION.md`, `AGENTS.md` and PR #159 before making changes.
-3. Run the existing manual capped Workers AI benchmark through `.github/workflows/mkety-ai-model-benchmark.yml` using its explicit paid-inference confirmation guard. Record model, quality, latency and actual Cloudflare cost evidence.
-4. Select/confirm the second managed model from benchmark evidence; do not choose by documentation alone.
-5. Run one tiny non-production Workers AI + AI Gateway inference through the real commercial path and verify:
+1. Re-read this file plus `docs/CURRENT_WORKSTREAM_STATUS.md`, `docs/MKETY_DEVELOPMENT_CONTINUATION.md`, `AGENTS.md` and PR #159 before making changes.
+2. Run the existing manual capped Workers AI benchmark through `.github/workflows/mkety-ai-model-benchmark.yml` using its explicit paid-inference confirmation guard. Record model, quality, latency and actual Cloudflare cost evidence.
+3. Select/confirm the second managed model from benchmark evidence; do not choose by documentation alone.
+4. Run one tiny non-production Workers AI + AI Gateway inference through the real commercial path and verify:
    - entitlement/model/route admission;
    - immutable rate-card selection;
    - credit and budget holds;
@@ -172,17 +187,17 @@ Current `main` base used by PR #159:
    - release of unused reservation;
    - idempotency/replay;
    - reconciliation behavior.
-6. Test one real customer-owned hostname end to end:
+5. Test one real customer-owned hostname end to end:
    - one CNAME;
    - HTTPS works;
    - tenant-bound live-route proof;
    - customer-domain login/handoff;
    - full white-label presentation;
    - no cross-tenant access.
-7. Identify the configured registrar/reseller provider, implement/bind its server-side adapter and test search/purchase/provisioning without exposing credentials.
-8. Only after steps 3-7 pass, update docs with evidence, move PR #159 out of draft, merge through normal protections, and perform guarded non-production/production promotion as appropriate.
-9. Keep `customerInferenceEnabled` OFF in production until the production acceptance gate explicitly passes.
-10. After Enterprise AI promotion, continue with any remaining performance/UX polish on `app.mkety.com` and Mail only from the new `main`; do not revive stale branches.
+6. Identify the configured registrar/reseller provider, implement/bind its server-side adapter and test search/purchase/provisioning without exposing credentials.
+7. Only after steps 2-6 pass, update docs with evidence, move PR #159 out of draft, merge through normal protections, and perform guarded non-production/production promotion as appropriate.
+8. Keep `customerInferenceEnabled` OFF in production until the production acceptance gate explicitly passes.
+9. After Enterprise AI promotion, continue with any remaining performance/UX polish on `app.mkety.com` and Mail only from the new `main`; do not revive stale branches.
 
 ## Open PR state at handoff
 
