@@ -4,7 +4,7 @@ import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
 import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { db } from '@/shared/db/cloudflare';
-import { aiModelAliases, projects } from '@/shared/db/schema';
+import { projects } from '@/shared/db/schema';
 
 function errorResponse(status: number, code: string, message: string) {
   return Response.json({ error: { code, message } }, { status });
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
       projectId,
       requestedModel: alias.alias,
     });
-    return route ? { alias, ...route } : null;
+    return route;
   }));
 
   const visible = resolved.filter((item): item is NonNullable<typeof item> => item !== null);
