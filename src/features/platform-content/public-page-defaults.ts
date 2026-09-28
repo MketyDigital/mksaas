@@ -130,6 +130,22 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             href: '/app',
           },
           {
+            key: 'enterprise-ai-product',
+            title: 'Enterprise AI',
+            description:
+              'Separately entitled branded AI for production channels, custom domains, API/PaaS use, human handoff, higher or contracted limits, advanced security, private/dedicated model routing and custom integrations.',
+            href: 'https://ai.mkety.com',
+            badge: 'Enterprise AI',
+          },
+          {
+            key: 'enterprise-mail-product',
+            title: 'Enterprise Mail',
+            description:
+              'Custom Mail capacity, migration, retention, isolated sending arrangements, private integrations and contractual support/service levels where agreed.',
+            href: '/mail',
+            badge: 'Enterprise Mail',
+          },
+          {
             key: 'trading',
             title: 'Trading Workspace',
             description:
@@ -326,20 +342,36 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
   {
     slug: 'pricing',
     title: 'Mkety Pricing',
-    seoTitle: 'Mkety Pricing | Starter, Workspaces, Mkety One and Enterprise',
+    seoTitle: 'Mkety Pricing | Platform, Mail and Enterprise products',
     seoDescription:
-      'Compare Mkety Starter, AI Workspace, Automation Workspace, Deploy Workspace, Mkety One, Trading Workspace as Custom / Enterprise, and Enterprise.',
+      'Compare Mkety Platform plans, separate Mkety Mail subscriptions, and Enterprise products including Enterprise AI and Enterprise Mail.'
     eyebrow: 'Pricing',
-    headline: 'Choose Starter, a Workspace, Mkety One, or Enterprise.',
+    headline: 'Choose a Platform plan, Mkety Mail, or Enterprise.'
     intro:
-      'Pick the product access you need and pay monthly or prepay 3, 6, or 12 months. Longer prepaid terms receive progressively lower effective monthly pricing. Mkety One combines the standard self-service options, while Trading Workspace and other specialized requirements remain Custom / Enterprise.',
+      'Pick the product access you need and pay monthly or prepay 3, 6, or 12 months. Platform plans and Mkety Mail are separate product families. Mkety One combines the standard Platform self-service options, while Enterprise AI, Enterprise Mail, Trading and other specialized requirements use separate Enterprise terms.'
     sections: [
       {
         eyebrow: 'Commercial model',
         title: 'Clear options for different ways of working.',
         description:
-          'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Self-service plans support 1, 3, 6, and 12 month prepaid terms with 0%, 5%, 10%, and 15% discounts respectively. Mkety One combines Starter plus all three self-service Workspaces. Trading Workspace remains visible as Custom / Enterprise without self-service pricing. Enterprise covers requirements beyond the standard shared platform envelope.',
+          'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Mkety One combines those standard Platform self-service products. Mkety Mail is separately subscribed with Mail Starter ($4.99/month), Mail Growth ($9.99/month) and Mail Business ($24.99/month). Both Platform and Mail fixed subscriptions use 1, 3, 6 and 12 month prepaid terms with 0%, 5%, 10% and 15% discounts. Enterprise AI, Enterprise Mail, Trading and other specialized requirements remain separate/custom.'
         items: [
+          {
+            key: 'mkety-mail-plans',
+            title: 'Mkety Mail',
+            description:
+              'Separate Mail subscriptions start at $4.99/month with clear domain, mailbox, seat, storage and sending limits, prepaid add-on capacity, and Enterprise Mail for custom requirements.',
+            href: '/mail',
+            badge: 'Separate product',
+          },
+          {
+            key: 'enterprise-ai',
+            title: 'Enterprise AI',
+            description:
+              'Separately entitled from AI Workspace for branded production assistants, channels, custom domains, API/PaaS, advanced security, private routing and contracted limits.',
+            href: '/enterprise',
+            badge: 'Enterprise',
+          },
           {
             key: 'trading-workspace',
             title: 'Trading Workspace',
@@ -357,11 +389,11 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Enterprise',
     seoTitle: 'Mkety Enterprise | Custom systems and implementations',
     seoDescription:
-      'Mkety Enterprise delivers custom systems, managed implementations, private or dedicated infrastructure, specialized integrations and contractable service levels.',
+      'Mkety Enterprise delivers Enterprise AI, Enterprise Mail, Trading, custom systems, managed implementations, private or dedicated infrastructure, specialized integrations and contractable service levels.'
     eyebrow: 'Enterprise',
     headline: 'Custom delivery for requirements beyond standard self-service.',
     intro:
-      'Use Mkety Enterprise for specialized systems, private or dedicated infrastructure, managed delivery, trading infrastructure, migration, data-residency requirements and organization-specific service commitments.',
+      'Use Mkety Enterprise for Enterprise AI, Enterprise Mail, specialized systems, private or dedicated infrastructure, managed delivery, trading infrastructure, migration, data-residency requirements and organization-specific service commitments.'
     sections: [
       {
         eyebrow: 'Custom delivery',
