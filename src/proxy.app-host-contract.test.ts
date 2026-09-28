@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const PROXY_PATH = path.resolve(process.cwd(), 'src/proxy.ts');
+const REPAIR_WORKFLOW_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-app-host-production-repair.yml',
+);
 
 describe('app.mkety.com platform host contract', () => {
   it('routes the canonical app host root into the authenticated /app entry before generic public routing', async () => {
@@ -23,8 +27,23 @@ describe('app.mkety.com platform host contract', () => {
 
   it('keeps app.mkety.com out of generic customer custom-domain resolution', async () => {
     const source = await readFile(PROXY_PATH, 'utf8');
-
     expect(source).toContain('hostname === appHost ||');
     expect(source).toContain('const isKnownAppHost =');
+  });
+
+  it('keeps the production repair isolated to app.mkety.com with explicit rollback and exact-SHA authorization', async () => {
+    const workflow = await readFile(REPAIR_WORKFLOW_PATH, 'utf8');
+
+    expect(workflow).toContain('APP_WORKER_NAME: mkety-app-host');
+    expect(workflow).toContain('REPAIR APP.MKETY.COM');
+    expect(workflow).toContain('verified_sha');
+    expect(workflow).toContain('refs/pull/160/head');
+    expect(workflow).toContain('persistent PR 160 head ref');
+    expect(workflow).toContain('mkety-production-db-v2');
+    expect(workflow).toContain('app.mkety.com');
+    expect(workflow).toContain('workers/domains');
+    expect(workflow).toContain('restore');
+    expect(workflow).not.toContain('for host in mkety.com www.mkety.com');
+    expect(workflow).not.toContain('PRODUCTION_WORKER_NAME: mkety-platform');
   });
 });
