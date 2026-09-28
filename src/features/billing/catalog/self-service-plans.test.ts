@@ -2,6 +2,7 @@ import { ENTITLEMENT_KEYS } from '@/features/entitlements/entitlement-keys';
 
 import {
   getSelfServiceBillingPlan,
+  getSelfServiceBillingPlanFamily,
   getSelfServiceBillingQuote,
   isSelfServiceBillingPlanKey,
   SELF_SERVICE_BILLING_PLANS,
@@ -51,6 +52,15 @@ describe('self-service billing catalog', () => {
     expect(getSelfServiceBillingQuote('ai-workspace', '12m').amountMinor).toBe(17330n);
     expect(getSelfServiceBillingQuote('deploy-workspace', '12m').amountMinor).toBe(10190n);
     expect(getSelfServiceBillingQuote('mkety-one', '12m').amountMinor).toBe(49980n);
+  });
+
+  it('keeps Mail as an additive product family beside the existing Platform subscription family', () => {
+    expect(getSelfServiceBillingPlanFamily('starter')).toBe('platform');
+    expect(getSelfServiceBillingPlanFamily('ai-workspace')).toBe('platform');
+    expect(getSelfServiceBillingPlanFamily('mkety-one')).toBe('platform');
+    expect(getSelfServiceBillingPlanFamily('mail-starter')).toBe('mail');
+    expect(getSelfServiceBillingPlanFamily('mail-growth')).toBe('mail');
+    expect(getSelfServiceBillingPlanFamily('mail-business')).toBe('mail');
   });
 
   it('uses only registered entitlement keys', () => {
