@@ -1,0 +1,322 @@
+name: Mkety App Host Production Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      verified_sha:
+        description: Exact certified SHA from hotfix/app-mkety-com-20260928
+        required: true
+        type: string
+      confirmation:
+        description: Type REPAIR APP.MKETY.COM
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  HOTFIX_BRANCH: hotfix/app-mkety-com-20260928
+  APP_WORKER_NAME: mkety-app-host
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
+  MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
+  MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login
+  NEXT_PUBLIC_APP_URL: https://app.mkety.com
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL || vars.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      CONFIGURED_MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
+    steps:
+      - name: Authorize exact hotfix SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${{ inputs.confirmation }}" = "REPAIR APP.MKETY.COM" ] || {
+            echo "Exact repair confirmation is required." >&2
+            exit 1
+          }
+          case "${{ inputs.verified_sha }}" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "verified_sha must be a full 40-character commit SHA." >&2; exit 1 ;;
+          esac
+
+      - name: Checkout exact certified hotfix
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.verified_sha }}
+          fetch-depth: 1
+
+      - name: Verify SHA belongs to hotfix branch tip
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_tip="$(git ls-remote origin "refs/heads/$HOTFIX_BRANCH" | awk '{print $1}')"
+          [ -n "$remote_tip" ] || { echo "Hotfix branch was not found." >&2; exit 1; }
+          [ "$remote_tip" = "${{ inputs.verified_sha }}" ] || {
+            echo "Refusing repair: verified SHA is not the current hotfix branch tip." >&2
+            exit 1
+          }
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate production management credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing production configuration: $name" >&2; exit 1; }
+          done
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+
+      - name: Resolve production Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" NAME="$MKETY_HYPERDRIVE_NAME" node <<'NODE' >/tmp/app-hyperdrive-id
+          const p=JSON.parse(process.env.HYPERDRIVES||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Hyperdrive lookup failed');
+          const matches=p.result.filter(x=>x.name===process.env.NAME);
+          if(matches.length!==1) throw new Error('Expected exactly one production Hyperdrive named '+process.env.NAME);
+          process.stdout.write(matches[0].id);
+          NODE
+          echo "id=$(cat /tmp/app-hyperdrive-id)" >> "$GITHUB_OUTPUT"
+
+      - name: Reconcile app.mkety.com callback into production ZITADEL application
+        id: zitadel
+        env:
+          ZITADEL_APPLICATION_NAME: Mkety Platform Production
+        run: pnpm exec tsx scripts/provision-zitadel-redirects.ts
+
+      - name: Configure dedicated app-host Worker
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          config.name=process.env.APP_WORKER_NAME;
+          config.workers_dev=true;
+          config.preview_urls=true;
+          config.keep_vars=true;
+          config.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          config.vars={...(config.vars||{}),NEXT_PUBLIC_APP_URL:'https://app.mkety.com'};
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
+          NODE
+
+      - name: Build and validate dedicated app-host Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm build
+          pnpm run deploy --dry-run
+
+      - name: Deploy dedicated app-host Worker without hostname binding
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run deploy 2>&1 | tee /tmp/mkety-app-host-deploy.log
+          url="$(grep -Eo 'https://[^[:space:]]+workers\.dev' /tmp/mkety-app-host-deploy.log | tail -n 1 || true)"
+          [ -n "$url" ] || { echo "Dedicated app Worker deployed without a workers.dev URL." >&2; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare durable app-host session secret
+        id: session
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CONFIGURED_MKETY_AUTH_SESSION_SECRET:-}" ]; then
+            echo "::add-mask::$CONFIGURED_MKETY_AUTH_SESSION_SECRET"
+            echo "SESSION_SECRET=$CONFIGURED_MKETY_AUTH_SESSION_SECRET" >> "$GITHUB_ENV"
+            echo "write=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pnpm exec wrangler secret list --name "$APP_WORKER_NAME" --format json >/tmp/app-worker-secrets.json
+          exists="$(node -e "const fs=require('fs');const raw=fs.readFileSync('/tmp/app-worker-secrets.json','utf8');const m=raw.match(/\[\s*(?:\{|\])/);const a=m?JSON.parse(raw.slice(m.index)):[];process.stdout.write(a.some(x=>x.name==='MKETY_AUTH_SESSION_SECRET')?'true':'false')")"
+          if [ "$exists" = true ]; then
+            echo "write=false" >> "$GITHUB_OUTPUT"
+          else
+            secret="$(openssl rand -hex 32)"
+            echo "::add-mask::$secret"
+            echo "SESSION_SECRET=$secret" >> "$GITHUB_ENV"
+            echo "write=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attach app-host auth runtime bindings
+        env:
+          CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
+          WRITE_SESSION_SECRET: ${{ steps.session.outputs.write }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLIENT_ID" ] || { echo "ZITADEL did not return a client id." >&2; exit 1; }
+          put_secret() {
+            local name="$1"; local value="$2"
+            [ -n "$value" ] || { echo "Missing runtime value: $name" >&2; exit 1; }
+            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$APP_WORKER_NAME" >/dev/null
+          }
+          put_secret MKETY_AUTH_PROVIDER zitadel
+          put_secret MKETY_AUTH_ISSUER "$MKETY_AUTH_ISSUER"
+          put_secret MKETY_AUTH_CLIENT_ID "$CLIENT_ID"
+          put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
+          put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
+          put_secret NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
+          if [ "$WRITE_SESSION_SECRET" = true ]; then
+            put_secret MKETY_AUTH_SESSION_SECRET "$SESSION_SECRET"
+          fi
+          printf '%s' '{"DATABASE_URL":null}' | pnpm exec wrangler secret bulk --name "$APP_WORKER_NAME" >/dev/null
+
+      - name: Smoke dedicated Worker before DNS mutation
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers=/tmp/app-preview.headers
+          code="$(curl -sS --connect-timeout 10 --max-time 30 -D "$headers" -o /dev/null -w '%{http_code}' "$PREVIEW_URL/app" || true)"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+          [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ] || {
+            echo "Preview /app did not redirect to login." >&2; exit 1;
+          }
+
+      - name: Back up app.mkety.com DNS and Custom Domain state
+        id: snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zones="$(curl -fsS "${auth[@]}" "$api/zones?name=mkety.com&status=active")"
+          zone_id="$(ZONES="$zones" node -e "const p=JSON.parse(process.env.ZONES||'{}');if(!p.success||!Array.isArray(p.result)||p.result.length!==1)process.exit(1);process.stdout.write(p.result[0].id)")"
+          echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+          curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=app.mkety.com" >/tmp/app-dns-before.json
+          curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/tmp/app-domains-before.json
+
+      - name: Replace bad app DNS with dedicated Worker Custom Domain
+        id: bind
+        env:
+          ZONE_ID: ${{ steps.snapshot.outputs.zone_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          restore() {
+            set +e
+            domains="$(curl -sS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            app_id="$(DOMAINS="$domains" WORKER="$APP_WORKER_NAME" node -e "const p=JSON.parse(process.env.DOMAINS||'{}');const d=(p.result||[]).find(x=>x.hostname==='app.mkety.com'&&x.service===process.env.WORKER);process.stdout.write(d?.id||'')")"
+            [ -z "$app_id" ] || curl -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$app_id" >/dev/null || true
+
+            current="$(curl -sS "${auth[@]}" "$api/zones/$ZONE_ID/dns_records?name=app.mkety.com")"
+            CURRENT="$current" node -e "const p=JSON.parse(process.env.CURRENT||'{}');for(const r of p.result||[]) console.log(r.id)" | while read -r id; do
+              [ -z "$id" ] || curl -sS -X DELETE "${auth[@]}" "$api/zones/$ZONE_ID/dns_records/$id" >/dev/null || true
+            done
+
+            DNS_BACKUP="$(cat /tmp/app-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
+          const {execFileSync}=require('child_process');
+          const backup=JSON.parse(process.env.DNS_BACKUP||'{}');
+          for(const r of backup.result||[]){
+            if(!['A','AAAA','CNAME'].includes(r.type)) continue;
+            const body=JSON.stringify({type:r.type,name:r.name,content:r.content,ttl:r.ttl||1,proxied:Boolean(r.proxied)});
+            execFileSync('curl',['-fsS','-X','POST','-H','Authorization: Bearer '+process.env.CLOUDFLARE_API_TOKEN,'-H','Content-Type: application/json','--data',body,'https://api.cloudflare.com/client/v4/zones/'+process.env.ZONE_ID+'/dns_records'],{stdio:'ignore'});
+          }
+          NODE
+          }
+          trap 'status=$?; restore; exit "$status"' ERR
+
+          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          conflict="$(DOMAINS="$domains" node -e "const p=JSON.parse(process.env.DOMAINS||'{}');const d=(p.result||[]).find(x=>x.hostname==='app.mkety.com');if(d)process.stdout.write(JSON.stringify(d))")"
+          if [ -n "$conflict" ]; then
+            owner="$(ROW="$conflict" node -e "process.stdout.write(JSON.parse(process.env.ROW).service||'')")"
+            [ "$owner" = "$APP_WORKER_NAME" ] || { echo "app.mkety.com already belongs to another Worker: $owner" >&2; false; }
+          else
+            current="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/dns_records?name=app.mkety.com")"
+            CURRENT="$current" node -e "const p=JSON.parse(process.env.CURRENT||'{}');for(const r of p.result||[]) if(['A','AAAA','CNAME'].includes(r.type)) console.log(r.id)" | while read -r id; do
+              [ -z "$id" ] || curl -fsS -X DELETE "${auth[@]}" "$api/zones/$ZONE_ID/dns_records/$id" >/dev/null
+            done
+            body="$(ZONE_ID="$ZONE_ID" WORKER="$APP_WORKER_NAME" node -e "process.stdout.write(JSON.stringify({hostname:'app.mkety.com',service:process.env.WORKER,zone_id:process.env.ZONE_ID,zone_name:'mkety.com'}))")"
+            response="$(curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            RESPONSE="$response" node -e "const p=JSON.parse(process.env.RESPONSE||'{}');if(!p.success||!p.result?.id)process.exit(1)"
+          fi
+
+          trap - ERR
+          echo "bound=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify live app host and branded auth handoff
+        env:
+          ZONE_ID: ${{ steps.snapshot.outputs.zone_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 60); do
+            root_headers=/tmp/app-live-root.headers
+            root_code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$root_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/' || true)"
+            root_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$root_headers")"
+            if [ "$root_code" -ge 300 ] 2>/dev/null && [ "$root_code" -lt 400 ] 2>/dev/null; then
+              ROOT_LOCATION="$root_location" node -e "const u=new URL(process.env.ROOT_LOCATION,'https://app.mkety.com/');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/app')process.exit(1)" && ready=1 && break
+            fi
+            sleep 5
+          done
+          [ "$ready" = 1 ] || { echo "app.mkety.com did not become ready." >&2; exit 1; }
+
+          app_headers=/tmp/app-live-entry.headers
+          app_code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$app_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app')"
+          app_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_headers")"
+          [ "$app_code" -ge 300 ] && [ "$app_code" -lt 400 ] && [ -n "$app_location" ] || { echo "Unauthenticated /app did not redirect." >&2; exit 1; }
+          APP_LOCATION="$app_location" node -e "const u=new URL(process.env.APP_LOCATION,'https://app.mkety.com/app');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login')process.exit(1)"
+
+          auth_headers=/tmp/app-live-auth.headers
+          auth_code="$(curl -sS --connect-timeout 10 --max-time 30 -D "$auth_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin')"
+          auth_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$auth_headers")"
+          [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ] || { echo "Auth first hop did not redirect." >&2; exit 1; }
+          AUTH_LOCATION="$auth_location" node -e "const u=new URL(process.env.AUTH_LOCATION);if(u.origin!=='https://auth.mkety.com'||!u.pathname.startsWith('/ui/v2/login/'))process.exit(1)"
+
+      - name: Disable dedicated Worker preview exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          body='{"workers_dev":false,"preview_urls":false}'
+          curl -fsS -X PATCH "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/settings" >/dev/null
+
+      - name: Publish repair evidence
+        shell: bash
+        run: |
+          {
+            echo '## app.mkety.com production repair'
+            echo
+            echo '- Exact hotfix SHA: `${{ inputs.verified_sha }}`'
+            echo '- Dedicated Worker: `mkety-app-host`'
+            echo '- Public mkety.com/www Worker: unchanged'
+            echo '- Production DB: existing MKETY_DB Hyperdrive'
+            echo '- ZITADEL callback/logout: app.mkety.com added non-destructively'
+            echo '- Bad app DNS record: replaced by Worker Custom Domain'
+            echo '- Live root/app/auth handoff: verified'
+          } >> "$GITHUB_STEP_SUMMARY"
