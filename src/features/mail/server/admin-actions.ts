@@ -29,7 +29,7 @@ export async function reconcileMailCatalog(opsTenantSlug: string) {
     actorId: actor.userId,
     action: 'mail.catalog.reconciled',
     entityType: 'mail_catalog',
-    metadata: result,
+    metadata: { ...result },
   });
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
