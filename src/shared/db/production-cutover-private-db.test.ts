@@ -12,6 +12,10 @@ const CANDIDATE_PATH = path.resolve(
   process.cwd(),
   '.github/workflows/mkety-public-candidate-deploy.yml',
 );
+const AUTH_RECONCILE_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-production-auth-reconcile.yml',
+);
 
 describe('production cutover private database gate', () => {
   it('authorizes one exact integrated candidate before private DB mutation and Custom Domain deploy', async () => {
@@ -84,6 +88,16 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain(
       'MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ secrets.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL || vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}',
     );
+  });
+
+  it('keeps app.mkety.com as the canonical production auth origin', async () => {
+    const workflow = await readFile(AUTH_RECONCILE_PATH, 'utf8');
+
+    expect(workflow).toContain('MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback');
+    expect(workflow).toContain('MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login');
+    expect(workflow).toContain('NEXT_PUBLIC_APP_URL: https://app.mkety.com');
+    expect(workflow).toContain('https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin');
+    expect(workflow).not.toContain('NEXT_PUBLIC_APP_URL: https://mkety.com');
   });
 
   it('upserts and verifies the Coolify migration secret without blindly replaying creates', async () => {
