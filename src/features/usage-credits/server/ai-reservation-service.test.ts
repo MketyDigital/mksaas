@@ -106,6 +106,7 @@ class FakeAiReservationSource implements AiCreditReservationSource {
         const now = new Date();
         const item: StoredAiCreditReservation = {
           id: `reservation-${++this.sequence}`,
+          ...input,
           settledCredits: input.settledCredits ?? null,
           releaseLedgerEntryId: input.releaseLedgerEntryId ?? null,
           usageEventId: input.usageEventId ?? null,
@@ -114,7 +115,6 @@ class FakeAiReservationSource implements AiCreditReservationSource {
           releaseReason: input.releaseReason ?? null,
           createdAt: now,
           updatedAt: now,
-          ...input,
         };
         this.reservations.push(item);
         return item;
