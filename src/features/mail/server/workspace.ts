@@ -18,6 +18,7 @@ export async function requireMailWorkspaceAccess(tenantSlug:string){
   const actor=await requireTenantMembership(tenantSlug);
   const tenant=await getTenantBySlug(tenantSlug);
   if(!tenant) throw new Error('Tenant not found');
+  await requireEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' });
   const membership=await db.query.tenantMemberships.findFirst({
     where:and(eq(tenantMemberships.tenantId,tenant.id),eq(tenantMemberships.userId,actor.userId)),
     columns:{role:true},
@@ -28,7 +29,6 @@ export async function requireMailWorkspaceAccess(tenantSlug:string){
 
 export async function enableMailWorkspace(tenantSlug:string){
   const {actor,tenant}=await requireMailWorkspaceAccess(tenantSlug);
-  await requireEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' });
   const existing=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
   if(existing) return existing;
   const planKey=await resolveTenantMailPlanKey(tenant.id);
