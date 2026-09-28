@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { getTenantSettings } from '@/features/admin/services/settings-service';
 import {
   connectEnterpriseAiHostname,
+  provisionEnterpriseAiManagedHostname,
   refreshEnterpriseAiHostname,
   saveEnterpriseAiWhiteLabel,
 } from '@/features/ai-runtime/server/enterprise-admin-actions';
@@ -21,7 +22,7 @@ export const dynamic = 'force-dynamic';
 function metadata(value: string | null) {
   if (!value) return null;
   try {
-    return JSON.parse(value) as { purpose?: string; cnameTarget?: string; sslStatus?: string | null };
+    return JSON.parse(value) as { purpose?: string; cnameTarget?: string; sslStatus?: string | null; managed?: boolean };
   } catch {
     return null;
   }
@@ -86,9 +87,25 @@ export default async function EnterpriseAiBrandingPage({ params }: { params: Pro
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle>Your web address</CardTitle>
-          <CardDescription>Use <strong>{tenant.slug}.mkety.app</strong> immediately, or connect your own domain with one CNAME record. Mkety handles TLS and app routing through Cloudflare for SaaS.</CardDescription>
+          <CardDescription>Activate a managed <strong>*.mkety.app</strong> address, or connect your own domain with one CNAME record. Mkety handles TLS and app routing through Cloudflare for SaaS.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          <div className="rounded-xl border p-4">
+            <p className="font-semibold">Managed Mkety address</p>
+            <p className="mt-1 text-sm text-muted-foreground">Mkety provisions DNS and TLS for this address; you do not add any DNS record.</p>
+            <form action={provisionEnterpriseAiManagedHostname.bind(null, tenantSlug)} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-1 items-center rounded-xl border bg-background">
+                <Input name="managedSubdomain" defaultValue={brand.managedSubdomain ?? tenant.slug} className="border-0 focus-visible:ring-0" />
+                <span className="pr-3 text-sm text-muted-foreground">.mkety.app</span>
+              </div>
+              <Button type="submit">Activate address</Button>
+            </form>
+          </div>
+
+          <div className="border-t pt-5">
+            <p className="font-semibold">Your own domain</p>
+            <p className="mt-1 text-sm text-muted-foreground">Enter a hostname such as ai.yourcompany.com. You will add one CNAME record after Mkety creates the hostname.</p>
+          </div>
           <form action={connectEnterpriseAiHostname.bind(null, tenantSlug)} className="flex flex-col gap-3 sm:flex-row">
             <Input name="hostname" placeholder="ai.yourcompany.com" className="sm:max-w-md" />
             <Button type="submit">Connect domain</Button>
@@ -105,7 +122,12 @@ export default async function EnterpriseAiBrandingPage({ params }: { params: Pro
                   </form>
                 ) : <span className="text-sm font-semibold text-emerald-600">Ready</span>}
               </div>
-              {meta?.cnameTarget ? (
+              {meta?.managed ? (
+                <div className="mt-4 rounded-lg bg-muted p-3 text-sm">
+                  <p className="font-medium">Mkety-managed address</p>
+                  <p className="mt-1 text-muted-foreground">DNS, certificate issuance and routing are managed automatically by Mkety.</p>
+                </div>
+              ) : meta?.cnameTarget ? (
                 <div className="mt-4 rounded-lg bg-muted p-3 text-sm">
                   <p className="font-medium">Add one DNS record</p>
                   <p className="mt-1 font-mono break-all">CNAME {domain.hostname} → {meta.cnameTarget}</p>
