@@ -10,7 +10,7 @@ describe('Enterprise AI live hostname route proof', () => {
   });
 
   it('accepts a working HTTPS route only when it proves the expected tenant', async () => {
-    global.fetch = vi.fn(async () => Response.json({
+    global.fetch = jest.fn(async () => Response.json({
       ok: true,
       hostname: 'ai.customer.com',
       tenant_id: 'tenant-1',
@@ -26,7 +26,7 @@ describe('Enterprise AI live hostname route proof', () => {
   });
 
   it('rejects a live hostname that resolves to another tenant', async () => {
-    global.fetch = vi.fn(async () => Response.json({
+    global.fetch = jest.fn(async () => Response.json({
       ok: true,
       hostname: 'ai.customer.com',
       tenant_id: 'tenant-other',
