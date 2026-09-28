@@ -453,3 +453,5 @@ jobs:
           echo 'Enterprise payment readiness: NOWPayments=true hosted-checkout=admin-configured-optional admin-issued-links=true'
           echo 'No provider/model selector is exposed to visitors.'
           echo 'No mkety.com route or custom-domain binding was configured by this workflow.'
+
+# release certification refresh: 2026-09-28 Mail/public product increment
