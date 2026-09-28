@@ -15,7 +15,11 @@ const rate = {
   effectiveTo: null,
 };
 
-function createHarness(options: { budgetFailure?: boolean; inferenceEnabled?: boolean } = {}) {
+function createHarness(options: {
+  budgetFailure?: boolean;
+  inferenceEnabled?: boolean;
+  authorizedWriteFailure?: boolean;
+} = {}) {
   const calls: string[] = [];
   const deps = {
     getPolicy: async () => ({
@@ -29,6 +33,9 @@ function createHarness(options: { budgetFailure?: boolean; inferenceEnabled?: bo
     }),
     markRequest: async (input: { status: string }) => {
       calls.push(`mark:${input.status}`);
+      if (input.status === 'authorized' && options.authorizedWriteFailure) {
+        throw new Error('request state write failed');
+      }
     },
     resolveRate: async () => rate,
     reserveCredits: async () => {
@@ -147,6 +154,21 @@ describe('AI commercial admission orchestrator', () => {
     expect(calls).toEqual([
       'credit:reserve',
       'budget:reserve',
+      'credit:release',
+      'mark:admission_failed',
+    ]);
+  });
+
+
+  it('releases budget and credit holds when a late authorization write fails', async () => {
+    const { service, calls } = createHarness({ authorizedWriteFailure: true });
+
+    await expect(service.admit(admissionInput)).rejects.toThrow('request state write failed');
+    expect(calls).toEqual([
+      'credit:reserve',
+      'budget:reserve',
+      'mark:authorized',
+      'budget:release',
       'credit:release',
       'mark:admission_failed',
     ]);
