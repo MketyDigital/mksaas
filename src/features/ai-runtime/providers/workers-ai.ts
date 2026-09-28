@@ -25,7 +25,7 @@ type WorkersAiChatResponse = {
   choices?: Array<{
     finish_reason?: string | null;
     message?: {
-      content?: string | null;
+      content?: string | Array<{ type?: string; text?: string; content?: string }> | null;
       tool_calls?: Array<{
         id?: string;
         function?: {
@@ -80,11 +80,22 @@ function normalizeWorkersAiResponse(
 
   const value = response as WorkersAiChatResponse;
   const choice = value.choices?.[0];
-  const text = typeof choice?.message?.content === 'string'
-    ? choice.message.content
-    : typeof value.response === 'string'
-      ? value.response
-      : undefined;
+  const content = choice?.message?.content;
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content
+          .map((part) => {
+            if (!part || typeof part !== 'object') return '';
+            if (typeof part.text === 'string') return part.text;
+            if (typeof part.content === 'string') return part.content;
+            return '';
+          })
+          .join('')
+          .trim() || undefined
+      : typeof value.response === 'string'
+        ? value.response
+        : undefined;
 
   const toolCalls = choice?.message?.tool_calls
     ?.filter((item) => item.function?.name)
