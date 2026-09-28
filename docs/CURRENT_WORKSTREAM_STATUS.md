@@ -1083,3 +1083,23 @@ Enterprise Mkety AI is presented as a business solution rather than an infrastru
 9. Add BYOK after managed inference is stable and tested.
 10. Promote production/customer inference only after exact-head CI, migration, smoke, security, commercial, and live acceptance gates pass.
 
+
+## 2026-09-28 — Enterprise AI business console integration
+
+- Commercial admission gate merged as `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`; provider execution remains disabled.
+- Current slice implements the focused `ai.mkety.com` product/session surface using the existing one-time Mkety product-handoff pattern.
+- Customer UX is outcome-first for SMBs: choose a business solution, create a zero-cost draft setup, then continue configuration; Advanced/Developer controls remain secondary.
+- Business solution templates are database-backed and seeded; Mkety Ops may edit title, description, outcomes, setup steps, sort order, and visibility without code.
+- Solution instances are tenant-scoped, optionally project-scoped, and require Enterprise AI entitlement. Draft creation does not publish, reserve credits, invoke a provider, or mutate entitlements.
+- Normal AI Workspace remains separate; entitled AI Workspace users receive a link to Mkety AI for Business at `https://ai.mkety.com`.
+- Public Mkety pages already use `https://ai.mkety.com` as the focused Enterprise AI destination.
+- Production DNS/custom-domain attachment is still a release operation and must not occur until this console/auth slice passes exact-head CI, migration, vinext and public candidate gates.
+
+### Next after this slice
+
+1. Certify and merge the business-console/auth/migration exact head.
+2. Add/verify the guarded Cloudflare host attachment for `ai.mkety.com` without changing unrelated Mkety hosts.
+3. Run the manual managed-model benchmark and select the second model from evidence.
+4. Add non-production Workers AI invocation only after a provider-success settlement/reconciliation path is atomic/idempotent enough to guarantee no free provider spend.
+5. Prove actual usage settlement, timeout/cancellation/failure repair, then streaming and BYOK.
+6. Production-enable customer inference only after commercial, security, tenant-isolation, live-host and rollback acceptance pass.
