@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
+import { resolveEnterpriseAiHostname } from '@/features/ai-runtime/server/enterprise-hostnames';
 import { getCanonicalMketyPublicUrl } from '@/features/platform-content/public-host-routing';
 import { db } from '@/shared/db/cloudflare';
 import { customDomains, tenants } from '@/shared/db/schema';
@@ -127,6 +128,38 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
   if (canonicalPublicUrl) {
     return NextResponse.redirect(canonicalPublicUrl, 308);
+  }
+
+  // Enterprise AI customer hostnames are routing context only. They resolve to the
+  // same tenant/workspace and use a host-bound one-time auth handoff so no wildcard
+  // cross-domain session cookie is required.
+  if (!pathname.startsWith('/api/') && hostname.toLowerCase() !== aiHost) {
+    try {
+      const enterpriseHost = await resolveEnterpriseAiHostname(hostname);
+      if (enterpriseHost) {
+        if (!session) {
+          let centralOrigin = 'https://app.mkety.com';
+          try {
+            centralOrigin = new URL(process.env.NEXT_PUBLIC_APP_URL || centralOrigin).origin;
+          } catch {
+            centralOrigin = 'https://app.mkety.com';
+          }
+          const login = new URL('/api/auth/product-handoff/start', centralOrigin);
+          login.searchParams.set('product', 'ai');
+          login.searchParams.set('targetHost', hostname.toLowerCase());
+          login.searchParams.set('returnTo', '/ai/app');
+          return NextResponse.redirect(login);
+        }
+
+        const rewriteUrl = new URL(request.url);
+        rewriteUrl.pathname = pathname === '/'
+          ? `/t/${enterpriseHost.tenant.slug}/enterprise-ai`
+          : `/t/${enterpriseHost.tenant.slug}/enterprise-ai${pathname}`;
+        return NextResponse.rewrite(rewriteUrl);
+      }
+    } catch {
+      // Enterprise hostname lookup is fail-closed and must not break canonical hosts.
+    }
   }
 
   if (!pathname.startsWith('/t/') && hostname) {
