@@ -61,6 +61,7 @@ export function ChatInterface({
       body: {
         tenantSlug,
         id: requestId,
+        conversationId: requestId,
         providerConnectionId: providerConnectionId || null,
         model: modelOverride.trim() || null,
       },
