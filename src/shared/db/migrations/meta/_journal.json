@@ -204,6 +204,13 @@
       "when": 1790579400000,
       "tag": "0028_agent_provider_connection_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790583000000,
+      "tag": "0029_platform_service_connections",
+      "breakpoints": true
     }
   ]
 }
