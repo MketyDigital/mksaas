@@ -832,6 +832,16 @@ jobs:
 
 
 
+          legacy_headers="$(mktemp)"
+          legacy_code="$(curl --connect-timeout 10 --max-time 60 -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/services')"
+          [ "$legacy_code" = '308' ] || { echo "Legacy /services redirect expected 308, got $legacy_code"; false; }
+          LEGACY_HEADERS="$legacy_headers" node -e "const fs=require('node:fs');const h=fs.readFileSync(process.env.LEGACY_HEADERS,'utf8');const m=h.match(/^location:\s*(.+)$/im);if(!m||new URL(m[1].trim()).toString()!=='https://mkety.com/solutions'){console.error('Legacy /services redirect target is wrong.');process.exit(1)}"
+
+          gone_headers="$(mktemp)"
+          gone_code="$(curl --connect-timeout 10 --max-time 60 -sS -D "$gone_headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/career')"
+          [ "$gone_code" = '410' ] || { echo "Legacy /career expected 410, got $gone_code"; false; }
+          grep -Eiq '^x-robots-tag:\s*noindex, nofollow' "$gone_headers" || { echo 'Legacy /career missing noindex X-Robots-Tag.'; false; }
+
           curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/academy' -o /tmp/mkety-academy-page.html
           grep -Fq 'Courses &amp; tiers' /tmp/mkety-academy-page.html || grep -Fq 'Courses & tiers' /tmp/mkety-academy-page.html || { echo 'Academy page missing Courses & tiers section.'; false; }
           grep -Fq 'Ready to learn?' /tmp/mkety-academy-page.html || { echo 'Academy page missing ready-to-learn handoff.'; false; }
@@ -952,6 +962,43 @@ jobs:
 
           trap - ERR
           echo 'Production acceptance passed. Apex/www Worker Custom Domains retained on the exact verified Worker.'
+
+
+      - name: Notify IndexNow after successful live acceptance
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/mkety-indexnow.json <<'JSON'
+          {
+            "host": "mkety.com",
+            "key": "c90e032d536bd79e43f57cfcad580d7e",
+            "keyLocation": "https://mkety.com/c90e032d536bd79e43f57cfcad580d7e.txt",
+            "urlList": [
+              "https://mkety.com/",
+              "https://mkety.com/platform",
+              "https://mkety.com/workspaces",
+              "https://mkety.com/solutions",
+              "https://mkety.com/academy",
+              "https://mkety.com/pricing",
+              "https://mkety.com/enterprise",
+              "https://mkety.com/mail",
+              "https://mkety.com/trust",
+              "https://mkety.com/infrastructure",
+              "https://mkety.com/about",
+              "https://mkety.com/docs",
+              "https://mkety.com/privacy",
+              "https://mkety.com/terms",
+              "https://mkety.com/contact",
+              "https://mkety.com/sitemap.xml"
+            ]
+          }
+          JSON
+          code="$(curl --connect-timeout 10 --max-time 30 -sS -o /tmp/mkety-indexnow-response -w '%{http_code}'             -H 'Content-Type: application/json; charset=utf-8'             --data @/tmp/mkety-indexnow.json             'https://api.indexnow.org/indexnow' || true)"
+          case "$code" in
+            200|202) echo "IndexNow accepted Mkety public release notification (HTTP $code)." ;;
+            *) echo "IndexNow notification was not accepted (HTTP $code); release remains healthy because indexing notification is non-blocking." ;;
+          esac
 
       - name: Publish cutover evidence and rollback instructions
         env:
