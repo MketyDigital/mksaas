@@ -17,7 +17,7 @@ export const agents = appSchema.table(
     name: varchar('name', { length: 160 }).notNull(),
     slug: varchar('slug', { length: 100 }).notNull(),
     instructions: text('instructions'),
-    provider: varchar('provider', { length: 40 }).notNull().default('platform'),
+    provider: varchar('provider', { length: 80 }).notNull().default('platform'),
     model: varchar('model', { length: 160 }),
     status: varchar('status', { length: 30 }).notNull().default('draft'),
     config: text('config'),
