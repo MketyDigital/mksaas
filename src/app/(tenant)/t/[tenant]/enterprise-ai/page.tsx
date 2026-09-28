@@ -188,6 +188,7 @@ export default async function EnterpriseAiConsolePage({
           <div className="mt-4 grid gap-2">
             <a className="rounded-lg border px-3 py-2 text-sm font-medium" href="https://mkety.com/docs"><Code2 className="mr-2 inline h-4 w-4" /> Developer docs</a>
             <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/t/${tenantSlug}/projects`}>Projects</Link>
+            <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/t/${tenantSlug}/enterprise-ai/providers`}>Providers / BYOK</Link>
           </div>
         </details>
       </section>
