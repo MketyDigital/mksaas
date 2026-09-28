@@ -104,6 +104,7 @@ export async function createAiReservationFingerprint(input: {
   apiKeyId: string | null;
   requestId: string | null;
   reservedCredits: bigint;
+  idempotencyKey: string;
 }) {
   const payload = JSON.stringify({
     tenantId: input.tenantId,
@@ -111,6 +112,7 @@ export async function createAiReservationFingerprint(input: {
     apiKeyId: input.apiKeyId,
     requestId: input.requestId,
     reservedCredits: input.reservedCredits.toString(),
+    idempotencyKey: input.idempotencyKey,
   });
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
   return toHex(new Uint8Array(digest));
