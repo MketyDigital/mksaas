@@ -4,10 +4,11 @@ import { and, asc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { getEnterpriseAiChannel, type EnterpriseAiChannelKey } from '@/features/ai-runtime/channels/registry';
+import { fingerprintAiConnectionSecret } from '@/features/ai-runtime/channels/connection-secret-crypto';
 import {
-  fingerprintAiConnectionSecret,
-  protectAiConnectionSecret,
-} from '@/features/ai-runtime/channels/connection-secret-crypto';
+  channelCredentialsFromForm,
+  protectChannelCredentials,
+} from '@/features/ai-runtime/channels/credentials';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { db } from '@/shared/db/cloudflare';
@@ -80,7 +81,8 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     if (parsed.protocol !== 'https:') throw new Error('Channel endpoints must use HTTPS.');
   }
 
-  const rawSecret = String(formData.get('credential') ?? '').trim();
+  const credentials = channelCredentialsFromForm(formData);
+  const rawSecret = Object.values(credentials).filter(Boolean).join('|');
   const metadata = safeMetadata(formData);
   const existing = await db.query.aiProviderConnections.findFirst({
     where: and(
@@ -90,9 +92,8 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     ),
   });
 
-  const secretRef = rawSecret
-    ? protectAiConnectionSecret(rawSecret)
-    : existing?.secretRef ?? null;
+  const protectedCredentials = protectChannelCredentials(credentials);
+  const secretRef = protectedCredentials ?? existing?.secretRef ?? null;
 
   if (rawSecret) {
     metadata.secretFingerprint = fingerprintAiConnectionSecret(rawSecret);
