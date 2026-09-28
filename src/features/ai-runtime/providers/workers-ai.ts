@@ -26,6 +26,13 @@ type WorkersAiChatResponse = {
     finish_reason?: string | null;
     message?: {
       content?: string | null;
+      tool_calls?: Array<{
+        id?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
+      }>;
     };
   }>;
   usage?: {
@@ -79,6 +86,14 @@ function normalizeWorkersAiResponse(
       ? value.response
       : undefined;
 
+  const toolCalls = choice?.message?.tool_calls
+    ?.filter((item) => item.function?.name)
+    .map((item) => ({
+      id: item.id,
+      name: item.function!.name!,
+      argumentsJson: item.function?.arguments ?? '{}',
+    }));
+
   const usage = value.usage;
   const inputTokens = nonNegativeBigInt(usage?.prompt_tokens ?? usage?.input_tokens);
   const outputTokens = nonNegativeBigInt(usage?.completion_tokens ?? usage?.output_tokens);
@@ -89,6 +104,7 @@ function normalizeWorkersAiResponse(
   return {
     nativeModel: value.model ?? nativeModel,
     text,
+    ...(toolCalls?.length ? { toolCalls } : {}),
     finishReason: normalizeFinishReason(choice?.finish_reason),
     usage: {
       inputTokens,
