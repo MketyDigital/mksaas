@@ -1,10 +1,33 @@
+
+
+## 2026-09-28 Enterprise AI completion workstream
+
+Current authoritative implementation direction:
+
+- Enterprise AI remains separately entitled from normal AI Workspace.
+- PR #159 is the clean current-main reconciliation of the business console; do not merge stale PRs #145, #154, #157 or #158 as historical patches.
+- White-label is a real product boundary: entitled customers may replace product name, logos, favicon, colors, support/legal links and customer login presentation.
+- Customer hostnames are routing context for the same tenant/workspace, never a duplicate tenant, user store or billing system.
+- Every Enterprise AI tenant may use the managed `<tenant>.mkety.app` hostname; white-label tenants may attach a verified custom hostname through Cloudflare for SaaS.
+- Custom hostname onboarding is designed for one customer DNS action: CNAME the selected hostname to the Mkety SaaS target; Mkety owns custom-hostname provisioning, TLS and routing.
+- Product-session handoff tokens are one-time and destination-host-bound so customer domains can establish host-scoped sessions without wildcard Mkety cookies.
+- Domain purchase is provider-neutral behind the Mkety domain-reseller adapter; registrar credentials remain server-side.
+- Day-one channel vocabulary is Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. The registry is adapter-based so additional channels do not create another AI runtime.
+- Customer console exposes plan, subscription status, current period, prepaid credits, current-month AI requests and charged credits in non-technical language.
+- Managed inference executes only after Enterprise entitlement, route/model policy, immutable rate-card resolution, worst-case credit reservation and every applicable budget reservation.
+- Workers AI is invoked through the Worker `AI` binding with an explicit AI Gateway ID. Provider failure releases holds.
+- Successful provider usage is normalized, exact customer credits are calculated from the admitted rate-card version, and credit/budget reservations are settled from actual usage.
+- Provider cost is recorded separately from customer charge in micro-USD. The default commercial planning floor targets 65% gross margin plus 15% overhead reserve; public numeric pricing is not changed by this workstream.
+- If upstream inference succeeds but local commercial settlement fails, the request becomes `reconciliation_required` and must not be sent upstream again.
+- Production `customerInferenceEnabled` remains off until model benchmark, cost verification, exact-head CI/migration/smoke/security acceptance and guarded promotion pass.
+
 # Mkety Current Workstream Status
 
-**Updated:** 2026-09-21  
-**Current workstream:** `mkety.com` public-site final acceptance and production auth recovery  
-**Status:** PRODUCTION — public site live; login/signup repaired and verified against ZITADEL over Workers VPC-backed Hyperdrive  
-**Production application SHA:** `2e871fe5ba51585886713c2cb79544e68dc20b73`  
-**Successful cutover run:** `35309531966`
+**Updated:** 2026-09-28  
+**Current workstream:** Enterprise Mkety AI completion — business console, white-label domains, multi-channel runtime, managed inference and exact commercial settlement  
+**Current main:** `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`  
+**Active completion PR:** #159 — `feat/enterprise-ai-complete-platform-20260928`  
+**Status:** AI runtime/commercial admission is merged on main; completion branch keeps production customer inference fail-closed until exact-head verification and guarded promotion.
 
 ## 2026-09-21 production auth recovery and public-site audit
 
