@@ -46,6 +46,16 @@ describe('AI commercial admission route safety', () => {
     expect(schema).toContain("settledCredits: bigint('settled_credits'");
   });
 
+  it('fails closed on idempotency replay lookup and returns structured conflict responses', async () => {
+    const route = await readFile('src/app/api/v1/ai/chat/completions/route.ts', 'utf8');
+
+    expect(route).toContain('resolveIdempotencyReplay({');
+    expect(route).toContain("'idempotency_conflict'");
+    expect(route).toContain("'idempotency_lookup_unavailable'");
+    expect(route).toContain('The request was not sent upstream.');
+    expect(route).toContain('if (replay) return replay;');
+  });
+
   it('keeps tools and structured output explicit in the provider-neutral contract', async () => {
     const route = await readFile('src/app/api/v1/ai/chat/completions/route.ts', 'utf8');
     expect(route).toContain("type: z.literal('function')");
