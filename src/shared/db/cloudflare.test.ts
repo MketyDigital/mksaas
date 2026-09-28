@@ -48,7 +48,25 @@ describe('Cloudflare database singleton lifecycle', () => {
     expect(mockDrizzle).not.toHaveBeenCalled();
   });
 
-  it('initializes once on first database access and reuses the singleton', async () => {
+  it('uses the active request database context without creating the fallback singleton', async () => {
+    const requestDatabase = {
+      query: { requestScoped: true },
+      execute: jest.fn(),
+    };
+    const { runWithRequestDatabaseContext } = await import('./request-context');
+    const { db } = await import('./cloudflare');
+
+    await runWithRequestDatabaseContext(requestDatabase, async () => {
+      expect(db.query).toBe(requestDatabase.query);
+      expect(typeof db.execute).toBe('function');
+    });
+
+    expect(mockRuntimeConnectionString).not.toHaveBeenCalled();
+    expect(mockPostgres).not.toHaveBeenCalled();
+    expect(mockDrizzle).not.toHaveBeenCalled();
+  });
+
+  it('initializes once on first database access and reuses the fallback singleton', async () => {
     const { db } = await import('./cloudflare');
 
     expect(mockRuntimeConnectionString).not.toHaveBeenCalled();
@@ -56,7 +74,8 @@ describe('Cloudflare database singleton lifecycle', () => {
     expect(db.query).toBe(mockDatabase.query);
     expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(1);
     expect(mockPostgres).toHaveBeenCalledWith('postgresql://runtime.example/mkety', {
-      max: undefined,
+      max: 1,
+      prepare: false,
     });
     expect(mockDrizzle).toHaveBeenCalledTimes(1);
 
