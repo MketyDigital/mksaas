@@ -1,0 +1,252 @@
+import {
+  activateAiRateCard,
+  createAiRateCard,
+  disableEnterpriseAiInference,
+  retireAiRateCard,
+  updateAiRuntimePolicy,
+} from '@/features/ai-runtime/server/commercial-admin-actions';
+import type { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+
+type Overview = Awaited<ReturnType<typeof getAiCommercialControlOverview>>;
+
+export function AiCommercialControlPanel({
+  tenant,
+  overview,
+}: {
+  tenant: string;
+  overview: Overview;
+}) {
+  const activeRateCards = overview.rateCards.filter((item) => item.status === 'active');
+  const enabledModels = overview.models.filter((item) => item.enabled);
+
+  return (
+    <div className="space-y-6">
+      <Card className="rounded-2xl border-primary/20 bg-primary/[0.025]">
+        <CardHeader>
+          <CardTitle>Cost protection</CardTitle>
+          <CardDescription>
+            Enterprise AI is prepaid-only. Customer inference cannot spend beyond available credits and applicable hard budgets.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Billing mode</p>
+            <p className="mt-2 font-semibold">Prepaid only</p>
+          </div>
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customer inference</p>
+            <p className="mt-2 font-semibold">
+              {overview.policy.customerInferenceEnabled ? 'Enabled' : 'Disabled'}
+            </p>
+          </div>
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Enabled models</p>
+            <p className="mt-2 font-semibold">{enabledModels.length}</p>
+          </div>
+          <div className="rounded-xl border bg-background p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active rate cards</p>
+            <p className="mt-2 font-semibold">{activeRateCards.length}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Safe customer limits</CardTitle>
+          <CardDescription>
+            These limits protect Mkety and customers from unexpectedly large requests. Changes apply without a code deployment.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={updateAiRuntimePolicy.bind(null, tenant)} className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <label className="text-sm font-medium">
+              Max request bytes
+              <input
+                className="mt-2 w-full rounded-lg border bg-background px-3 py-2"
+                defaultValue={overview.policy.maxRequestBytes}
+                min={1024}
+                max={5000000}
+                name="maxRequestBytes"
+                required
+                type="number"
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Max messages
+              <input
+                className="mt-2 w-full rounded-lg border bg-background px-3 py-2"
+                defaultValue={overview.policy.maxMessages}
+                min={1}
+                max={512}
+                name="maxMessages"
+                required
+                type="number"
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Max tools
+              <input
+                className="mt-2 w-full rounded-lg border bg-background px-3 py-2"
+                defaultValue={overview.policy.maxTools}
+                min={0}
+                max={256}
+                name="maxTools"
+                required
+                type="number"
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Max output tokens
+              <input
+                className="mt-2 w-full rounded-lg border bg-background px-3 py-2"
+                defaultValue={overview.policy.maxOutputTokens}
+                min={1}
+                max={131072}
+                name="maxOutputTokens"
+                required
+                type="number"
+              />
+            </label>
+            <label className="text-sm font-medium">
+              Reservation seconds
+              <input
+                className="mt-2 w-full rounded-lg border bg-background px-3 py-2"
+                defaultValue={overview.policy.reservationTtlSeconds}
+                min={30}
+                max={600}
+                name="reservationTtlSeconds"
+                required
+                type="number"
+              />
+            </label>
+            <div className="md:col-span-2 xl:col-span-5">
+              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                Save safe limits
+              </button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Models and commercial readiness</CardTitle>
+          <CardDescription>
+            A model must be approved, enabled, routed, and have an active rate card before customer inference can be promoted.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {overview.models.map((model) => {
+            const cards = overview.rateCards.filter((card) => card.modelId === model.id);
+            const active = cards.find((card) => card.status === 'active');
+            return (
+              <div className="rounded-xl border p-4" key={model.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{model.displayName}</p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">{model.nativeModel}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full bg-muted px-3 py-1">{model.status}</span>
+                    <span className="rounded-full bg-muted px-3 py-1">{model.enabled ? 'enabled' : 'disabled'}</span>
+                    <span className="rounded-full bg-muted px-3 py-1">
+                      {active ? `rate v${active.version}` : 'no active rate'}
+                    </span>
+                  </div>
+                </div>
+
+                {cards.length ? (
+                  <div className="mt-4 grid gap-2">
+                    {cards.map((card) => (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2 text-sm" key={card.id}>
+                        <span>
+                          v{card.version} · {card.status} · input {card.inputCreditsPerMillion.toString()} · output {card.outputCreditsPerMillion.toString()} credits / 1M tokens
+                        </span>
+                        <div className="flex gap-2">
+                          {card.status === 'draft' ? (
+                            <form action={activateAiRateCard.bind(null, tenant, card.id)}>
+                              <button className="rounded-lg border px-3 py-1.5 text-xs font-semibold">Activate</button>
+                            </form>
+                          ) : null}
+                          {card.status === 'active' ? (
+                            <form action={retireAiRateCard.bind(null, tenant, card.id)}>
+                              <button className="rounded-lg border px-3 py-1.5 text-xs font-semibold">Retire</button>
+                            </form>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">No rate version has been created for this model.</p>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <details className="rounded-2xl border bg-card p-5">
+        <summary className="cursor-pointer font-semibold">Advanced: create a new rate-card version</summary>
+        <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+          Use this only when commercial rates need to change. Existing historical versions are retained; Mkety never rewrites prior billable usage pricing.
+        </p>
+        <form action={createAiRateCard.bind(null, tenant)} className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <label className="text-sm font-medium">
+            Model
+            <select className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="modelId" required>
+              <option value="">Choose model</option>
+              {overview.models.map((model) => (
+                <option key={model.id} value={model.id}>{model.displayName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Input credits / 1M tokens
+            <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" min={1} name="inputCreditsPerMillion" required type="number" />
+          </label>
+          <label className="text-sm font-medium">
+            Cached input credits / 1M
+            <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" min={1} name="cachedInputCreditsPerMillion" type="number" />
+          </label>
+          <label className="text-sm font-medium">
+            Output credits / 1M tokens
+            <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" min={1} name="outputCreditsPerMillion" required type="number" />
+          </label>
+          <label className="text-sm font-medium">
+            Minimum credits / request
+            <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={1} min={1} name="minimumCreditsPerRequest" required type="number" />
+          </label>
+          <label className="text-sm font-medium">
+            Effective from
+            <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="effectiveFrom" type="datetime-local" />
+          </label>
+          <div className="md:col-span-2 xl:col-span-3">
+            <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+              Create draft rate version
+            </button>
+          </div>
+        </form>
+      </details>
+
+      {overview.policy.customerInferenceEnabled ? (
+        <Card className="rounded-2xl border-destructive/30">
+          <CardHeader>
+            <CardTitle>Emergency stop</CardTitle>
+            <CardDescription>
+              Disables new customer Enterprise AI inference while preserving data, configuration, and audit history.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={disableEnterpriseAiInference.bind(null, tenant)}>
+              <button className="rounded-xl border border-destructive px-4 py-2 text-sm font-semibold text-destructive">
+                Disable customer inference
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
