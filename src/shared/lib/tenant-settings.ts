@@ -351,6 +351,42 @@ export const storageSettingsSchema = z.object({
 export type StorageSettings = z.infer<typeof storageSettingsSchema>;
 
 // ============================================================================
+// Enterprise AI White-label Settings
+// ============================================================================
+
+export const enterpriseAiWhiteLabelSchema = z.object({
+  /** Fully replace Mkety-facing product branding on entitled customer surfaces. */
+  enabled: z.boolean().optional().default(false),
+  brandName: z.string().min(1).max(120).optional(),
+  productName: z.string().min(1).max(120).optional(),
+  logoUrl: z.string().url().optional(),
+  logoDarkUrl: z.string().url().optional(),
+  faviconUrl: z.string().url().optional(),
+  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  supportEmail: z.string().email().optional(),
+  supportUrl: z.string().url().optional(),
+  privacyUrl: z.string().url().optional(),
+  termsUrl: z.string().url().optional(),
+  legalName: z.string().max(160).optional(),
+  loginHeading: z.string().max(160).optional(),
+  loginSubheading: z.string().max(300).optional(),
+  managedSubdomain: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/).optional(),
+  customHostname: z.string().max(255).optional(),
+  hideMketyBranding: z.boolean().optional().default(true),
+});
+
+export type EnterpriseAiWhiteLabelSettings = z.infer<typeof enterpriseAiWhiteLabelSchema>;
+
+export const enterpriseAiSettingsSchema = z.object({
+  whiteLabel: enterpriseAiWhiteLabelSchema.optional(),
+  defaultChannel: z.enum(['website','telegram','whatsapp','instagram','facebook_messenger','slack','microsoft_teams','custom_webhook']).optional().default('website'),
+});
+
+export type EnterpriseAiSettings = z.infer<typeof enterpriseAiSettingsSchema>;
+
+// ============================================================================
 // Complete Tenant Settings Schema
 // ============================================================================
 
@@ -362,6 +398,7 @@ export const tenantSettingsSchema = z.object({
   storage: storageSettingsSchema.optional(),
   /** Tenant departments configuration */
   departments: departmentsSchema.optional(),
+  enterpriseAi: enterpriseAiSettingsSchema.optional(),
 });
 
 export type TenantSettings = z.infer<typeof tenantSettingsSchema>;
@@ -430,6 +467,10 @@ export const DEFAULT_DEPARTMENTS: NonNullable<TenantSettings['departments']> = {
   list: [],
 };
 
+export const DEFAULT_ENTERPRISE_AI: NonNullable<TenantSettings['enterpriseAi']> = {
+  defaultChannel: 'website',
+};
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -442,6 +483,7 @@ export type AppliedTenantSettings = Required<{
   ai: NonNullable<TenantSettings['ai']>;
   storage: NonNullable<TenantSettings['storage']>;
   departments: NonNullable<TenantSettings['departments']>;
+  enterpriseAi: NonNullable<TenantSettings['enterpriseAi']>;
 }>;
 
 /**
@@ -456,6 +498,7 @@ export function applySettingsDefaults(settings: TenantSettingsInput): AppliedTen
     ai: { ...DEFAULT_AI, ...settings.ai },
     storage: { ...DEFAULT_STORAGE, ...settings.storage },
     departments: { ...DEFAULT_DEPARTMENTS, ...settings.departments },
+    enterpriseAi: { ...DEFAULT_ENTERPRISE_AI, ...settings.enterpriseAi },
   } as AppliedTenantSettings;
 }
 
@@ -493,6 +536,8 @@ export function mergeTenantSettings(
     storage: partial.storage !== undefined ? { ...existing.storage, ...partial.storage } : existing.storage,
     departments:
       partial.departments !== undefined ? { ...existing.departments, ...partial.departments } : existing.departments,
+    enterpriseAi:
+      partial.enterpriseAi !== undefined ? { ...existing.enterpriseAi, ...partial.enterpriseAi } : existing.enterpriseAi,
   } as TenantSettings;
 }
 
