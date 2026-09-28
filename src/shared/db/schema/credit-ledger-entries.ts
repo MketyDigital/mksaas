@@ -12,6 +12,8 @@ export const creditLedgerEntryTypeEnum = appSchema.enum('credit_ledger_entry_typ
   'manual_grant',
   'manual_debit',
   'adjustment',
+  'reservation_hold',
+  'reservation_release',
 ]);
 
 export const creditLedgerEntries = appSchema.table(
