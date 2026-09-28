@@ -1,14 +1,17 @@
-import { ArrowRight, Code2, CreditCard, Sparkles } from 'lucide-react';
+import { ArrowRight, Code2, CreditCard, Globe2, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { getTenantSettings } from '@/features/admin/services/settings-service';
+import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
+import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
 import {
   listEnterpriseAiSolutionInstances,
   listEnterpriseAiSolutionTemplates,
   listTenantProjectChoices,
 } from '@/features/ai-runtime/server/business-solutions';
+import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
 import { getCreditBalance } from '@/features/usage-credits/server/service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { requireTenantMembership } from '@/shared/lib/permissions';
@@ -46,13 +49,17 @@ export default async function EnterpriseAiConsolePage({
     );
   }
 
-  const [templates, instances, projects, balance, commercial] = await Promise.all([
+  const [templates, instances, projects, balance, commercial, tenantSettings, canWhiteLabel] = await Promise.all([
     listEnterpriseAiSolutionTemplates(),
     listEnterpriseAiSolutionInstances(tenant.id),
     listTenantProjectChoices(tenant.id),
     getCreditBalance(tenant.id),
     getEnterpriseAiCustomerSummary(tenant.id),
+    getTenantSettings(tenantSlug),
+    hasEnterpriseAiWhiteLabelAccess(tenant.id),
   ]);
+  const brand = resolveEnterpriseAiBrand(tenantSettings, tenant.name);
+  const displayBrand = canWhiteLabel && brand.enabled ? brand : { ...brand, brandName: tenant.name, productName: 'Mkety AI', hideMketyBranding: false };
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 py-4">
@@ -60,10 +67,10 @@ export default async function EnterpriseAiConsolePage({
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
           <Sparkles className="h-6 w-6" />
         </div>
-        <p className="mt-5 text-sm font-semibold uppercase tracking-[0.18em] text-primary">Mkety AI for {tenant.name}</p>
+        <p className="mt-5 text-sm font-semibold uppercase tracking-[0.18em] text-primary">{displayBrand.productName} for {displayBrand.brandName}</p>
         <h1 className="mt-2 max-w-4xl text-3xl font-bold tracking-tight sm:text-5xl">What do you want AI to help your business do?</h1>
         <p className="mt-4 max-w-3xl text-base text-muted-foreground sm:text-lg">
-          Start with the result you want. Mkety keeps model choice, routing, permissions, budgets and technical setup behind simple business controls.
+          Start with the result you want. Model choice, routing, permissions, budgets and technical setup stay behind simple business controls.
         </p>
         <div className="mt-6 flex flex-wrap gap-3 text-sm">
           <span className="rounded-full border bg-background px-4 py-2">Private to your workspace</span>
@@ -110,6 +117,34 @@ export default async function EnterpriseAiConsolePage({
             </Card>
           ))}
         </div>
+      </section>
+
+      <section>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold">Connect where your customers already are</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Day-one channels share one Enterprise AI runtime, permissions and usage policy.</p>
+          </div>
+          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/enterprise-ai/channels`}><MessageSquareMore className="mr-2 inline h-4 w-4" /> Manage channels</Link>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {ENTERPRISE_AI_CHANNELS.map((channel) => (
+            <Card className="rounded-2xl" key={channel.key}>
+              <CardHeader className="pb-3"><CardTitle className="text-base">{channel.label}</CardTitle><CardDescription>{channel.supportsHumanHandoff ? 'AI + human handoff ready' : 'Flexible integration channel'}</CardDescription></CardHeader>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <Card className="rounded-2xl">
+          <CardHeader><Palette className="h-5 w-5 text-primary" /><CardTitle>Brand & white-label</CardTitle><CardDescription>{canWhiteLabel ? 'Use your own name, logo, colors, support and legal links.' : 'Available with Enterprise AI white-label access.'}</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Open branding <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader><Globe2 className="h-5 w-5 text-primary" /><CardTitle>Your domain</CardTitle><CardDescription>Use {tenant.slug}.mkety.app or connect a customer hostname through Cloudflare for SaaS.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Manage domain <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
       </section>
 
       <section>
