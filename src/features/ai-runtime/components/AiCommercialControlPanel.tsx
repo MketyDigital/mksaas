@@ -4,6 +4,7 @@ import {
   disableEnterpriseAiInference,
   retireAiRateCard,
   updateAiRuntimePolicy,
+  updateAiSolutionTemplate,
 } from '@/features/ai-runtime/server/commercial-admin-actions';
 import type { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
@@ -229,6 +230,45 @@ export function AiCommercialControlPanel({
           </div>
         </form>
       </details>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Business solution cards</CardTitle>
+          <CardDescription>
+            Change what non-technical customers see first on Mkety AI without changing code. Technical execution and security rules are not editable here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {overview.solutionTemplates.map((template) => (
+            <details className="rounded-xl border p-4" key={template.key}>
+              <summary className="cursor-pointer font-semibold">{template.title}</summary>
+              <form action={updateAiSolutionTemplate.bind(null, tenant, template.key)} className="mt-4 grid gap-3">
+                <label className="text-sm font-medium">Title
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={template.title} maxLength={160} name="title" required />
+                </label>
+                <label className="text-sm font-medium">Simple description
+                  <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={template.shortDescription} name="shortDescription" required rows={3} />
+                </label>
+                <label className="text-sm font-medium">Business outcomes — one per line
+                  <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={template.outcomes.join('\n')} name="outcomes" required rows={4} />
+                </label>
+                <label className="text-sm font-medium">Setup steps — one per line
+                  <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={template.setupSteps.join('\n')} name="setupSteps" required rows={4} />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-medium">Order
+                    <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={template.sortOrder} min={0} max={10000} name="sortOrder" required type="number" />
+                  </label>
+                  <label className="flex items-center gap-2 self-end pb-2 text-sm font-medium">
+                    <input defaultChecked={template.enabled} name="enabled" type="checkbox" /> Show this solution
+                  </label>
+                </div>
+                <button className="w-fit rounded-lg border px-4 py-2 text-sm font-semibold">Save solution card</button>
+              </form>
+            </details>
+          ))}
+        </CardContent>
+      </Card>
 
       {overview.policy.customerInferenceEnabled ? (
         <Card className="rounded-2xl border-destructive/30">
