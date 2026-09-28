@@ -128,10 +128,16 @@ export async function logoutSession(token: string | null | undefined, returnTo =
 }
 
 
+export type MketyProductHandoff = 'mail' | 'ai';
+
+function productHandoffDefaultReturnTo(product: MketyProductHandoff) {
+  return product === 'mail' ? '/mail/app' : '/ai/app';
+}
+
 export async function createProductHandoff(
   userId: string,
-  product: 'mail',
-  returnTo = '/mail/app',
+  product: MketyProductHandoff,
+  returnTo = productHandoffDefaultReturnTo(product),
 ): Promise<string> {
   const state = generateOpaqueToken();
   const expiresAt = new Date(Date.now() + 60_000);
@@ -142,7 +148,7 @@ export async function createProductHandoff(
         provider: `product-handoff:${product}`,
         verifier: userId,
         nonce: product,
-        returnTo: isSafeReturnTo(returnTo) ? returnTo : '/mail/app',
+        returnTo: isSafeReturnTo(returnTo) ? returnTo : productHandoffDefaultReturnTo(product),
         expiresAt,
       },
       database,
@@ -153,7 +159,7 @@ export async function createProductHandoff(
 
 export async function consumeProductHandoff(
   state: string,
-  product: 'mail',
+  product: MketyProductHandoff,
 ): Promise<{ userId: string; returnTo: string } | null> {
   const transaction = await withRequestDatabase((database) => consumeLoginTransaction(state, database));
   if (!transaction || transaction.provider !== `product-handoff:${product}` || transaction.nonce !== product) {
