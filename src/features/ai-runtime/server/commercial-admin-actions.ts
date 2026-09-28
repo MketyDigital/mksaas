@@ -8,7 +8,7 @@ import { db } from '@/shared/db/cloudflare';
 import { aiModels, aiRateCards, aiRuntimePolicies } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 
-import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-admin-queries';
+import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
 
 function parsePositiveBigInt(value: FormDataEntryValue | null, label: string) {
   const raw = String(value ?? '').trim();
