@@ -38,8 +38,22 @@ const requestSchema = z.object({
   max_tokens: z.number().int().positive().max(131_072).optional(),
   max_completion_tokens: z.number().int().positive().max(131_072).optional(),
   stream: z.boolean().optional().default(false),
-  tools: z.array(z.unknown()).max(256).optional(),
-  response_format: z.unknown().optional(),
+  tools: z.array(z.object({
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string().min(1).max(128),
+      description: z.string().max(2_000).optional(),
+      parameters: z.record(z.string(), z.unknown()),
+    }),
+  })).max(256).optional(),
+  response_format: z.object({
+    type: z.literal('json_schema'),
+    json_schema: z.object({
+      name: z.string().min(1).max(128).optional(),
+      strict: z.boolean().optional(),
+      schema: z.record(z.string(), z.unknown()),
+    }),
+  }).optional(),
 });
 
 function errorResponse(status: number, code: string, message: string, requestId?: string) {
@@ -277,6 +291,33 @@ export async function POST(request: Request) {
     return errorResponse(402, 'commercial_admission_denied', 'Prepaid credits or budget do not authorize this request.', requestId);
   }
 
+  const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
+  if (!providerRate) {
+    try {
+      await releaseAiCommercialRequest({ admission, reason: 'provider_cost_unavailable' });
+    } catch {
+      await db
+        .update(aiRequests)
+        .set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        })
+        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+      return errorResponse(503, 'commercial_reconciliation_required', 'Commercial holds require reconciliation.', requestId);
+    }
+
+    await db
+      .update(aiRequests)
+      .set({
+        status: 'provider_unavailable',
+        errorCode: 'provider_cost_unavailable',
+        completedAt: new Date(),
+      })
+      .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+    return errorResponse(503, 'provider_cost_unavailable', 'Provider cost is not verified for this model.', requestId);
+  }
+
   if (resolved.model.providerKey !== 'workers-ai') {
     try {
       await releaseAiCommercialRequest({ admission, reason: 'provider_not_supported' });
@@ -306,6 +347,18 @@ export async function POST(request: Request) {
         ...(message.tool_call_id ? { toolCallId: message.tool_call_id } : {}),
       })),
       maxOutputTokens: effectiveMaxOutput,
+      tools: parsed.data.tools?.map((tool) => ({
+        name: tool.function.name,
+        description: tool.function.description,
+        inputSchema: tool.function.parameters,
+      })),
+      structuredOutput: parsed.data.response_format
+        ? {
+            name: parsed.data.response_format.json_schema.name,
+            strict: parsed.data.response_format.json_schema.strict,
+            schema: parsed.data.response_format.json_schema.schema,
+          }
+        : undefined,
       idempotencyKey,
       metadata: { requestId },
     }, resolved.model.nativeModel);
@@ -338,18 +391,13 @@ export async function POST(request: Request) {
     rate,
   });
 
-  const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
-  const providerCostUsdMicros = providerRate
-    ? calculateProviderCostUsdMicros({
-        rate: providerRate,
-        inputTokens: result.usage.inputTokens,
-        cachedInputTokens: result.usage.cachedInputTokens,
-        outputTokens: result.usage.outputTokens,
-      })
-    : null;
-  const minimumRevenueUsdMicros = providerCostUsdMicros === null
-    ? null
-    : minimumCustomerRevenueUsdMicros(providerCostUsdMicros);
+  const providerCostUsdMicros = calculateProviderCostUsdMicros({
+    rate: providerRate,
+    inputTokens: result.usage.inputTokens,
+    cachedInputTokens: result.usage.cachedInputTokens,
+    outputTokens: result.usage.outputTokens,
+  });
+  const minimumRevenueUsdMicros = minimumCustomerRevenueUsdMicros(providerCostUsdMicros);
 
   try {
     await settleAiCommercialRequest({
@@ -369,8 +417,9 @@ export async function POST(request: Request) {
         providerCostMetadata: {
           requestFingerprint,
           providerRequestId: result.providerRequestId ?? null,
-          providerCostUsdMicros: providerCostUsdMicros?.toString() ?? null,
-          minimumRevenueUsdMicros: minimumRevenueUsdMicros?.toString() ?? null,
+          providerCostUsdMicros: providerCostUsdMicros.toString(),
+          providerCostVerifiedAt: providerRate.verifiedAt,
+          minimumRevenueUsdMicros: minimumRevenueUsdMicros.toString(),
           actualCredits: actualCredits.toString(),
           creditReservationId: admission.creditReservation.id,
           budgetReservationIds: admission.budgetReservations.map((item) => item.id),
@@ -398,8 +447,9 @@ export async function POST(request: Request) {
       providerCostMetadata: {
         requestFingerprint,
         providerRequestId: result.providerRequestId ?? null,
-        providerCostUsdMicros: providerCostUsdMicros?.toString() ?? null,
-        minimumRevenueUsdMicros: minimumRevenueUsdMicros?.toString() ?? null,
+        providerCostUsdMicros: providerCostUsdMicros.toString(),
+          providerCostVerifiedAt: providerRate.verifiedAt,
+        minimumRevenueUsdMicros: minimumRevenueUsdMicros.toString(),
         actualCredits: actualCredits.toString(),
         creditReservationId: admission.creditReservation.id,
         budgetReservationIds: admission.budgetReservations.map((item) => item.id),
@@ -414,7 +464,22 @@ export async function POST(request: Request) {
     model: resolved.alias.alias,
     choices: [{
       index: 0,
-      message: { role: 'assistant', content: result.text ?? '' },
+      message: {
+        role: 'assistant',
+        content: result.text ?? null,
+        ...(result.toolCalls?.length
+          ? {
+              tool_calls: result.toolCalls.map((toolCall, index) => ({
+                id: toolCall.id ?? `call_${index + 1}`,
+                type: 'function',
+                function: {
+                  name: toolCall.name,
+                  arguments: toolCall.argumentsJson,
+                },
+              })),
+            }
+          : {}),
+      },
       finish_reason: result.finishReason,
     }],
     usage: {
