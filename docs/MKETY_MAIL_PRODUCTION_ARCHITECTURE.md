@@ -372,6 +372,41 @@ Release-workflow hardening completed during this attempt:
 Do not restart Mail architecture design. Do not begin the Mkety AI implementation workstream until this Mail infrastructure release is completed and the required production functional tests pass.
 
 
+## Mail login and product-session handoff
+
+Mkety Mail must not use a wildcard `.mkety.com` application-session cookie.
+
+Reason:
+
+- Mkety Academy, Media, Trading and other `*.mkety.com` products may remain independently deployed or intentionally isolated;
+- broad cookie sharing could alter those products' authentication behavior;
+- a future product integration must be explicit rather than relying on an accidental shared-cookie boundary.
+
+The Mail login path is therefore product-scoped:
+
+1. the browser opens `mail.mkety.com`;
+2. when no Mail-host session exists, Mail redirects to the central Mkety app handoff endpoint;
+3. the central endpoint verifies the existing central Mkety session;
+4. it creates a random one-time Mail handoff using the existing expiring auth transaction store;
+5. the browser returns to the Mail host with only the opaque handoff token;
+6. Mail atomically consumes the token;
+7. Mail creates a normal host-scoped Mkety application session for that user;
+8. the browser continues to `/mail/app`;
+9. Mail still checks `workspace.mail` before protected tenant Mail access.
+
+Handoff properties:
+
+- product audience is fixed to Mail;
+- token is opaque;
+- lifetime is 60 seconds;
+- token is one-time because the auth transaction row is deleted on successful consume;
+- raw central session tokens are never placed in URLs;
+- Mail never receives provider credentials;
+- no wildcard Mkety application cookie is created;
+- unrelated Mkety subdomains are unaffected.
+
+This pattern may later be generalized for Media or another separately deployed Mkety product only after that product is explicitly integrated and tested. It must not be enabled globally by hostname wildcard.
+
 ## Commercial access and usage boundary
 
 Mkety Mail is a separately entitled Mkety product/workspace.
