@@ -297,6 +297,38 @@ jobs:
           [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ] || { echo "Auth first hop did not redirect." >&2; exit 1; }
           AUTH_LOCATION="$auth_location" node -e "const u=new URL(process.env.AUTH_LOCATION);if(u.origin!=='https://auth.mkety.com'||!u.pathname.startsWith('/ui/v2/login/'))process.exit(1)"
 
+      - name: Roll back app host binding if live acceptance failed
+        if: failure() && steps.bind.outputs.bound == 'true'
+        env:
+          ZONE_ID: ${{ steps.snapshot.outputs.zone_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          app_id="$(DOMAINS="$domains" WORKER="$APP_WORKER_NAME" node -e "const p=JSON.parse(process.env.DOMAINS||'{}');const d=(p.result||[]).find(x=>x.hostname==='app.mkety.com'&&x.service===process.env.WORKER);process.stdout.write(d?.id||'')")"
+          if [ -n "$app_id" ]; then
+            curl -fsS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$app_id" >/dev/null
+          fi
+
+          current="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/dns_records?name=app.mkety.com")"
+          CURRENT="$current" node -e "const p=JSON.parse(process.env.CURRENT||'{}');for(const r of p.result||[]) console.log(r.id)" | while read -r id; do
+            [ -z "$id" ] || curl -fsS -X DELETE "${auth[@]}" "$api/zones/$ZONE_ID/dns_records/$id" >/dev/null
+          done
+
+          DNS_BACKUP="$(cat /tmp/app-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
+          const {execFileSync}=require('child_process');
+          const backup=JSON.parse(process.env.DNS_BACKUP||'{}');
+          for(const r of backup.result||[]){
+            if(!['A','AAAA','CNAME'].includes(r.type)) continue;
+            const body=JSON.stringify({type:r.type,name:r.name,content:r.content,ttl:r.ttl||1,proxied:Boolean(r.proxied)});
+            execFileSync('curl',['-fsS','-X','POST','-H','Authorization: Bearer '+process.env.CLOUDFLARE_API_TOKEN,'-H','Content-Type: application/json','--data',body,'https://api.cloudflare.com/client/v4/zones/'+process.env.ZONE_ID+'/dns_records'],{stdio:'ignore'});
+          }
+          NODE
+          echo 'Live acceptance failed; restored the pre-repair app.mkety.com DNS state.'
+
       - name: Disable dedicated Worker preview exposure
         shell: bash
         run: |
