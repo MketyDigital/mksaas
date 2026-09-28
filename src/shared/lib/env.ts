@@ -26,6 +26,7 @@ export const env = createEnv({
     OPENROUTER_BASE_URL: z.url().default('https://openrouter.ai/api/v1'),
     MKETY_AI_API_KEY: z.string().optional(),
     MKETY_AI_BASE_URL: z.url().optional(),
+    MKETY_AI_BYOK_ENCRYPTION_KEY: z.string().min(32).optional(),
 
     // Public Mkety AI. Isolated from Platform/tenant AI configuration.
     MKETY_PUBLIC_AI_ENABLED: z.string().default('false'),
@@ -114,6 +115,7 @@ export const env = createEnv({
     OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL,
     MKETY_AI_API_KEY: process.env.MKETY_AI_API_KEY,
     MKETY_AI_BASE_URL: process.env.MKETY_AI_BASE_URL,
+    MKETY_AI_BYOK_ENCRYPTION_KEY: process.env.MKETY_AI_BYOK_ENCRYPTION_KEY,
     MKETY_PUBLIC_AI_ENABLED: process.env.MKETY_PUBLIC_AI_ENABLED,
     MKETY_PUBLIC_AI_PRIMARY_PROVIDER: process.env.MKETY_PUBLIC_AI_PRIMARY_PROVIDER,
     MKETY_PUBLIC_AI_FALLBACK_PROVIDERS: process.env.MKETY_PUBLIC_AI_FALLBACK_PROVIDERS,
