@@ -799,7 +799,7 @@ jobs:
               existed="$(ROW="$row" node -e "process.stdout.write(String(JSON.parse(process.env.ROW).existed))")"
               new_id="$(ROW="$row" node -e "process.stdout.write(JSON.parse(process.env.ROW).newId||'')")"
               if [ "$existed" != 'true' ] && [ -n "$new_id" ]; then
-                curl -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$new_id" >/dev/null || true
+                curl --connect-timeout 10 --max-time 60 -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$new_id" >/dev/null || true
               fi
             done
             restore_dns || true
@@ -808,17 +808,17 @@ jobs:
 
           production_ready=0
           for attempt in $(seq 1 60); do
-            code="$(curl -sS --connect-timeout 10 --max-time 25 -o /tmp/mkety-production-root.html -w '%{http_code}' 'https://mkety.com/' || true)"
+            code="$(curl --connect-timeout 10 --max-time 60 -sS --connect-timeout 10 --max-time 25 -o /tmp/mkety-production-root.html -w '%{http_code}' 'https://mkety.com/' || true)"
             echo "Custom Domain readiness attempt $attempt/60: HTTP $code"
             if [ "$code" = '200' ]; then production_ready=1; break; fi
             sleep 5
           done
           [ "$production_ready" = '1' ] || { echo 'mkety.com Custom Domain did not become ready in the bounded window.'; false; }
 
-          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact)
+          html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /mail /trust /infrastructure /about /docs /privacy /terms /contact)
           for route in "${html_routes[@]}"; do
             body=/tmp/mkety-production.html
-            code="$(curl -L -sS -o "$body" -w '%{http_code}' "https://mkety.com$route")"
+            code="$(curl --connect-timeout 10 --max-time 60 -L -sS -o "$body" -w '%{http_code}' "https://mkety.com$route")"
             [ "$code" = '200' ] || { echo "Production route failed: $route HTTP $code"; false; }
             if grep -Eqi 'under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|\bmksaas\b|origin\.mkety\.com|Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel' "$body"; then
               echo "Production route exposed quarantined/internal wording: $route"
@@ -832,35 +832,50 @@ jobs:
 
 
 
-          curl -fsS 'https://mkety.com/academy' -o /tmp/mkety-academy-page.html
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/academy' -o /tmp/mkety-academy-page.html
           grep -Fq 'Courses &amp; tiers' /tmp/mkety-academy-page.html || grep -Fq 'Courses & tiers' /tmp/mkety-academy-page.html || { echo 'Academy page missing Courses & tiers section.'; false; }
           grep -Fq 'Ready to learn?' /tmp/mkety-academy-page.html || { echo 'Academy page missing ready-to-learn handoff.'; false; }
           grep -Fq 'Ask Mkety AI about Academy' /tmp/mkety-academy-page.html || { echo 'Academy page missing AI-first discovery CTA.'; false; }
           grep -Fq 'academy.mkety.com' /tmp/mkety-academy-page.html || { echo 'Academy page missing learning-access destination.'; false; }
 
-          curl -fsS 'https://mkety.com/pricing' -o /tmp/mkety-pricing-page.html
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/pricing' -o /tmp/mkety-pricing-page.html
           # Contract literal: data-plan-price="starter:$5.99"
           # Contract literal: Starter price card missing exact USD-formatted $5.99 amount.
           grep -Fq "data-plan-price=\"starter:\$5.99\"" /tmp/mkety-pricing-page.html || { echo "Starter price card missing exact USD-formatted \$5.99 amount."; false; }
           grep -Fq 'Trading Workspace' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Workspace.'; false; }
           grep -Fq 'Custom / Enterprise' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Custom / Enterprise positioning.'; false; }
 
-          curl -fsS 'https://mkety.com/workspaces' -o /tmp/mkety-workspaces-page.html
+
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/mail' -o /tmp/mkety-mail-page.html
+          grep -Fq 'Mail Starter' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Starter.'; false; }
+          grep -Fq '$4.99' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Starter price.'; false; }
+          grep -Fq 'Mail Growth' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Growth.'; false; }
+          grep -Fq '$9.99' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Growth price.'; false; }
+          grep -Fq 'Mail Business' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Business.'; false; }
+          grep -Fq '$24.99' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Business price.'; false; }
+          grep -Fq 'Enterprise Mail' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Enterprise Mail.'; false; }
+          grep -Fq 'Marketing' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Marketing Coming Soon boundary.'; false; }
+
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/enterprise' -o /tmp/mkety-enterprise-page.html
+          grep -Fq 'Enterprise AI' /tmp/mkety-enterprise-page.html || { echo 'Production Enterprise page missing Enterprise AI.'; false; }
+          grep -Fq 'Enterprise Mail' /tmp/mkety-enterprise-page.html || { echo 'Production Enterprise page missing Enterprise Mail.'; false; }
+
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/workspaces' -o /tmp/mkety-workspaces-page.html
           grep -Fq 'Trading Workspace' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Workspace.'; false; }
           grep -Fq 'Custom / Enterprise' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Custom / Enterprise positioning.'; false; }
 
-          curl -fsS 'https://mkety.com/' -o /tmp/mkety-home-page.html
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/' -o /tmp/mkety-home-page.html
           if grep -Fq 'academy.mkety.com' /tmp/mkety-home-page.html; then echo 'Homepage must not bypass AI-first Academy discovery.'; false; fi
 
           for image in class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg; do
             headers="$(mktemp)"
-            code="$(curl -sS -D "$headers" -o /tmp/mkety-academy-image -w '%{http_code}' "https://mkety.com/academy-hubs/$image" || true)"
+            code="$(curl --connect-timeout 10 --max-time 60 -sS -D "$headers" -o /tmp/mkety-academy-image -w '%{http_code}' "https://mkety.com/academy-hubs/$image" || true)"
             [ "$code" = '200' ] || { echo "Academy image failed: $image HTTP $code"; exit 1; }
             content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, "");gsub(/\r/,"");v=$0} END{print v}' "$headers")"
             printf '%s' "$content_type" | grep -Eqi '^image/' || { echo "Academy asset is not an image: $image ($content_type)"; exit 1; }
           done
 
-          curl -fsS "https://mkety.com/docs" -o /tmp/mkety-docs-index.html
+          curl --connect-timeout 10 --max-time 60 -fsS "https://mkety.com/docs" -o /tmp/mkety-docs-index.html
           python3 <<'PY' >/tmp/mkety-doc-links
           import re
           html=open('/tmp/mkety-docs-index.html','r',encoding='utf-8',errors='replace').read()
@@ -871,25 +886,25 @@ jobs:
           [ -s /tmp/mkety-doc-links ] || { echo 'Docs index rendered no article links.'; exit 1; }
           while IFS= read -r doc_path; do
             [ -n "$doc_path" ] || continue
-            code="$(curl -L -sS -o /tmp/mkety-doc-page -w '%{http_code}' "https://mkety.com$doc_path" || true)"
+            code="$(curl --connect-timeout 10 --max-time 60 -L -sS -o /tmp/mkety-doc-page -w '%{http_code}' "https://mkety.com$doc_path" || true)"
             [ "$code" = '200' ] || { echo "Rendered docs link failed: $doc_path HTTP $code"; exit 1; }
           done </tmp/mkety-doc-links
 
-          curl -fsS 'https://mkety.com/sitemap.xml' -o /tmp/mkety-production-sitemap.xml
-          for path in / /platform /workspaces /solutions /academy /pricing /enterprise /about /docs /privacy /terms /contact; do
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/sitemap.xml' -o /tmp/mkety-production-sitemap.xml
+          for path in / /platform /workspaces /solutions /academy /pricing /enterprise /mail /trust /infrastructure /about /docs /privacy /terms /contact; do
             expected="https://mkety.com${path}"
             grep -Fq "<loc>$expected</loc>" /tmp/mkety-production-sitemap.xml || { echo "Production sitemap missing $expected"; false; }
           done
-          curl -fsS 'https://mkety.com/robots.txt' -o /tmp/mkety-production-robots.txt
+          curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/robots.txt' -o /tmp/mkety-production-robots.txt
           grep -Fq 'Sitemap: https://mkety.com/sitemap.xml' /tmp/mkety-production-robots.txt || { echo 'Production robots.txt missing sitemap declaration.'; false; }
           grep -Fq 'Host: https://mkety.com' /tmp/mkety-production-robots.txt || { echo 'Production robots.txt missing host declaration.'; false; }
 
           headers="$(mktemp)"
-          www_code="$(curl -sS -D "$headers" -o /dev/null -w '%{http_code}' 'https://www.mkety.com/')"
+          www_code="$(curl --connect-timeout 10 --max-time 60 -sS -D "$headers" -o /dev/null -w '%{http_code}' 'https://www.mkety.com/')"
           [ "$www_code" = '308' ] || { echo "www canonical redirect expected 308, got $www_code"; false; }
           WWW_HEADERS="$headers" node -e "const fs=require('node:fs');const h=fs.readFileSync(process.env.WWW_HEADERS,'utf8');const m=h.match(/^location:\s*(.+)$/im);if(!m){console.error('www 308 response has no Location header.');process.exit(1)};const u=new URL(m[1].trim());if(u.protocol!=='https:'||u.hostname!=='mkety.com'||u.pathname!=='/'||u.search||u.hash){console.error('www 308 Location is not canonical apex: '+u.toString());process.exit(1)};console.log('www canonical redirect target: '+u.toString())"
 
-          webhook_code="$(curl -sS -o /tmp/mkety-production-webhook.json -w '%{http_code}' \
+          webhook_code="$(curl --connect-timeout 10 --max-time 60 -sS -o /tmp/mkety-production-webhook.json -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' \
             -H 'x-nowpayments-sig: mkety-production-intentionally-invalid-signature' \
             --data '{"order_id":"production-smoke-no-order","payment_status":"finished","payment_id":"production-smoke-no-payment"}' \
@@ -897,8 +912,8 @@ jobs:
           [ "$webhook_code" = '400' ] || { echo "NOWPayments production webhook expected invalid-signature HTTP 400, got $webhook_code"; false; }
 
           cookie_jar=/tmp/mkety-production-ai-cookies
-          curl -fsS -c "$cookie_jar" -b "$cookie_jar" 'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai-history.json
-          curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
+          curl --connect-timeout 10 --max-time 60 -fsS -c "$cookie_jar" -b "$cookie_jar" 'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai-history.json
+          curl --connect-timeout 10 --max-time 60 -fsS -c "$cookie_jar" -b "$cookie_jar" \
             -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
             --data '{"message":"What are Mkety current plans and prices, where do I access Academy, and where do I go if I want to buy Trading? Also, can you show me the source code behind Mkety?"}' \
             'https://mkety.com/api/public/assistant' >/tmp/mkety-production-ai.json
@@ -925,7 +940,7 @@ jobs:
           console.log('Public AI live acceptance passed: canonical commercial grounding, Academy destination, Enterprise-first Trading sales, and private-source boundary.');
           NODE
 
-          current_routes="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/workers/routes")"
+          current_routes="$(curl --connect-timeout 10 --max-time 60 -fsS "${auth[@]}" "$api/zones/$ZONE_ID/workers/routes")"
           CURRENT="$current_routes" BEFORE="$(cat /tmp/mkety-routes-before.json)" node <<'NODE'
           const current = JSON.parse(process.env.CURRENT || '{}');
           const before = JSON.parse(process.env.BEFORE || '{}');
