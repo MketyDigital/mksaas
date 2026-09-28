@@ -5,9 +5,9 @@ import { revalidatePath } from 'next/cache';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import {
+  type ByokProviderInput,
   disableByokProviderConnection,
   saveByokProviderConnection,
-  type ByokProviderInput,
 } from '@/features/ai-runtime/server/provider-connections';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
