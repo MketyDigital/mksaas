@@ -1,3 +1,26 @@
+## 2026-09-28 final repository certification and live-release tooling
+
+Certified implementation head: `106390643a63ad4ecaa7bbaa0f4edc10a976c72f`.
+
+Exact-head evidence:
+- CI run `36445378970` — SUCCESS: Build, Test, Lint and Type-check all passed.
+- Migration Baseline `36445379145` — SUCCESS.
+- Mkety AI Workspace Foundation Smoke `36445378931` — SUCCESS.
+- Mkety Platform Core Workspaces Smoke `36445378968` — SUCCESS.
+- Mkety Cloudflare vinext Smoke `36445379557` — SUCCESS.
+- Mkety Content DB Smoke `36445379296` — SUCCESS.
+- Mkety Public Candidate Deploy `36445379381` — SUCCESS, including tests/type/lint/vinext, connected DB application, payment-gateway checks, isolated Worker build/deploy, public-route/copy smoke, payment safety and Public Mkety AI memory/privacy/commercial-grounding smoke.
+
+The previous Public AI candidate failure was a false-positive acceptance rule that treated legitimate product names such as Mail Growth as a retired Platform plan. Candidate and production acceptance now reject only retired `Growth|Pro|Business` plan/tier/workspace phrases; the corrected integrated candidate passed.
+
+Repository-side release tooling is now complete:
+- `.github/workflows/mkety-ai-commercial-acceptance.yml` / `scripts/accept-mkety-ai-commercial.ts`: one tiny non-production managed request with direct DB verification of immutable rate-card selection, credit/budget holds and settlement, normalized usage, provider-cost evidence, and idempotency.
+- `.github/workflows/mkety-domainnameapi-ote-acceptance.yml` / `scripts/accept-domainnameapi-ote.ts`: reads the active encrypted database DomainNameAPI connection, refuses non-OT&E operation, verifies availability transport, and optionally performs OT&E registration + renewal lifecycle acceptance.
+- `.github/workflows/mkety-enterprise-ai-white-label-domain-acceptance.yml` / `scripts/accept-enterprise-ai-white-label-domain.ts`: read-only real-host acceptance for CNAME, HTTPS tenant proof, database tenant ownership, configured white-label login identity and wrong-tenant-path isolation.
+- `.github/workflows/mkety-enterprise-ai-inference-promotion.yml` / `scripts/promote-enterprise-ai-inference.ts`: separate production operator enable/disable path. Enablement requires benchmark, commercial, domain and registrar evidence plus managed-route/rate/prepaid readiness. The application UI remains disable-only.
+
+Production `customerInferenceEnabled` remains OFF. PR #159 must remain draft until the three remaining real-environment acceptances are run and recorded: tiny commercial/accounting acceptance, DomainNameAPI OT&E/lifecycle acceptance, and a real customer white-label hostname acceptance. Only then may the guarded production promotion workflow be used.
+
 ## 2026-09-28 central AI runtime and dynamic-configuration authority
 
 This section supersedes earlier statements below that describe Workspace AI, Enterprise BYOK, provider selection, or registrar integration as still separate/unimplemented.
