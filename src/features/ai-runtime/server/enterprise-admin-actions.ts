@@ -155,3 +155,64 @@ export async function refreshEnterpriseAiHostname(tenantSlug: string, formData: 
 
   revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
 }
+
+
+export async function provisionEnterpriseAiManagedHostname(tenantSlug: string, formData: FormData) {
+  await requirePermission(tenantSlug, 'ai:enterprise:admin');
+  const tenant = await getTenantBySlug(tenantSlug);
+  if (!tenant) throw new Error('Workspace not found.');
+  if (!(await hasEnterpriseAiAccess(tenant.id))) throw new Error('Enterprise AI is not enabled.');
+
+  const subdomain = String(formData.get('managedSubdomain') ?? '').trim().toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) {
+    throw new Error('Enter a valid managed subdomain.');
+  }
+  const hostname = `${subdomain}.mkety.app`;
+  const existing = await db.query.customDomains.findFirst({ where: eq(customDomains.hostname, hostname) });
+  if (existing && existing.tenantId !== tenant.id) throw new Error('That managed hostname is already assigned.');
+
+  const provisioned = await provisionMketyAppManagedHostname(subdomain);
+  const metadata = JSON.stringify({
+    purpose: 'enterprise-ai',
+    managed: true,
+    cnameTarget: provisioned.cnameTarget,
+    cloudflareCustomHostnameId: provisioned.id,
+    sslStatus: provisioned.sslStatus,
+  });
+
+  if (existing) {
+    await db.update(customDomains).set({
+      provider: 'cloudflare-for-saas',
+      providerVerified: metadata,
+      verification: JSON.stringify({ managed: true }),
+      status: provisioned.ready ? 'verified' : 'pending',
+      updatedAt: new Date(),
+    }).where(eq(customDomains.id, existing.id));
+  } else {
+    await db.insert(customDomains).values({
+      tenantId: tenant.id,
+      hostname,
+      provider: 'cloudflare-for-saas',
+      providerVerified: metadata,
+      verification: JSON.stringify({ managed: true }),
+      status: provisioned.ready ? 'verified' : 'pending',
+    });
+  }
+
+  if (await hasEnterpriseAiWhiteLabelAccess(tenant.id)) {
+    const settings = await getTenantSettings(tenantSlug);
+    await updateTenantSettings(tenantSlug, {
+      enterpriseAi: {
+        defaultChannel: settings.enterpriseAi?.defaultChannel ?? 'website',
+        whiteLabel: {
+          ...settings.enterpriseAi?.whiteLabel,
+          enabled: settings.enterpriseAi?.whiteLabel?.enabled ?? false,
+          hideMketyBranding: settings.enterpriseAi?.whiteLabel?.hideMketyBranding ?? true,
+          managedSubdomain: subdomain,
+        },
+      },
+    });
+  }
+
+  revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
+}
