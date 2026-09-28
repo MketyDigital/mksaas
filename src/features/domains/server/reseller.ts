@@ -1,4 +1,6 @@
-import { createDomainNameApiAdapterFromEnvironment } from './domainnameapi';
+import { getActivePlatformServiceConnection } from '@/features/platform-connections/server/service';
+
+import { DomainNameApiAdapter } from './domainnameapi';
 
 export type DomainQuote = {
   domain: string;
@@ -30,20 +32,36 @@ export interface DomainResellerAdapter {
   }): Promise<RegisteredDomain>;
 }
 
-/**
- * Mkety owns the registrar/reseller abstraction. Customer UI never receives
- * registrar credentials. The concrete adapter is intentionally selected from
- * server configuration so the existing reseller account can be bound without
- * coupling Enterprise AI to one registrar.
- */
-let adapter: DomainResellerAdapter | null = null;
+let adapterOverride: DomainResellerAdapter | null = null;
 
-export function configureDomainResellerAdapter(next: DomainResellerAdapter) {
-  adapter = next;
+export function configureDomainResellerAdapter(next: DomainResellerAdapter | null) {
+  adapterOverride = next;
 }
 
-export function getDomainResellerAdapter() {
-  if (!adapter) adapter = createDomainNameApiAdapterFromEnvironment();
-  if (!adapter) throw new Error('Domain reseller adapter is not configured.');
-  return adapter;
+export async function getDomainResellerAdapter(): Promise<DomainResellerAdapter> {
+  if (adapterOverride) return adapterOverride;
+
+  const connection = await getActivePlatformServiceConnection({
+    serviceKey: 'domains',
+    providerKey: 'domainnameapi',
+  });
+  if (!connection) throw new Error('Domain reseller adapter is not configured.');
+
+  const username = String(connection.secret.username ?? '').trim();
+  const apiToken = String(connection.secret.apiToken ?? '').trim();
+  if (!username || !apiToken) throw new Error('DomainNameAPI reseller credentials are incomplete.');
+
+  const config = connection.config ?? {};
+  const nameServers = Array.isArray(config.nameServers)
+    ? config.nameServers.filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    : [];
+
+  return new DomainNameApiAdapter({
+    username,
+    apiToken,
+    environment: connection.mode === 'production' ? 'production' : 'ote',
+    baseUrl: connection.endpointUrl ?? undefined,
+    nameServers,
+    whoisPrivacy: config.whoisPrivacy !== false,
+  });
 }
