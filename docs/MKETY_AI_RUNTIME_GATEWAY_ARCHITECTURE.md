@@ -266,10 +266,13 @@ Cloudflare Workers AI is one managed-provider path, not the only provider.
 
 For the initial managed catalog:
 
-- `@cf/google/gemma-4-26b-a4b-it` is the initial economical multimodal/open route.
-- `@cf/qwen/qwen3.8-27b` is the initial higher-capability multimodal/reasoning route.
-- Gemma 4 published pricing verified 2026-09-27: $0.10/M input tokens and $0.30/M output tokens.
-- Qwen 3.8 27B published pricing verified 2026-09-27: $0.45/M input, $3.20/M output and $0.05/M cached input tokens.
+- `@cf/google/gemma-4-26b-a4b-it` remains the approved economical multimodal/open candidate.
+- `@cf/zai-org/glm-5.3-flash` and `@cf/qwen/qwen3.8-27b` remain disabled benchmark candidates for the second managed slot.
+- Published pricing revalidated 2026-09-28:
+  - Gemma 4: $0.10/M input and $0.30/M output tokens.
+  - GLM-5.3 Flash: $0.15/M input, $0.50/M output and $0.03/M cached input tokens.
+  - Qwen 3.8 27B: $0.45/M input, $3.20/M output and $0.05/M cached input tokens.
+- GLM currently has the strongest catalog economics of the two second-slot candidates, but benchmark evidence across quality, tools, structure, coding, reasoning, vision, latency and reliability must decide promotion.
 - Additional managed models require explicit cost/capability review rather than automatic exposure.
 - Third-party frontier models should enter through customer BYOK, not Cloudflare Unified Billing, unless a later authority deliberately changes this rule.
 - Model IDs and prices must never be permanently hard-coded into public commercial copy. They belong in a controlled model/rate catalog.
@@ -308,6 +311,17 @@ Mkety still owns:
 - customer support and SLA.
 
 Do not expose Cloudflare account tokens, gateway tokens or provider credentials as customer-facing Mkety credentials.
+
+### 8.1 Workers AI transport boundary
+
+Use two Cloudflare-supported transports for different operational contexts:
+
+- **Mkety Worker runtime:** prefer the Workers AI binding (`env.AI.run()`) with an explicit AI Gateway ID. The binding keeps Cloudflare account credentials out of application request handling and is the intended production runtime transport.
+- **Guarded GitHub benchmark/operations:** use Cloudflare's authenticated REST/OpenAI-compatible endpoint because GitHub Actions is outside the Worker runtime. Route those calls through an isolated non-production AI Gateway using standard/postpaid Workers AI billing.
+
+The REST benchmark path is not the customer runtime and must never become a fallback around Mkety entitlement, budget or credit enforcement.
+
+Do not attach the AI binding to the production Mkety Worker merely to run model benchmarks. Add/promote the production binding only after the non-production adapter, accounting reservation boundary and acceptance tests are green.
 
 ## 9. API-key contract
 
