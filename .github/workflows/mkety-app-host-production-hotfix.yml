@@ -1,0 +1,231 @@
+name: Mkety app.mkety.com Production Hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/app-mkety-com-20260928
+    paths:
+      - '.github/workflows/mkety-app-host-production-hotfix.yml'
+
+permissions:
+  contents: read
+
+env:
+  APP_WORKER_NAME: mkety-app-host
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
+  NEXT_PUBLIC_APP_URL: https://app.mkety.com
+  MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
+  MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL || vars.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      CONFIGURED_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate production repair credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing required hotfix configuration: $name" >&2; exit 1; }
+          done
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          echo "::add-mask::$ZITADEL_MANAGEMENT_TOKEN"
+
+      - name: Re-run app-host contract test
+        run: pnpm exec jest src/proxy.app-host-contract.test.ts --runInBand
+
+      - name: Resolve production Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          id="$(RESPONSE="$response" NAME="$MKETY_HYPERDRIVE_NAME" node <<'NODE'
+          const p=JSON.parse(process.env.RESPONSE||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Hyperdrive lookup failed');
+          const m=p.result.filter(x=>x.name===process.env.NAME);
+          if(m.length!==1||!m[0]?.id) throw new Error('Expected exactly one production Hyperdrive');
+          process.stdout.write(m[0].id);
+          NODE
+          )"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Configure isolated app Worker
+        env:
+          HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs');
+          const p='wrangler.jsonc';
+          const c=JSON.parse(fs.readFileSync(p,'utf8'));
+          c.name=process.env.APP_WORKER_NAME;
+          c.workers_dev=true;
+          c.preview_urls=true;
+          c.keep_vars=true;
+          c.hyperdrive=[{binding:'MKETY_DB',id:process.env.HYPERDRIVE_ID}];
+          c.vars={...(c.vars||{}),SKIP_ENV_VALIDATION:'true',NEXT_PUBLIC_APP_URL:'https://app.mkety.com'};
+          delete c.route; delete c.routes;
+          fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');
+          NODE
+
+      - name: Build and deploy isolated app Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm build
+          pnpm run deploy --dry-run
+          pnpm run deploy 2>&1 | tee /tmp/app-hotfix-deploy.log
+          url="$(grep -Eo 'https://[^[:space:]]+workers\.dev' /tmp/app-hotfix-deploy.log | tail -n1 || true)"
+          [ -n "$url" ] || { echo 'No workers.dev preview URL discovered.' >&2; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Add app.mkety.com to existing ZITADEL production application
+        id: zitadel
+        env:
+          ZITADEL_APPLICATION_NAME: Mkety Platform Production
+        run: pnpm exec tsx scripts/provision-zitadel-redirects.ts
+
+      - name: Attach dedicated app auth runtime secrets
+        env:
+          CLIENT_ID: ${{ steps.zitadel.outputs.client_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLIENT_ID" ] || { echo 'ZITADEL did not return client id.' >&2; exit 1; }
+          session="${CONFIGURED_SESSION_SECRET:-}"
+          if [ -z "$session" ]; then session="$(openssl rand -hex 32)"; fi
+          echo "::add-mask::$session"
+          put_secret(){ printf '%s' "$2" | pnpm exec wrangler secret put "$1" --name "$APP_WORKER_NAME" >/dev/null; }
+          put_secret MKETY_AUTH_PROVIDER zitadel
+          put_secret MKETY_AUTH_ISSUER "$MKETY_AUTH_ISSUER"
+          put_secret MKETY_AUTH_CLIENT_ID "$CLIENT_ID"
+          put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
+          put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
+          put_secret MKETY_AUTH_SESSION_SECRET "$session"
+          put_secret NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
+
+      - name: Prove app Worker preview before DNS mutation
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            code="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/app-preview -w '%{http_code}' "$PREVIEW_URL/app" || true)"
+            if [ "$code" -ge 300 ] 2>/dev/null && [ "$code" -lt 400 ] 2>/dev/null; then exit 0; fi
+            sleep 3
+          done
+          echo 'Dedicated app Worker preview did not reach authenticated app boundary.' >&2
+          exit 1
+
+      - name: Snapshot and repair app.mkety.com only
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zones="$(curl -fsS "${auth[@]}" "$api/zones?name=mkety.com&status=active")"
+          zone="$(ZONES="$zones" node -e "const p=JSON.parse(process.env.ZONES||'{}');if(!p.success||!Array.isArray(p.result)||p.result.length!==1)process.exit(1);process.stdout.write(p.result[0].id)")"
+          echo "zone=$zone" >> "$GITHUB_OUTPUT"
+          dns="$(curl -fsS "${auth[@]}" "$api/zones/$zone/dns_records?name=app.mkety.com")"
+          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          DNS="$dns" DOMAINS="$domains" node <<'NODE' >/tmp/app-host-before.json
+          const dns=JSON.parse(process.env.DNS||'{}'),domains=JSON.parse(process.env.DOMAINS||'{}');
+          if(!dns.success||!Array.isArray(dns.result)||!domains.success||!Array.isArray(domains.result)) throw new Error('Could not snapshot app host');
+          const existing=domains.result.find(x=>x.hostname==='app.mkety.com')||null;
+          if(existing&&existing.service!==process.env.APP_WORKER_NAME) throw new Error('app.mkety.com already belongs to another Worker');
+          process.stdout.write(JSON.stringify({dns:dns.result,existingDomain:existing},null,2));
+          NODE
+
+          rollback(){
+            set +e
+            if [ -s /tmp/app-new-domain-id ]; then
+              id="$(cat /tmp/app-new-domain-id)"
+              curl -sS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$id" >/dev/null || true
+            fi
+            current="$(curl -sS "${auth[@]}" "$api/zones/$zone/dns_records?name=app.mkety.com" || true)"
+            ids="$(CURRENT="$current" node -e "const p=JSON.parse(process.env.CURRENT||'{}');for(const r of p.result||[])if(['A','AAAA','CNAME'].includes(r.type))console.log(r.id)")"
+            while IFS= read -r id; do [ -z "$id" ] || curl -sS -X DELETE "${auth[@]}" "$api/zones/$zone/dns_records/$id" >/dev/null || true; done <<< "$ids"
+            SNAPSHOT="$(cat /tmp/app-host-before.json)" ZONE="$zone" TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
+          const s=JSON.parse(process.env.SNAPSHOT);
+          for(const r of s.dns.filter(x=>['A','AAAA','CNAME'].includes(x.type))){
+            const body={type:r.type,name:r.name,content:r.content,ttl:r.ttl,proxied:r.proxied};
+            const res=await fetch('https://api.cloudflare.com/client/v4/zones/'+process.env.ZONE+'/dns_records',{method:'POST',headers:{Authorization:'Bearer '+process.env.TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body)});
+            if(!res.ok) console.error('Rollback DNS restore failed for '+r.name);
+          }
+          NODE
+          }
+          trap 'rollback' ERR
+
+          existing="$(node -e "const x=require('/tmp/app-host-before.json');process.stdout.write(x.existingDomain?.id||'')")"
+          if [ -z "$existing" ]; then
+            ids="$(DNS="$dns" node -e "const p=JSON.parse(process.env.DNS||'{}');for(const r of p.result||[])if(['A','AAAA','CNAME'].includes(r.type))console.log(r.id)")"
+            while IFS= read -r id; do [ -z "$id" ] || curl -fsS -X DELETE "${auth[@]}" "$api/zones/$zone/dns_records/$id" >/dev/null; done <<< "$ids"
+            body="$(ZONE="$zone" node -e "process.stdout.write(JSON.stringify({hostname:'app.mkety.com',service:process.env.APP_WORKER_NAME,zone_id:process.env.ZONE,zone_name:'mkety.com'}))")"
+            response="$(curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            id="$(RESPONSE="$response" node -e "const p=JSON.parse(process.env.RESPONSE||'{}');if(!p.success||!p.result?.id)process.exit(1);process.stdout.write(p.result.id)")"
+            printf '%s' "$id" >/tmp/app-new-domain-id
+          fi
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            headers=/tmp/app-live.headers
+            code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/' || true)"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$headers")"
+            if [ "$code" -ge 300 ] 2>/dev/null && [ "$code" -lt 400 ] 2>/dev/null && [ -n "$location" ]; then
+              if LOCATION="$location" node -e "const u=new URL(process.env.LOCATION,'https://app.mkety.com/');process.exit(u.origin==='https://app.mkety.com'&&u.pathname==='/app'?0:1)"; then ready=1; break; fi
+            fi
+            sleep 5
+          done
+          [ "$ready" = 1 ] || { echo 'app.mkety.com did not become ready.' >&2; false; }
+
+          entry_headers=/tmp/app-entry.headers
+          entry_code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$entry_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app' || true)"
+          entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$entry_headers")"
+          [ "$entry_code" -ge 300 ] && [ "$entry_code" -lt 400 ] && [ -n "$entry_location" ]
+          ENTRY="$entry_location" node -e "const u=new URL(process.env.ENTRY,'https://app.mkety.com/app');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login')process.exit(1)"
+
+          auth_headers=/tmp/app-auth.headers
+          auth_code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$auth_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin' || true)"
+          auth_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, "");sub(/\r$/,"");print;exit}' "$auth_headers")"
+          [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ]
+          AUTH_LOCATION="$auth_location" node -e "const u=new URL(process.env.AUTH_LOCATION);if(u.origin!=='https://auth.mkety.com')process.exit(1)"
+          trap - ERR
+
+      - name: Disable dedicated Worker preview URLs
+        if: success()
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '{"enabled":false,"previews_enabled":false}' "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/subdomain" >/dev/null
+
+      - name: Publish hotfix evidence
+        if: always()
+        run: |
+          {
+            echo '## app.mkety.com production hotfix'
+            echo
+            echo "- Dedicated Worker: $APP_WORKER_NAME"
+            echo '- Public mkety.com/www Worker was not modified.'
+            echo '- ZITADEL app callback was added without removing the existing callback.'
+            echo '- app.mkety.com root → /app, unauthenticated /app → /login, and branded auth first hop were required before success.'
+          } >> "$GITHUB_STEP_SUMMARY"
