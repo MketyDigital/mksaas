@@ -23,6 +23,7 @@ import {
 import { requirePermission } from '@/shared/lib/permissions';
 
 const PROVIDERS: readonly PublicAIProviderId[] = [
+  'workers-ai',
   'openai',
   'azure-openai',
   'gemini',
