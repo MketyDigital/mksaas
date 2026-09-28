@@ -162,6 +162,13 @@
       "when": 1790557800000,
       "tag": "0022_ai_credit_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790561400000,
+      "tag": "0023_ai_budget_reservations",
+      "breakpoints": true
     }
   ]
 }
