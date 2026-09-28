@@ -1,10 +1,11 @@
-name: Mkety DomainNameAPI Direct OT&E Diagnostic
+name: Mkety DomainNameAPI Credential Diagnostics
 
 on:
   pull_request:
     paths:
       - 'src/features/domains/server/domainnameapi.ts'
       - 'scripts/verify-domainnameapi-ote-direct.ts'
+      - 'scripts/verify-domainnameapi-live-readonly.ts'
       - '.github/workflows/mkety-domainnameapi-direct-ote-diagnostic.yml'
 
 permissions:
@@ -32,54 +33,81 @@ jobs:
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Detect OT&E credentials
+      - name: Detect credential classes
         id: credentials
         shell: bash
         run: |
           set -euo pipefail
-          username="${DOMAINNAMEAPI_OTE_USERNAME:-}"
-          token="${DOMAINNAMEAPI_OTE_API_TOKEN:-}"
-          if [ -n "$username" ] && [ -n "$token" ]; then
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-            echo 'source=ote-specific' >> "$GITHUB_OUTPUT"
-            echo "::add-mask::$username"
-            echo "::add-mask::$token"
-            echo "DOMAINNAMEAPI_USERNAME=$username" >> "$GITHUB_ENV"
-            echo "DOMAINNAMEAPI_API_TOKEN=$token" >> "$GITHUB_ENV"
+          if [ -n "${DOMAINNAMEAPI_OTE_USERNAME:-}" ] && [ -n "${DOMAINNAMEAPI_OTE_API_TOKEN:-}" ]; then
+            echo 'ote_available=true' >> "$GITHUB_OUTPUT"
+            echo "::add-mask::$DOMAINNAMEAPI_OTE_USERNAME"
+            echo "::add-mask::$DOMAINNAMEAPI_OTE_API_TOKEN"
           else
-            echo 'available=false' >> "$GITHUB_OUTPUT"
-            echo 'source=missing-ote-specific' >> "$GITHUB_OUTPUT"
+            echo 'ote_available=false' >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "${DOMAINNAMEAPI_LIVE_USERNAME:-}" ] && [ -n "${DOMAINNAMEAPI_LIVE_API_TOKEN:-}" ]; then
+            echo 'live_available=true' >> "$GITHUB_OUTPUT"
+            echo "::add-mask::$DOMAINNAMEAPI_LIVE_USERNAME"
+            echo "::add-mask::$DOMAINNAMEAPI_LIVE_API_TOKEN"
+          else
+            echo 'live_available=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Execute real DomainNameAPI OT&E quote
-        if: steps.credentials.outputs.available == 'true'
+        if: steps.credentials.outputs.ote_available == 'true'
+        env:
+          DOMAINNAMEAPI_USERNAME: ${{ env.DOMAINNAMEAPI_OTE_USERNAME }}
+          DOMAINNAMEAPI_API_TOKEN: ${{ env.DOMAINNAMEAPI_OTE_API_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           pnpm exec tsx scripts/verify-domainnameapi-ote-direct.ts | tee /tmp/domainnameapi-direct-ote.json
           node -e "const x=require('/tmp/domainnameapi-direct-ote.json');if(x.ok!==true)process.exit(1)"
 
-      - name: Publish OT&E diagnostic
+      - name: Execute safe live DomainNameAPI quote-only probe
+        if: steps.credentials.outputs.live_available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/verify-domainnameapi-live-readonly.ts | tee /tmp/domainnameapi-live-readonly.json
+          node -e "const x=require('/tmp/domainnameapi-live-readonly.json');if(x.ok!==true||x.operation!=='quote-only'||x.mutationPerformed!==false)process.exit(1)"
+
+      - name: Publish credential diagnostics
         if: always()
         shell: bash
         run: |
           node <<'NODE'
           const fs=require('fs');
-          let result=null;
-          try{result=JSON.parse(fs.readFileSync('/tmp/domainnameapi-direct-ote.json','utf8'))}catch{}
-          const credentials='${{ steps.credentials.outputs.available }}'==='true';
-          const rows=['## DomainNameAPI direct OT&E diagnostic','',
-            '- GitHub preview credentials available: '+credentials,
-            '- Real OT&E quote executed: '+Boolean(result?.ok),
+          let ote=null;
+          let live=null;
+          try{ote=JSON.parse(fs.readFileSync('/tmp/domainnameapi-direct-ote.json','utf8'))}catch{}
+          try{live=JSON.parse(fs.readFileSync('/tmp/domainnameapi-live-readonly.json','utf8'))}catch{}
+          const oteCredentials='${{ steps.credentials.outputs.ote_available }}'==='true';
+          const liveCredentials='${{ steps.credentials.outputs.live_available }}'==='true';
+          const rows=['## DomainNameAPI credential diagnostics','',
+            '- OT&E-specific credentials available: '+oteCredentials,
+            '- Real OT&E quote executed: '+Boolean(ote?.ok),
+            '- Live credentials available: '+liveCredentials,
+            '- Live production quote-only probe executed: '+Boolean(live?.ok),
+            '- Live mutation performed: '+String(live?.mutationPerformed ?? false),
           ];
-          if(result){
-            rows.push('- Quote domain: '+result.domain);
-            rows.push('- Availability response: '+result.available);
-            rows.push('- Currency: '+result.currency);
+          if(ote){
+            rows.push('- OT&E quote domain: '+ote.domain);
+            rows.push('- OT&E availability response: '+ote.available);
+            rows.push('- OT&E currency: '+ote.currency);
           }
-          if(!credentials){
-            rows.push('- Blocker: add DOMAINNAMEAPI_OTE_USERNAME and DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Existing live DOMAINNAMEAPI_* credentials are intentionally not used against OT&E.');
+          if(live){
+            rows.push('- Live probe domain: '+live.domain);
+            rows.push('- Live availability response: '+live.available);
+            rows.push('- Live currency: '+live.currency);
           }
+          if(!oteCredentials){
+            rows.push('- OT&E lifecycle blocker: add DOMAINNAMEAPI_OTE_USERNAME and DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Live credentials are deliberately never sent to OT&E.');
+          }
+          if(!liveCredentials){
+            rows.push('- Live read-only blocker: DOMAINNAMEAPI_USERNAME / DOMAINNAMEAPI_API_TOKEN are unavailable in the preview GitHub Environment.');
+          }
+          rows.push('- Safety: the live diagnostic performs availability/price lookup only; it does not register or renew a domain.');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\n')+'\n');
-          console.log(JSON.stringify({credentialsAvailable:credentials,result},null,2));
+          console.log(JSON.stringify({oteCredentialsAvailable:oteCredentials,liveCredentialsAvailable:liveCredentials,ote,live},null,2));
           NODE
