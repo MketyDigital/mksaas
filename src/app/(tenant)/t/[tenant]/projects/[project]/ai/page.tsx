@@ -1,5 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
+import Link from 'next/link';
 
+import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
 import { createAgent } from '@/features/projects/actions';
 import { requireProjectAccess } from '@/features/projects/server/access';
 import { AiAgentSummaryGrid } from '@/features/projects/workspaces/ai/AiAgentSummaryGrid';
@@ -26,6 +28,7 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
   });
 
   const knowledgeStatus = access.canManage ? 'Ready for project knowledge' : 'Project knowledge available';
+  const enterpriseAiEnabled = await hasEnterpriseAiAccess(access.tenant.id);
 
   return (
     <WorkspaceShell
@@ -35,6 +38,19 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
       workspace={getProjectWorkspaceByKey('ai')}
     >
       <AiWorkspaceStatusPanel agentCount={projectAgents.length} canManage={access.canManage} knowledgeStatus={knowledgeStatus} />
+
+      {enterpriseAiEnabled ? (
+        <section className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-5">
+          <p className="text-sm font-semibold text-primary">Mkety AI for Business</p>
+          <h2 className="mt-1 text-xl font-semibold">Start from a business result instead of technical AI settings</h2>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            Open your separately entitled Enterprise AI console for customer support, lead follow-up, business knowledge, operations, team assistance, and custom workflows.
+          </p>
+          <Link className="mt-4 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href="https://ai.mkety.com">
+            Open Mkety AI for Business
+          </Link>
+        </section>
+      ) : null}
 
       <AiWorkspaceReadiness agentCount={projectAgents.length} canManage={access.canManage} projectSlug={access.project.slug} tenantSlug={access.tenant.slug} />
 
