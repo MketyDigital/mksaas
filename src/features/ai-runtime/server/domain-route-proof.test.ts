@@ -4,11 +4,14 @@ import { probeEnterpriseAiHostnameRoute } from './domain-route-proof';
 
 describe('Enterprise AI live hostname route proof', () => {
   it('accepts a working HTTPS route only when it proves the expected tenant', async () => {
-    const fetchImpl = async () => Response.json({
+    const fetchImpl = async () => ({
       ok: true,
-      hostname: 'ai.customer.com',
-      tenant_id: 'tenant-1',
-    });
+      json: async () => ({
+        ok: true,
+        hostname: 'ai.customer.com',
+        tenant_id: 'tenant-1',
+      }),
+    }) as Response;
 
     await expect(
       probeEnterpriseAiHostnameRoute(
@@ -24,11 +27,14 @@ describe('Enterprise AI live hostname route proof', () => {
   });
 
   it('rejects a live hostname that resolves to another tenant', async () => {
-    const fetchImpl = async () => Response.json({
+    const fetchImpl = async () => ({
       ok: true,
-      hostname: 'ai.customer.com',
-      tenant_id: 'tenant-other',
-    });
+      json: async () => ({
+        ok: true,
+        hostname: 'ai.customer.com',
+        tenant_id: 'tenant-other',
+      }),
+    }) as Response;
 
     await expect(
       probeEnterpriseAiHostnameRoute(
