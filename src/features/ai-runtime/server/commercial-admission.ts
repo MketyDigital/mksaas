@@ -182,6 +182,7 @@ export function createAiCommercialAdmissionService(
         now,
       });
 
+      let budgetReserved = false;
       try {
         const budget = await dependencies.reserveBudget({
           tenantId: input.tenantId,
@@ -195,6 +196,7 @@ export function createAiCommercialAdmissionService(
           expiresAt,
           now,
         });
+        budgetReserved = true;
 
         await dependencies.markRequest({
           requestId: input.requestId,
@@ -224,6 +226,13 @@ export function createAiCommercialAdmissionService(
           expiresAt,
         };
       } catch (error) {
+        if (budgetReserved) {
+          await dependencies.releaseBudget({
+            tenantId: input.tenantId,
+            idempotencyKey,
+            reason: 'admission_failed',
+          }).catch(() => undefined);
+        }
         await dependencies.releaseCredits({
           tenantId: input.tenantId,
           reservationId: credit.reservation.id,
