@@ -1,15 +1,16 @@
+import { getDefaultPublicAIModel, type PublicAIProviderId } from '@/features/public-assistant/models';
 import {
   disablePublicAiProviderConnection,
   savePublicAiProviderConnection,
   updatePublicAiRouting,
 } from '@/features/public-assistant/server/admin-actions';
 import type { getPublicAiControlOverview } from '@/features/public-assistant/server/dynamic-config';
-import { getDefaultPublicAIModel, type PublicAIProviderId } from '@/features/public-assistant/models';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 type Overview = Awaited<ReturnType<typeof getPublicAiControlOverview>>;
 
 const PROVIDERS: Array<[PublicAIProviderId, string]> = [
+  ['workers-ai', 'Mkety managed AI'],
   ['openai', 'OpenAI'],
   ['azure-openai', 'Azure OpenAI'],
   ['gemini', 'Google Gemini'],
@@ -17,6 +18,8 @@ const PROVIDERS: Array<[PublicAIProviderId, string]> = [
   ['cloudflare-ai', 'Cloudflare AI'],
   ['bedrock', 'AWS Bedrock'],
 ];
+
+const CREDENTIAL_PROVIDERS = PROVIDERS.filter(([provider]) => provider !== 'workers-ai');
 
 export function PublicAiControlPanel({
   tenant,
@@ -127,7 +130,7 @@ export function PublicAiControlPanel({
               <label className="text-sm font-medium">
                 Provider
                 <select className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="provider" required>
-                  {PROVIDERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  {CREDENTIAL_PROVIDERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
               <label className="text-sm font-medium">API key
