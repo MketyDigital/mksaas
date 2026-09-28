@@ -64,6 +64,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
 
   const session = await auth(request);
   let effectivePathname = pathname;
+  const appHost=(() => { try { return new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://app.mkety.com').hostname.toLowerCase(); } catch { return 'app.mkety.com'; } })();
   const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
   const aiHost=(process.env.MKETY_AI_HOST||'ai.mkety.com').toLowerCase();
   const apiHost=(process.env.MKETY_API_HOST||'api.mkety.com').toLowerCase();
@@ -85,6 +86,13 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     const url=new URL(request.url);
     url.pathname='/api'+pathname;
     return NextResponse.rewrite(url);
+  }
+
+  if(hostname.toLowerCase()===appHost && pathname==='/'){
+    const url=new URL(request.url);
+    url.pathname='/app';
+    url.search='';
+    return NextResponse.redirect(url);
   }
 
   if(hostname.toLowerCase()===mailHost && (pathname==='/' || pathname==='/mail/app') && !session){
@@ -158,13 +166,6 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   }
 
   if (!pathname.startsWith('/t/') && hostname) {
-    const appHost = (() => {
-      try {
-        return new URL(process.env.NEXT_PUBLIC_APP_URL || '').hostname;
-      } catch {
-        return '';
-      }
-    })();
     const vercelHost = process.env.VERCEL_URL || '';
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
     const isKnownAppHost =
