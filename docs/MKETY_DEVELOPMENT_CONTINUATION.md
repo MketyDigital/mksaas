@@ -1353,55 +1353,57 @@ Current bounded SolutionHub contract:
 
 This slice is intentionally catalog/routing-first. Any future SolutionHub install/provision capability must introduce tenant/project-scoped persistence, entitlement/billing checks, approval/audit rules, idempotent provisioning state, and rollback/recovery design before enabling mutation.
 
-## 2026-09-28 — Enterprise Mkety AI AI-01 runtime foundation
+## 2026-09-28 — Enterprise Mkety AI commercial safety and operations
 
-**Requested outcome:** begin Enterprise Mkety AI implementation from the successful public-production authority without reopening product architecture or coupling normal AI Workspace to the Enterprise add-on.
+**Current production/main authority before this branch:** `28e28562a5c5d08d5d050e15ab4b7af8c4901777`
 
-**Production authority at start:** `5db1e05f718d713dd1012be6ee05d6fe80d4cb21`  
-**Draft implementation PR:** #150 — `feat: implement Enterprise Mkety AI runtime foundation`  
-**Branch:** `feat/mkety-ai-runtime-foundation-20260928`
+### Completed and merged
 
-### Changes in this slice
+- PR #150 — Enterprise AI runtime foundation, merged as `9ce9a3bd3591708b2604fa9f83b18e44ef102ede`.
+- PR #151 — atomic AI credit reservations, merged as `43cadf485d105ed2fd1e9f6bc1a2f81fafe7cc95`.
+- PR #152 — layered AI budget reservations, merged as `28e28562a5c5d08d5d050e15ab4b7af8c4901777`.
+- Normal AI Workspace remains separate from Enterprise AI.
+- Paid customer inference remains disabled.
+- Credit admission now supports atomic hold, exact settlement, full failure release, idempotency, tenant/project/key/request ownership checks, immutable usage/ledger history, and concurrent-overspend protection.
+- Budget admission now reserves every applicable active tenant/project/API-key budget in one transaction, distinguishes hard-stop and soft budgets, and settles/releases exact reserved counters.
+- `docs/MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md` defines the broad cross-industry Enterprise AI solution surface while preserving shared security/commercial primitives.
 
-- preserved normal AI Workspace as the existing self-service product;
-- added separate Enterprise AI/API entitlement keys and AI PBAC vocabulary/role bundles;
-- added migration `0021_mkety_ai_runtime_foundation` for hashed API keys, model catalog/aliases, provider connections, routes, budgets and request records;
-- added `mk_ai_live_` / `mk_ai_test_` one-way-hashed key lifecycle with explicit supported scopes and project ownership validation;
-- added provider-neutral runtime types and a non-billable fake adapter;
-- added fail-closed tenant/project model routing, budget authorization and idempotent request recording;
-- added authenticated `GET /api/v1/ai/models` and fail-closed `POST /api/v1/ai/chat/completions`;
-- added tenant-scoped exact cache-key composition and bounded idempotent retry policy for later edge/provider integration;
-- added a tested Workers AI binding adapter routed through AI Gateway, but left it unbound from customer traffic and production runtime;
-- added a manual-only, explicitly authorized, capped Workers AI benchmark runner/workflow for Gemma 4, GLM-5.3 Flash and Qwen 3.8 27B using an isolated standard/postpaid AI Gateway;
-- retained Mail-era entitlements and Billing catalog coverage from current production main.
+### Current workstream
 
-### Managed-model decision state
+Build the commercial-control and no-code Mkety Ops layer before any real paid customer inference:
 
-- Gemma 4 26B A4B remains the day-one managed candidate.
-- GLM-5.3 Flash and Qwen 3.8 27B remain disabled benchmark candidates.
-- Current Workers AI catalog data makes GLM materially cheaper than Qwen and gives it a materially larger context window, but the second production managed model is not locked until Mkety's benchmark covers chat, long-context/RAG, tools, structured output, coding, reasoning, vision, latency, reliability and cost.
+- effective-dated, versioned AI rate cards;
+- strict prepaid-only runtime policy;
+- safe request/output/reservation limits;
+- Platform Control visibility and emergency disable;
+- simple business-facing Enterprise AI product experience with developer controls progressively disclosed;
+- commercial admission orchestration that requires both credit and budget reservations before provider invocation;
+- no production model/provider activation until exact accounting, failure repair, non-production inference, and model benchmark evidence pass.
 
-### Reliability boundary
+### Commercial invariants
 
-PostgreSQL remains authoritative for tenant/project scope, entitlement, API-key metadata, budgets, idempotent commercial state and usage/accounting. KV is only for non-authoritative high-read cache/config state. Durable Objects are reserved for later strongly coordinated per-tenant/per-key rate/concurrency/stream state. AI Gateway is the intended provider-facing retry/timeout/fallback/cache/observability layer. No stale cache may grant access or authorize spend.
+1. No managed inference without Enterprise entitlement, valid tenant/project/key scope, active route/model, active effective rate card, available prepaid credits, and all applicable hard budgets.
+2. No silent postpaid overage. Enterprise AI remains prepaid/committed-capacity only unless a future explicit architecture and commercial decision changes this rule.
+3. Rate-card values used for billable usage are historical facts. Future changes create a new version rather than rewriting prior pricing.
+4. Browser success/return pages, client claims, API parameters, or provider responses never grant credits, entitlements, subscriptions, or budget bypasses.
+5. Holds occur before paid provider work. Successful calls settle exact actual usage; failed calls release held value.
+6. Customer BYOK never silently falls back to Mkety-paid credentials.
+7. Mkety Ops may edit safe business configuration without code, but protected invariants, secrets, authorization, settlement logic, and production release gates remain non-editable.
 
-### Verification evidence so far
+### User-experience direction
 
-On PR #150's evolving draft head:
+Enterprise Mkety AI is presented as a business solution rather than an infrastructure console. The default customer journey is outcome-first (for example customer support, lead follow-up, knowledge assistant, booking/operations, internal helpdesk, and custom automation). Model/provider/API/routing controls remain available to advanced users and developers without becoming the default vocabulary for small and medium businesses.
 
-- Mkety Migration Baseline: passed on the AI-01 migration/snapshot chain;
-- Mkety Platform Core Workspaces Smoke: passed, including workspace tests and type-check;
-- Mkety Cloudflare vinext Smoke: passed Worker compatibility/build/package validation;
-- full CI is re-triggered whenever the draft head moves and must be green on the final exact head before promotion.
+### Remaining release sequence
 
-No paid Workers AI inference is enabled in AI-01. No production AI Gateway/DNS/model route is enabled. Existing Public Mkety AI and normal AI Workspace runtimes are not rerouted by this slice.
+1. Finish and certify AI commercial-control/no-code Ops configuration.
+2. Implement one commercial admission orchestrator that acquires credit and every applicable budget reservation before provider invocation and compensates/release safely on partial failure.
+3. Run the existing manual-only Gemma 4 / GLM-5.3 Flash / Qwen 3.8 benchmark and retain the JSON artifact.
+4. Select the second managed model from benchmark evidence.
+5. Bind Workers AI in non-production only and route through the isolated AI Gateway.
+6. Prove exact rate-card selection, reservation, actual-usage settlement, idempotency, provider-failure release, timeout/retry behavior, reconciliation, and crash repair.
+7. Add the focused `ai.mkety.com` customer console/host routing and central `app.mkety.com` Enterprise AI entry behind the correct entitlement, preserving Public Mkety AI isolation.
+8. Add streaming only after accounting invariants hold for streaming/cancellation.
+9. Add BYOK after managed inference is stable and tested.
+10. Promote production/customer inference only after exact-head CI, migration, smoke, security, commercial, and live acceptance gates pass.
 
-### Exact next steps
-
-1. Hold PR #150 as draft until its final exact head is fully green.
-2. Dispatch the manual-only controlled Gemma 4 / GLM-5.3 Flash / Qwen 3.8 benchmark and retain its JSON artifact as model-selection evidence.
-3. Lock the second managed model based on Mkety benchmark evidence, not catalog pricing alone.
-4. Design and implement atomic credit/admission reservation semantics using the existing Usage/Credits authority before customer traffic can invoke the Workers AI adapter.
-5. Bind Workers AI only in a non-production Mkety runtime first, route through the isolated AI Gateway, and prove accounting/idempotency/failure repair before production promotion.
-6. Add streaming after admission/accounting invariants are preserved.
-7. Add BYOK only after managed inference is stable; never silently fall back from failed BYOK to Mkety-paid credentials.
