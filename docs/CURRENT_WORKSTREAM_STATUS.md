@@ -8,14 +8,15 @@ Current authoritative implementation direction:
 - PR #159 is the clean current-main reconciliation of the business console; do not merge stale PRs #145, #154, #157 or #158 as historical patches.
 - White-label is a real product boundary: entitled customers may replace product name, logos, favicon, colors, support/legal links and customer login presentation.
 - Customer hostnames are routing context for the same tenant/workspace, never a duplicate tenant, user store or billing system.
-- Every Enterprise AI tenant may use the managed `<tenant>.mkety.app` hostname; white-label tenants may attach a verified custom hostname through Cloudflare for SaaS.
+- Enterprise AI tenants can activate an exact managed `<subdomain>.mkety.app` hostname. Mkety provisions the Cloudflare for SaaS hostname plus the exact `mkety.app` DNS CNAME and only treats it as live after verification; white-label tenants may also attach a verified custom hostname.
 - Custom hostname onboarding is designed for one customer DNS action: CNAME the selected hostname to the Mkety SaaS target; Mkety owns custom-hostname provisioning, TLS and routing.
 - Product-session handoff tokens are one-time and destination-host-bound so customer domains can establish host-scoped sessions without wildcard Mkety cookies.
 - Domain purchase is provider-neutral behind the Mkety domain-reseller adapter; registrar credentials remain server-side.
 - Day-one channel vocabulary is Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. The registry is adapter-based so additional channels do not create another AI runtime.
+- Authenticated inbound channel adapters now verify Telegram secret tokens, Slack signed requests with replay-window checks, Meta HMAC signatures for WhatsApp/Messenger/Instagram, and signed custom webhooks before any AI credits can be consumed. Microsoft Teams is outbound workflow/webhook only until Bot Framework inbound identity verification is implemented.
 - Customer console exposes plan, subscription status, current period, prepaid credits, current-month AI requests and charged credits in non-technical language.
 - Managed inference executes only after Enterprise entitlement, route/model policy, immutable rate-card resolution, worst-case credit reservation and every applicable budget reservation.
-- Workers AI is invoked through the Worker `AI` binding with an explicit AI Gateway ID. Provider failure releases holds.
+- Workers AI is invoked through the Worker `AI` binding with an explicit AI Gateway ID. Pre-dispatch failures release holds; any ambiguous failure after provider dispatch preserves holds and becomes `reconciliation_required` so Mkety cannot silently absorb upstream spend.
 - Successful provider usage is normalized, exact customer credits are calculated from the admitted rate-card version, and credit/budget reservations are settled from actual usage.
 - Provider cost is recorded separately from customer charge in micro-USD. The default commercial planning floor targets 65% gross margin plus 15% overhead reserve; public numeric pricing is not changed by this workstream.
 - If upstream inference succeeds but local commercial settlement fails, the request becomes `reconciliation_required` and must not be sent upstream again.
