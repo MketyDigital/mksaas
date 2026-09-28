@@ -186,6 +186,30 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
     );
 
     const normalized = normalizeWorkersAiResponse(response, nativeModel);
+    if (!normalized.text && !normalized.toolCalls?.length) {
+      const record = response && typeof response === 'object'
+        ? response as Record<string, unknown>
+        : {};
+      const choice = Array.isArray(record.choices) && record.choices[0] && typeof record.choices[0] === 'object'
+        ? record.choices[0] as Record<string, unknown>
+        : {};
+      const message = choice.message && typeof choice.message === 'object'
+        ? choice.message as Record<string, unknown>
+        : {};
+      console.warn('Workers AI returned no normalized text/tool call', {
+        nativeModel,
+        topLevelKeys: Object.keys(record).sort(),
+        choiceKeys: Object.keys(choice).sort(),
+        messageKeys: Object.keys(message).sort(),
+        responseType: typeof record.response,
+        responseArray: Array.isArray(record.response),
+        contentType: typeof message.content,
+        contentArray: Array.isArray(message.content),
+        usageKeys: record.usage && typeof record.usage === 'object'
+          ? Object.keys(record.usage as Record<string, unknown>).sort()
+          : [],
+      });
+    }
     return {
       requestId: crypto.randomUUID(),
       provider: this.key,
