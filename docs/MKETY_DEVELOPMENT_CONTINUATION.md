@@ -1333,3 +1333,22 @@ Known non-release blocker:
 ### Next session
 
 Public-site work is closed unless a new production regression is observed. Resume authenticated app development from current `main`, using the existing APP-07 approval-gated Deploy foundation as the starting point. Do not reopen historical public branches or PR #78 wholesale.
+
+
+
+## 2026-09-23 authenticated SolutionHub catalog foundation
+
+With the public production cutover complete and APP-07 approval-gated non-production Deploy execution merged, authenticated application work resumes with SolutionHub.
+
+Current bounded SolutionHub contract:
+- the authenticated project SolutionHub route is now a real discovery/catalog surface rather than a planned-only capability map;
+- code-owned catalog entries are classified as shared-platform or Enterprise/Custom;
+- shared-platform examples route only into existing project-scoped AI, Automation, or Deploy workspaces;
+- approved shared examples include Customer Support AI, AI Knowledge Assistant, Lead Capture Automation, Telegram Workflow, Marketing Automation, and Business Website;
+- complex ERP, substantial regulated-data systems, private/dedicated runtime requirements, and Trading Automation route to Enterprise rather than pretending to be self-service;
+- no one-click install, clone, provisioning, entitlement mutation, billing mutation, infrastructure allocation, or Trading execution is introduced;
+- SolutionHub continues to inherit the existing authenticated tenant/project access boundary from `requireProjectAccess`;
+- Automation, Deploy, and SolutionHub registry availability now reflects implemented authenticated functionality instead of stale `Planned` labels;
+- Deploy customer wording remains explicitly non-production: production execution and domains are still protected.
+
+This slice is intentionally catalog/routing-first. Any future SolutionHub install/provision capability must introduce tenant/project-scoped persistence, entitlement/billing checks, approval/audit rules, idempotent provisioning state, and rollback/recovery design before enabling mutation.
