@@ -269,6 +269,47 @@ jobs:
           put_secret MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY "${MKETY_PUBLIC_BEDROCK_SECRET_ACCESS_KEY:-}"
           put_secret MKETY_PUBLIC_BEDROCK_SESSION_TOKEN "${MKETY_PUBLIC_BEDROCK_SESSION_TOKEN:-}"
           put_secret MKETY_PUBLIC_BEDROCK_REGION "${MKETY_PUBLIC_BEDROCK_REGION:-}"
+          put_secret MKETY_AI_GATEWAY_ID 'mkety-ai-benchmark'
+
+      - name: Prepare ephemeral managed-AI commercial acceptance fixture
+        id: ai-commercial-fixture
+        shell: bash
+        env:
+          AI_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          AI_ACCEPTANCE_FIXTURE_STATE: /tmp/mkety-ai-commercial-fixture.json
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$AI_ACCEPTANCE_DATABASE_URL"
+          pnpm exec tsx scripts/stage-ai-commercial-fixture.ts setup >/tmp/mkety-ai-fixture-setup.json
+          api_key="$(node -e "const x=require('/tmp/mkety-ai-commercial-fixture.json');process.stdout.write(x.apiKey)")"
+          echo "::add-mask::$api_key"
+          echo "api_key=$api_key" >> "$GITHUB_OUTPUT"
+          echo "model=$(node -e "const x=require('/tmp/mkety-ai-commercial-fixture.json');process.stdout.write(x.modelAlias)")" >> "$GITHUB_OUTPUT"
+
+      - name: Run real managed-AI commercial accounting acceptance
+        shell: bash
+        env:
+          AI_ACCEPTANCE_BASE_URL: ${{ steps.deploy.outputs.url }}
+          AI_ACCEPTANCE_API_KEY: ${{ steps.ai-commercial-fixture.outputs.api_key }}
+          AI_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          AI_ACCEPTANCE_MODEL: ${{ steps.ai-commercial-fixture.outputs.model }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$AI_ACCEPTANCE_API_KEY"
+          echo "::add-mask::$AI_ACCEPTANCE_DATABASE_URL"
+          pnpm exec tsx scripts/accept-mkety-ai-commercial.ts | tee /tmp/mkety-ai-commercial-acceptance.json
+          node -e "const x=require('/tmp/mkety-ai-commercial-acceptance.json');if(x.ok!==true)process.exit(1)"
+
+      - name: Restore staging AI policy and remove commercial fixture
+        if: always() && steps.ai-commercial-fixture.outcome == 'success'
+        shell: bash
+        env:
+          AI_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          AI_ACCEPTANCE_FIXTURE_STATE: /tmp/mkety-ai-commercial-fixture.json
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$AI_ACCEPTANCE_DATABASE_URL"
+          pnpm exec tsx scripts/stage-ai-commercial-fixture.ts cleanup
 
       - name: Smoke candidate public routes and production copy
         shell: bash
