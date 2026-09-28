@@ -60,27 +60,11 @@ jobs:
 
           [ "$code" = "200" ] || {
             echo "DomainNameAPI OT&E availability check failed with HTTP $code." >&2
-            python - <<'PY'
-import json
-from pathlib import Path
-p=Path('/tmp/domainnameapi-ote.json')
-try:
-    data=json.loads(p.read_text())
-    safe={k:v for k,v in data.items() if str(k).lower() not in {'apikey','token','password','secret'}}
-    print(json.dumps(safe)[:1500])
-except Exception:
-    print('OT&E returned a non-JSON error response.')
-PY
+            python -c "import json,pathlib; p=pathlib.Path('/tmp/domainnameapi-ote.json'); data=json.loads(p.read_text()); print(json.dumps({k:v for k,v in data.items() if str(k).lower() not in {'apikey','token','password','secret'}})[:1500])" || true
             exit 1
           }
 
-          python - <<'PY'
-import json
-from pathlib import Path
-data=json.loads(Path('/tmp/domainnameapi-ote.json').read_text())
-print('DomainNameAPI OT&E authentication and read-only availability transport: OK')
-print('Response type:', type(data).__name__)
-PY
+          python -c "import json,pathlib; data=json.loads(pathlib.Path('/tmp/domainnameapi-ote.json').read_text()); print('DomainNameAPI OT&E authentication and read-only availability transport: OK'); print('Response type:', type(data).__name__)"
 
       - name: Publish smoke evidence
         shell: bash
