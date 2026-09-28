@@ -109,7 +109,10 @@ export async function POST(request: Request) {
   });
 
   if (existing) {
-    if (existing.requestFingerprint !== requestFingerprint) {
+    const existingFingerprint = typeof existing.providerCostMetadata.requestFingerprint === 'string'
+      ? existing.providerCostMetadata.requestFingerprint
+      : null;
+    if (existingFingerprint !== requestFingerprint) {
       return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
     }
     return errorResponse(
@@ -164,12 +167,12 @@ export async function POST(request: Request) {
       projectId,
       apiKeyId: key.id,
       idempotencyKey,
-      requestFingerprint,
       modelAlias: resolved.alias.alias,
       providerKey: resolved.model.providerKey,
       nativeModel: resolved.model.nativeModel,
       status: 'provider_unavailable',
       errorCode: 'provider_unavailable',
+      providerCostMetadata: { requestFingerprint },
       completedAt: new Date(),
     });
   } catch {
@@ -179,7 +182,10 @@ export async function POST(request: Request) {
         eq(aiRequests.idempotencyKey, idempotencyKey),
       ),
     });
-    if (raced?.requestFingerprint === requestFingerprint) {
+    const racedFingerprint = raced && typeof raced.providerCostMetadata.requestFingerprint === 'string'
+      ? raced.providerCostMetadata.requestFingerprint
+      : null;
+    if (raced && racedFingerprint === requestFingerprint) {
       return errorResponse(503, 'provider_unavailable', 'Managed inference is not enabled on this AI-01 foundation route yet.', raced.id);
     }
     return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
