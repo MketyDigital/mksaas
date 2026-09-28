@@ -234,7 +234,7 @@ export async function POST(request: Request) {
         messages: parsed.data.messages
           .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
           .map((message) => ({
-            role: message.role === 'system' ? 'system' : message.role,
+            role: message.role as 'system' | 'user' | 'assistant',
             content: message.content,
           })),
         maxOutputTokens: parsed.data.max_completion_tokens ?? parsed.data.max_tokens ?? policy.maxOutputTokens,
