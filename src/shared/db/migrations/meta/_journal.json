@@ -176,6 +176,13 @@
       "when": 1790565000000,
       "tag": "0024_ai_commercial_control",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790568600000,
+      "tag": "0025_ai_business_solutions",
+      "breakpoints": true
     }
   ]
 }
