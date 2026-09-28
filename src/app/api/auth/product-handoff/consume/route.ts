@@ -10,10 +10,14 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-function expectedHost(product: MketyProductHandoff) {
-  return product === 'ai'
+async function isAllowedHost(product: MketyProductHandoff, hostname: string) {
+  const canonical = product === 'ai'
     ? (process.env.MKETY_AI_HOST || 'ai.mkety.com').trim().toLowerCase()
     : (process.env.MKETY_MAIL_HOST || 'mail.mkety.com').trim().toLowerCase();
+  if (hostname === canonical) return true;
+  if (product !== 'ai') return false;
+  const { resolveEnterpriseAiHostname } = await import('@/features/ai-runtime/server/enterprise-hostnames');
+  return Boolean(await resolveEnterpriseAiHostname(hostname));
 }
 
 function returnTo(product: MketyProductHandoff) {
@@ -31,7 +35,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: 'unsupported_product' }, { status: 400 });
   }
 
-  if (url.hostname.toLowerCase() !== expectedHost(product)) {
+  const handoffHost = url.hostname.toLowerCase();
+  if (!(await isAllowedHost(product, handoffHost))) {
     return NextResponse.json({ ok: false, error: 'invalid_handoff_host' }, { status: 400 });
   }
 
@@ -41,7 +46,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(`/login?returnTo=${encodeURIComponent(fallback)}`, url.origin));
   }
 
-  const handoff = await consumeProductHandoff(token, product);
+  const handoff = await consumeProductHandoff(token, product, handoffHost);
   if (!handoff) {
     return NextResponse.redirect(
       new URL(`/login?returnTo=${encodeURIComponent(fallback)}&error=handoff`, url.origin),
