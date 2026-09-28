@@ -3,15 +3,15 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
-import { getEnterpriseAiChannel, type EnterpriseAiChannelKey } from '@/features/ai-runtime/channels/registry';
+import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import { fingerprintAiConnectionSecret } from '@/features/ai-runtime/channels/connection-secret-crypto';
 import {
   channelCredentialsFromForm,
   protectChannelCredentials,
   revealChannelCredentials,
 } from '@/features/ai-runtime/channels/credentials';
+import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
-import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
