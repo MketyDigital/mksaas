@@ -213,6 +213,7 @@ export async function POST(
             },
             {
               recipientId: inbound.replyRecipientId,
+              contextId: inbound.conversationId,
               text: turn.text,
             },
           );
