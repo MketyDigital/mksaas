@@ -10,9 +10,10 @@ import { SidebarSeparator } from '../SidebarSeparator';
 interface MyViewNavProps {
   basePath: string;
   onItemClick?: () => void;
+  hasMailAccess?: boolean;
 }
 
-export function MyViewNav({ basePath, onItemClick }: MyViewNavProps) {
+export function MyViewNav({ basePath, onItemClick, hasMailAccess = false }: MyViewNavProps) {
   const t = useTranslations('nav');
 
   return (
@@ -21,7 +22,7 @@ export function MyViewNav({ basePath, onItemClick }: MyViewNavProps) {
       <SidebarNavItem href={`${basePath}/assistant`} label={t('assistant')} icon={Bot} iconTint="assistant" onClick={onItemClick} />
       <SidebarNavItem href={`${basePath}/projects`} label="Projects" icon={Boxes} iconTint="primary" onClick={onItemClick} />
       <SidebarNavItem href={`${basePath}/wallet`} label="Wallet" icon={WalletCards} iconTint="primary" onClick={onItemClick} />
-      <SidebarNavItem href={`${basePath}/mail`} label="Mail" icon={Mail} iconTint="primary" onClick={onItemClick} />
+      {hasMailAccess ? <SidebarNavItem href={`${basePath}/mail`} label="Mail" icon={Mail} iconTint="primary" onClick={onItemClick} /> : null}
 
       <SidebarSeparator />
 
