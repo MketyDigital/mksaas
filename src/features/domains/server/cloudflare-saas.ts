@@ -74,3 +74,21 @@ export async function deleteCloudflareSaasHostname(id: string) {
     method: 'DELETE',
   });
 }
+
+
+export async function retryCloudflareSaasHostnameValidation(id: string) {
+  const zoneId = env('MKETY_SAAS_ZONE_ID');
+  return cf<CloudflareCustomHostname>(
+    `/zones/${zoneId}/custom_hostnames/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ssl: {
+          method: 'http',
+          type: 'dv',
+          settings: { min_tls_version: '1.2' },
+        },
+      }),
+    },
+  );
+}
