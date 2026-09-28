@@ -3,15 +3,15 @@ import {
   Activity,
   Bot,
   Boxes,
+  ChartNoAxesCombined,
   CreditCard,
   FolderKanban,
   Mail,
+  Rocket,
   Sparkles,
   Users,
   WalletCards,
   Workflow,
-  Rocket,
-  ChartNoAxesCombined,
 } from 'lucide-react';
 import Link from 'next/link';
 
