@@ -1,0 +1,89 @@
+name: Mkety Enterprise AI Production Inference Promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Enable only after all live gates pass; disable is the emergency fail-closed path
+        required: true
+        default: disable
+        type: choice
+        options:
+          - disable
+          - enable
+      confirmation:
+        description: ENABLE_ENTERPRISE_AI_PRODUCTION or DISABLE_ENTERPRISE_AI_PRODUCTION
+        required: true
+        type: string
+      benchmark_evidence:
+        description: Successful managed-model benchmark run/reference
+        required: false
+        type: string
+      commercial_evidence:
+        description: Successful tiny commercial acceptance run/reference
+        required: false
+        type: string
+      domain_evidence:
+        description: Successful white-label domain acceptance run/reference
+        required: false
+        type: string
+      registrar_evidence:
+        description: Successful DomainNameAPI OT&E/lifecycle acceptance run/reference
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  production-inference-promotion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      AI_PROMOTION_DATABASE_URL: ${{ secrets.MKETY_ACCEPTANCE_DATABASE_URL }}
+      AI_PROMOTION_ACTION: ${{ inputs.action }}
+      AI_PROMOTION_CONFIRMATION: ${{ inputs.confirmation }}
+      AI_PROMOTION_BENCHMARK_EVIDENCE: ${{ inputs.benchmark_evidence }}
+      AI_PROMOTION_COMMERCIAL_EVIDENCE: ${{ inputs.commercial_evidence }}
+      AI_PROMOTION_DOMAIN_EVIDENCE: ${{ inputs.domain_evidence }}
+      AI_PROMOTION_REGISTRAR_EVIDENCE: ${{ inputs.registrar_evidence }}
+    steps:
+      - name: Enforce production promotion evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${AI_PROMOTION_DATABASE_URL:-}" ] || { echo "Missing production MKETY_ACCEPTANCE_DATABASE_URL." >&2; exit 1; }
+          echo "::add-mask::$AI_PROMOTION_DATABASE_URL"
+          if [ "$AI_PROMOTION_ACTION" = "enable" ]; then
+            [ "$AI_PROMOTION_CONFIRMATION" = "ENABLE_ENTERPRISE_AI_PRODUCTION" ] || { echo "Invalid enable confirmation." >&2; exit 1; }
+            for name in AI_PROMOTION_BENCHMARK_EVIDENCE AI_PROMOTION_COMMERCIAL_EVIDENCE AI_PROMOTION_DOMAIN_EVIDENCE AI_PROMOTION_REGISTRAR_EVIDENCE; do
+              [ -n "${!name:-}" ] || { echo "Missing required enable evidence: $name" >&2; exit 1; }
+            done
+          else
+            [ "$AI_PROMOTION_CONFIRMATION" = "DISABLE_ENTERPRISE_AI_PRODUCTION" ] || { echo "Invalid disable confirmation." >&2; exit 1; }
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply guarded production inference policy change
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/promote-enterprise-ai-inference.ts | tee /tmp/enterprise-ai-promotion.json
+
+      - name: Publish promotion evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/enterprise-ai-promotion.json','utf8'));const rows=['## Enterprise AI inference promotion','','- Action: '+x.action,'- customerInferenceEnabled: '+x.customerInferenceEnabled,'- prepaidOnly: '+x.prepaidOnly,'- Updated at: '+x.updatedAt];if(x.evidence){rows.push('- Benchmark evidence: '+x.evidence.benchmark,'- Commercial evidence: '+x.evidence.commercial,'- Domain evidence: '+x.evidence.domain,'- Registrar evidence: '+x.evidence.registrar);}fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\\n')+'\\n');"
