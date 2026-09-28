@@ -210,7 +210,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     return {
       domain,
       expiresAt: parseDate(findValue(payload, ['expiryDate', 'expiresAt', 'expirationDate'])),
-      providerDomainRef: String(findValue(payload, ['domainId', 'orderId', 'domainName']) ?? domain),
+      providerDomainRef: String(findValue(payload, ['domainName']) ?? domain),
     };
   }
 
@@ -230,7 +230,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     return {
       domain,
       expiresAt: parseDate(findValue(payload, ['expiryDate', 'expiresAt', 'expirationDate'])),
-      providerDomainRef: String(findValue(payload, ['domainId', 'orderId', 'domainName']) ?? domain),
+      providerDomainRef: String(findValue(payload, ['domainName']) ?? domain),
     };
   }
 }
