@@ -20,6 +20,9 @@ describe('self-service billing catalog', () => {
       'ai-workspace',
       'automation-workspace',
       'deploy-workspace',
+      'mail-starter',
+      'mail-growth',
+      'mail-business',
       'mkety-one',
     ]);
   });
@@ -29,6 +32,9 @@ describe('self-service billing catalog', () => {
     expect(SELF_SERVICE_BILLING_PLANS['ai-workspace'].amountMinor).toBe(1699n);
     expect(SELF_SERVICE_BILLING_PLANS['automation-workspace'].amountMinor).toBe(1699n);
     expect(SELF_SERVICE_BILLING_PLANS['deploy-workspace'].amountMinor).toBe(999n);
+    expect(SELF_SERVICE_BILLING_PLANS['mail-starter'].amountMinor).toBe(499n);
+    expect(SELF_SERVICE_BILLING_PLANS['mail-growth'].amountMinor).toBe(999n);
+    expect(SELF_SERVICE_BILLING_PLANS['mail-business'].amountMinor).toBe(2499n);
     expect(SELF_SERVICE_BILLING_PLANS['mkety-one'].amountMinor).toBe(4900n);
     expect(Object.values(SELF_SERVICE_BILLING_PLANS).every((plan) => plan.currency === 'USD')).toBe(true);
   });
