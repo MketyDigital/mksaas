@@ -1,3 +1,16 @@
+# 2026-09-28 continuation audit reconciliation
+
+Continuation audit started from PR #159 docs-only head `8dfa0d61296177e6ca59e8ff77a732cdfc579984`.
+
+- Certified implementation SHA remains `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`.
+- Public Candidate Deploy run `36415088152` is confirmed SUCCESS in addition to the recorded CI, migration, workspace, vinext and Content DB gates.
+- PR #159 remains open, mergeable and draft. PR #147 remains historical; stale AI PRs #145/#154/#157/#158 remain superseded.
+- Documentation authority has been reconciled so Discord and LinkedIn Page Community match the implemented channel registry, Teams inbound is not claimed, and GLM/Qwen remain benchmark candidates rather than a preselected second managed model.
+- Remaining blockers are live/external only: paid benchmark, tiny real provider/accounting acceptance, real customer-domain white-label/isolation acceptance, registrar/reseller adapter verification, and explicit guarded production promotion.
+- Production `customerInferenceEnabled` remains OFF.
+
+Use PR #159 itself for the latest docs-only branch head; do not encode a self-referential “current head” SHA into this file.
+
 # 2026-09-28 exact session handoff pointer
 
 Authoritative dated handoff:
@@ -18,7 +31,7 @@ Verified on that implementation SHA:
 
 PR #159 remains draft intentionally. Production Enterprise AI inference remains fail-closed pending the manual paid model benchmark, tiny live provider/accounting acceptance, real customer-domain white-label acceptance, registrar/reseller adapter verification and guarded production promotion.
 
-First action in the next session: check the latest PR #159 head and workflow conclusions, then read the dated handoff before making runtime changes.
+First action in the next session: read the dated handoff and current PR #159 workflow conclusions before making runtime changes.
 
 
 # 2026-09-28 Platform, Mail and Enterprise AI completion update
