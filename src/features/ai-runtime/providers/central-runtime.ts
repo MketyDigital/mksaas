@@ -1,6 +1,6 @@
 import type { CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderId } from './external-types';
 import { getManagedWorkersAiProvider } from './runtime.cloudflare';
-import { routeManagedAiTask, type ManagedAiTaskClass } from '../managed-model-policy';
+import { type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
 import { resolveByokProviderConnection } from '../server/provider-connections';
 
 export type CentralAiExecutionSource = 'managed' | 'byok';
