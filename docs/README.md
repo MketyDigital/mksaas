@@ -8,9 +8,10 @@ This repository is the Mkety product codebase. It is no longer governed as the u
 2. [`FEATURE_AGENT_HANDOFF_PROTOCOL.md`](./FEATURE_AGENT_HANDOFF_PROTOCOL.md) — mandatory completion/handoff discipline for every feature/workstream agent.
 3. [`CURRENT_WORKSTREAM_STATUS.md`](./CURRENT_WORKSTREAM_STATUS.md) — concise pointer to what is being worked on now, its verified state, blockers, and exact next steps.
 4. [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) — operational milestone order and long-running continuation roadmap.
-5. [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) — public-site release-gate evidence, fixes, and remaining external gates until superseded by fresher verified evidence.
+5. [`handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`](./handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md) — authoritative continuation handoff for PR #159 and its remaining live gates.
 6. The approved spec/plan for the active feature branch.
 7. Current branch code, migrations, tests, and immutable CI/deployment evidence.
+8. Older release handoffs, including `MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`, are historical unless a newer current-state record explicitly points back to them.
 
 When an older document conflicts with `AGENTS.md` or fresher verified handoff evidence, treat the older statement as historical and update it before using it as an implementation source.
 
@@ -21,6 +22,10 @@ When an older document conflicts with `AGENTS.md` or fresher verified handoff ev
 | [`FEATURE_AGENT_HANDOFF_PROTOCOL.md`](./FEATURE_AGENT_HANDOFF_PROTOCOL.md) | Mandatory feature-agent progress, evidence, blocker, and next-step update gate |
 | [`CURRENT_WORKSTREAM_STATUS.md`](./CURRENT_WORKSTREAM_STATUS.md) | Current workstream, status, blocker, verification, and exact resume point |
 | [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
+| [`handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`](./handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md) | PR #159 Enterprise AI / Platform / Mail completion evidence and exact remaining live gates |
+| [`MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md`](./MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md) | Shared AI runtime, provider, domain, channel, and Enterprise AI architecture |
+| [`MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`](./MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md) | Enterprise AI product, commercial, security, usage, and operations policy |
+| [`MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md`](./MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md) | Broad Enterprise AI capability envelope; not a claim that every capability is launch-enabled |
 | [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Public-site release-gate and Platform continuation boundary; use only with fresher current-state evidence |
 | [`MKETY_PUBLIC_CUTOVER_RUNBOOK.md`](./MKETY_PUBLIC_CUTOVER_RUNBOOK.md) | Production `mkety.com` cutover and rollback procedure |
 | [`MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`](./MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md) | Current commercial/product presentation contract |
@@ -41,21 +46,15 @@ The current Auth implementation is rooted in:
 - `docs/superpowers/plans/2026-09-06-mkety-auth-zitadel-vinext.md`
 - `docs/HANDOFF_MKETY_AUTH_ZITADEL_CLOUDFLARE.md`
 
-The Platform promotion stack remains ordered:
+The older Auth → Automation Webhooks → Billing → Entitlements → Usage/Credits promotion stack is historical and has already been reconciled into the current production baseline. Do not use those old branch numbers as the current continuation sequence.
 
-```text
-Auth #16
-  ↓
-Automation Webhooks #15
-  ↓
-Billing #21
-  ↓
-Entitlements #22
-  ↓
-Usage/Credits #23
-```
+For the active Enterprise AI completion, use PR #159, the September 28 dated handoff, and the current status/continuation documents. Stale AI PRs #145, #154, #157 and #158 must not be merged as substitutes for PR #159.
 
-Do not merge or flatten those branches out of order. Reconcile any stale/open branch against current `main` before promotion, and record that reconciliation in `CURRENT_WORKSTREAM_STATUS.md`.
+## Current Enterprise AI completion
+
+PR #159 (`feat/enterprise-ai-complete-platform-20260928`) is the authoritative completion candidate. Repository verification is recorded against certified implementation SHA `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`; docs-only heads may be newer.
+
+Production `customerInferenceEnabled` remains off until the guarded paid model benchmark, tiny real Workers AI + AI Gateway accounting acceptance, real customer-hostname white-label/isolation acceptance, concrete registrar/reseller adapter verification, and explicit guarded production promotion are completed and documented.
 
 ## Legacy/reference documents
 
