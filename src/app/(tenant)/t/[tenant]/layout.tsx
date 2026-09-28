@@ -40,6 +40,7 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
   );
   const permissions = session.user.permissions?.[tenant.slug] ?? [];
   const hasMailAccess = allowedEntitlements.has('workspace.mail');
+  const hasEnterpriseAiAccess = allowedEntitlements.has('workspace.ai.enterprise');
 
   return (
     <TenantProvider
@@ -55,6 +56,7 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
         tenantSlug={tenant.slug}
         permissions={permissions}
         hasMailAccess={hasMailAccess}
+        hasEnterpriseAiAccess={hasEnterpriseAiAccess}
       >
         {children}
       </TenantLayoutClient>
