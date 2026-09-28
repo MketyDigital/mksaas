@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getSessionToken } from '@/shared/lib/auth';
 import { logoutSession, MKETY_SESSION_COOKIE } from '@/shared/lib/auth/service';
+import { env } from '@/shared/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,7 @@ async function handleLogout(request: Request) {
     httpOnly: true,
     secure: url.protocol === 'https:',
     sameSite: 'lax',
+    domain: env.NODE_ENV === 'production' ? env.MKETY_AUTH_COOKIE_DOMAIN : undefined,
     path: '/',
     maxAge: 0,
   });
