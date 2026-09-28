@@ -16,7 +16,8 @@ describe('app.mkety.com production repair workflow contract', () => {
     expect(source).toContain('APP_WORKER_NAME: mkety-app-host');
     expect(source).toContain('HOTFIX_PR_REF: refs/pull/160/head');
     expect(source).toContain('verified_sha');
-    expect(source).toContain('git ls-remote origin "refs/heads/$HOTFIX_BRANCH"');
+    expect(source).toContain('git ls-remote origin "$HOTFIX_PR_REF"');
+    expect(source).toContain('persistent PR 160 head ref');
   });
 
   it('uses the existing production Hyperdrive and app-specific auth origin', async () => {
