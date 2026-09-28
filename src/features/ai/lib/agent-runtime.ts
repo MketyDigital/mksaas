@@ -126,7 +126,7 @@ async function runCentralAgent(
   const tools = centralToolDefinitions(configuredToolIds);
   const maxSteps = toolsEnabled ? config.maxSteps ?? 1 : 1;
 
-  let input = [...conversation];
+  const input = [...conversation];
   let totalInput = 0;
   let totalOutput = 0;
   let finalText = '';
