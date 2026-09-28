@@ -144,13 +144,22 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     const { name, tld } = splitDomain(domain);
 
     let payload: unknown;
-    const modern = await this.request('/api/v1/domains/search', {
+    // DomainNameAPI's current Swagger contract documents availability through
+    // POST /v1/domain/check with the Reseller ID and API key in the request body.
+    // Only fall back to alternate endpoint shapes when that route is genuinely absent;
+    // authentication/authorization failures must remain visible and fail closed.
+    const v1 = await this.request('/v1/domain/check', {
       method: 'POST',
-      body: JSON.stringify({ domainName: domain, period: years, command: 'create' }),
+      body: JSON.stringify({
+        resellerId: this.config.username.trim(),
+        apiKey: this.config.apiToken.trim(),
+        domainName: domain,
+        period: years,
+      }),
     });
-    if (modern.response.ok) {
-      payload = modern.payload;
-    } else if (modern.response.status === 404 || modern.response.status === 405) {
+    if (v1.response.ok) {
+      payload = v1.payload;
+    } else if (v1.response.status === 404 || v1.response.status === 405) {
       const params = new URLSearchParams({
         domainNames: name,
         tlds: tld,
@@ -161,24 +170,19 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       if (legacyBasic.response.ok) {
         payload = legacyBasic.payload;
       } else if (legacyBasic.response.status === 404 || legacyBasic.response.status === 405) {
-        const v1 = await this.request('/v1/domain/check', {
+        const modern = await this.request('/api/v1/domains/search', {
           method: 'POST',
-          body: JSON.stringify({
-            resellerId: this.config.username.trim(),
-            apiKey: this.config.apiToken.trim(),
-            domainName: domain,
-            period: years,
-          }),
+          body: JSON.stringify({ domainName: domain, period: years, command: 'create' }),
         });
-        if (!v1.response.ok) {
-          throw new Error(`DomainNameAPI availability check failed (${v1.response.status}).`);
+        if (!modern.response.ok) {
+          throw new Error(`DomainNameAPI availability check failed (${modern.response.status}).`);
         }
-        payload = v1.payload;
+        payload = modern.payload;
       } else {
         throw new Error(`DomainNameAPI availability check failed (${legacyBasic.response.status}).`);
       }
     } else {
-      throw new Error(`DomainNameAPI availability check failed (${modern.response.status}).`);
+      throw new Error(`DomainNameAPI availability check failed (${v1.response.status}).`);
     }
 
     const status = findValue(payload, ['status', 'available', 'isAvailable']);
