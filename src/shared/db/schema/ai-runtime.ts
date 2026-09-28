@@ -1,9 +1,11 @@
 import { bigint, boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { users } from './auth';
+import { creditLedgerEntries } from './credit-ledger-entries';
 import { projects } from './projects';
 import { appSchema } from './schema';
 import { tenants } from './tenants';
+import { usageEvents } from './usage-events';
 
 export type AiModelCapabilities = {
   text: boolean;
@@ -144,6 +146,33 @@ export const aiRequests = appSchema.table('ai_requests', {
   index('ai_requests_project_started_idx').on(table.projectId, table.startedAt),
 ]);
 
+export const aiCreditReservations = appSchema.table('ai_credit_reservations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  apiKeyId: uuid('api_key_id').references(() => aiApiKeys.id, { onDelete: 'set null' }),
+  requestId: uuid('request_id').references(() => aiRequests.id, { onDelete: 'set null' }),
+  idempotencyKey: varchar('idempotency_key', { length: 160 }).notNull(),
+  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+  status: varchar('status', { length: 24 }).notNull().default('held'),
+  reservedCredits: bigint('reserved_credits', { mode: 'bigint' }).notNull(),
+  settledCredits: bigint('settled_credits', { mode: 'bigint' }),
+  holdLedgerEntryId: uuid('hold_ledger_entry_id').references(() => creditLedgerEntries.id, { onDelete: 'set null' }),
+  releaseLedgerEntryId: uuid('release_ledger_entry_id').references(() => creditLedgerEntries.id, { onDelete: 'set null' }),
+  usageEventId: uuid('usage_event_id').references(() => usageEvents.id, { onDelete: 'set null' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  settledAt: timestamp('settled_at', { withTimezone: true }),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  releaseReason: varchar('release_reason', { length: 80 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('ai_credit_reservations_tenant_idempotency_uidx').on(table.tenantId, table.idempotencyKey),
+  index('ai_credit_reservations_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
+  index('ai_credit_reservations_request_idx').on(table.requestId),
+]);
+
 export type AiApiKey = typeof aiApiKeys.$inferSelect;
 export type AiModel = typeof aiModels.$inferSelect;
 export type AiBudget = typeof aiBudgets.$inferSelect;
+export type AiCreditReservation = typeof aiCreditReservations.$inferSelect;

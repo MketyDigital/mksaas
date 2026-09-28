@@ -54,6 +54,8 @@ describe('usage credits persistence schema', () => {
       'manual_grant',
       'manual_debit',
       'adjustment',
+      'reservation_hold',
+      'reservation_release',
     ]);
   });
 });
