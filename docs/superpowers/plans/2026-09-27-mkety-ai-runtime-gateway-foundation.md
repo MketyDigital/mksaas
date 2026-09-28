@@ -20,12 +20,13 @@ Completed or implemented in the candidate:
 - host-bound one-time product-session handoff;
 - provider-neutral domain-reseller seam;
 - non-technical customer plan/subscription/usage/credits summary;
-- day-one channel registry for Website, WhatsApp, Telegram, Instagram, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API.
+- day-one channel registry for Website, WhatsApp, Telegram, Instagram, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook and custom webhook/API.
+
+Repository certification is green on implementation SHA `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`, including CI/build/type-check/tests/lint, migration baseline, Platform Core Workspaces Smoke, Cloudflare vinext Smoke, Content DB Smoke, and Public Candidate Deploy run `36415088152`.
 
 Still gated before production inference:
 
-- exact-head CI/type/lint/build/migration/vinext/candidate acceptance;
-- non-production model benchmark and tiny real-provider acceptance;
+- guarded paid model benchmark and tiny real-provider acceptance;
 - settlement/reconciliation verification against real Cloudflare usage;
 - real white-label hostname/TLS/login acceptance;
 - selected registrar adapter binding and sandbox/live-safe verification;
