@@ -5,7 +5,8 @@ import { redirect } from 'next/navigation';
 
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
 import { db } from '@/shared/db/cloudflare';
-import { aiSolutionInstances, aiSolutionTemplates, projects } from '@/shared/db/schema/ai-runtime';
+import { projects } from '@/shared/db/schema';
+import { aiSolutionInstances, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 import { requireTenantMembership } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
