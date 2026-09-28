@@ -23,9 +23,9 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
   accentColor: '#22D3EE',
-  defaultSeoTitle: 'Mkety | AI, Automation, Deployments, Media & Enterprise',
+  defaultSeoTitle: 'Mkety | AI, Automation, Deployments, Mail, Media & Enterprise',
   defaultSeoDescription:
-    'Build AI agents, automate workflows, deploy applications, manage media, and deliver custom business systems with Mkety.',
+    'Build AI agents, automate workflows, deploy applications, run business email, manage media, and deliver custom business systems with Mkety.',
   contactEmail: 'support@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
@@ -193,6 +193,18 @@ export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
       badge: 'Custom / Enterprise',
     },
     {
+      key: 'enterprise-ai',
+      title: 'Enterprise AI',
+      description: 'Branded customer-facing AI, production channels, custom domains, API/PaaS access, operator handoff, higher limits, private routing and advanced security under separately entitled Enterprise terms.',
+      badge: 'Enterprise AI',
+    },
+    {
+      key: 'enterprise-mail',
+      title: 'Enterprise Mail',
+      description: 'Custom business-email capacity, migration, retention, dedicated sending isolation, private integrations and contractual service levels where agreed.',
+      badge: 'Enterprise Mail',
+    },
+    {
       key: 'customer-projects',
       title: 'Custom projects',
       description: 'Dedicated systems and integrations can be delivered around your organization’s requirements.',
@@ -352,6 +364,11 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
       'No. Mkety includes AI, automation, deployment, media storage and delivery, integrations, business solutions, practical learning, and Enterprise implementation support.',
   },
   {
+    question: 'How do Mkety Mail and Enterprise AI fit with the normal Workspaces?',
+    answer:
+      'Mkety Mail is a separately subscribed workspace/add-on with Mail Starter, Mail Growth and Mail Business plans plus Enterprise Mail. Enterprise AI is also separately entitled from the normal AI Workspace. Buying AI Workspace or Mkety One does not automatically grant Enterprise AI or Mkety Mail.',
+  },
+  {
     question: 'Do I need Mkety One to use Mkety?',
     answer:
       'No. You can start with Starter or choose an individual AI, Automation, or Deploy Workspace. Mkety One combines Starter and all three self-service Workspaces in one bundle. Self-service plans can be paid monthly or prepaid for 3, 6, or 12 months, with progressively larger prepaid discounts.',
@@ -396,6 +413,7 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
       { label: 'Workspaces', href: '/workspaces' },
       { label: 'SolutionHub', href: '/solutions' },
       { label: 'Pricing', href: '/pricing' },
+      { label: 'Mkety Mail', href: '/mail' },
     ],
   },
   {
@@ -453,6 +471,12 @@ export const defaultDocsCategories: PlatformDocsCategoryInput[] = [
     title: 'Mkety Products & Domains',
     description: 'The official web addresses for Mkety products and customer experiences.',
     sortOrder: 50,
+  },
+  {
+    key: 'mail',
+    title: 'Mkety Mail',
+    description: 'Professional email, Mail plans, usage limits, add-ons, Customer Updates and Enterprise Mail.',
+    sortOrder: 55,
   },
   {
     key: 'trust',
@@ -550,7 +574,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Official Mkety web addresses',
     excerpt: 'The main customer-facing Mkety product addresses.',
     bodyMarkdown:
-      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. `media.mkety.com` is the official Mkety Media platform for discovering current media products, published features, plan details, and signup options. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
+      '# Official Mkety web addresses\n\nUse `mkety.com` for the public Mkety website and `app.mkety.com` for the Mkety Platform application. `media.mkety.com` is the official Mkety Media platform for discovering current media products, published features, plan details, and signup options. `mail.mkety.com` is the Mkety Mail application for entitled Mail customers, while public Mail plans and product information are published at `mkety.com/mail`. `ai.mkety.com` is the focused Mkety AI product/console surface; Enterprise AI access is separately entitled from normal AI Workspace. Public Academy discovery starts through Mkety AI on `mkety.com`; Academy access is handed off separately after the appropriate enrolment/access is confirmed. `trade.mkety.com` remains approved access for the specialized Trading product. New Trading sales and custom pricing start through Enterprise on `mkety.com`. Customer deployments may use approved `*.mkety.app` addresses.',
     sortOrder: 10,
   },
   {
@@ -560,6 +584,24 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     excerpt: 'The official Mkety platform for current media products, features, plans, and signup.',
     bodyMarkdown:
       '# Mkety Media\n\nMkety Media is a standalone Mkety product for managed media storage and delivery, available at `https://media.mkety.com`. Upload images, videos and general files, organize them into buckets, and use permanent cached Mkety delivery URLs across websites, landing pages, applications, campaigns, training content and other systems.\n\nCore capabilities include secure direct and multipart uploads, bucket-based organization, storage/delivery/request usage monitoring, prepaid hard limits, team access within plan seat limits, self-service upgrades, extra prepaid capacity, and complete library export through JSON/CSV manifests and generated download-all scripts.\n\nPublic plans are Starter, Growth and Business. Billing supports monthly, 3-month, 6-month and 12-month terms. Current prices, discounts and exact quotas are managed on the Media platform and should be checked there before purchase. Public plans are prepaid and hard-capped rather than creating unlimited post-paid overage.\n\nEnterprise is request-based and can use exact private pricing and quotas, extra team seats, branded media domains, assisted migration, retention/deletion-protection requirements, data-residency options, regional or dedicated infrastructure, private/signed delivery requirements, and contractual SLA terms where agreed.\n\nCustomers retain ownership of uploaded content. Standard delivery URLs are public to anyone who has the URL; private or signed delivery is an Enterprise/custom requirement. Mkety Media also provides full-library portability so customers can export their inventory and move their files.\n\nUse `media.mkety.com` as the canonical source for current plan details, signup and product availability.',
+    sortOrder: 20,
+  },
+  {
+    categoryKey: 'mail',
+    slug: 'mkety-mail',
+    title: 'Mkety Mail',
+    excerpt: 'Professional business email, shared inboxes, transactional messaging and Customer Updates.',
+    bodyMarkdown:
+      '# Mkety Mail\n\nMkety Mail is a separately entitled Mkety product/workspace for professional business email, shared inboxes, aliases, forwarding, contacts, templates, transactional API/SMTP, signed webhooks, delivery analytics and safe Customer Updates. Marketing campaigns remain Coming Soon.\n\nPublic monthly plans are Mail Starter at $4.99, Mail Growth at $9.99 and Mail Business at $24.99. The standard Mkety prepaid term ladder applies to the fixed subscription: 1 month 0%, 3 months 5%, 6 months 10%, and 12 months 15%. Enterprise Mail is custom.\n\nMail Starter includes 1 domain, 3 mailboxes, 3 team seats, 1 shared inbox, 5 GB storage, 2,000 outbound messages/month and 500 Customer Update deliveries/month, with up to 500 recipients per Customer Update. Mail Growth includes 3 domains, 10 mailboxes, 10 seats, 3 shared inboxes, 25 GB storage, 10,000 outbound messages/month and 3,000 Customer Update deliveries/month, with up to 3,000 recipients per update. Mail Business includes 10 domains, 50 mailboxes, 25 seats, 10 shared inboxes, 100 GB storage, 50,000 outbound messages/month and 15,000 Customer Update deliveries/month, with up to 3,000 recipients per update.\n\nSelf-service Mail is hard-capped rather than surprise postpaid. Approved prepaid packs can add storage, outbound volume, Customer Update deliveries, mailboxes or seats. Warm-up, complaint/bounce, abuse and provider safety limits still apply even when commercial quota remains.\n\nCustomers see their own plan, included allowance, used/remaining quota and purchased capacity. Raw provider cost, global platform capacity, internal reputation scoring and other operations-only telemetry remain restricted to authorized Mkety admin/ops.',
+    sortOrder: 10,
+  },
+  {
+    categoryKey: 'enterprise',
+    slug: 'enterprise-ai',
+    title: 'Enterprise AI',
+    excerpt: 'Enterprise AI is separately entitled from the normal AI Workspace.',
+    bodyMarkdown:
+      '# Enterprise AI\n\nEnterprise AI is a separate Mkety product/add-on from the normal AI Workspace. AI Workspace remains the self-service agent-building product. Enterprise AI is for branded customer-facing assistants, production channels, custom domains, API/PaaS access, human/operator handoff, contracted usage and limits, advanced security, private or dedicated model routing, custom integrations and contractual support/SLA terms where agreed.\n\nEnterprise AI reuses Mkety identity, tenant membership, PBAC, Billing, Entitlements, Usage/Credits and shared payment settlement, but has its own commercial entitlement and contract/plan policy. Buying AI Workspace or Mkety One does not automatically grant Enterprise AI.',
     sortOrder: 20,
   },
   {
@@ -613,7 +655,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Choose where to start',
     excerpt: 'Pick Starter, a Workspace, Mkety One, Academy, or Enterprise based on what you need.',
     bodyMarkdown:
-      '# Choose where to start\n\nUse Starter when your main goal is publishing websites and pages. Choose AI Workspace for agents and knowledge-powered experiences, Automation Workspace for workflows and integrations, and Deploy Workspace for lightweight applications, APIs and portals. Mkety One combines the standard self-service products. Use Mkety Academy when your goal is learning, and Enterprise when your requirement needs dedicated infrastructure, specialized integrations, persistent services, Trading, or other custom delivery.',
+      '# Choose where to start\n\nUse Starter when your main goal is publishing websites and pages. Choose AI Workspace for agents and knowledge-powered experiences, Automation Workspace for workflows and integrations, and Deploy Workspace for lightweight applications, APIs and portals. Mkety One combines the standard Platform self-service products. Subscribe to Mkety Mail separately when you need professional business email and customer communication. Use Mkety Academy when your goal is learning, and Enterprise for Enterprise AI, Enterprise Mail, dedicated infrastructure, specialized integrations, persistent services, Trading, or other custom delivery.',
     sortOrder: 20,
   },
   {
