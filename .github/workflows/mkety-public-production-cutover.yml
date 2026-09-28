@@ -787,7 +787,7 @@ jobs:
             DNS_BACKUP="$(cat /tmp/mkety-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
           const {execFileSync} = require('node:child_process');
           const backup = JSON.parse(process.env.DNS_BACKUP || '{}');
-          for (const record of [...(backup.root || []), ...(backup.www || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
+          for (const record of [...(backup.root || []), ...(backup.www || []), ...(backup.app || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
             const query = `https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records?type=${encodeURIComponent(record.type)}&name=${encodeURIComponent(record.name)}&content=${encodeURIComponent(record.content)}`;
             const current = JSON.parse(execFileSync('curl', ['-fsS','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json',query], {encoding:'utf8'}));
             if (Array.isArray(current.result) && current.result.length) continue;
@@ -817,6 +817,33 @@ jobs:
             sleep 5
           done
           [ "$production_ready" = '1' ] || { echo 'mkety.com Custom Domain did not become ready in the bounded window.'; false; }
+
+          app_ready=0
+          for attempt in $(seq 1 60); do
+            app_headers=/tmp/mkety-app-root.headers
+            app_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/' || true)"
+            app_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_headers")"
+            echo "app.mkety.com readiness attempt $attempt/60: HTTP $app_code location=$app_location"
+            if [ "$app_code" -ge 300 ] 2>/dev/null && [ "$app_code" -lt 400 ] 2>/dev/null && [ -n "$app_location" ]; then
+              APP_LOCATION="$app_location" node <<'NODE'
+          const u=new URL(process.env.APP_LOCATION,'https://app.mkety.com/');
+          if(u.origin!=='https://app.mkety.com'||u.pathname!=='/app') process.exit(1);
+          NODE
+              app_ready=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$app_ready" = '1' ] || { echo 'app.mkety.com did not become the authenticated Platform entry in the bounded window.'; false; }
+
+          app_entry_headers=/tmp/mkety-app-entry.headers
+          app_entry_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_entry_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app' || true)"
+          app_entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_entry_headers")"
+          [ "$app_entry_code" -ge 300 ] && [ "$app_entry_code" -lt 400 ] && [ -n "$app_entry_location" ] || { echo "Unauthenticated app entry expected redirect, got HTTP $app_entry_code"; false; }
+          APP_ENTRY_LOCATION="$app_entry_location" node <<'NODE'
+          const u=new URL(process.env.APP_ENTRY_LOCATION,'https://app.mkety.com/app');
+          if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login') throw new Error('Unauthenticated app entry did not remain on app.mkety.com/login');
+          NODE
 
           html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /mail /trust /infrastructure /about /docs /privacy /terms /contact)
           for route in "${html_routes[@]}"; do
