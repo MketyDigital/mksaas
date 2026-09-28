@@ -14,7 +14,7 @@ describe('app.mkety.com production repair workflow contract', () => {
     expect(source).not.toContain('push:');
     expect(source).toContain('REPAIR APP.MKETY.COM');
     expect(source).toContain('APP_WORKER_NAME: mkety-app-host');
-    expect(source).toContain('HOTFIX_BRANCH: hotfix/app-mkety-com-20260928');
+    expect(source).toContain('HOTFIX_PR_REF: refs/pull/160/head');
     expect(source).toContain('verified_sha');
     expect(source).toContain('git ls-remote origin "refs/heads/$HOTFIX_BRANCH"');
   });
