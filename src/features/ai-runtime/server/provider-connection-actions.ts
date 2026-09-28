@@ -87,9 +87,10 @@ export async function disableEnterpriseAiByokProvider(
 export async function testEnterpriseAiByokProvider(
   tenantSlug: string,
   connectionId: string,
-  model: string,
+  formData: FormData,
 ) {
   const tenant = await requireByokAccess(tenantSlug);
+  const model = text(formData, 'model');
   const result = await runCentralAi({
     tenantId: tenant.id,
     providerConnectionId: connectionId,
