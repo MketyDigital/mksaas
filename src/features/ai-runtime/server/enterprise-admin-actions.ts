@@ -6,7 +6,6 @@ import { revalidatePath } from 'next/cache';
 import { createCloudflareSaasHostname, getCloudflareSaasHostname } from '@/features/domains/server/cloudflare-saas';
 import { getTenantSettings, updateTenantSettings } from '@/features/admin/services/settings-service';
 import { hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
-import { buildEnterpriseAiDnsInstructions } from '@/features/ai-runtime/server/enterprise-hostnames';
 import { db } from '@/shared/db/cloudflare';
 import { customDomains } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
