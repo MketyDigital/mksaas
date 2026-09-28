@@ -4036,3 +4036,14 @@ For Enterprise AI, white-label means a genuine customer-facing product identity,
 - Enterprise customers must be able to understand plan, subscription, usage and customer cost/credits without needing developer knowledge.
 - Raw provider cost remains internal commercial telemetry. Customer charging remains versioned, prepaid/fail-closed by default and separate from provider cost.
 - Production managed inference may only run after credit and every applicable budget reservation succeed, and it must settle actual usage against the immutable admitted rate-card version.
+
+# 2026-09-28 Enterprise AI channel and managed-model authority reconciliation
+
+This section is newer than the earlier Enterprise AI override above and resolves the final launch-candidate architecture against PR #159.
+
+- The implemented Enterprise AI channel registry is: Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook, and custom webhook/API.
+- Discord is an authenticated conversational channel. LinkedIn support is limited to approved Page Community organization comment/mention workflows; do not claim unrestricted LinkedIn inbox or direct-message access.
+- Microsoft Teams inbound is not yet part of the production contract. Current Teams support is outbound workflow/webhook delivery until a Bot Framework identity path is implemented and verified.
+- The managed Workers AI benchmark set is Gemma 4 26B A4B, GLM-5.3 Flash, and Qwen 3.8 27B. Gemma remains the initial managed candidate; the second managed model must be selected from recorded benchmark evidence rather than documentation preference.
+- Production managed customer inference remains fail-closed. `customerInferenceEnabled` must stay off until the paid benchmark, tiny real AI Gateway/accounting acceptance, real customer-domain white-label/isolation acceptance, registrar/reseller adapter verification, and guarded production promotion are all recorded.
+
