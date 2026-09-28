@@ -64,7 +64,7 @@ function verifyCustom(rawBody: string, headers: Headers, credentials: Enterprise
 }
 
 
-function verifyDiscord(rawBody: string, headers: Headers, credentials: EnterpriseAiChannelCredentials) {
+export function verifyDiscordInteraction(rawBody: string, headers: Headers, credentials: EnterpriseAiChannelCredentials) {
   const publicKey = credentials.publicKey;
   if (!publicKey || !/^[0-9a-fA-F]{64}$/.test(publicKey)) {
     throw new Error('Discord application public key is not configured.');
@@ -89,7 +89,7 @@ function verifyDiscord(rawBody: string, headers: Headers, credentials: Enterpris
   if (!valid) throw new Error('Discord interaction authentication failed.');
 }
 
-function normalizeDiscord(payload: Record<string, unknown>): NormalizedEnterpriseAiInbound {
+export function normalizeDiscordInteraction(payload: Record<string, unknown>): NormalizedEnterpriseAiInbound {
   if (payload.type !== 2) throw new Error('Discord interaction type is not a chat command.');
   const member = payload.member as Record<string, unknown> | undefined;
   const user = (member?.user ?? payload.user) as Record<string, unknown> | undefined;
@@ -263,8 +263,8 @@ export function verifyAndNormalizeEnterpriseAiInbound(input: {
       verifySlack(input.rawBody, input.headers, input.credentials, input.now);
       return normalizeSlack(payload);
     case 'discord':
-      verifyDiscord(input.rawBody, input.headers, input.credentials);
-      return normalizeDiscord(payload);
+      verifyDiscordInteraction(input.rawBody, input.headers, input.credentials);
+      return normalizeDiscordInteraction(payload);
     case 'whatsapp':
     case 'instagram':
     case 'facebook_messenger':
