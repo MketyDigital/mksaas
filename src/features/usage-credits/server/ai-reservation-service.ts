@@ -113,6 +113,7 @@ export function createAiCreditReservationService(source: AiCreditReservationSour
         tenantId: input.tenantId,
         ...scope,
         reservedCredits: input.reservedCredits,
+        idempotencyKey: input.idempotencyKey,
       });
 
       return source.transaction(async (tx) => {
