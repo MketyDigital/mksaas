@@ -36,7 +36,7 @@ const idempotencyKey = 'mkety-live-acceptance-' + Date.now() + '-' + crypto.rand
 const body = {
   model,
   messages: [{ role: 'user', content: 'Reply only with: MKETY_ACCEPTANCE_OK' }],
-  max_completion_tokens: 64,
+  max_completion_tokens: 256,
 };
 
 const headers: Record<string, string> = {
