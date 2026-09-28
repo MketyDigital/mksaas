@@ -104,6 +104,7 @@ export async function activateAiRateCard(
     });
     if (!selected) throw new Error('AI rate card was not found.');
     if (selected.status === 'retired') throw new Error('Retired rate cards cannot be reactivated.');
+    if (selected.status === 'active') return;
 
     await tx
       .update(aiRateCards)
