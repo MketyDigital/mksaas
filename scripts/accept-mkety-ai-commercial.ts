@@ -99,7 +99,7 @@ try {
   if (!rateCard || Number(rateCard.version) !== Number(request.rate_card_version)) throw new Error('Recorded rate-card version no longer matches the immutable request snapshot.');
 
   const replay = await fetch(baseUrl + '/api/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
-  const replayPayload = await responseJson(replay);
+  const replayPayload = await responseJson(replay, 'Idempotent replay');
   if (replay.status !== 409 || String((replayPayload.error as Json | undefined)?.code ?? '') !== 'duplicate_request') throw new Error('Exact idempotent replay was not blocked as duplicate: HTTP ' + replay.status);
 
   const safeTenantId = String(request.tenant_id);
@@ -109,7 +109,7 @@ try {
 
   const conflictBody = { ...body, messages: [{ role: 'user', content: 'This body is intentionally different.' }] };
   const conflict = await fetch(baseUrl + '/api/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(conflictBody) });
-  const conflictPayload = await responseJson(conflict);
+  const conflictPayload = await responseJson(conflict, 'Idempotency conflict probe');
   if (conflict.status !== 409 || String((conflictPayload.error as Json | undefined)?.code ?? '') !== 'idempotency_conflict') throw new Error('Changed-body idempotency conflict was not rejected.');
 
   console.log(JSON.stringify({ ok: true, requestId, modelAlias: request.model_alias, nativeModel: request.native_model, provider: request.provider_key, reservedCredits: reserved.toString(), settledCredits: settled.toString(), inputTokens: inputTokens.toString(), cachedInputTokens: String(request.cached_input_tokens), outputTokens: outputTokens.toString(), providerCostUsdMicros: providerCost.toString(), minimumRevenueUsdMicros: minimumRevenue.toString(), budgetReservations: budgets.length, idempotentReplay: 'blocked-without-redispatch' }, null, 2));
