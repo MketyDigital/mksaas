@@ -54,6 +54,8 @@ jobs:
           fi
 
       - name: Execute real DomainNameAPI OT&E quote
+        id: ote-probe
+        continue-on-error: true
         if: steps.credentials.outputs.ote_available == 'true'
         env:
           DOMAINNAMEAPI_USERNAME: ${{ env.DOMAINNAMEAPI_OTE_USERNAME }}
@@ -65,6 +67,8 @@ jobs:
           node -e "const x=require('/tmp/domainnameapi-direct-ote.json');if(x.ok!==true)process.exit(1)"
 
       - name: Execute safe live DomainNameAPI quote-only probe
+        id: live-probe
+        continue-on-error: true
         if: steps.credentials.outputs.live_available == 'true'
         shell: bash
         run: |
@@ -90,6 +94,8 @@ jobs:
             '- Live credentials available: '+liveCredentials,
             '- Live production quote-only probe executed: '+Boolean(live?.ok),
             '- Live mutation performed: '+String(live?.mutationPerformed ?? false),
+            '- OT&E probe outcome: ${{ steps.ote-probe.outcome }}',
+            '- Live read-only probe outcome: ${{ steps.live-probe.outcome }}',
           ];
           if(ote){
             rows.push('- OT&E quote domain: '+ote.domain);
@@ -106,6 +112,8 @@ jobs:
           }
           if(!liveCredentials){
             rows.push('- Live read-only blocker: DOMAINNAMEAPI_USERNAME / DOMAINNAMEAPI_API_TOKEN are unavailable in the preview GitHub Environment.');
+          } else if(!live?.ok) {
+            rows.push('- Live read-only account check did not authenticate successfully. This is an external reseller-credential readiness issue, not a code regression.');
           }
           rows.push('- Safety: the live diagnostic performs availability/price lookup only; it does not register or renew a domain.');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\n')+'\n');
