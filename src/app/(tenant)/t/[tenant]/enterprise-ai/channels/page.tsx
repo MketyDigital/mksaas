@@ -120,6 +120,32 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
                       </>
                     ) : null}
 
+                    {channel.key === 'discord' ? (
+                      <>
+                        <div><Label htmlFor={`${channel.key}-botToken`}>Bot token</Label><Input id={`${channel.key}-botToken`} name="botToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'Discord bot token'} /></div>
+                        <div><Label htmlFor={`${channel.key}-publicKey`}>Application public key</Label><Input id={`${channel.key}-publicKey`} name="publicKey" type="password" autoComplete="off" className="mt-1" placeholder="64-character Discord public key" /></div>
+                        <div><Label htmlFor={`${channel.key}-applicationId`}>Application ID</Label><Input id={`${channel.key}-applicationId`} name="applicationId" defaultValue={value('applicationId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-guildId`}>Server / guild ID</Label><Input id={`${channel.key}-guildId`} name="guildId" defaultValue={value('guildId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-channelId`}>Default channel ID</Label><Input id={`${channel.key}-channelId`} name="channelId" defaultValue={value('channelId')} className="mt-1" /></div>
+                        <p className="text-xs text-muted-foreground">Set the Discord Interactions Endpoint URL to this connection&apos;s Mkety inbound webhook. Use a slash command with one required string option for the user question.</p>
+                      </>
+                    ) : null}
+
+                    {channel.key === 'linkedin_page' ? (
+                      <>
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+                          LinkedIn Page Community requires a LinkedIn developer app approved for Community Management. This connector handles Page comments/mentions; it does not claim unrestricted LinkedIn inbox/DM API access.
+                        </div>
+                        <div><Label htmlFor={`${channel.key}-accessToken`}>Organization admin access token</Label><Input id={`${channel.key}-accessToken`} name="accessToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'LinkedIn OAuth access token'} /></div>
+                        <div><Label htmlFor={`${channel.key}-clientSecret`}>LinkedIn app client secret</Label><Input id={`${channel.key}-clientSecret`} name="clientSecret" type="password" autoComplete="off" className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-applicationId`}>Developer application ID</Label><Input id={`${channel.key}-applicationId`} name="applicationId" defaultValue={value('applicationId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-organizationId`}>Organization ID</Label><Input id={`${channel.key}-organizationId`} name="organizationId" defaultValue={value('organizationId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-memberId`}>Admin member ID</Label><Input id={`${channel.key}-memberId`} name="memberId" defaultValue={value('memberId')} className="mt-1" /></div>
+                        <div><Label htmlFor={`${channel.key}-linkedinVersion`}>LinkedIn API version</Label><Input id={`${channel.key}-linkedinVersion`} name="linkedinVersion" defaultValue={value('linkedinVersion') || '202609'} className="mt-1" /></div>
+                        <p className="text-xs text-muted-foreground">Register the Mkety inbound URL in LinkedIn Webhooks, complete the challenge validation, then subscribe the organization to social-action notifications.</p>
+                      </>
+                    ) : null}
+
                     {(channel.key === 'microsoft_teams' || channel.key === 'custom_webhook') ? (
                       <>
                         <div><Label htmlFor={`${channel.key}-endpoint`}>{channel.key === 'microsoft_teams' ? 'Teams workflow/webhook URL' : 'Webhook URL'}</Label><Input id={`${channel.key}-endpoint`} name="endpointUrl" defaultValue={connection?.endpointUrl ?? ''} className="mt-1" /></div>
