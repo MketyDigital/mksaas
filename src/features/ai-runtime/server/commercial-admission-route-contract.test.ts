@@ -9,23 +9,26 @@ describe('AI commercial admission route safety', () => {
     expect(() => conservativeInputTokenUpperBound(0)).toThrow();
   });
 
-  it('requires commercial admission and exact settlement around provider execution', async () => {
+  it('requires commercial admission and verified provider cost before managed execution', async () => {
     const route = await readFile(
       'src/app/api/v1/ai/chat/completions/route.ts',
       'utf8',
     );
 
-    expect(route).toContain('admitAiCommercialRequest');
-    expect(route).toContain('settleAiCommercialRequest');
-    expect(route).toContain('releaseAiCommercialRequest');
-    expect(route).toContain("status: 'admitting'");
-    expect(route).toContain("status: 'completed'");
-    expect(route).toContain('getManagedWorkersAiProvider');
-    expect(route.indexOf('admitAiCommercialRequest')).toBeLessThan(route.indexOf('provider.complete'));
-    expect(route.indexOf('provider.complete')).toBeLessThan(route.indexOf('settleAiCommercialRequest'));
+    const admission = route.indexOf('admitAiCommercialRequest');
+    const providerCost = route.indexOf('getManagedAiCostRate');
+    const providerExecution = route.indexOf('getManagedWorkersAiProvider');
+    const settlement = route.indexOf('settleAiCommercialRequest');
+
+    expect(admission).toBeGreaterThan(-1);
+    expect(providerCost).toBeGreaterThan(admission);
+    expect(providerExecution).toBeGreaterThan(providerCost);
+    expect(settlement).toBeGreaterThan(providerExecution);
+    expect(route).toContain("status: 'reconciliation_required'");
+    expect(route).toContain('The request will not be sent upstream again.');
   });
 
-  it('snapshots the exact commercial rate and reservation amount on each request', async () => {
+  it('snapshots exact commercial rate, usage, provider cost and settlement state', async () => {
     const [route, schema] = await Promise.all([
       readFile('src/app/api/v1/ai/chat/completions/route.ts', 'utf8'),
       readFile('src/shared/db/schema/ai-runtime.ts', 'utf8'),
@@ -34,7 +37,18 @@ describe('AI commercial admission route safety', () => {
     expect(route).toContain('rateCardId: rate.id');
     expect(route).toContain('rateCardVersion: rate.version');
     expect(route).toContain('reservedCredits');
+    expect(route).toContain('settledCredits: actualCredits');
+    expect(route).toContain('providerCostUsdMicros');
+    expect(route).toContain('providerCostVerifiedAt');
     expect(schema).toContain("rateCardId: uuid('rate_card_id')");
     expect(schema).toContain("settledCredits: bigint('settled_credits'");
+  });
+
+  it('keeps tools and structured output explicit in the provider-neutral contract', async () => {
+    const route = await readFile('src/app/api/v1/ai/chat/completions/route.ts', 'utf8');
+    expect(route).toContain("type: z.literal('function')");
+    expect(route).toContain("type: z.literal('json_schema')");
+    expect(route).toContain('inputSchema: tool.function.parameters');
+    expect(route).toContain('tool_calls: result.toolCalls.map');
   });
 });
