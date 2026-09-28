@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server';
 import {
   consumeProductHandoff,
   createSessionForUser,
-  type MketyProductHandoff,
   MKETY_SESSION_COOKIE,
   MKETY_SESSION_MAX_AGE_SECONDS,
+  type MketyProductHandoff,
 } from '@/shared/lib/auth/service';
 
 export const dynamic = 'force-dynamic';
