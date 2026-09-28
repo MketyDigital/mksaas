@@ -1,3 +1,5 @@
+import { createDomainNameApiAdapterFromEnvironment } from './domainnameapi';
+
 export type DomainQuote = {
   domain: string;
   available: boolean;
@@ -41,6 +43,7 @@ export function configureDomainResellerAdapter(next: DomainResellerAdapter) {
 }
 
 export function getDomainResellerAdapter() {
+  if (!adapter) adapter = createDomainNameApiAdapterFromEnvironment();
   if (!adapter) throw new Error('Domain reseller adapter is not configured.');
   return adapter;
 }
