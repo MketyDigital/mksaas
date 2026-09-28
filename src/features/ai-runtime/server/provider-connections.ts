@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import {
   createCentralExternalProvider,
@@ -115,7 +115,7 @@ export async function saveByokProviderConnection(input: {
     where: and(
       eq(aiProviderConnections.tenantId, input.tenantId),
       projectId === null
-        ? eq(aiProviderConnections.projectId, null as never)
+        ? isNull(aiProviderConnections.projectId)
         : eq(aiProviderConnections.projectId, projectId),
       eq(aiProviderConnections.providerKey, normalized.providerKey),
       eq(aiProviderConnections.mode, 'byok'),
