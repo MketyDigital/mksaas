@@ -145,3 +145,11 @@ export function getSelfServiceBillingQuote(planKey: string, termKey: SelfService
     currency: plan.currency,
   };
 }
+
+
+export type SelfServiceBillingPlanFamily = 'platform' | 'mail';
+
+export function getSelfServiceBillingPlanFamily(planKey: string): SelfServiceBillingPlanFamily {
+  const plan = getSelfServiceBillingPlan(planKey);
+  return plan.key.startsWith('mail-') ? 'mail' : 'platform';
+}
