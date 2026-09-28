@@ -93,7 +93,18 @@ async function readJsonBody(request: Request, maxRequestBytes: number) {
   }
 }
 
-function duplicateResponse(existing: typeof aiRequests.$inferSelect) {
+type DuplicateRequestRecord = Pick<
+  typeof aiRequests.$inferSelect,
+  'id' | 'errorCode' | 'providerCostMetadata'
+>;
+
+function requestFingerprintFromMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>).requestFingerprint;
+  return typeof value === 'string' ? value : null;
+}
+
+function duplicateResponse(existing: DuplicateRequestRecord) {
   const messages: Record<string, string> = {
     runtime_disabled: 'Enterprise AI customer inference is not enabled yet.',
     provider_unavailable: 'Managed inference is not enabled on this route yet.',
@@ -167,12 +178,15 @@ export async function POST(request: Request) {
       eq(aiRequests.tenantId, key.tenantId),
       eq(aiRequests.idempotencyKey, idempotencyKey),
     ),
+    columns: {
+      id: true,
+      errorCode: true,
+      providerCostMetadata: true,
+    },
   });
 
   if (existing) {
-    const existingFingerprint = typeof existing.providerCostMetadata.requestFingerprint === 'string'
-      ? existing.providerCostMetadata.requestFingerprint
-      : null;
+    const existingFingerprint = requestFingerprintFromMetadata(existing.providerCostMetadata);
     if (existingFingerprint !== requestFingerprint) {
       return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
     }
@@ -218,9 +232,14 @@ export async function POST(request: Request) {
           eq(aiRequests.tenantId, key.tenantId),
           eq(aiRequests.idempotencyKey, idempotencyKey),
         ),
+        columns: {
+          id: true,
+          errorCode: true,
+          providerCostMetadata: true,
+        },
       });
-      const racedFingerprint = raced && typeof raced.providerCostMetadata.requestFingerprint === 'string'
-        ? raced.providerCostMetadata.requestFingerprint
+      const racedFingerprint = raced
+        ? requestFingerprintFromMetadata(raced.providerCostMetadata)
         : null;
       if (raced && racedFingerprint === requestFingerprint) return duplicateResponse(raced);
       return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
@@ -364,9 +383,14 @@ export async function POST(request: Request) {
         eq(aiRequests.tenantId, key.tenantId),
         eq(aiRequests.idempotencyKey, idempotencyKey),
       ),
+      columns: {
+        id: true,
+        errorCode: true,
+        providerCostMetadata: true,
+      },
     });
-    const racedFingerprint = raced && typeof raced.providerCostMetadata.requestFingerprint === 'string'
-      ? raced.providerCostMetadata.requestFingerprint
+    const racedFingerprint = raced
+      ? requestFingerprintFromMetadata(raced.providerCostMetadata)
       : null;
     if (raced && racedFingerprint === requestFingerprint) return duplicateResponse(raced);
     return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
