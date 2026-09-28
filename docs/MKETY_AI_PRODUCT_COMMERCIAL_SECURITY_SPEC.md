@@ -79,32 +79,23 @@ Tenant / Organization
 
 A member may have multiple roles. Effective authorization is the union of database-resolved permissions.
 
-### 2.1 Proposed AI permissions
+### 2.1 AI permission vocabulary
 
-Add permission keys such as:
+AI-01 registers the following database-resolved permission keys:
 
-- `ai:dashboard`
-- `ai:agents:read`
-- `ai:agents:write`
-- `ai:agents:publish`
-- `ai:knowledge:read`
-- `ai:knowledge:write`
-- `ai:tools:read`
-- `ai:tools:write`
-- `ai:providers:read`
-- `ai:providers:write`
-- `ai:api_keys:read`
-- `ai:api_keys:write`
-- `ai:channels:read`
-- `ai:channels:write`
-- `ai:domains:read`
-- `ai:domains:write`
-- `ai:usage:read`
-- `ai:billing:read`
+- `ai:workspace:view`
+- `ai:agents:manage`
+- `ai:knowledge:manage`
+- `ai:api_keys:manage`
+- `ai:models:manage`
+- `ai:routes:manage`
+- `ai:channels:manage`
+- `ai:billing:view`
 - `ai:billing:manage`
-- `ai:audit:read`
-- `ai:security:manage`
-- `ai:enterprise:manage`
+- `ai:usage:view`
+- `ai:enterprise:admin`
+
+Extend this vocabulary only when an implemented operation needs a materially distinct authorization boundary. Do not create speculative read/write variants that are not enforced by server operations.
 
 Do not rely on UI role labels for authorization. Server/API checks remain database-backed.
 
