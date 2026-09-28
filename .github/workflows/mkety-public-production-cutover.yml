@@ -832,6 +832,16 @@ jobs:
 
 
 
+          legacy_headers="$(mktemp)"
+          legacy_code="$(curl --connect-timeout 10 --max-time 60 -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/services')"
+          [ "$legacy_code" = '308' ] || { echo "Legacy /services redirect expected 308, got $legacy_code"; false; }
+          LEGACY_HEADERS="$legacy_headers" node -e "const fs=require('node:fs');const h=fs.readFileSync(process.env.LEGACY_HEADERS,'utf8');const m=h.match(/^location:\s*(.+)$/im);if(!m||new URL(m[1].trim()).toString()!=='https://mkety.com/solutions'){console.error('Legacy /services redirect target is wrong.');process.exit(1)}"
+
+          gone_headers="$(mktemp)"
+          gone_code="$(curl --connect-timeout 10 --max-time 60 -sS -D "$gone_headers" -o /dev/null -w '%{http_code}' 'https://mkety.com/career')"
+          [ "$gone_code" = '410' ] || { echo "Legacy /career expected 410, got $gone_code"; false; }
+          grep -Eiq '^x-robots-tag:\s*noindex, nofollow' "$gone_headers" || { echo 'Legacy /career missing noindex X-Robots-Tag.'; false; }
+
           curl --connect-timeout 10 --max-time 60 -fsS 'https://mkety.com/academy' -o /tmp/mkety-academy-page.html
           grep -Fq 'Courses &amp; tiers' /tmp/mkety-academy-page.html || grep -Fq 'Courses & tiers' /tmp/mkety-academy-page.html || { echo 'Academy page missing Courses & tiers section.'; false; }
           grep -Fq 'Ready to learn?' /tmp/mkety-academy-page.html || { echo 'Academy page missing ready-to-learn handoff.'; false; }
