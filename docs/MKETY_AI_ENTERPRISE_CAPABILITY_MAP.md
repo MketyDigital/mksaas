@@ -800,7 +800,9 @@ The first Enterprise AI product composition must include:
 - managed `*.mkety.app` customer hostname;
 - Cloudflare for SaaS customer-owned hostname path with simple CNAME onboarding;
 - provider-neutral domain purchase/reseller path;
-- Website, WhatsApp, Telegram, Instagram, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API channel families;
+- Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook and custom webhook/API channel families;
+- LinkedIn Page Community is limited to approved organization community/comment workflows; it is not unrestricted LinkedIn inbox/DM automation;
+- Microsoft Teams inbound remains outside the launch contract until Bot Framework identity verification is implemented; current Teams support is outbound workflow/webhook;
 - human-handoff capability on conversational channels;
 - provider-neutral managed inference with exact prepaid admission and settlement;
 - internal provider-cost and margin telemetry separated from customer billing.
