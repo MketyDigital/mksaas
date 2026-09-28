@@ -79,13 +79,28 @@ export async function runCentralAi(input: {
   }
 
   const decision = routeManagedAiTask(input.taskClass ?? 'smart');
-  const nativeModel = input.model?.trim() || decision.model.nativeModel;
+  const requestedAlias =
+    input.model === MANAGED_AI_MODEL_ALIASES.economy || input.model === MANAGED_AI_MODEL_ALIASES.smart
+      ? input.model
+      : decision.alias;
+  const resolved = await resolveAiModelRoute({
+    tenantId: input.tenantId,
+    projectId,
+    requestedModel: requestedAlias,
+  });
+  if (!resolved) {
+    throw new Error(`Managed AI route is unavailable for alias: ${requestedAlias}`);
+  }
+  if (resolved.model.providerKey !== 'workers-ai') {
+    throw new Error('Managed Mkety AI alias must resolve to the Workers AI provider.');
+  }
+  const nativeModel = resolved.model.nativeModel;
   const result = await getManagedWorkersAiProvider().complete({
     tenantId: input.tenantId,
     projectId,
     apiKeyId: input.apiKeyId ?? null,
     actorUserId: input.actorUserId ?? null,
-    requestedModel: decision.alias,
+    requestedModel: requestedAlias,
     messages: [
       { role: 'system', content: input.system },
       ...input.messages,
