@@ -1,4 +1,4 @@
-import { createCentralExternalProvider, type CentralAiProviderCredentials } from '@/features/ai-runtime/providers/external';
+import { type CentralAiProviderCredentials, createCentralExternalProvider } from '@/features/ai-runtime/providers/external';
 
 import type { PublicAIProviderAdapter } from './types';
 import type { PublicAssistantEnvironment } from '../../config';
