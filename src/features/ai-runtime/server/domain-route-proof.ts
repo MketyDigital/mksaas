@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import { customDomains } from '@/shared/db/schema';
@@ -56,7 +56,7 @@ export async function probeEnterpriseAiHostnameRoute(
 export async function readEnterpriseAiRouteProof(hostname: string) {
   const normalized = hostname.trim().toLowerCase();
   const domain = await db.query.customDomains.findFirst({
-    where: eq(customDomains.hostname, normalized),
+    where: and(eq(customDomains.hostname, normalized), eq(customDomains.status, 'verified')),
   });
   if (!domain) return null;
 
