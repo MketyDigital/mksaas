@@ -3,7 +3,9 @@ import { env } from 'cloudflare:workers';
 import { WorkersAiProviderAdapter, type WorkersAiBinding } from './workers-ai';
 
 function gatewayId() {
-  const value = process.env.MKETY_AI_GATEWAY_ID?.trim();
+  const value = typeof env.MKETY_AI_GATEWAY_ID === 'string'
+    ? env.MKETY_AI_GATEWAY_ID.trim()
+    : '';
   if (!value) throw new Error('MKETY_AI_GATEWAY_ID is not configured.');
   return value;
 }
