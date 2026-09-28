@@ -25,7 +25,7 @@ const cards = [
 
 function source(allowTrading: boolean): EntitlementSource {
   return {
-    getCurrentPlanVersionId: jest.fn().mockResolvedValue('plan-v1'),
+    getCurrentPlanVersionIds: jest.fn().mockResolvedValue(['plan-v1']),
     getPlanEntitlements: jest.fn().mockResolvedValue(
       allowTrading ? [{ entitlementKey: 'workspace.trading.enterprise', enabled: true }] : [],
     ),
