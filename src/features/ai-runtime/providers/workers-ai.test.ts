@@ -87,6 +87,52 @@ describe('WorkersAiProviderAdapter', () => {
     }));
   });
 
+
+  it('normalizes array-form message content', async () => {
+    const run = jest.fn().mockResolvedValue({
+      choices: [{
+        finish_reason: 'stop',
+        message: {
+          content: [
+            { type: 'text', text: 'MKETY_' },
+            { type: 'text', text: 'ACCEPTANCE_OK' },
+          ],
+        },
+      }],
+      usage: { input_tokens: 5, output_tokens: 2 },
+    });
+    const adapter = new WorkersAiProviderAdapter({ run }, { gatewayId: 'mkety-ai-nonprod' });
+
+    const result = await adapter.complete(request, '@cf/google/gemma-4-26b-a4b-it');
+
+    expect(result.text).toBe('MKETY_ACCEPTANCE_OK');
+    expect(result.usage).toEqual({
+      inputTokens: 5n,
+      cachedInputTokens: 0n,
+      outputTokens: 2n,
+    });
+  });
+
+  it('normalizes array-form top-level response content', async () => {
+    const run = jest.fn().mockResolvedValue({
+      response: [
+        { type: 'output_text', text: 'MKETY_' },
+        { type: 'output_text', text: 'ACCEPTANCE_OK' },
+      ],
+      usage: { input_tokens: 4, output_tokens: 2 },
+    });
+    const adapter = new WorkersAiProviderAdapter({ run }, { gatewayId: 'mkety-ai-nonprod' });
+
+    const result = await adapter.complete(request, '@cf/google/gemma-4-26b-a4b-it');
+
+    expect(result.text).toBe('MKETY_ACCEPTANCE_OK');
+    expect(result.usage).toEqual({
+      inputTokens: 4n,
+      cachedInputTokens: 0n,
+      outputTokens: 2n,
+    });
+  });
+
   it('maps tool and strict structured-output contracts without exposing Mkety credentials', async () => {
     const run = jest.fn().mockResolvedValue({
       choices: [{ finish_reason: 'stop', message: { content: '{"ok":true}' } }],
