@@ -1,3 +1,35 @@
+# 2026-09-28 Enterprise AI completion handoff
+
+**Current workstream:** complete and certify Enterprise Mkety AI on PR #159.
+
+**Base main:** `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`.
+
+Current implementation state:
+
+- AI runtime foundation, credit reservations, layered budgets, versioned rate cards, commercial controls and fail-closed admission are already on `main`.
+- PR #159 is the clean continuation branch. Do not merge stale AI PRs #145, #154, #157 or #158.
+- The business-facing `ai.mkety.com` console is reconciled onto current main.
+- Managed Workers AI execution now sits behind Enterprise entitlement, route/model policy, verified provider cost, prepaid credit reservation and all applicable budget reservations.
+- Actual provider usage settles the admitted rate-card charge. If upstream succeeds but local settlement fails, the request is marked `reconciliation_required` and must never be resent upstream under the same idempotency key.
+- Provider cost is stored separately from customer charge in micro-USD with verification date metadata. Current planning floor targets 65% gross margin plus 15% overhead reserve; this is an internal floor, not public pricing.
+- Workers AI uses the Cloudflare `AI` binding and explicit AI Gateway ID. Production customer inference stays off until guarded promotion.
+- True white-label is entitlement-gated and supports customer product name, logos, favicon, colors, support/legal links and branded tenant login.
+- White-label domains map to the same tenant/workspace. Customers can use `<tenant>.mkety.app` or connect their own hostname through Cloudflare for SaaS with one CNAME instruction; TLS/routing remain Mkety-managed.
+- Product handoff tokens are one-time and bound to the destination hostname, avoiding wildcard cross-domain session cookies.
+- Domain purchase is behind a provider-neutral server-side reseller adapter; bind the already-configured registrar account there without exposing credentials.
+- Day-one channel registry includes Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. New channels must implement the same adapter/security/usage/handoff contracts rather than fork the runtime.
+- The customer console exposes plan/subscription, current-period billing, prepaid credits, request usage and charged credits in non-technical language.
+
+Promotion gate:
+
+1. keep PR #159 draft until exact-head type/lint/test/build/migration/vinext/candidate checks are green;
+2. run non-production model benchmark and tiny real inference acceptance through AI Gateway;
+3. verify actual token usage, provider cost and commercial settlement against Cloudflare evidence;
+4. verify white-label host login, TLS and tenant isolation on a real test domain;
+5. bind/test the selected registrar adapter before exposing domain checkout;
+6. do not enable `customerInferenceEnabled` in production until those checks pass and guarded production promotion is explicitly authorized.
+
+
 # Mkety Development Continuation Roadmap
 
 ## 2026-09-28 Enterprise AI continuation authority
