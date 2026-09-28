@@ -1,7 +1,7 @@
 import type { CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderId } from './external-types';
 import { getManagedWorkersAiProvider } from './runtime.cloudflare';
-import { type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
-import { getEnterpriseAiRuntimePolicy } from '../server/commercial-policy';
+import { MANAGED_AI_MODEL_ALIASES, type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
+import { resolveAiModelRoute } from '../server/model-routing';
 import { resolveByokProviderConnection } from '../server/provider-connections';
 
 export type CentralAiExecutionSource = 'managed' | 'byok';
@@ -45,11 +45,6 @@ export async function runCentralAi(input: {
   idempotencyKey?: string;
   tools?: Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }>;
 }): Promise<CentralAiExecutionResult> {
-  const policy = await getEnterpriseAiRuntimePolicy();
-  if (!policy.customerInferenceEnabled) {
-    throw new Error('Mkety customer AI inference is not enabled yet.');
-  }
-
   const projectId = input.projectId ?? null;
   const idempotencyKey = input.idempotencyKey ?? `central-${crypto.randomUUID()}`;
 
@@ -79,7 +74,7 @@ export async function runCentralAi(input: {
   }
 
   const decision = routeManagedAiTask(input.taskClass ?? 'smart');
-  const requestedAlias =
+  const requestedAlias: string =
     input.model === MANAGED_AI_MODEL_ALIASES.economy || input.model === MANAGED_AI_MODEL_ALIASES.smart
       ? input.model
       : decision.alias;
