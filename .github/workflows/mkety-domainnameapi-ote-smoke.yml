@@ -26,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      DOMAINNAMEAPI_USERNAME: ${{ secrets.DOMAINNAMEAPI_OTE_USERNAME || secrets.DOMAINNAMEAPI_USERNAME }}
-      DOMAINNAMEAPI_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN || secrets.DOMAINNAMEAPI_API_TOKEN }}
+      DOMAINNAMEAPI_USERNAME: ${{ secrets.DOMAINNAMEAPI_OTE_USERNAME }}
+      DOMAINNAMEAPI_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN }}
     steps:
       - name: Require explicit OT&E authorization
         shell: bash
