@@ -39,7 +39,7 @@ const headers: Record<string, string> = {
 };
 if (projectId) headers['x-mkety-project-id'] = projectId;
 
-const first = await fetch(baseUrl + '/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
+const first = await fetch(baseUrl + '/api/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
 const firstPayload = await responseJson(first);
 if (!first.ok) {
   const error = firstPayload.error as Json | undefined;
@@ -98,7 +98,7 @@ try {
   const rateCard = rateRows[0];
   if (!rateCard || Number(rateCard.version) !== Number(request.rate_card_version)) throw new Error('Recorded rate-card version no longer matches the immutable request snapshot.');
 
-  const replay = await fetch(baseUrl + '/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
+  const replay = await fetch(baseUrl + '/api/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
   const replayPayload = await responseJson(replay);
   if (replay.status !== 409 || String((replayPayload.error as Json | undefined)?.code ?? '') !== 'duplicate_request') throw new Error('Exact idempotent replay was not blocked as duplicate: HTTP ' + replay.status);
 
@@ -108,7 +108,7 @@ try {
   if (Number(countRows[0]?.count) !== 1) throw new Error('Idempotent replay created more than one provider request record.');
 
   const conflictBody = { ...body, messages: [{ role: 'user', content: 'This body is intentionally different.' }] };
-  const conflict = await fetch(baseUrl + '/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(conflictBody) });
+  const conflict = await fetch(baseUrl + '/api/v1/ai/chat/completions', { method: 'POST', headers, body: JSON.stringify(conflictBody) });
   const conflictPayload = await responseJson(conflict);
   if (conflict.status !== 409 || String((conflictPayload.error as Json | undefined)?.code ?? '') !== 'idempotency_conflict') throw new Error('Changed-body idempotency conflict was not rejected.');
 
