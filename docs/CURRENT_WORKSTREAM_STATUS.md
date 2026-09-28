@@ -1047,6 +1047,8 @@ Known non-goals for this Mail release:
 - added fail-closed tenant/project model routing, budget authorization and idempotent request recording;
 - added authenticated `GET /api/v1/ai/models` and fail-closed `POST /api/v1/ai/chat/completions`;
 - added tenant-scoped exact cache-key composition and bounded idempotent retry policy for later edge/provider integration;
+- added a tested Workers AI binding adapter routed through AI Gateway, but left it unbound from customer traffic and production runtime;
+- added a manual-only, explicitly authorized, capped Workers AI benchmark runner/workflow for Gemma 4, GLM-5.3 Flash and Qwen 3.8 27B using an isolated standard/postpaid AI Gateway;
 - retained Mail-era entitlements and Billing catalog coverage from current production main.
 
 ### Managed-model decision state
@@ -1073,9 +1075,9 @@ No paid Workers AI inference is enabled in AI-01. No production AI Gateway/DNS/m
 ### Exact next steps
 
 1. Hold PR #150 as draft until its final exact head is fully green.
-2. Run the controlled Gemma 4 / GLM-5.3 Flash / Qwen 3.8 benchmark.
+2. Dispatch the manual-only controlled Gemma 4 / GLM-5.3 Flash / Qwen 3.8 benchmark and retain its JSON artifact as model-selection evidence.
 3. Lock the second managed model based on Mkety benchmark evidence, not catalog pricing alone.
-4. Add the non-production Workers AI adapter and AI Gateway path with bounded retries/timeouts/fallback policy.
-5. Add atomic admission/reservation semantics before any billable managed inference.
+4. Design and implement atomic credit/admission reservation semantics using the existing Usage/Credits authority before customer traffic can invoke the Workers AI adapter.
+5. Bind Workers AI only in a non-production Mkety runtime first, route through the isolated AI Gateway, and prove accounting/idempotency/failure repair before production promotion.
 6. Add streaming after admission/accounting invariants are preserved.
 7. Add BYOK only after managed inference is stable; never silently fall back from failed BYOK to Mkety-paid credentials.
