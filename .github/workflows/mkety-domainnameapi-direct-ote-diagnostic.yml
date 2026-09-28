@@ -16,8 +16,10 @@ jobs:
     timeout-minutes: 12
     environment: preview
     env:
-      DOMAINNAMEAPI_USERNAME: ${{ secrets.DOMAINNAMEAPI_USERNAME }}
-      DOMAINNAMEAPI_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_API_TOKEN }}
+      DOMAINNAMEAPI_OTE_USERNAME: ${{ secrets.DOMAINNAMEAPI_OTE_USERNAME }}
+      DOMAINNAMEAPI_OTE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN }}
+      DOMAINNAMEAPI_LIVE_USERNAME: ${{ secrets.DOMAINNAMEAPI_USERNAME }}
+      DOMAINNAMEAPI_LIVE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_API_TOKEN }}
       DOMAINNAMEAPI_OTE_BASE_URL: ${{ secrets.DOMAINNAMEAPI_OTE_BASE_URL || vars.DOMAINNAMEAPI_OTE_BASE_URL }}
       DOMAINNAMEAPI_NAME_SERVERS: ${{ secrets.DOMAINNAMEAPI_NAME_SERVERS || vars.DOMAINNAMEAPI_NAME_SERVERS }}
     steps:
@@ -35,12 +37,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${DOMAINNAMEAPI_USERNAME:-}" ] && [ -n "${DOMAINNAMEAPI_API_TOKEN:-}" ]; then
+          username="${DOMAINNAMEAPI_OTE_USERNAME:-}"
+          token="${DOMAINNAMEAPI_OTE_API_TOKEN:-}"
+          if [ -n "$username" ] && [ -n "$token" ]; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
-            echo "::add-mask::$DOMAINNAMEAPI_USERNAME"
-            echo "::add-mask::$DOMAINNAMEAPI_API_TOKEN"
+            echo 'source=ote-specific' >> "$GITHUB_OUTPUT"
+            echo "::add-mask::$username"
+            echo "::add-mask::$token"
+            echo "DOMAINNAMEAPI_USERNAME=$username" >> "$GITHUB_ENV"
+            echo "DOMAINNAMEAPI_API_TOKEN=$token" >> "$GITHUB_ENV"
           else
             echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'source=missing-ote-specific' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Execute real DomainNameAPI OT&E quote
@@ -70,7 +78,7 @@ jobs:
             rows.push('- Currency: '+result.currency);
           }
           if(!credentials){
-            rows.push('- Blocker: add DOMAINNAMEAPI_USERNAME and DOMAINNAMEAPI_API_TOKEN to the preview GitHub Environment; no Platform Control deployment is required.');
+            rows.push('- Blocker: add DOMAINNAMEAPI_OTE_USERNAME and DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Existing live DOMAINNAMEAPI_* credentials are intentionally not used against OT&E.');
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\n')+'\n');
           console.log(JSON.stringify({credentialsAvailable:credentials,result},null,2));
