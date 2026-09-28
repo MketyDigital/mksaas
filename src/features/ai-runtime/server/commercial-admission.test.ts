@@ -66,8 +66,10 @@ function dependencies(overrides: Partial<AiCommercialAdmissionDependencies> = {}
   return {
     reserveCredits: jest.fn(async () => creditReservation()),
     releaseCredits: jest.fn(async () => creditReservation()),
+    settleCredits: jest.fn(async () => creditReservation()),
     reserveBudget: jest.fn(async () => budgetResult()),
     releaseBudget: jest.fn(async () => budgetResult()),
+    settleBudget: jest.fn(async () => budgetResult()),
     ...overrides,
   } satisfies AiCommercialAdmissionDependencies;
 }
