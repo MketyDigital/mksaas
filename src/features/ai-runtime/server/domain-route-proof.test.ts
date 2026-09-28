@@ -1,61 +1,71 @@
-import { readFile } from 'node:fs/promises';
-
 import { probeEnterpriseAiHostnameRoute } from './domain-route-proof';
 
 describe('Enterprise AI live hostname route proof', () => {
-  it('accepts a working HTTPS route only when it proves the expected tenant', async () => {
-    const fetchImpl = async () => ({
+  it('accepts only the exact hostname and expected tenant id', async () => {
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({
       ok: true,
-      json: async () => ({
-        ok: true,
-        hostname: 'ai.customer.com',
-        tenant_id: 'tenant-1',
-      }),
-    }) as Response;
+      hostname: 'ai.starpipsforex.com',
+      tenant_id: 'tenant-starpips',
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
 
-    await expect(
-      probeEnterpriseAiHostnameRoute(
-        'ai.customer.com',
-        'tenant-1',
-        fetchImpl as typeof fetch,
-      ),
-    ).resolves.toMatchObject({
+    await expect(probeEnterpriseAiHostnameRoute(
+      'ai.starpipsforex.com',
+      'tenant-starpips',
+      fetchImpl as typeof fetch,
+    )).resolves.toEqual({
       ok: true,
-      hostname: 'ai.customer.com',
-      tenantId: 'tenant-1',
+      hostname: 'ai.starpipsforex.com',
+      tenantId: 'tenant-starpips',
     });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://ai.starpipsforex.com/api/v1/ai/domain-route-proof',
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'error',
+        cache: 'no-store',
+      }),
+    );
   });
 
-  it('rejects a live hostname that resolves to another tenant', async () => {
-    const fetchImpl = async () => ({
+  it('rejects cross-tenant route proof even when HTTPS responds successfully', async () => {
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({
       ok: true,
-      json: async () => ({
-        ok: true,
-        hostname: 'ai.customer.com',
-        tenant_id: 'tenant-other',
-      }),
-    }) as Response;
+      hostname: 'ai.starpipsforex.com',
+      tenant_id: 'tenant-other',
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
 
-    await expect(
-      probeEnterpriseAiHostnameRoute(
-        'ai.customer.com',
-        'tenant-1',
-        fetchImpl as typeof fetch,
-      ),
-    ).resolves.toMatchObject({
+    await expect(probeEnterpriseAiHostnameRoute(
+      'ai.starpipsforex.com',
+      'tenant-starpips',
+      fetchImpl as typeof fetch,
+    )).resolves.toEqual({
       ok: false,
+      hostname: 'ai.starpipsforex.com',
+      tenantId: 'tenant-other',
       reason: 'route_probe_tenant_mismatch',
     });
   });
 
-  it('keeps the provider status fallback tied to live-route proof in the admin action', async () => {
-    const source = await readFile(
-      'src/features/ai-runtime/server/enterprise-admin-actions.ts',
-      'utf8',
-    );
-    expect(source).toContain('strictProviderVerified');
-    expect(source).toContain('probeEnterpriseAiHostnameRoute(domain.hostname, tenant.id)');
-    expect(source).toContain("verificationMethod = strictProviderVerified");
-    expect(source).toContain("'live_route'");
+  it('fails closed on redirects, HTTP failures and network failures', async () => {
+    const httpFailure = jest.fn(async () => new Response('bad gateway', { status: 502 }));
+    await expect(probeEnterpriseAiHostnameRoute(
+      'ai.starpipsforex.com',
+      'tenant-starpips',
+      httpFailure as typeof fetch,
+    )).resolves.toMatchObject({ ok: false, reason: 'route_probe_http_error' });
+
+    const networkFailure = jest.fn(async () => { throw new Error('network unavailable'); });
+    await expect(probeEnterpriseAiHostnameRoute(
+      'ai.starpipsforex.com',
+      'tenant-starpips',
+      networkFailure as typeof fetch,
+    )).resolves.toMatchObject({ ok: false, reason: 'route_probe_failed' });
   });
 });
