@@ -21,9 +21,10 @@ import { AppLogo } from '../brand/Logo';
 interface UnifiedSidebarProps {
   tenantSlug?: string;
   permissions?: string[];
+  hasMailAccess?: boolean;
 }
 
-export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp }: UnifiedSidebarProps) {
+export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp, hasMailAccess = false }: UnifiedSidebarProps) {
   const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = useTranslations('nav');
@@ -70,7 +71,7 @@ export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp }: Uni
       case 'admin':
         return <AdminViewNav basePath={basePath} permissions={permissions} onItemClick={onItemClick} />;
       default:
-        return <MyViewNav basePath={basePath} onItemClick={onItemClick} />;
+        return <MyViewNav basePath={basePath} hasMailAccess={hasMailAccess} onItemClick={onItemClick} />;
     }
   };
 
