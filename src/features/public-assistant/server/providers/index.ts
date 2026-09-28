@@ -1,4 +1,5 @@
 import { type CentralAiProviderCredentials, createCentralExternalProvider } from '@/features/ai-runtime/providers/external';
+import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 
 import type { PublicAIProviderAdapter } from './types';
 import type { PublicAssistantEnvironment } from '../../config';
@@ -9,6 +10,8 @@ function credentialsFor(
   environment: PublicAssistantEnvironment,
 ): CentralAiProviderCredentials | null {
   switch (providerId) {
+    case 'workers-ai':
+      return null;
     case 'openai':
       return environment.MKETY_PUBLIC_OPENAI_API_KEY
         ? { provider: 'openai', apiKey: environment.MKETY_PUBLIC_OPENAI_API_KEY }
@@ -71,6 +74,38 @@ export function createPublicAIProviderAdapters(
   environment: PublicAssistantEnvironment,
 ): PublicAIProviderAdapter[] {
   return providerIds.flatMap((providerId) => {
+    if (providerId === 'workers-ai') {
+      const adapter: PublicAIProviderAdapter = {
+        id: 'workers-ai',
+        async generate(request) {
+          const result = await getManagedWorkersAiProvider().complete({
+            tenantId: 'public-mkety-ai',
+            projectId: null,
+            apiKeyId: null,
+            actorUserId: null,
+            requestedModel: 'public-ai',
+            messages: [
+              { role: 'system', content: request.system },
+              ...request.messages,
+            ],
+            maxOutputTokens: request.maxOutputTokens,
+            idempotencyKey: `public-ai-${crypto.randomUUID()}`,
+          }, request.model);
+
+          return {
+            text: result.text ?? '',
+            providerRequestId: result.providerRequestId,
+            usage: {
+              inputTokens: Number(result.usage.inputTokens),
+              outputTokens: Number(result.usage.outputTokens),
+              totalTokens: Number(result.usage.inputTokens + result.usage.outputTokens),
+            },
+          };
+        },
+      };
+      return [adapter];
+    }
+
     const credentials = credentialsFor(providerId, environment);
     if (!credentials) return [];
     const central = createCentralExternalProvider(credentials);
