@@ -10,7 +10,8 @@ type EnterpriseHostnameMetadata = {
   purpose: 'enterprise-ai';
   cnameTarget: string;
   cloudflareCustomHostnameId?: string;
-  sslStatus?: string;
+  sslStatus?: string | null;
+  managed?: boolean;
 };
 
 function parseMetadata(value: string | null): EnterpriseHostnameMetadata | null {
@@ -26,14 +27,8 @@ function parseMetadata(value: string | null): EnterpriseHostnameMetadata | null 
 export async function resolveEnterpriseAiHostname(hostname: string) {
   const normalized = hostname.trim().toLowerCase();
 
-  if (normalized.endsWith('.mkety.app')) {
-    const subdomain = normalized.slice(0, -'.mkety.app'.length);
-    const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, subdomain) });
-    if (!tenant) return null;
-    const entitled = await hasEntitlement({ tenantId: tenant.id, entitlement: 'workspace.ai.enterprise' });
-    return entitled ? { tenant, hostname: normalized, kind: 'managed' as const } : null;
-  }
-
+  // A hostname is real only after an explicit verified provisioning record exists.
+  // Never infer *.mkety.app availability from the tenant slug alone.
   const domain = await db.query.customDomains.findFirst({
     where: and(eq(customDomains.hostname, normalized), eq(customDomains.status, 'verified')),
   });
@@ -45,13 +40,27 @@ export async function resolveEnterpriseAiHostname(hostname: string) {
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, domain.tenantId) });
   if (!tenant) return null;
 
-  const [enterprise, whitelabel] = await Promise.all([
-    hasEntitlement({ tenantId: tenant.id, entitlement: 'workspace.ai.enterprise' }),
-    hasEntitlement({ tenantId: tenant.id, entitlement: 'ai.whitelabel' }),
-  ]);
-  if (!enterprise || !whitelabel) return null;
+  const enterprise = await hasEntitlement({
+    tenantId: tenant.id,
+    entitlement: 'workspace.ai.enterprise',
+  });
+  if (!enterprise) return null;
 
-  return { tenant, hostname: normalized, kind: 'custom' as const, metadata };
+  const managed = metadata.managed === true && normalized.endsWith('.mkety.app');
+  if (!managed) {
+    const whiteLabel = await hasEntitlement({
+      tenantId: tenant.id,
+      entitlement: 'ai.whitelabel',
+    });
+    if (!whiteLabel) return null;
+  }
+
+  return {
+    tenant,
+    hostname: normalized,
+    kind: managed ? 'managed' as const : 'custom' as const,
+    metadata,
+  };
 }
 
 export function buildEnterpriseAiDnsInstructions(hostname: string, cnameTarget: string) {
