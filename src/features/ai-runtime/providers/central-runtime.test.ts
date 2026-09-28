@@ -64,6 +64,74 @@ describe('central Mkety AI runtime', () => {
     });
   });
 
+
+  it('omits blank system messages from managed provider requests', async () => {
+    routeMock.mockResolvedValue({
+      alias: { alias: 'mkety-economy' },
+      model: {
+        providerKey: 'workers-ai',
+        nativeModel: '@cf/google/gemma-4-26b-a4b-it',
+      },
+      route: { id: 'route-economy' },
+    } as never);
+    const complete = jest.fn().mockResolvedValue({
+      text: 'ok',
+      usage: { inputTokens: 2n, cachedInputTokens: 0n, outputTokens: 1n },
+      providerRequestId: 'provider-blank-system',
+      finishReason: 'stop',
+    });
+    managedMock.mockReturnValue({ complete } as never);
+
+    await runCentralAi({
+      tenantId: 'tenant-1',
+      model: 'mkety-economy',
+      system: '   ',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+      '@cf/google/gemma-4-26b-a4b-it',
+    );
+  });
+
+  it('trims and preserves non-empty system messages before user messages', async () => {
+    routeMock.mockResolvedValue({
+      alias: { alias: 'mkety-economy' },
+      model: {
+        providerKey: 'workers-ai',
+        nativeModel: '@cf/google/gemma-4-26b-a4b-it',
+      },
+      route: { id: 'route-economy' },
+    } as never);
+    const complete = jest.fn().mockResolvedValue({
+      text: 'ok',
+      usage: { inputTokens: 2n, cachedInputTokens: 0n, outputTokens: 1n },
+      providerRequestId: 'provider-system',
+      finishReason: 'stop',
+    });
+    managedMock.mockReturnValue({ complete } as never);
+
+    await runCentralAi({
+      tenantId: 'tenant-1',
+      model: 'mkety-economy',
+      system: '  Follow instructions.  ',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          { role: 'system', content: 'Follow instructions.' },
+          { role: 'user', content: 'hello' },
+        ],
+      }),
+      '@cf/google/gemma-4-26b-a4b-it',
+    );
+  });
+
   it('fails closed when the requested managed alias has no active route', async () => {
     routeMock.mockResolvedValue(null);
 
