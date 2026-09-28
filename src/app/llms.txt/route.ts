@@ -37,7 +37,7 @@ Deploy Workspace: managed web/API/serverless deployment, preview and production 
 Trading Workspace: specialized Custom/Enterprise trading automation and infrastructure.
 
 ## Mkety Mail
-Mkety Mail is separately subscribed from the normal Mkety Platform plans. Public monthly plans are Mail Starter $4.99, Mail Growth $9.99 and Mail Business $24.99, with the standard 1/3/6/12-month prepaid discount ladder. Enterprise Mail is custom. Public plans have explicit domain, mailbox, seat, shared-inbox, storage, outbound-message and Customer Update limits; self-service overage uses prepaid capacity packs rather than surprise postpaid billing. Marketing campaigns remain Coming Soon.
+Mkety Mail is separately subscribed from the normal Mkety Platform plans. Public monthly plans are Mail Starter $4.99, Mail Growth $9.99 and Mail Business $24.99, with the standard 1/3/6/12-month prepaid discount ladder. Enterprise Mail is custom. Public plans have explicit domain, mailbox, seat, shared-inbox, storage, outbound-message and Customer Update limits; self-service limits fail closed rather than creating surprise postpaid billing; customers upgrade plan or use Enterprise for more capacity. Marketing campaigns remain Coming Soon.
 
 ## Enterprise AI
 Enterprise AI is separately entitled from the normal AI Workspace. It is the Enterprise product layer for branded customer-facing assistants, production channels, custom domains, API/PaaS use, operator handoff, contracted usage/limits, advanced security, private/dedicated model routing, custom integrations and SLA/support terms where agreed.
