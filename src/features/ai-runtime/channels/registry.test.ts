@@ -1,8 +1,8 @@
 import { ENTERPRISE_AI_CHANNELS } from './registry';
 
 describe('Enterprise AI channel registry', () => {
-  it('ships at least seven common customer channels plus a custom extension path', () => {
-    expect(ENTERPRISE_AI_CHANNELS.length).toBeGreaterThanOrEqual(8);
+  it('ships major customer channels plus a custom extension path', () => {
+    expect(ENTERPRISE_AI_CHANNELS.length).toBeGreaterThanOrEqual(10);
     expect(ENTERPRISE_AI_CHANNELS.map((item) => item.key)).toEqual(expect.arrayContaining([
       'website',
       'whatsapp',
@@ -10,6 +10,8 @@ describe('Enterprise AI channel registry', () => {
       'instagram',
       'facebook_messenger',
       'slack',
+      'discord',
+      'linkedin_page',
       'microsoft_teams',
       'custom_webhook',
     ]));
