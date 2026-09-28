@@ -3,7 +3,7 @@ import { asc, desc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db/cloudflare';
 import { aiModels, aiRateCards, aiRuntimePolicies } from '@/shared/db/schema/ai-runtime';
 
-export const ENTERPRISE_AI_RUNTIME_POLICY_KEY = 'enterprise-default';
+import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
 
 export async function getAiCommercialControlOverview() {
   const [models, rateCards, policy] = await Promise.all([
