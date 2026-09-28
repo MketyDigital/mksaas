@@ -5,11 +5,11 @@ import { redirect } from 'next/navigation';
 
 import { publishAgentVersion, snapshotAgentVersion } from '@/features/ai/lib/agent-versioning';
 import { db } from '@/shared/db';
-import { agents, projects, tenantMemberships } from '@/shared/db/schema';
+import { aiProviderConnections, agents, projects, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
-const providers = new Set(['platform', 'openai', 'groq', 'openrouter', 'custom']);
+const legacyProviders = new Set(['openai', 'groq', 'openrouter', 'custom']);
 const statuses = new Set(['draft', 'disabled']);
 
 async function requireManager(tenantSlug: string) {
@@ -63,7 +63,23 @@ export async function updateAgent(formData: FormData) {
 
   if (!name) throw new Error('Agent name is required.');
   if (!statuses.has(status)) throw new Error('Save as draft or disabled; publishing is done through a version.');
-  if (!providers.has(provider)) throw new Error('Invalid AI provider.');
+  if (provider !== 'platform' && provider !== 'workers-ai' && !legacyProviders.has(provider) && !provider.startsWith('byok:')) {
+    throw new Error('Invalid AI provider.');
+  }
+  if (provider.startsWith('byok:')) {
+    const connectionId = provider.slice('byok:'.length).trim();
+    const connection = connectionId
+      ? await db.query.aiProviderConnections.findFirst({ where: and(
+          eq(aiProviderConnections.id, connectionId),
+          eq(aiProviderConnections.tenantId, tenant.id),
+          eq(aiProviderConnections.status, 'active'),
+          eq(aiProviderConnections.mode, 'byok'),
+        ) })
+      : null;
+    if (!connection || (connection.projectId && connection.projectId !== project.id)) {
+      throw new Error('BYOK provider connection is not available to this project.');
+    }
+  }
 
   const config = validateConfig(rawConfig);
   await db.update(agents).set({ name, instructions: instructions || null, provider, model: model || null, status, config, updatedAt: new Date() }).where(eq(agents.id, agent.id));
