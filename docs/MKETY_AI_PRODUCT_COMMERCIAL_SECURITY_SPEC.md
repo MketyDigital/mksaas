@@ -1,11 +1,19 @@
 # Mkety AI Product, Commercial, Security & Operations Specification
 
-> Status: proposed product/commercial specification
+> Status: approved product/commercial authority with an implemented September 28 launch subset; production managed inference remains gated
 > Date: 2026-09-27
-> Branch: `feat/mkety-ai-runtime-gateway-foundation-20260927`
+> Active completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159
 > Governing authority: `AGENTS.md`, `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`, `docs/MKETY_SHARED_PAYMENTS.md`, `docs/ROLES_AND_PERMISSIONS.md`, and `docs/MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md`.
 >
 > This document is additive. Where it conflicts with an existing authority, the existing authority wins until deliberately reconciled.
+
+### 2026-09-28 implementation reconciliation
+
+PR #159 has implemented the commercial admission/settlement foundation, provider-cost separation, white-label/domain shell, and current channel registry described by the newer handoff. The production inference switch remains off.
+
+For managed Workers AI, Gemma 4 is the initial managed candidate. GLM-5.3 Flash and Qwen 3.8 27B are benchmark candidates for the second managed slot; no document may lock the second model before the guarded benchmark evidence is recorded.
+
+The launch channel registry includes Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook, and custom webhook/API. LinkedIn does not imply unrestricted inbox/DM access, and Teams inbound is not implemented.
 
 ## 1. Product definition
 
@@ -240,7 +248,7 @@ Initial managed models should be intentionally small in number and expandable.
 **Day-one managed-provider policy:**
 
 - Cloudflare Workers AI hosted open models only for Mkety-managed inference.
-- Initial routes: `@cf/google/gemma-4-26b-a4b-it` and `@cf/qwen/qwen3.8-27b`.
+- Initial managed candidate: `@cf/google/gemma-4-26b-a4b-it`. Benchmark candidates for the second managed slot: `@cf/zai-org/glm-5.3-flash` and `@cf/qwen/qwen3.8-27b`. The second slot is selected only from recorded benchmark evidence.
 - Third-party frontier models are **not** to be purchased through Cloudflare Unified Billing/prepaid AI Gateway credits as a normal Mkety-managed route.
 - OpenAI, Anthropic, Gemini, xAI and similar third-party providers are supported through **customer BYOK** where enabled.
 - Mkety may later operate its own private/self-hosted model endpoint on OCI, AWS, Azure or another approved GPU platform.
@@ -255,14 +263,15 @@ Expose stable aliases:
 - `mkety/reasoning`
 - `mkety/private/<deployment>`
 
-### 4.1.1 Day-one Workers AI cost baseline — verified 2026-09-27
+### 4.1.1 Workers AI candidate cost baseline — verified 2026-09-28
 
 Current Cloudflare Workers AI published unit pricing:
 
 | Model | Input | Output | Cached input | Primary role |
 | --- | ---: | ---: | ---: | --- |
-| `@cf/google/gemma-4-26b-a4b-it` | $0.10 / 1M tokens | $0.30 / 1M tokens | not separately listed | economical default / vision / tools |
-| `@cf/qwen/qwen3.8-27b` | $0.45 / 1M tokens | $3.20 / 1M tokens | $0.05 / 1M tokens | higher-capability reasoning / vision / tools |
+| `@cf/google/gemma-4-26b-a4b-it` | $0.10 / 1M tokens | $0.30 / 1M tokens | not separately listed | initial managed candidate |
+| `@cf/zai-org/glm-5.3-flash` | $0.15 / 1M tokens | $0.50 / 1M tokens | $0.03 / 1M tokens | lower-cost second-slot benchmark candidate |
+| `@cf/qwen/qwen3.8-27b` | $0.45 / 1M tokens | $3.20 / 1M tokens | $0.05 / 1M tokens | higher-cost second-slot benchmark candidate |
 
 Cloudflare currently meters Workers AI in neurons internally and publishes equivalent per-model token pricing. The account receives a 10,000-neuron daily free allocation; usage above that allocation on Workers Paid is billed at the model's published unit economics. The free allocation is an infrastructure benefit and must never be promised as a customer entitlement.
 
