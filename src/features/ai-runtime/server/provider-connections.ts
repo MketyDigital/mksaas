@@ -165,6 +165,162 @@ export async function disableByokProviderConnection(input: { tenantId: string; c
   return row ?? null;
 }
 
+function adapterFromConnection(row: {
+  providerKey: string;
+  secretRef: string | null;
+  endpointUrl: string | null;
+  metadata: Record<string, unknown>;
+}) {
+  if (!isCentralAiProviderId(row.providerKey)) {
+    throw new Error('AI provider is not supported by the central Mkety AI runtime.');
+  }
+  if (!row.secretRef) throw new Error('AI provider secret is not configured.');
+
+  return decryptAiProviderSecret(row.secretRef, encryptionKey()).then((secret) => {
+    const metadata = row.metadata ?? {};
+    let credentials: CentralAiProviderCredentials;
+
+    switch (row.providerKey) {
+      case 'openai':
+        credentials = { provider: 'openai', apiKey: nonEmpty(secret.apiKey ?? '', 'OpenAI API key') };
+        break;
+      case 'azure-openai':
+        credentials = {
+          provider: 'azure-openai',
+          apiKey: nonEmpty(secret.apiKey ?? '', 'Azure OpenAI API key'),
+          endpoint: nonEmpty(row.endpointUrl ?? '', 'Azure OpenAI endpoint'),
+          deployment: nonEmpty(String(metadata.deployment ?? ''), 'Azure OpenAI deployment'),
+        };
+        break;
+      case 'gemini':
+        credentials = { provider: 'gemini', apiKey: nonEmpty(secret.apiKey ?? '', 'Gemini API key') };
+        break;
+      case 'vertex':
+        credentials = {
+          provider: 'vertex',
+          accessToken: nonEmpty(secret.accessToken ?? '', 'Vertex access token'),
+          projectId: nonEmpty(String(metadata.projectId ?? ''), 'Vertex project ID'),
+          location: String(metadata.location ?? 'global'),
+        };
+        break;
+      case 'cloudflare-ai':
+        credentials = {
+          provider: 'cloudflare-ai',
+          accountId: nonEmpty(String(metadata.accountId ?? ''), 'Cloudflare account ID'),
+          apiToken: nonEmpty(secret.apiToken ?? '', 'Cloudflare AI API token'),
+        };
+        break;
+      case 'bedrock':
+        credentials = {
+          provider: 'bedrock',
+          accessKeyId: nonEmpty(secret.accessKeyId ?? '', 'AWS access key ID'),
+          secretAccessKey: nonEmpty(secret.secretAccessKey ?? '', 'AWS secret access key'),
+          ...(secret.sessionToken ? { sessionToken: secret.sessionToken } : {}),
+          region: String(metadata.region ?? 'us-east-1'),
+        };
+        break;
+    }
+
+    return createCentralExternalProvider(credentials);
+  });
+}
+
+export async function saveSystemAiProviderConnection(input: {
+  mode: 'public' | 'platform';
+  provider: ByokProviderInput;
+}) {
+  const normalized = normalizeInput(input.provider);
+  const secretRef = await encryptAiProviderSecret(normalized.secret, encryptionKey());
+  const now = new Date();
+
+  const existing = await db.query.aiProviderConnections.findFirst({
+    where: and(
+      isNull(aiProviderConnections.tenantId),
+      isNull(aiProviderConnections.projectId),
+      eq(aiProviderConnections.providerKey, normalized.providerKey),
+      eq(aiProviderConnections.mode, input.mode),
+    ),
+  });
+
+  if (existing) {
+    const [updated] = await db.update(aiProviderConnections).set({
+      secretRef,
+      endpointUrl: normalized.endpointUrl,
+      metadata: normalized.metadata,
+      status: 'active',
+      updatedAt: now,
+    }).where(eq(aiProviderConnections.id, existing.id)).returning();
+    return updated ?? existing;
+  }
+
+  const [created] = await db.insert(aiProviderConnections).values({
+    tenantId: null,
+    projectId: null,
+    providerKey: normalized.providerKey,
+    mode: input.mode,
+    secretRef,
+    endpointUrl: normalized.endpointUrl,
+    status: 'active',
+    metadata: normalized.metadata,
+    updatedAt: now,
+  }).returning();
+  if (!created) throw new Error('System AI provider connection creation did not return a record.');
+  return created;
+}
+
+export async function listSystemAiProviderConnections(mode: 'public' | 'platform') {
+  return db.query.aiProviderConnections.findMany({
+    where: and(
+      isNull(aiProviderConnections.tenantId),
+      isNull(aiProviderConnections.projectId),
+      eq(aiProviderConnections.mode, mode),
+    ),
+    columns: {
+      id: true,
+      providerKey: true,
+      mode: true,
+      endpointUrl: true,
+      status: true,
+      metadata: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+}
+
+export async function resolveSystemAiProviderConnection(input: {
+  mode: 'public' | 'platform';
+  providerKey: CentralAiProviderId;
+}) {
+  const row = await db.query.aiProviderConnections.findFirst({
+    where: and(
+      isNull(aiProviderConnections.tenantId),
+      isNull(aiProviderConnections.projectId),
+      eq(aiProviderConnections.providerKey, input.providerKey),
+      eq(aiProviderConnections.mode, input.mode),
+      eq(aiProviderConnections.status, 'active'),
+    ),
+  });
+  if (!row) throw new Error(`${input.mode} AI provider connection is not active.`);
+  return { connection: row, adapter: await adapterFromConnection(row) };
+}
+
+export async function disableSystemAiProviderConnection(input: {
+  mode: 'public' | 'platform';
+  providerKey: CentralAiProviderId;
+}) {
+  const [row] = await db.update(aiProviderConnections).set({
+    status: 'disabled',
+    updatedAt: new Date(),
+  }).where(and(
+    isNull(aiProviderConnections.tenantId),
+    isNull(aiProviderConnections.projectId),
+    eq(aiProviderConnections.providerKey, input.providerKey),
+    eq(aiProviderConnections.mode, input.mode),
+  )).returning();
+  return row ?? null;
+}
+
 export async function resolveByokProviderConnection(input: {
   tenantId: string;
   projectId?: string | null;
@@ -186,59 +342,9 @@ export async function resolveByokProviderConnection(input: {
   if (row.projectId && row.projectId !== (input.projectId ?? null)) {
     throw new Error('BYOK provider connection is outside the requested project scope.');
   }
-  if (!isCentralAiProviderId(row.providerKey)) {
-    throw new Error('BYOK provider is not supported by the central Mkety AI runtime.');
-  }
-  if (!row.secretRef) throw new Error('BYOK provider secret is not configured.');
-
-  const secret = await decryptAiProviderSecret(row.secretRef, encryptionKey());
-  const metadata = row.metadata ?? {};
-  let credentials: CentralAiProviderCredentials;
-
-  switch (row.providerKey) {
-    case 'openai':
-      credentials = { provider: 'openai', apiKey: nonEmpty(secret.apiKey ?? '', 'OpenAI API key') };
-      break;
-    case 'azure-openai':
-      credentials = {
-        provider: 'azure-openai',
-        apiKey: nonEmpty(secret.apiKey ?? '', 'Azure OpenAI API key'),
-        endpoint: nonEmpty(row.endpointUrl ?? '', 'Azure OpenAI endpoint'),
-        deployment: nonEmpty(String(metadata.deployment ?? ''), 'Azure OpenAI deployment'),
-      };
-      break;
-    case 'gemini':
-      credentials = { provider: 'gemini', apiKey: nonEmpty(secret.apiKey ?? '', 'Gemini API key') };
-      break;
-    case 'vertex':
-      credentials = {
-        provider: 'vertex',
-        accessToken: nonEmpty(secret.accessToken ?? '', 'Vertex access token'),
-        projectId: nonEmpty(String(metadata.projectId ?? ''), 'Vertex project ID'),
-        location: String(metadata.location ?? 'global'),
-      };
-      break;
-    case 'cloudflare-ai':
-      credentials = {
-        provider: 'cloudflare-ai',
-        accountId: nonEmpty(String(metadata.accountId ?? ''), 'Cloudflare account ID'),
-        apiToken: nonEmpty(secret.apiToken ?? '', 'Cloudflare AI API token'),
-      };
-      break;
-    case 'bedrock':
-      credentials = {
-        provider: 'bedrock',
-        accessKeyId: nonEmpty(secret.accessKeyId ?? '', 'AWS access key ID'),
-        secretAccessKey: nonEmpty(secret.secretAccessKey ?? '', 'AWS secret access key'),
-        ...(secret.sessionToken ? { sessionToken: secret.sessionToken } : {}),
-        region: String(metadata.region ?? 'us-east-1'),
-      };
-      break;
-  }
-
   return {
     connection: row,
-    adapter: createCentralExternalProvider(credentials),
+    adapter: await adapterFromConnection(row),
   };
 }
 
