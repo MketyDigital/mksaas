@@ -1,3 +1,30 @@
+# 2026-09-28 Platform, Mail and Enterprise AI completion update
+
+Current completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159.
+
+In addition to the Enterprise AI runtime/commercial/white-label work already recorded below, the same completion branch now includes:
+
+- Discord as a real Enterprise AI conversational channel with Ed25519 Interaction verification, deferred responses, background AI execution and outbound bot delivery.
+- LinkedIn Page Community as an approval-gated connector for supported organization comments/mentions. It validates LinkedIn challenge/HMAC requests, retrieves the actual comment, and replies as the connected organization. It does not claim unrestricted LinkedIn inbox/DM access.
+- Trading-style custom-domain verification fallback: strict Cloudflare for SaaS active+SSL-active remains accepted, but if provider SSL state lags, Mkety can verify a hostname only when a live HTTPS route proof reaches Mkety and returns the exact expected tenant identity.
+- `app.mkety.com` hot-path optimization: request-cached auth/session, tenant lookup and effective entitlements; single-snapshot workspace filtering; concurrent dashboard metrics; reduced repeated membership/PBAC/entitlement reads.
+- A new entitlement-aware tenant product dashboard with correct Projects, Billing, Usage & Credits, Mail, Enterprise AI, Media and Enterprise entry points.
+- A real tenant Billing index showing all current Platform/Mail-family subscriptions, verified settlements, ledger activity and self-service checkout links. Platform and Mail subscriptions remain independently composable.
+- Persistent Mkety Mail customer navigation covering overview, inbox, shared inboxes, domains, mailboxes, contacts, templates, customer updates, developer tools, analytics, apps and automation.
+- Mail first-time onboarding now starts at domain verification before mailbox creation, and the `mail.mkety.com` workspace chooser resolves multi-tenant Mail access in parallel.
+- Tenant user navigation now exposes Plan & Billing, Usage & Credits, Mkety Mail when entitled and Enterprise AI when entitled.
+- Missing Admin routes are repaired: Analytics, Departments and Settings -> Features now have real destinations; the stale Integration Jobs -> /processing link now routes to Integrations.
+- Navigation route-contract tests lock Admin, Mail, Billing, Enterprise AI and product-host handoff routes.
+
+Release/certification rule remains unchanged:
+
+1. exact-head CI/type/lint/tests/build/migration/vinext/core-workspace/content-db smoke must all pass;
+2. production `customerInferenceEnabled` stays fail-closed until the guarded paid Workers AI benchmark and tiny live provider/accounting acceptance are explicitly run and recorded;
+3. a real customer hostname must prove HTTPS, tenant-bound live-route identity and branded-login isolation before production white-label promotion;
+4. registrar/domain-reseller checkout stays behind the provider-neutral adapter until the configured registrar implementation is identified and verified;
+5. Mail/product/payment changes must preserve existing verified-settlement, entitlement and provider-secret boundaries.
+
+
 
 
 ## 2026-09-28 Enterprise AI completion workstream
