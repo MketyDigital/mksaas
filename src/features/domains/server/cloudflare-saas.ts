@@ -44,7 +44,9 @@ export async function createCloudflareSaasHostname(hostname: string) {
     body: JSON.stringify({
       hostname: normalized,
       ssl: {
-        method: 'txt',
+        // HTTP DCV lets non-wildcard customers finish onboarding with only the
+        // CNAME to our SaaS target; Cloudflare serves the validation token.
+        method: 'http',
         type: 'dv',
         settings: { min_tls_version: '1.2' },
       },
