@@ -1,3 +1,50 @@
+## 2026-09-28 final central-AI / live-gate repository certification
+
+Certified implementation SHA: `de0cc9c27cb5d6b10b5c3561dbb365573584e53f`.
+
+Exact-head evidence:
+- CI `36463882071` — SUCCESS.
+- Migration Baseline `36463882626` — SUCCESS.
+- Mkety AI Workspace Foundation Smoke `36463882405` — SUCCESS.
+- Mkety Platform Core Workspaces Smoke `36463882573` — SUCCESS.
+- Mkety Cloudflare vinext Smoke `36463882696` — SUCCESS.
+- Mkety Public Candidate Deploy `36463882316` — SUCCESS.
+- Production App Host Diagnostic `36463882391` — SUCCESS as a read-only diagnostic; it proves the current production defect, not a repair.
+- Live Gate Readiness Diagnostic `36463882183` — SUCCESS.
+- DomainNameAPI Direct OT&E Diagnostic `36463882234` — SUCCESS as a credential-readiness diagnostic; no preview DomainNameAPI credentials are currently configured.
+
+The public candidate now performs the complete connected acceptance sequence:
+1. applies the base Drizzle migrations before legacy Mkety content migrations;
+2. verifies the connected staging database;
+3. deploys an isolated candidate Worker with the real Workers AI binding and non-production AI Gateway;
+4. creates a self-cleaning ephemeral Enterprise AI tenant/API key/credits/budget fixture;
+5. temporarily enables customer inference in staging only;
+6. performs a real managed Workers AI request;
+7. verifies immutable rate-card selection, provider usage/cost evidence, credit/budget reservation and settlement, and idempotent replay;
+8. restores the previous staging AI runtime policy and deletes the ephemeral fixture;
+9. completes public-route/copy, Enterprise payment-safety and Public Mkety AI memory/privacy/commercial-grounding smokes.
+
+The real commercial inference/accounting gate is therefore CLOSED on this implementation SHA.
+
+Managed-model benchmark remains closed by run `36425084523`:
+- `mkety-economy` -> Gemma 4;
+- `mkety-smart` -> GLM-5.3 Flash;
+- Qwen remains disabled reserve.
+Migration `0027_ai_managed_model_selection.sql` encodes this selection.
+
+app.mkety.com:
+- live diagnostics prove production is currently misconfigured: no Worker Custom Domain, a proxied CNAME target of `mkety.com/app`, and HTTP 530 on `/` and `/app`;
+- repository-side repair is isolated in draft PR #160 from current `main`;
+- PR #160 is green in full CI and vinext;
+- its manual production workflow deploys a dedicated `mkety-app-host` Worker, preserves the public `mkety.com`/`www.mkety.com` Worker, binds existing production Hyperdrive, adds app callback/logout URIs to ZITADEL non-destructively, backs up/restores app DNS, attaches only `app.mkety.com`, verifies `/ -> /app -> /login -> auth.mkety.com`, then disables workers.dev/preview exposure.
+No production app-host mutation has been executed yet.
+
+Still intentionally deferred real external gates:
+- DomainNameAPI real OT&E quote/lifecycle: code and workflows are complete, but preview GitHub Environment currently has no `DOMAINNAMEAPI_USERNAME` or `DOMAINNAMEAPI_API_TOKEN`;
+- real customer white-label hostname acceptance: requires an actual controlled customer hostname;
+- production app.mkety.com repair execution: manual PR #160 workflow only after choosing to perform the production mutation;
+- production Enterprise AI promotion: `customerInferenceEnabled` remains OFF and must stay OFF until the remaining external evidence is recorded.
+
 ## 2026-09-28 final repository certification and live-release tooling
 
 Certified implementation head: `106390643a63ad4ecaa7bbaa0f4edc10a976c72f`.
