@@ -1,3 +1,5 @@
+import { DomainNameApiAdapter } from './domainnameapi';
+
 function mockJsonResponse(payload: unknown, status: number) {
   return {
     ok: status >= 200 && status < 300,
@@ -5,8 +7,6 @@ function mockJsonResponse(payload: unknown, status: number) {
     json: jest.fn(async () => payload),
   } as unknown as Response;
 }
-
-import { DomainNameApiAdapter } from './domainnameapi';
 
 describe('DomainNameApiAdapter', () => {
   afterEach(() => {
@@ -61,10 +61,7 @@ describe('DomainNameApiAdapter', () => {
 
   it('does not retry registration on an ambiguous server error', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ message: 'upstream timeout' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+      mockJsonResponse({ message: 'upstream timeout' }, 500),
     );
 
     const adapter = new DomainNameApiAdapter({
@@ -84,10 +81,7 @@ describe('DomainNameApiAdapter', () => {
 
   it('keeps production opt-in explicit', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+      mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }, 200),
     );
     const adapter = new DomainNameApiAdapter({
       username: '00000000-0000-0000-0000-000000000000',
