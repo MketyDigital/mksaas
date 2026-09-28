@@ -46,7 +46,7 @@ try {
     "where provider_key='workers-ai' and native_model='@cf/qwen/qwen3.8-27b'"
   );
   const reserve = reserveRows[0];
-  if (!reserve || reserve.enabled !== false || reserve.status !== 'disabled') {
+  if (!reserve || reserve.enabled !== false || reserve.status !== 'benchmarked-reserve') {
     throw new Error('Qwen 3.8 27B is not preserved as a disabled reserve model.');
   }
 
