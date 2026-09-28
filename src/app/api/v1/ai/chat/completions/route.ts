@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
 import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
+import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import {
   admitAiCommercialRequest,
   releaseAiCommercialRequest,
@@ -46,6 +47,7 @@ const requestSchema = z.object({
       parameters: z.record(z.string(), z.unknown()),
     }),
   })).max(256).optional(),
+  provider_connection_id: z.string().uuid().optional(),
   response_format: z.object({
     type: z.literal('json_schema'),
     json_schema: z.object({
@@ -175,6 +177,118 @@ export async function POST(request: Request) {
       return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
     }
     return duplicateResponse(existing);
+  }
+
+  if (parsed.data.provider_connection_id) {
+    if (parsed.data.tools?.length) {
+      return errorResponse(400, 'byok_tools_not_supported', 'Tool calling is not enabled for this BYOK provider route yet.');
+    }
+    if (parsed.data.response_format) {
+      return errorResponse(400, 'byok_structured_output_not_supported', 'Structured output is not enabled for this BYOK provider route yet.');
+    }
+
+    const requestId = crypto.randomUUID();
+    const startedAt = new Date();
+    try {
+      await db.insert(aiRequests).values({
+        id: requestId,
+        tenantId: key.tenantId,
+        projectId,
+        apiKeyId: key.id,
+        idempotencyKey,
+        modelAlias: parsed.data.model,
+        providerKey: 'byok',
+        nativeModel: parsed.data.model,
+        reservedCredits: 0n,
+        settledCredits: 0n,
+        status: 'provider_dispatch',
+        providerCostMetadata: {
+          requestFingerprint,
+          commercialMode: 'byok',
+          providerCostOwnership: 'customer',
+        },
+        startedAt,
+      });
+    } catch {
+      const raced = await db.query.aiRequests.findFirst({
+        where: and(
+          eq(aiRequests.tenantId, key.tenantId),
+          eq(aiRequests.idempotencyKey, idempotencyKey),
+        ),
+      });
+      const racedFingerprint = raced && typeof raced.providerCostMetadata.requestFingerprint === 'string'
+        ? raced.providerCostMetadata.requestFingerprint
+        : null;
+      if (raced && racedFingerprint === requestFingerprint) return duplicateResponse(raced);
+      return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    }
+
+    try {
+      const result = await runCentralAi({
+        tenantId: key.tenantId,
+        projectId,
+        apiKeyId: key.id,
+        providerConnectionId: parsed.data.provider_connection_id,
+        model: parsed.data.model,
+        system: '',
+        messages: parsed.data.messages
+          .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
+          .map((message) => ({
+            role: message.role === 'system' ? 'system' : message.role,
+            content: message.content,
+          })),
+        maxOutputTokens: parsed.data.max_completion_tokens ?? parsed.data.max_tokens ?? policy.maxOutputTokens,
+        idempotencyKey,
+      });
+
+      await db.update(aiRequests).set({
+        providerKey: result.provider,
+        nativeModel: result.nativeModel,
+        status: 'completed',
+        inputTokens: BigInt(result.usage?.inputTokens ?? 0),
+        outputTokens: BigInt(result.usage?.outputTokens ?? 0),
+        cachedInputTokens: 0n,
+        settledCredits: 0n,
+        providerCostMetadata: {
+          requestFingerprint,
+          commercialMode: 'byok',
+          providerCostOwnership: 'customer',
+          mketyProviderCostUsdMicros: '0',
+          providerRequestId: result.providerRequestId ?? null,
+        },
+        completedAt: new Date(),
+      }).where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+
+      return Response.json({
+        id: requestId,
+        object: 'chat.completion',
+        model: result.nativeModel,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: result.text || null },
+          finish_reason: 'stop',
+        }],
+        usage: {
+          prompt_tokens: result.usage?.inputTokens ?? 0,
+          completion_tokens: result.usage?.outputTokens ?? 0,
+          total_tokens: result.usage?.totalTokens ?? ((result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0)),
+        },
+        mkety_commercial_mode: 'byok',
+      });
+    } catch {
+      await db.update(aiRequests).set({
+        status: 'provider_unavailable',
+        errorCode: 'byok_provider_failed',
+        completedAt: new Date(),
+      }).where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+
+      return errorResponse(
+        503,
+        'byok_provider_failed',
+        'The customer-owned provider request failed. Mkety did not fall back to managed inference.',
+        requestId,
+      );
+    }
   }
 
   const resolved = await resolveAiModelRoute({
