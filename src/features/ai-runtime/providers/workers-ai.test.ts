@@ -37,6 +37,7 @@ describe('WorkersAiProviderAdapter', () => {
       expect.objectContaining({
         messages: [{ role: 'user', content: 'hello' }],
         stream: false,
+        chat_template_kwargs: { enable_thinking: false },
         max_completion_tokens: 500,
       }),
       {
@@ -113,6 +114,8 @@ describe('WorkersAiProviderAdapter', () => {
         },
       },
     );
+    const [, glmPayload] = run.mock.calls[0]!;
+    expect(glmPayload).not.toHaveProperty('chat_template_kwargs');
   });
 
   it('rejects malformed provider responses instead of fabricating success', async () => {
