@@ -14,7 +14,7 @@ export const agentVersions = appSchema.table('agent_versions', {
   status: varchar('status', { length: 20 }).notNull().default('draft'),
   name: varchar('name', { length: 160 }).notNull(),
   instructions: text('instructions'),
-  provider: varchar('provider', { length: 40 }).notNull(),
+  provider: varchar('provider', { length: 80 }).notNull(),
   model: varchar('model', { length: 160 }),
   config: text('config'),
   knowledgeDocumentIds: jsonb('knowledge_document_ids').$type<string[]>().notNull().default([]),
