@@ -1,9 +1,14 @@
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
-import { aiApiKeys } from '@/shared/db/schema';
+import { aiApiKeys, projects } from '@/shared/db/schema';
 
 const encoder = new TextEncoder();
+
+export const AI_API_SCOPES = ['ai:models:read', 'ai:chat'] as const;
+export type AiApiScope = (typeof AI_API_SCOPES)[number];
+
+const AI_API_SCOPE_SET = new Set<string>(AI_API_SCOPES);
 
 function toHex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -19,6 +24,17 @@ function randomToken(bytes = 32) {
   return toHex(value);
 }
 
+export function normalizeAiApiScopes(scopes?: string[]): AiApiScope[] {
+  const requested = scopes ?? [...AI_API_SCOPES];
+  if (requested.length === 0) throw new Error('AI API keys require at least one scope.');
+
+  const normalized = [...new Set(requested)];
+  if (normalized.some((scope) => !AI_API_SCOPE_SET.has(scope))) {
+    throw new Error('AI API key contains an unsupported scope.');
+  }
+  return normalized as AiApiScope[];
+}
+
 export async function createAiApiKey(input: {
   tenantId: string;
   projectId?: string | null;
@@ -28,6 +44,15 @@ export async function createAiApiKey(input: {
   expiresAt?: Date | null;
   createdByUserId?: string | null;
 }) {
+  const projectId = input.projectId ?? null;
+  if (projectId) {
+    const ownedProject = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.tenantId, input.tenantId)),
+      columns: { id: true },
+    });
+    if (!ownedProject) throw new Error('AI API key project is not available to this tenant.');
+  }
+
   const environment = input.environment ?? 'live';
   const prefix = environment === 'test' ? 'mk_ai_test_' : 'mk_ai_live_';
   const plaintext = prefix + randomToken();
@@ -36,16 +61,17 @@ export async function createAiApiKey(input: {
 
   const [row] = await db.insert(aiApiKeys).values({
     tenantId: input.tenantId,
-    projectId: input.projectId ?? null,
+    projectId,
     environment,
     name: input.name,
     keyPrefix,
     keyHash,
-    scopes: input.scopes ?? ['ai:models:read', 'ai:chat'],
+    scopes: normalizeAiApiScopes(input.scopes),
     expiresAt: input.expiresAt ?? null,
     createdByUserId: input.createdByUserId ?? null,
   }).returning();
 
+  if (!row) throw new Error('AI API key creation did not return a record.');
   return { apiKey: plaintext, record: row };
 }
 
