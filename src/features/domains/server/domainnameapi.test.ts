@@ -1,3 +1,11 @@
+function mockJsonResponse(payload: unknown, status: number) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: jest.fn(async () => payload),
+  } as unknown as Response;
+}
+
 import { DomainNameApiAdapter } from './domainnameapi';
 
 describe('DomainNameApiAdapter', () => {
@@ -7,12 +15,12 @@ describe('DomainNameApiAdapter', () => {
 
   it('uses OT&E and parses an available-domain quote', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({
+      mockJsonResponse({
         status: 'available',
         price: 10.81,
         renewalPrice: 12.5,
         currency: 'USD',
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      }, 200),
     );
 
     const adapter = new DomainNameApiAdapter({
@@ -35,12 +43,12 @@ describe('DomainNameApiAdapter', () => {
 
   it('falls back to the documented check endpoint only when modern discovery is absent', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+      .mockResolvedValueOnce(mockJsonResponse(null, 404))
+      .mockResolvedValueOnce(mockJsonResponse({
         Status: 'available',
         Price: '9.99',
         Currency: 'USD',
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }, 200));
 
     const adapter = new DomainNameApiAdapter({
       username: '00000000-0000-0000-0000-000000000000',
@@ -53,7 +61,7 @@ describe('DomainNameApiAdapter', () => {
 
   it('does not retry registration on an ambiguous server error', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ message: 'upstream timeout' }), {
+      mockJsonResponse({ message: 'upstream timeout' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -76,7 +84,7 @@ describe('DomainNameApiAdapter', () => {
 
   it('keeps production opt-in explicit', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ status: 'available', price: 10, currency: 'USD' }), {
+      mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
