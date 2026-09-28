@@ -1,3 +1,15 @@
+
+
+## 2026-09-28 managed-model benchmark decision
+
+- Guarded paid benchmark rerun `36425084523` succeeded on commit `0b3fb85c78443cb471caeef7b66ac397535b607a` through isolated AI Gateway `mkety-ai-benchmark` using standard/postpaid Workers AI billing.
+- Corrected benchmark evidence: Gemma 4 passed 8/10, GLM-5.3 Flash 9/10, Qwen 3.8 27B 9/10; provider errors were zero for all three.
+- Managed launch selection is now Gemma 4 as the primary/economy model and GLM-5.3 Flash as the smart/complex model. Qwen remains a benchmarked reserve, not a default route.
+- Routing is task-class based rather than round-robin: economy/general work -> Gemma; smart/complex work -> GLM-5.3 Flash; heavy work starts on GLM-5.3 Flash and may later escalate to full GLM-5.3 after a separate benchmark/integration decision.
+- Public Mkety AI already has concrete adapters for OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare AI and AWS Bedrock. This is a separate public-runtime provider configuration boundary.
+- Enterprise BYOK currently has entitlement, provider-connection schema and route abstractions, but the commercial Enterprise execution path still invokes managed Workers AI only. Do not claim tenant BYOK execution is complete until provider adapters/secret-resolution are wired into that path.
+- The ordinary authenticated Workspace chat still uses its older environment-wide OpenAI-compatible provider layer (OpenAI/Groq/OpenRouter/custom); it is not yet unified with Enterprise BYOK/model routing.
+- Production `customerInferenceEnabled` remains OFF. The next live gate is tiny non-production commercial inference/accounting acceptance through the real Mkety Enterprise API path.
 # 2026-09-28 continuation audit reconciliation
 
 Continuation audit started from PR #159 docs-only head `8dfa0d61296177e6ca59e8ff77a732cdfc579984`.
