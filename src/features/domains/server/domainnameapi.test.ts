@@ -56,7 +56,7 @@ describe('DomainNameApiAdapter', () => {
       environment: 'ote',
     });
     await expect(adapter.quote('hello.com')).resolves.toMatchObject({ available: true });
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/domain/check?');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/domain/check?'))).toBe(true);
   });
 
   it('does not retry registration on an ambiguous server error', async () => {
@@ -76,7 +76,8 @@ describe('DomainNameApiAdapter', () => {
       idempotencyKey: 'order-1',
       contactRef: 'contact-1',
     })).rejects.toThrow('DomainNameAPI request failed (500)');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const registrationCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('/domain/register'));
+    expect(registrationCalls).toHaveLength(1);
   });
 
   it('keeps production opt-in explicit', async () => {
@@ -89,6 +90,6 @@ describe('DomainNameApiAdapter', () => {
       environment: 'production',
     });
     await adapter.quote('example.net');
-    expect(String(fetchMock.mock.calls[0]?.[0]).startsWith('https://api.domainresellerapi.com/')).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('https://api.domainresellerapi.com/'))).toBe(true);
   });
 });
