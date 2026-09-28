@@ -16,6 +16,15 @@ describe('Mkety public indexing controls', () => {
     expect(urls.some((url) => url.includes('/app/'))).toBe(false);
   });
 
+  it('publishes a release freshness timestamp for public and docs sitemap entries', () => {
+    const publicEntry = getMketySitemapEntries().find((entry) => entry.url === 'https://mkety.com/');
+    const docsEntry = getMketyDocsSitemapEntries([{ categoryKey: 'trust', slug: 'security-and-reliability' }])[0];
+
+    expect(publicEntry?.lastModified).toEqual(expect.any(Date));
+    expect(docsEntry?.lastModified).toEqual(expect.any(Date));
+    expect(publicEntry?.lastModified?.toISOString()).toBe('2026-09-28T03:24:08.000Z');
+  });
+
   it('includes canonical published docs article paths', () => {
     const entries = getMketyDocsSitemapEntries([
       { categoryKey: 'trust', slug: 'security-and-reliability' },
