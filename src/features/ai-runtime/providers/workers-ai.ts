@@ -167,6 +167,9 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
         ...(request.maxOutputTokens ? { max_completion_tokens: request.maxOutputTokens } : {}),
         ...(request.tools?.length ? { tools: mapTools(request) } : {}),
         ...(request.structuredOutput ? { response_format: mapResponseFormat(request) } : {}),
+        ...(nativeModel === '@cf/google/gemma-4-26b-a4b-it'
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : {}),
       },
       {
         rejectIfBusy: true,
