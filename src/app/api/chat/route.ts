@@ -6,6 +6,7 @@ import {
 } from 'ai';
 import { and, eq } from 'drizzle-orm';
 
+import { classifyManagedAiTask } from '@/features/ai-runtime/managed-model-policy';
 import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import { db } from '@/shared/db';
 import { assistantConversations, persons, tenantMemberships, tenants } from '@/shared/db/schema';
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
     conversationId = `conv_${Date.now()}`,
     providerConnectionId,
     model,
-    taskClass = 'smart',
+    taskClass,
   } = body as {
     messages: UIMessage[];
     tenantSlug: string;
@@ -87,12 +88,17 @@ Current user: ${session.user.name || session.user.email}`;
   const parts = messages.at(-1)?.parts as Array<{ type: string; text?: string }> | undefined;
   const messagePreview = parts?.map((p) => (p.type === 'text' ? p.text : '')).join(' ').slice(0, 100) || '';
 
+  const resolvedTaskClass = classifyManagedAiTask({
+    messages: centralMessages,
+    requested: taskClass ?? null,
+  });
+
   const response = await runCentralAi({
     tenantId: tenant.id,
     actorUserId: session.user.id,
     messages: centralMessages,
     system: systemPrompt,
-    taskClass,
+    taskClass: resolvedTaskClass,
     providerConnectionId: providerConnectionId ?? null,
     model: model ?? null,
     maxOutputTokens: 2_000,
