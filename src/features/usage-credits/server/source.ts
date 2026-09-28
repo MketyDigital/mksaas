@@ -6,7 +6,9 @@ export type CreditLedgerEntryType =
   | 'usage'
   | 'manual_grant'
   | 'manual_debit'
-  | 'adjustment';
+  | 'adjustment'
+  | 'reservation_hold'
+  | 'reservation_release';
 
 export interface CreditLedgerRecord {
   id: string;
