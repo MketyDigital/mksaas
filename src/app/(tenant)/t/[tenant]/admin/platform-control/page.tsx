@@ -1,4 +1,4 @@
-import { BadgeCheck, Cloud, CreditCard, Globe2, KeyRound, LayoutDashboard, Mail, Route, Shield, Wallet } from 'lucide-react';
+import { BadgeCheck, Cloud, CreditCard, Globe2, KeyRound, LayoutDashboard, Mail, Route, Shield, Sparkles, Wallet } from 'lucide-react';
 import Link from 'next/link';
 
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
@@ -20,6 +20,7 @@ const iconMap = {
   route: Route,
   'key-round': KeyRound,
   shield: Shield,
+  sparkles: Sparkles,
 };
 
 function readinessLabel(ready: boolean, active: string, inactive: string) {

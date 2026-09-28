@@ -169,6 +169,13 @@
       "when": 1790561400000,
       "tag": "0023_ai_budget_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790565000000,
+      "tag": "0024_ai_commercial_control",
+      "breakpoints": true
     }
   ]
 }

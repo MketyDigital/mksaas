@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation';
 
+import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
+import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
@@ -24,6 +26,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'app-experience': ['Edit dashboard copy', 'Manage workspace cards', 'Control onboarding text', 'Update quick links'],
   'plans-entitlements': ['Manage plan presentation', 'Review entitlement mappings', 'Control feature visibility', 'Set usage display rules'],
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
+  'ai-operations': ['Review cost protection', 'Manage safe limits', 'Create future rate versions', 'Emergency-disable inference'],
   'mail-operations': ['Reconcile Mail plans', 'Operate tenant Mail state', 'Manage domain sending/routing', 'Review Mail readiness'],
   'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
@@ -67,9 +70,11 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const isDeployments = controlModule.key === 'deployments-domains';
   const isPayments = controlModule.key === 'payments';
   const isMailOperations = controlModule.key === 'mail-operations';
+  const isAiOperations = controlModule.key === 'ai-operations';
   let deploymentApprovalRows = null;
   let paymentSettings = null;
   let mailOperations = null;
+  let aiCommercialOverview = null;
 
   if (isDeployments) {
     await requirePermission(tenant, 'platform:deployments');
@@ -86,6 +91,11 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   if (isMailOperations) {
     await requirePermission(tenant, 'platform:plans');
     mailOperations = await withAdminTimeout(getMailOperationsOverview(), null);
+  }
+
+  if (isAiOperations) {
+    await requirePermission(tenant, 'platform:plans');
+    aiCommercialOverview = await withAdminTimeout(getAiCommercialControlOverview(), null);
   }
 
   return (
@@ -132,6 +142,10 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         />
       ) : null}
 
+
+      {isAiOperations && aiCommercialOverview ? (
+        <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
+      ) : null}
 
       {isMailOperations && mailOperations ? (
         <div className="space-y-6">
@@ -260,7 +274,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         </div>
       ) : null}
 
-      {!isPayments && !isMailOperations ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {!isPayments && !isMailOperations && !isAiOperations ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle>Controlled module surface</CardTitle>
