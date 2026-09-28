@@ -3,14 +3,11 @@
 import { revalidatePath } from 'next/cache';
 
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
-import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import {
   type ByokProviderInput,
   disableByokProviderConnection,
-  disableSystemAiProviderConnection,
   saveByokProviderConnection,
-  saveSystemAiProviderConnection,
 } from '@/features/ai-runtime/server/provider-connections';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -109,28 +106,3 @@ export async function testEnterpriseAiByokProvider(
   void result;
 }
 
-
-async function requirePublicAiOps(tenantSlug: string) {
-  await requirePlatformControlAccess(tenantSlug);
-  await requirePermission(tenantSlug, 'platform:plans');
-}
-
-export async function savePublicAiProviderConnection(tenantSlug: string, formData: FormData) {
-  await requirePublicAiOps(tenantSlug);
-  await saveSystemAiProviderConnection({
-    mode: 'public',
-    provider: parseProvider(formData),
-  });
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/ai-operations`);
-  revalidatePath('/');
-}
-
-export async function disablePublicAiProviderConnection(
-  tenantSlug: string,
-  providerKey: 'openai' | 'azure-openai' | 'gemini' | 'vertex' | 'cloudflare-ai' | 'bedrock',
-) {
-  await requirePublicAiOps(tenantSlug);
-  await disableSystemAiProviderConnection({ mode: 'public', providerKey });
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/ai-operations`);
-  revalidatePath('/');
-}
