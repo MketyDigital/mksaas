@@ -284,7 +284,8 @@ jobs:
           api_key="$(node -e "const x=require('/tmp/mkety-ai-commercial-fixture.json');process.stdout.write(x.apiKey)")"
           echo "::add-mask::$api_key"
           echo "api_key=$api_key" >> "$GITHUB_OUTPUT"
-          echo "model=$(node -e "const x=require('/tmp/mkety-ai-commercial-fixture.json');process.stdout.write(x.modelAlias)")" >> "$GITHUB_OUTPUT"
+          model="$(node -e 'const x=require("/tmp/mkety-ai-commercial-fixture.json");process.stdout.write(x.modelAlias)')"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
 
       - name: Run real managed-AI commercial accounting acceptance
         shell: bash
@@ -301,7 +302,7 @@ jobs:
           node -e "const x=require('/tmp/mkety-ai-commercial-acceptance.json');if(x.ok!==true)process.exit(1)"
 
       - name: Restore staging AI policy and remove commercial fixture
-        if: always() && steps.ai-commercial-fixture.outcome == 'success'
+        if: always()
         shell: bash
         env:
           AI_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
