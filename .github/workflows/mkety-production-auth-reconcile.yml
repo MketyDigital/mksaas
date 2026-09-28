@@ -15,9 +15,9 @@ env:
   PRODUCTION_WORKER_NAME: mkety-platform
   RELEASE_BRANCH: feat/mkety-public-site-production
   SKIP_ENV_VALIDATION: 'true'
-  MKETY_AUTH_REDIRECT_URI: https://mkety.com/api/auth/callback
-  MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://mkety.com/login
-  NEXT_PUBLIC_APP_URL: https://mkety.com
+  MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
+  MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login
+  NEXT_PUBLIC_APP_URL: https://app.mkety.com
 
 jobs:
   reconcile:
