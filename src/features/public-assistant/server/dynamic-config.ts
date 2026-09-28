@@ -13,8 +13,10 @@ import {
   type PublicAIProviderId,
 } from '../models';
 import type { PublicAIProviderTarget } from './gateway';
+import { createPublicAIProviderAdapters } from './providers';
 
 const PROVIDERS: readonly PublicAIProviderId[] = [
+  'workers-ai',
   'openai',
   'azure-openai',
   'gemini',
@@ -97,6 +99,17 @@ export async function resolveDynamicPublicAiTargets(
 
   const targets: PublicAIProviderTarget[] = [];
   for (const provider of providers) {
+    if (provider === 'workers-ai') {
+      const adapter = createPublicAIProviderAdapters(['workers-ai'], {})[0];
+      if (adapter) {
+        targets.push({
+          adapter,
+          model: config.models[provider] ?? getDefaultPublicAIModel(provider),
+        });
+      }
+      continue;
+    }
+
     try {
       const { adapter } = await resolveSystemAiProviderConnection({
         mode: 'public',
