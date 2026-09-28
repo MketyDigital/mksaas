@@ -7,6 +7,7 @@ export const ENTITLEMENT_KEYS = [
   'workspace.knowledge',
   'workspace.integrations',
   'workspace.trading.enterprise',
+  'workspace.mail',
   'workspace.ai.enterprise',
   'ai.api',
   'ai.byok',
