@@ -18,6 +18,37 @@ Mkety AI is one central multi-tenant AI platform with four first-class consumpti
 
 Dedicated per-customer AI infrastructure is an exception, not the default. A normal Enterprise "AI instance" is a logical tenant configuration on the central service.
 
+## 1.1 Product packaging boundary — Workspace vs Enterprise Add-on
+
+The existing **AI Workspace** and the new **Enterprise Mkety AI** are related but commercially distinct products.
+
+- **AI Workspace ($16.99/month today)** remains the normal self-service Mkety Platform workspace for agents, knowledge, tools, model choice, Website AI, supported messaging integrations, API access, histories, testing and team collaboration.
+- **Enterprise Mkety AI** is a separately entitled paid product/add-on/workspace for organizations that need managed customer-facing AI infrastructure: branded assistants, production channels, custom domains, operator handoff, tenant-wide controls, enterprise analytics, advanced security, higher limits, committed usage, private routing, SLA or custom integrations.
+- Buying AI Workspace must **not** silently grant Enterprise AI.
+- Buying Enterprise AI may depend on a base Mkety tenant/account, but its entitlement, commercial terms, limits, usage pools and overage behavior are separate.
+- Enterprise AI should appear in central Mkety as an enabled product/workspace/add-on, while `ai.mkety.com` remains its focused console/control surface.
+- A tenant may own both AI Workspace and Enterprise AI and reuse approved agents/knowledge/configuration through explicit linkage rather than duplicated membership/billing systems.
+- The same central runtime can serve both without collapsing their product entitlements.
+
+The product relationship should mirror the future **Media ↔ central Mkety** integration pattern:
+
+```text
+Central Mkety
+  tenant / identity / PBAC / billing / entitlements
+        |
+        +-- AI Workspace entitlement
+        |      -> normal Platform AI experience
+        |
+        +-- Enterprise AI add-on entitlement
+        |      -> ai.mkety.com enterprise console
+        |      -> channels / domains / usage / support / SLA
+        |
+        +-- Future Media add-on entitlement
+               -> media.mkety.com / isolated Media runtime
+```
+
+Enterprise AI and Media can therefore be surfaced as first-class products in the central Mkety catalog and enabled for normal Mkety tenants without physically folding all operational storage/runtime into the core app.
+
 ## 2. Customer hierarchy and team collaboration
 
 Reuse the existing Mkety tenant membership, invitation and PBAC system.
@@ -378,6 +409,157 @@ subscription/platform fee
 ```
 
 Provider cost and customer charge are separate immutable facts.
+
+## 6.0 Commercial packaging authority
+
+Commercially, treat Enterprise Mkety AI as a **separate add-on/workspace subscription**, not as an automatic benefit of the normal AI Workspace plan.
+
+Recommended structure:
+
+```text
+Existing Mkety Platform subscription (optional/base)
+        +
+Enterprise AI platform/add-on subscription
+        +
+included Enterprise AI allowance
+        +
+metered usage / prepaid top-ups / contracted overage
+        +
+optional paid add-ons
+        +
+one-time implementation/integration fees where applicable
+```
+
+Possible Enterprise AI package dimensions include:
+
+- number of production assistants/applications;
+- number of channels;
+- custom domains;
+- monthly conversation allowance;
+- managed-inference credit allowance;
+- knowledge/storage quota;
+- operator/handoff seats;
+- API projects/service accounts;
+- retention/audit window;
+- support/SLA level;
+- BYOK eligibility;
+- private/self-hosted routing eligibility;
+- regional/dedicated infrastructure.
+
+The normal AI Workspace subscription keeps its current price/behavior unless deliberately changed. Enterprise AI gets its own product entitlement(s), plan/version/rate-card configuration and billing line item.
+
+### 6.0.1 Payments
+
+Enterprise AI uses the existing Mkety shared payment boundary only:
+
+- NOWPayments — primary/default crypto path;
+- Flutterwave v3 — supported Mkety-owned/central compatible path;
+- Kora Checkout Standard — supported provider-controlled checkout path.
+
+Browser return/UI success is never proof of payment. Settlement must follow the existing verified webhook/re-query/idempotent Billing/Enterprise ledger rules.
+
+Enterprise invoices/contracts may also be represented through existing Billing/Enterprise settlement primitives where supported. Do not build a second payment subsystem inside AI.
+
+### 6.0.2 Usage and allowance
+
+Each Enterprise plan/version may define one or more included allowances such as:
+
+- conversations;
+- AI requests;
+- input/output tokens;
+- managed AI credits;
+- RAG/retrieval operations;
+- knowledge ingestion;
+- storage;
+- tool/action executions;
+- automation/workflow runs;
+- channel deliveries;
+- operator seats;
+- API rate/concurrency capacity.
+
+Customer-facing packaging can emphasize **conversations/credits/capacity** while internal accounting still records the precise underlying token/provider usage and cost.
+
+### 6.0.3 Limits
+
+Enterprise limits are layered, not singular:
+
+1. entitlement limit;
+2. plan/version allowance;
+3. tenant/project/key budget;
+4. customer-configured safety limit;
+5. Mkety infrastructure/provider limit.
+
+The strictest applicable limit wins.
+
+Configurable limits include:
+
+- RPM/TPM;
+- concurrency;
+- daily/monthly request ceilings;
+- input/context/output token caps;
+- file/document sizes;
+- knowledge/storage quota;
+- channel count;
+- assistant/application count;
+- API-key/project count;
+- tool steps and run duration;
+- daily/monthly managed-spend ceiling;
+- retention days.
+
+### 6.0.4 Overage behavior
+
+Every Enterprise tenant must have an explicit overage mode:
+
+- **Hard stop** — safest default for self-service or trial tenants.
+- **Prepaid top-up** — consume purchased AI credits after included allowance.
+- **Authorized auto top-up** — only where payment-provider/consent mechanics safely support it.
+- **BYOK continuation** — provider inference continues on customer key while Mkety-owned platform operations remain subject to Mkety limits/charges.
+- **Controlled postpaid overage** — only contracted/approved Enterprise/Business tenants with credit limit and settlement terms.
+
+Usage warnings should be emitted at configurable thresholds such as 50%, 75%, 90% and 100%.
+
+No Enterprise plan should imply unlimited Mkety-paid inference unless backed by a separately priced dedicated-capacity contract.
+
+### 6.0.5 Enterprise add-ons
+
+Optional line items may include:
+
+- extra conversation/credit packs;
+- additional production assistants;
+- extra channels;
+- additional operator seats;
+- advanced analytics/audit retention;
+- extra knowledge/storage;
+- custom domain packs;
+- premium support;
+- custom integration packs;
+- dedicated/private model route;
+- dedicated GPU/runtime capacity;
+- private networking;
+- regional residency;
+- custom SLA.
+
+### 6.0.6 Security tiers
+
+All Enterprise AI receives baseline tenant isolation, PBAC, audit, secret protection, rate/budget enforcement and secure API keys.
+
+Higher Enterprise tiers/contracts may additionally enable:
+
+- SSO/SAML/OIDC;
+- SCIM;
+- IP/CIDR restrictions;
+- custom retention/no-content-retention;
+- DLP/guardrails;
+- private networking;
+- dedicated model/runtime;
+- regional residency;
+- customer-managed encryption where later supported;
+- extended audit export;
+- stricter approval policies for high-risk tools/actions;
+- SLA and incident-response commitments.
+
+Do not advertise compliance certifications that Mkety has not actually achieved.
+
 
 ### 6.2 Preserve and blend the existing Mkety Platform/Public AI implementation
 
@@ -1351,3 +1533,23 @@ Implementation-time revalidation remains mandatory. Current research references:
 - Cloudflare AI Gateway Custom Providers: https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/
 
 These references support the provider/cost assumptions in this design but are not substitutes for release-time verification.
+
+
+## 30. Central product/add-on integration rule
+
+Enterprise AI should be discoverable and purchasable from the central Mkety product/catalog experience, but enabling it creates a separate product entitlement and opens the Enterprise AI workspace/console rather than expanding the normal AI Workspace invisibly.
+
+A normal tenant journey may be:
+
+```text
+Mkety tenant
+  -> Products / SolutionHub / Billing
+  -> Enable Enterprise AI
+  -> choose plan or contact sales
+  -> payment/contract settlement
+  -> entitlement becomes active
+  -> Enterprise AI workspace appears
+  -> ai.mkety.com opens with tenant context
+```
+
+The future Media integration should follow the same central-product pattern while retaining Media's isolated operational runtime/storage. This gives users one Mkety identity, team, billing and entitlement system without scattering product ownership or forcing all products into one runtime.
