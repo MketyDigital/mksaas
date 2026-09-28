@@ -2,12 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import {
+  type ByokProviderInput,
   disableByokProviderConnection,
   saveByokProviderConnection,
-  type ByokProviderInput,
 } from '@/features/ai-runtime/server/provider-connections';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { requireProjectAccess } from '@/features/projects/server/access';
 
 function text(formData: FormData, key: string) {
