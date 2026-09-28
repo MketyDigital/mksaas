@@ -51,7 +51,7 @@ export async function saveEnterpriseAiWhiteLabel(tenantSlug: string, formData: F
 
   await updateTenantSettings(tenantSlug, {
     enterpriseAi: {
-      ...current.enterpriseAi,
+      defaultChannel: current.enterpriseAi?.defaultChannel ?? 'website',
       whiteLabel,
     },
   });
@@ -100,10 +100,11 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
   const settings = await getTenantSettings(tenantSlug);
   await updateTenantSettings(tenantSlug, {
     enterpriseAi: {
-      ...settings.enterpriseAi,
+      defaultChannel: settings.enterpriseAi?.defaultChannel ?? 'website',
       whiteLabel: {
         ...settings.enterpriseAi?.whiteLabel,
         enabled: true,
+        hideMketyBranding: settings.enterpriseAi?.whiteLabel?.hideMketyBranding ?? true,
         customHostname: hostname,
       },
     },
