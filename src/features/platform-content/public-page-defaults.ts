@@ -389,11 +389,11 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Enterprise',
     seoTitle: 'Mkety Enterprise | Custom systems and implementations',
     seoDescription:
-      'Mkety Enterprise delivers Enterprise AI, Enterprise Mail, Trading, custom systems, managed implementations, private or dedicated infrastructure, specialized integrations and contractable service levels.'
+      'Mkety Enterprise delivers Enterprise AI, Enterprise Mail, Trading, custom systems, managed implementations, private or dedicated infrastructure, specialized integrations and contractable service levels.',
     eyebrow: 'Enterprise',
     headline: 'Custom delivery for requirements beyond standard self-service.',
     intro:
-      'Use Mkety Enterprise for Enterprise AI, Enterprise Mail, specialized systems, private or dedicated infrastructure, managed delivery, trading infrastructure, migration, data-residency requirements and organization-specific service commitments.'
+      'Use Mkety Enterprise for Enterprise AI, Enterprise Mail, specialized systems, private or dedicated infrastructure, managed delivery, trading infrastructure, migration, data-residency requirements and organization-specific service commitments.',
     sections: [
       {
         eyebrow: 'Custom delivery',
