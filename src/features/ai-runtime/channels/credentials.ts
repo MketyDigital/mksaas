@@ -11,6 +11,8 @@ export type EnterpriseAiChannelCredentials = {
   appSecret?: string;
   verificationToken?: string;
   apiKey?: string;
+  clientSecret?: string;
+  publicKey?: string;
 };
 
 function clean(value: FormDataEntryValue | null) {
@@ -27,6 +29,8 @@ export function channelCredentialsFromForm(formData: FormData): EnterpriseAiChan
     appSecret: clean(formData.get('appSecret')),
     verificationToken: clean(formData.get('verificationToken')),
     apiKey: clean(formData.get('apiKey')),
+    clientSecret: clean(formData.get('clientSecret')),
+    publicKey: clean(formData.get('publicKey')),
   };
   return Object.fromEntries(Object.entries(credentials).filter(([, value]) => Boolean(value)));
 }
@@ -52,6 +56,8 @@ export function revealChannelCredentials(secretRef: string): EnterpriseAiChannel
     'appSecret',
     'verificationToken',
     'apiKey',
+    'clientSecret',
+    'publicKey',
   ]);
   const result: EnterpriseAiChannelCredentials = {};
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
