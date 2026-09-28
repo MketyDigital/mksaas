@@ -1,38 +1,72 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 
-import { buildSolutionHubCapabilities, SolutionHubWorkspaceOverview } from './SolutionHubWorkspaceOverview';
+import {
+  getSolutionHubEntriesByClass,
+  solutionHubCatalog,
+} from './solutionhub/catalog';
+import { SolutionHubWorkspaceOverview } from './SolutionHubWorkspaceOverview';
 
 describe('SolutionHubWorkspaceOverview', () => {
-  it('renders the SolutionHub capability map', () => {
-    render(<SolutionHubWorkspaceOverview />);
+  it('renders the authenticated shared-platform and Enterprise catalog', () => {
+    render(<SolutionHubWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
-    expect(screen.getByRole('heading', { name: /Package repeatable business systems safely/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Start from a proven solution path/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Build with existing Mkety workspaces/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Requirements that need reviewed delivery/i }),
+    ).toBeInTheDocument();
 
-    for (const capability of buildSolutionHubCapabilities()) {
-      expect(screen.getByText(capability.title)).toBeInTheDocument();
-      expect(screen.getByText(capability.description)).toBeInTheDocument();
+    for (const entry of solutionHubCatalog) {
+      expect(screen.getByRole('heading', { name: entry.title })).toBeInTheDocument();
+      expect(screen.getByText(entry.description)).toBeInTheDocument();
     }
   });
 
-  it('keeps enterprise requests and install flow protected', () => {
-    const protectedCapabilities = buildSolutionHubCapabilities().filter((capability) => capability.status === 'protected');
+  it('routes shared-platform patterns into the current project workspaces', () => {
+    render(<SolutionHubWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
-    expect(protectedCapabilities.map((capability) => capability.key)).toEqual(['enterprise-requests', 'install-flow']);
+    expect(screen.getAllByRole('link', { name: 'Open AI Workspace' })[0]).toHaveAttribute(
+      'href',
+      '/t/acme/projects/demo/ai',
+    );
+    expect(screen.getAllByRole('link', { name: 'Open Automation' })[0]).toHaveAttribute(
+      'href',
+      '/t/acme/projects/demo/automation',
+    );
+    expect(screen.getByRole('link', { name: 'Open Deploy' })).toHaveAttribute(
+      'href',
+      '/t/acme/projects/demo/deploy',
+    );
+  });
 
-    render(<SolutionHubWorkspaceOverview />);
+  it('keeps complex and Trading paths on Enterprise instead of self-service install', () => {
+    render(<SolutionHubWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
-    for (const capability of protectedCapabilities) {
-      const heading = screen.getByRole('heading', { name: capability.title });
-      const card = heading.closest('article');
-      expect(card).not.toBeNull();
-      expect(within(card as HTMLElement).getByText('Protected')).toBeInTheDocument();
+    const enterpriseEntries = getSolutionHubEntriesByClass('enterprise-custom');
+    expect(enterpriseEntries.map((entry) => entry.key)).toEqual([
+      'complex-erp',
+      'regulated-data-system',
+      'private-dedicated-runtime',
+      'trading-automation',
+    ]);
+
+    const enterpriseLinks = screen.getAllByRole('link', { name: 'Request Enterprise' });
+    expect(enterpriseLinks).toHaveLength(enterpriseEntries.length);
+    for (const link of enterpriseLinks) {
+      expect(link).toHaveAttribute('href', '/enterprise');
     }
   });
 
-  it('does not expose an active install action yet', () => {
-    render(<SolutionHubWorkspaceOverview />);
+  it('does not expose install or provisioning actions', () => {
+    render(<SolutionHubWorkspaceOverview projectSlug="demo" tenantSlug="acme" />);
 
-    expect(screen.queryByRole('link', { name: /install/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/before any solution can be cloned or installed/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /install|provision|clone/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Clone\/install, provisioning, entitlement mutation/i),
+    ).toBeInTheDocument();
   });
 });
