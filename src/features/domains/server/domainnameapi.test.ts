@@ -13,7 +13,7 @@ describe('DomainNameApiAdapter', () => {
     jest.restoreAllMocks();
   });
 
-  it('uses OT&E and parses an available-domain quote', async () => {
+  it('uses the documented v1 check endpoint and parses an available-domain quote', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({
         status: 'available',
@@ -36,12 +36,20 @@ describe('DomainNameApiAdapter', () => {
       currency: 'USD',
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://ote.domainresellerapi.com/api/v1/domains/search',
-      expect.objectContaining({ method: 'POST' }),
+      'https://ote.domainresellerapi.com/v1/domain/check',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          resellerId: '00000000-0000-0000-0000-000000000000',
+          apiKey: 'test-token',
+          domainName: 'example.com',
+          period: 1,
+        }),
+      }),
     );
   });
 
-  it('falls back to the documented check endpoint only when modern discovery is absent', async () => {
+  it('falls back to Basic-auth availability discovery only when v1 is absent', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(mockJsonResponse(null, 404))
       .mockResolvedValueOnce(mockJsonResponse({
@@ -57,6 +65,21 @@ describe('DomainNameApiAdapter', () => {
     });
     await expect(adapter.quote('hello.com')).resolves.toMatchObject({ available: true });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/domain/check?'))).toBe(true);
+  });
+
+  it('does not hide v1 authentication failures behind endpoint fallbacks', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ message: 'Unauthorized' }, 401),
+    );
+
+    const adapter = new DomainNameApiAdapter({
+      username: '00000000-0000-0000-0000-000000000000',
+      apiToken: 'test-token',
+      environment: 'production',
+    });
+
+    await expect(adapter.quote('example.com')).rejects.toThrow('DomainNameAPI availability check failed (401)');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry registration on an ambiguous server error', async () => {
