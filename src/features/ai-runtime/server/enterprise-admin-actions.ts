@@ -139,7 +139,10 @@ export async function refreshEnterpriseAiHostname(tenantSlug: string, formData: 
     throw new Error('Hostname provisioning metadata is incomplete.');
   }
 
-  const current = await getCloudflareSaasHostname(metadata.cloudflareCustomHostnameId);
+  let current = await getCloudflareSaasHostname(metadata.cloudflareCustomHostnameId);
+  if (current.status !== 'active' || current.ssl?.status !== 'active') {
+    current = await retryCloudflareSaasHostnameValidation(metadata.cloudflareCustomHostnameId);
+  }
   const verified = current.status === 'active' && current.ssl?.status === 'active';
   await db.update(customDomains).set({
     status: verified ? 'verified' : 'pending',
