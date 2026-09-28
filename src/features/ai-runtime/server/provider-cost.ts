@@ -24,7 +24,6 @@ export const MANAGED_AI_COST_RATES: readonly ManagedAiCostRate[] = [
     model: '@cf/qwen/qwen3.8-27b',
     verifiedAt: '2026-09-28',
     inputUsdMicrosPerMillion: 450_000n,
-    cachedInputUsdMicrosPerMillion: 50_000n,
     outputUsdMicrosPerMillion: 3_200_000n,
   },
 ] as const;
