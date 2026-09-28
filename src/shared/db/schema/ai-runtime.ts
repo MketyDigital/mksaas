@@ -1,4 +1,5 @@
-import { bigint, boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, boolean, check, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { users } from './auth';
 import { creditLedgerEntries } from './credit-ledger-entries';
@@ -141,6 +142,14 @@ export const aiRateCards = appSchema.table('ai_rate_cards', {
 }, (table) => [
   uniqueIndex('ai_rate_cards_model_version_uidx').on(table.modelId, table.version),
   index('ai_rate_cards_model_status_effective_idx').on(table.modelId, table.status, table.effectiveFrom),
+  check(
+    'ai_rate_cards_positive_rates_check',
+    sql`${table.inputCreditsPerMillion} > 0 AND ${table.outputCreditsPerMillion} > 0 AND ${table.minimumCreditsPerRequest} > 0`,
+  ),
+  check(
+    'ai_rate_cards_cached_rate_check',
+    sql`${table.cachedInputCreditsPerMillion} IS NULL OR ${table.cachedInputCreditsPerMillion} > 0`,
+  ),
 ]);
 
 export const aiRuntimePolicies = appSchema.table('ai_runtime_policies', {
@@ -155,7 +164,17 @@ export const aiRuntimePolicies = appSchema.table('ai_runtime_policies', {
   updatedByUserId: text('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  check(
+    'ai_runtime_policies_limits_check',
+    sql`${table.maxRequestBytes} BETWEEN 1024 AND 5000000
+      AND ${table.maxMessages} BETWEEN 1 AND 512
+      AND ${table.maxTools} BETWEEN 0 AND 256
+      AND ${table.maxOutputTokens} BETWEEN 1 AND 131072
+      AND ${table.reservationTtlSeconds} BETWEEN 30 AND 600`,
+  ),
+  check('ai_runtime_policies_prepaid_only_check', sql`${table.prepaidOnly} = true`),
+]);
 
 export const aiRequests = appSchema.table('ai_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -218,25 +237,3 @@ export const aiBudgetReservations = appSchema.table('ai_budget_reservations', {
   reservedCredits: bigint('reserved_credits', { mode: 'bigint' }).notNull(),
   reservedRequests: bigint('reserved_requests', { mode: 'bigint' }).notNull().default(1n),
   settledCredits: bigint('settled_credits', { mode: 'bigint' }),
-  settledRequests: bigint('settled_requests', { mode: 'bigint' }),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  settledAt: timestamp('settled_at', { withTimezone: true }),
-  releasedAt: timestamp('released_at', { withTimezone: true }),
-  releaseReason: varchar('release_reason', { length: 80 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex('ai_budget_reservations_budget_idempotency_uidx').on(table.budgetId, table.idempotencyKey),
-  index('ai_budget_reservations_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
-  index('ai_budget_reservations_request_idx').on(table.requestId),
-  index('ai_budget_reservations_credit_reservation_idx').on(table.creditReservationId),
-]);
-
-
-export type AiApiKey = typeof aiApiKeys.$inferSelect;
-export type AiModel = typeof aiModels.$inferSelect;
-export type AiRateCard = typeof aiRateCards.$inferSelect;
-export type AiRuntimePolicy = typeof aiRuntimePolicies.$inferSelect;
-export type AiBudget = typeof aiBudgets.$inferSelect;
-export type AiBudgetReservation = typeof aiBudgetReservations.$inferSelect;
-export type AiCreditReservation = typeof aiCreditReservations.$inferSelect;
