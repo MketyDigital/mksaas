@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, createPublicKey, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 
 import type { EnterpriseAiChannelCredentials } from './credentials';
 import type { EnterpriseAiChannelKey } from './registry';
@@ -61,6 +61,97 @@ function verifyCustom(rawBody: string, headers: Headers, credentials: Enterprise
   const supplied = headers.get('x-mkety-signature-256') ?? '';
   const expected = `sha256=${hmacHex(secret, rawBody)}`;
   if (!timestamp || !safeEqual(supplied, expected)) throw new Error('Custom webhook authentication failed.');
+}
+
+
+function verifyDiscord(rawBody: string, headers: Headers, credentials: EnterpriseAiChannelCredentials) {
+  const publicKey = credentials.publicKey;
+  if (!publicKey || !/^[0-9a-fA-F]{64}$/.test(publicKey)) {
+    throw new Error('Discord application public key is not configured.');
+  }
+  const signature = headers.get('x-signature-ed25519') ?? '';
+  const timestamp = headers.get('x-signature-timestamp') ?? '';
+  if (!/^[0-9a-fA-F]{128}$/.test(signature) || !timestamp) {
+    throw new Error('Discord interaction signature is missing.');
+  }
+  const rawKey = Buffer.from(publicKey, 'hex');
+  const derKey = Buffer.concat([
+    Buffer.from('302a300506032b6570032100', 'hex'),
+    rawKey,
+  ]);
+  const key = createPublicKey({ key: derKey, format: 'der', type: 'spki' });
+  const valid = verifySignature(
+    null,
+    Buffer.from(timestamp + rawBody, 'utf8'),
+    key,
+    Buffer.from(signature, 'hex'),
+  );
+  if (!valid) throw new Error('Discord interaction authentication failed.');
+}
+
+function normalizeDiscord(payload: Record<string, unknown>): NormalizedEnterpriseAiInbound {
+  if (payload.type !== 2) throw new Error('Discord interaction type is not a chat command.');
+  const member = payload.member as Record<string, unknown> | undefined;
+  const user = (member?.user ?? payload.user) as Record<string, unknown> | undefined;
+  const data = payload.data as Record<string, unknown> | undefined;
+  const options = Array.isArray(data?.options) ? data.options as Array<Record<string, unknown>> : [];
+  const firstString = options.find((option) => option.type === 3 && typeof option.value === 'string');
+  const text = requireString(firstString?.value, 'Discord command text');
+  return {
+    senderId: requireString(user?.id, 'Discord user ID'),
+    conversationId: String(payload.channel_id ?? payload.guild_id ?? user?.id ?? ''),
+    providerMessageId: requireString(payload.id, 'Discord interaction ID'),
+    text,
+    replyRecipientId: String(payload.channel_id ?? ''),
+  };
+}
+
+function verifyLinkedIn(rawBody: string, headers: Headers, credentials: EnterpriseAiChannelCredentials) {
+  const clientSecret = credentials.clientSecret;
+  if (!clientSecret) throw new Error('LinkedIn client secret is not configured.');
+  const supplied = headers.get('x-li-signature') ?? '';
+  const expected = hmacHex(clientSecret, `hmacsha256=${rawBody}`);
+  if (!safeEqual(supplied, expected)) throw new Error('LinkedIn webhook authentication failed.');
+}
+
+export function verifyLinkedInWebhookChallenge(url: URL, credentials: EnterpriseAiChannelCredentials) {
+  const challengeCode = url.searchParams.get('challengeCode');
+  if (!challengeCode || !credentials.clientSecret) {
+    throw new Error('LinkedIn webhook validation failed.');
+  }
+  return {
+    challengeCode,
+    challengeResponse: hmacHex(credentials.clientSecret, challengeCode),
+  };
+}
+
+export type LinkedInCommunityNotification = {
+  notificationId: string;
+  action: string;
+  organizationUrn: string;
+  sourcePostUrn?: string;
+  generatedActivityUrn?: string;
+};
+
+export function verifyAndExtractLinkedInCommunityNotifications(input: {
+  rawBody: string;
+  headers: Headers;
+  credentials: EnterpriseAiChannelCredentials;
+}) {
+  verifyLinkedIn(input.rawBody, input.headers, input.credentials);
+  let payload: Record<string, unknown>;
+  try { payload = JSON.parse(input.rawBody) as Record<string, unknown>; }
+  catch { throw new Error('LinkedIn webhook body is invalid JSON.'); }
+  const notifications = Array.isArray(payload.notifications)
+    ? payload.notifications as Array<Record<string, unknown>>
+    : [];
+  return notifications.map((item) => ({
+    notificationId: String(item.notificationId ?? ''),
+    action: String(item.action ?? ''),
+    organizationUrn: String(item.organizationalEntity ?? ''),
+    sourcePostUrn: typeof item.sourcePost === 'string' ? item.sourcePost : undefined,
+    generatedActivityUrn: typeof item.generatedActivity === 'string' ? item.generatedActivity : undefined,
+  })).filter((item) => item.notificationId && item.organizationUrn);
 }
 
 function normalizeTelegram(payload: Record<string, unknown>): NormalizedEnterpriseAiInbound {
@@ -171,6 +262,9 @@ export function verifyAndNormalizeEnterpriseAiInbound(input: {
     case 'slack':
       verifySlack(input.rawBody, input.headers, input.credentials, input.now);
       return normalizeSlack(payload);
+    case 'discord':
+      verifyDiscord(input.rawBody, input.headers, input.credentials);
+      return normalizeDiscord(payload);
     case 'whatsapp':
     case 'instagram':
     case 'facebook_messenger':
@@ -181,7 +275,8 @@ export function verifyAndNormalizeEnterpriseAiInbound(input: {
       return normalizeCustom(payload);
     case 'website':
     case 'microsoft_teams':
-      throw new Error('This channel does not accept this webhook ingress contract.');
+    case 'linkedin_page':
+      throw new Error('This channel does not accept this generic webhook ingress contract.');
   }
 }
 
