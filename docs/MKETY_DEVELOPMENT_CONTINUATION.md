@@ -1,5 +1,25 @@
 # Mkety Development Continuation Roadmap
 
+## 2026-09-28 Enterprise AI continuation authority
+
+The current Enterprise AI continuation is PR #159 on `feat/enterprise-ai-complete-platform-20260928`, based directly on main `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`.
+
+Continue in this order:
+
+1. keep the reconciled business console, white-label branding, host-bound login and Cloudflare for SaaS domain path on current main;
+2. keep Website, WhatsApp, Telegram, Instagram, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API behind one channel-adapter contract;
+3. complete exact-head CI/migration/vinext/public-candidate verification;
+4. run the guarded managed-model benchmark and record actual provider cost/latency/quality;
+5. verify Workers AI through the isolated AI Gateway with production customer inference still disabled;
+6. prove exact reservation, provider execution, settlement, provider-failure release, post-provider accounting repair and replay/idempotency behavior;
+7. bind the configured registrar/reseller implementation to the provider-neutral domain adapter without exposing registrar credentials;
+8. promote customer inference only through the existing runtime policy after exact production acceptance;
+9. add streaming only after cancellation/partial-output settlement is proven;
+10. add BYOK/private provider execution without any silent Mkety-paid fallback.
+
+Stale AI PRs #145, #154, #157 and #158 are historical implementation branches. Do not merge them onto current main.
+
+
 ## 2026-09-21 verified production baseline
 
 The `mkety.com` public milestone is live and production authentication has been repaired.
