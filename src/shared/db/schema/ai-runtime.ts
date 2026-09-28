@@ -125,32 +125,6 @@ export const aiBudgets = appSchema.table('ai_budgets', {
   index('ai_budgets_api_key_idx').on(table.apiKeyId),
 ]);
 
-export const aiBudgetReservations = appSchema.table('ai_budget_reservations', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  budgetId: uuid('budget_id').notNull().references(() => aiBudgets.id, { onDelete: 'cascade' }),
-  requestId: uuid('request_id').references(() => aiRequests.id, { onDelete: 'set null' }),
-  creditReservationId: uuid('credit_reservation_id').references(() => aiCreditReservations.id, { onDelete: 'set null' }),
-  idempotencyKey: varchar('idempotency_key', { length: 160 }).notNull(),
-  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
-  status: varchar('status', { length: 24 }).notNull().default('held'),
-  reservedCredits: bigint('reserved_credits', { mode: 'bigint' }).notNull(),
-  reservedRequests: bigint('reserved_requests', { mode: 'bigint' }).notNull().default(1n),
-  settledCredits: bigint('settled_credits', { mode: 'bigint' }),
-  settledRequests: bigint('settled_requests', { mode: 'bigint' }),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  settledAt: timestamp('settled_at', { withTimezone: true }),
-  releasedAt: timestamp('released_at', { withTimezone: true }),
-  releaseReason: varchar('release_reason', { length: 80 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex('ai_budget_reservations_budget_idempotency_uidx').on(table.budgetId, table.idempotencyKey),
-  index('ai_budget_reservations_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
-  index('ai_budget_reservations_request_idx').on(table.requestId),
-  index('ai_budget_reservations_credit_reservation_idx').on(table.creditReservationId),
-]);
-
 export const aiRequests = appSchema.table('ai_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
@@ -199,6 +173,33 @@ export const aiCreditReservations = appSchema.table('ai_credit_reservations', {
   index('ai_credit_reservations_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
   index('ai_credit_reservations_request_idx').on(table.requestId),
 ]);
+
+export const aiBudgetReservations = appSchema.table('ai_budget_reservations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  budgetId: uuid('budget_id').notNull().references(() => aiBudgets.id, { onDelete: 'cascade' }),
+  requestId: uuid('request_id').references(() => aiRequests.id, { onDelete: 'set null' }),
+  creditReservationId: uuid('credit_reservation_id').references(() => aiCreditReservations.id, { onDelete: 'set null' }),
+  idempotencyKey: varchar('idempotency_key', { length: 160 }).notNull(),
+  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+  status: varchar('status', { length: 24 }).notNull().default('held'),
+  reservedCredits: bigint('reserved_credits', { mode: 'bigint' }).notNull(),
+  reservedRequests: bigint('reserved_requests', { mode: 'bigint' }).notNull().default(1n),
+  settledCredits: bigint('settled_credits', { mode: 'bigint' }),
+  settledRequests: bigint('settled_requests', { mode: 'bigint' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  settledAt: timestamp('settled_at', { withTimezone: true }),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  releaseReason: varchar('release_reason', { length: 80 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('ai_budget_reservations_budget_idempotency_uidx').on(table.budgetId, table.idempotencyKey),
+  index('ai_budget_reservations_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
+  index('ai_budget_reservations_request_idx').on(table.requestId),
+  index('ai_budget_reservations_credit_reservation_idx').on(table.creditReservationId),
+]);
+
 
 export type AiApiKey = typeof aiApiKeys.$inferSelect;
 export type AiModel = typeof aiModels.$inferSelect;
