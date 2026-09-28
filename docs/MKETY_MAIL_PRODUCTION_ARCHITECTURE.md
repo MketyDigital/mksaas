@@ -282,3 +282,34 @@ The customer sees business language only:
 - Create API key
 
 DNS, MX, DKIM, R2, Workers, queues and Cloudflare credentials remain implementation details.
+
+
+## Production completion trigger — 2026-09-27
+
+This proof-neutral documentation update records the guarded Mail production completion attempt after merge of PR #142.
+
+Exact pre-trigger main SHA:
+
+`37179f1fbc620bc963fef91ef8ee0bb9b5f1aded`
+
+The production workflow must still enforce its existing exact-SHA quality, migration, Cloudflare permission, infrastructure, deployment, auth-binding and smoke gates. A failed gate is not authorization to bypass or weaken the gate.
+
+
+## Production completion retry — aligned proof base
+
+The Migration Baseline and Cloudflare vinext Smoke proof workflows were certified together on:
+
+`26f0cead52d9ee69932af8ed419ed97f12413330`
+
+This retry remains subject to all existing guarded production checks and must stop on any failed permission, migration, deployment, binding, or smoke gate.
+
+
+## Production completion trigger 2 — 2026-09-27
+
+Second guarded Mail production attempt after merge of the migration-baseline proof inheritance repair.
+
+Exact pre-trigger main SHA:
+
+`f9fddbe7265731413b31c0ce660df3963fac87a1`
+
+All existing release gates remain mandatory; this documentation commit exists only to activate the repository's guarded `[mail-production]` push path.

@@ -44,3 +44,7 @@ jobs:
         run: pnpm db:check:migrations
       - name: Verify Drizzle migration consistency
         run: pnpm exec drizzle-kit check
+
+# verification refresh: 2026-09-27 mail production proof
+
+# combined proof refresh: 2026-09-27
