@@ -176,6 +176,37 @@ export const aiRuntimePolicies = appSchema.table('ai_runtime_policies', {
   check('ai_runtime_policies_prepaid_only_check', sql`${table.prepaidOnly} = true`),
 ]);
 
+export const aiSolutionTemplates = appSchema.table('ai_solution_templates', {
+  key: varchar('key', { length: 80 }).primaryKey(),
+  title: varchar('title', { length: 160 }).notNull(),
+  shortDescription: text('short_description').notNull(),
+  outcomes: jsonb('outcomes').$type<string[]>().notNull().default([]),
+  setupSteps: jsonb('setup_steps').$type<string[]>().notNull().default([]),
+  enabled: boolean('enabled').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(100),
+  updatedByUserId: text('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('ai_solution_templates_enabled_sort_idx').on(table.enabled, table.sortOrder),
+]);
+
+export const aiSolutionInstances = appSchema.table('ai_solution_instances', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  templateKey: varchar('template_key', { length: 80 }).notNull().references(() => aiSolutionTemplates.key, { onDelete: 'restrict' }),
+  name: varchar('name', { length: 160 }).notNull(),
+  status: varchar('status', { length: 24 }).notNull().default('draft'),
+  configuration: jsonb('configuration').$type<Record<string, unknown>>().notNull().default({}),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('ai_solution_instances_tenant_status_idx').on(table.tenantId, table.status, table.updatedAt),
+  index('ai_solution_instances_project_idx').on(table.projectId),
+]);
+
 export const aiRequests = appSchema.table('ai_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
@@ -256,6 +287,8 @@ export type AiApiKey = typeof aiApiKeys.$inferSelect;
 export type AiModel = typeof aiModels.$inferSelect;
 export type AiRateCard = typeof aiRateCards.$inferSelect;
 export type AiRuntimePolicy = typeof aiRuntimePolicies.$inferSelect;
+export type AiSolutionTemplate = typeof aiSolutionTemplates.$inferSelect;
+export type AiSolutionInstance = typeof aiSolutionInstances.$inferSelect;
 export type AiBudget = typeof aiBudgets.$inferSelect;
 export type AiBudgetReservation = typeof aiBudgetReservations.$inferSelect;
 export type AiCreditReservation = typeof aiCreditReservations.$inferSelect;
