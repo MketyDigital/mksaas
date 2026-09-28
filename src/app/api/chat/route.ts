@@ -1,7 +1,12 @@
-import { convertToModelMessages, createIdGenerator, stepCountIs, streamText, type UIMessage } from 'ai';
+import {
+  createIdGenerator,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+} from 'ai';
 import { and, eq } from 'drizzle-orm';
 
-import { getAIModel, getAIProvider } from '@/features/ai/lib/provider';
+import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import { db } from '@/shared/db';
 import { assistantConversations, persons, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -19,16 +24,39 @@ function deriveConversationTitle(messages: UIMessage[]): string {
   return text.slice(0, 60) + (text.length > 60 ? '...' : '');
 }
 
+function toCentralMessages(messages: UIMessage[]) {
+  return messages
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => {
+      const parts = message.parts as Array<{ type: string; text?: string }> | undefined;
+      return {
+        role: message.role as 'user' | 'assistant',
+        content: parts?.map((part) => (part.type === 'text' ? part.text ?? '' : '')).join('\n').trim() ?? '',
+      };
+    })
+    .filter((message) => message.content);
+}
+
 export async function POST(req: Request) {
   if (!env.ENABLE_AI_FEATURES) {
     return new Response('AI features are disabled until ENABLE_AI_FEATURES=true.', { status: 503 });
   }
 
   const body = await req.json();
-  const { messages, tenantSlug, conversationId = `conv_${Date.now()}` } = body as {
+  const {
+    messages,
+    tenantSlug,
+    conversationId = `conv_${Date.now()}`,
+    providerConnectionId,
+    model,
+    taskClass = 'smart',
+  } = body as {
     messages: UIMessage[];
     tenantSlug: string;
     conversationId?: string;
+    providerConnectionId?: string | null;
+    model?: string | null;
+    taskClass?: 'economy' | 'smart' | 'heavy';
   };
 
   const session = await auth();
@@ -47,39 +75,63 @@ export async function POST(req: Request) {
   });
   if (!person) return new Response('Workspace profile not found', { status: 409 });
 
-  let provider;
-  try {
-    provider = getAIProvider();
-  } catch (error) {
-    logger.error({ error }, 'Mkety AI provider is not configured');
-    return new Response('AI provider is not configured for this environment.', { status: 503 });
-  }
+  const centralMessages = toCentralMessages(messages);
+  if (!centralMessages.length) return new Response('At least one message is required.', { status: 400 });
 
-  const model = getAIModel();
-  const modelMessages = await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]);
-  const systemPrompt = `You are the Mkety AI assistant for ${tenant.name}.\nYou help users with their questions and tasks across the Mkety platform.\nBe helpful, concise, and professional.\nDo not claim to have performed actions you did not perform.\nCurrent user: ${session.user.name || session.user.email}`;
+  const systemPrompt = `You are the Mkety AI assistant for ${tenant.name}.
+You help users with their questions and tasks across the Mkety platform.
+Be helpful, concise, and professional.
+Do not claim to have performed actions you did not perform.
+Current user: ${session.user.name || session.user.email}`;
 
   const parts = messages.at(-1)?.parts as Array<{ type: string; text?: string }> | undefined;
   const messagePreview = parts?.map((p) => (p.type === 'text' ? p.text : '')).join(' ').slice(0, 100) || '';
+
+  const response = await runCentralAi({
+    tenantId: tenant.id,
+    actorUserId: session.user.id,
+    messages: centralMessages,
+    system: systemPrompt,
+    taskClass,
+    providerConnectionId: providerConnectionId ?? null,
+    model: model ?? null,
+    maxOutputTokens: 2_000,
+  }).catch((error) => {
+    logger.error({ error }, 'Central Mkety AI execution failed');
+    return null;
+  });
+
+  if (!response?.text) {
+    return new Response('AI provider is not configured or did not return a usable response.', { status: 503 });
+  }
+
   logAuditEvent({
     tenantId: tenant.id,
     actorId: person.id,
     action: AuditActions.AI_CONVERSATION,
     entityType: 'ai_assistant',
-    metadata: { messagePreview, messageCount: messages.length, provider: env.MKETY_AI_PROVIDER, model },
-    aiModelVersion: model,
+    metadata: {
+      messagePreview,
+      messageCount: messages.length,
+      provider: response.provider,
+      model: response.nativeModel,
+      source: response.source,
+    },
+    aiModelVersion: response.nativeModel,
   }).catch((err) => logger.error({ error: err }, 'Failed to log AI conversation'));
 
-  const result = streamText({
-    model: provider(model),
-    system: systemPrompt,
-    messages: modelMessages,
-    stopWhen: stepCountIs(5),
-  });
-
-  return result.toUIMessageStreamResponse({
+  const generateMessageId = createIdGenerator({ prefix: 'msg', size: 16 });
+  const stream = createUIMessageStream({
     originalMessages: messages,
-    generateMessageId: createIdGenerator({ prefix: 'msg', size: 16 }),
+    generateId: generateMessageId,
+    execute: ({ writer }) => {
+      const messageId = generateMessageId();
+      const textId = `text_${messageId}`;
+      writer.write({ type: 'start', messageId });
+      writer.write({ type: 'text-start', id: textId });
+      writer.write({ type: 'text-delta', id: textId, delta: response.text });
+      writer.write({ type: 'text-end', id: textId });
+    },
     onFinish: async ({ messages: finishedMessages }) => {
       const title = deriveConversationTitle(finishedMessages as UIMessage[]);
       await db.insert(assistantConversations).values({
@@ -96,4 +148,6 @@ export async function POST(req: Request) {
       });
     },
   });
+
+  return createUIMessageStreamResponse({ stream });
 }
