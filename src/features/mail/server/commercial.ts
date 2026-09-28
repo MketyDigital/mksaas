@@ -3,7 +3,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/shared/db/cloudflare';
 import { billingPlans, billingPlanVersions, billingSubscriptions } from '@/shared/db/schema';
 
-import { isMailPlanKey, normalizeMailPlanKey, type MailPlanKey } from '../commercial/plans';
+import { type MailPlanKey, isMailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 
 const QUALIFYING_MAIL_SUBSCRIPTION_STATUSES = [
   'trialing',
