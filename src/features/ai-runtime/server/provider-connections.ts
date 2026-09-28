@@ -154,13 +154,24 @@ export async function saveByokProviderConnection(input: {
   return created;
 }
 
-export async function disableByokProviderConnection(input: { tenantId: string; connectionId: string }) {
+export async function disableByokProviderConnection(input: {
+  tenantId: string;
+  connectionId: string;
+  projectId?: string | null;
+}) {
+  const scope = input.projectId === undefined
+    ? undefined
+    : input.projectId === null
+      ? isNull(aiProviderConnections.projectId)
+      : eq(aiProviderConnections.projectId, input.projectId);
+
   const [row] = await db.update(aiProviderConnections)
     .set({ status: 'disabled', updatedAt: new Date() })
     .where(and(
       eq(aiProviderConnections.id, input.connectionId),
       eq(aiProviderConnections.tenantId, input.tenantId),
       eq(aiProviderConnections.mode, 'byok'),
+      scope,
     ))
     .returning();
   return row ?? null;
