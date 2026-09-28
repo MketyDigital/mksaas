@@ -258,13 +258,13 @@ export async function updatePublicAiRouting(tenantSlug: string, formData: FormDa
     models[provider] = model;
   }
 
-  const module = await db.query.platformAppControlCenterModules.findFirst({
+  const controlModule = await db.query.platformAppControlCenterModules.findFirst({
     where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
   });
-  if (!module) throw new Error('AI Operations control module is not initialized.');
+  if (!controlModule) throw new Error('AI Operations control module is not initialized.');
 
-  const metadata = module.metadataJson && typeof module.metadataJson === 'object' && !Array.isArray(module.metadataJson)
-    ? module.metadataJson as Record<string, unknown>
+  const metadata = controlModule.metadataJson && typeof controlModule.metadataJson === 'object' && !Array.isArray(controlModule.metadataJson)
+    ? controlModule.metadataJson as Record<string, unknown>
     : {};
   const before = metadata.publicAiConfig && typeof metadata.publicAiConfig === 'object' && !Array.isArray(metadata.publicAiConfig)
     ? metadata.publicAiConfig as Record<string, unknown>
@@ -281,7 +281,7 @@ export async function updatePublicAiRouting(tenantSlug: string, formData: FormDa
       metadataJson: { ...metadata, publicAiConfig },
       updatedBy: actor.userId,
       updatedAt: new Date(),
-    }).where(eq(platformAppControlCenterModules.id, module.id));
+    }).where(eq(platformAppControlCenterModules.id, controlModule.id));
 
     await tx.insert(platformAppExperienceRevisions).values({
       entityType: 'control_center_module',
