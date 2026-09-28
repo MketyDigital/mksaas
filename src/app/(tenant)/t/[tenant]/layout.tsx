@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { ThemeCSSInjector } from '@/shared/components/providers/theme-css-injector';
 import { getCurrentUserPermissions } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -43,6 +44,7 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
 
   // Permissions for sidebar/nav (may be returned from session when set by auth callback)
   const permissions = await getCurrentUserPermissions(tenant.slug);
+  const hasMailAccess = await hasEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' });
 
   return (
     <TenantProvider
@@ -54,7 +56,7 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
       }}
     >
       <ThemeCSSInjector />
-      <TenantLayoutClient tenantSlug={tenant.slug} permissions={permissions}>
+      <TenantLayoutClient tenantSlug={tenant.slug} permissions={permissions} hasMailAccess={hasMailAccess}>
         {children}
       </TenantLayoutClient>
     </TenantProvider>
