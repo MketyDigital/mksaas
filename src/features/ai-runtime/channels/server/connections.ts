@@ -29,7 +29,7 @@ function parseChannel(value: FormDataEntryValue | null) {
 }
 
 function safeMetadata(formData: FormData) {
-  const fields = ['displayName', 'accountId', 'pageId', 'phoneNumberId', 'teamId', 'channelId', 'botUsername'];
+  const fields = ['displayName', 'accountId', 'pageId', 'phoneNumberId', 'teamId', 'channelId', 'botUsername', 'guildId', 'applicationId', 'organizationId', 'memberId', 'linkedinVersion', 'modelAlias'];
   const result: Record<string, string> = {};
   for (const field of fields) {
     const value = String(formData.get(field) ?? '').trim();
