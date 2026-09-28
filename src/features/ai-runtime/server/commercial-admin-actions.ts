@@ -4,8 +4,10 @@ import { and, desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { assertCurrentPublicAIModel, getDefaultPublicAIModel, type PublicAIProviderId } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
 import { aiModels, aiRateCards, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
+import { platformAppControlCenterModules, platformAppExperienceRevisions } from '@/shared/db/schema/platform-app-experience';
 import { requirePermission } from '@/shared/lib/permissions';
 
 import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
@@ -217,4 +219,79 @@ export async function updateAiSolutionTemplate(
 
   revalidateAiOps(tenantSlug);
   revalidatePath('/ai/app');
+}
+
+
+const PUBLIC_AI_PROVIDERS: readonly PublicAIProviderId[] = [
+  'openai',
+  'azure-openai',
+  'gemini',
+  'vertex',
+  'cloudflare-ai',
+  'bedrock',
+];
+
+function isPublicAiProvider(value: string): value is PublicAIProviderId {
+  return PUBLIC_AI_PROVIDERS.includes(value as PublicAIProviderId);
+}
+
+export async function updatePublicAiRouting(tenantSlug: string, formData: FormData) {
+  const actor = await requireAiCommercialOps(tenantSlug);
+  const primary = String(formData.get('publicAiPrimaryProvider') ?? '').trim();
+  if (!isPublicAiProvider(primary)) throw new Error('Choose a supported Public AI primary provider.');
+
+  const fallbackProviders = String(formData.get('publicAiFallbackProviders') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (fallbackProviders.some((value) => !isPublicAiProvider(value))) {
+    throw new Error('Public AI fallback providers contain an unsupported provider.');
+  }
+  const uniqueFallbacks = fallbackProviders
+    .filter((provider, index, values) => provider !== primary && values.indexOf(provider) === index) as PublicAIProviderId[];
+
+  const models: Partial<Record<PublicAIProviderId, string>> = {};
+  for (const provider of PUBLIC_AI_PROVIDERS) {
+    const model = String(formData.get(`publicAiModel_${provider}`) ?? '').trim()
+      || getDefaultPublicAIModel(provider);
+    assertCurrentPublicAIModel(provider, model);
+    models[provider] = model;
+  }
+
+  const module = await db.query.platformAppControlCenterModules.findFirst({
+    where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
+  });
+  if (!module) throw new Error('AI Operations control module is not initialized.');
+
+  const metadata = module.metadataJson && typeof module.metadataJson === 'object' && !Array.isArray(module.metadataJson)
+    ? module.metadataJson as Record<string, unknown>
+    : {};
+  const before = metadata.publicAiConfig && typeof metadata.publicAiConfig === 'object' && !Array.isArray(metadata.publicAiConfig)
+    ? metadata.publicAiConfig as Record<string, unknown>
+    : null;
+  const publicAiConfig = {
+    enabled: formData.get('publicAiEnabled') === 'on',
+    primaryProvider: primary,
+    fallbackProviders: uniqueFallbacks,
+    models,
+  };
+
+  await db.transaction(async (tx) => {
+    await tx.update(platformAppControlCenterModules).set({
+      metadataJson: { ...metadata, publicAiConfig },
+      updatedBy: actor.userId,
+      updatedAt: new Date(),
+    }).where(eq(platformAppControlCenterModules.id, module.id));
+
+    await tx.insert(platformAppExperienceRevisions).values({
+      entityType: 'control_center_module',
+      entityId: module.id,
+      beforeJson: before ? { publicAiConfig: before } : null,
+      afterJson: { publicAiConfig },
+      actorId: actor.userId,
+    });
+  });
+
+  revalidateAiOps(tenantSlug);
+  revalidatePath('/');
 }
