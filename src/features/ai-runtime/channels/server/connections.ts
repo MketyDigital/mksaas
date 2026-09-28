@@ -8,6 +8,7 @@ import { fingerprintAiConnectionSecret } from '@/features/ai-runtime/channels/co
 import {
   channelCredentialsFromForm,
   protectChannelCredentials,
+  revealChannelCredentials,
 } from '@/features/ai-runtime/channels/credentials';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/entitlement-keys';
@@ -81,8 +82,7 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     if (parsed.protocol !== 'https:') throw new Error('Channel endpoints must use HTTPS.');
   }
 
-  const credentials = channelCredentialsFromForm(formData);
-  const rawSecret = Object.values(credentials).filter(Boolean).join('|');
+  const submittedCredentials = channelCredentialsFromForm(formData);
   const metadata = safeMetadata(formData);
   const existing = await db.query.aiProviderConnections.findFirst({
     where: and(
@@ -92,8 +92,16 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     ),
   });
 
+  const existingCredentials = existing?.secretRef
+    ? revealChannelCredentials(existing.secretRef)
+    : {};
+  const credentials = { ...existingCredentials, ...submittedCredentials };
   const protectedCredentials = protectChannelCredentials(credentials);
   const secretRef = protectedCredentials ?? existing?.secretRef ?? null;
+  const rawSecret = Object.entries(credentials)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}:${value}`)
+    .join('|');
 
   if (rawSecret) {
     metadata.secretFingerprint = fingerprintAiConnectionSecret(rawSecret);
@@ -101,15 +109,19 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     metadata.secretFingerprint = existing.metadata.secretFingerprint;
   }
 
-  metadata.channelKey = channel.key;
-  metadata.credentialMode = channel.credentialMode;
+  const mergedMetadata = {
+    ...(existing?.metadata ?? {}),
+    ...metadata,
+    channelKey: channel.key,
+    credentialMode: channel.credentialMode,
+  };
 
   if (existing) {
     await db.update(aiProviderConnections).set({
       endpointUrl,
       secretRef,
       status: 'active',
-      metadata,
+      metadata: mergedMetadata,
       updatedAt: new Date(),
     }).where(eq(aiProviderConnections.id, existing.id));
   } else {
@@ -121,7 +133,7 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
       secretRef,
       endpointUrl,
       status: 'active',
-      metadata,
+      metadata: mergedMetadata,
     });
   }
 
