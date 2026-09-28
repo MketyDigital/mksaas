@@ -115,7 +115,7 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(runtime).toContain('detectLeadMetadata');
     expect(runtime).toContain('publicAiLeadCaptureEnabled');
     expect(runtime).toContain('deterministicFallback');
-    expect(runtime).toContain('if (!config.enabled)');
+    expect(runtime).toContain('if (!providerState.enabled)');
     expect(runtime).toContain('if (!primary)');
     expect(runtime).toContain('returnDeterministicFallback');
     expect(runtime).toContain('mailto:');
