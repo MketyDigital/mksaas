@@ -24,7 +24,7 @@ describe('Platform navigation route contract', () => {
       'admin/audit-logs/page.tsx',
     ];
     for (const candidate of expected) {
-      expect(existsSync(route(candidate)), candidate).toBe(true);
+      expect(existsSync(route(candidate))).toBe(true);
     }
   });
 
@@ -44,7 +44,7 @@ describe('Platform navigation route contract', () => {
       'mail/automation/page.tsx',
     ];
     for (const candidate of expected) {
-      expect(existsSync(route(candidate)), candidate).toBe(true);
+      expect(existsSync(route(candidate))).toBe(true);
     }
   });
 
@@ -57,7 +57,7 @@ describe('Platform navigation route contract', () => {
       'billing/checkout/page.tsx',
       'enterprise-ai/page.tsx',
     ]) {
-      expect(existsSync(route(candidate)), candidate).toBe(true);
+      expect(existsSync(route(candidate))).toBe(true);
     }
   });
 
