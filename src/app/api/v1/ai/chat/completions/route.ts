@@ -24,6 +24,7 @@ import {
 } from '@/features/ai-runtime/server/provider-cost';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { aiRequests, projects } from '@/shared/db/schema';
 
 const ABSOLUTE_MAX_REQUEST_BYTES = 5_000_000;
@@ -162,7 +163,7 @@ function duplicateResponse(existing: DuplicateRequestRecord) {
   );
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const key = await authenticateAiApiKey(request, 'ai:chat');
   if (!key) return errorResponse(401, 'unauthorized', 'Invalid API key.');
 
@@ -655,4 +656,9 @@ export async function POST(request: Request) {
       cached_input_tokens: Number(result.usage.cachedInputTokens),
     },
   });
+}
+
+
+export async function POST(request: Request) {
+  return withRequestDatabase(async () => handlePost(request));
 }
