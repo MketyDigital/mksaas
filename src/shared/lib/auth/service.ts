@@ -126,3 +126,43 @@ export async function logoutSession(token: string | null | undefined, returnTo =
 
   return safeReturnTo;
 }
+
+
+export async function createProductHandoff(
+  userId: string,
+  product: 'mail',
+  returnTo = '/mail/app',
+): Promise<string> {
+  const state = generateOpaqueToken();
+  const expiresAt = new Date(Date.now() + 60_000);
+  await withRequestDatabase((database) =>
+    createLoginTransaction(
+      {
+        state,
+        provider: `product-handoff:${product}`,
+        verifier: userId,
+        nonce: product,
+        returnTo: isSafeReturnTo(returnTo) ? returnTo : '/mail/app',
+        expiresAt,
+      },
+      database,
+    ),
+  );
+  return state;
+}
+
+export async function consumeProductHandoff(
+  state: string,
+  product: 'mail',
+): Promise<{ userId: string; returnTo: string } | null> {
+  const transaction = await withRequestDatabase((database) => consumeLoginTransaction(state, database));
+  if (!transaction || transaction.provider !== `product-handoff:${product}` || transaction.nonce !== product) {
+    return null;
+  }
+  return { userId: transaction.verifier, returnTo: transaction.returnTo };
+}
+
+export async function createSessionForUser(userId: string) {
+  const expiresAt = new Date(Date.now() + MKETY_SESSION_MAX_AGE_SECONDS * 1000);
+  return withRequestDatabase((database) => createSession(userId, expiresAt, database));
+}

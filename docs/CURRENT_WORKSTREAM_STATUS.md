@@ -932,3 +932,98 @@ Current bounded SolutionHub contract:
 - Deploy customer wording remains explicitly non-production: production execution and domains are still protected.
 
 This slice is intentionally catalog/routing-first. Any future SolutionHub install/provision capability must introduce tenant/project-scoped persistence, entitlement/billing checks, approval/audit rules, idempotent provisioning state, and rollback/recovery design before enabling mutation.
+
+## Mkety Mail commercial product + public production reconciliation — September 28, 2026
+
+Requested outcome:
+
+- make Mkety Mail a real separately subscribed/add-on Mkety product with public plans, enforced usage limits, shared payment settlement, authenticated product access and operations controls;
+- publish Mail and Enterprise AI as first-class public product offerings without changing the existing AI Workspace product boundary;
+- keep provider/internal infrastructure telemetry restricted to Mkety admin/ops;
+- verify and complete the previously prepared Mkety public-site production cutover;
+- do not alter authentication/session behavior for Academy, Media, Trading or unrelated `*.mkety.com` products.
+
+Current implementation branch:
+
+- `feat/mkety-mail-commercial-product-20260928`
+- PR #146
+- based on current `main` `7dc7884ebb28d96daa7820c51d37dfae183bf4b0`.
+
+Implemented on the branch:
+
+- Mail Starter $4.99/month;
+- Mail Growth $9.99/month;
+- Mail Business $24.99/month;
+- Enterprise Mail remains contract/custom;
+- `workspace.mail` entitlement;
+- additive subscription-family checkout so a tenant can own one Platform-family subscription plus a separate Mail-family subscription;
+- Entitlements composition across qualifying active subscriptions;
+- Billing remains authoritative for purchased Mail tier;
+- Mail workspace initialization resolves the paid Mail plan;
+- plan-aware monthly outbound and Customer Update limits;
+- existing daily/domain warm-up, bounce/complaint and reputation controls remain stricter safety boundaries when applicable;
+- self-service Mail fails closed at quota; launch extra capacity is plan upgrade or Enterprise, not unimplemented prepaid capacity packs;
+- customer-safe Mail usage view;
+- global Platform Control Mail operations module for catalog reconciliation, tenant Mail state, onboarding and domain routing/sending/DNS readiness;
+- public Mail marketing page expanded with professional inbox, aliases/forwarding, shared inboxes, contacts/templates, Customer Updates, transactional API, webhooks, supported external mail-client setup, deliverability controls, trust/security, plans, Enterprise and Marketing Coming Soon;
+- public pricing/Enterprise/docs/llms/Public Mkety AI knowledge updated for Mail and separate Enterprise AI;
+- CMS-safe public content refresh migration;
+- product catalog/operations migration;
+- Mail navigation and protected Mail routes require `workspace.mail`;
+- canonical `/mail/app` resolves entitled Mail workspaces;
+- Mail uses a product-scoped one-time session handoff rather than a wildcard `.mkety.com` application cookie.
+
+Mail session-handoff safety:
+
+- no wildcard Mkety application cookie;
+- no central session token is placed in a URL;
+- central app verifies its own Mkety session before issuing a Mail handoff;
+- handoff token is opaque, one-time and expires after 60 seconds;
+- Mail atomically consumes the handoff and establishes its own host-scoped Mkety session;
+- audience is fixed to Mail;
+- Academy, Media, Trading and unrelated Mkety subdomains remain unchanged;
+- the pattern may be generalized to another product only through a separate explicit integration.
+
+Payment boundary:
+
+- NOWPayments remains primary/default crypto;
+- Flutterwave v3 and Kora remain supported alternatives where configured;
+- Mail uses the shared Mkety Billing/payment settlement path;
+- browser redirect/success pages never grant Mail entitlement;
+- provider webhook/re-query verification and idempotent Billing settlement remain authoritative.
+
+Production audit findings:
+
+- the live `https://mkety.com` apex is still serving the legacy Mkety marketing site as of this audit;
+- the protected public production workflow is `Mkety Public Production Cutover`;
+- that workflow promotes only `mkety.com` and `www.mkety.com`;
+- it snapshots existing Cloudflare Custom Domains, apex/www DNS and Worker Routes before mutation;
+- it refuses conflicting Worker Routes/custom-domain ownership;
+- rollback rules explicitly preserve unrelated Worker routes and DNS;
+- therefore Mail, API, Media, Academy, Trading, autoconfig/autodiscover and unrelated subdomains are outside the public cutover mutation set;
+- the required release branch `feat/mkety-public-site-production` is currently stale: 187 commits behind `main` and 0 ahead, with merge base at the historical role-fix SHA;
+- this stale release branch explains why repository public work and live public production diverged.
+
+Release plan:
+
+1. freeze PR #146 after documentation;
+2. require exact-head CI, Migration Baseline, Cloudflare Vinext, Content DB Smoke and integrated Public Candidate success;
+3. merge #146 to `main` only after exact-head certification;
+4. verify exact new `main`;
+5. fast-forward `feat/mkety-public-site-production` to the certified new `main` because that release branch has no unique commits to preserve;
+6. run exact release-branch CI and integrated Public Candidate;
+7. run the guarded public production cutover with the exact certified release SHA;
+8. verify production DB/content migrations and public CMS seed/reconciliation;
+9. smoke the real live `mkety.com`, `www.mkety.com`, pricing, Enterprise, Trust, Infrastructure, Academy discovery, Mail, docs, llms.txt, login/signup and Public Mkety AI;
+10. separately verify `mail.mkety.com` product-session handoff, Mail entitlement, onboarding and customer dashboard;
+11. confirm unrelated product hosts/routes are unchanged;
+12. only after live acceptance passes, return to Enterprise Mkety AI implementation.
+
+Known non-goals for this Mail release:
+
+- Marketing campaigns remain Coming Soon;
+- prepaid Mail capacity packs remain planned, not sold;
+- external IMAP/SMTP remains subject to production certification where protocol infrastructure is not yet certified;
+- no wildcard Mkety auth cookie;
+- no Media/Academy/Trading runtime migration;
+- no Enterprise AI inference-provider production activation.

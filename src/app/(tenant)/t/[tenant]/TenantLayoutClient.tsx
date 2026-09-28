@@ -22,6 +22,7 @@ interface TenantLayoutClientProps {
   tenantSlug: string;
   /** Current user permissions in this tenant (from getCurrentUserPermissions). Used for sidebar visibility. */
   permissions?: string[];
+  hasMailAccess?: boolean;
 }
 
 /**
@@ -31,10 +32,12 @@ function TenantLayoutContent({
   children,
   tenantSlug,
   permissions,
+  hasMailAccess,
 }: {
   children: ReactNode;
   tenantSlug: string;
   permissions: string[];
+  hasMailAccess: boolean;
 }) {
   const { isCollapsed } = useSidebar();
 
@@ -43,7 +46,7 @@ function TenantLayoutContent({
       <div className="min-h-screen bg-background">
         <CommandPalette />
         <TopHeader tenantSlug={tenantSlug} />
-        <UnifiedSidebar tenantSlug={tenantSlug} permissions={permissions} />
+        <UnifiedSidebar tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess} />
         <main className={isCollapsed ? 'lg:pl-16 pt-0 lg:pt-16' : 'lg:pl-64 pt-0 lg:pt-16'}>
           <div className="container mx-auto py-6 px-4">{children}</div>
         </main>
@@ -52,13 +55,13 @@ function TenantLayoutContent({
   );
 }
 
-export function TenantLayoutClient({ children, tenantSlug, permissions = [] }: TenantLayoutClientProps) {
+export function TenantLayoutClient({ children, tenantSlug, permissions = [], hasMailAccess = false }: TenantLayoutClientProps) {
   // Unified layout with sidebar for all routes
   // View-specific rendering is handled by UnifiedSidebar based on current view from ViewProvider
   return (
     <GlobalSearchProvider>
       <SidebarProvider>
-        <TenantLayoutContent tenantSlug={tenantSlug} permissions={permissions}>
+        <TenantLayoutContent tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess}>
           {children}
         </TenantLayoutContent>
       </SidebarProvider>

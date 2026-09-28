@@ -46,6 +46,33 @@ export const SELF_SERVICE_BILLING_PLANS = {
     billingInterval: 'monthly',
     entitlements: ['workspace.deploy'] as EntitlementKey[],
   },
+  'mail-starter': {
+    key: 'mail-starter',
+    name: 'Mail Starter',
+    description: 'Professional business email for solo operators and small teams.',
+    amountMinor: 499n,
+    currency: 'USD',
+    billingInterval: 'monthly',
+    entitlements: ['workspace.mail'] as EntitlementKey[],
+  },
+  'mail-growth': {
+    key: 'mail-growth',
+    name: 'Mail Growth',
+    description: 'Business email, shared inboxes and customer communication for growing teams.',
+    amountMinor: 999n,
+    currency: 'USD',
+    billingInterval: 'monthly',
+    entitlements: ['workspace.mail'] as EntitlementKey[],
+  },
+  'mail-business': {
+    key: 'mail-business',
+    name: 'Mail Business',
+    description: 'Higher-capacity business email, API/SMTP and team communication controls.',
+    amountMinor: 2499n,
+    currency: 'USD',
+    billingInterval: 'monthly',
+    entitlements: ['workspace.mail'] as EntitlementKey[],
+  },
   'mkety-one': {
     key: 'mkety-one',
     name: 'Mkety One',
@@ -117,4 +144,12 @@ export function getSelfServiceBillingQuote(planKey: string, termKey: SelfService
     effectiveMonthlyMinor: (amountMinor + BigInt(Math.floor(term.months / 2))) / BigInt(term.months),
     currency: plan.currency,
   };
+}
+
+
+export type SelfServiceBillingPlanFamily = 'platform' | 'mail';
+
+export function getSelfServiceBillingPlanFamily(planKey: string): SelfServiceBillingPlanFamily {
+  const plan = getSelfServiceBillingPlan(planKey);
+  return plan.key.startsWith('mail-') ? 'mail' : 'platform';
 }

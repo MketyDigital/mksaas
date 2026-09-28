@@ -44,7 +44,10 @@ export async function POST(request:Request){
   if(!mailbox) return NextResponse.json({ok:false,error:'sender_not_allowed'},{status:403});
 
   const capacity=await getMailSendCapacity(key.tenantId,domain.id,1);
-  if(!capacity.allowed) return NextResponse.json({ok:false,error:capacity.reason==='warmup'?'sender_warmup':'daily_limit',remaining:capacity.remaining},{status:429});
+  if(!capacity.allowed){
+    const error=capacity.reason==='warmup'?'sender_warmup':capacity.reason==='monthly_limit'?'monthly_limit':'daily_limit';
+    return NextResponse.json({ok:false,error,remaining:capacity.remaining,period:capacity.period},{status:429});
+  }
 
   const suppression=await db.query.mailSuppressions.findFirst({
     where:and(eq(mailSuppressions.tenantId,key.tenantId),eq(mailSuppressions.email,to)),

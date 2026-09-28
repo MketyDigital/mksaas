@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
+import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
+import { reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
@@ -22,6 +24,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'app-experience': ['Edit dashboard copy', 'Manage workspace cards', 'Control onboarding text', 'Update quick links'],
   'plans-entitlements': ['Manage plan presentation', 'Review entitlement mappings', 'Control feature visibility', 'Set usage display rules'],
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
+  'mail-operations': ['Reconcile Mail plans', 'Operate tenant Mail state', 'Manage domain sending/routing', 'Review Mail readiness'],
   'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
     'Monitor mkety.com public website routing',
@@ -50,6 +53,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     plans: 'plans-entitlements',
     billing: 'billing-ledger',
     security: 'security-audit',
+    mail: 'mail-operations',
   };
   const moduleKey = moduleAliases[routeModuleKey] ?? routeModuleKey;
   const controlModule = await getPublishedControlCenterModule(moduleKey);
@@ -62,8 +66,10 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const isAppExperience = controlModule.key === 'app-experience';
   const isDeployments = controlModule.key === 'deployments-domains';
   const isPayments = controlModule.key === 'payments';
+  const isMailOperations = controlModule.key === 'mail-operations';
   let deploymentApprovalRows = null;
   let paymentSettings = null;
+  let mailOperations = null;
 
   if (isDeployments) {
     await requirePermission(tenant, 'platform:deployments');
@@ -75,6 +81,11 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   if (isPayments) {
     await requirePermission(tenant, 'platform:billing');
     paymentSettings = await withAdminTimeout(getMketyPaymentSettings(), null);
+  }
+
+  if (isMailOperations) {
+    await requirePermission(tenant, 'platform:plans');
+    mailOperations = await withAdminTimeout(getMailOperationsOverview(), null);
   }
 
   return (
@@ -121,7 +132,135 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         />
       ) : null}
 
-      {!isPayments ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+
+      {isMailOperations && mailOperations ? (
+        <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Mail commercial catalog</CardTitle>
+                  <CardDescription>
+                    Canonical prices stay versioned in Billing. Reconcile creates missing plan/version/entitlement records but never rewrites billing history.
+                  </CardDescription>
+                </div>
+                <form action={reconcileMailCatalog.bind(null, tenant)}>
+                  <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                    Reconcile catalog
+                  </button>
+                </form>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-3">
+              {mailOperations.catalog.map((plan) => (
+                <div key={plan.key} className="rounded-xl border bg-muted/20 p-4">
+                  <p className="font-semibold">{plan.name}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {String.fromCharCode(36)}{(Number(plan.amountMinor) / 100).toFixed(2)} / month
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            {mailOperations.workspaces.length ? mailOperations.workspaces.map((workspace) => (
+              <Card className="rounded-2xl" key={workspace.workspaceId}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>{workspace.tenantName}</CardTitle>
+                      <CardDescription>
+                        {workspace.tenantSlug} · paid plan {workspace.paidPlanKey} · {workspace.domains.length} domain{workspace.domains.length === 1 ? '' : 's'}
+                      </CardDescription>
+                    </div>
+                    <a className="text-sm font-semibold text-primary" href={'/t/' + workspace.tenantSlug + '/mail'}>
+                      Open tenant Mail →
+                    </a>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <form action={updateMailWorkspaceOperations.bind(null, tenant)} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                    <input type="hidden" name="workspaceId" value={workspace.workspaceId} />
+                    <input type="hidden" name="targetTenantId" value={workspace.tenantId} />
+                    <label className="text-sm font-medium">
+                      Workspace status
+                      <select name="status" defaultValue={workspace.status} className="mt-2 w-full rounded-lg border bg-background px-3 py-2">
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Onboarding
+                      <select name="onboardingStep" defaultValue={workspace.onboardingStep} className="mt-2 w-full rounded-lg border bg-background px-3 py-2">
+                        <option value="domain">Domain setup</option>
+                        <option value="ready">Ready</option>
+                      </select>
+                    </label>
+                    <button className="rounded-lg border px-4 py-2 text-sm font-semibold">Save workspace</button>
+                  </form>
+
+                  <div className="space-y-3">
+                    {workspace.domains.length ? workspace.domains.map((domain) => (
+                      <form action={updateMailDomainOperations.bind(null, tenant)} key={domain.id} className="rounded-xl border bg-muted/15 p-4">
+                        <input type="hidden" name="domainId" value={domain.id} />
+                        <input type="hidden" name="targetTenantId" value={workspace.tenantId} />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">{domain.domain}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Routing {domain.routingEnabled ? 'on' : 'off'} · Sending {domain.sendingEnabled ? 'on' : 'off'}
+                            </p>
+                          </div>
+                          <button className="rounded-lg border px-3 py-2 text-sm font-semibold">Save domain</button>
+                        </div>
+                        <div className="mt-4 grid gap-3 md:grid-cols-5">
+                          {[
+                            ['status', 'Domain', domain.status],
+                            ['spfStatus', 'SPF', domain.spfStatus],
+                            ['dkimStatus', 'DKIM', domain.dkimStatus],
+                            ['dmarcStatus', 'DMARC', domain.dmarcStatus],
+                            ['mxStatus', 'MX', domain.mxStatus],
+                          ].map(([name, label, value]) => (
+                            <label className="text-xs font-medium" key={String(name)}>
+                              {label}
+                              <select name={String(name)} defaultValue={String(value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-sm">
+                                <option value="pending">Pending</option>
+                                <option value="verified">Verified</option>
+                                <option value="failed">Failed</option>
+                                <option value="disabled">Disabled</option>
+                              </select>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-5 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="routingEnabled" defaultChecked={domain.routingEnabled} />
+                            Routing enabled
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="sendingEnabled" defaultChecked={domain.sendingEnabled} />
+                            Sending enabled
+                          </label>
+                        </div>
+                      </form>
+                    )) : (
+                      <p className="text-sm text-muted-foreground">No Mail domains connected yet.</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <Card className="rounded-2xl">
+                <CardContent className="p-6 text-sm text-muted-foreground">No Mail workspaces have been provisioned yet.</CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {!isPayments && !isMailOperations ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle>Controlled module surface</CardTitle>

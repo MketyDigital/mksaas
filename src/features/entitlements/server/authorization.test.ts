@@ -4,7 +4,7 @@ import type { EntitlementSource } from './resolver';
 
 function source(allowed: boolean): EntitlementSource {
   return {
-    getCurrentPlanVersionId: jest.fn().mockResolvedValue('plan-v1'),
+    getCurrentPlanVersionIds: jest.fn().mockResolvedValue(['plan-v1']),
     getPlanEntitlements: jest.fn().mockResolvedValue(
       allowed ? [{ entitlementKey: 'workspace.workflows', enabled: true }] : [],
     ),

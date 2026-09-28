@@ -16,6 +16,7 @@ import {
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -61,6 +62,11 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const quote = getSelfServiceBillingQuote(plan.key, termKey);
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
+  const isMailPlan = plan.key.startsWith('mail-');
+  const mailEntitled = isMailPlan && returned
+    ? await hasEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' })
+    : false;
+  if (mailEntitled) redirect(`/t/${tenantSlug}/mail?payment=confirmed`);
   const paymentSettings = await getMketyPaymentSettings();
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
   const flutterwaveEnabled = Boolean(
@@ -229,10 +235,10 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
             </div>
           ) : (
             <Link
-              href={`/t/${tenantSlug}`}
+              href={isMailPlan ? `/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&payment=returned` : `/t/${tenantSlug}`}
               className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground"
             >
-              Return to workspace
+              {isMailPlan ? 'Check Mail activation' : 'Return to workspace'}
             </Link>
           )}
 

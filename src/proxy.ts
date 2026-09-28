@@ -47,9 +47,21 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.rewrite(url);
   }
 
-  if(hostname.toLowerCase()===mailHost && pathname==='/'){
+  if(hostname.toLowerCase()===mailHost && (pathname==='/' || pathname==='/mail/app') && !session){
+    let centralOrigin='https://app.mkety.com';
+    try {
+      centralOrigin=new URL(process.env.NEXT_PUBLIC_APP_URL || centralOrigin).origin;
+    } catch {
+      centralOrigin='https://app.mkety.com';
+    }
+    const url=new URL('/api/auth/product-handoff/start',centralOrigin);
+    url.searchParams.set('product','mail');
+    url.searchParams.set('returnTo','/mail/app');
+    return NextResponse.redirect(url);
+  }
+  if(hostname.toLowerCase()===mailHost && pathname==='/' && session){
     const url=new URL(request.url);
-    url.pathname=session?'/mail/app':'/login';
+    url.pathname='/mail/app';
     url.search='';
     return NextResponse.redirect(url);
   }

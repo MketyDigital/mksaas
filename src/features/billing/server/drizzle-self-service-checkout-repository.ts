@@ -10,7 +10,7 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
-import { getSelfServiceBillingPlan, getSelfServiceBillingQuote } from '../catalog/self-service-plans';
+import { getSelfServiceBillingPlan, getSelfServiceBillingPlanFamily, getSelfServiceBillingQuote, isSelfServiceBillingPlanKey } from '../catalog/self-service-plans';
 import type { SelfServiceCheckoutRepository } from './self-service-checkout';
 
 export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository = {
@@ -19,19 +19,33 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
     const quote = getSelfServiceBillingQuote(input.planKey, input.termKey);
 
     return db.transaction(async (tx) => {
-      const [existingSubscription] = await tx
-        .select({ id: billingSubscriptions.id })
+      const currentSubscriptions = await tx
+        .select({
+          id: billingSubscriptions.id,
+          planKey: billingPlans.key,
+        })
         .from(billingSubscriptions)
+        .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
+        .innerJoin(billingPlans, eq(billingPlans.id, billingPlanVersions.planId))
         .where(
           and(
             eq(billingSubscriptions.tenantId, input.tenantId),
             ne(billingSubscriptions.status, 'cancelled'),
           ),
-        )
-        .limit(1);
+        );
 
-      if (existingSubscription) {
-        throw new Error('This workspace already has a current Mkety subscription.');
+      const requestedFamily = getSelfServiceBillingPlanFamily(input.planKey);
+      const conflictingSubscription = currentSubscriptions.find((subscription) => {
+        if (!isSelfServiceBillingPlanKey(subscription.planKey)) return false;
+        return getSelfServiceBillingPlanFamily(subscription.planKey) === requestedFamily;
+      });
+
+      if (conflictingSubscription) {
+        throw new Error(
+          requestedFamily === 'mail'
+            ? 'This workspace already has a current Mkety Mail subscription.'
+            : 'This workspace already has a current Mkety Platform subscription.',
+        );
       }
 
       const [activeVersion] = await tx

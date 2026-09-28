@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import { getMailCommercialPlan, normalizeMailPlanKey } from '@/features/mail/commercial/plans';
 import { db } from '@/shared/db/cloudflare';
 import {
   mailContacts,
@@ -16,7 +17,7 @@ import {
 
 import { pushMailQueueBatch } from './cloudflare';
 import { getMailSendCapacity } from './sending-policy';
-import { requireMailWorkspaceAccess } from './workspace';
+import { getMailWorkspace, requireMailWorkspaceAccess } from './workspace';
 
 function chunks<T>(values:T[],size:number){
   const result:T[][]=[];
@@ -46,14 +47,19 @@ export async function createCustomerUpdate(tenantSlug:string,formData:FormData){
     redirect(`/t/${tenantSlug}/mail/customer-updates?error=domain`);
   }
 
+  const workspace=await getMailWorkspace(tenantSlug);
+  if(!workspace) redirect(`/t/${tenantSlug}/mail?error=workspace`);
+  const plan=getMailCommercialPlan(normalizeMailPlanKey(workspace.planKey));
+  const recipientLimit=Math.min(3000,plan.limits.maxRecipientsPerCustomerUpdate);
+
   const [contacts,suppressions]=await Promise.all([
-    db.query.mailContacts.findMany({where:and(eq(mailContacts.tenantId,tenant.id),eq(mailContacts.status,'active')),limit:3000}),
+    db.query.mailContacts.findMany({where:and(eq(mailContacts.tenantId,tenant.id),eq(mailContacts.status,'active')),limit:recipientLimit}),
     db.query.mailSuppressions.findMany({where:eq(mailSuppressions.tenantId,tenant.id)}),
   ]);
   const suppressed=new Set(suppressions.map((row)=>row.email.toLowerCase()));
-  const recipients=contacts.filter((contact)=>!suppressed.has(contact.email.toLowerCase())).slice(0,3000);
+  const recipients=contacts.filter((contact)=>!suppressed.has(contact.email.toLowerCase())).slice(0,recipientLimit);
   if(!recipients.length) redirect(`/t/${tenantSlug}/mail/customer-updates?error=recipients`);
-  const capacity=await getMailSendCapacity(tenant.id,domain.id,recipients.length);
+  const capacity=await getMailSendCapacity(tenant.id,domain.id,recipients.length,'customer_update');
   if(!capacity.allowed){
     const reason=capacity.reason==='warmup'?'warmup':'limit';
     redirect(`/t/${tenantSlug}/mail/customer-updates?error=${reason}&remaining=${capacity.remaining}`);

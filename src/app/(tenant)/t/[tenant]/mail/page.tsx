@@ -1,6 +1,7 @@
 import { Code2, Globe2, Inbox, Mail, Megaphone, Send, Smartphone, Users } from 'lucide-react';
 
 import { enableMketyMail } from '@/features/mail/server/actions';
+import { getCustomerMailUsageSummary } from '@/features/mail/server/usage';
 import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
@@ -11,6 +12,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
   const {tenant}=await params;
   await requireMailWorkspaceAccess(tenant);
   const workspace=await getMailWorkspace(tenant);
+  const usage=workspace?await getCustomerMailUsageSummary(tenant):null;
 
   if(!workspace){
     const action=enableMketyMail.bind(null,tenant);
@@ -63,6 +65,32 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
     {workspace.onboardingStep==='domain'&&<Card className="rounded-2xl border-primary/30">
       <CardHeader><CardTitle>Connect your business domain</CardTitle><CardDescription>Start with the domain you want to use for addresses such as hello@company.com. Mkety will guide the mail records and verification for you.</CardDescription></CardHeader>
       <CardContent><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/t/${tenant}/mail/domains`}>Connect domain</a></CardContent>
+    </Card>}
+
+    {usage&&<Card className="rounded-2xl">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Usage & Billing</CardTitle>
+            <CardDescription>{usage.planName} · ${(Number(usage.priceMinor)/100).toFixed(2)} / month before prepaid-term discounts</CardDescription>
+          </div>
+          <a className="text-sm font-semibold text-primary" href={`/t/${tenant}/billing/checkout?plan=${usage.planKey}`}>Manage plan →</a>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ['Outbound this month',usage.usage.outboundMessages,usage.limits.outboundMessagesPerMonth],
+            ['Customer Updates',usage.usage.customerUpdateDeliveries,usage.limits.customerUpdateDeliveriesPerMonth],
+            ['Mailboxes',usage.usage.mailboxes,usage.limits.mailboxes],
+            ['Domains',usage.usage.domains,usage.limits.domains],
+          ].map(([label,used,limit])=><div className="rounded-xl border p-4" key={String(label)}>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+            <p className="mt-2 text-xl font-semibold">{Number(used).toLocaleString()} <span className="text-sm font-normal text-muted-foreground">/ {Number(limit).toLocaleString()}</span></p>
+          </div>)}
+        </div>
+        <p className="mt-4 text-xs text-muted-foreground">This view shows only your commercial Mail allowance and usage. Provider cost, global capacity and operations-only reputation telemetry are not customer-visible.</p>
+      </CardContent>
     </Card>}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

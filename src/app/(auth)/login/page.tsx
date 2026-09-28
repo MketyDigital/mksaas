@@ -13,20 +13,22 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 interface LoginPageProps {
-  searchParams: Promise<{ plan?: string; term?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string; returnTo?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const query = await searchParams;
   const planKey = query.plan && isSelfServiceBillingPlanKey(query.plan) ? query.plan : null;
+  const safeReturnTo = query.returnTo && query.returnTo.startsWith('/') && !query.returnTo.startsWith('//') ? query.returnTo : null;
   const termKey = query.term && isSelfServiceBillingTermKey(query.term) ? query.term : null;
   const planQuery = planKey
     ? `plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}`
     : '';
-  const selectTenantUrl = planKey ? `/select-tenant?${planQuery}` : '/select-tenant';
+  const selectTenantUrl = safeReturnTo ?? (planKey ? `/select-tenant?${planQuery}` : '/select-tenant');
 
   const session = await auth();
   if (session?.user) {
+    if (safeReturnTo) redirect(safeReturnTo);
     const userRoles = (session.user.roles ?? {}) as Record<string, TenantRole>;
     const tenantSlugs = Object.keys(userRoles);
     if (tenantSlugs.length === 1) {
