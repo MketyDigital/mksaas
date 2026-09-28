@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
-import { aiModels, aiRateCards, aiRuntimePolicies } from '@/shared/db/schema/ai-runtime';
+import { aiModels, aiRateCards, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 
 import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
@@ -182,4 +182,39 @@ export async function disableEnterpriseAiInference(tenantSlug: string) {
     })
     .where(eq(aiRuntimePolicies.key, ENTERPRISE_AI_RUNTIME_POLICY_KEY));
   revalidateAiOps(tenantSlug);
+}
+
+export async function updateAiSolutionTemplate(
+  tenantSlug: string,
+  templateKey: string,
+  formData: FormData,
+) {
+  const actor = await requireAiCommercialOps(tenantSlug);
+  const title = String(formData.get('title') ?? '').trim();
+  const shortDescription = String(formData.get('shortDescription') ?? '').trim();
+  const outcomes = String(formData.get('outcomes') ?? '').split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 12);
+  const setupSteps = String(formData.get('setupSteps') ?? '').split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 12);
+  const sortOrder = parseIntegerInRange(formData.get('sortOrder'), 'Sort order', 0, 10_000);
+  const enabled = formData.get('enabled') === 'on';
+
+  if (!title || title.length > 160 || !shortDescription || shortDescription.length > 2_000) {
+    throw new Error('Solution title and description are required and must stay within safe limits.');
+  }
+  if (!outcomes.length || !setupSteps.length) {
+    throw new Error('At least one outcome and one setup step are required.');
+  }
+
+  await db.update(aiSolutionTemplates).set({
+    title,
+    shortDescription,
+    outcomes,
+    setupSteps,
+    sortOrder,
+    enabled,
+    updatedByUserId: actor.userId,
+    updatedAt: new Date(),
+  }).where(eq(aiSolutionTemplates.key, templateKey));
+
+  revalidateAiOps(tenantSlug);
+  revalidatePath('/ai/app');
 }
