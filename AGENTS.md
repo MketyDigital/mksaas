@@ -4020,3 +4020,19 @@ This section is newer than the protected historical blueprint above and override
 
 Historical certification/recovery branches and PRs must not be merged blindly. Reconcile any still-needed intent onto current `main`, then run fresh verification. The current production baseline takes precedence over stale branch state.
 
+
+
+# 2026-09-28 Enterprise AI White-label and Customer Domain Override
+
+For Enterprise AI, white-label means a genuine customer-facing product identity, not only a logo swap.
+
+- Entitled white-label customers may replace Enterprise AI product/brand name, logo, favicon, colors, support/legal links and customer login presentation.
+- A customer hostname is routing context for the existing Mkety tenant/workspace. Never create a duplicate tenant, membership directory, billing ledger or AI runtime for a custom domain.
+- Every Enterprise AI tenant may use the managed `<tenant>.mkety.app` fallback.
+- Customer-owned hostnames use Cloudflare for SaaS and should normally require one customer CNAME record; Mkety owns certificate provisioning, verification and routing.
+- Domains purchased through Mkety use the server-owned registrar/reseller abstraction and then enter the same Cloudflare/custom-hostname path.
+- Host-to-host login uses one-time destination-bound product handoff and host-scoped session cookies. Do not reintroduce wildcard Mkety cookies.
+- Day-one Enterprise AI channels are Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API; future channels extend the adapter layer rather than fork the runtime.
+- Enterprise customers must be able to understand plan, subscription, usage and customer cost/credits without needing developer knowledge.
+- Raw provider cost remains internal commercial telemetry. Customer charging remains versioned, prepaid/fail-closed by default and separate from provider cost.
+- Production managed inference may only run after credit and every applicable budget reservation succeed, and it must settle actual usage against the immutable admitted rate-card version.
