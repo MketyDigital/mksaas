@@ -277,20 +277,20 @@ Cloudflare currently meters Workers AI in neurons internally and publishes equiv
 
 Illustrative raw upstream cost, excluding Worker requests, storage, Gateway, retrieval, tools, payment fees and Mkety margin:
 
-| Workload example | Tokens | Gemma 4 raw cost | Qwen 3.8 raw cost |
-| --- | --- | ---: | ---: |
-| Light chat | 1,000 in / 300 out | ~$0.00019 | ~$0.00141 |
-| Normal chat | 2,000 in / 500 out | ~$0.00035 | ~$0.00250 |
-| RAG-style answer | 5,000 in / 800 out | ~$0.00074 | ~$0.00481 |
-| Heavy agent turn | 10,000 in / 2,000 out | ~$0.00160 | ~$0.01090 |
+| Workload example | Tokens | Gemma 4 raw cost | GLM-5.3 Flash raw cost | Qwen 3.8 raw cost |
+| --- | --- | ---: | ---: | ---: |
+| Light chat | 1,000 in / 300 out | ~$0.00019 | ~$0.00030 | ~$0.00141 |
+| Normal chat | 2,000 in / 500 out | ~$0.00035 | ~$0.00055 | ~$0.00250 |
+| RAG-style answer | 5,000 in / 800 out | ~$0.00074 | ~$0.00115 | ~$0.00481 |
+| Heavy agent turn | 10,000 in / 2,000 out | ~$0.00160 | ~$0.00250 | ~$0.01090 |
 
-For 1,000 "normal chat" turns at the example size, raw model inference is approximately $0.35 on Gemma 4 versus $2.50 on Qwen 3.8 before all other Mkety costs.
+For 1,000 "normal chat" turns at the example size, raw model inference is approximately $0.35 on Gemma 4, $0.55 on GLM-5.3 Flash, and $2.50 on Qwen 3.8 before all other Mkety costs.
 
 Commercial consequences:
 
 - `mkety/default` should initially prefer Gemma 4 for ordinary workloads unless evaluation quality says otherwise.
-- Qwen 3.8 should be a higher-capability route rather than the universal default because its output cost is materially higher.
-- model aliases and policy routing should decide whether a request truly needs Qwen;
+- GLM-5.3 Flash and Qwen 3.8 must be compared on quality, capability, latency, reliability and measured cost before either receives the second managed slot.
+- Do not assign a permanent "higher-capability" production role to either second-slot candidate from documentation alone; model aliases and policy routing follow benchmark evidence.
 - Enterprise and API rate cards should price against measured blended workloads, not merely multiply provider token rates;
 - image/vision inputs, long contexts, reasoning behavior and agent tool loops must be benchmarked before publishing final credit conversion.
 
@@ -303,13 +303,15 @@ Provisional managed-inference reference:
 | Model | Raw input / 1M | Raw output / 1M | Provisional Mkety input / 1M | Provisional Mkety output / 1M |
 | --- | ---: | ---: | ---: | ---: |
 | Gemma 4 | $0.10 | $0.30 | $0.30 | $0.90 |
+| GLM-5.3 Flash | $0.15 | $0.50 | $0.45 | $1.50 |
 | Qwen 3.8 27B | $0.45 | $3.20 | $1.35 | $9.60 |
 
-Qwen cached input raw pricing is $0.05/M; a provisional 3x reference would be $0.15/M cached input.
+GLM cached input raw pricing is $0.03/M and Qwen cached input is $0.05/M; provisional 3x references would be $0.09/M and $0.15/M respectively.
 
 At the illustrative 2,000-input/500-output "normal chat" workload:
 
 - Gemma raw ~= $0.00035; provisional managed inference ~= $0.00105 per turn, or ~= $1.05 per 1,000 turns.
+- GLM raw ~= $0.00055; provisional managed inference ~= $0.00165 per turn, or ~= $1.65 per 1,000 turns.
 - Qwen raw ~= $0.00250; provisional managed inference ~= $0.00750 per turn, or ~= $7.50 per 1,000 turns.
 
 This inference rate is **not the whole Enterprise price**. Enterprise pricing must recover and monetize:
