@@ -243,3 +243,32 @@ export async function resolveByokProviderConnection(input: {
     adapter: createCentralExternalProvider(credentials),
   };
 }
+
+
+export async function listByokProviderConnections(input: {
+  tenantId: string;
+  projectId?: string | null;
+}) {
+  const projectId = input.projectId ?? null;
+  await assertProjectScope(input.tenantId, projectId);
+  return db.query.aiProviderConnections.findMany({
+    where: and(
+      eq(aiProviderConnections.tenantId, input.tenantId),
+      projectId === null
+        ? isNull(aiProviderConnections.projectId)
+        : eq(aiProviderConnections.projectId, projectId),
+      eq(aiProviderConnections.mode, 'byok'),
+    ),
+    columns: {
+      id: true,
+      projectId: true,
+      providerKey: true,
+      mode: true,
+      endpointUrl: true,
+      status: true,
+      metadata: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+}
