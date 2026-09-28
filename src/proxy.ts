@@ -47,9 +47,16 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.rewrite(url);
   }
 
-  if(hostname.toLowerCase()===mailHost && pathname==='/'){
+  if(hostname.toLowerCase()===mailHost && (pathname==='/' || pathname==='/mail/app') && !session){
     const url=new URL(request.url);
-    url.pathname=session?'/mail/app':'/login';
+    url.pathname='/login';
+    url.search='';
+    url.searchParams.set('returnTo','/mail/app');
+    return NextResponse.redirect(url);
+  }
+  if(hostname.toLowerCase()===mailHost && pathname==='/' && session){
+    const url=new URL(request.url);
+    url.pathname='/mail/app';
     url.search='';
     return NextResponse.redirect(url);
   }
