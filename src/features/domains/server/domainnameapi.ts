@@ -118,9 +118,16 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     let lastStatus = 0;
     let lastPayload: unknown = null;
     for (const path of paths) {
+      const legacyBody = path.startsWith('/v1/domain/')
+        ? {
+            ...body,
+            resellerId: this.config.username.trim(),
+            apiKey: this.config.apiToken.trim(),
+          }
+        : body;
       const { response, payload } = await this.request(path, {
         method: 'POST',
-        body: JSON.stringify(body),
+        body: JSON.stringify(legacyBody),
       });
       lastStatus = response.status;
       lastPayload = payload;
@@ -189,7 +196,9 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
         domainName: domain,
         period: input.years,
         registrantContactId: input.contactRef,
-        nameServers: this.config.nameServers ?? [],
+        nameServers: this.config.nameServers?.length
+          ? this.config.nameServers
+          : ['tr.apiname.com', 'eu.apiname.com'],
         whoisPrivacy: this.config.whoisPrivacy ?? true,
       },
     );
