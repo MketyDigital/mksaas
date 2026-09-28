@@ -1,9 +1,9 @@
 import { and, eq, isNull } from 'drizzle-orm';
 
 import {
+  type CentralAiProviderCredentials,
   createCentralExternalProvider,
   isCentralAiProviderId,
-  type CentralAiProviderCredentials,
 } from '@/features/ai-runtime/providers/external';
 import type { CentralAiProviderId } from '@/features/ai-runtime/providers/external-types';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
