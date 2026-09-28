@@ -54,7 +54,7 @@ describe('production cutover private database gate', () => {
 
     expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
     expect(workflow).toContain('Attach apex and www as Worker Custom Domains');
-    expect(workflow).toContain('Business\\s+(?:plan|tier|workspace)');
+    expect(workflow).toContain('(?:Growth|Pro|Business)\\s+(?:plan|tier|workspace)');
     expect(workflow).not.toContain('\\b(Growth|Pro|Business)\\b');
     expect(workflow).toContain('for host in mkety.com www.mkety.com');
     expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
