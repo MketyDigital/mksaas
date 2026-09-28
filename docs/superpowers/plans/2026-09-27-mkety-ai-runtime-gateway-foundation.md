@@ -392,3 +392,51 @@ Mail production completion and repository cleanup have now reached:
 - current main after SolutionHub merge: `7dc7884ebb28d96daa7820c51d37dfae183bf4b0`.
 
 The AI implementation gate is now reduced to final exact-main validation/promotion checks. After those are green, begin AI-01 immediately.
+
+
+## AI-01 implementation start — 2026-09-28
+
+Mail and public-production gates are complete. AI-01 now proceeds from exact successful public production release `5db1e05f718d713dd1012be6ee05d6fe80d4cb21`.
+
+Implemented on the current-production-derived AI branch:
+
+- Enterprise AI/API entitlement vocabulary reconciled from the approved foundation;
+- AI-specific PBAC permission vocabulary;
+- additive AI runtime schema for API keys, model catalog/aliases, provider connections, routes, budgets and request records;
+- one-way hashed `mk_ai_live_` / `mk_ai_test_` API-key lifecycle;
+- provider-neutral runtime contract and non-billable fake adapter;
+- tenant/project-aware model-route resolution;
+- fail-closed managed-inference budget authorization seam;
+- authenticated `GET /api/v1/ai/models`;
+- authenticated `POST /api/v1/ai/chat/completions` foundation with required idempotency;
+- controlled provider-unavailable result after all authorization gates so AI-01 cannot create paid inference.
+
+### Managed-model benchmark update
+
+Do not permanently lock Qwen 3.8 as the second managed model before benchmark.
+
+Current Workers AI catalog verification on 2026-09-28 makes the initial benchmark set:
+
+- Gemma 4 26B A4B — day-one managed candidate;
+- GLM-5.3 Flash — benchmark candidate;
+- Qwen 3.8 27B — benchmark candidate.
+
+GLM-5.3 Flash currently has materially lower published token pricing than Qwen 3.8 27B while retaining reasoning, vision and function-calling capability and a materially larger context window. This makes GLM the primary economic challenger, but the production alias must be selected only after Mkety's own normal-chat, RAG/long-context, tools, structured output, coding, reasoning, vision, latency, reliability and cost benchmark.
+
+All candidate DB rows remain disabled until benchmark and non-production provider acceptance are complete.
+
+### Reliability and edge-state boundary
+
+Use Cloudflare primitives by consistency requirement rather than making every edge primitive authoritative:
+
+- PostgreSQL remains authoritative for identity-linked tenant/project scope, entitlements, budgets, usage/accounting, API-key metadata, model/route policy and idempotent commercial state.
+- Hyperdrive remains the database connectivity/latency layer where appropriate.
+- Workers KV may cache non-authoritative, high-read configuration/catalog material with explicit versioning/TTL; it must not authorize spend or replace strongly consistent budget/idempotency state.
+- Durable Objects are appropriate for later per-tenant/per-key coordination that requires single-threaded consistency, such as atomic rate windows, concurrency admission and long-lived streaming/session coordination.
+- AI Gateway should provide provider-facing observability, bounded retries/timeouts, safe fallback policy and eligible inference caching after provider integration.
+- Cache keys must include all tenant/model/prompt/tool/policy dimensions that can change an answer; tenant-sensitive outputs must never share a cross-tenant cache key.
+- Queues may be used for asynchronous observability/accounting repair work only when the request path has already preserved an authoritative idempotent record; queues must never become a way to authorize unrecorded spend.
+- R2 is appropriate for larger AI artifacts/exports where database rows store ownership and references.
+- no stale cache result may grant entitlement, budget or route access.
+
+This layering is intended to keep the runtime fast and resilient without trading away tenant isolation, billing correctness or fail-closed security.
