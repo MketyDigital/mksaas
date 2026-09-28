@@ -5,12 +5,12 @@ import {
   verifyAndNormalizeEnterpriseAiInbound,
   verifyMetaWebhookChallenge,
 } from '@/features/ai-runtime/channels/inbound';
-import { getEnterpriseAiChannel, type EnterpriseAiChannelKey } from '@/features/ai-runtime/channels/registry';
+import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
-import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections } from '@/shared/db/schema/ai-runtime';
 
