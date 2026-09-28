@@ -62,6 +62,31 @@ describe('WorkersAiProviderAdapter', () => {
     });
   });
 
+
+  it('normalizes the native Workers AI text-generation response shape', async () => {
+    const run = jest.fn().mockResolvedValue({
+      response: 'MKETY_ACCEPTANCE_OK',
+      usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+    });
+    const adapter = new WorkersAiProviderAdapter({ run }, { gatewayId: 'mkety-ai-nonprod' });
+
+    const result = await adapter.complete({
+      ...request,
+      maxOutputTokens: 64,
+      requestedModel: 'mkety-economy',
+    }, '@cf/google/gemma-4-26b-a4b-it');
+
+    expect(result.text).toBe('MKETY_ACCEPTANCE_OK');
+    expect(result.usage).toEqual({
+      inputTokens: 8n,
+      cachedInputTokens: 0n,
+      outputTokens: 4n,
+    });
+    expect(run.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      chat_template_kwargs: { enable_thinking: false },
+    }));
+  });
+
   it('maps tool and strict structured-output contracts without exposing Mkety credentials', async () => {
     const run = jest.fn().mockResolvedValue({
       choices: [{ finish_reason: 'stop', message: { content: '{"ok":true}' } }],
