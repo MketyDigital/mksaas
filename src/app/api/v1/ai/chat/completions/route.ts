@@ -3,16 +3,24 @@ import { z } from 'zod';
 
 import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
 import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
+import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 import {
   admitAiCommercialRequest,
   releaseAiCommercialRequest,
+  settleAiCommercialRequest,
 } from '@/features/ai-runtime/server/commercial-admission';
 import { conservativeInputTokenUpperBound } from '@/features/ai-runtime/server/commercial-estimation';
 import { getEnterpriseAiRuntimePolicy } from '@/features/ai-runtime/server/commercial-policy';
 import {
+  calculateAiCredits,
   estimateAiReservationCredits,
   resolveActiveAiRateCard,
 } from '@/features/ai-runtime/server/commercial-rates';
+import {
+  calculateProviderCostUsdMicros,
+  getManagedAiCostRate,
+  minimumCustomerRevenueUsdMicros,
+} from '@/features/ai-runtime/server/provider-cost';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { db } from '@/shared/db/cloudflare';
 import { aiRequests, projects } from '@/shared/db/schema';
@@ -269,10 +277,85 @@ export async function POST(request: Request) {
     return errorResponse(402, 'commercial_admission_denied', 'Prepaid credits or budget do not authorize this request.', requestId);
   }
 
+  if (resolved.model.providerKey !== 'workers-ai') {
+    try {
+      await releaseAiCommercialRequest({ admission, reason: 'provider_not_supported' });
+    } catch {
+      await db
+        .update(aiRequests)
+        .set({ status: 'reconciliation_required', errorCode: 'commercial_reconciliation_required', completedAt: new Date() })
+        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+      return errorResponse(503, 'commercial_reconciliation_required', 'Commercial holds require reconciliation.', requestId);
+    }
+    return errorResponse(503, 'provider_unavailable', 'The selected managed provider is not enabled.', requestId);
+  }
+
+  let result;
   try {
-    await releaseAiCommercialRequest({
+    const provider = getManagedWorkersAiProvider();
+    result = await provider.complete({
+      tenantId: key.tenantId,
+      projectId,
+      apiKeyId: key.id,
+      actorUserId: null,
+      requestedModel: resolved.alias.alias,
+      messages: parsed.data.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.name ? { name: message.name } : {}),
+        ...(message.tool_call_id ? { toolCallId: message.tool_call_id } : {}),
+      })),
+      maxOutputTokens: effectiveMaxOutput,
+      idempotencyKey,
+      metadata: { requestId },
+    }, resolved.model.nativeModel);
+  } catch {
+    try {
+      await releaseAiCommercialRequest({ admission, reason: 'provider_failed' });
+    } catch {
+      await db
+        .update(aiRequests)
+        .set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        })
+        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+      return errorResponse(503, 'commercial_reconciliation_required', 'Provider failed and commercial holds require reconciliation.', requestId);
+    }
+
+    await db
+      .update(aiRequests)
+      .set({ status: 'provider_failed', errorCode: 'provider_failed', completedAt: new Date() })
+      .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+    return errorResponse(502, 'provider_failed', 'The managed AI provider could not complete the request.', requestId);
+  }
+
+  const actualCredits = calculateAiCredits({
+    inputTokens: result.usage.inputTokens,
+    cachedInputTokens: result.usage.cachedInputTokens,
+    outputTokens: result.usage.outputTokens,
+    rate,
+  });
+
+  const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
+  const providerCostUsdMicros = providerRate
+    ? calculateProviderCostUsdMicros({
+        rate: providerRate,
+        inputTokens: result.usage.inputTokens,
+        cachedInputTokens: result.usage.cachedInputTokens,
+        outputTokens: result.usage.outputTokens,
+      })
+    : null;
+  const minimumRevenueUsdMicros = providerCostUsdMicros === null
+    ? null
+    : minimumCustomerRevenueUsdMicros(providerCostUsdMicros);
+
+  try {
+    await settleAiCommercialRequest({
       admission,
-      reason: 'provider_unavailable',
+      actualCredits,
+      settledAt: new Date(),
     });
   } catch {
     await db
@@ -280,21 +363,25 @@ export async function POST(request: Request) {
       .set({
         status: 'reconciliation_required',
         errorCode: 'commercial_reconciliation_required',
+        inputTokens: result.usage.inputTokens,
+        cachedInputTokens: result.usage.cachedInputTokens,
+        outputTokens: result.usage.outputTokens,
         providerCostMetadata: {
           requestFingerprint,
-          inputTokenUpperBound: inputTokenUpperBound.toString(),
-          effectiveMaxOutput,
+          providerRequestId: result.providerRequestId ?? null,
+          providerCostUsdMicros: providerCostUsdMicros?.toString() ?? null,
+          minimumRevenueUsdMicros: minimumRevenueUsdMicros?.toString() ?? null,
+          actualCredits: actualCredits.toString(),
           creditReservationId: admission.creditReservation.id,
           budgetReservationIds: admission.budgetReservations.map((item) => item.id),
         },
         completedAt: new Date(),
       })
       .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
-
     return errorResponse(
       503,
       'commercial_reconciliation_required',
-      'Request was not sent to a provider and its commercial holds require reconciliation.',
+      'The provider completed the request but accounting requires reconciliation. The request will not be sent upstream again.',
       requestId,
     );
   }
@@ -302,12 +389,18 @@ export async function POST(request: Request) {
   await db
     .update(aiRequests)
     .set({
-      status: 'provider_unavailable',
-      errorCode: 'provider_unavailable',
+      status: 'completed',
+      errorCode: null,
+      settledCredits: actualCredits,
+      inputTokens: result.usage.inputTokens,
+      cachedInputTokens: result.usage.cachedInputTokens,
+      outputTokens: result.usage.outputTokens,
       providerCostMetadata: {
         requestFingerprint,
-        inputTokenUpperBound: inputTokenUpperBound.toString(),
-        effectiveMaxOutput,
+        providerRequestId: result.providerRequestId ?? null,
+        providerCostUsdMicros: providerCostUsdMicros?.toString() ?? null,
+        minimumRevenueUsdMicros: minimumRevenueUsdMicros?.toString() ?? null,
+        actualCredits: actualCredits.toString(),
         creditReservationId: admission.creditReservation.id,
         budgetReservationIds: admission.budgetReservations.map((item) => item.id),
       },
@@ -315,10 +408,20 @@ export async function POST(request: Request) {
     })
     .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
 
-  return errorResponse(
-    503,
-    'provider_unavailable',
-    'Commercial admission passed and was released; managed inference is still disabled on this route.',
-    requestId,
-  );
+  return Response.json({
+    id: requestId,
+    object: 'chat.completion',
+    model: resolved.alias.alias,
+    choices: [{
+      index: 0,
+      message: { role: 'assistant', content: result.text ?? '' },
+      finish_reason: result.finishReason,
+    }],
+    usage: {
+      prompt_tokens: Number(result.usage.inputTokens),
+      completion_tokens: Number(result.usage.outputTokens),
+      total_tokens: Number(result.usage.inputTokens + result.usage.outputTokens),
+      cached_input_tokens: Number(result.usage.cachedInputTokens),
+    },
+  });
 }
