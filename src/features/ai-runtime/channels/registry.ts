@@ -5,6 +5,8 @@ export type EnterpriseAiChannelKey =
   | 'instagram'
   | 'facebook_messenger'
   | 'slack'
+  | 'discord'
+  | 'linkedin_page'
   | 'microsoft_teams'
   | 'custom_webhook';
 
@@ -79,6 +81,26 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+  },
+  {
+    key: 'discord',
+    label: 'Discord',
+    entitlement: 'ai.channel.discord',
+    customerSetup: ['Create or choose a Discord app/bot', 'Add the bot to the server', 'Configure the interactions endpoint'],
+    credentialMode: 'token',
+    supportsInbound: true,
+    supportsOutbound: true,
+    supportsHumanHandoff: true,
+  },
+  {
+    key: 'linkedin_page',
+    label: 'LinkedIn Page Community',
+    entitlement: 'ai.channel.linkedin_page',
+    customerSetup: ['Use a LinkedIn developer app with approved Community Management access', 'Connect an organization admin token', 'Validate and subscribe the webhook'],
+    credentialMode: 'oauth',
+    supportsInbound: true,
+    supportsOutbound: true,
+    supportsHumanHandoff: false,
   },
   {
     key: 'microsoft_teams',
