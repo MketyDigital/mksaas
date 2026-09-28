@@ -4047,3 +4047,18 @@ This section is newer than the earlier Enterprise AI override above and resolves
 - The managed Workers AI benchmark set is Gemma 4 26B A4B, GLM-5.3 Flash, and Qwen 3.8 27B. Gemma remains the initial managed candidate; the second managed model must be selected from recorded benchmark evidence rather than documentation preference.
 - Production managed customer inference remains fail-closed. `customerInferenceEnabled` must stay off until the paid benchmark, tiny real AI Gateway/accounting acceptance, real customer-domain white-label/isolation acceptance, registrar/reseller adapter verification, and guarded production promotion are all recorded.
 
+
+
+# 2026-09-28 Central Mkety AI Runtime and Dynamic Connection Authority
+
+This section is newer than all earlier Public AI, Platform AI, Enterprise AI, provider and registrar wording above and supersedes any conflicting implementation guidance.
+
+- Public Mkety AI, authenticated Workspace AI, managed Agent Builder/Automation execution, Workspace knowledge embeddings, Enterprise AI and the Enterprise AI API are separate product/data/policy experiences that consume one shared central Mkety AI transport/control layer. “Separate” means isolation of memory, tenant data, policy, credentials, entitlements, budgets and audit scope; it does **not** mean maintaining duplicate provider transports.
+- Mkety-managed inference uses Workers AI through the shared runtime. The selected managed routes are `mkety-economy` -> Gemma 4 and `mkety-smart` -> GLM-5.3 Flash. Qwen 3.8 27B is a benchmarked reserve. Normal Workspace chat routes by task class rather than random/round-robin distribution. Heavy work starts on GLM-5.3 Flash until a separately validated full GLM-5.3 escalation tier is introduced.
+- Public AI may use the managed Workers AI routes or isolated Mkety-owned external-provider system connections. Tenant Workspace/Enterprise BYOK uses tenant/project-scoped connections. Approved external adapters are OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare AI and AWS Bedrock.
+- A selected BYOK connection is fail-closed: provider/credential failure must never silently fall back to Mkety-paid inference.
+- Rotatable provider/customer/reseller credentials must be encrypted database-backed connections and must not require an application build/redeploy to rotate. Mutable provider selection, model choice, fallback order, endpoints, regions and reseller settings are database-backed configuration.
+- Only genuine bootstrap/root/infrastructure secrets belong in Worker/server secret storage. The shared connection-encryption root is `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY`; provider API keys and DomainNameAPI reseller credentials are not deployment configuration.
+- Domain registration is a system-wide Mkety service. DomainNameAPI is the concrete reseller adapter behind the shared domain abstraction. Enterprise AI and other products consume the Domains service; they do not own registrar credentials.
+- Managed-model benchmark gate is complete: run `36425084523` recorded Gemma 4 at 8/10, GLM-5.3 Flash at 9/10 and Qwen 3.8 27B at 9/10 with zero provider errors. Gemma + GLM-5.3 Flash are the selected managed pair.
+- Production Enterprise customer inference remains OFF until the tiny managed commercial/accounting acceptance, real customer white-label hostname/login isolation acceptance, DomainNameAPI live reseller acceptance and explicit guarded production promotion are recorded.
