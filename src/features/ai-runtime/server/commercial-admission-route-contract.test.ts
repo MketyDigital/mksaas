@@ -15,10 +15,10 @@ describe('AI commercial admission route safety', () => {
       'utf8',
     );
 
-    const admission = route.indexOf('admitAiCommercialRequest');
-    const providerCost = route.indexOf('getManagedAiCostRate');
-    const providerExecution = route.indexOf('getManagedWorkersAiProvider');
-    const settlement = route.indexOf('settleAiCommercialRequest');
+    const admission = route.lastIndexOf('admitAiCommercialRequest({');
+    const providerCost = route.lastIndexOf('getManagedAiCostRate(');
+    const providerExecution = route.lastIndexOf('getManagedWorkersAiProvider()');
+    const settlement = route.lastIndexOf('settleAiCommercialRequest({');
 
     expect(admission).toBeGreaterThan(-1);
     expect(providerCost).toBeGreaterThan(admission);
