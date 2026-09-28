@@ -33,6 +33,9 @@ export function assertReservationCredits(credits: bigint) {
   }
 }
 
+export const AI_CREDIT_RESERVATION_DEFAULT_TTL_MS = 2 * 60 * 1000;
+export const AI_CREDIT_RESERVATION_MAX_TTL_MS = 10 * 60 * 1000;
+
 export function assertReservationIdempotencyKey(value: string) {
   if (!value || value.length > 160) {
     throw new AiCreditReservationError(
@@ -40,6 +43,23 @@ export function assertReservationIdempotencyKey(value: string) {
       'Reservation idempotency key must contain 1 to 160 characters.',
     );
   }
+}
+
+export function assertReservationExpiry(expiresAt: Date, now: Date) {
+  const ttlMs = expiresAt.getTime() - now.getTime();
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0 || ttlMs > AI_CREDIT_RESERVATION_MAX_TTL_MS) {
+    throw new AiCreditReservationError(
+      AI_CREDIT_RESERVATION_ERROR_CODES.invalidExpiry,
+      'Reservation expiry must be in the future and no more than 10 minutes away.',
+    );
+  }
+}
+
+export function reservationOperationIdempotencyKey(
+  fingerprint: string,
+  operation: 'hold' | 'release' | 'usage',
+) {
+  return `aires:${fingerprint}:${operation}`;
 }
 
 export function planAiReservationSettlement(reservedCredits: bigint, actualCredits: bigint) {
