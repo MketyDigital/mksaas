@@ -119,6 +119,33 @@ describe('Mkety documented public commercial presentation', () => {
     ]);
   });
 
+  it('publishes Mail and Enterprise AI as separate product families', () => {
+    const pricingPage = getDefaultPublicPage('pricing');
+    const pricingItems = pricingPage?.sections[0]?.items ?? [];
+    expect(pricingItems.find((item) => item.key === 'mkety-mail-plans')).toMatchObject({
+      title: 'Mkety Mail',
+      href: '/mail',
+      badge: 'Separate product',
+    });
+    expect(pricingItems.find((item) => item.key === 'enterprise-ai')).toMatchObject({
+      title: 'Enterprise AI',
+      href: '/enterprise',
+      badge: 'Enterprise',
+    });
+
+    const enterprisePage = getDefaultPublicPage('enterprise');
+    expect(enterprisePage?.sections[0]?.items.find((item) => item.key === 'enterprise-ai-product')).toMatchObject({
+      title: 'Enterprise AI',
+      href: 'https://ai.mkety.com',
+      badge: 'Enterprise AI',
+    });
+    expect(enterprisePage?.sections[0]?.items.find((item) => item.key === 'enterprise-mail-product')).toMatchObject({
+      title: 'Enterprise Mail',
+      href: '/mail',
+      badge: 'Enterprise Mail',
+    });
+  });
+
   it('keeps Trading visible but sends new buyers through Enterprise first', () => {
     expect(workspaceByKey.get('ai')).toMatchObject({
       title: 'AI Workspace',
