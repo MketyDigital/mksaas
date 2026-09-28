@@ -46,7 +46,7 @@ type WorkersAiChatResponse = {
     output_tokens?: number;
     cached_input_tokens?: number;
   };
-  response?: string;
+  response?: string | Array<{ type?: string; text?: string; content?: string }>;
 };
 
 function nonNegativeBigInt(value: unknown) {
@@ -95,7 +95,17 @@ function normalizeWorkersAiResponse(
           .trim() || undefined
       : typeof value.response === 'string'
         ? value.response
-        : undefined;
+        : Array.isArray(value.response)
+          ? value.response
+              .map((part) => {
+                if (!part || typeof part !== 'object') return '';
+                if (typeof part.text === 'string') return part.text;
+                if (typeof part.content === 'string') return part.content;
+                return '';
+              })
+              .join('')
+              .trim() || undefined
+          : undefined;
 
   const toolCalls = choice?.message?.tool_calls
     ?.filter((item) => item.function?.name)
