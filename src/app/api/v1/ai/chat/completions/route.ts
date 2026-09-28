@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
@@ -6,7 +6,9 @@ import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
 import { authorizeAiBudget } from '@/features/ai-runtime/server/budget-authorization';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { db } from '@/shared/db/cloudflare';
-import { aiRequests } from '@/shared/db/schema';
+import { aiRequests, projects } from '@/shared/db/schema';
+
+const MAX_REQUEST_BYTES = 1_000_000;
 
 const requestSchema = z.object({
   model: z.string().min(1).max(128),
@@ -23,37 +25,117 @@ const requestSchema = z.object({
   response_format: z.unknown().optional(),
 });
 
+function errorResponse(status: number, code: string, message: string, requestId?: string) {
+  return Response.json({
+    error: {
+      code,
+      message,
+      ...(requestId ? { request_id: requestId } : {}),
+    },
+  }, { status });
+}
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function readJsonBody(request: Request) {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) return { tooLarge: true as const };
+
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) return { tooLarge: true as const };
+
+  try {
+    return { tooLarge: false as const, value: JSON.parse(raw) as unknown };
+  } catch {
+    return { tooLarge: false as const, value: null };
+  }
+}
+
 export async function POST(request: Request) {
-  const contentLength = Number(request.headers.get('content-length') ?? '0');
-  if (contentLength > 1_000_000) {
-    return Response.json({ error: { code: 'request_too_large', message: 'Request body is too large.' } }, { status: 413 });
-  }
-
   const key = await authenticateAiApiKey(request, 'ai:chat');
-  if (!key) return Response.json({ error: { code: 'unauthorized', message: 'Invalid API key.' } }, { status: 401 });
+  if (!key) return errorResponse(401, 'unauthorized', 'Invalid API key.');
+
   if (!(await hasEnterpriseAiApiAccess(key.tenantId))) {
-    return Response.json({ error: { code: 'forbidden', message: 'Enterprise AI API access is not enabled.' } }, { status: 403 });
+    return errorResponse(403, 'forbidden', 'Enterprise AI API access is not enabled.');
   }
 
-  const parsed = requestSchema.safeParse(await request.json().catch(() => null));
+  const body = await readJsonBody(request);
+  if (body.tooLarge) return errorResponse(413, 'request_too_large', 'Request body is too large.');
+
+  const parsed = requestSchema.safeParse(body.value);
   if (!parsed.success) {
-    return Response.json({ error: { code: 'invalid_request', message: 'Invalid chat completion request.' } }, { status: 400 });
+    return errorResponse(400, 'invalid_request', 'Invalid chat completion request.');
   }
 
-  const projectHeader = request.headers.get('x-mkety-project-id');
-  const projectId = key.projectId ?? projectHeader ?? null;
+  if (parsed.data.stream) {
+    return errorResponse(501, 'streaming_not_enabled', 'Streaming is not enabled on the AI-01 foundation route yet.');
+  }
+
+  const projectHeader = request.headers.get('x-mkety-project-id')?.trim() || null;
+  const projectId = key.projectId ?? projectHeader;
+
   if (key.projectId && projectHeader && projectHeader !== key.projectId) {
-    return Response.json({ error: { code: 'project_scope_mismatch', message: 'API key is not valid for this project.' } }, { status: 403 });
+    return errorResponse(403, 'project_scope_mismatch', 'API key is not valid for this project.');
+  }
+
+  if (projectId) {
+    const ownedProject = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.tenantId, key.tenantId)),
+      columns: { id: true },
+    });
+    if (!ownedProject) {
+      return errorResponse(403, 'project_scope_mismatch', 'Project is not available to this tenant.');
+    }
   }
 
   const idempotencyKey = request.headers.get('idempotency-key')?.trim();
   if (!idempotencyKey || idempotencyKey.length > 180) {
-    return Response.json({ error: { code: 'idempotency_key_required', message: 'A valid Idempotency-Key header is required.' } }, { status: 400 });
+    return errorResponse(400, 'idempotency_key_required', 'A valid Idempotency-Key header is required.');
   }
 
-  const resolved = await resolveAiModelRoute({ tenantId: key.tenantId, projectId, requestedModel: parsed.data.model });
+  const requestFingerprint = await sha256(JSON.stringify({
+    projectId,
+    body: parsed.data,
+  }));
+
+  const existing = await db.query.aiRequests.findFirst({
+    where: and(
+      eq(aiRequests.tenantId, key.tenantId),
+      eq(aiRequests.idempotencyKey, idempotencyKey),
+    ),
+  });
+
+  if (existing) {
+    if (existing.requestFingerprint !== requestFingerprint) {
+      return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    }
+    return errorResponse(
+      existing.status === 'provider_unavailable' ? 503 : 409,
+      existing.errorCode ?? 'duplicate_request',
+      existing.status === 'provider_unavailable'
+        ? 'Managed inference is not enabled on this AI-01 foundation route yet.'
+        : 'This request has already been accepted.',
+      existing.id,
+    );
+  }
+
+  const resolved = await resolveAiModelRoute({
+    tenantId: key.tenantId,
+    projectId,
+    requestedModel: parsed.data.model,
+  });
   if (!resolved) {
-    return Response.json({ error: { code: 'model_not_allowed', message: 'Requested model is not available for this tenant.' } }, { status: 403 });
+    return errorResponse(403, 'model_not_allowed', 'Requested model is not available for this tenant.');
+  }
+
+  if (parsed.data.tools?.length && !resolved.model.capabilities.tools) {
+    return errorResponse(400, 'tools_not_supported', 'Requested model does not support tool calling.');
+  }
+  if (parsed.data.response_format && !resolved.model.capabilities.structuredOutput) {
+    return errorResponse(400, 'structured_output_not_supported', 'Requested model does not support structured output.');
   }
 
   const maxOutput = parsed.data.max_completion_tokens ?? parsed.data.max_tokens;
@@ -61,15 +143,20 @@ export async function POST(request: Request) {
     ? resolved.model.limits.maxOutputTokens
     : undefined;
   if (maxOutput && modelMaxOutput && maxOutput > modelMaxOutput) {
-    return Response.json({ error: { code: 'max_output_exceeded', message: 'Requested output limit exceeds the model policy.' } }, { status: 400 });
+    return errorResponse(400, 'max_output_exceeded', 'Requested output limit exceeds the model policy.');
   }
 
-  const budget = await authorizeAiBudget({ tenantId: key.tenantId, projectId, apiKeyId: key.id });
+  const budget = await authorizeAiBudget({
+    tenantId: key.tenantId,
+    projectId,
+    apiKeyId: key.id,
+  });
   if (!budget.ok) {
-    return Response.json({ error: { code: budget.code, message: 'AI budget does not authorize this request.' } }, { status: 402 });
+    return errorResponse(402, budget.code, 'AI budget does not authorize this request.');
   }
 
   const requestId = crypto.randomUUID();
+
   try {
     await db.insert(aiRequests).values({
       id: requestId,
@@ -77,6 +164,7 @@ export async function POST(request: Request) {
       projectId,
       apiKeyId: key.id,
       idempotencyKey,
+      requestFingerprint,
       modelAlias: resolved.alias.alias,
       providerKey: resolved.model.providerKey,
       nativeModel: resolved.model.nativeModel,
@@ -85,14 +173,22 @@ export async function POST(request: Request) {
       completedAt: new Date(),
     });
   } catch {
-    return Response.json({ error: { code: 'duplicate_request', message: 'This idempotency key has already been used.' } }, { status: 409 });
+    const raced = await db.query.aiRequests.findFirst({
+      where: and(
+        eq(aiRequests.tenantId, key.tenantId),
+        eq(aiRequests.idempotencyKey, idempotencyKey),
+      ),
+    });
+    if (raced?.requestFingerprint === requestFingerprint) {
+      return errorResponse(503, 'provider_unavailable', 'Managed inference is not enabled on this AI-01 foundation route yet.', raced.id);
+    }
+    return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
   }
 
-  return Response.json({
-    error: {
-      code: 'provider_unavailable',
-      message: 'Managed inference is not enabled on this AI-01 foundation route yet.',
-      request_id: requestId,
-    },
-  }, { status: 503 });
+  return errorResponse(
+    503,
+    'provider_unavailable',
+    'Managed inference is not enabled on this AI-01 foundation route yet.',
+    requestId,
+  );
 }
