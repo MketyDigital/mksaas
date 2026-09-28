@@ -1,0 +1,873 @@
+# Mkety AI Runtime, Gateway & Enterprise AI Architecture
+
+> Status: design foundation
+> Branch: `feat/mkety-ai-runtime-gateway-foundation-20260927`
+> Date: 2026-09-27
+> Governing authority: `AGENTS.md` and `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`
+>
+> This document does not supersede `AGENTS.md`. If there is a conflict, `AGENTS.md` wins until the authority is deliberately updated.
+>
+> Detailed product, team/RBAC, pricing, overage, payments, cache, security, reliability and operations policy is defined in `docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`.
+
+## 1. Product intent
+
+Mkety AI becomes the shared AI runtime and AI API product for Mkety Platform and approved Enterprise / Customer Solutions.
+
+It has three simultaneous roles without collapsing their security boundaries:
+
+1. the inference/runtime layer consumed by the existing Mkety Platform AI Workspace;
+2. a developer-facing SaaS/PaaS API that customers can integrate like an OpenAI-compatible model provider;
+3. a standalone multi-tenant Enterprise AI SaaS/PaaS product that provisions customer AI configurations, channels, domains, knowledge and policies on the same central Mkety AI service by default.
+
+Mkety remains broader than AI. Mkety AI is a major Platform capability and enterprise service, not a replacement for the Platform, Academy, Trading, Mail, Media, or other Mkety products.
+
+## 2. Domain contract
+
+The existing Mkety domain authority remains intact:
+
+- `mkety.com` — public company/product site.
+- `app.mkety.com` — authenticated Mkety Platform.
+- `api.mkety.com` — public/platform API boundary.
+- `ai.mkety.com` — Mkety AI product console and AI-specific product experience.
+- `*.mkety.app` — customer preview/development/managed application hostnames.
+- customer custom domains — attached through the approved Cloudflare/custom-hostname path.
+
+Canonical developer API:
+
+```text
+https://api.mkety.com/v1/ai
+```
+
+OpenAI-compatible examples:
+
+```text
+GET  /v1/ai/models
+POST /v1/ai/chat/completions
+POST /v1/ai/responses
+POST /v1/ai/embeddings
+```
+
+Future multimodal endpoints may include image and audio operations when the selected model/provider capability actually supports them.
+
+An optional `ai.mkety.com/v1` compatibility alias may be introduced later only if the domain authority is deliberately updated. It is not required for the first release.
+
+## 3. Key product experiences
+
+### 3.1 Mkety AI API
+
+A customer creates a Mkety AI API key and uses it in an application by changing the OpenAI-compatible base URL.
+
+Example conceptual configuration:
+
+```text
+Base URL: https://api.mkety.com/v1/ai
+API key:  mk_ai_live_...
+Model:    mkety/default
+```
+
+Keys are tenant/project scoped, stored hashed, shown in full only once, revocable, rotatable, auditable, and optionally restricted by model, endpoint, budget, origin/IP, and environment.
+
+### 3.2 Mkety Platform AI Workspace
+
+The existing Agent Builder, agents, knowledge, tools, model selection, testing, versions, Website AI, supported messaging, run history, and Automation agent action continue to be Platform experiences.
+
+Their provider execution should progressively move behind the shared Mkety AI Runtime rather than each feature directly owning external-provider credentials and provider-specific routing.
+
+### 3.3 Enterprise AI on the shared central runtime
+
+The default Enterprise product is **not one Worker/runtime per enterprise customer**.
+
+Mkety operates one central multi-tenant AI service (or a small horizontally-scaled pool of equivalent central runtime instances for capacity/availability). Mkety itself is also a tenant/first-party consumer of this service.
+
+Each enterprise customer receives an isolated tenant configuration on that shared service: brand, assistant configuration, knowledge, tools, channels, domains, provider policy, budgets and audit state. A separate Worker, VM, GPU endpoint, database or dedicated AI stack is provisioned only when an Enterprise contract requires materially greater isolation, throughput, regional placement, security controls, private networking or dedicated capacity.
+
+The shared Enterprise configuration may include:
+
+- customer name, brand and assistant identity;
+- custom instructions and behavior;
+- tenant/project knowledge;
+- tools and business APIs;
+- one or more approved model routes;
+- Mkety-managed inference, BYOK, private/self-hosted model routes, or hybrid routing;
+- web assistant/widget;
+- Telegram bot/assistant;
+- supported WhatsApp, Messenger, Instagram or other social messaging integrations where provider APIs permit;
+- Slack, Discord, Microsoft Teams or other approved collaboration channels;
+- API access;
+- human handoff/escalation;
+- analytics, traces, feedback and audit history;
+- custom domain or `{customer}.mkety.app`;
+- optional dedicated/private infrastructure and SLA through Enterprise terms.
+
+## 3.4 Enterprise AI is a separate product entitlement
+
+Enterprise AI is not the same commercial product as the normal Mkety AI Workspace.
+
+- AI Workspace remains the self-service Platform workspace under its existing subscription.
+- Enterprise AI is a separately purchased/enabled product add-on/workspace with its own entitlement, plan/version, usage allowance, limits, overage policy and optional Enterprise contract.
+- Both can reuse central Mkety identity, tenant membership, PBAC, Billing, Entitlements, Usage/Credits and the same central inference runtime.
+- A tenant may have AI Workspace without Enterprise AI, Enterprise AI without needing duplicated user/team records, or both.
+- `ai.mkety.com` can expose both experiences based on entitlement, but the UI must make the distinction clear.
+- Enterprise-only features include production multi-channel/customer-facing deployment, custom domains, advanced operator handoff, higher/contracted limits, Enterprise security controls, private/dedicated routing, SLA and custom integrations.
+
+Conceptually:
+
+```text
+Central Mkety tenant
+   |
+   +-- workspace.ai entitlement
+   |      -> normal AI Workspace
+   |
+   +-- ai.enterprise entitlement
+          -> Enterprise AI product/workspace
+          -> ai.mkety.com enterprise console
+          -> managed channels/domains/usage/security
+```
+
+This follows the same integration principle intended for Media: central Mkety owns identity/billing/entitlement and the product keeps its focused runtime/console boundary.
+
+## 4. Runtime architecture
+
+The central service is both:
+
+- **Mkety's own AI server/runtime** for Public Mkety AI, AI Workspace and approved internal products; and
+- **a standalone multi-tenant SaaS/PaaS AI product** sold to external businesses and developers.
+
+The same runtime contract serves first-party and third-party tenants without sharing private tenant state.
+
+```text
+Mkety Public AI / AI Workspace / Automation / approved Mkety products
+External developers / Enterprise websites / Telegram / customer apps
+                              |
+                              v
+                    Central Mkety AI Service
+                              |
+                       Mkety AI Edge API
+             |
+      Auth / tenant / key
+             |
+   Entitlement + budget gate
+             |
+        Policy Router
+      /       |        \
+     /        |         \
+Mkety-paid   BYOK     Private/Self-hosted
+providers   providers      providers
+     \        |          /
+      \       |         /
+       Cloudflare AI Gateway
+       / routing / logs /
+      / limits / fallback
+             |
+          Model
+             |
+      normalized result
+             |
+       Usage + cost event
+             |
+      Credits / Billing
+             |
+      Run / audit record
+```
+
+Mkety owns the customer-facing contract. Cloudflare remains infrastructure behind the Mkety abstraction.
+
+## 5. Provider modes
+
+Every model route has an explicit commercial/provider mode.
+
+### 5.1 MKETY_MANAGED
+
+Mkety owns the upstream provider credential and pays the upstream inference charge.
+
+Requirements:
+
+- only approved models;
+- server-side effective-dated rate card;
+- pre-call budget/credit authorization;
+- max input/output constraints;
+- usage reconciliation after the call;
+- hard tenant/project/key limits;
+- no unlimited plan whose economics depend on variable third-party inference.
+
+### 5.2 CUSTOMER_BYOK
+
+The customer supplies the provider credential.
+
+Requirements:
+
+- secret never returned after initial submission;
+- prefer Cloudflare AI Gateway/Secrets Store or an equivalent Mkety-controlled encrypted secret reference;
+- no plaintext provider secret in normal application tables or logs;
+- BYOK-only routing must fail closed rather than silently falling back to a Mkety-paid upstream credential;
+- Mkety may still charge a platform/gateway/agent/RAG/channel fee because Mkety continues to provide routing, observability, storage, tools, knowledge, runtime and support;
+- provider inference itself should not be represented as a Mkety pass-through cost when the customer is paying the provider directly.
+
+### 5.3 ENTERPRISE_PRIVATE
+
+An approved customer/Mkety private model endpoint is registered as a custom provider.
+
+This can support:
+
+- Mkety-operated GPU infrastructure;
+- customer-operated inference;
+- OCI/GPU/VPS/Kubernetes inference;
+- vLLM/TGI/Ollama-compatible or other approved HTTPS inference layers;
+- an OpenAI-compatible private endpoint.
+
+Private models still have compute, bandwidth and operational cost even where there is no per-token Cloudflare model charge. They must remain metered and capacity-controlled.
+
+### 5.4 HYBRID
+
+An explicit route may use an ordered strategy such as:
+
+```text
+private model -> customer BYOK -> Mkety-managed fallback
+```
+
+or another approved policy.
+
+Fallback across commercial modes is never implicit. A route must declare whether Mkety-paid fallback is permitted.
+
+## 6. Model abstraction
+
+Expose stable Mkety aliases in addition to provider-native IDs.
+
+Initial aliases should be capability-oriented:
+
+- `mkety/default` — balanced default selected by policy.
+- `mkety/fast` — low-latency/economical.
+- `mkety/vision` — image-capable model.
+- `mkety/reasoning` — reasoning-focused.
+- `mkety/private/<deployment>` — approved private model route.
+
+Provider-native IDs may still be available according to entitlement and route policy.
+
+The alias layer protects customers from model deprecations and lets Mkety change the underlying provider/model only under an explicit compatibility policy.
+
+Each model catalog row should describe capabilities such as:
+
+- text input/output;
+- image/vision input;
+- image output;
+- audio input/output;
+- embeddings;
+- tool/function calling;
+- structured output;
+- reasoning;
+- context/output limits;
+- provider;
+- lifecycle status;
+- commercial mode eligibility.
+
+## 7. Initial Cloudflare model policy
+
+Cloudflare Workers AI is one managed-provider path, not the only provider.
+
+For the initial managed catalog:
+
+- `@cf/google/gemma-4-26b-a4b-it` remains the approved economical multimodal/open candidate.
+- `@cf/zai-org/glm-5.3-flash` and `@cf/qwen/qwen3.8-27b` remain disabled benchmark candidates for the second managed slot.
+- Published pricing revalidated 2026-09-28:
+  - Gemma 4: $0.10/M input and $0.30/M output tokens.
+  - GLM-5.3 Flash: $0.15/M input, $0.50/M output and $0.03/M cached input tokens.
+  - Qwen 3.8 27B: $0.45/M input, $3.20/M output and $0.05/M cached input tokens.
+- GLM currently has the strongest catalog economics of the two second-slot candidates, but benchmark evidence across quality, tools, structure, coding, reasoning, vision, latency and reliability must decide promotion.
+- Additional managed models require explicit cost/capability review rather than automatic exposure.
+- Third-party frontier models should enter through customer BYOK, not Cloudflare Unified Billing, unless a later authority deliberately changes this rule.
+- Model IDs and prices must never be permanently hard-coded into public commercial copy. They belong in a controlled model/rate catalog.
+
+The implementation must revalidate currently available model capabilities and prices before production enablement.
+
+## 8. Cloudflare AI Gateway role
+
+Cloudflare AI Gateway may provide:
+
+- Workers AI access;
+- third-party provider routing;
+- BYOK key references;
+- dynamic routing;
+- explicit fallback policy;
+- observability;
+- caching where safe;
+- provider/model analytics;
+- rate limiting/budget controls;
+- custom providers for approved private/self-hosted HTTPS endpoints.
+
+Mkety still owns:
+
+- customer API keys;
+- authentication/authorization;
+- tenant/project ownership;
+- model aliases/catalog;
+- entitlements;
+- customer budgets;
+- commercial rate cards;
+- usage ledger;
+- credits/billing;
+- Enterprise instance configuration;
+- channel integrations;
+- security policy;
+- customer support and SLA.
+
+Do not expose Cloudflare account tokens, gateway tokens or provider credentials as customer-facing Mkety credentials.
+
+### 8.1 Workers AI transport boundary
+
+Use two Cloudflare-supported transports for different operational contexts:
+
+- **Mkety Worker runtime:** prefer the Workers AI binding (`env.AI.run()`) with an explicit AI Gateway ID. The binding keeps Cloudflare account credentials out of application request handling and is the intended production runtime transport.
+- **Guarded GitHub benchmark/operations:** use Cloudflare's authenticated REST/OpenAI-compatible endpoint because GitHub Actions is outside the Worker runtime. Route those calls through an isolated non-production AI Gateway using standard/postpaid Workers AI billing.
+
+The REST benchmark path is not the customer runtime and must never become a fallback around Mkety entitlement, budget or credit enforcement.
+
+Do not attach the AI binding to the production Mkety Worker merely to run model benchmarks. Add/promote the production binding only after the non-production adapter, accounting reservation boundary and acceptance tests are green.
+
+## 9. API-key contract
+
+Follow the proven Mkety Mail API-key pattern rather than inventing a weaker mechanism.
+
+Suggested key prefix:
+
+```text
+mk_ai_live_
+```
+
+Optional non-production prefix:
+
+```text
+mk_ai_test_
+```
+
+API-key record fields should include:
+
+- id;
+- tenantId;
+- projectId where scoped;
+- name;
+- keyPrefix;
+- secretHash;
+- environment;
+- scopes;
+- modelAllowlist/policy reference;
+- rateLimitPolicy;
+- budgetPolicy;
+- allowedOrigins/IP restrictions where configured;
+- createdBy;
+- createdAt;
+- lastUsedAt;
+- expiresAt;
+- revokedAt.
+
+The plaintext key is shown once and never persisted reversibly.
+
+Initial scopes can include:
+
+- `ai.models.read`;
+- `ai.inference`;
+- `ai.embeddings`;
+- `ai.responses`;
+- `ai.instances.invoke`;
+- administrative scopes only through the authenticated control plane, not ordinary inference keys.
+
+## 10. Usage, cost and charging
+
+Reuse Mkety Usage/Credits/Billing rather than building a parallel payment system.
+
+Existing meters remain useful:
+
+- `ai.generation`;
+- `ai.tokens.input`;
+- `ai.tokens.output`;
+- `knowledge.ingestion`.
+
+Extend the metering contract as required for:
+
+- request count;
+- cached input tokens;
+- reasoning tokens when exposed by provider;
+- embedding tokens;
+- image input/output units;
+- audio seconds/units;
+- tool executions where billable;
+- gateway/routing operations if commercially relevant.
+
+Provider cost and Mkety customer charge are different facts and must not be conflated.
+
+Recommended accounting:
+
+```text
+immutable Usage Event
+   -> provider usage/cost metadata
+   -> effective-dated Mkety rate rule
+   -> non-cash credit debit or metered charge
+   -> Billing settlement / prepaid balance policy
+```
+
+For Mkety-managed variable-cost inference, favor:
+
+- prepaid balance/credits;
+- monthly included allowance where commercially useful;
+- hard spend ceilings;
+- optional controlled overage only for approved customers;
+- Enterprise minimum commitment + included usage + metered overage where contracted.
+
+Avoid unlimited variable-cost inference.
+
+Rate versions must be server-owned, immutable once used, and effective-dated so upstream price changes do not rewrite historical usage.
+
+## 11. Cost-safety invariants
+
+Before every billable managed inference:
+
+1. authenticate key/session;
+2. resolve authoritative tenant/project;
+3. require the correct entitlement;
+4. resolve route/model capability;
+5. enforce key/model/tenant budgets;
+6. enforce max tokens/media limits;
+7. authorize/reserve sufficient usage/credits where needed;
+8. invoke provider;
+9. record normalized provider usage;
+10. reconcile final Mkety consumption;
+11. persist run/failure metadata without leaking secrets.
+
+Additional safeguards:
+
+- per-minute and per-day key limits;
+- tenant/project monthly limits;
+- concurrency caps;
+- request body size caps;
+- timeouts;
+- model allowlists;
+- abuse/risk controls;
+- no automatic expensive fallback unless route policy explicitly permits it;
+- idempotency for operations where retries can create duplicated spend;
+- circuit breakers for failing providers;
+- configurable cache only when tenant/privacy semantics make reuse safe.
+
+## 12. Tenant BYOK and secret isolation
+
+Tenant BYOK is a first-class mode.
+
+A provider connection should contain metadata and a secret reference, not the raw secret in ordinary queryable configuration.
+
+Conceptual record:
+
+```text
+ai_provider_connections
+- id
+- tenant_id
+- project_id nullable
+- provider
+- mode
+- secret_ref
+- public_config_json
+- status
+- created_by
+- created_at
+- rotated_at
+- revoked_at
+```
+
+Never render stored secret values in Platform Control, AI Workspace, logs, error messages, exports or support tooling.
+
+## 13. Shared Enterprise tenant configurations
+
+The normal Enterprise unit is a tenant-scoped AI configuration on the central Mkety AI service, not a dedicated infrastructure instance.
+
+"Instance" in product/UI language may still mean a named customer assistant/application configuration, but it must not imply dedicated compute. Many customer configurations may execute on the same Mkety AI Worker/runtime pool.
+
+Conceptual entities:
+
+```text
+ai_instances
+ai_instance_versions
+ai_instance_domains
+ai_channels
+ai_channel_installations
+ai_routes
+ai_model_aliases
+ai_provider_connections
+ai_api_keys
+ai_runs
+ai_usage_events
+ai_budgets
+ai_webhooks
+ai_audit_logs
+```
+
+An instance can reference an existing published Mkety agent instead of duplicating its prompt/knowledge/tool model.
+
+The preferred relationship is:
+
+```text
+Agent definition/version
+       |
+       v
+Enterprise AI configuration on central runtime
+       |
+       +-- Website
+       +-- Telegram
+       +-- API
+       +-- Supported social/collaboration channel
+       +-- Custom domain / *.mkety.app
+```
+
+Channel state and secrets remain adapters around one shared runtime rather than separate AI implementations.
+
+## 14. Website/embedded assistant
+
+Support:
+
+- copy/paste script embed;
+- React/JS SDK later;
+- theme/brand settings;
+- domain allowlist;
+- signed server integration for sensitive actions;
+- optional anonymous conversation;
+- authenticated end-user identity supplied through a signed customer assertion;
+- human escalation;
+- file/image upload only when model and instance policy allow it;
+- knowledge citations where available;
+- feedback;
+- transcript retention policy.
+
+For customers without a domain, a managed instance may use:
+
+```text
+https://customer-slug.mkety.app
+```
+
+Customer-owned domains use the approved custom-hostname path.
+
+## 15. Messaging/channel adapters
+
+Initial priority:
+
+1. Website/embed.
+2. Telegram.
+3. API.
+4. Webhook/custom channel.
+5. Slack/Discord/Teams based on demand.
+6. WhatsApp/Messenger/Instagram where official provider/API policy allows.
+
+A channel adapter owns transport concerns only:
+
+- inbound authentication;
+- source identity;
+- message normalization;
+- outbound formatting/delivery;
+- provider-specific retry/idempotency.
+
+It must not become a separate AI semantics engine.
+
+## 16. Knowledge and data
+
+Reuse the existing tenant/project knowledge architecture.
+
+An Enterprise instance may attach:
+
+- Mkety knowledge documents;
+- website crawl/import;
+- uploaded files;
+- approved connectors;
+- customer APIs/databases through tools rather than indiscriminate ingestion;
+- structured FAQ/catalog datasets.
+
+Private tenant knowledge must never leak into Public Mkety AI or another tenant.
+
+Public Mkety AI remains a distinct public-only trust boundary even if it later consumes the common inference transport. Its already-implemented provider gateway, browser memory, public-only knowledge/tools and one-assistant/no-model-picker product contract remain intact during migration.
+
+## 17. Relationship to existing Mkety products
+
+### Platform AI Workspace
+
+Becomes a first-party client of the shared Mkety AI Runtime.
+
+The current `getAIProvider()` abstraction should be migrated incrementally. Do not break Agent Builder while the central runtime is introduced.
+
+### Public Mkety AI
+
+Remains public-only and isolated from tenant AI state. It may use the shared low-level inference transport only if private tenant/provider state remains unreachable.
+
+### Automation
+
+Automation agent actions call the same authorized agent runtime. Existing constraints such as disabled tools in bounded Automation execution remain unless separately redesigned and approved.
+
+### Trading
+
+Trading may use Mkety AI for bounded interpretation/presentation/fallback. Trading's deterministic server-side validation and execution authority remain unchanged. AI must never become broker/trade authority.
+
+### MkLMS / Academy / customer LMS
+
+MkLMS can consume Mkety AI for approved white-label tutor, support, course Q&A, content assistance or admin automation while retaining its independent installation/database/storage/security boundaries.
+
+### Mail and Media
+
+Mail/Media may consume AI through supported internal/API contracts, but Mkety AI does not absorb their independent product responsibilities.
+
+## 18. Enterprise isolation and scaling modes
+
+The **default and primary product** is Shared Managed.
+
+### Shared managed — default
+
+- one central Mkety AI service or horizontally-scaled equivalent runtime pool;
+- Mkety's own AI workloads and external customer workloads use the same runtime contract;
+- strict tenant/project/customer isolation;
+- logical customer AI configurations rather than one Worker per customer;
+- customer configuration, knowledge, channels and secrets separated;
+- shared Workers AI / AI Gateway / private-model routing infrastructure;
+- normal SaaS/PaaS economics;
+- scale the central runtime horizontally before creating customer-specific stacks.
+
+### Isolated runtime — exception
+
+- dedicated Worker/service and/or database/secret namespace where required;
+- customer domain;
+- stronger operational isolation.
+
+### Dedicated/private infrastructure — exception
+
+- dedicated GPU/model endpoint;
+- private database/networking;
+- regional placement;
+- contractual SLA/security requirements;
+- Enterprise-only quote.
+
+## 19. Observability
+
+Expose customer-safe operational visibility:
+
+- requests;
+- tokens/media units;
+- model/alias;
+- latency;
+- success/failure;
+- cached/not cached where relevant;
+- cost/credit consumption;
+- route/fallback event;
+- channel;
+- agent/instance;
+- project;
+- date range.
+
+Internal telemetry may include provider diagnostics but must sanitize secrets and private provider responses.
+
+Enterprise audit history should record configuration changes, key rotation/revocation, model-route changes, domain/channel changes and privileged actions.
+
+## 20. Admin / Platform Control
+
+Platform Control should manage safe metadata/policy such as:
+
+- approved providers;
+- model catalog;
+- capability flags;
+- model lifecycle;
+- Mkety-managed rate versions;
+- default aliases/routes;
+- global circuit breakers;
+- Enterprise provisioning state;
+- usage/risk visibility.
+
+Do not make raw infrastructure tokens, provider secrets, signing keys or unrestricted execution logic CMS-editable.
+
+## 21. Initial implementation sequence
+
+### Phase AI-00 — authority/design
+
+- this architecture;
+- reconcile `AGENTS.md`/commercial source of truth after review;
+- define domain/API contract;
+- define runtime boundaries and commercial modes.
+
+### Phase AI-01 — API/runtime foundation
+
+- tenant/project API-key schema and hashed-key lifecycle;
+- model catalog/capabilities;
+- route/policy schema;
+- `GET /v1/ai/models`;
+- normalized internal inference interface;
+- initial OpenAI-compatible `chat/completions`;
+- immutable run/usage events;
+- entitlement and budget gate;
+- tests before provider enablement.
+
+### Phase AI-02 — Cloudflare managed provider
+
+- Workers AI adapter;
+- AI Gateway integration;
+- managed model catalog;
+- exact usage/cost normalization;
+- retry/circuit-breaker policy;
+- current model/cost verification.
+
+### Phase AI-03 — BYOK
+
+- provider connection UI/API;
+- secure secret references;
+- Cloudflare BYOK integration where applicable;
+- BYOK-only fail-closed routing;
+- provider health/test operation;
+- per-provider/model allowlists.
+
+### Phase AI-04 — Platform AI migration
+
+- internal Mkety AI runtime client;
+- progressively route Agent Builder/test/published agents through it;
+- preserve knowledge/tools/versioning;
+- preserve existing behavior during migration;
+- remove duplicated direct-provider decisions only after parity tests.
+
+### Phase AI-05 — shared Enterprise SaaS/PaaS
+
+- multi-tenant enterprise configuration/version model;
+- do not provision one Worker per customer by default;
+- managed `*.mkety.app` hostname;
+- Website AI channel;
+- Telegram channel;
+- API channel;
+- custom domain provisioning through existing approved domain architecture;
+- analytics/audit/handoff.
+
+### Phase AI-06 — private/self-hosted models
+
+- custom provider registration;
+- TLS/auth/health checks;
+- capacity policy;
+- model capability declaration;
+- private route aliases;
+- Enterprise commercial controls.
+
+### Phase AI-07 — expanded multimodal/connectors
+
+- embeddings;
+- image/vision;
+- audio;
+- approved social/collaboration channels;
+- knowledge/connectors;
+- richer observability;
+- SLA/isolation options.
+
+## 22. Release gates
+
+Do not deploy this design directly to production.
+
+Each phase requires:
+
+- feature branch;
+- migrations added rather than historical migrations edited;
+- tenant isolation tests;
+- auth/API-key tests;
+- entitlement tests;
+- cost/budget tests;
+- provider failure tests;
+- no-secret-leak tests;
+- Cloudflare candidate validation;
+- exact model/cost revalidation before enabling managed models;
+- explicit promotion authorization under the repository's normal production controls.
+
+## 23. Decisions to preserve
+
+1. Mkety AI is a shared Platform/Enterprise capability, not a new unrelated architecture authority.
+2. `api.mkety.com` remains the canonical API boundary.
+3. `ai.mkety.com` is the product/console surface.
+4. `*.mkety.app` is the default managed customer hostname namespace.
+5. Existing AI Workspace remains and becomes a consumer of the shared runtime.
+6. Public Mkety AI remains private-data isolated.
+7. Trading AI remains non-authoritative for execution.
+8. BYOK must fail closed and never silently create Mkety upstream spend.
+9. Private/self-hosted models are not assumed to be cost-free; their capacity is still metered.
+10. Billing/Entitlements/Usage/Credits remain Mkety-owned shared commercial primitives.
+11. Provider/model details remain replaceable behind Mkety model aliases and routing policy.
+12. Enterprise dedicated infrastructure is available when justified, not the default for every AI customer.
+13. The normal Enterprise product runs on the same central multi-tenant Mkety AI service that supplies Mkety's own AI consumers.
+14. Scale is achieved first by horizontally scaling the shared Mkety AI runtime/provider layer, not by cloning a full AI stack for every customer.
+15. A customer-facing "AI instance" normally means logical configuration/isolation, not dedicated compute.
+
+
+## 24. Central-service clarification — 2026-09-27
+
+The intended commercial/runtime model is:
+
+```text
+                         ONE MKETY AI PLATFORM
+                                |
+                  +-------------+-------------+
+                  |                           |
+            First-party Mkety             External tenants
+                  |                           |
+      +-----------+-----------+        +------+----------------+
+      |           |           |        |      |                |
+ Public AI   AI Workspace  Products   API  Enterprise bots  Websites/etc.
+                  |                           |
+                  +-------------+-------------+
+                                |
+                      Central runtime/router
+                                |
+          +---------------------+----------------------+
+          |                     |                      |
+     Workers AI             AI Gateway             Private model
+   managed models           + BYOK                OCI/AWS/Azure GPU
+          |                     |                      |
+          +---------------------+----------------------+
+                                |
+                       Usage/Billing/Policy
+```
+
+Initial deployment may use Workers AI for almost all inference because it avoids early GPU infrastructure and idle-capacity cost. The architecture must nevertheless keep the model-provider boundary portable from the first release so an OpenAI-compatible private inference endpoint on OCI, AWS, Azure or another approved host can later replace or supplement Workers AI without changing customer API keys, customer integrations, enterprise channels or the public Mkety AI contract.
+
+A private/self-hosted transition should be driven by measured economics, capacity, privacy or Enterprise requirements rather than performed prematurely.
+
+The first shared managed model set should be small and purposeful. As of the 2026-09-27 design review, Gemma 4 is an approved initial candidate and the second initial open model should be selected from the current Workers AI catalog based on capability/cost testing immediately before enablement. The catalog must remain expandable rather than hard-limited to two models.
+
+
+## 25. Commercial/security companion specification
+
+The detailed launch design for team membership, AI-specific PBAC, plan families, included usage, prepaid top-ups, overage modes, NOWPayments/Flutterwave/Kora settlement, enterprise demos, caching, abuse protection, DLP/guardrails, reliability, observability, human handoff, knowledge/RAG, model evaluation and Enterprise security is maintained in:
+
+`docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`
+
+Preserve these core rules from that specification:
+
+- reuse Mkety tenant membership/invitations/PBAC;
+- managed AI is never unlimited variable-cost inference;
+- self-service managed AI hard-stops by default when authorized credits are exhausted;
+- BYOK may continue only under explicit route policy and must not silently spend Mkety credentials;
+- Enterprise postpaid overage requires an approved credit limit/contract;
+- fixed subscription discounts do not automatically discount variable AI usage;
+- provider infrastructure limits never define the customer commercial contract;
+- cache keys and storage must preserve tenant isolation;
+- browser-facing widgets use restricted publishable/signed credentials, not unrestricted secret API keys;
+- dedicated Enterprise infrastructure is an optional isolation/capacity tier.
+
+
+## 26. Existing product compatibility baseline
+
+This runtime project must blend with, not redesign, the current Mkety commercial/product contract:
+
+- AI Workspace remains $16.99/month under the current commercial source of truth.
+- AI Workspace remains the self-service Agent Builder/agents/knowledge/tools/models/publishing/integrations/API/history/usage/team product.
+- Public Mkety AI remains an isolated public support assistant and never inherits tenant data.
+- Existing direct provider adapters remain valid migration-era implementation until the shared runtime proves parity.
+- Enterprise/shared runtime and developer API are the principal net-new architecture in this workstream.
+
+
+## 27. Commercial enforcement boundary
+
+Before any Enterprise inference/channel/action operation, the runtime must resolve:
+
+1. authenticated tenant/project/principal;
+2. Enterprise AI product entitlement;
+3. active plan/version or contract;
+4. included allowance and current usage;
+5. tenant/project/key budget and configured limits;
+6. overage mode;
+7. route/model eligibility;
+8. security policy;
+9. final infrastructure/provider constraints.
+
+Only then may the runtime invoke the model/channel/tool.
+
+This keeps Enterprise commercial enforcement independent from ordinary AI Workspace access while still reusing the same low-level runtime.

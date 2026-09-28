@@ -8,6 +8,12 @@ describe('entitlement keys', () => {
       'workspace.deploy',
       'workspace.trading.enterprise',
       'workspace.mail',
+      'workspace.ai.enterprise',
+      'ai.api',
+      'ai.byok',
+      'ai.private_model',
+      'ai.channel.website',
+      'ai.channel.telegram',
     ]));
   });
 
@@ -22,5 +28,6 @@ describe('entitlement keys', () => {
   it('accepts registered runtime entitlement strings', () => {
     expect(isEntitlementKey('workspace.workflows')).toBe(true);
     expect(isEntitlementKey('workspace.mail')).toBe(true);
+    expect(isEntitlementKey('workspace.ai.enterprise')).toBe(true);
   });
 });

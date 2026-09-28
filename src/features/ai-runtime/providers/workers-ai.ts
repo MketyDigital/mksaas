@@ -1,0 +1,173 @@
+import type {
+  AiRuntimeProviderAdapter,
+  AiRuntimeRequest,
+  AiRuntimeResult,
+} from '../runtime/types';
+
+export interface WorkersAiBinding {
+  run(
+    model: string,
+    input: Record<string, unknown>,
+    options?: {
+      gateway?: {
+        id: string;
+        skipCache?: boolean;
+        cacheTtl?: number;
+      };
+      rejectIfBusy?: boolean;
+    },
+  ): Promise<unknown>;
+}
+
+type WorkersAiChatResponse = {
+  id?: string;
+  model?: string;
+  choices?: Array<{
+    finish_reason?: string | null;
+    message?: {
+      content?: string | null;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+    };
+    input_tokens?: number;
+    output_tokens?: number;
+    cached_input_tokens?: number;
+  };
+  response?: string;
+};
+
+function nonNegativeBigInt(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? BigInt(Math.trunc(value))
+    : 0n;
+}
+
+function normalizeFinishReason(value: unknown): AiRuntimeResult['finishReason'] {
+  switch (value) {
+    case 'stop':
+      return 'stop';
+    case 'length':
+      return 'length';
+    case 'tool_calls':
+      return 'tool_calls';
+    case 'content_filter':
+      return 'content_filter';
+    default:
+      return 'unknown';
+  }
+}
+
+function normalizeWorkersAiResponse(
+  response: unknown,
+  nativeModel: string,
+): Omit<AiRuntimeResult, 'requestId' | 'provider'> {
+  if (!response || typeof response !== 'object') {
+    throw new Error('Workers AI returned an invalid response.');
+  }
+
+  const value = response as WorkersAiChatResponse;
+  const choice = value.choices?.[0];
+  const text = typeof choice?.message?.content === 'string'
+    ? choice.message.content
+    : typeof value.response === 'string'
+      ? value.response
+      : undefined;
+
+  const usage = value.usage;
+  const inputTokens = nonNegativeBigInt(usage?.prompt_tokens ?? usage?.input_tokens);
+  const outputTokens = nonNegativeBigInt(usage?.completion_tokens ?? usage?.output_tokens);
+  const cachedInputTokens = nonNegativeBigInt(
+    usage?.prompt_tokens_details?.cached_tokens ?? usage?.cached_input_tokens,
+  );
+
+  return {
+    nativeModel: value.model ?? nativeModel,
+    text,
+    finishReason: normalizeFinishReason(choice?.finish_reason),
+    usage: {
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+    },
+    providerRequestId: value.id,
+  };
+}
+
+function mapTools(request: AiRuntimeRequest) {
+  if (!request.tools?.length) return undefined;
+  return request.tools.map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    },
+  }));
+}
+
+function mapResponseFormat(request: AiRuntimeRequest) {
+  if (!request.structuredOutput) return undefined;
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: request.structuredOutput.name ?? 'mkety_output',
+      strict: request.structuredOutput.strict ?? true,
+      schema: request.structuredOutput.schema,
+    },
+  };
+}
+
+export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
+  readonly key = 'workers-ai';
+
+  constructor(
+    private readonly binding: WorkersAiBinding,
+    private readonly options: {
+      gatewayId: string;
+      cacheTtlSeconds?: number;
+    },
+  ) {}
+
+  async complete(request: AiRuntimeRequest, nativeModel: string): Promise<AiRuntimeResult> {
+    const response = await this.binding.run(
+      nativeModel,
+      {
+        messages: request.messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+          ...(message.name ? { name: message.name } : {}),
+          ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+        })),
+        stream: false,
+        ...(request.maxOutputTokens ? { max_completion_tokens: request.maxOutputTokens } : {}),
+        ...(request.tools?.length ? { tools: mapTools(request) } : {}),
+        ...(request.structuredOutput ? { response_format: mapResponseFormat(request) } : {}),
+      },
+      {
+        rejectIfBusy: true,
+        gateway: {
+          id: this.options.gatewayId,
+          // AI-01 does not enable response caching by default. The orchestration
+          // layer must explicitly establish cache eligibility first.
+          skipCache: this.options.cacheTtlSeconds === undefined,
+          ...(this.options.cacheTtlSeconds !== undefined
+            ? { cacheTtl: this.options.cacheTtlSeconds }
+            : {}),
+        },
+      },
+    );
+
+    const normalized = normalizeWorkersAiResponse(response, nativeModel);
+    return {
+      requestId: crypto.randomUUID(),
+      provider: this.key,
+      ...normalized,
+    };
+  }
+}
