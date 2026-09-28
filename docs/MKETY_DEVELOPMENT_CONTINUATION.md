@@ -18,11 +18,12 @@ Current implementation state:
 - Product handoff tokens are one-time and bound to the destination hostname, avoiding wildcard cross-domain session cookies.
 - Domain purchase is behind a provider-neutral server-side reseller adapter; bind the already-configured registrar account there without exposing credentials.
 - Day-one channel registry includes Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. New channels must implement the same adapter/security/usage/handoff contracts rather than fork the runtime.
+- Authenticated inbound channel adapters now verify Telegram secret tokens, Slack signed requests with replay-window checks, Meta HMAC signatures for WhatsApp/Messenger/Instagram, and signed custom webhooks before any AI credits can be consumed. Microsoft Teams is outbound workflow/webhook only until Bot Framework inbound identity verification is implemented.
 - The customer console exposes plan/subscription, current-period billing, prepaid credits, request usage and charged credits in non-technical language.
 
 Promotion gate:
 
-1. keep PR #159 draft until exact-head type/lint/test/build/migration/vinext/candidate checks are green;
+1. exact-head CI, migration baseline, Cloudflare vinext smoke, Platform core workspaces smoke and Content DB smoke are green on the completion candidate; keep PR #159 draft until the paid/non-production provider acceptance and real hostname checks below are also recorded;
 2. run non-production model benchmark and tiny real inference acceptance through AI Gateway;
 3. verify actual token usage, provider cost and commercial settlement against Cloudflare evidence;
 4. verify white-label host login, TLS and tenant isolation on a real test domain;
