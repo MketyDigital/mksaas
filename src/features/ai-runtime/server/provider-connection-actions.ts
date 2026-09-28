@@ -103,5 +103,5 @@ export async function testEnterpriseAiByokProvider(
   if (result.text.trim() !== 'MKETY_BYOK_OK') {
     throw new Error('Provider responded, but the connection diagnostic did not return the expected result.');
   }
-  return { ok: true, provider: result.provider, model: result.nativeModel };
+  void result;
 }
