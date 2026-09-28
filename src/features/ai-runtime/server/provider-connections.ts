@@ -10,8 +10,9 @@ import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections, projects } from '@/shared/db/schema';
 
-import { decryptAiProviderSecret, encryptAiProviderSecret } from './byok-secrets';
 import { getConnectionEncryptionKey } from '@/shared/security/connection-secrets';
+
+import { decryptAiProviderSecret, encryptAiProviderSecret } from './byok-secrets';
 
 export type ByokProviderInput =
   | { provider: 'openai'; apiKey: string }
@@ -178,7 +179,7 @@ function adapterFromConnection(row: {
 
   return decryptAiProviderSecret(row.secretRef, encryptionKey()).then((secret) => {
     const metadata = row.metadata ?? {};
-    let credentials: CentralAiProviderCredentials;
+    let credentials: CentralAiProviderCredentials | null = null;
 
     switch (row.providerKey) {
       case 'openai':
@@ -221,6 +222,7 @@ function adapterFromConnection(row: {
         break;
     }
 
+    if (!credentials) throw new Error('AI provider credentials could not be resolved.');
     return createCentralExternalProvider(credentials);
   });
 }
