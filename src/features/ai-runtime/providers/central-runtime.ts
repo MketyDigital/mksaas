@@ -9,6 +9,8 @@ export type CentralAiExecutionResult = CentralAiGenerateResponse & {
   provider: CentralAiProviderId | 'workers-ai';
   nativeModel: string;
   source: CentralAiExecutionSource;
+  toolCalls?: Array<{ id?: string; name: string; argumentsJson: string }>;
+  finishReason?: string;
 };
 
 function defaultByokModel(provider: CentralAiProviderId) {
@@ -40,11 +42,15 @@ export async function runCentralAi(input: {
   temperature?: number;
   providerConnectionId?: string | null;
   idempotencyKey?: string;
+  tools?: Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }>;
 }): Promise<CentralAiExecutionResult> {
   const projectId = input.projectId ?? null;
   const idempotencyKey = input.idempotencyKey ?? `central-${crypto.randomUUID()}`;
 
   if (input.providerConnectionId) {
+    if (input.tools?.length) {
+      throw new Error('Tool calling is not yet enabled for external BYOK adapters.');
+    }
     const { adapter } = await resolveByokProviderConnection({
       tenantId: input.tenantId,
       projectId,
@@ -79,6 +85,7 @@ export async function runCentralAi(input: {
       ...input.messages,
     ],
     maxOutputTokens: input.maxOutputTokens,
+    tools: input.tools,
     idempotencyKey,
   }, nativeModel);
 
@@ -93,5 +100,7 @@ export async function runCentralAi(input: {
     provider: 'workers-ai',
     nativeModel,
     source: 'managed',
+    toolCalls: result.toolCalls,
+    finishReason: result.finishReason,
   };
 }
