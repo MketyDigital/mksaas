@@ -2,7 +2,7 @@ import { type EntitlementSource, hasEntitlement } from './resolver';
 
 function source(overrides: Partial<EntitlementSource> = {}): EntitlementSource {
   return {
-    getCurrentPlanVersionId: jest.fn().mockResolvedValue('plan-v1'),
+    getCurrentPlanVersionIds: jest.fn().mockResolvedValue(['plan-v1']),
     getPlanEntitlements: jest.fn().mockResolvedValue([]),
     getTenantOverrides: jest.fn().mockResolvedValue([]),
     ...overrides,
@@ -54,36 +54,41 @@ describe('hasEntitlement', () => {
   it('fails closed for unknown entitlement keys without querying storage', async () => {
     const storage = source();
     await expect(hasEntitlement({ tenantId: 'tenant-a', entitlement: 'workspace.unknown', now }, storage)).resolves.toBe(false);
-    expect(storage.getCurrentPlanVersionId).not.toHaveBeenCalled();
+    expect(storage.getCurrentPlanVersionIds).not.toHaveBeenCalled();
   });
 
   it('allows an explicit active tenant grant when there is no qualifying subscription', async () => {
     const allowed = await hasEntitlement(
       { tenantId: 'tenant-a', entitlement: 'workspace.workflows', now },
       source({
-        getCurrentPlanVersionId: jest.fn().mockResolvedValue(null),
+        getCurrentPlanVersionIds: jest.fn().mockResolvedValue([]),
         getTenantOverrides: jest.fn().mockResolvedValue([{ entitlementKey: 'workspace.workflows', effect: 'grant', expiresAt: null }]),
       }),
     );
     expect(allowed).toBe(true);
   });
 
-  it('uses only the current subscribed plan version', async () => {
-    const getPlanEntitlements = jest.fn(async (planVersionId: string) =>
-      planVersionId === 'plan-v2' ? [{ entitlementKey: 'workspace.workflows', enabled: true }] : [],
-    );
-    const allowed = await hasEntitlement(
-      { tenantId: 'tenant-a', entitlement: 'workspace.workflows', now },
-      source({ getCurrentPlanVersionId: jest.fn().mockResolvedValue('plan-v2'), getPlanEntitlements }),
-    );
-    expect(allowed).toBe(true);
-    expect(getPlanEntitlements).toHaveBeenCalledWith('plan-v2');
+  it('composes entitlement grants across qualifying subscriptions', async () => {
+    const getPlanEntitlements = jest.fn(async (planVersionId: string) => {
+      if (planVersionId === 'plan-ai') return [{ entitlementKey: 'workspace.ai', enabled: true }];
+      if (planVersionId === 'plan-mail') return [{ entitlementKey: 'workspace.mail', enabled: true }];
+      return [];
+    });
+    const storage = source({
+      getCurrentPlanVersionIds: jest.fn().mockResolvedValue(['plan-ai', 'plan-mail']),
+      getPlanEntitlements,
+    });
+
+    await expect(hasEntitlement({ tenantId: 'tenant-a', entitlement: 'workspace.ai', now }, storage)).resolves.toBe(true);
+    await expect(hasEntitlement({ tenantId: 'tenant-a', entitlement: 'workspace.mail', now }, storage)).resolves.toBe(true);
+    expect(getPlanEntitlements).toHaveBeenCalledWith('plan-ai');
+    expect(getPlanEntitlements).toHaveBeenCalledWith('plan-mail');
   });
 
   it('passes the requested tenant only to tenant-scoped reads', async () => {
     const storage = source();
     await hasEntitlement({ tenantId: 'tenant-a', entitlement: 'workspace.workflows', now }, storage);
-    expect(storage.getCurrentPlanVersionId).toHaveBeenCalledWith('tenant-a');
+    expect(storage.getCurrentPlanVersionIds).toHaveBeenCalledWith('tenant-a');
     expect(storage.getTenantOverrides).toHaveBeenCalledWith('tenant-a');
   });
 });
