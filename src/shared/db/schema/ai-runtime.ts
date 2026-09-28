@@ -1,9 +1,9 @@
 import { bigint, boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
+import { users } from './auth';
 import { projects } from './projects';
 import { appSchema } from './schema';
 import { tenants } from './tenants';
-import { users } from './auth';
 
 export type AiModelCapabilities = {
   text: boolean;
@@ -127,6 +127,7 @@ export const aiRequests = appSchema.table('ai_requests', {
   projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
   apiKeyId: uuid('api_key_id').references(() => aiApiKeys.id, { onDelete: 'set null' }),
   idempotencyKey: varchar('idempotency_key', { length: 180 }).notNull(),
+  requestFingerprint: varchar('request_fingerprint', { length: 64 }).notNull(),
   modelAlias: varchar('model_alias', { length: 128 }).notNull(),
   providerKey: varchar('provider_key', { length: 64 }),
   nativeModel: varchar('native_model', { length: 200 }),
