@@ -7,6 +7,41 @@ import { customDomains, tenants } from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
 
+
+const LEGACY_PUBLIC_REDIRECTS = new Map<string, string>([
+  ['/about-us', '/about'],
+  ['/aboutus', '/about'],
+  ['/services', '/solutions'],
+  ['/service', '/solutions'],
+  ['/contact-us', '/contact'],
+  ['/contactus', '/contact'],
+]);
+
+const LEGACY_PUBLIC_GONE_PATHS = new Set(['/career', '/careers']);
+
+function legacyPublicResponse(url: URL) {
+  const host = url.hostname.toLowerCase();
+  if (host !== 'mkety.com' && host !== 'www.mkety.com') return null;
+
+  const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
+  const target = LEGACY_PUBLIC_REDIRECTS.get(pathname.toLowerCase());
+  if (target) {
+    return NextResponse.redirect(new URL(target, 'https://mkety.com'), 308);
+  }
+
+  if (LEGACY_PUBLIC_GONE_PATHS.has(pathname.toLowerCase())) {
+    return new NextResponse('Gone', {
+      status: 410,
+      headers: {
+        'Cache-Control': 'public, max-age=3600',
+        'X-Robots-Tag': 'noindex, nofollow',
+      },
+    });
+  }
+
+  return null;
+}
+
 function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/' ||
@@ -23,6 +58,9 @@ function isPublicPath(pathname: string): boolean {
 export default async function proxy(request: Request & { nextUrl?: URL }) {
   const nextUrl = request.nextUrl ?? new URL(request.url);
   const { pathname, hostname } = nextUrl;
+  const legacyResponse = legacyPublicResponse(new URL(request.url));
+  if (legacyResponse) return legacyResponse;
+
   const session = await auth(request);
   let effectivePathname = pathname;
   const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
