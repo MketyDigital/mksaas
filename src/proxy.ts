@@ -146,9 +146,10 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
         }
 
         const rewriteUrl = new URL(request.url);
-        rewriteUrl.pathname = pathname === '/'
-          ? `/t/${enterpriseHost.tenant.slug}/enterprise-ai`
-          : `/t/${enterpriseHost.tenant.slug}/enterprise-ai${pathname}`;
+        // Customer-owned and managed *.mkety.app hosts expose the customer app,
+        // not Mkety's management console. Administration stays on ai.mkety.com/app.mkety.com.
+        rewriteUrl.pathname = `/t/${enterpriseHost.tenant.slug}/enterprise-ai/customer`;
+        rewriteUrl.search = '';
         return NextResponse.rewrite(rewriteUrl);
       }
     } catch {
