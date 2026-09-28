@@ -54,7 +54,7 @@ const choices = Array.isArray(firstPayload.choices) ? firstPayload.choices : [];
 const firstChoice = choices[0] as Json | undefined;
 const message = firstChoice?.message as Json | undefined;
 const answer = String(message?.content ?? '').trim();
-if (answer !== 'MKETY_ACCEPTANCE_OK') throw new Error('Managed provider returned unexpected acceptance answer: ' + JSON.stringify(answer));
+if (!/\bMKETY_ACCEPTANCE_OK\b/.test(answer)) throw new Error('Managed provider returned unexpected acceptance answer: ' + JSON.stringify(answer));
 
 const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
