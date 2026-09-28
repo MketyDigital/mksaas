@@ -1,7 +1,7 @@
 import {
   AI_COMMERCIAL_ADMISSION_ERROR_CODES,
-  createAiCommercialAdmissionService,
   type AiCommercialAdmissionDependencies,
+  createAiCommercialAdmissionService,
 } from './commercial-admission';
 
 function creditReservation(id = 'credit-reservation-1') {
