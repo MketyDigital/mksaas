@@ -46,7 +46,7 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
     secret: { username, apiToken },
     endpointUrl: endpointUrl || null,
     config: {
-      nameServers,
+      nameServers: nameservers,
       whoisPrivacy: formData.get('whoisPrivacy') === 'on',
     },
     actorUserId: actor.userId,
