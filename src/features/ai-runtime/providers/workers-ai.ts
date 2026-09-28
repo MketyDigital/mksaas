@@ -230,6 +230,7 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
           ? Object.keys(record.usage as Record<string, unknown>).sort()
           : [],
       });
+      throw new Error('Workers AI returned no assistant text or tool call.');
     }
     return {
       requestId: crypto.randomUUID(),
