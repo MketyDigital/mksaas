@@ -1,4 +1,5 @@
 import type { WorkspaceCardInput } from '@/features/platform-app-experience/schemas';
+import { isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 
 import {
   type EntitlementSource,
@@ -18,7 +19,8 @@ export async function filterWorkspaceCardsByEntitlement(
     entitlements.filter((item) => item.allowed).map((item) => item.entitlement),
   );
 
-  return workspaces.filter(
-    (workspace) => !workspace.requiresEntitlement || allowed.has(workspace.requiresEntitlement),
-  );
+  return workspaces.filter((workspace) => {
+    if (!workspace.requiresEntitlement) return true;
+    return isEntitlementKey(workspace.requiresEntitlement) && allowed.has(workspace.requiresEntitlement);
+  });
 }
