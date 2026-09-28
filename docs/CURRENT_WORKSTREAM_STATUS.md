@@ -1,3 +1,7 @@
+## 2026-09-28 sequencing update
+
+Repository merge is no longer waiting on the real customer-hostname test. The remaining DomainNameAPI authentication issue and real white-label hostname acceptance remain unresolved external acceptance items. Enterprise customer inference remains disabled until those later acceptance requirements are intentionally completed.
+
 ## 2026-09-28 post-hotfix reconciliation and exact-head verification
 
 - PR #160 merged to main as `909c3d31a524075763c0a1c7d7985f89254e0b3a`; its guarded app.mkety.com repair workflow has not yet been executed in production.
