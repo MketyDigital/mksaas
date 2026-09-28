@@ -120,6 +120,32 @@ async function findExistingRequest(tenantId: string, idempotencyKey: string): Pr
   return row ?? null;
 }
 
+async function resolveIdempotencyReplay(input: {
+  tenantId: string;
+  idempotencyKey: string;
+  requestFingerprint: string;
+}) {
+  try {
+    const existing = await findExistingRequest(input.tenantId, input.idempotencyKey);
+    if (!existing) return null;
+    const existingFingerprint = requestFingerprintFromMetadata(existing.providerCostMetadata);
+    if (existingFingerprint !== input.requestFingerprint) {
+      return errorResponse(
+        409,
+        'idempotency_conflict',
+        'Idempotency-Key was already used with a different request.',
+      );
+    }
+    return duplicateResponse(existing);
+  } catch {
+    return errorResponse(
+      503,
+      'idempotency_lookup_unavailable',
+      'Idempotency state could not be verified safely. The request was not sent upstream.',
+    );
+  }
+}
+
 function duplicateResponse(existing: DuplicateRequestRecord) {
   const messages: Record<string, string> = {
     runtime_disabled: 'Enterprise AI customer inference is not enabled yet.',
@@ -189,15 +215,12 @@ export async function POST(request: Request) {
     body: parsed.data,
   }));
 
-  const existing = await findExistingRequest(key.tenantId, idempotencyKey);
-
-  if (existing) {
-    const existingFingerprint = requestFingerprintFromMetadata(existing.providerCostMetadata);
-    if (existingFingerprint !== requestFingerprint) {
-      return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
-    }
-    return duplicateResponse(existing);
-  }
+  const replay = await resolveIdempotencyReplay({
+    tenantId: key.tenantId,
+    idempotencyKey,
+    requestFingerprint,
+  });
+  if (replay) return replay;
 
   if (parsed.data.provider_connection_id) {
     if (!policy.customerInferenceEnabled) {
@@ -233,12 +256,16 @@ export async function POST(request: Request) {
         startedAt,
       });
     } catch {
-      const raced = await findExistingRequest(key.tenantId, idempotencyKey);
-      const racedFingerprint = raced
-        ? requestFingerprintFromMetadata(raced.providerCostMetadata)
-        : null;
-      if (raced && racedFingerprint === requestFingerprint) return duplicateResponse(raced);
-      return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+      const raced = await resolveIdempotencyReplay({
+        tenantId: key.tenantId,
+        idempotencyKey,
+        requestFingerprint,
+      });
+      return raced ?? errorResponse(
+        503,
+        'idempotency_lookup_unavailable',
+        'Idempotency state could not be verified safely. The request was not sent upstream.',
+      );
     }
 
     try {
@@ -374,22 +401,16 @@ export async function POST(request: Request) {
       startedAt,
     });
   } catch {
-    const raced = await db.query.aiRequests.findFirst({
-      where: and(
-        eq(aiRequests.tenantId, key.tenantId),
-        eq(aiRequests.idempotencyKey, idempotencyKey),
-      ),
-      columns: {
-        id: true,
-        errorCode: true,
-        providerCostMetadata: true,
-      },
+    const raced = await resolveIdempotencyReplay({
+      tenantId: key.tenantId,
+      idempotencyKey,
+      requestFingerprint,
     });
-    const racedFingerprint = raced
-      ? requestFingerprintFromMetadata(raced.providerCostMetadata)
-      : null;
-    if (raced && racedFingerprint === requestFingerprint) return duplicateResponse(raced);
-    return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    return raced ?? errorResponse(
+      503,
+      'idempotency_lookup_unavailable',
+      'Idempotency state could not be verified safely. The request was not sent upstream.',
+    );
   }
 
   if (!policy.customerInferenceEnabled) {
