@@ -1,4 +1,4 @@
-import { getDomainResellerAdapter, type DomainQuote, type RegisteredDomain } from './reseller';
+import { type DomainQuote, getDomainResellerAdapter, type RegisteredDomain } from './reseller';
 
 function years(value: number) {
   if (!Number.isInteger(value) || value < 1 || value > 10) {
@@ -8,7 +8,7 @@ function years(value: number) {
 }
 
 export async function quoteDomainRegistration(domain: string, registrationYears = 1): Promise<DomainQuote> {
-  return getDomainResellerAdapter().quote(domain, years(registrationYears));
+  return (await getDomainResellerAdapter()).quote(domain, years(registrationYears));
 }
 
 export async function registerDomainAfterVerifiedSettlement(input: {
@@ -24,7 +24,7 @@ export async function registerDomainAfterVerifiedSettlement(input: {
   if (!input.orderId.trim()) throw new Error('Domain registration order ID is required.');
   if (!input.contactRef.trim()) throw new Error('Domain registrant contact reference is required.');
 
-  return getDomainResellerAdapter().register({
+  return (await getDomainResellerAdapter()).register({
     domain: input.domain,
     years: years(input.years),
     contactRef: input.contactRef.trim(),
@@ -43,7 +43,7 @@ export async function renewDomainAfterVerifiedSettlement(input: {
   }
   if (!input.orderId.trim()) throw new Error('Domain renewal order ID is required.');
 
-  return getDomainResellerAdapter().renew({
+  return (await getDomainResellerAdapter()).renew({
     providerDomainRef: input.providerDomainRef,
     years: years(input.years),
     idempotencyKey: `domain-renew:${input.orderId.trim()}`,
