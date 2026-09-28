@@ -12,6 +12,7 @@ export type EnterpriseAiOutboundMessage = {
   recipientId?: string;
   text: string;
   replyToId?: string;
+  contextId?: string;
 };
 
 export type EnterpriseAiDeliveryResult = {
@@ -162,7 +163,8 @@ export async function deliverEnterpriseAiChannelMessage(
       const organizationId = required(metadataString(connection.metadata, 'organizationId'), 'LinkedIn organization ID');
       const version = metadataString(connection.metadata, 'linkedinVersion') ?? '202609';
       const targetUrn = required(message.recipientId, 'LinkedIn post or comment URN');
-      const encoded = encodeURIComponent(targetUrn);
+      const contextUrn = message.contextId ?? targetUrn;
+      const encoded = encodeURIComponent(contextUrn);
       const payload = await jsonRequest(
         `https://api.linkedin.com/rest/socialActions/${encoded}/comments`,
         {
@@ -176,7 +178,8 @@ export async function deliverEnterpriseAiChannelMessage(
           body: JSON.stringify({
             actor: `urn:li:organization:${organizationId}`,
             message: { text: message.text },
-            object: targetUrn,
+            object: contextUrn,
+            ...(targetUrn !== contextUrn ? { parentComment: targetUrn } : {}),
           }),
         },
       );
