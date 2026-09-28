@@ -2,7 +2,8 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { ENTERPRISE_AI_SOLUTIONS } from '@/features/ai-runtime/business-solutions';
 import { db } from '@/shared/db/cloudflare';
-import { aiSolutionInstances, aiSolutionTemplates, projects } from '@/shared/db/schema/ai-runtime';
+import { projects } from '@/shared/db/schema';
+import { aiSolutionInstances, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 
 export async function listEnterpriseAiSolutionTemplates() {
   const rows = await db.select().from(aiSolutionTemplates)
