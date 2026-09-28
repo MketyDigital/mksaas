@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db/cloudflare';
-import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 
 export const dynamic = 'force-dynamic';
