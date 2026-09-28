@@ -47,6 +47,12 @@ describe('self-service billing catalog', () => {
     expect(getSelfServiceBillingQuote('mkety-one', '12m').amountMinor).toBe(49980n);
   });
 
+  it('keeps Enterprise AI separate from normal self-service AI Workspace', () => {
+    expect(SELF_SERVICE_BILLING_PLANS['ai-workspace'].entitlements).not.toContain('workspace.ai.enterprise');
+    expect(SELF_SERVICE_BILLING_PLANS['mkety-one'].entitlements).not.toContain('workspace.ai.enterprise');
+    expect(isSelfServiceBillingPlanKey('enterprise-ai')).toBe(false);
+  });
+
   it('uses only registered entitlement keys', () => {
     const registered = new Set<string>(ENTITLEMENT_KEYS);
     for (const plan of Object.values(SELF_SERVICE_BILLING_PLANS)) {
