@@ -9,9 +9,9 @@ import type { CentralAiProviderId } from '@/features/ai-runtime/providers/extern
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections, projects } from '@/shared/db/schema';
-import { env } from '@/shared/lib/env';
 
 import { decryptAiProviderSecret, encryptAiProviderSecret } from './byok-secrets';
+import { getConnectionEncryptionKey } from '@/shared/security/connection-secrets';
 
 export type ByokProviderInput =
   | { provider: 'openai'; apiKey: string }
@@ -22,9 +22,7 @@ export type ByokProviderInput =
   | { provider: 'bedrock'; accessKeyId: string; secretAccessKey: string; sessionToken?: string; region?: string };
 
 function encryptionKey() {
-  const key = env.MKETY_AI_BYOK_ENCRYPTION_KEY;
-  if (!key) throw new Error('BYOK secret encryption is not configured.');
-  return key;
+  return getConnectionEncryptionKey();
 }
 
 function nonEmpty(value: string, label: string) {
