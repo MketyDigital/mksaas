@@ -7,6 +7,7 @@ import {
   updateAiSolutionTemplate,
 } from '@/features/ai-runtime/server/commercial-admin-actions';
 import type { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
+import { PublicAiControlPanel } from '@/features/public-assistant/components/PublicAiControlPanel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 type Overview = Awaited<ReturnType<typeof getAiCommercialControlOverview>>;
@@ -29,6 +30,8 @@ export function AiCommercialControlPanel({
 
   return (
     <div className="space-y-6">
+      <PublicAiControlPanel tenant={tenant} overview={overview.publicAi} />
+
       <Card className="rounded-2xl border-primary/20 bg-primary/[0.025]">
         <CardHeader>
           <CardTitle>Cost protection</CardTitle>
