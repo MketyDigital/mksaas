@@ -41,12 +41,15 @@ describe('AI credit reservation accounting engine', () => {
       apiKeyId: 'key-a',
       requestId: 'request-a',
       reservedCredits: 25n,
+      idempotencyKey: 'request-1',
     };
     await expect(createAiReservationFingerprint(base)).resolves
       .toBe(await createAiReservationFingerprint(base));
     await expect(createAiReservationFingerprint({ ...base, reservedCredits: 26n })).resolves
       .not.toBe(await createAiReservationFingerprint(base));
     await expect(createAiReservationFingerprint({ ...base, tenantId: 'tenant-b' })).resolves
+      .not.toBe(await createAiReservationFingerprint(base));
+    await expect(createAiReservationFingerprint({ ...base, idempotencyKey: 'request-2' })).resolves
       .not.toBe(await createAiReservationFingerprint(base));
   });
 });
