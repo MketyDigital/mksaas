@@ -183,6 +183,13 @@
       "when": 1790568600000,
       "tag": "0025_ai_commercial_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790572200000,
+      "tag": "0026_ai_business_solutions",
+      "breakpoints": true
     }
   ]
 }
