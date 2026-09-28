@@ -370,3 +370,21 @@ Release-workflow hardening completed during this attempt:
 - PR #144: serialized Mail production runs, independent exact quality gates, and final main-head revalidation.
 
 Do not restart Mail architecture design. Do not begin the Mkety AI implementation workstream until this Mail infrastructure release is completed and the required production functional tests pass.
+
+
+## Commercial access and usage boundary
+
+Mkety Mail is a separately entitled Mkety product/workspace.
+
+- New self-service activation requires `workspace.mail`.
+- Public self-service subscriptions are Mail Starter ($4.99/month), Mail Growth ($9.99/month) and Mail Business ($24.99/month).
+- Enterprise Mail is custom.
+- A tenant may hold a normal Mkety Platform subscription and a separate Mail subscription at the same time.
+- Entitlement resolution composes grants across qualifying active subscriptions so add-ons do not replace the tenant's Platform entitlements.
+- Billing checkout prevents duplicate subscriptions within the same product family while allowing one Platform-family subscription plus one Mail-family subscription.
+- Mail quota enforcement resolves the tenant's current paid Mail subscription from Billing and applies plan-specific monthly limits in addition to the existing daily/domain warm-up and reputation controls.
+- Self-service Mail uses hard limits and prepaid capacity packs rather than surprise postpaid overage.
+- Customer-facing Mail usage exposes only the tenant's plan, allowance, used/remaining quota and purchased capacity.
+- Raw provider cost, account-wide Cloudflare capacity, internal reputation scoring, other-tenant usage and operations-only telemetry remain restricted to authorized Mkety admin/ops.
+
+This same product-composition approach is the intended foundation for later centrally enabled products such as Mkety Media: one Mkety tenant/team/billing identity with product-specific entitlements and focused operational runtimes.
