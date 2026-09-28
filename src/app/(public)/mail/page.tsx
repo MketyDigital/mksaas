@@ -23,6 +23,7 @@ export default function MketyMailPublicPage(){
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <a href="#mail-plans" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">Choose a Mail plan <ArrowRight className="h-4 w-4"/></a>
         <a href="https://mail.mkety.com" className="inline-flex rounded-xl border px-5 py-3 font-semibold">Already subscribed? Open Mail</a>
+        <Link href="/login?plan=mail-starter" className="inline-flex rounded-xl border px-5 py-3 font-semibold">Sign in</Link>
       </div>
     </div>
 
@@ -58,7 +59,10 @@ export default function MketyMailPublicPage(){
               <li>Up to {limits.maxRecipientsPerCustomerUpdate.toLocaleString()} recipients per Customer Update</li>
               <li>Inbox, aliases, forwarding, templates, API/SMTP, webhooks and analytics</li>
             </ul>
-            <Link className="mt-8 inline-flex justify-center rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/signup?plan=${plan.key}`}>Choose {plan.name}</Link>
+            <div className="mt-8 grid gap-2">
+              <Link className="inline-flex justify-center rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/signup?plan=${plan.key}`}>Create account · {plan.name}</Link>
+              <Link className="inline-flex justify-center rounded-xl border px-5 py-3 text-sm font-semibold" href={`/login?plan=${plan.key}`}>Sign in & add to existing workspace</Link>
+            </div>
           </div>;
         })}
       </div>
