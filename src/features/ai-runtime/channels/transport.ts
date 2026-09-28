@@ -132,6 +132,65 @@ export async function deliverEnterpriseAiChannelMessage(
       };
     }
 
+
+    case 'discord': {
+      const botToken = required(connection.credentials.botToken, 'Discord bot token');
+      const channelId = message.recipientId ?? metadataString(connection.metadata, 'channelId');
+      const payload = await jsonRequest(
+        `https://discord.com/api/v10/channels/${required(channelId, 'Discord channel ID')}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${botToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: message.text,
+            ...(message.replyToId ? { message_reference: { message_id: message.replyToId } } : {}),
+            allowed_mentions: { parse: [] },
+          }),
+        },
+      );
+      return {
+        providerMessageId: typeof payload.id === 'string' ? payload.id : null,
+        rawStatus: 'sent',
+      };
+    }
+
+    case 'linkedin_page': {
+      const token = required(connection.credentials.accessToken, 'LinkedIn access token');
+      const organizationId = required(metadataString(connection.metadata, 'organizationId'), 'LinkedIn organization ID');
+      const version = metadataString(connection.metadata, 'linkedinVersion') ?? '202609';
+      const targetUrn = required(message.recipientId, 'LinkedIn post or comment URN');
+      const encoded = encodeURIComponent(targetUrn);
+      const payload = await jsonRequest(
+        `https://api.linkedin.com/rest/socialActions/${encoded}/comments`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Linkedin-Version': version,
+            'X-Restli-Protocol-Version': '2.0.0',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            actor: `urn:li:organization:${organizationId}`,
+            message: { text: message.text },
+            object: targetUrn,
+          }),
+        },
+      );
+      return {
+        providerMessageId:
+          typeof payload.id === 'string'
+            ? payload.id
+            : typeof payload.entity === 'string'
+              ? payload.entity
+              : null,
+        rawStatus: 'sent',
+      };
+    }
+
     case 'microsoft_teams': {
       const endpoint = required(connection.endpointUrl ?? undefined, 'Microsoft Teams webhook endpoint');
       await jsonRequest(endpoint, {
