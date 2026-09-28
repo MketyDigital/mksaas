@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 
 import { publishAgentVersion, snapshotAgentVersion } from '@/features/ai/lib/agent-versioning';
 import { db } from '@/shared/db';
-import { aiProviderConnections, agents, projects, tenantMemberships } from '@/shared/db/schema';
+import { agents, aiProviderConnections, projects, tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
