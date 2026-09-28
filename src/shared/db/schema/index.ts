@@ -34,6 +34,7 @@ export * from './mkety-auth';
 export * from './persons';
 export * from './platform-app-experience';
 export * from './platform-content';
+export * from './platform-service-connections';
 export * from './platform-enterprise-orders';
 export * from './projects';
 export * from './public-assistant-memory';
