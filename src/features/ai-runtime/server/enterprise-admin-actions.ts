@@ -148,12 +148,35 @@ export async function refreshEnterpriseAiHostname(tenantSlug: string, formData: 
   if (current.status !== 'active' || current.ssl?.status !== 'active') {
     current = await retryCloudflareSaasHostnameValidation(metadata.cloudflareCustomHostnameId);
   }
-  const verified = current.status === 'active' && current.ssl?.status === 'active';
+
+  const strictProviderVerified =
+    current.status === 'active' && current.ssl?.status === 'active';
+  const liveRouteProof = strictProviderVerified
+    ? null
+    : await probeEnterpriseAiHostnameRoute(domain.hostname, tenant.id);
+  const verified =
+    strictProviderVerified ||
+    (liveRouteProof?.ok === true && liveRouteProof.tenantId === tenant.id);
+  const verificationMethod = strictProviderVerified
+    ? 'cloudflare'
+    : verified
+      ? 'live_route'
+      : 'pending';
+
   await db.update(customDomains).set({
     status: verified ? 'verified' : 'pending',
     providerVerified: JSON.stringify({
       ...metadata,
       sslStatus: current.ssl?.status ?? null,
+      verificationMethod,
+      liveRouteVerifiedAt:
+        verified && verificationMethod === 'live_route'
+          ? new Date().toISOString()
+          : null,
+    }),
+    verification: JSON.stringify({
+      provider: current.ownership_verification ?? {},
+      liveRouteProof,
     }),
     updatedAt: new Date(),
   }).where(eq(customDomains.id, domain.id));
