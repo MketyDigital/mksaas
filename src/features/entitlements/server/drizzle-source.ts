@@ -18,8 +18,8 @@ const QUALIFYING_SUBSCRIPTION_STATUSES = [
 ] as const;
 
 export const drizzleEntitlementSource: EntitlementSource = {
-  async getCurrentPlanVersionId(tenantId) {
-    const [subscription] = await db
+  async getCurrentPlanVersionIds(tenantId) {
+    const subscriptions = await db
       .select({ planVersionId: billingSubscriptions.planVersionId })
       .from(billingSubscriptions)
       .where(
@@ -28,10 +28,9 @@ export const drizzleEntitlementSource: EntitlementSource = {
           inArray(billingSubscriptions.status, [...QUALIFYING_SUBSCRIPTION_STATUSES]),
         ),
       )
-      .orderBy(desc(billingSubscriptions.updatedAt))
-      .limit(1);
+      .orderBy(desc(billingSubscriptions.updatedAt));
 
-    return subscription?.planVersionId ?? null;
+    return [...new Set(subscriptions.map((subscription) => subscription.planVersionId))];
   },
 
   async getPlanEntitlements(planVersionId) {
