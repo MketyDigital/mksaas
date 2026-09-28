@@ -8,6 +8,8 @@ on:
     paths:
       - '.github/workflows/mkety-public-candidate-deploy.yml'
       - 'migrations/**'
+      - 'src/shared/db/migrations/**'
+      - 'src/shared/db/schema/**'
       - 'src/app/**'
       - 'src/features/platform-content/**'
       - 'src/features/public-assistant/**'
@@ -139,6 +141,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: |
+          pnpm db:migrate
           pnpm db:migrate:mkety-content
           pnpm db:seed:mkety-content
           pnpm db:seed:billing-catalog
