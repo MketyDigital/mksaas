@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
 import {
   listEnterpriseAiSolutionInstances,
   listEnterpriseAiSolutionTemplates,
@@ -45,11 +46,12 @@ export default async function EnterpriseAiConsolePage({
     );
   }
 
-  const [templates, instances, projects, balance] = await Promise.all([
+  const [templates, instances, projects, balance, commercial] = await Promise.all([
     listEnterpriseAiSolutionTemplates(),
     listEnterpriseAiSolutionInstances(tenant.id),
     listTenantProjectChoices(tenant.id),
     getCreditBalance(tenant.id),
+    getEnterpriseAiCustomerSummary(tenant.id),
   ]);
 
   return (
@@ -107,6 +109,29 @@ export default async function EnterpriseAiConsolePage({
               </CardContent>
             </Card>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-2xl font-bold">Plan, usage & cost</h2>
+        <p className="mt-1 text-sm text-muted-foreground">A simple view of what your business has, what it has used this month, and what remains.</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-2"><CardDescription>Current plan</CardDescription></CardHeader>
+            <CardContent><p className="text-2xl font-bold">{commercial.billing?.plan.name ?? 'Enterprise agreement'}</p><p className="mt-1 text-xs text-muted-foreground">{commercial.billing?.subscription.status ?? 'Entitled'}</p></CardContent>
+          </Card>
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-2"><CardDescription>Credits available</CardDescription></CardHeader>
+            <CardContent><p className="text-2xl font-bold">{commercial.credits?.availableCredits.toString() ?? '0'}</p><p className="mt-1 text-xs text-muted-foreground">Prepaid usage protection</p></CardContent>
+          </Card>
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-2"><CardDescription>AI requests this month</CardDescription></CardHeader>
+            <CardContent><p className="text-2xl font-bold">{commercial.usage.requests.toString()}</p><p className="mt-1 text-xs text-muted-foreground">{commercial.usage.settledCredits.toString()} credits used</p></CardContent>
+          </Card>
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-2"><CardDescription>Current subscription</CardDescription></CardHeader>
+            <CardContent><p className="text-2xl font-bold">{commercial.billing ? `${commercial.billing.currentPeriod.currency} ${(Number(commercial.billing.currentPeriod.amountDueMinor) / 100).toFixed(2)}` : 'Custom'}</p><p className="mt-1 text-xs text-muted-foreground">{commercial.billing?.subscription.renewalMode ?? 'Contract terms'}</p></CardContent>
+          </Card>
         </div>
       </section>
 
