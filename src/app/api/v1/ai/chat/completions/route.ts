@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     return Response.json({ error: { code: budget.code, message: 'AI budget does not authorize this request.' } }, { status: 402 });
   }
 
-  const requestId = randomUUID();
+  const requestId = crypto.randomUUID();
   try {
     await db.insert(aiRequests).values({
       id: requestId,
