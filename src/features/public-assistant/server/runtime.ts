@@ -11,6 +11,7 @@ import {
   recordPublicAIToolRun,
 } from './memory';
 import { createPublicAIProviderAdapters } from './providers';
+import { getDynamicPublicAiConfig, resolveDynamicPublicAiTargets } from './dynamic-config';
 import { buildPublicSystemPrompt, planPublicSupportTools, sanitizePublicAssistantAnswer } from './support';
 import { getPublicPricingKnowledge } from './knowledge';
 import { executePublicSupportTool, type PublicSupportToolName } from './tools';
@@ -183,18 +184,34 @@ async function getPublicSupportSettings(database: Database) {
   };
 }
 
-function resolveProviderTargets(environment: PublicAssistantEnvironment): PublicAIProviderTarget[] {
+async function resolveProviderTargets(environment: PublicAssistantEnvironment): Promise<{
+  enabled: boolean;
+  targets: PublicAIProviderTarget[];
+}> {
+  const dynamic = await getDynamicPublicAiConfig();
+  if (dynamic) {
+    return {
+      enabled: dynamic.enabled,
+      targets: dynamic.enabled ? await resolveDynamicPublicAiTargets(dynamic) : [],
+    };
+  }
+
+  // Temporary migration fallback only. Once Platform Control has a Public AI
+  // database configuration, provider credentials and routing no longer depend on env.
   const config = parsePublicAIProviderConfig(environment);
   const requestedProviders = [config.primaryProvider, ...config.fallbackProviders];
   const adapters = createPublicAIProviderAdapters(requestedProviders, environment);
   const targetByProvider = new Map(adapters.map((adapter) => [adapter.id, adapter]));
 
-  return requestedProviders.flatMap((provider) => {
-    const adapter = targetByProvider.get(provider);
-    if (!adapter) return [];
-    const model = provider === config.primaryProvider ? config.model : getDefaultPublicAIModel(provider);
-    return [{ adapter, model }];
-  });
+  return {
+    enabled: config.enabled,
+    targets: requestedProviders.flatMap((provider) => {
+      const adapter = targetByProvider.get(provider);
+      if (!adapter) return [];
+      const model = provider === config.primaryProvider ? config.model : getDefaultPublicAIModel(provider);
+      return [{ adapter, model }];
+    }),
+  };
 }
 
 function buildDeterministicSupportFallback(settings: {
@@ -240,7 +257,7 @@ export async function runMketyPublicAssistant(input: {
   message: string;
   environment: PublicAssistantEnvironment;
 }) {
-  const config = parsePublicAIProviderConfig(input.environment);
+  const providerState = await resolveProviderTargets(input.environment);
 
   let conversationId = input.conversationId;
   if (conversationId) {
@@ -263,7 +280,7 @@ export async function runMketyPublicAssistant(input: {
     metadata: leadMetadata,
   });
 
-  if (!config.enabled) {
+  if (!providerState.enabled) {
     return returnDeterministicFallback({
       database: input.database,
       visitorId: input.visitorId,
@@ -281,7 +298,7 @@ export async function runMketyPublicAssistant(input: {
     conversationId,
     message: input.message,
   });
-  const targets = resolveProviderTargets(input.environment);
+  const targets = providerState.targets;
   const primary = targets[0];
   if (!primary) {
     return returnDeterministicFallback({
