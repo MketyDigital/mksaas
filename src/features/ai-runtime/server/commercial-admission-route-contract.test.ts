@@ -9,19 +9,20 @@ describe('AI commercial admission route safety', () => {
     expect(() => conservativeInputTokenUpperBound(0)).toThrow();
   });
 
-  it('requires commercial admission before any future provider execution point', async () => {
+  it('requires commercial admission and exact settlement around provider execution', async () => {
     const route = await readFile(
       'src/app/api/v1/ai/chat/completions/route.ts',
       'utf8',
     );
 
     expect(route).toContain('admitAiCommercialRequest');
+    expect(route).toContain('settleAiCommercialRequest');
     expect(route).toContain('releaseAiCommercialRequest');
     expect(route).toContain("status: 'admitting'");
-    expect(route).toContain("errorCode: 'provider_unavailable'");
-    expect(route).not.toContain('.run(');
-    expect(route).not.toContain('env.AI');
-    expect(route).not.toContain('WorkersAi');
+    expect(route).toContain("status: 'completed'");
+    expect(route).toContain('getManagedWorkersAiProvider');
+    expect(route.indexOf('admitAiCommercialRequest')).toBeLessThan(route.indexOf('provider.complete'));
+    expect(route.indexOf('provider.complete')).toBeLessThan(route.indexOf('settleAiCommercialRequest'));
   });
 
   it('snapshots the exact commercial rate and reservation amount on each request', async () => {
