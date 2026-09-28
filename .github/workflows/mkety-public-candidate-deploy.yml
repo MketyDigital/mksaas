@@ -141,12 +141,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: |
-          pnpm db:migrate
-          pnpm db:migrate:mkety-content
-          pnpm db:seed:mkety-content
-          pnpm db:seed:billing-catalog
-          pnpm db:smoke:mkety-content
-          pnpm db:smoke:billing-catalog
+          set -euo pipefail
+          timeout --signal=TERM 360s pnpm db:migrate
+          timeout --signal=TERM 180s pnpm db:migrate:mkety-content
+          timeout --signal=TERM 180s pnpm db:seed:mkety-content
+          timeout --signal=TERM 180s pnpm db:seed:billing-catalog
+          timeout --signal=TERM 180s pnpm db:smoke:mkety-content
+          timeout --signal=TERM 180s pnpm db:smoke:billing-catalog
+          DATABASE_URL="$DATABASE_URL" pnpm exec tsx scripts/verify-managed-ai-selection.ts
 
       - name: Require operational Enterprise payment gateway
         id: enterprise-payment
