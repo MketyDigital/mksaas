@@ -1,0 +1,140 @@
+name: Mkety AI Managed Model Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_paid_inference:
+        description: Type RUN_SMALL_PAID_BENCHMARK to authorize the capped Workers AI benchmark.
+        required: true
+        type: string
+      gateway_id:
+        description: Non-production AI Gateway ID.
+        required: true
+        default: mkety-ai-benchmark
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-ai-managed-model-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Benchmark Gemma GLM and Qwen
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      MKETY_AI_BENCHMARK_GATEWAY_ID: ${{ inputs.gateway_id }}
+
+    steps:
+      - name: Require explicit paid benchmark authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_paid_inference }}" != "RUN_SMALL_PAID_BENCHMARK" ]; then
+            echo "Paid inference benchmark was not explicitly authorized." >&2
+            exit 1
+          fi
+
+      - name: Checkout exact requested revision
+        uses: actions/checkout@v4
+
+      - name: Validate Cloudflare benchmark credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo "CLOUDFLARE_ACCOUNT_ID is missing." >&2; exit 1; }
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "CLOUDFLARE_API_TOKEN is missing." >&2; exit 1; }
+          case "${MKETY_AI_BENCHMARK_GATEWAY_ID}" in
+            *[!a-zA-Z0-9_-]*|'') echo "Invalid benchmark gateway id." >&2; exit 1 ;;
+          esac
+
+      - name: Ensure isolated benchmark gateway uses standard Workers AI billing
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4"
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")
+          gateway_url="${api}/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${MKETY_AI_BENCHMARK_GATEWAY_ID}"
+
+          code="$(curl -sS -o /tmp/gateway.json -w '%{http_code}' "${auth[@]}" "${gateway_url}")"
+          if [ "${code}" = "404" ]; then
+            create_url="${api}/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways"
+            payload="$(node -e 'process.stdout.write(JSON.stringify({
+              id: process.env.MKETY_AI_BENCHMARK_GATEWAY_ID,
+              cache_invalidate_on_update: true,
+              cache_ttl: 0,
+              collect_logs: true,
+              authentication: true,
+              rate_limiting_interval: 60,
+              rate_limiting_limit: 60,
+              rate_limiting_technique: "sliding",
+              retry_max_attempts: 1,
+              retry_backoff: "exponential",
+              retry_delay: 250,
+              workers_ai_billing_mode: "postpaid"
+            }))')"
+            create_code="$(curl -sS -o /tmp/gateway-create.json -w '%{http_code}' -X POST "${auth[@]}" --data "${payload}" "${create_url}")"
+            if [ "${create_code}" -lt 200 ] || [ "${create_code}" -ge 300 ]; then
+              echo "Could not create isolated AI benchmark gateway (HTTP ${create_code})." >&2
+              node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/gateway-create.json","utf8"));console.error({success:p.success,errors:p.errors?.map(e=>({code:e.code,message:e.message}))})'
+              exit 1
+            fi
+            cp /tmp/gateway-create.json /tmp/gateway.json
+          elif [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
+            echo "Could not inspect benchmark gateway (HTTP ${code})." >&2
+            exit 1
+          fi
+
+          GATEWAY_JSON="$(cat /tmp/gateway.json)" node <<'NODE'
+          const payload=JSON.parse(process.env.GATEWAY_JSON||'{}');
+          if (!payload.success || !payload.result) throw new Error('Cloudflare gateway response was not successful.');
+          const mode=payload.result.workers_ai_billing_mode ?? 'postpaid';
+          if (mode !== 'postpaid') throw new Error('Benchmark gateway must use standard/postpaid Workers AI billing, never Unified Billing.');
+          if (payload.result.id !== process.env.MKETY_AI_BENCHMARK_GATEWAY_ID) throw new Error('Unexpected benchmark gateway identity.');
+          console.log('Benchmark gateway verified:', payload.result.id, 'billing=', mode);
+          NODE
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run capped managed-model benchmark
+        run: pnpm exec tsx scripts/benchmark-mkety-ai-models.ts
+
+      - name: Publish benchmark summary
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const fs=require('fs');
+          const report=JSON.parse(fs.readFileSync('artifacts/mkety-ai-model-benchmark.json','utf8'));
+          console.log('## Mkety AI managed-model benchmark');
+          console.log('');
+          console.log('| Model | Checks passed | Attempts | Provider errors | Avg latency (ms) | Estimated raw provider cost (USD) |');
+          console.log('|---|---:|---:|---:|---:|---:|');
+          for (const row of report.summary) {
+            console.log(`| ${row.modelKey} | ${row.passed} | ${row.attempted} | ${row.providerErrors} | ${row.averageLatencyMs ?? 'n/a'} | ${Number(row.estimatedRawProviderCostUsd).toFixed(6)} |`);
+          }
+          console.log('');
+          console.log('This workflow records benchmark evidence only. It does not promote a model or enable customer inference.');
+          NODE
+
+      - name: Upload benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-ai-managed-model-benchmark
+          path: artifacts/mkety-ai-model-benchmark.json
+          if-no-files-found: error
+          retention-days: 14
