@@ -138,17 +138,11 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
       const enterpriseHost = await resolveEnterpriseAiHostname(hostname);
       if (enterpriseHost) {
         if (!session) {
-          let centralOrigin = 'https://app.mkety.com';
-          try {
-            centralOrigin = new URL(process.env.NEXT_PUBLIC_APP_URL || centralOrigin).origin;
-          } catch {
-            centralOrigin = 'https://app.mkety.com';
-          }
-          const login = new URL('/api/auth/product-handoff/start', centralOrigin);
-          login.searchParams.set('product', 'ai');
-          login.searchParams.set('targetHost', hostname.toLowerCase());
-          login.searchParams.set('returnTo', '/ai/app');
-          return NextResponse.redirect(login);
+          const loginUrl = new URL(request.url);
+          loginUrl.pathname = `/t/${enterpriseHost.tenant.slug}/login`;
+          loginUrl.search = '';
+          loginUrl.searchParams.set('enterpriseAiHost', hostname.toLowerCase());
+          return NextResponse.rewrite(loginUrl);
         }
 
         const rewriteUrl = new URL(request.url);
