@@ -164,7 +164,7 @@ Once the foundation is green:
 1. create the Workers AI adapter;
 2. route it through Cloudflare AI Gateway using standard Workers AI billing, not Unified Billing;
 3. configure a non-production gateway;
-4. seed `@cf/google/gemma-4-26b-a4b-it` and `@cf/qwen/qwen3.8-27b` after re-verifying current pricing/capabilities;
+4. seed disabled benchmark candidates for `@cf/google/gemma-4-26b-a4b-it`, `@cf/zai-org/glm-5.3-flash` and `@cf/qwen/qwen3.8-27b` after re-verifying current pricing/capabilities; lock the second managed model only after benchmark evidence;
 5. explicitly prevent reliance on Cloudflare-managed third-party frontier credentials/Unified Billing;
 6. run tiny controlled inference acceptance;
 7. verify normalized usage and actual Cloudflare cost;
@@ -261,10 +261,11 @@ After AI-01 is green, proceed to non-production Workers AI + AI Gateway integrat
 
 **Execution-order gate:** this AI implementation does not start until the currently active Mkety Mail production-completion workstream is finished, verified, and its follow-up PR sequence is reconciled. AI design/documentation may continue on this feature branch, but code implementation waits behind that operational gate.
 
-Provider scope is locked for initial implementation:
+Provider scope for initial implementation:
 
-- Workers AI hosted Gemma 4;
-- Workers AI hosted Qwen 3.8 27B;
+- Workers AI hosted Gemma 4 remains the approved initial managed candidate;
+- GLM-5.3 Flash and Qwen 3.8 27B remain disabled benchmark candidates for the second managed slot;
+- select the second managed model from measured normal chat, long-context/RAG, tool calling, structured output, coding, reasoning, vision, latency, reliability and cost results;
 - customer BYOK for third-party frontier providers;
 - private/self-hosted HTTPS model endpoint later;
 - no Cloudflare Unified Billing frontier-model resale path.
@@ -279,11 +280,11 @@ AI planning is now commercially reconciled with current `main`:
 - current Public Mkety AI implementation/trust boundary reviewed;
 - current AI Workspace behavior and $16.99/month commercial contract reviewed;
 - current self-service 1/3/6/12-month billing terms preserved;
-- initial managed provider scope locked to Workers AI Gemma 4 + Qwen 3.8 27B;
+- Gemma 4 retained as the initial managed candidate; GLM-5.3 Flash added beside Qwen 3.8 27B for the second-model benchmark;
 - Cloudflare Unified Billing/frontier-model resale explicitly excluded;
 - third-party frontier providers remain BYOK;
 - private OCI/AWS/Azure/etc. model endpoint remains future-compatible;
-- exact current Workers AI unit costs documented;
+- exact current Workers AI unit costs documented and re-verified on 2026-09-28 for Gemma 4, GLM-5.3 Flash and Qwen 3.8 27B;
 - provisional ~65% pre-overhead gross-margin floor documented as a 3x planning reference;
 - Enterprise remains the major net-new product layer.
 
