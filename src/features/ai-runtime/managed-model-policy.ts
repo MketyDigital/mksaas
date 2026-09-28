@@ -31,3 +31,27 @@ export function routeManagedAiTask(taskClass: ManagedAiTaskClass): ManagedAiRout
     escalationRequired: taskClass === 'heavy',
   };
 }
+
+
+const SMART_TASK_PATTERN =
+  /\b(code|coding|debug|bug|refactor|architecture|reasoning|analy[sz]e|compare|plan|strategy|sql|typescript|javascript|python|api|schema|migration|workflow|agent|tool|function|deploy|security|financial model|forecast)\b/i;
+
+const HEAVY_TASK_PATTERN =
+  /\b(repo[- ]wide|multi[- ]step|deep analysis|complex architecture|large refactor|app builder|build an app|production migration|autonomous|long[- ]running)\b/i;
+
+export function classifyManagedAiTask(input: {
+  messages: Array<{ role: string; content: string }>;
+  requested?: ManagedAiTaskClass | null;
+}): ManagedAiTaskClass {
+  if (input.requested) return input.requested;
+
+  const text = input.messages
+    .filter((message) => message.role === 'user')
+    .slice(-4)
+    .map((message) => message.content)
+    .join('\n');
+
+  if (HEAVY_TASK_PATTERN.test(text) || text.length > 12_000) return 'heavy';
+  if (SMART_TASK_PATTERN.test(text) || text.length > 3_500) return 'smart';
+  return 'economy';
+}
