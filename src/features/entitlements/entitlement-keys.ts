@@ -18,6 +18,8 @@ export const ENTITLEMENT_KEYS = [
   'ai.channel.instagram',
   'ai.channel.facebook_messenger',
   'ai.channel.slack',
+  'ai.channel.discord',
+  'ai.channel.linkedin_page',
   'ai.channel.microsoft_teams',
   'ai.channel.custom_webhook',
   'ai.whitelabel',
