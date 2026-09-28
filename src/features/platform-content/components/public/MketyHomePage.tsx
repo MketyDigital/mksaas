@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Cloud,
   Layers3,
+  Mail,
   Rocket,
   Shield,
   Workflow,
@@ -274,6 +275,34 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
                   </CardDescription>
                 </CardHeader>
               </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-10 md:py-12">
+        <div className="container mx-auto">
+          <div className="grid gap-6 overflow-hidden rounded-[2rem] border border-primary/15 bg-gradient-to-br from-card via-background to-primary/[0.06] p-6 shadow-sm md:p-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Mail className="h-7 w-7" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety Mail</p>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Professional email and customer communication in Mkety.</h2>
+              <p className="mt-4 max-w-3xl leading-7 text-muted-foreground">
+                Run business mailboxes, aliases, forwarding, shared inboxes, Customer Updates, templates, transactional API/SMTP and delivery analytics with separately subscribed Mail plans and clear usage limits.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button asChild className="rounded-xl">
+                  <Link href="/mail">
+                    Explore Mkety Mail
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="rounded-xl">
+                  <Link href="/enterprise">Enterprise Mail</Link>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
