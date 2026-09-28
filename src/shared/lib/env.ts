@@ -14,6 +14,7 @@ export const env = createEnv({
     MKETY_AUTH_REDIRECT_URI: z.url(),
     MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: z.url(),
     MKETY_AUTH_SESSION_SECRET: z.string().min(32),
+    MKETY_AUTH_COOKIE_DOMAIN: z.string().default('.mkety.com'),
 
     // Mkety Platform AI. Public Mkety AI must not use these as its runtime config.
     OPENAI_API_KEY: z.string().optional(),
@@ -104,6 +105,7 @@ export const env = createEnv({
     MKETY_AUTH_REDIRECT_URI: process.env.MKETY_AUTH_REDIRECT_URI,
     MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: process.env.MKETY_AUTH_POST_LOGOUT_REDIRECT_URI,
     MKETY_AUTH_SESSION_SECRET: process.env.MKETY_AUTH_SESSION_SECRET,
+    MKETY_AUTH_COOKIE_DOMAIN: process.env.MKETY_AUTH_COOKIE_DOMAIN,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     MKETY_AI_PROVIDER: process.env.MKETY_AI_PROVIDER,
