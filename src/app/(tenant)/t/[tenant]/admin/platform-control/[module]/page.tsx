@@ -139,10 +139,14 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle>Mail commercial catalog</CardTitle>
-                  <CardDescription>Canonical prices stay versioned in Billing. Reconcile creates missing plan/version/entitlement records but never rewrites billing history.</CardDescription>
+                  <CardDescription>
+                    Canonical prices stay versioned in Billing. Reconcile creates missing plan/version/entitlement records but never rewrites billing history.
+                  </CardDescription>
                 </div>
                 <form action={reconcileMailCatalog.bind(null, tenant)}>
-                  <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Reconcile catalog</button>
+                  <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                    Reconcile catalog
+                  </button>
                 </form>
               </div>
             </CardHeader>
@@ -150,55 +154,9 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
               {mailOperations.catalog.map((plan) => (
                 <div key={plan.key} className="rounded-xl border bg-muted/20 p-4">
                   <p className="font-semibold">{plan.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{'
-        <Card className="rounded-2xl">
-          <CardHeader>
-            <CardTitle>Controlled module surface</CardTitle>
-            <CardDescription>{controlModule.implementationNotes}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {actions.map((action) => (
-                <div key={action} className="rounded-xl border bg-muted/30 p-4 text-sm font-medium">
-                  {action}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-primary/20">
-          <CardHeader>
-            <CardTitle>Safety boundary</CardTitle>
-            <CardDescription>
-              Required permission: <span className="font-mono">{controlModule.requiredPermission}</span>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5 text-sm text-muted-foreground">
-            <div>
-              <p className="mb-2 font-medium text-foreground">Editable here</p>
-              <ul className="list-disc space-y-1 pl-4">
-                {controlModule.editableScope.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <p className="mb-2 font-medium text-foreground">Protected from admin editing</p>
-              <ul className="list-disc space-y-1 pl-4">
-                {controlModule.protectedScope.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-            <p>Domain routing must follow the approved Mkety map: mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, and *.mkety.app.</p>
-          </CardContent>
-        </Card>
-      </div> : null}
-    </div>
-  );
-}
-}{(Number(plan.amountMinor) / 100).toFixed(2)} / month</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {String.fromCharCode(36)}{(Number(plan.amountMinor) / 100).toFixed(2)} / month
+                  </p>
                   <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key}</p>
                 </div>
               ))}
@@ -212,22 +170,28 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <CardTitle>{workspace.tenantName}</CardTitle>
-                      <CardDescription>{workspace.tenantSlug} · paid plan {workspace.paidPlanKey} · {workspace.domains.length} domain{workspace.domains.length === 1 ? '' : 's'}</CardDescription>
+                      <CardDescription>
+                        {workspace.tenantSlug} · paid plan {workspace.paidPlanKey} · {workspace.domains.length} domain{workspace.domains.length === 1 ? '' : 's'}
+                      </CardDescription>
                     </div>
-                    <a className="text-sm font-semibold text-primary" href={\`/t/\${workspace.tenantSlug}/mail\`}>Open tenant Mail →</a>
+                    <a className="text-sm font-semibold text-primary" href={'/t/' + workspace.tenantSlug + '/mail'}>
+                      Open tenant Mail →
+                    </a>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <form action={updateMailWorkspaceOperations.bind(null, tenant)} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
                     <input type="hidden" name="workspaceId" value={workspace.workspaceId} />
                     <input type="hidden" name="targetTenantId" value={workspace.tenantId} />
-                    <label className="text-sm font-medium">Workspace status
+                    <label className="text-sm font-medium">
+                      Workspace status
                       <select name="status" defaultValue={workspace.status} className="mt-2 w-full rounded-lg border bg-background px-3 py-2">
                         <option value="active">Active</option>
                         <option value="suspended">Suspended</option>
                       </select>
                     </label>
-                    <label className="text-sm font-medium">Onboarding
+                    <label className="text-sm font-medium">
+                      Onboarding
                       <select name="onboardingStep" defaultValue={workspace.onboardingStep} className="mt-2 w-full rounded-lg border bg-background px-3 py-2">
                         <option value="domain">Domain setup</option>
                         <option value="ready">Ready</option>
@@ -244,19 +208,22 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <p className="font-semibold">{domain.domain}</p>
-                            <p className="text-xs text-muted-foreground">Routing {domain.routingEnabled ? 'on' : 'off'} · Sending {domain.sendingEnabled ? 'on' : 'off'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Routing {domain.routingEnabled ? 'on' : 'off'} · Sending {domain.sendingEnabled ? 'on' : 'off'}
+                            </p>
                           </div>
                           <button className="rounded-lg border px-3 py-2 text-sm font-semibold">Save domain</button>
                         </div>
                         <div className="mt-4 grid gap-3 md:grid-cols-5">
                           {[
-                            ['status','Domain',domain.status],
-                            ['spfStatus','SPF',domain.spfStatus],
-                            ['dkimStatus','DKIM',domain.dkimStatus],
-                            ['dmarcStatus','DMARC',domain.dmarcStatus],
-                            ['mxStatus','MX',domain.mxStatus],
-                          ].map(([name,label,value]) => (
-                            <label className="text-xs font-medium" key={String(name)}>{label}
+                            ['status', 'Domain', domain.status],
+                            ['spfStatus', 'SPF', domain.spfStatus],
+                            ['dkimStatus', 'DKIM', domain.dkimStatus],
+                            ['dmarcStatus', 'DMARC', domain.dmarcStatus],
+                            ['mxStatus', 'MX', domain.mxStatus],
+                          ].map(([name, label, value]) => (
+                            <label className="text-xs font-medium" key={String(name)}>
+                              {label}
                               <select name={String(name)} defaultValue={String(value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-sm">
                                 <option value="pending">Pending</option>
                                 <option value="verified">Verified</option>
@@ -267,15 +234,27 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                           ))}
                         </div>
                         <div className="mt-4 flex flex-wrap gap-5 text-sm">
-                          <label className="flex items-center gap-2"><input type="checkbox" name="routingEnabled" defaultChecked={domain.routingEnabled} /> Routing enabled</label>
-                          <label className="flex items-center gap-2"><input type="checkbox" name="sendingEnabled" defaultChecked={domain.sendingEnabled} /> Sending enabled</label>
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="routingEnabled" defaultChecked={domain.routingEnabled} />
+                            Routing enabled
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="sendingEnabled" defaultChecked={domain.sendingEnabled} />
+                            Sending enabled
+                          </label>
                         </div>
                       </form>
-                    )) : <p className="text-sm text-muted-foreground">No Mail domains connected yet.</p>}
+                    )) : (
+                      <p className="text-sm text-muted-foreground">No Mail domains connected yet.</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-            )) : <Card className="rounded-2xl"><CardContent className="p-6 text-sm text-muted-foreground">No Mail workspaces have been provisioned yet.</CardContent></Card>}
+            )) : (
+              <Card className="rounded-2xl">
+                <CardContent className="p-6 text-sm text-muted-foreground">No Mail workspaces have been provisioned yet.</CardContent>
+              </Card>
+            )}
           </div>
         </div>
       ) : null}
