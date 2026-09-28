@@ -29,7 +29,23 @@ describe('app.mkety.com production repair workflow', () => {
     expect(workflow).toContain("hostname:'app.mkety.com'");
     expect(workflow).toContain("service:process.env.WORKER");
     expect(workflow).toContain("if: failure() && steps.bind.outputs.bound == 'true'");
-    expect(workflow).toContain('Live acceptance failed; restored the pre-repair app.mkety.com DNS state.');
+    expect(workflow).toContain('Post-binding acceptance failed; restored the pre-repair app.mkety.com DNS state.');
+    expect(workflow).toContain('preexisting_bound');
+    expect(workflow).toContain('Preserving pre-existing app.mkety.com Worker Custom Domain during rollback.');
+  });
+
+  it('runs rollback after preview hardening so any post-binding failure is covered', async () => {
+    const workflow = await readFile(WORKFLOW_PATH, 'utf8');
+
+    const verify = workflow.indexOf('Verify live app host and branded auth handoff');
+    const harden = workflow.indexOf('Disable dedicated Worker preview exposure');
+    const rollback = workflow.indexOf('Roll back app host binding if post-binding acceptance failed');
+    const publish = workflow.indexOf('Publish repair evidence');
+
+    expect(verify).toBeGreaterThan(-1);
+    expect(harden).toBeGreaterThan(verify);
+    expect(rollback).toBeGreaterThan(harden);
+    expect(publish).toBeGreaterThan(rollback);
   });
 
   it('verifies root, app login and ZITADEL first-hop behavior after attachment', async () => {
