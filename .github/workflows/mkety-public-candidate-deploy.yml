@@ -319,6 +319,21 @@ jobs:
           grep -Fq 'Trading Workspace' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Workspace.'; exit 1; }
           grep -Fq 'Custom / Enterprise' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Custom / Enterprise positioning.'; exit 1; }
 
+
+          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/mail" -o /tmp/mkety-mail-page.html
+          grep -Fq 'Mail Starter' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter.'; exit 1; }
+          grep -Fq '$4.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter price.'; exit 1; }
+          grep -Fq 'Mail Growth' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Growth.'; exit 1; }
+          grep -Fq '$9.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Growth price.'; exit 1; }
+          grep -Fq 'Mail Business' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Business.'; exit 1; }
+          grep -Fq '$24.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Business price.'; exit 1; }
+          grep -Fq 'Enterprise Mail' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Enterprise Mail.'; exit 1; }
+          grep -Fq 'Marketing' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Marketing Coming Soon boundary.'; exit 1; }
+
+          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/enterprise" -o /tmp/mkety-enterprise-page.html
+          grep -Fq 'Enterprise AI' /tmp/mkety-enterprise-page.html || { echo 'Candidate Enterprise page missing Enterprise AI.'; exit 1; }
+          grep -Fq 'Enterprise Mail' /tmp/mkety-enterprise-page.html || { echo 'Candidate Enterprise page missing Enterprise Mail.'; exit 1; }
+
           curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/workspaces" -o /tmp/mkety-workspaces-page.html
           grep -Fq 'Trading Workspace' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Workspace.'; exit 1; }
           grep -Fq 'Custom / Enterprise' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Custom / Enterprise positioning.'; exit 1; }
