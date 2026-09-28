@@ -99,6 +99,33 @@ The shared Enterprise configuration may include:
 - custom domain or `{customer}.mkety.app`;
 - optional dedicated/private infrastructure and SLA through Enterprise terms.
 
+## 3.4 Enterprise AI is a separate product entitlement
+
+Enterprise AI is not the same commercial product as the normal Mkety AI Workspace.
+
+- AI Workspace remains the self-service Platform workspace under its existing subscription.
+- Enterprise AI is a separately purchased/enabled product add-on/workspace with its own entitlement, plan/version, usage allowance, limits, overage policy and optional Enterprise contract.
+- Both can reuse central Mkety identity, tenant membership, PBAC, Billing, Entitlements, Usage/Credits and the same central inference runtime.
+- A tenant may have AI Workspace without Enterprise AI, Enterprise AI without needing duplicated user/team records, or both.
+- `ai.mkety.com` can expose both experiences based on entitlement, but the UI must make the distinction clear.
+- Enterprise-only features include production multi-channel/customer-facing deployment, custom domains, advanced operator handoff, higher/contracted limits, Enterprise security controls, private/dedicated routing, SLA and custom integrations.
+
+Conceptually:
+
+```text
+Central Mkety tenant
+   |
+   +-- workspace.ai entitlement
+   |      -> normal AI Workspace
+   |
+   +-- ai.enterprise entitlement
+          -> Enterprise AI product/workspace
+          -> ai.mkety.com enterprise console
+          -> managed channels/domains/usage/security
+```
+
+This follows the same integration principle intended for Media: central Mkety owns identity/billing/entitlement and the product keeps its focused runtime/console boundary.
+
 ## 4. Runtime architecture
 
 The central service is both:
@@ -811,3 +838,22 @@ This runtime project must blend with, not redesign, the current Mkety commercial
 - Public Mkety AI remains an isolated public support assistant and never inherits tenant data.
 - Existing direct provider adapters remain valid migration-era implementation until the shared runtime proves parity.
 - Enterprise/shared runtime and developer API are the principal net-new architecture in this workstream.
+
+
+## 27. Commercial enforcement boundary
+
+Before any Enterprise inference/channel/action operation, the runtime must resolve:
+
+1. authenticated tenant/project/principal;
+2. Enterprise AI product entitlement;
+3. active plan/version or contract;
+4. included allowance and current usage;
+5. tenant/project/key budget and configured limits;
+6. overage mode;
+7. route/model eligibility;
+8. security policy;
+9. final infrastructure/provider constraints.
+
+Only then may the runtime invoke the model/channel/tool.
+
+This keeps Enterprise commercial enforcement independent from ordinary AI Workspace access while still reusing the same low-level runtime.
