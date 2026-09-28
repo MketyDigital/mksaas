@@ -1,7 +1,7 @@
 import { ArrowRight, Inbox, Mail, Send, Users } from 'lucide-react';
 import Link from 'next/link';
 
-import { MAIL_COMMERCIAL_PLANS, MAIL_PREPAID_ADDONS } from '@/features/mail/commercial/plans';
+import { MAIL_COMMERCIAL_PLANS } from '@/features/mail/commercial/plans';
 
 export const metadata={
   title:'Mkety Mail — Business email made simple',
@@ -67,8 +67,8 @@ export default function MketyMailPublicPage(){
         })}
       </div>
       <div className="mt-6 rounded-2xl border bg-muted/30 p-6">
-        <p className="font-semibold">Need more capacity without changing plan?</p>
-        <p className="mt-2 text-sm text-muted-foreground">Self-service overage is prepaid and hard-capped. Available packs include {Object.values(MAIL_PREPAID_ADDONS).map((item)=>`${item.label} (${usd(item.amountMinor)})`).join(', ')}. No unlimited sending and no surprise postpaid bill.</p>
+        <p className="font-semibold">Need more capacity?</p>
+        <p className="mt-2 text-sm text-muted-foreground">Upgrade to a higher Mail plan or discuss Enterprise Mail. Self-service limits fail closed rather than creating surprise postpaid overage. Prepaid capacity packs will only launch after the dedicated pack ledger and quota reconciliation are production-ready.</p>
       </div>
       <div className="mt-6 rounded-2xl border p-6">
         <p className="font-semibold">Enterprise Mail</p>
