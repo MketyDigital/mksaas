@@ -97,7 +97,7 @@ export async function runCentralAi(input: {
     actorUserId: input.actorUserId ?? null,
     requestedModel: requestedAlias,
     messages: [
-      { role: 'system', content: input.system },
+      ...(input.system.trim() ? [{ role: 'system' as const, content: input.system.trim() }] : []),
       ...input.messages,
     ],
     maxOutputTokens: input.maxOutputTokens,
