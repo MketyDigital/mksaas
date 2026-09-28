@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 
-import { WorkersAiProviderAdapter, type WorkersAiBinding } from './workers-ai';
+import { type WorkersAiBinding, WorkersAiProviderAdapter } from './workers-ai';
 
 function gatewayId() {
   const value = typeof env.MKETY_AI_GATEWAY_ID === 'string'
