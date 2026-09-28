@@ -2,7 +2,6 @@ import { ENTITLEMENT_KEYS } from '@/features/entitlements/entitlement-keys';
 
 import {
   getSelfServiceBillingPlan,
-  getSelfServiceBillingPlanFamily,
   getSelfServiceBillingQuote,
   isSelfServiceBillingPlanKey,
   SELF_SERVICE_BILLING_PLANS,
@@ -21,9 +20,6 @@ describe('self-service billing catalog', () => {
       'ai-workspace',
       'automation-workspace',
       'deploy-workspace',
-      'mail-starter',
-      'mail-growth',
-      'mail-business',
       'mkety-one',
     ]);
   });
@@ -33,9 +29,6 @@ describe('self-service billing catalog', () => {
     expect(SELF_SERVICE_BILLING_PLANS['ai-workspace'].amountMinor).toBe(1699n);
     expect(SELF_SERVICE_BILLING_PLANS['automation-workspace'].amountMinor).toBe(1699n);
     expect(SELF_SERVICE_BILLING_PLANS['deploy-workspace'].amountMinor).toBe(999n);
-    expect(SELF_SERVICE_BILLING_PLANS['mail-starter'].amountMinor).toBe(499n);
-    expect(SELF_SERVICE_BILLING_PLANS['mail-growth'].amountMinor).toBe(999n);
-    expect(SELF_SERVICE_BILLING_PLANS['mail-business'].amountMinor).toBe(2499n);
     expect(SELF_SERVICE_BILLING_PLANS['mkety-one'].amountMinor).toBe(4900n);
     expect(Object.values(SELF_SERVICE_BILLING_PLANS).every((plan) => plan.currency === 'USD')).toBe(true);
   });
@@ -54,13 +47,10 @@ describe('self-service billing catalog', () => {
     expect(getSelfServiceBillingQuote('mkety-one', '12m').amountMinor).toBe(49980n);
   });
 
-  it('keeps Mail as an additive product family beside the existing Platform subscription family', () => {
-    expect(getSelfServiceBillingPlanFamily('starter')).toBe('platform');
-    expect(getSelfServiceBillingPlanFamily('ai-workspace')).toBe('platform');
-    expect(getSelfServiceBillingPlanFamily('mkety-one')).toBe('platform');
-    expect(getSelfServiceBillingPlanFamily('mail-starter')).toBe('mail');
-    expect(getSelfServiceBillingPlanFamily('mail-growth')).toBe('mail');
-    expect(getSelfServiceBillingPlanFamily('mail-business')).toBe('mail');
+  it('keeps Enterprise AI separate from normal self-service AI Workspace', () => {
+    expect(SELF_SERVICE_BILLING_PLANS['ai-workspace'].entitlements).not.toContain('workspace.ai.enterprise');
+    expect(SELF_SERVICE_BILLING_PLANS['mkety-one'].entitlements).not.toContain('workspace.ai.enterprise');
+    expect(isSelfServiceBillingPlanKey('enterprise-ai')).toBe(false);
   });
 
   it('uses only registered entitlement keys', () => {
