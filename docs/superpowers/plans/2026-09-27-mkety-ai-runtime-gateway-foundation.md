@@ -344,3 +344,51 @@ Mail release-workflow safety fixes are completed and merged on main:
 **Do not start AI-01 code implementation until the Cloudflare token permission is corrected, the guarded Mail production release succeeds, and Mail production functional acceptance is completed.**
 
 AI architecture/commercial/provider planning remains complete enough to start immediately once this gate clears.
+
+
+## Product packaging clarification — 2026-09-28
+
+Enterprise Mkety AI is a separate paid product/workspace/add-on, not an automatic extension of the normal AI Workspace subscription.
+
+Implementation implications:
+
+- preserve the existing normal AI Workspace subscription and experience;
+- add a separate Enterprise AI product entitlement (for example `ai.enterprise` / `workspace.ai.enterprise`);
+- attach Enterprise-specific plan/version, allowance, limits and overage policy;
+- surface Enterprise AI in the central Mkety product/catalog/billing experience;
+- opening Enterprise AI routes the tenant into the Enterprise console at `ai.mkety.com`;
+- reuse central tenant identity, membership/PBAC, Billing, Entitlements, Usage/Credits and Payments;
+- do not create duplicate users, teams or a second billing/payment system;
+- model, channel, custom-domain, security, SLA and private-runtime controls remain Enterprise-only unless separately entitled;
+- BYOK and managed usage must be metered under the Enterprise product's commercial policy;
+- hard-stop/prepaid/postpaid/BYOK-continuation overage modes must be explicit per tenant;
+- limits are enforced as the strictest of entitlement, plan, tenant budget, customer safety setting and infrastructure/provider ceiling;
+- Enterprise payment settlement remains through NOWPayments / Flutterwave v3 / Kora shared payment authority.
+
+The intended pattern matches the future Media integration:
+
+```text
+Central Mkety tenant
+  -> enable/purchase product add-on
+  -> entitlement activates
+  -> focused product console/runtime becomes available
+```
+
+Media can therefore remain at `media.mkety.com` with isolated media runtime/storage while becoming accessible as a centrally enabled Mkety product. Enterprise AI should follow the same commercial/product composition principle even though its inference runtime is centrally shared by default.
+
+## Operational progress — 2026-09-28
+
+Mail production completion and repository cleanup have now reached:
+
+- Mail production workflow green after Cloudflare token permission correction;
+- R2 bucket and Mail queues provisioned;
+- all four Mail Workers deployed;
+- runtime secrets attached;
+- Mail/application domains attached;
+- production Mail smoke passed;
+- PR #140 merged;
+- PR #141 merged;
+- PR #139 closed as superseded;
+- current main after SolutionHub merge: `7dc7884ebb28d96daa7820c51d37dfae183bf4b0`.
+
+The AI implementation gate is now reduced to final exact-main validation/promotion checks. After those are green, begin AI-01 immediately.
