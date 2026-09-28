@@ -739,19 +739,13 @@ All paid self-service Mail plans include the supported core product:
 
 Marketing campaigns remain Coming Soon and are not part of the current included sending allowance.
 
-### Prepaid overage / capacity packs
+### Overage / extra capacity
 
-Self-service Mail does not create surprise postpaid overage. When an included limit is exhausted, the operation fails closed unless the tenant upgrades or buys an approved prepaid capacity pack.
+Self-service Mail does not create surprise postpaid overage. When an included limit is exhausted, the operation fails closed until the tenant upgrades to a higher Mail plan or moves to agreed Enterprise capacity.
 
-Current prepaid pack references:
+Prepaid capacity packs are a planned billing extension, not a launch feature. They must not be sold or advertised until a dedicated purchased-capacity ledger, verified checkout settlement, expiry/renewal policy, and quota reconciliation path are implemented and tested.
 
-- extra 10 GB Mail storage: $2;
-- extra 10,000 outbound messages: $3;
-- extra 5,000 Customer Update deliveries: $3;
-- extra 5 mailboxes: $2;
-- extra 5 team seats: $3.
-
-Capacity packs increase commercial allowance only; they never bypass domain warm-up, complaint/bounce protection, recipient-source rules, provider/account limits, abuse controls or other safety ceilings.
+No commercial upgrade may bypass domain warm-up, complaint/bounce protection, recipient-source rules, provider/account limits, abuse controls or other safety ceilings.
 
 ### Usage visibility
 
@@ -761,8 +755,8 @@ Customer-facing Mail usage shows only commercial/product information relevant to
 - included quota;
 - used amount;
 - remaining amount;
-- prepaid packs;
 - plan renewal/billing term;
+- upgrade path when a hard limit is reached;
 - hard-limit/warm-up status;
 - relevant sending/storage history.
 
