@@ -64,6 +64,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   const session = await auth(request);
   let effectivePathname = pathname;
   const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
+  const aiHost=(process.env.MKETY_AI_HOST||'ai.mkety.com').toLowerCase();
   const apiHost=(process.env.MKETY_API_HOST||'api.mkety.com').toLowerCase();
   const autoconfigHost=(process.env.MKETY_MAIL_AUTOCONFIG_HOST||'autoconfig.mkety.com').toLowerCase();
   const autodiscoverHost=(process.env.MKETY_MAIL_AUTODISCOVER_HOST||'autodiscover.mkety.com').toLowerCase();
@@ -104,6 +105,25 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.redirect(url);
   }
 
+  if(hostname.toLowerCase()===aiHost && (pathname==='/' || pathname==='/ai/app') && !session){
+    let centralOrigin='https://app.mkety.com';
+    try {
+      centralOrigin=new URL(process.env.NEXT_PUBLIC_APP_URL || centralOrigin).origin;
+    } catch {
+      centralOrigin='https://app.mkety.com';
+    }
+    const url=new URL('/api/auth/product-handoff/start',centralOrigin);
+    url.searchParams.set('product','ai');
+    url.searchParams.set('returnTo','/ai/app');
+    return NextResponse.redirect(url);
+  }
+  if(hostname.toLowerCase()===aiHost && pathname==='/' && session){
+    const url=new URL(request.url);
+    url.pathname='/ai/app';
+    url.search='';
+    return NextResponse.redirect(url);
+  }
+
   const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
   if (canonicalPublicUrl) {
     return NextResponse.redirect(canonicalPublicUrl, 308);
@@ -122,6 +142,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     const isKnownAppHost =
       hostname === appHost ||
       hostname.toLowerCase() === mailHost ||
+      hostname.toLowerCase() === aiHost ||
       hostname.toLowerCase() === apiHost ||
       hostname.toLowerCase() === autoconfigHost ||
       hostname.toLowerCase() === autodiscoverHost ||
