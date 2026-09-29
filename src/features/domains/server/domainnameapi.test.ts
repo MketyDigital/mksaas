@@ -35,6 +35,7 @@ describe('DomainNameApiAdapter', () => {
           domainName: 'example.com',
           status: 'available',
           price: 10.81,
+          renewalPrice: 12.5,
           currency: 'USD',
         }],
       }, 200),
@@ -49,7 +50,10 @@ describe('DomainNameApiAdapter', () => {
     await expect(adapter.quote('example.com')).resolves.toMatchObject({
       domain: 'example.com',
       available: true,
+      providerRegistrationPriceMinor: 1081n,
+      providerRenewalPriceMinor: 1250n,
       registrationPriceMinor: 1081n,
+      renewalPriceMinor: 1250n,
       currency: 'USD',
     });
 
@@ -68,7 +72,7 @@ describe('DomainNameApiAdapter', () => {
 
   it('keeps production opt-in explicit', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ infos: [{ domainName: 'example.net', status: 'available', price: 10, currency: 'USD' }] }, 200),
+      mockJsonResponse({ infos: [{ domainName: 'example.net', status: 'available', price: 10, renewalPrice: 12, currency: 'USD' }] }, 200),
     );
     const adapter = new DomainNameApiAdapter({
       resellerId: 'provider-issued-reseller-id',
@@ -83,7 +87,7 @@ describe('DomainNameApiAdapter', () => {
 
   it('routes official REST quote traffic through the fixed-egress relay', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ infos: [{ domainName: 'relay-test.com', status: 'available', price: 8.25, currency: 'USD' }] }, 200),
+      mockJsonResponse({ infos: [{ domainName: 'relay-test.com', status: 'available', price: 8.25, renewalPrice: 9.5, currency: 'USD' }] }, 200),
     );
     const adapter = new DomainNameApiAdapter({
       resellerId: 'provider-issued-reseller-id',
@@ -98,7 +102,9 @@ describe('DomainNameApiAdapter', () => {
       registrationPriceMinor: 825n,
     });
 
-    const [, init] = fetchMock.mock.calls.at(-1)!;
+    const quoteCall = fetchMock.mock.calls.find(([url]) => url === 'https://registrar-relay.mkety.com/v1/domainnameapi');
+    expect(quoteCall).toBeDefined();
+    const [, init] = quoteCall!;
     const relayBody = JSON.parse(String(init?.body));
     expect(relayBody).toEqual(expect.objectContaining({
       operation: 'quote',
@@ -111,6 +117,69 @@ describe('DomainNameApiAdapter', () => {
         period: 1,
       },
     }));
+  });
+
+
+  it('keeps provider base pricing visible and applies editable sell-price markup', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({
+        infos: [{
+          domainName: 'markup.com',
+          status: 'available',
+          price: 10,
+          renewalPrice: 20,
+          currency: 'USD',
+        }],
+      }, 200),
+    );
+    const adapter = new DomainNameApiAdapter({
+      resellerId: 'provider-issued-reseller-id',
+      apiKey: 'test-token',
+      environment: 'production',
+      registrationMarkupPercent: 25,
+      renewalMarkupPercent: 10,
+      registrationFixedMarkupMinor: 100n,
+      renewalFixedMarkupMinor: 50n,
+    });
+
+    await expect(adapter.quote('markup.com')).resolves.toMatchObject({
+      providerRegistrationPriceMinor: 1000n,
+      providerRenewalPriceMinor: 2000n,
+      registrationPriceMinor: 1350n,
+      renewalPriceMinor: 2250n,
+      registrationMarkupPercent: 25,
+      renewalMarkupPercent: 10,
+    });
+  });
+
+  it('uses the provider TLD catalog when availability omits renewal pricing', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({
+        infos: [{ domainName: 'catalog.com', status: 'available', price: 9, currency: 'USD' }],
+      }, 200))
+      .mockResolvedValueOnce(mockJsonResponse({
+        items: [{
+          name: 'com',
+          prices: [{
+            renew: [{ period: 1, price: 14.25, currency: 'USD' }],
+          }],
+        }],
+      }, 200));
+
+    const adapter = new DomainNameApiAdapter({
+      resellerId: 'provider-issued-reseller-id',
+      apiKey: 'test-token',
+      environment: 'production',
+    });
+
+    await expect(adapter.quote('catalog.com')).resolves.toMatchObject({
+      providerRegistrationPriceMinor: 900n,
+      providerRenewalPriceMinor: 1425n,
+      renewalPriceMinor: 1425n,
+    });
+    expect(fetchMock.mock.calls.at(1)?.[0]).toBe(
+      'https://api.domainresellerapi.com/api/v1/products/tlds?MaxResultCount=500&SkipCount=0',
+    );
   });
 
   it('registers only with the official full-contact REST payload', async () => {
