@@ -97,6 +97,29 @@ export default async function EnterpriseAiConsolePage({
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 py-4">
+      {commercial.billing?.subscription.status === 'past_due' ? (
+        <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="font-semibold">Enterprise AI renewal is due</p>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Your workspace is currently inside its billing grace window. Renew now to avoid customer AI stopping when that grace period ends. Pricing is resolved server-side from your current Enterprise agreement.
+              </p>
+            </div>
+            <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="flex flex-wrap gap-2" method="post">
+              <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
+                <option value="nowpayments">NOWPayments</option>
+                <option value="flutterwave">Flutterwave</option>
+                <option value="kora">Kora</option>
+              </select>
+              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" type="submit">
+                Renew Enterprise AI
+              </button>
+            </form>
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-3xl border bg-primary/[0.04] p-6 sm:p-8">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
           <Sparkles className="h-6 w-6" />
