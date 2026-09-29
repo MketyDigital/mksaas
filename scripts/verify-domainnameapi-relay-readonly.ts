@@ -40,6 +40,7 @@ const ote = await probe('ote', oteApiKey);
 
 console.log(JSON.stringify({
   ok: true,
+  contract: 'official-domainnameapi-rest-sdk',
   transport: 'fixed-egress-relay',
   mutationPerformed: false,
   live,
