@@ -5,8 +5,27 @@ describe('Enterprise AI true white-label and domain contract', () => {
     const source = await readFile('src/features/domains/server/cloudflare-saas.ts', 'utf8');
     expect(source).toContain("method: 'http'");
     expect(source).toContain('MKETY_SAAS_CNAME_TARGET');
+    expect(source).toContain("discoverCloudflareZoneId(apiToken, accountId, 'mkety.com')");
+    expect(source).toContain("discoverCloudflareZoneId(apiToken, accountId, 'mkety.app')");
+    expect(source).toContain('/custom_hostnames/fallback_origin');
     expect(source).toContain('provisionMketyAppManagedHostname');
     expect(source).toContain("type: 'CNAME'");
+  });
+
+  it('can promote a pending custom hostname from a real HTTPS tenant route proof', async () => {
+    const proof = await readFile('src/features/ai-runtime/server/domain-route-proof.ts', 'utf8');
+    const admin = await readFile('src/features/ai-runtime/server/enterprise-admin-actions.ts', 'utf8');
+    const resolver = await readFile('src/features/ai-runtime/server/enterprise-hostnames.ts', 'utf8');
+
+    expect(proof).toContain("where: eq(customDomains.hostname, normalized)");
+    expect(proof).not.toContain("eq(customDomains.status, 'verified')");
+    expect(admin).toContain("verificationMethod: strictProviderVerified ? 'cloudflare' : 'pending'");
+    expect(admin).toContain("'live_route'");
+    expect(admin).toContain("status: liveVerified ? 'verified' : 'pending'");
+    expect(admin.indexOf("await db.insert(customDomains).values")).toBeLessThan(
+      admin.indexOf("const liveRouteProof = await probeEnterpriseAiHostnameRoute(hostname, tenant.id)"),
+    );
+    expect(resolver).toContain("eq(customDomains.status, 'verified')");
   });
 
   it('never treats an unprovisioned mkety.app slug as a live hostname', async () => {
@@ -14,6 +33,16 @@ describe('Enterprise AI true white-label and domain contract', () => {
     expect(source).toContain("eq(customDomains.status, 'verified')");
     expect(source).not.toContain('eq(tenants.slug, subdomain)');
     expect(source).toContain("metadata.managed === true");
+  });
+
+  it('accepts externally proxied customer DNS when HTTPS proves the exact tenant', async () => {
+    const acceptance = await readFile('scripts/accept-enterprise-ai-white-label-domain.ts', 'utf8');
+    expect(acceptance).toContain('resolve4');
+    expect(acceptance).toContain('resolve6');
+    expect(acceptance).toContain('dnsResolvable');
+    expect(acceptance).toContain('dnsCnameVerified');
+    expect(acceptance).toContain('/api/v1/ai/domain-route-proof');
+    expect(acceptance).not.toContain('Live DNS CNAME does not match Mkety target');
   });
 
   it('keeps white-label hosts on the customer app instead of the Mkety management console', async () => {

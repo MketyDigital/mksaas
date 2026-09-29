@@ -37,6 +37,12 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Trusted Mail TCP service exists but is not the managed Mkety gateway; refusing takeover.');
   });
 
+  it('resolves the Coolify server address safely before publishing Mail DNS', () => {
+    expect(workflow).toContain('/servers/$SERVER_UUID/domains');
+    expect(workflow).toContain('getent ahostsv4');
+    expect(workflow).toContain('Coolify server did not resolve to a public IPv4.');
+  });
+
   it('requires publicly trusted TLS and protocol greetings', () => {
     expect(workflow).toContain('openssl s_client -connect "$host:$port"');
     expect(workflow).toContain("grep -Fq 'IMAP4rev1'");

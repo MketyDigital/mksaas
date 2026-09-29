@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import { customDomains } from '@/shared/db/schema';
@@ -57,8 +57,11 @@ export async function probeEnterpriseAiHostnameRoute(
 
 export async function readEnterpriseAiRouteProof(hostname: string) {
   const normalized = hostname.trim().toLowerCase();
+  // This endpoint is the proof used to promote a pending hostname to verified.
+  // Do not require status=verified here or the live-route fallback becomes circular.
+  // Normal Enterprise AI hostname resolution still requires verified status separately.
   const domain = await db.query.customDomains.findFirst({
-    where: and(eq(customDomains.hostname, normalized), eq(customDomains.status, 'verified')),
+    where: eq(customDomains.hostname, normalized),
   });
   if (!domain) return null;
 
