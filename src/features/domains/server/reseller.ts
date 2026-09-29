@@ -52,6 +52,10 @@ export interface DomainResellerAdapter {
     years: number;
     idempotencyKey: string;
   }): Promise<RegisteredDomain>;
+  setNameServers(input: {
+    providerDomainRef: string;
+    nameServers: string[];
+  }): Promise<void>;
 }
 
 let adapterOverride: DomainResellerAdapter | null = null;
