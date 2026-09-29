@@ -16,6 +16,7 @@ export type EnterpriseAiScheduledPayload = {
   contextId?: string;
   sourceProviderMessageId?: string;
   commitment?: string;
+  sourceQuote?: string;
 };
 
 export async function ensureEnterpriseAiConversation(input: {
