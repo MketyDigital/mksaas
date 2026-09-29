@@ -69,24 +69,34 @@ describe('createSelfServiceCheckout', () => {
     expect(repo.failed).not.toHaveBeenCalled();
   });
 
-  it('fails before payment when the prepared amount does not match the canonical plan', async () => {
+  it('uses the repository-prepared active-version amount without re-pricing from client or bootstrap constants', async () => {
     const repo = repository();
     repo.prepareCheckout = jest.fn().mockResolvedValue({
       checkoutId: 'checkout-1',
       tenantId: 'tenant-1',
       subscriptionId: 'subscription-1',
       billingPeriodId: 'period-1',
-      amountExpectedMinor: 1n,
+      amountExpectedMinor: 5100n,
       currency: 'USD',
     });
+    const createCheckout = jest.fn().mockResolvedValue({
+      provider: 'nowpayments',
+      providerCheckoutId: 'provider-2',
+      checkoutUrl: 'https://pay.example/active-version',
+    });
 
-    await expect(createSelfServiceCheckout(repo, adapter(), {
+    await createSelfServiceCheckout(repo, adapter({ createCheckout }), {
       tenantId: 'tenant-1',
       planKey: 'ai-workspace',
       termKey: '3m',
       returnUrl: 'https://mkety.com/payment/success',
       cancelUrl: 'https://mkety.com/payment/cancelled',
-    })).rejects.toThrow('authoritative Mkety billing catalog');
+    });
+
+    expect(createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      amountExpectedMinor: 5100n,
+      currency: 'USD',
+    }));
   });
 
   it('cancels the pending checkout state when provider invoice creation fails', async () => {
