@@ -365,6 +365,11 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
       'No. Mkety includes AI, automation, deployment, media storage and delivery, integrations, business solutions, practical learning, and Enterprise implementation support.',
   },
   {
+    question: 'Can I register domains and manage DNS through Mkety?',
+    answer:
+      'Yes. Mkety Domains supports live domain search and registration pricing, managed domain ownership, renewal settings, authoritative DNS for supported Mkety-registered domains, and custom-domain connections for supported Mkety products. Underlying registrar and DNS providers remain behind Mkety.',
+  },
+  {
     question: 'How do Mkety Mail and Enterprise AI fit with the normal Workspaces?',
     answer:
       'Mkety Mail is a separately subscribed workspace/add-on with Mail Starter, Mail Growth and Mail Business plans plus Enterprise Mail. Enterprise AI is also separately entitled from the normal AI Workspace. Buying AI Workspace or Mkety One does not automatically grant Enterprise AI or Mkety Mail.',
@@ -668,6 +673,15 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     bodyMarkdown:
       '# Account, workspace and checkout\n\nFor self-service plans, choose a plan and billing term, sign in or create your Mkety account, choose or create a workspace, and then complete the authenticated checkout for that workspace. Plan access is activated from verified payment settlement; a browser return or success screen alone does not grant entitlements.',
     sortOrder: 30,
+  },
+  {
+    categoryKey: 'platform',
+    slug: 'mkety-domains-and-dns',
+    title: 'Mkety Domains and DNS',
+    excerpt: 'Register domains, understand live pricing, manage DNS, and connect custom hostnames through Mkety.',
+    bodyMarkdown:
+      '# Mkety Domains and DNS\n\nMkety Domains is the customer-facing domain service inside Mkety Platform. Customers use Mkety to search supported domains, see current registration and renewal pricing, register after verified payment settlement, manage renewal preferences, and operate supported DNS records.\n\nDomain prices are not a fixed Platform subscription feature. The customer price is quoted from current upstream extension-specific cost plus the active Mkety commercial pricing policy at the time of the quote.\n\nDomains registered through Mkety can use Mkety-managed authoritative DNS. Mkety provisions the DNS zone, connects the registrar nameservers, and lets authorized tenant administrators manage supported A, AAAA, CNAME, TXT, MX, SRV and CAA records. Provider-managed NS/SOA records are protected.\n\nCustomer-owned domains can also be connected to supported Mkety products through Mkety-managed custom-hostname validation and HTTPS. Customers interact with Mkety; registrar, DNS and certificate providers remain protected implementation details.',
+    sortOrder: 25,
   },
   {
     categoryKey: 'platform',
