@@ -11,6 +11,7 @@ import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections, projects } from '@/shared/db/schema';
 
 import { getConnectionEncryptionKey } from '@/shared/security/connection-secrets';
+import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 
 import { decryptAiProviderSecret, encryptAiProviderSecret } from './byok-secrets';
 
@@ -51,7 +52,13 @@ function normalizeInput(input: ByokProviderInput): {
         providerKey: input.provider,
         secret: { apiKey: nonEmpty(input.apiKey, 'Azure OpenAI API key') },
         metadata: { deployment: nonEmpty(input.deployment, 'Azure OpenAI deployment') },
-        endpointUrl: new URL(nonEmpty(input.endpoint, 'Azure OpenAI endpoint')).toString().replace(/\/+$/, ''),
+        endpointUrl: assertPublicHttpsUrl(
+          nonEmpty(input.endpoint, 'Azure OpenAI endpoint'),
+          {
+            label: 'Azure OpenAI endpoint',
+            allowedSuffixes: ['.openai.azure.com', '.services.ai.azure.com'],
+          },
+        ).toString().replace(/\/+$/, ''),
       };
     case 'gemini':
       return {
