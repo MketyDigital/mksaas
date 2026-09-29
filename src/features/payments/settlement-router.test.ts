@@ -5,6 +5,7 @@ const mockApplySettlement = jest.fn();
 const mockMarkCompleted = jest.fn();
 const mockMarkAwaiting = jest.fn();
 const mockMarkFailed = jest.fn();
+const mockGrantCurrentPeriodAllowance = jest.fn();
 
 jest.mock('@/features/billing/server/drizzle-checkout-settlement', () => ({
   findBillingCheckoutSettlementContext: mockFindContext,
@@ -28,6 +29,10 @@ jest.mock('@/features/enterprise-checkout/server/repository', () => ({
   },
 }));
 
+jest.mock('@/features/usage-credits/server/period-grants', () => ({
+  grantCurrentPeriodAllowance: mockGrantCurrentPeriodAllowance,
+}));
+
 jest.mock('@/shared/db', () => ({ db: {} }));
 
 import { routeVerifiedMketyPayment } from './settlement-router';
@@ -44,8 +49,10 @@ describe('routeVerifiedMketyPayment', () => {
       providerAmountExpectedMinor: 5656294n,
       providerCurrency: 'NGN',
       provider: 'flutterwave',
+      tenantId: 'tenant-1',
     });
     mockApplySettlement.mockResolvedValue({ status: 'applied', settlementId: 'settlement-1' });
+    mockGrantCurrentPeriodAllowance.mockResolvedValue(null);
   });
 
   it('verifies local collection currency but applies canonical Mkety settlement', async () => {
@@ -75,6 +82,7 @@ describe('routeVerifiedMketyPayment', () => {
     );
     expect(mockApplySettlement.mock.calls[0]?.[2]).toEqual(expect.any(Date));
     expect(mockMarkCompleted).toHaveBeenCalled();
+    expect(mockGrantCurrentPeriodAllowance).toHaveBeenCalledWith('tenant-1');
   });
 
   it('rejects a provider amount below the stored local-currency quote', async () => {
