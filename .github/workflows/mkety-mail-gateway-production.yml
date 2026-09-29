@@ -71,16 +71,19 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+          RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
           [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'Missing COOLIFY_TOKEN.'; exit 1; }
           [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'Missing CLOUDFLARE_API_TOKEN.'; exit 1; }
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Target SHA must be exact.'; exit 1; }
 
-          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-            [ "${{ inputs.confirmation }}" = 'DEPLOY MAIL GATEWAY' ] || { echo 'Exact confirmation required.'; exit 1; }
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            [ "$RELEASE_CONFIRMATION" = 'DEPLOY MAIL GATEWAY' ] || { echo 'Exact confirmation required.'; exit 1; }
           else
-            printf '%s' "${{ github.event.head_commit.message }}" | grep -Fq '[mail-gateway-production]' || {
+            printf '%s' "$RELEASE_MESSAGE" | grep -Fq '[mail-gateway-production]' || {
               echo 'Push is not an authorized Mail gateway production release.'
               exit 1
             }
