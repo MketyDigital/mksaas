@@ -27,7 +27,7 @@ import { mailExternalClientsEnabled } from '@/features/mail/server/external-clie
 export const metadata = {
   title: 'Mkety Mail — Professional business email, shared inboxes and transactional email',
   description:
-    'Mkety Mail combines professional business email, team inboxes, customer updates, transactional API/SMTP, delivery analytics, secure mail-app setup, domain verification and Enterprise controls in one Mkety product.',
+    'Mkety Mail combines professional business email, team inboxes, customer updates, transactional API, delivery analytics, domain verification and Enterprise controls in one Mkety product.',
 };
 
 function usd(amountMinor: bigint) {
