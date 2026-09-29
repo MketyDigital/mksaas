@@ -147,6 +147,7 @@ export async function getPublishedControlCenterModules() {
           protectedScope?: string[];
           implementationNotes?: string;
         };
+        const authoritative = platformControlModules.find((item) => item.key === module.moduleKey);
 
         return appControlCenterModuleSchema.parse({
           key: module.moduleKey,
@@ -156,13 +157,19 @@ export async function getPublishedControlCenterModules() {
           iconKey: module.iconKey ?? undefined,
           level: module.level,
           enabled: module.enabled,
-          requiredPermission: module.requiredPermission,
+          requiredPermission: authoritative?.requiredPermission ?? module.requiredPermission,
           sortOrder: module.sortOrder,
-          domain: metadata.domain ?? 'app.mkety.com',
-          status: metadata.status ?? 'foundation',
-          editableScope: metadata.editableScope ?? ['Approved admin configuration'],
-          protectedScope: metadata.protectedScope ?? ['Backend logic and security-sensitive behavior'],
-          implementationNotes: metadata.implementationNotes ?? 'Loaded from published platform app experience content.',
+          domain: authoritative?.domain ?? metadata.domain ?? 'app.mkety.com',
+          status: authoritative?.status ?? metadata.status ?? 'foundation',
+          editableScope: authoritative?.editableScope ?? metadata.editableScope ?? ['Approved admin configuration'],
+          protectedScope:
+            authoritative?.protectedScope ??
+            metadata.protectedScope ??
+            ['Backend logic and security-sensitive behavior'],
+          implementationNotes:
+            authoritative?.implementationNotes ??
+            metadata.implementationNotes ??
+            'Loaded from published platform app experience content.',
         });
       });
   }, platformControlModules.filter((module) => module.enabled !== false).sort((a, b) => a.sortOrder - b.sortOrder));
