@@ -450,11 +450,11 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Pricing',
     seoTitle: 'Mkety Pricing | Platform, Mail and Enterprise products',
     seoDescription:
-      'Compare Mkety Platform plans, separate Mkety Mail subscriptions, and Enterprise products including Enterprise AI and Enterprise Mail.',
+      'Compare Mkety Platform plans, Mkety Domains, separate Mkety Mail subscriptions, and Enterprise products including Enterprise AI and Enterprise Mail.',
     eyebrow: 'Pricing',
     headline: 'Choose a Platform plan, Mkety Mail, or Enterprise.',
     intro:
-      'Pick the product access you need and pay monthly or prepay 3, 6, or 12 months. Platform plans and Mkety Mail are separate product families. Mkety One combines the standard Platform self-service options, while Enterprise AI, Enterprise Mail, Trading and other specialized requirements use separate Enterprise terms.',
+      'Pick the product access you need and pay monthly or prepay 3, 6, or 12 months. Platform plans and Mkety Mail are separate product families. Mkety Domains uses live per-domain registration and renewal pricing rather than a fixed subscription price. Mkety One combines the standard Platform self-service options, while Enterprise AI, Enterprise Mail, Trading and other specialized requirements use separate Enterprise terms.',
     sections: [
       {
         eyebrow: 'Commercial model',
@@ -462,6 +462,14 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         description:
           'Starter is the Pages-first website and publishing plan. AI, Automation and Deploy can be purchased as individual Workspaces. Mkety One combines those standard Platform self-service products. Mkety Mail is separately subscribed with Mail Starter ($4.99/month), Mail Growth ($9.99/month) and Mail Business ($24.99/month). Both Platform and Mail fixed subscriptions use 1, 3, 6 and 12 month prepaid terms with 0%, 5%, 10% and 15% discounts. Enterprise AI, Enterprise Mail, Trading and other specialized requirements remain separate/custom.',
         items: [
+          {
+            key: 'mkety-domains',
+            title: 'Mkety Domains',
+            description:
+              'Domain registration and renewal use live extension-specific pricing. Mkety shows the current sell price at search/quote time after applying the active Mkety commercial pricing policy.',
+            href: '/domains',
+            badge: 'Live domain pricing',
+          },
           {
             key: 'mkety-mail-plans',
             title: 'Mkety Mail',
