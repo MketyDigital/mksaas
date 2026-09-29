@@ -95,14 +95,15 @@ export async function disableDomainResellerConnection(
 export async function saveCloudflareDomainRoutingConnection(tenantSlug: string, formData: FormData) {
   const actor = await requireDomainOps(tenantSlug);
   const apiTokenInput = String(formData.get('apiToken') ?? '').trim();
+  const accountId = String(formData.get('accountId') ?? '').trim();
   const saasZoneId = String(formData.get('saasZoneId') ?? '').trim();
   const appZoneId = String(formData.get('appZoneId') ?? '').trim();
   const cnameTarget = String(formData.get('cnameTarget') ?? '').trim().toLowerCase();
   const minTlsVersion = String(formData.get('minTlsVersion') ?? '1.2').trim();
   const managedDnsProxied = formData.get('managedDnsProxied') === 'on';
 
-  if (!saasZoneId || !appZoneId || !cnameTarget) {
-    throw new Error('Cloudflare SaaS zone, app zone and CNAME target are required.');
+  if (!accountId || !saasZoneId || !appZoneId || !cnameTarget) {
+    throw new Error('Cloudflare account, SaaS zone, app zone and CNAME target are required.');
   }
   if (!/^[a-z0-9.-]+$/i.test(cnameTarget)) throw new Error('Cloudflare CNAME target is invalid.');
   if (!['1.2', '1.3'].includes(minTlsVersion)) throw new Error('Minimum TLS version must be 1.2 or 1.3.');
@@ -123,6 +124,7 @@ export async function saveCloudflareDomainRoutingConnection(tenantSlug: string, 
     mode: 'production',
     secret: { apiToken },
     config: {
+      accountId,
       saasZoneId,
       appZoneId,
       cnameTarget,
