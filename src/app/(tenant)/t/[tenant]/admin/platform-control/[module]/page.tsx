@@ -13,6 +13,7 @@ import { getDomainResellerConnections } from '@/features/domains/server/reseller
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
+import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
 import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 
@@ -35,6 +36,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
   'ai-operations': ['Review cost protection', 'Manage safe limits', 'Create future rate versions', 'Emergency-disable inference'],
   'mail-operations': ['Reconcile Mail plans', 'Operate tenant Mail state', 'Manage domain sending/routing', 'Review Mail readiness'],
+  'media-connector': ['Link verified Media workspaces', 'Suspend or disconnect links', 'Review external workspace references', 'Preserve standalone Media billing'],
   'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
     'Monitor mkety.com public website routing',
@@ -64,6 +66,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     billing: 'billing-ledger',
     security: 'security-audit',
     mail: 'mail-operations',
+    media: 'media-connector',
   };
   const moduleKey = moduleAliases[routeModuleKey] ?? routeModuleKey;
   const controlModule = await getPublishedControlCenterModule(moduleKey);
@@ -78,12 +81,14 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const isPayments = controlModule.key === 'payments';
   const isMailOperations = controlModule.key === 'mail-operations';
   const isAiOperations = controlModule.key === 'ai-operations';
+  const isMediaConnector = controlModule.key === 'media-connector';
   const isDomainsRouting = controlModule.key === 'domains-routing';
   let deploymentApprovalRows = null;
   let paymentSettings = null;
   let mailOperations = null;
   let aiCommercialOverview = null;
   let enterpriseAiContracts = null;
+  let mediaLinks = null;
   let domainResellerConnections = null;
 
   if (isDeployments) {
@@ -109,6 +114,11 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
       withAdminTimeout(getAiCommercialControlOverview(), null),
       withAdminTimeout(listEnterpriseAiContracts(), []),
     ]);
+  }
+
+  if (isMediaConnector) {
+    await requirePermission(tenant, 'platform:plans');
+    mediaLinks = await withAdminTimeout(listMediaTenantLinks(), []);
   }
 
   if (isDomainsRouting) {
@@ -225,6 +235,64 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                     {contract.description ? <p className="mt-3 text-sm text-muted-foreground">{contract.description}</p> : null}
                   </div>
                 )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {isMediaConnector && mediaLinks ? (
+        <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Mkety Media tenant links</CardTitle>
+              <CardDescription>
+                Link an Mkety workspace to an existing standalone Media workspace. This stores only a non-secret reference; Media billing, invoices, credentials and runtime remain authoritative in Media.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <form action={saveMediaTenantLink.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Mkety workspace slug
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Existing Media workspace reference
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={255} name="externalWorkspaceRef" placeholder="Media workspace ID or canonical reference" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Link status
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="linked" name="status">
+                    <option value="linked">Linked</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="disconnected">Disconnected</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Verification note
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={1000} name="note" placeholder="How the Media workspace ownership/link was verified" />
+                </label>
+                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                  Save Media link
+                </button>
+              </form>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {mediaLinks.length ? mediaLinks.map((link) => (
+                  <div className="rounded-xl border p-4" key={link.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{link.tenantName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{link.tenantSlug}</p>
+                      </div>
+                      <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">{link.status}</span>
+                    </div>
+                    <p className="mt-3 font-mono text-xs">{link.externalWorkspaceRef}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Updated {link.updatedAt.toLocaleString()}</p>
+                  </div>
+                )) : (
+                  <p className="text-sm text-muted-foreground">No Mkety tenant is linked to Media yet.</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -409,7 +477,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         </div>
       ) : null}
 
-      {!isPayments && !isMailOperations && !isAiOperations && !isDomainsRouting ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {!isPayments && !isMailOperations && !isAiOperations && !isMediaConnector && !isDomainsRouting ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle>Controlled module surface</CardTitle>
