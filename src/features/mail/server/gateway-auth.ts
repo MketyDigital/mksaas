@@ -1,10 +1,12 @@
 import { and, eq, isNull } from 'drizzle-orm';
 
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
 import {
   mailAppPasswords,
   mailDomains,
   mailMailboxes,
+  mailWorkspaces,
 } from '@/shared/db/schema';
 
 export function requireMailGatewaySecret(request: Request) {
@@ -56,15 +58,28 @@ export async function authenticateExternalMailClient(username: string, password:
   });
   if (!domain) return null;
 
-  const mailbox = await db.query.mailMailboxes.findFirst({
-    where: and(
-      eq(mailMailboxes.tenantId, domain.tenantId),
-      eq(mailMailboxes.domainId, domain.id),
-      eq(mailMailboxes.localPart, localPart),
-      eq(mailMailboxes.status, 'active'),
-    ),
-  });
-  if (!mailbox) return null;
+  const [workspace, entitled, mailbox] = await Promise.all([
+    db.query.mailWorkspaces.findFirst({
+      where: and(
+        eq(mailWorkspaces.tenantId, domain.tenantId),
+        eq(mailWorkspaces.status, 'active'),
+      ),
+      columns: { id: true },
+    }),
+    hasEntitlement({
+      tenantId: domain.tenantId,
+      entitlement: 'workspace.mail',
+    }),
+    db.query.mailMailboxes.findFirst({
+      where: and(
+        eq(mailMailboxes.tenantId, domain.tenantId),
+        eq(mailMailboxes.domainId, domain.id),
+        eq(mailMailboxes.localPart, localPart),
+        eq(mailMailboxes.status, 'active'),
+      ),
+    }),
+  ]);
+  if (!workspace || !entitled || !mailbox) return null;
 
   const credentials = await db.query.mailAppPasswords.findMany({
     where: and(
