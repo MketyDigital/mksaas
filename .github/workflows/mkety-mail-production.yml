@@ -385,22 +385,29 @@ jobs:
           zone_response="$(curl -fsS "${auth[@]}" "$api/zones?name=mkety.com&status=active")"
           zone_id="$(ZONE="$zone_response" node -e "const x=JSON.parse(process.env.ZONE||'{}');const z=(x.result||[])[0];if(!z?.id)process.exit(1);process.stdout.write(z.id)")"
 
-          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          reconcile_domain() {
+            host="$1"
+            worker="$2"
+            body="$(HOST="$host" ZONE="$zone_id" WORKER="$worker" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.WORKER,zone_id:process.env.ZONE,zone_name:'mkety.com'}))")"
+
+            # PUT is intentionally idempotent and also repairs a hostname that
+            # already exists but points at a stale Worker service.
+            curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/dev/null
+
+            domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+            actual="$(DOMAINS="$domains" HOST="$host" node -e "const x=JSON.parse(process.env.DOMAINS||'{}');const d=(x.result||[]).find(v=>v.hostname===process.env.HOST);if(d)process.stdout.write(String(d.service||''))")"
+            [ "$actual" = "$worker" ] || {
+              echo "::error::Custom domain $host maps to '${actual:-missing}', expected '$worker'."
+              exit 1
+            }
+            echo "Verified custom domain $host -> $worker"
+          }
+
           for host in mail.mkety.com api.mkety.com autoconfig.mkety.com autodiscover.mkety.com; do
-            existing="$(DOMAINS="$domains" HOST="$host" node -e "const x=JSON.parse(process.env.DOMAINS||'{}');const d=(x.result||[]).find(v=>v.hostname===process.env.HOST);if(d)process.stdout.write(String(d.id||''))")"
-            if [ -z "$existing" ]; then
-              body="$(HOST="$host" ZONE="$zone_id" WORKER="$PRODUCTION_WORKER_NAME" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.WORKER,zone_id:process.env.ZONE,zone_name:'mkety.com'}))")"
-              curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/dev/null
-            fi
+            reconcile_domain "$host" "$PRODUCTION_WORKER_NAME"
           done
 
-          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
-          content_host='mail-content.mkety.com'
-          existing="$(DOMAINS="$domains" HOST="$content_host" node -e "const x=JSON.parse(process.env.DOMAINS||'{}');const d=(x.result||[]).find(v=>v.hostname===process.env.HOST);if(d)process.stdout.write(String(d.id||''))")"
-          if [ -z "$existing" ]; then
-            body="$(HOST="$content_host" ZONE="$zone_id" WORKER="$MAIL_CONTENT_WORKER" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.WORKER,zone_id:process.env.ZONE,zone_name:'mkety.com'}))")"
-            curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/dev/null
-          fi
+          reconcile_domain 'mail-content.mkety.com' "$MAIL_CONTENT_WORKER"
 
       - name: Production smoke
         shell: bash
