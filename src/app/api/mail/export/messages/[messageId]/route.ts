@@ -58,7 +58,8 @@ export async function GET(request:Request,context:{params:Promise<{messageId:str
     bytes=new TextEncoder().encode(lines.join('\r\n'));
   }
 
-  const responseBody=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);\n  return new Response(responseBody,{
+  const responseBody=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+  return new Response(responseBody,{
     headers:{
       'content-type':'message/rfc822',
       'content-disposition':`attachment; filename="${sanitizeFilename(message.subject||message.id)}.eml"`,
