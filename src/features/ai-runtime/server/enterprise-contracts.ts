@@ -5,6 +5,7 @@ import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
+import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { db } from '@/shared/db';
 import {
