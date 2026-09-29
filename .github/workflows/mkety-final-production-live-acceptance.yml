@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           home="$(curl -fsS --connect-timeout 10 --max-time 30 https://mkety.com/)"
-          if grep -Eq 'href=["'"']?/domains|Mkety Domains' <<<"$home"; then
+          if grep -Eq '/domains|Mkety Domains' <<<"$home"; then
             echo 'discoverable=true' >> "$GITHUB_OUTPUT"
             echo 'MKETY_DOMAINS_HOME_DISCOVERABLE=true'
           else
