@@ -1,0 +1,20 @@
+name: Mkety Production Content Reconcile Finalization
+
+on:
+  push:
+    branches:
+      - release/production-finalize-20260929
+    paths:
+      - .github/workflows/mkety-production-content-finalize.yml
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
+    with:
+      verified_sha: 6c3d44cb0b1c9020950466bd5a37f8524e84a86b
+      release_branch: main
+    secrets:
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
