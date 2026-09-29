@@ -1,3 +1,5 @@
+import { getActivePlatformServiceConnection } from '@/features/platform-connections/server/service';
+
 const CF_API = 'https://api.cloudflare.com/client/v4';
 
 type CloudflareCustomHostname = {
@@ -8,18 +10,51 @@ type CloudflareCustomHostname = {
   ownership_verification?: { type?: string; name?: string; value?: string };
 };
 
-function env(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is not configured.`);
-  return value;
+type CloudflareDomainConfig = {
+  apiToken: string;
+  saasZoneId: string;
+  appZoneId: string;
+  cnameTarget: string;
+  minTlsVersion: '1.2' | '1.3';
+  managedDnsProxied: boolean;
+};
+
+async function cloudflareDomainConfig(): Promise<CloudflareDomainConfig> {
+  const connection = await getActivePlatformServiceConnection({
+    serviceKey: 'domains',
+    providerKey: 'cloudflare-saas',
+  }).catch(() => null);
+
+  const config = connection?.config ?? {};
+  const apiToken = String(connection?.secret.apiToken ?? process.env.CLOUDFLARE_API_TOKEN ?? '').trim();
+  const saasZoneId = String(config.saasZoneId ?? process.env.MKETY_SAAS_ZONE_ID ?? '').trim();
+  const appZoneId = String(config.appZoneId ?? process.env.MKETY_APP_ZONE_ID ?? '').trim();
+  const cnameTarget = String(config.cnameTarget ?? process.env.MKETY_SAAS_CNAME_TARGET ?? '').trim().toLowerCase();
+  const minTlsVersion = String(config.minTlsVersion ?? '1.2') === '1.3' ? '1.3' : '1.2';
+  const managedDnsProxied = typeof config.managedDnsProxied === 'boolean'
+    ? config.managedDnsProxied
+    : false;
+
+  if (!apiToken) throw new Error('Cloudflare domain API token is not configured.');
+  if (!saasZoneId) throw new Error('Cloudflare SaaS zone ID is not configured.');
+  if (!appZoneId) throw new Error('Cloudflare app zone ID is not configured.');
+  if (!cnameTarget) throw new Error('Cloudflare SaaS CNAME target is not configured.');
+
+  return {
+    apiToken,
+    saasZoneId,
+    appZoneId,
+    cnameTarget,
+    minTlsVersion,
+    managedDnsProxied,
+  };
 }
 
-async function cf<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = env('CLOUDFLARE_API_TOKEN');
+async function cf<T>(config: CloudflareDomainConfig, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${CF_API}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${config.apiToken}`,
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
     },
@@ -31,24 +66,22 @@ async function cf<T>(path: string, init?: RequestInit): Promise<T> {
   return body.result;
 }
 
-export function cloudflareSaasCnameTarget() {
-  return env('MKETY_SAAS_CNAME_TARGET').toLowerCase();
+export async function cloudflareSaasCnameTarget() {
+  return (await cloudflareDomainConfig()).cnameTarget;
 }
 
 export async function createCloudflareSaasHostname(hostname: string) {
-  const zoneId = env('MKETY_SAAS_ZONE_ID');
+  const config = await cloudflareDomainConfig();
   const normalized = hostname.trim().toLowerCase();
 
-  const result = await cf<CloudflareCustomHostname>(`/zones/${zoneId}/custom_hostnames`, {
+  const result = await cf<CloudflareCustomHostname>(config, `/zones/${config.saasZoneId}/custom_hostnames`, {
     method: 'POST',
     body: JSON.stringify({
       hostname: normalized,
       ssl: {
-        // HTTP DCV lets non-wildcard customers finish onboarding with only the
-        // CNAME to our SaaS target; Cloudflare serves the validation token.
         method: 'http',
         type: 'dv',
-        settings: { min_tls_version: '1.2' },
+        settings: { min_tls_version: config.minTlsVersion },
       },
     }),
   });
@@ -59,40 +92,44 @@ export async function createCloudflareSaasHostname(hostname: string) {
     status: result.status,
     sslStatus: result.ssl?.status ?? null,
     ownershipVerification: result.ownership_verification ?? null,
-    cnameTarget: cloudflareSaasCnameTarget(),
+    cnameTarget: config.cnameTarget,
   };
 }
 
 export async function getCloudflareSaasHostname(id: string) {
-  const zoneId = env('MKETY_SAAS_ZONE_ID');
-  return cf<CloudflareCustomHostname>(`/zones/${zoneId}/custom_hostnames/${encodeURIComponent(id)}`);
+  const config = await cloudflareDomainConfig();
+  return cf<CloudflareCustomHostname>(
+    config,
+    `/zones/${config.saasZoneId}/custom_hostnames/${encodeURIComponent(id)}`,
+  );
 }
 
 export async function deleteCloudflareSaasHostname(id: string) {
-  const zoneId = env('MKETY_SAAS_ZONE_ID');
-  await cf<{ id: string }>(`/zones/${zoneId}/custom_hostnames/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
+  const config = await cloudflareDomainConfig();
+  await cf<{ id: string }>(
+    config,
+    `/zones/${config.saasZoneId}/custom_hostnames/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  );
 }
 
-
 export async function retryCloudflareSaasHostnameValidation(id: string) {
-  const zoneId = env('MKETY_SAAS_ZONE_ID');
+  const config = await cloudflareDomainConfig();
   return cf<CloudflareCustomHostname>(
-    `/zones/${zoneId}/custom_hostnames/${encodeURIComponent(id)}`,
+    config,
+    `/zones/${config.saasZoneId}/custom_hostnames/${encodeURIComponent(id)}`,
     {
       method: 'PATCH',
       body: JSON.stringify({
         ssl: {
           method: 'http',
           type: 'dv',
-          settings: { min_tls_version: '1.2' },
+          settings: { min_tls_version: config.minTlsVersion },
         },
       }),
     },
   );
 }
-
 
 type CloudflareDnsRecord = {
   id: string;
@@ -103,26 +140,30 @@ type CloudflareDnsRecord = {
 };
 
 async function upsertManagedMketyAppCname(hostname: string, target: string) {
-  const zoneId = env('MKETY_APP_ZONE_ID');
+  const config = await cloudflareDomainConfig();
   const query = new URLSearchParams({ type: 'CNAME', name: hostname });
-  const existing = await cf<CloudflareDnsRecord[]>(`/zones/${zoneId}/dns_records?${query.toString()}`);
+  const existing = await cf<CloudflareDnsRecord[]>(
+    config,
+    `/zones/${config.appZoneId}/dns_records?${query.toString()}`,
+  );
   const body = JSON.stringify({
     type: 'CNAME',
     name: hostname,
     content: target,
     ttl: 1,
-    proxied: false,
+    proxied: config.managedDnsProxied,
     comment: 'Mkety Enterprise AI managed hostname',
   });
 
   if (existing.length > 1) throw new Error('Managed hostname has conflicting DNS records.');
   if (existing[0]) {
-    return cf<CloudflareDnsRecord>(`/zones/${zoneId}/dns_records/${existing[0].id}`, {
-      method: 'PUT',
-      body,
-    });
+    return cf<CloudflareDnsRecord>(
+      config,
+      `/zones/${config.appZoneId}/dns_records/${existing[0].id}`,
+      { method: 'PUT', body },
+    );
   }
-  return cf<CloudflareDnsRecord>(`/zones/${zoneId}/dns_records`, {
+  return cf<CloudflareDnsRecord>(config, `/zones/${config.appZoneId}/dns_records`, {
     method: 'POST',
     body,
   });
