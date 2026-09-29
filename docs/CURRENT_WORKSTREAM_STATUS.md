@@ -4,6 +4,21 @@ Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4
 
 ## 2026-09-29 stabilization implementation progress
 
+### 2026-09-29 exact-head pre-merge certification
+
+Certified stabilization implementation SHA before this documentation reconciliation: `5e85c2331208d5c49380cec77683c352e8fcf2ad`.
+
+Evidence on that exact SHA:
+- aggregate CI `36563958996` — SUCCESS: tests, type-check, build and lint all passed;
+- Migration Baseline `36563959225` — SUCCESS;
+- Mkety Cloudflare vinext Smoke `36563959181` — SUCCESS, including Worker build and deployment-package validation;
+- Mkety Platform Core Workspaces Smoke `36563959122` — SUCCESS;
+- Mkety Production App Host Diagnostic `36563959087` — SUCCESS;
+- Mkety Public Candidate Deploy `36563959073`, rerun exact job `109391516471` — SUCCESS after the original run was cancelled by workflow concurrency. The successful rerun passed tests, type-check, lint, vinext compatibility, connected staging database verification, operational Enterprise payment-gateway checks, isolated Worker deployment, real managed-AI commercial/accounting acceptance, public route/copy smoke, Enterprise payment safety, and Public Mkety AI memory/privacy acceptance.
+- GitHub Advanced Security review thread for the Mail EML preview regex was fixed and resolved; the brittle script/style filtering regex was removed rather than suppressed.
+
+This closes the repository-side pre-merge certification for the stabilization implementation. It does **not** certify production `ai.mkety.com`, `api.mkety.com/v1/ai`, Mail live ingress/dispatch, or customer inference. Those remain guarded production acceptance steps after merge.
+
 - PR #173 is the active pre-Starpips stabilization branch and has completed implementation-level pre-merge certification; it remains unmerged until the documentation-only reconciliation head is rechecked.
 - AI Workspace and Enterprise AI are explicitly separate product entitlements and user experiences. Shared identity, PBAC, billing, credits and runtime are platform primitives only.
 - Tenant navigation has been simplified into Workspace / Products / Account; Admin exposes direct Product Operations entries.
