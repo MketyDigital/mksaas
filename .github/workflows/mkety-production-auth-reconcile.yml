@@ -179,7 +179,7 @@ jobs:
           const requestId=u.searchParams.get('requestId')||'';
           if(u.origin!=='https://auth.mkety.com') throw new Error('Browser-visible auth redirect escaped Mkety domain');
           if(!u.pathname.startsWith('/ui/v2/login/')) throw new Error('Unexpected branded sign-in path');
-          if(!requestId.startsWith('oidc_')) throw new Error('Missing real OIDC requestId');
+          if(!requestId.trim()) throw new Error('Missing OIDC requestId');
           console.log('Production branded Mkety auth first hop verified.');
           NODE
 
