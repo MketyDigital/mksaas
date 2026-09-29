@@ -9,11 +9,13 @@ import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/e
 import { db } from '@/shared/db';
 import {
   billingCheckouts,
+  billingLedgerEntries,
   billingPeriods,
   billingPlans,
   billingPlanVersionCreditAllowances,
   billingPlanVersionEntitlements,
   billingPlanVersions,
+  billingSettlements,
   billingSubscriptions,
   tenants,
 } from '@/shared/db/schema';
@@ -354,4 +356,102 @@ export async function createEnterpriseAiContractCheckout(input: {
     });
     throw error;
   }
+}
+
+
+export async function getEnterpriseAiContractBillingSummary(tenantId: string) {
+  const [subscription] = await db
+    .select({
+      id: billingSubscriptions.id,
+      planKey: billingPlans.key,
+      planName: billingPlans.name,
+      planVersion: billingPlanVersions.version,
+      status: billingSubscriptions.status,
+      renewalMode: billingSubscriptions.renewalMode,
+      autoRenew: billingSubscriptions.autoRenew,
+      currentPeriodStart: billingSubscriptions.currentPeriodStart,
+      currentPeriodEnd: billingSubscriptions.currentPeriodEnd,
+      gracePeriodEnd: billingSubscriptions.gracePeriodEnd,
+    })
+    .from(billingSubscriptions)
+    .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
+    .innerJoin(billingPlans, eq(billingPlans.id, billingPlanVersions.planId))
+    .where(and(
+      eq(billingSubscriptions.tenantId, tenantId),
+      eq(billingPlans.key, contractPlanKey(tenantId)),
+      ne(billingSubscriptions.status, 'cancelled'),
+    ))
+    .orderBy(desc(billingSubscriptions.updatedAt))
+    .limit(1);
+
+  if (!subscription) return null;
+
+  const [[period], ledger, settlements] = await Promise.all([
+    db.select({
+      amountDueMinor: billingPeriods.amountDueMinor,
+      currency: billingPeriods.currency,
+      periodStart: billingPeriods.periodStart,
+      periodEnd: billingPeriods.periodEnd,
+    })
+      .from(billingPeriods)
+      .where(and(
+        eq(billingPeriods.tenantId, tenantId),
+        eq(billingPeriods.subscriptionId, subscription.id),
+      ))
+      .orderBy(desc(billingPeriods.periodEnd))
+      .limit(1),
+    db.select({
+      id: billingLedgerEntries.id,
+      entryType: billingLedgerEntries.entryType,
+      amountMinor: billingLedgerEntries.amountMinor,
+      currency: billingLedgerEntries.currency,
+      createdAt: billingLedgerEntries.createdAt,
+    })
+      .from(billingLedgerEntries)
+      .where(and(
+        eq(billingLedgerEntries.tenantId, tenantId),
+        eq(billingLedgerEntries.subscriptionId, subscription.id),
+      ))
+      .orderBy(desc(billingLedgerEntries.createdAt))
+      .limit(10),
+    db.select({
+      id: billingSettlements.id,
+      provider: billingSettlements.provider,
+      amountPaidMinor: billingSettlements.amountPaidMinor,
+      currencyPaid: billingSettlements.currencyPaid,
+      status: billingSettlements.status,
+      occurredAt: billingSettlements.occurredAt,
+    })
+      .from(billingSettlements)
+      .where(and(
+        eq(billingSettlements.tenantId, tenantId),
+        eq(billingSettlements.subscriptionId, subscription.id),
+      ))
+      .orderBy(desc(billingSettlements.occurredAt))
+      .limit(10),
+  ]);
+
+  if (!period) return null;
+
+  return {
+    plan: {
+      key: subscription.planKey,
+      name: subscription.planName,
+      version: subscription.planVersion,
+    },
+    subscription: {
+      status: subscription.status,
+      renewalMode: subscription.renewalMode,
+      autoRenew: subscription.autoRenew,
+      gracePeriodEnd: subscription.gracePeriodEnd,
+    },
+    currentPeriod: {
+      start: subscription.currentPeriodStart ?? period.periodStart,
+      end: subscription.currentPeriodEnd ?? period.periodEnd,
+      amountDueMinor: period.amountDueMinor,
+      currency: period.currency,
+    },
+    recentLedger: ledger,
+    recentSettlements: settlements,
+  };
 }
