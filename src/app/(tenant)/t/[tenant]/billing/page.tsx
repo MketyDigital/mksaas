@@ -131,7 +131,7 @@ export default async function BillingHome({
       <Card className="rounded-2xl">
         <CardHeader><CardTitle>Other Mkety products</CardTitle><CardDescription>Standalone products keep their existing runtime and product-specific commercial rules while linking back to the same Mkety ecosystem.</CardDescription></CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <a className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href="https://media.mkety.com">Mkety Media <ExternalLink className="h-4 w-4" /></a>
+          <Link className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/media`}>Mkety Media <ExternalLink className="h-4 w-4" /></Link>
           <a className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href="https://mkety.com/enterprise">Enterprise products <ExternalLink className="h-4 w-4" /></a>
         </CardContent>
       </Card>
