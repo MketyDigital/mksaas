@@ -5,6 +5,27 @@ import { db } from '@/shared/db/cloudflare';
 import { projects } from '@/shared/db/schema';
 import { aiSolutionInstances, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 
+
+export type EnterpriseAiSolutionConfiguration = {
+  systemPrompt: string;
+  knowledgeText: string;
+  defaultModelAlias: string;
+  paused: boolean;
+};
+
+export function parseEnterpriseAiSolutionConfiguration(value: Record<string, unknown> | null | undefined): EnterpriseAiSolutionConfiguration {
+  const source = value ?? {};
+  return {
+    systemPrompt: typeof source.systemPrompt === 'string' ? source.systemPrompt : '',
+    knowledgeText: typeof source.knowledgeText === 'string' ? source.knowledgeText : '',
+    defaultModelAlias:
+      typeof source.defaultModelAlias === 'string' && source.defaultModelAlias.trim()
+        ? source.defaultModelAlias.trim()
+        : 'mkety-economy',
+    paused: source.paused === true,
+  };
+}
+
 export async function listEnterpriseAiSolutionTemplates() {
   const rows = await db.select().from(aiSolutionTemplates)
     .where(eq(aiSolutionTemplates.enabled, true))
