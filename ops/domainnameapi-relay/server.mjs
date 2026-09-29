@@ -10,6 +10,7 @@ const OTE_BASE = 'https://ote.domainresellerapi.com/api/v1';
 const seenNonces = new Map();
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/domains/bulk-search' }],
+  ['pricing', { method: 'GET', path: '/products/tlds' }],
   ['register', { method: 'POST', path: '/domains/register-with-contacts' }],
   ['renew', { method: 'POST', path: '/domains/renew' }],
 ]);
@@ -87,10 +88,18 @@ const server = createServer(async (req, res) => {
     const { resellerId: _resellerId, apiKey: _apiKey, ...providerPayload } = input.payload;
     const body = input.operation === 'quote'
       ? JSON.stringify([{ domainName: String(providerPayload.domainName || '') }])
-      : JSON.stringify(providerPayload);
+      : input.operation === 'pricing'
+        ? undefined
+        : JSON.stringify(providerPayload);
+    const path = input.operation === 'pricing'
+      ? operation.path + '?' + new URLSearchParams({
+          MaxResultCount: String(providerPayload.maxResultCount || 500),
+          SkipCount: '0',
+        }).toString()
+      : operation.path;
 
     const base = input.environment === 'production' ? LIVE_BASE : OTE_BASE;
-    const upstream = await fetch(base + operation.path, {
+    const upstream = await fetch(base + path, {
       method: operation.method,
       headers: {
         accept: 'application/json',
@@ -98,7 +107,7 @@ const server = createServer(async (req, res) => {
         'X-API-KEY': apiKey,
         '__reseller': resellerId,
       },
-      body,
+      ...(body === undefined ? {} : { body }),
       signal: AbortSignal.timeout(20_000),
     });
     const text = await upstream.text();
