@@ -10,6 +10,7 @@ function mockJsonResponse(payload: unknown, status: number) {
 
 describe('DomainNameApiAdapter', () => {
   afterEach(() => {
+    jest.clearAllMocks();
     jest.restoreAllMocks();
   });
 
