@@ -27,6 +27,7 @@ export async function GET(request:Request){
     ),
   });
   if(!membership) return NextResponse.json({ok:false},{status:403});
+  if(!['admin','manager'].includes(String(membership.role))) return NextResponse.json({ok:false},{status:403});
 
   const [workspace,domains,mailboxes,contacts,templates]=await Promise.all([
     db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)}),
