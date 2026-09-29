@@ -38,7 +38,7 @@ jobs:
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       APP_NAME: mkety-domainnameapi-relay
       RELEASE_BRANCH: main
-      TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified_sha || '3e6518ce70dcf7bb0f68feb3cbda1ef8221dc119' }}
+      TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified_sha || '6c3d44cb0b1c9020950466bd5a37f8524e84a86b' }}
 
     steps:
       - name: Authorize exact release
