@@ -11,6 +11,7 @@ export interface DomainNameApiConfig {
   whoisPrivacy?: boolean;
   relayUrl?: string;
   relaySecret?: string;
+  relaySecretSeed?: string;
 }
 
 function normalizeDomain(value: string) {
@@ -86,6 +87,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
   private readonly legacyAuth: string;
   private readonly relayUrl: string | null;
   private readonly relaySecret: string | null;
+  private readonly relaySecretSeed: string | null;
 
   constructor(private readonly config: DomainNameApiConfig) {
     const environment = config.environment ?? 'ote';
@@ -99,16 +101,41 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     this.legacyAuth = `Basic ${base64(`${config.resellerId.trim()}:${config.apiKey.trim()}`)}`;
     this.relayUrl = config.relayUrl?.trim().replace(/\/+$/, '') || null;
     this.relaySecret = config.relaySecret?.trim() || null;
-    if ((this.relayUrl && !this.relaySecret) || (!this.relayUrl && this.relaySecret)) {
-      throw new Error('DomainNameAPI relay URL and secret must be configured together.');
+    this.relaySecretSeed = config.relaySecretSeed?.trim() || null;
+    const hasRelayKey = Boolean(this.relaySecret || this.relaySecretSeed);
+    if ((this.relayUrl && !hasRelayKey) || (!this.relayUrl && hasRelayKey)) {
+      throw new Error('DomainNameAPI relay URL and relay key material must be configured together.');
     }
     if (this.relaySecret && this.relaySecret.length < 32) {
       throw new Error('DomainNameAPI relay secret must be at least 32 characters.');
     }
+    if (this.relaySecretSeed && this.relaySecretSeed.length < 32) {
+      throw new Error('DomainNameAPI relay key seed must be at least 32 characters.');
+    }
+  }
+
+  private async resolveRelaySecret() {
+    if (this.relaySecret) return this.relaySecret;
+    if (!this.relaySecretSeed) throw new Error('DomainNameAPI relay key material is not configured.');
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(this.relaySecretSeed),
+      'HKDF',
+      false,
+      ['deriveBits'],
+    );
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode('mkety-domain-relay-v1'),
+      info: new TextEncoder().encode('request-hmac'),
+    }, key, 256));
+    return Array.from(bits, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
   private async relayRequest(operation: 'quote' | 'register' | 'renew' | 'info', body: string) {
-    if (!this.relayUrl || !this.relaySecret) throw new Error('DomainNameAPI relay is not configured.');
+    if (!this.relayUrl) throw new Error('DomainNameAPI relay is not configured.');
+    const relaySecret = await this.resolveRelaySecret();
     const timestamp = String(Date.now());
     const nonce = crypto.randomUUID();
     const raw = JSON.stringify({
@@ -119,7 +146,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     });
     const key = await crypto.subtle.importKey(
       'raw',
-      new TextEncoder().encode(this.relaySecret),
+      new TextEncoder().encode(relaySecret),
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['sign'],
