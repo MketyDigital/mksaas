@@ -6,6 +6,8 @@ Production state:
 - Enterprise AI infrastructure accepted by run `36568179070`; customer inference remains OFF.
 - Mkety Mail Cloudflare/runtime production accepted by run `36576563773` on main `455a1359cbde16d9eae34b6683c19cb4088d481e`.
 - Dedicated external-client IMAP/SMTP gateway is the only active infrastructure implementation before controlled customer acceptance.
+- Gateway hosting decision is closed: use the existing always-on Coolify/OCI server for the tiny raw-TCP service; Cloudflare Workers are not the inbound IMAP/SMTP endpoint. Keep the gateway stateless and 24/7, with Cloudflare DNS/DNS-01 around it.
+- PR #178 is the exact resume point; its CodeQL release-metadata interpolation finding was fixed in commit `742328e7fb31ea8bb56714e1a51ad83de4130b6d` and must receive final exact-head certification before guarded merge/deploy.
 - Latest handoff: `docs/handoffs/2026-09-29-mail-production-gateway-next.md`.
 
 Continue in this exact order:
