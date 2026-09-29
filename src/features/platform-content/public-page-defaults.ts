@@ -97,17 +97,17 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Domains',
     seoTitle: 'Mkety Domains | Register domains, manage DNS and connect custom hostnames',
     seoDescription:
-      'Register domains, manage DNS, connect custom hostnames, configure nameservers and operate domain routing from one Mkety experience.',
+      'Search and register domains with live Mkety pricing, manage DNS records, nameservers, renewals and custom hostnames from one Mkety experience.',
     eyebrow: 'Mkety Domains',
-    headline: 'Your domains, DNS and custom hostnames—managed through Mkety.',
+    headline: 'Buy domains, manage DNS and connect custom hostnames—all through Mkety.',
     intro:
-      'Search and register domains, manage DNS and nameservers, connect custom domains to Mkety products, and keep renewal and routing operations together without leaving Mkety.',
+      'Mkety Domains gives you one place to search and register domains, see live sell prices, manage renewals, operate DNS records and nameservers, and connect custom domains to Mkety products. You stay inside Mkety while the infrastructure layer remains managed behind the scenes.',
     sections: [
       {
         eyebrow: 'Domain registration',
         title: 'Find and register domains with live pricing.',
         description:
-          'Mkety checks live domain availability and current pricing before checkout. Registration happens only after verified payment settlement.',
+          'Mkety checks live availability and current extension-specific pricing before checkout. The price shown is the active Mkety sell price, and registration happens only after verified payment settlement.',
         items: [
           {
             key: 'search',
@@ -146,7 +146,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'dns',
             title: 'DNS management',
             description:
-              'Manage supported DNS records, nameservers and routing settings from Mkety without needing to work directly with infrastructure vendors.',
+              'Create and update supported A, AAAA, CNAME, TXT, MX, SRV and CAA records, manage nameservers and routing, and keep DNS operations inside Mkety.'
           },
           {
             key: 'custom-hostnames',

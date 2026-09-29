@@ -182,6 +182,43 @@ describe('DomainNameApiAdapter', () => {
     );
   });
 
+
+  it('retries transient quote failures but never mutation failures', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ message: 'temporary upstream failure' }, 502))
+      .mockResolvedValueOnce(mockJsonResponse({ message: 'temporary upstream failure' }, 503))
+      .mockResolvedValueOnce(mockJsonResponse({
+        infos: [{
+          domainName: 'retry.com',
+          status: 'available',
+          price: 11,
+          renewalPrice: 12,
+          currency: 'USD',
+        }],
+      }, 200));
+
+    const adapter = new DomainNameApiAdapter({
+      resellerId: 'provider-issued-reseller-id',
+      apiKey: 'test-token',
+      environment: 'production',
+    });
+
+    await expect(adapter.quote('retry.com')).resolves.toMatchObject({
+      available: true,
+      registrationPriceMinor: 1100n,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    fetchMock.mockReset().mockResolvedValue(mockJsonResponse({ message: 'temporary upstream failure' }, 502));
+    await expect(adapter.register({
+      domain: 'retry-mutation.com',
+      years: 1,
+      idempotencyKey: 'order-retry-1',
+      contact,
+    })).rejects.toThrow('DomainNameAPI register failed (502)');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('registers only with the official full-contact REST payload', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({

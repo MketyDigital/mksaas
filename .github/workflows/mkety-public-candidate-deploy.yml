@@ -324,7 +324,7 @@ jobs:
         run: |
           set -euo pipefail
           routes=(
-            '/' '/platform' '/workspaces' '/solutions' '/academy' '/pricing' '/enterprise' '/mail' '/trust' '/infrastructure'
+            '/' '/platform' '/workspaces' '/domains' '/solutions' '/academy' '/pricing' '/enterprise' '/mail' '/trust' '/infrastructure'
             '/about' '/docs' '/privacy' '/terms' '/contact' '/sitemap.xml' '/robots.txt' '/llms.txt'
           )
           quarantine='Next\.js SaaS AI Template|Auth\.js v5|OpenNext|Vercel|under development|\bWIP\b|github\.com/MketyDigital|MketyDigital|mksaas|origin\.mkety\.com'
@@ -358,6 +358,11 @@ jobs:
           grep -Fq 'Ready to learn?' /tmp/mkety-academy-page.html || { echo 'Academy page missing ready-to-learn handoff.'; exit 1; }
           grep -Fq 'Ask Mkety AI about Academy' /tmp/mkety-academy-page.html || { echo 'Academy page missing AI-first discovery CTA.'; exit 1; }
           grep -Fq 'academy.mkety.com' /tmp/mkety-academy-page.html || { echo 'Academy page missing learning-access destination.'; exit 1; }
+
+          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/domains" -o /tmp/mkety-domains-page.html
+          grep -Fq 'Mkety Domains' /tmp/mkety-domains-page.html || { echo 'Domains page missing Mkety Domains product identity.'; exit 1; }
+          grep -Fq 'Mkety DNS' /tmp/mkety-domains-page.html || { echo 'Domains page missing Mkety DNS product identity.'; exit 1; }
+          grep -Fq 'live' /tmp/mkety-domains-page.html || { echo 'Domains page missing live-pricing positioning.'; exit 1; }
 
           curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/pricing" -o /tmp/mkety-pricing-page.html
           # Contract literal: data-plan-price="starter:$5.99"
