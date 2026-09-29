@@ -138,7 +138,7 @@ export default async function EnterpriseAiSolutionPage({
                 <span>
                   <strong>Commitment reminders</strong>
                   <span className="mt-1 block text-muted-foreground">
-                    When a customer clearly promises a future action and gives a date/time, the assistant may schedule one tenant-scoped reminder. Ambiguous dates are not scheduled.
+                    When a customer clearly promises a future action and gives a date/time, the assistant may schedule one tenant-scoped reminder on supported asynchronous channels. Telegram, Slack, Discord and custom webhook are supported now; Meta channels wait for template/window-aware delivery. Ambiguous dates are not scheduled.
                   </span>
                 </span>
               </label>
