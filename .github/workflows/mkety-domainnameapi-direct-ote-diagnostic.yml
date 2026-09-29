@@ -89,7 +89,7 @@ jobs:
           const oteCredentials='${{ steps.credentials.outputs.ote_available }}'==='true';
           const liveCredentials='${{ steps.credentials.outputs.live_available }}'==='true';
           const rows=['## DomainNameAPI credential diagnostics','',
-            '- OT&E-specific credentials available: '+oteCredentials,
+            '- OT&E Test API Key + existing Reseller ID available: '+oteCredentials,
             '- Real OT&E quote executed: '+Boolean(ote?.ok),
             '- Live credentials available: '+liveCredentials,
             '- Live production quote-only probe executed: '+Boolean(live?.ok),
@@ -108,7 +108,7 @@ jobs:
             rows.push('- Live currency: '+live.currency);
           }
           if(!oteCredentials){
-            rows.push('- OT&E lifecycle blocker: add DOMAINNAMEAPI_RESELLER_ID and DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Live credentials are deliberately never sent to OT&E.');
+            rows.push('- OT&E lifecycle blocker: add DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Mkety reuses the existing provider-issued Reseller ID and sends only the separate Test/OT&E API Key to OT&E.');
           }
           if(!liveCredentials){
             rows.push('- Live read-only blocker: DOMAINNAMEAPI_USERNAME / DOMAINNAMEAPI_API_TOKEN are unavailable in the preview GitHub Environment.');
