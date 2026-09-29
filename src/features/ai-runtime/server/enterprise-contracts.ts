@@ -24,28 +24,6 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 const CONTRACT_PREFIX = 'enterprise-ai-contract-';
 
-const ALLOWED_CONTRACT_ENTITLEMENTS = [
-  'workspace.ai.enterprise',
-  'ai.api',
-  'ai.byok',
-  'ai.private_model',
-  'ai.channel.website',
-  'ai.channel.telegram',
-  'ai.channel.whatsapp',
-  'ai.channel.instagram',
-  'ai.channel.facebook_messenger',
-  'ai.channel.slack',
-  'ai.channel.discord',
-  'ai.channel.linkedin_page',
-  'ai.channel.microsoft_teams',
-  'ai.channel.custom_webhook',
-  'ai.whitelabel',
-  'ai.domain.purchase',
-  'ai.provider.gemini',
-  'ai.provider.anthropic',
-] as const satisfies readonly EntitlementKey[];
-
-export const ENTERPRISE_AI_CONTRACT_ENTITLEMENTS = ALLOWED_CONTRACT_ENTITLEMENTS;
 
 function contractPlanKey(tenantId: string) {
   return `${CONTRACT_PREFIX}${tenantId}`;
@@ -71,7 +49,7 @@ function parseIncludedEntitlements(formData: FormData) {
   const requested = new Set(formData.getAll('entitlements').map((value) => String(value)));
   requested.add('workspace.ai.enterprise');
   return [...requested].filter((key): key is EntitlementKey =>
-    isEntitlementKey(key) && (ALLOWED_CONTRACT_ENTITLEMENTS as readonly string[]).includes(key),
+    isEntitlementKey(key) && (ENTERPRISE_AI_CONTRACT_ENTITLEMENTS as readonly string[]).includes(key),
   );
 }
 
