@@ -105,4 +105,11 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, '0.0.0.0', () => {
   console.log('mkety-domainnameapi-relay listening on port ' + port);
+  void fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(10_000) })
+    .then((response) => response.ok ? response.json() : Promise.reject(new Error('egress lookup failed')))
+    .then((payload) => {
+      const ip = typeof payload?.ip === 'string' ? payload.ip.trim() : '';
+      if (/^[0-9a-f:.]+$/i.test(ip)) console.log('MKETY_RELAY_OUTBOUND_IP=' + ip);
+    })
+    .catch(() => console.log('MKETY_RELAY_OUTBOUND_IP=unavailable'));
 });
