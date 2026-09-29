@@ -267,6 +267,47 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     throw new Error('Managed channel provider outcome requires reconciliation.');
   }
 
+  let responseText = result.text ?? '';
+  let pendingReminder: {
+    dueAt: Date;
+    commitment: string;
+    reminderText: string;
+  } | null = null;
+  const reminderCall = configuration.commitmentRemindersEnabled
+    ? result.toolCalls?.find((item) => item.name === 'schedule_commitment_reminder')
+    : undefined;
+  if (reminderCall) {
+    try {
+      const args = JSON.parse(reminderCall.argumentsJson) as Record<string, unknown>;
+      const dueAt = new Date(String(args.dueAtIso ?? ''));
+      const commitment = String(args.commitment ?? '').trim().slice(0, 500);
+      const reminderText = String(args.reminderText ?? '').trim().slice(0, 1200);
+      const acknowledgement = String(args.acknowledgement ?? '').trim().slice(0, 1200);
+      const now = Date.now();
+      const maxFuture = now + 366 * 24 * 60 * 60 * 1000;
+      if (
+        Number.isFinite(dueAt.getTime()) &&
+        dueAt.getTime() > now + 60_000 &&
+        dueAt.getTime() <= maxFuture &&
+        commitment &&
+        reminderText &&
+        acknowledgement
+      ) {
+        const scheduledAt = new Date(
+          Math.max(now + 60_000, dueAt.getTime() - configuration.reminderLeadMinutes * 60_000),
+        );
+        pendingReminder = { dueAt: scheduledAt, commitment, reminderText };
+        responseText = acknowledgement;
+      } else if (!responseText) {
+        responseText = 'Please give me a specific future date and time so I can schedule that reminder safely.';
+      }
+    } catch {
+      if (!responseText) {
+        responseText = 'Please give me a specific future date and time so I can schedule that reminder safely.';
+      }
+    }
+  }
+
   const actualCredits = calculateAiCredits({
     inputTokens: result.usage.inputTokens,
     cachedInputTokens: result.usage.cachedInputTokens,
@@ -326,7 +367,40 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     completedAt: new Date(),
   }).where(eq(aiRequests.id, requestId));
 
-  return { kind: 'completed', requestId, text: result.text ?? '' };
+  let reminderScheduled = false;
+  if (pendingReminder) {
+    await scheduleEnterpriseAiAction({
+      tenantId: input.tenantId,
+      conversationId: conversation.id,
+      solutionInstanceId: solution?.id ?? null,
+      connectionId: input.connectionId,
+      kind: 'commitment_reminder',
+      idempotencyKey: `reminder:${input.connectionId}:${input.providerMessageId}`,
+      dueAt: pendingReminder.dueAt,
+      payload: {
+        recipientId: input.replyRecipientId,
+        contextId: input.contextId,
+        text: pendingReminder.reminderText,
+        sourceProviderMessageId: input.providerMessageId,
+        commitment: pendingReminder.commitment,
+      },
+    });
+    reminderScheduled = true;
+  }
+
+  const deliveryDelaySeconds = await deterministicReplyDelaySeconds(
+    configuration,
+    input.providerMessageId,
+  );
+
+  return {
+    kind: 'completed',
+    requestId,
+    text: responseText,
+    conversationId: conversation.id,
+    deliveryDelaySeconds,
+    reminderScheduled,
+  };
 }
 
 export async function releaseEnterpriseAiChannelAdmissionSafely(input: Parameters<typeof releaseAiCommercialRequest>[0]) {
