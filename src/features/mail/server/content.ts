@@ -2,6 +2,8 @@ export async function fetchMailContent(key:string){
   const url=process.env.MKETY_MAIL_CONTENT_URL||'';
   const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
   if(!url||!secret||!key) return null;
+  const bodyBytes=new Uint8Array(bytes.byteLength);
+  bodyBytes.set(bytes);
   const response=await fetch(url,{
     method:'POST',
     headers:{authorization:`Bearer ${secret}`,'content-type':'application/json'},
@@ -68,7 +70,7 @@ export async function storeMailContent(
       'x-mkety-operation':'put',
       'x-mkety-key':key,
     },
-    body:bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),
+    body:bodyBytes,
     cache:'no-store',
   });
   if(!response.ok) throw new Error('Mkety Mail content storage rejected the migration object.');
