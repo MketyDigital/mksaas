@@ -142,7 +142,7 @@ export default async function EnterpriseAiConsolePage({
           <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Open branding <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
-          <CardHeader><Globe2 className="h-5 w-5 text-primary" /><CardTitle>Your domain</CardTitle><CardDescription>Use {tenant.slug}.mkety.app or connect a customer hostname through Cloudflare for SaaS.</CardDescription></CardHeader>
+          <CardHeader><Globe2 className="h-5 w-5 text-primary" /><CardTitle>Your domain</CardTitle><CardDescription>Use {tenant.slug}.mkety.app or connect a customer hostname through Mkety Domains.</CardDescription></CardHeader>
           <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Manage domain <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
       </section>

@@ -23,7 +23,7 @@ export default async function MailDomainsPage({params,searchParams}:{params:Prom
     <PageHeader variant="hero" icon={<Globe2 className="h-5 w-5"/>} title="Business domains" description="Connect the domain you want to use for professional email. Mkety handles the technical checks for you."/>
 
     <Card className="rounded-2xl">
-      <CardHeader><CardTitle>Connect a domain</CardTitle><CardDescription>Enter only your domain name. If it is already managed in Mkety Cloudflare, setup is automatic. Otherwise we’ll guide the connection.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Connect a domain</CardTitle><CardDescription>Enter only your domain name. If it is already managed in Mkety DNS, setup is automatic. Otherwise we’ll guide the connection.</CardDescription></CardHeader>
       <CardContent className="space-y-4">
         {query.error==="domain"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">Enter a valid domain such as company.com.</div>}
         {query.error==="claimed"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">This domain is already connected to another Mkety Mail workspace.</div>}
@@ -54,7 +54,7 @@ export default async function MailDomainsPage({params,searchParams}:{params:Prom
               <p className="mt-1 text-xs text-muted-foreground">{status==='verified'?'Ready':'Mkety is checking this'}</p>
             </div>)}
           </div>
-          {!domain.routingEnabled&&<div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm"><div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary"/><p>This domain is not yet inside Mkety’s managed Cloudflare account. We’ll use the guided connection flow so you do not need to paste API keys into Mkety.</p></div></div>}
+          {!domain.routingEnabled&&<div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm"><div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary"/><p>This domain is not yet inside Mkety DNS. We’ll use the guided connection flow so you do not need to paste infrastructure credentials into Mkety.</p></div></div>}
         </CardContent>
       </Card>)}
       {!domains.length&&<Card className="rounded-2xl"><CardContent className="py-8 text-sm text-muted-foreground">No domain connected yet.</CardContent></Card>}
