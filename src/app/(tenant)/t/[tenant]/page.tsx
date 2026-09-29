@@ -51,7 +51,7 @@ export default async function TenantDashboard({ params }: TenantDashboardProps) 
   if (!tenant) return null;
 
   const [statsResult, dashboard, workspaces, entitlements] = await Promise.all([
-    getDashboardStats(tenant.id),
+    getDashboardStats(tenant.slug),
     getPublishedDashboardSettings(),
     getPublishedWorkspaceCardsForTenant(tenant.id),
     getTenantEntitlementsForRequest(tenant.id),
