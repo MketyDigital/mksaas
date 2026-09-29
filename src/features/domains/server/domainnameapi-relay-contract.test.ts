@@ -9,6 +9,7 @@ describe('DomainNameAPI fixed-egress relay contract', () => {
 
   it('is not a general-purpose proxy and exposes only official operations', () => {
     expect(source).toContain("['quote', { method: 'POST', path: '/domains/bulk-search' }]");
+    expect(source).toContain("['pricing', { method: 'GET', path: '/products/tlds' }]");
     expect(source).toContain("['register', { method: 'POST', path: '/domains/register-with-contacts' }]");
     expect(source).toContain("['renew', { method: 'POST', path: '/domains/renew' }]");
     expect(source).toContain("if (!operation) return json(res, 400, { error: 'unsupported_operation' })");
