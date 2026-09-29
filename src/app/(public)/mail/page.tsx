@@ -21,7 +21,7 @@ import {
 import Link from 'next/link';
 
 import { getActiveSelfServicePlans } from '@/features/billing/server/active-catalog';
-import { MAIL_COMMERCIAL_PLANS, MAIL_PLAN_KEYS } from '@/features/mail/commercial/plans';
+import { MAIL_COMMERCIAL_PLANS, MAIL_PLAN_KEYS, type MailPlanKey } from '@/features/mail/commercial/plans';
 
 export const metadata = {
   title: 'Mkety Mail — Professional business email, shared inboxes and transactional email',
@@ -138,7 +138,7 @@ const trustFeatures = [
 export default async function MketyMailPublicPage() {
   const activePlans = await getActiveSelfServicePlans(MAIL_PLAN_KEYS);
   const plans = activePlans.map((active) => ({
-    ...MAIL_COMMERCIAL_PLANS[active.key],
+    ...MAIL_COMMERCIAL_PLANS[active.key as MailPlanKey],
     name: active.name,
     description: active.description,
     amountMinor: active.amountMinor,
