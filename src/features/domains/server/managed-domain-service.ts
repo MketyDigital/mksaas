@@ -13,8 +13,8 @@ import {
   findCloudflareManagedZone,
   getCloudflareManagedZone,
   listCloudflareDnsRecords,
-  saveCloudflareDnsRecord,
   type MketyDnsRecordInput,
+  saveCloudflareDnsRecord,
 } from './cloudflare-saas';
 import { getDomainResellerAdapter, type RegisteredDomain } from './reseller';
 
@@ -57,7 +57,9 @@ async function provisionManagedDomainDnsInternal(tenantId: string, managedDomain
   if (!zoneId) {
     const zone = await findCloudflareManagedZone(domain) ?? await createCloudflareManagedZone(domain);
     zoneId = zone.id;
-    nameServers = zone.nameServers;
+    nameServers = 'nameServers' in zone
+      ? zone.nameServers
+      : Array.isArray(zone.name_servers) ? zone.name_servers : [];
     await db.update(managedDomains).set({
       dnsZoneId: zoneId,
       dnsStatus: zone.status || 'pending',
