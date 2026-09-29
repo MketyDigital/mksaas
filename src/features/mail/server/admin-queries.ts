@@ -1,8 +1,7 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, like } from 'drizzle-orm';
 
-import { SELF_SERVICE_BILLING_PLANS } from '@/features/billing/catalog/self-service-plans';
 import { db } from '@/shared/db/cloudflare';
-import { mailDomains, mailWorkspaces, tenants } from '@/shared/db/schema';
+import { billingPlans, billingPlanVersions, mailDomains, mailWorkspaces, tenants } from '@/shared/db/schema';
 
 import { resolveTenantMailPlanKey } from './commercial';
 
@@ -53,16 +52,31 @@ export async function getMailOperationsOverview(limit = 100) {
     };
   }));
 
+  const catalog = await db
+    .select({
+      key: billingPlans.key,
+      name: billingPlans.name,
+      description: billingPlans.description,
+      version: billingPlanVersions.version,
+      amountMinor: billingPlanVersions.amountMinor,
+      currency: billingPlanVersions.currency,
+      billingInterval: billingPlanVersions.billingInterval,
+      effectiveFrom: billingPlanVersions.effectiveFrom,
+    })
+    .from(billingPlanVersions)
+    .innerJoin(billingPlans, eq(billingPlans.id, billingPlanVersions.planId))
+    .where(
+      and(
+        like(billingPlans.key, 'mail-%'),
+        eq(billingPlans.status, 'active'),
+        eq(billingPlanVersions.isPublic, true),
+        isNull(billingPlanVersions.effectiveTo),
+      ),
+    )
+    .orderBy(asc(billingPlans.key));
+
   return {
-    catalog: Object.values(SELF_SERVICE_BILLING_PLANS)
-      .filter((plan) => plan.key.startsWith('mail-'))
-      .map((plan) => ({
-        key: plan.key,
-        name: plan.name,
-        amountMinor: plan.amountMinor,
-        currency: plan.currency,
-        billingInterval: plan.billingInterval,
-      })),
+    catalog,
     workspaces: rows,
   };
 }
