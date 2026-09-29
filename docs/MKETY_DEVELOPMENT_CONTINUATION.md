@@ -17,7 +17,7 @@ Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4
 - Enterprise AI recurring commercial access now has tenant-specific non-public versioned contract plans, negotiated monthly pricing, included entitlements/credits, verified Billing checkout activation, and fail-closed access after paid/grace periods.
 - Enterprise AI now has a real playground and customer-safe runs view; playground disables reminder/pacing side effects but still uses commercial admission.
 - Mail now exposes customer portability: existing contact CSV import/export plus workspace JSON export, RFC822/EML message export, and bounded authenticated EML import through the Mail content worker. Credentials, API keys, app passwords, provider secrets and verified settlements are intentionally excluded.
-- Guarded workflow `.github/workflows/mkety-enterprise-ai-production.yml` now defines exact-SHA deployment for `ai.mkety.com`, `api.mkety.com/v1/ai`, the AI delivery Queue/DLQ and scheduler worker. The workflow explicitly does not enable production inference.
+- Guarded workflow `.github/workflows/mkety-ai-production.yml` now defines exact-SHA deployment for `ai.mkety.com`, `api.mkety.com/v1/ai`, the AI delivery Queue/DLQ and scheduler worker. The workflow explicitly does not enable production inference.
 - Dedicated customer setup/readiness runbook: `docs/MKETY_MAIL_ENTERPRISE_AI_CUSTOMER_SETUP_RUNBOOK.md`.
 - Still incomplete before first Enterprise AI customer: exact-head CI, guarded production execution/acceptance for `ai.mkety.com`, `api.mkety.com/v1/ai`, delivery Queue/DLQ/scheduler verification, and then real customer acceptance before inference promotion.
 - Starpips production acceptance remains blocked until this stabilization checklist is closed.
