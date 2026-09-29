@@ -2,6 +2,12 @@ import { and, eq } from 'drizzle-orm';
 
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 import {
+  deterministicReplyDelaySeconds,
+  ensureEnterpriseAiConversation,
+  recordEnterpriseAiMessage,
+  scheduleEnterpriseAiAction,
+} from '@/features/ai-runtime/channels/server/conversations';
+import {
   admitAiCommercialRequest,
   releaseAiCommercialRequest,
   settleAiCommercialRequest,
@@ -25,8 +31,9 @@ import { aiRequests } from '@/shared/db/schema';
 import { aiSolutionInstances } from '@/shared/db/schema/ai-runtime';
 
 export type EnterpriseAiManagedChannelTurnResult =
-  | { kind: 'completed'; requestId: string; text: string }
+  | { kind: 'completed'; requestId: string; text: string; conversationId: string; deliveryDelaySeconds: number; reminderScheduled: boolean }
   | { kind: 'duplicate'; requestId: string }
+  | { kind: 'handoff'; conversationId: string }
   | { kind: 'disabled'; requestId?: string };
 
 export async function runEnterpriseAiManagedChannelTurn(input: {
@@ -35,6 +42,10 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   connectionId: string;
   providerMessageId: string;
   senderId: string;
+  externalConversationId: string;
+  replyRecipientId: string;
+  replyToId?: string;
+  contextId?: string;
   text: string;
   solutionInstanceId?: string | null;
   requestedModel?: string;
@@ -57,6 +68,26 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   const configuration = parseEnterpriseAiSolutionConfiguration(solution?.configuration);
   if (solution?.status === 'disabled' || configuration.paused) {
     return { kind: 'disabled' };
+  }
+
+  const conversation = await ensureEnterpriseAiConversation({
+    tenantId: input.tenantId,
+    projectId: input.projectId ?? null,
+    solutionInstanceId: solution?.id ?? null,
+    connectionId: input.connectionId,
+    externalConversationId: input.externalConversationId,
+    externalUserId: input.senderId,
+  });
+  await recordEnterpriseAiMessage({
+    tenantId: input.tenantId,
+    conversationId: conversation.id,
+    direction: 'inbound',
+    role: 'user',
+    providerMessageId: input.providerMessageId,
+    content: input.text,
+  });
+  if (conversation.status === 'human') {
+    return { kind: 'handoff', conversationId: conversation.id };
   }
 
   const requestedModel =
