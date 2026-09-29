@@ -337,9 +337,14 @@ jobs:
         run: |
           set -euo pipefail
           api='https://api.cloudflare.com/client/v4'
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-          body='{"workers_dev":false,"preview_urls":false}'
-          curl -fsS -X PATCH "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/settings" >/dev/null
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          response="$(curl -fsS -X DELETE "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/subdomain")"
+          RESPONSE="$response" node - <<'NODE'
+          const p=JSON.parse(process.env.RESPONSE||'{}');
+          if(!p.success||p.result?.enabled!==false||p.result?.previews_enabled!==false){
+            throw new Error('Cloudflare did not confirm workers.dev and preview URLs are disabled.');
+          }
+          NODE
 
       - name: Roll back app host binding if post-binding acceptance failed
         if: failure() && steps.bind.outputs.bound == 'true'
