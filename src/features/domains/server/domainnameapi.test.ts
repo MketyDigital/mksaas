@@ -128,4 +128,53 @@ describe('DomainNameApiAdapter', () => {
     await adapter.quote('example.net');
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('https://api.domainresellerapi.com/'))).toBe(true);
   });
+  it('routes v2 traffic through the fixed-egress relay without direct provider fallback', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ status: 'available', price: 8.25, currency: 'USD' }, 200),
+    );
+
+    const adapter = new DomainNameApiAdapter({
+      resellerId: '123456',
+      apiKey: 'live-api-key',
+      environment: 'production',
+      relayUrl: 'https://registrar-relay.mkety.com/',
+      relaySecret: '0123456789abcdef0123456789abcdef',
+    });
+
+    await expect(adapter.quote('relay-test.com')).resolves.toMatchObject({
+      available: true,
+      registrationPriceMinor: 825n,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://registrar-relay.mkety.com/v1/domainnameapi');
+    expect(init).toEqual(expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({
+        'X-Mkety-Timestamp': expect.stringMatching(/^\d+$/),
+        'X-Mkety-Signature': expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    }));
+    const relayBody = JSON.parse(String(init?.body));
+    expect(relayBody).toEqual(expect.objectContaining({
+      operation: 'quote',
+      environment: 'production',
+      nonce: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      payload: expect.objectContaining({
+        resellerId: '123456',
+        apiKey: 'live-api-key',
+        domainName: 'relay-test.com',
+      }),
+    }));
+  });
+
+  it('rejects the reseller panel username for v2', () => {
+    expect(() => new DomainNameApiAdapter({
+      resellerId: 'Mkety',
+      apiKey: 'test-token',
+      environment: 'production',
+    })).toThrow('numerical Reseller ID');
+  });
+
 });
