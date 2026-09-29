@@ -163,11 +163,22 @@ export async function POST(
               : undefined,
         });
         if (turn.kind !== 'completed' || !turn.text) return;
-        await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
+        const delivery = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: turn.text, allowed_mentions: { parse: [] } }),
         });
+        if (!delivery.ok) throw new Error('Discord follow-up delivery failed.');
+        await recordEnterpriseAiMessage({
+          tenantId: connection.tenantId!,
+          conversationId: turn.conversationId,
+          requestId: turn.requestId,
+          direction: 'outbound',
+          role: 'assistant',
+          content: turn.text,
+          metadata: { channel: 'discord' },
+        });
+        await markEnterpriseAiConversationOutbound(turn.conversationId, connection.tenantId!);
       } catch {
         await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
           method: 'POST',
