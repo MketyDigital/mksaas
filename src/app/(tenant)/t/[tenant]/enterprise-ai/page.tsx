@@ -6,6 +6,7 @@ import { getTenantSettings } from '@/features/admin/services/settings-service';
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
 import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
+import { getActiveEnterpriseAiContract } from '@/features/ai-runtime/server/enterprise-contracts';
 import {
   listEnterpriseAiSolutionInstances,
   listEnterpriseAiSolutionTemplates,
@@ -30,19 +31,44 @@ export default async function EnterpriseAiConsolePage({
   if (!tenant) redirect('/select-tenant');
 
   if (!(await hasEnterpriseAiAccess(tenant.id))) {
+    const contract = await getActiveEnterpriseAiContract(tenant.id);
     return (
-      <div className="mx-auto max-w-3xl py-8">
+      <div className="mx-auto max-w-3xl space-y-4 py-8">
         <Card className="rounded-3xl">
           <CardHeader>
             <Sparkles className="h-8 w-8 text-primary" />
-            <CardTitle className="mt-3 text-2xl">Enterprise AI is not active for this workspace</CardTitle>
+            <CardTitle className="mt-3 text-2xl">{contract ? 'Your Enterprise AI agreement is ready' : 'Enterprise AI is not active for this workspace'}</CardTitle>
             <CardDescription>
-              Enterprise Mkety AI is a separate business solution from the normal AI Workspace. Access only becomes active from Mkety-owned billing and entitlements.
+              {contract
+                ? 'Complete the verified subscription payment below. Access activates from Mkety Billing after settlement; no browser action can grant the entitlement by itself.'
+                : 'Enterprise Mkety AI is a separate business solution from the normal AI Workspace. Access only becomes active from Mkety-owned billing and entitlements.'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/enterprise">Explore Enterprise AI</a>
-            <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}`}>Back to workspace</Link>
+          <CardContent className="space-y-5">
+            {contract ? (
+              <>
+                <div className="rounded-2xl border bg-muted/20 p-4">
+                  <p className="font-semibold">{contract.planName}</p>
+                  <p className="mt-1 text-3xl font-bold">{contract.currency} {(Number(contract.amountMinor) / 100).toFixed(2)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
+                  <p className="mt-2 text-sm text-muted-foreground">{contract.planDescription}</p>
+                  <p className="mt-3 text-xs text-muted-foreground">{contract.includedCredits.toString()} included credits per billing period · {contract.entitlements.length} included capabilities</p>
+                </div>
+                <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-[1fr_auto]" method="post">
+                  <select className="rounded-xl border bg-background px-3 py-3 text-sm" defaultValue="nowpayments" name="provider">
+                    <option value="nowpayments">Crypto / NOWPayments</option>
+                    <option value="flutterwave">Card / bank · Flutterwave</option>
+                    <option value="kora">Card / bank · Kora</option>
+                  </select>
+                  <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Pay & activate Enterprise AI</button>
+                </form>
+                <p className="text-xs text-muted-foreground">If payment is later overdue, Enterprise AI follows the contract period and configured grace window, then stops inference while preserving your setup.</p>
+              </>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/enterprise">Explore Enterprise AI</a>
+                <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}`}>Back to workspace</Link>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
