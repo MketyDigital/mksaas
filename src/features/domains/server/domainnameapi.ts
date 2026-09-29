@@ -238,10 +238,17 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
   }
 
   private async execute(operation: 'quote' | 'register' | 'renew', path: string, body: Record<string, unknown>) {
-    const result = this.relayUrl
-      ? await this.relayRequest(operation, body)
-      : await this.providerRequest(path, 'POST', operation === 'quote' ? [{ domainName: body.domainName }] : body);
-    if (result.response.ok) return result.payload;
+    const maxAttempts = operation === 'quote' ? 3 : 1;
+    let result: Awaited<ReturnType<DomainNameApiAdapter['relayRequest']>> | Awaited<ReturnType<DomainNameApiAdapter['providerRequest']>> | null = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      result = this.relayUrl
+        ? await this.relayRequest(operation, body)
+        : await this.providerRequest(path, 'POST', operation === 'quote' ? [{ domainName: body.domainName }] : body);
+      if (result.response.ok) return result.payload;
+      if (![502, 503, 504].includes(result.response.status) || attempt === maxAttempts) break;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+    if (!result) throw new Error('DomainNameAPI request did not execute.');
     const message = findValue(result.payload, ['message', 'errorMessage', 'error', 'detail']);
     throw new Error(
       `DomainNameAPI ${operation} failed (${result.response.status})${typeof message === 'string' ? `: ${message}` : ''}.`,
