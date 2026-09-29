@@ -17288,6 +17288,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "reply_recipient_id": {
+          "name": "reply_recipient_id",
+          "type": "varchar(240)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply_context_id": {
+          "name": "reply_context_id",
+          "type": "varchar(240)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
