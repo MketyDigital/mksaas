@@ -1,11 +1,6 @@
 name: Mkety App Host Production Repair
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/mkety-app-host-production-repair.yml'
   workflow_dispatch:
     inputs:
       verified_sha:
