@@ -23,19 +23,19 @@ export function DomainResellerControlPanel({
     <div className="space-y-6">
       <Card className="rounded-2xl border-primary/20">
         <CardHeader>
-          <CardTitle>System-wide domain reseller</CardTitle>
+          <CardTitle>Mkety Domains &amp; DNS</CardTitle>
           <CardDescription>
-            DomainNameAPI powers Mkety domain purchasing as a shared platform service. Enterprise AI, Deploy and future products consume this same service instead of storing their own registrar credentials.
+            One operations surface for domain registration, customer pricing, nameservers, DNS and custom hostnames. Provider credentials stay protected behind Mkety.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border p-4">
-            <p className="text-xs uppercase text-muted-foreground">Provider</p>
-            <p className="mt-2 font-semibold">DomainNameAPI</p>
+            <p className="text-xs uppercase text-muted-foreground">Registration</p>
+            <p className="mt-2 font-semibold">{current ? 'Connected' : 'Not configured'}</p>
           </div>
           <div className="rounded-xl border p-4">
-            <p className="text-xs uppercase text-muted-foreground">Status</p>
-            <p className="mt-2 font-semibold">{current ? 'Active' : 'Not configured'}</p>
+            <p className="text-xs uppercase text-muted-foreground">DNS &amp; hostnames</p>
+            <p className="mt-2 font-semibold">{cloudflare ? 'Connected' : 'Not configured'}</p>
           </div>
           <div className="rounded-xl border p-4">
             <p className="text-xs uppercase text-muted-foreground">Environment</p>
@@ -46,9 +46,9 @@ export function DomainResellerControlPanel({
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle>Configure / rotate DomainNameAPI</CardTitle>
+          <CardTitle>Domain registration &amp; pricing</CardTitle>
           <CardDescription>
-            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use the exact V2 Reseller ID shown in your DomainNameAPI account. Pair it with the Test Environment API Key for OT&amp;E, or the Live Environment API Key for production.
+            Update Mkety’s registrar connection, default nameservers and customer pricing policy without rebuilding the application. Provider credentials remain encrypted.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -61,11 +61,11 @@ export function DomainResellerControlPanel({
               </select>
             </label>
             <label className="text-sm font-medium">
-              Reseller ID (V2, exactly as issued)
+              Registrar Reseller ID
               <input autoComplete="off" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="resellerId" required />
             </label>
             <label className="text-sm font-medium">
-              API Key
+              Registrar API key
               <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiKey" required type="password" />
             </label>
             <label className="text-sm font-medium">
@@ -76,7 +76,7 @@ export function DomainResellerControlPanel({
               <div className="md:col-span-2">
                 <p className="font-semibold">Customer pricing</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Mkety starts from DomainNameAPI&apos;s real provider price, then applies these editable markups to the customer sell price.
+                  Mkety starts from the live upstream registration/renewal price and applies these editable margins to the customer sell price.
                 </p>
               </div>
               <label className="text-sm font-medium">
@@ -106,7 +106,7 @@ export function DomainResellerControlPanel({
             </label>
             <div className="md:col-span-2">
               <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-                Save encrypted reseller connection
+                Save domain registration settings
               </button>
             </div>
           </form>
@@ -116,9 +116,9 @@ export function DomainResellerControlPanel({
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle>Cloudflare domains, DNS &amp; custom hostnames</CardTitle>
+          <CardTitle>DNS &amp; custom hostname infrastructure</CardTitle>
           <CardDescription>
-            Editable production routing for Cloudflare for SaaS and managed *.mkety.app DNS. Existing environment values remain a bootstrap fallback until this connection is saved.
+            Configure the protected infrastructure Mkety uses for authoritative DNS, managed *.mkety.app records and customer custom-hostname validation. Environment values remain a recovery fallback.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -126,6 +126,10 @@ export function DomainResellerControlPanel({
             <label className="text-sm font-medium md:col-span-2">
               Cloudflare API token
               <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiToken" placeholder={cloudflare ? 'Leave blank to keep the currently encrypted token' : 'Required for first setup'} type="password" />
+            </label>
+            <label className="text-sm font-medium">
+              Cloudflare account ID
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.accountId ?? '')} name="accountId" required />
             </label>
             <label className="text-sm font-medium">
               Cloudflare for SaaS zone ID
@@ -152,14 +156,14 @@ export function DomainResellerControlPanel({
             </label>
             <div className="flex flex-wrap gap-3 md:col-span-2">
               <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-                Save Cloudflare routing configuration
+                Save DNS & hostname settings
               </button>
               {cloudflare ? (
                 <button
                   className="rounded-xl border border-destructive px-4 py-2 text-sm font-semibold text-destructive"
                   formAction={disableCloudflareDomainRoutingConnection.bind(null, tenant, cloudflare.id)}
                 >
-                  Disable Cloudflare routing connection
+                  Disable DNS routing connection
                 </button>
               ) : null}
             </div>
@@ -170,12 +174,12 @@ export function DomainResellerControlPanel({
       {current ? (
         <Card className="rounded-2xl border-destructive/20">
           <CardHeader>
-            <CardTitle>Disable reseller connection</CardTitle>
+            <CardTitle>Disable domain registration</CardTitle>
             <CardDescription>This stops new Mkety registrar operations without deleting historical domain records.</CardDescription>
           </CardHeader>
           <CardContent>
             <form action={disableDomainResellerConnection.bind(null, tenant, current.id)}>
-              <button className="rounded-xl border border-destructive px-4 py-2 text-sm font-semibold text-destructive">Disable DomainNameAPI</button>
+              <button className="rounded-xl border border-destructive px-4 py-2 text-sm font-semibold text-destructive">Disable domain registration</button>
             </form>
           </CardContent>
         </Card>
