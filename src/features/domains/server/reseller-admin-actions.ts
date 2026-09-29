@@ -31,6 +31,10 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
   const resellerId = String(formData.get('resellerId') ?? '').trim();
   const apiKey = String(formData.get('apiKey') ?? '').trim();
   const endpointUrl = String(formData.get('endpointUrl') ?? '').trim();
+  const registrationMarkupPercent = Number(formData.get('registrationMarkupPercent') ?? 0);
+  const renewalMarkupPercent = Number(formData.get('renewalMarkupPercent') ?? 0);
+  const registrationFixedMarkupMinor = Math.round(Number(formData.get('registrationFixedMarkup') ?? 0) * 100);
+  const renewalFixedMarkupMinor = Math.round(Number(formData.get('renewalFixedMarkup') ?? 0) * 100);
   const nameservers = String(formData.get('nameServers') ?? '')
     .split(/[\n,]+/)
     .map((value) => value.trim().toLowerCase())
@@ -39,6 +43,22 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
   if (!resellerId) throw new Error('DomainNameAPI V2 Reseller ID is required.');
   if (!apiKey) throw new Error('DomainNameAPI V2 API Key is required.');
   if (endpointUrl) new URL(endpointUrl);
+  for (const [label, value] of [
+    ['Registration markup', registrationMarkupPercent],
+    ['Renewal markup', renewalMarkupPercent],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0 || value > 1000) {
+      throw new Error(label + ' must be between 0% and 1000%.');
+    }
+  }
+  for (const [label, value] of [
+    ['Registration fixed markup', registrationFixedMarkupMinor],
+    ['Renewal fixed markup', renewalFixedMarkupMinor],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0 || value > 100000000) {
+      throw new Error(label + ' is invalid.');
+    }
+  }
 
   await savePlatformServiceConnection({
     serviceKey: 'domains',
@@ -49,6 +69,10 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
     config: {
       nameServers: nameservers,
       whoisPrivacy: formData.get('whoisPrivacy') === 'on',
+      registrationMarkupPercent,
+      renewalMarkupPercent,
+      registrationFixedMarkupMinor,
+      renewalFixedMarkupMinor,
     },
     actorUserId: actor.userId,
     exclusiveProviderModes: true,
