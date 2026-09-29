@@ -21,7 +21,9 @@ jobs:
       - name: Verify production Mail HTTP surfaces
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+
+          failures=0
 
           fetch_expected() {
             label="$1"
@@ -33,7 +35,7 @@ jobs:
             code='000'
 
             for attempt in 1 2 3 4 5; do
-              args=(--connect-timeout 10 --max-time 30 -L -sS -o "$output" -w '%{http_code}')
+              args=(--connect-timeout 10 --max-time 30 -sS -D "${output}.headers" -o "$output" -w '%{http_code}')
               if [ "$method" = 'POST' ]; then
                 args+=(-X POST -H 'Content-Type: application/json' --data "$body")
               fi
@@ -46,19 +48,33 @@ jobs:
             done
 
             echo "::error::$label failed; last HTTP $code"
-            head -c 500 "$output" 2>/dev/null || true
+            echo '--- response headers ---'
+            cat "${output}.headers" 2>/dev/null || true
+            echo '--- response body ---'
+            head -c 800 "$output" 2>/dev/null || true
             echo
             return 1
           }
 
-          fetch_expected 'Mail app host' 'https://mail.mkety.com/' '200 302 307' /tmp/mail-home
-          fetch_expected 'Public Mail page' 'https://mkety.com/mail' '200' /tmp/mail-public
-          grep -Fq 'Business email made simple' /tmp/mail-public
-          fetch_expected 'Autoconfig' 'https://autoconfig.mkety.com/mail/config-v1.1.xml?emailaddress=hello%40example.com' '200' /tmp/mail-autoconfig
-          grep -Fq 'imap.mkety.com' /tmp/mail-autoconfig
-          grep -Fq 'smtp.mkety.com' /tmp/mail-autoconfig
-          fetch_expected 'Mail API fail-closed' 'https://api.mkety.com/api/v1/mail/send' '401' /tmp/mail-api POST '{}'
-          fetch_expected 'Mail content fail-closed' 'https://mail-content.mkety.com' '401' /tmp/mail-content POST '{"key":"mail/nope"}'
+          fetch_expected 'Mail host health' 'https://mail.mkety.com/api/health' '200' /tmp/mail-health || failures=$((failures+1))
+          fetch_expected 'Mail host root handoff' 'https://mail.mkety.com/' '302 303 307 308' /tmp/mail-home || failures=$((failures+1))
+          fetch_expected 'Mail host app handoff' 'https://mail.mkety.com/mail/app' '302 303 307 308' /tmp/mail-app || failures=$((failures+1))
+          fetch_expected 'Central Mail handoff start' 'https://app.mkety.com/api/auth/product-handoff/start?product=mail&returnTo=%2Fmail%2Fapp' '302 303 307 308' /tmp/mail-handoff || failures=$((failures+1))
+
+          fetch_expected 'Public Mail page' 'https://mkety.com/mail' '200' /tmp/mail-public || failures=$((failures+1))
+          grep -Fq 'Business email made simple' /tmp/mail-public || { echo '::error::Public Mail page missing product copy.'; failures=$((failures+1)); }
+
+          fetch_expected 'Autoconfig' 'https://autoconfig.mkety.com/mail/config-v1.1.xml?emailaddress=hello%40example.com' '200' /tmp/mail-autoconfig || failures=$((failures+1))
+          grep -Fq 'imap.mkety.com' /tmp/mail-autoconfig || { echo '::error::Autoconfig missing IMAP host.'; failures=$((failures+1)); }
+          grep -Fq 'smtp.mkety.com' /tmp/mail-autoconfig || { echo '::error::Autoconfig missing SMTP host.'; failures=$((failures+1)); }
+
+          fetch_expected 'Mail API fail-closed' 'https://api.mkety.com/api/v1/mail/send' '401' /tmp/mail-api POST '{}' || failures=$((failures+1))
+          fetch_expected 'Mail content fail-closed' 'https://mail-content.mkety.com' '401' /tmp/mail-content POST '{"key":"mail/nope"}' || failures=$((failures+1))
+
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::Mail live HTTP readiness has $failures failed check(s)."
+            exit 1
+          fi
 
       - name: Diagnose external-client IMAP/SMTP gateway
         id: gateway
