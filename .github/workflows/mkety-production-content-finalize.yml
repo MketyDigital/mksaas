@@ -14,7 +14,7 @@ jobs:
   reconcile:
     uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
     with:
-      verified_sha: a1974deed263480280ce2fe97f8fb859a351eb0e
-      release_branch: main
+      verified_sha: ${{ github.sha }}
+      release_branch: release/production-finalize-20260929
     secrets:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
