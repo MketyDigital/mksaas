@@ -1,0 +1,99 @@
+name: Mkety Final Production Live Acceptance
+
+on:
+  push:
+    branches:
+      - release/production-finalize-20260929
+    paths:
+      - .github/workflows/mkety-final-production-live-acceptance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Verify public Mkety Domains presentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          domains="$(curl -fsS --connect-timeout 10 --max-time 30 https://mkety.com/domains)"
+          printf '%s' "$domains" | grep -q 'Mkety Domains'
+          printf '%s' "$domains" | grep -qi 'DNS'
+          printf '%s' "$domains" | grep -qi 'register'
+          echo 'MKETY_DOMAINS_PUBLIC_PAGE_OK=true'
+
+      - name: Verify public-site discoverability
+        id: presentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="$(curl -fsS --connect-timeout 10 --max-time 30 https://mkety.com/)"
+          if printf '%s' "$home" | grep -Eq 'href=["'"']?/domains|Mkety Domains'; then
+            echo 'discoverable=true' >> "$GITHUB_OUTPUT"
+            echo 'MKETY_DOMAINS_HOME_DISCOVERABLE=true'
+          else
+            echo 'discoverable=false' >> "$GITHUB_OUTPUT"
+            echo 'MKETY_DOMAINS_HOME_DISCOVERABLE=false'
+          fi
+
+      - name: Verify production Worker Custom Domain ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          domains="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          DOMAINS="$domains" node <<'NODE'
+          const p=JSON.parse(process.env.DOMAINS||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Custom Domain lookup failed');
+          const owner=(host)=>p.result.find(x=>x.hostname===host)?.service||null;
+          const expected={
+            'mkety.com':'mkety-platform',
+            'www.mkety.com':'mkety-platform',
+            'app.mkety.com':'mkety-app-host',
+          };
+          for(const [host,service] of Object.entries(expected)){
+            if(owner(host)!==service) throw new Error(host+' owner is '+owner(host)+', expected '+service);
+          }
+          NODE
+
+      - name: Verify branded app authentication chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          root_headers=/tmp/root.headers
+          root_code="$(curl -sS -D "$root_headers" -o /dev/null -w '%{http_code}' https://app.mkety.com/)"
+          root_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$root_headers")"
+          [ "$root_code" -ge 300 ] && [ "$root_code" -lt 400 ]
+          ROOT_LOCATION="$root_location" node -e "const u=new URL(process.env.ROOT_LOCATION,'https://app.mkety.com/');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/app')process.exit(1)"
+
+          app_headers=/tmp/app.headers
+          app_code="$(curl -sS -D "$app_headers" -o /dev/null -w '%{http_code}' https://app.mkety.com/app)"
+          app_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_headers")"
+          [ "$app_code" -ge 300 ] && [ "$app_code" -lt 400 ]
+          APP_LOCATION="$app_location" node -e "const u=new URL(process.env.APP_LOCATION,'https://app.mkety.com/app');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login')process.exit(1)"
+
+          auth_headers=/tmp/auth.headers
+          auth_code="$(curl -sS -D "$auth_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin')"
+          auth_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$auth_headers")"
+          [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ]
+          AUTH_LOCATION="$auth_location" node -e "const u=new URL(process.env.AUTH_LOCATION);if(u.origin!=='https://auth.mkety.com'||!u.pathname.startsWith('/ui/v2/login/'))process.exit(1)"
+
+      - name: Publish acceptance evidence
+        shell: bash
+        run: |
+          {
+            echo '## Mkety final production live acceptance'
+            echo
+            echo '- Mkety Domains public page: pass'
+            echo "- Homepage Domains discoverability: ${{ steps.presentation.outputs.discoverable }}"
+            echo '- mkety.com / www.mkety.com ownership: mkety-platform'
+            echo '- app.mkety.com ownership: mkety-app-host'
+            echo '- branded app auth chain: pass'
+          } >> "$GITHUB_STEP_SUMMARY"
