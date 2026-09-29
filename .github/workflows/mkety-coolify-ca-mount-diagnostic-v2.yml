@@ -1,11 +1,6 @@
 name: Mkety Coolify CA Mount Diagnostic V2
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/mkety-coolify-ca-mount-diagnostic-v2.yml
-      - ops/coolify-ca-mount-diagnostic-v2/**
   workflow_dispatch:
 
 permissions:
