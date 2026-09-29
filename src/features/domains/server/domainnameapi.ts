@@ -9,6 +9,8 @@ export interface DomainNameApiConfig {
   baseUrl?: string;
   nameServers?: string[];
   whoisPrivacy?: boolean;
+  relayUrl?: string;
+  relaySecret?: string;
 }
 
 function normalizeDomain(value: string) {
@@ -82,6 +84,8 @@ function successStatus(value: unknown) {
 export class DomainNameApiAdapter implements DomainResellerAdapter {
   private readonly baseUrl: string;
   private readonly legacyAuth: string;
+  private readonly relayUrl: string | null;
+  private readonly relaySecret: string | null;
 
   constructor(private readonly config: DomainNameApiConfig) {
     const environment = config.environment ?? 'ote';
@@ -96,9 +100,65 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       throw new Error('DomainNameAPI V2 requires the numerical Reseller ID from Integration Details, not the reseller-panel username.');
     }
     this.legacyAuth = `Basic ${base64(`${config.resellerId.trim()}:${config.apiKey.trim()}`)}`;
+    this.relayUrl = config.relayUrl?.trim().replace(/\/+$/, '') || null;
+    this.relaySecret = config.relaySecret?.trim() || null;
+    if ((this.relayUrl && !this.relaySecret) || (!this.relayUrl && this.relaySecret)) {
+      throw new Error('DomainNameAPI relay URL and secret must be configured together.');
+    }
+    if (this.relaySecret && this.relaySecret.length < 32) {
+      throw new Error('DomainNameAPI relay secret must be at least 32 characters.');
+    }
+  }
+
+  private async relayRequest(operation: 'quote' | 'register' | 'renew', body: string) {
+    if (!this.relayUrl || !this.relaySecret) throw new Error('DomainNameAPI relay is not configured.');
+    const timestamp = String(Date.now());
+    const raw = JSON.stringify({
+      operation,
+      environment: this.config.environment ?? 'ote',
+      payload: JSON.parse(body) as Record<string, unknown>,
+    });
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(this.relaySecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const signatureBytes = new Uint8Array(await crypto.subtle.sign(
+      'HMAC',
+      key,
+      new TextEncoder().encode(`${timestamp}.${raw}`),
+    ));
+    const signature = Array.from(signatureBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const response = await fetch(`${this.relayUrl}/v1/domainnameapi`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Mkety-Timestamp': timestamp,
+        'X-Mkety-Signature': signature,
+      },
+      body: raw,
+    });
+    let payload: unknown = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    return { response, payload };
   }
 
   private async request(path: string, init: RequestInit, authMode: 'v2' | 'legacy-basic' = 'v2') {
+    if (this.relayUrl && authMode === 'v2') {
+      const operation = path === '/v1/domain/check'
+        ? 'quote'
+        : path === '/v1/domain/register'
+          ? 'register'
+          : path === '/v1/domain/renew'
+            ? 'renew'
+            : null;
+      if (!operation) throw new Error('DomainNameAPI relay refuses unsupported endpoint fallback.');
+      return this.relayRequest(operation, String(init.body ?? '{}'));
+    }
+
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
@@ -135,6 +195,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       lastStatus = response.status;
       lastPayload = payload;
       if (response.ok) return payload;
+      if (this.relayUrl) break;
       // Endpoint-shape fallback is safe only when the attempted route does not exist.
       if (response.status !== 404 && response.status !== 405) break;
     }
@@ -162,7 +223,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     });
     if (v1.response.ok) {
       payload = v1.payload;
-    } else if (v1.response.status === 404 || v1.response.status === 405) {
+    } else if (!this.relayUrl && (v1.response.status === 404 || v1.response.status === 405)) {
       const params = new URLSearchParams({
         domainNames: name,
         tlds: tld,
