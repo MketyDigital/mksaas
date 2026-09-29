@@ -9,7 +9,8 @@ describe('Platform navigation route contract', () => {
   it('keeps every Admin sidebar destination backed by a real route', () => {
     const expected = [
       'admin/page.tsx',
-      'admin/platform-control/page.tsx',\n      'admin/platform-control/[module]/page.tsx',
+      'admin/platform-control/page.tsx',
+      'admin/platform-control/[module]/page.tsx',
       'admin/analytics/page.tsx',
       'admin/members/page.tsx',
       'admin/invites/page.tsx',
