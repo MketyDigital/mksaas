@@ -1,3 +1,30 @@
+# 2026-09-29 final Mail/Enterprise handoff — gateway deployed; OCI ingress is the last Mail infrastructure blocker
+
+## Authority
+
+This section supersedes the older #178-era handoff below.
+
+- Current production main: `f581b31443f255bbf8786d873562a390ee6698b3` (PR #189).
+- Mail Production run `36639931406`: SUCCESS on that exact SHA.
+- Enterprise AI infrastructure run `36568179070`: SUCCESS; customer inference remains OFF.
+- Mail gateway run `36639931332` proved exact-SHA gateway deployment/readiness after trusted certificate issuance, Coolify configuration and central secret synchronization.
+- PR #189 also deployed fail-closed commercial login enforcement: every external-client app-password authentication re-checks active Mail workspace plus `workspace.mail` entitlement.
+- Corrected earlier gateway run `36637983178` proved Cloudflare authoritative DNS and public recursive DNS are correct/unproxied, then direct origin IMAPS 993 timed out.
+- Direct runner SSH to the OCI host is unavailable. A same-host disposable probe confirmed OCI IMDS and instance-principal signer availability but VCN/network read returned 404, so that identity cannot manage Security Lists/NSGs. Standard/common OCI API credential names were not present under the tested protected-production secret names.
+- The gateway is therefore deployed but **not yet public-TCP accepted**. The remaining infrastructure action is OCI/provider ingress for TCP 993 and 465.
+- `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` remains false.
+
+## Exact resume point
+
+1. Open OCI network policy for the validated Coolify origin: TCP 993 (IMAPS) and TCP 465 (SMTPS), public client source as required for standards-compatible mail clients. Preserve existing rules; do not replace the Security List/NSG.
+2. Rerun the guarded Mail gateway release. The workflow must prove: exact release authorization, gateway health/readiness, Cloudflare authoritative/public DNS, trusted TLS using the public hostnames, IMAP4rev1 CAPABILITY, SMTP AUTH PLAIN/LOGIN greeting, and fail-closed internal API behavior.
+3. Run the controlled app-password functional acceptance (successful auth/sync/send, revoke, then failed auth) before enabling external-client UI/autoconfig.
+4. Record the accepted SHA/run IDs in the status + continuation docs.
+5. Then begin Enterprise AI customer acceptance: contract, verified payment, entitlement/credits, solution, channels, branding/domain, playground, logs/accounting and handoff tests while global customer inference remains OFF.
+6. Intentionally promote Enterprise AI inference only after that acceptance, then begin Starpips real-customer onboarding.
+
+---
+
 # 2026-09-29 Mail production accepted — external-client gateway next
 
 ## Authority
