@@ -19,9 +19,12 @@ describe('Enterprise AI true white-label and domain contract', () => {
 
     expect(proof).toContain("where: eq(customDomains.hostname, normalized)");
     expect(proof).not.toContain("eq(customDomains.status, 'verified')");
-    expect(admin).toContain("verificationMethod = strictProviderVerified");
+    expect(admin).toContain("verificationMethod: strictProviderVerified ? 'cloudflare' : 'pending'");
     expect(admin).toContain("'live_route'");
-    expect(admin).toContain("status: verified ? 'verified' : 'pending'");
+    expect(admin).toContain("status: liveVerified ? 'verified' : 'pending'");
+    expect(admin.indexOf("await db.insert(customDomains).values")).toBeLessThan(
+      admin.indexOf("const liveRouteProof = await probeEnterpriseAiHostnameRoute(hostname, tenant.id)"),
+    );
     expect(resolver).toContain("eq(customDomains.status, 'verified')");
   });
 
