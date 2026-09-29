@@ -2,6 +2,11 @@ import { notFound } from 'next/navigation';
 
 import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
 import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
+import {
+  createEnterpriseAiContractVersion,
+  ENTERPRISE_AI_CONTRACT_ENTITLEMENTS,
+  listEnterpriseAiContracts,
+} from '@/features/ai-runtime/server/enterprise-contracts';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
@@ -78,6 +83,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   let paymentSettings = null;
   let mailOperations = null;
   let aiCommercialOverview = null;
+  let enterpriseAiContracts = null;
   let domainResellerConnections = null;
 
   if (isDeployments) {
@@ -99,7 +105,10 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
 
   if (isAiOperations) {
     await requirePermission(tenant, 'platform:plans');
-    aiCommercialOverview = await withAdminTimeout(getAiCommercialControlOverview(), null);
+    [aiCommercialOverview, enterpriseAiContracts] = await Promise.all([
+      withAdminTimeout(getAiCommercialControlOverview(), null),
+      withAdminTimeout(listEnterpriseAiContracts(), []),
+    ]);
   }
 
   if (isDomainsRouting) {
@@ -153,7 +162,73 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
 
 
       {isAiOperations && aiCommercialOverview ? (
-        <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
+        <div className="space-y-6">
+          <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Enterprise AI customer contracts</CardTitle>
+              <CardDescription>
+                Create a tenant-specific recurring contract. Saving a change creates a new immutable billing version; verified payment activates the subscription entitlement.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Customer workspace slug
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Contract name
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="name" placeholder="Customer Enterprise AI" />
+                </label>
+                <label className="text-sm font-medium">
+                  Monthly price (USD)
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="monthlyPriceUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="100.00" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Included credits per billing period
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
+                </label>
+                <label className="text-sm font-medium lg:col-span-2">
+                  Description
+                  <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={2000} name="description" rows={3} />
+                </label>
+                <div className="lg:col-span-2">
+                  <p className="text-sm font-medium">Included capabilities</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Enterprise AI base access is always included. Add only capabilities covered by the customer contract.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {ENTERPRISE_AI_CONTRACT_ENTITLEMENTS.map((entitlement) => (
+                      <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs" key={entitlement}>
+                        <input defaultChecked={entitlement === 'workspace.ai.enterprise'} disabled={entitlement === 'workspace.ai.enterprise'} name={entitlement === 'workspace.ai.enterprise' ? undefined : 'entitlements'} type="checkbox" value={entitlement} />
+                        <span className="font-mono">{entitlement}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                  Create contract version
+                </button>
+              </form>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {(enterpriseAiContracts ?? []).length ? (enterpriseAiContracts ?? []).map((contract) => (
+                  <div className="rounded-xl border p-4" key={contract.versionId}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{contract.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{contract.tenant?.slug ?? 'Unknown tenant'} · version {contract.version}</p>
+                      </div>
+                      <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                        {contract.currency} {(Number(contract.amountMinor) / 100).toFixed(2)}/mo
+                      </span>
+                    </div>
+                    {contract.description ? <p className="mt-3 text-sm text-muted-foreground">{contract.description}</p> : null}
+                  </div>
+                )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
 
       {isDomainsRouting && domainResellerConnections ? (
