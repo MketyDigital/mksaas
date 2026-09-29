@@ -12,8 +12,26 @@ function required(name: string) {
 const databaseUrl = required('DOMAIN_ACCEPTANCE_DATABASE_URL');
 const encryptionKey = required('MKETY_CONNECTION_SECRET_ENCRYPTION_KEY');
 const runLifecycle = process.env.DOMAIN_ACCEPTANCE_LIFECYCLE === 'true';
-const contactRef = process.env.DOMAIN_ACCEPTANCE_CONTACT_REF?.trim() || '';
-if (runLifecycle && !contactRef) throw new Error('Lifecycle acceptance requires DOMAIN_ACCEPTANCE_CONTACT_REF.');
+const contactJson = process.env.DOMAIN_ACCEPTANCE_CONTACT_JSON?.trim() || '';
+let lifecycleContact: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  companyName?: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  phoneCountryCode: string;
+  phone: string;
+  faxCountryCode?: string;
+  fax?: string;
+} | null = null;
+if (runLifecycle) {
+  if (!contactJson) throw new Error('Lifecycle acceptance requires DOMAIN_ACCEPTANCE_CONTACT_JSON.');
+  lifecycleContact = JSON.parse(contactJson);
+}
 
 const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
@@ -68,7 +86,7 @@ try {
       domain,
       years: 1,
       idempotencyKey: 'domain-accept-register-' + crypto.randomUUID(),
-      contactRef,
+      contact: lifecycleContact!,
     });
     if (registered.domain !== domain || !registered.providerDomainRef) throw new Error('DomainNameAPI OT&E registration was not confirmed.');
 
