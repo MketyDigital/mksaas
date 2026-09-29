@@ -3,104 +3,194 @@
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import PostalMime from 'postal-mime';
 
 import { db } from '@/shared/db/cloudflare';
-import { mailMailboxes, mailMessages } from '@/shared/db/schema';
+import { mailMailboxes, mailMessages, mailThreads } from '@/shared/db/schema';
 
 import { storeMailContent } from './content';
 import { requireMailWorkspaceAccess } from './workspace';
 
-function unfoldHeaders(text:string){
-  return text.replace(/\r?\n[ \t]+/g,' ');
+function addressStrings(value: unknown): string[] {
+  const result: string[] = [];
+  const visit = (item: unknown) => {
+    if (!item || typeof item !== 'object') return;
+    const record = item as Record<string, unknown>;
+    if (typeof record.address === 'string' && record.address.trim()) {
+      result.push(record.address.trim().toLowerCase().slice(0, 320));
+    }
+    if (Array.isArray(record.group)) record.group.forEach(visit);
+  };
+  if (Array.isArray(value)) value.forEach(visit);
+  else visit(value);
+  return [...new Set(result)].slice(0, 100);
 }
 
-function parseHeaders(raw:string){
-  const normalized=raw.replace(/\r\n/g,'\n');
-  const split=normalized.indexOf('\n\n');
-  const headerText=unfoldHeaders(split>=0?normalized.slice(0,split):normalized);
-  const body=split>=0?normalized.slice(split+2):'';
-  const headers=new Map<string,string>();
-  for(const line of headerText.split('\n')){
-    const index=line.indexOf(':');
-    if(index<=0) continue;
-    const key=line.slice(0,index).trim().toLowerCase();
-    const value=line.slice(index+1).trim();
-    if(key&&!headers.has(key)) headers.set(key,value);
+function safeAttachmentFilename(value: unknown, index: number) {
+  const raw = typeof value === 'string' ? value : `attachment-${index + 1}`;
+  const normalized = raw
+    .replace(/[\\/\0]/g, '_')
+    .replace(/[^\p{L}\p{N}._()\- ]/gu, '_')
+    .trim();
+  return (normalized || `attachment-${index + 1}`).slice(0, 180);
+}
+
+function attachmentBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   }
-  return {headers,body};
+  if (typeof value === 'string') return new TextEncoder().encode(value);
+  return new Uint8Array();
 }
 
-function firstAddress(value:string|undefined){
-  if(!value) return '';
-  const angle=value.match(/<([^<>\s]+@[^<>\s]+)>/);
-  if(angle?.[1]) return angle[1].trim().toLowerCase();
-  const plain=value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  return plain?.[0]?.trim().toLowerCase()??'';
+function plainPreview(text: string, html: string) {
+  const source = text || html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return source.replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
-function addressList(value:string|undefined){
-  if(!value) return [] as string[];
-  return value.split(',').map((item)=>firstAddress(item)).filter(Boolean).slice(0,100);
-}
-
-export async function importMailEmlFiles(tenantSlug:string,formData:FormData){
-  const access=await requireMailWorkspaceAccess(tenantSlug);
-  const mailboxId=String(formData.get('mailboxId')||'');
-  const mailbox=await db.query.mailMailboxes.findFirst({
-    where:and(
-      eq(mailMailboxes.id,mailboxId),
-      eq(mailMailboxes.tenantId,access.tenant.id),
-      eq(mailMailboxes.status,'active'),
+export async function importMailEmlFiles(tenantSlug: string, formData: FormData) {
+  const access = await requireMailWorkspaceAccess(tenantSlug);
+  const mailboxId = String(formData.get('mailboxId') || '');
+  const mailbox = await db.query.mailMailboxes.findFirst({
+    where: and(
+      eq(mailMailboxes.id, mailboxId),
+      eq(mailMailboxes.tenantId, access.tenant.id),
+      eq(mailMailboxes.status, 'active'),
     ),
   });
-  if(!mailbox) redirect(`/t/${tenantSlug}/mail/migration?error=mailbox`);
+  if (!mailbox) redirect(`/t/${tenantSlug}/mail/migration?error=mailbox`);
 
-  const files=formData.getAll('files').filter((value):value is File=>value instanceof File&&value.size>0);
-  if(!files.length||files.length>20) redirect(`/t/${tenantSlug}/mail/migration?error=files`);
-  if(files.some((file)=>!file.name.toLowerCase().endsWith('.eml')&&file.type!=='message/rfc822')){
+  const files = formData
+    .getAll('files')
+    .filter((value): value is File => value instanceof File && value.size > 0);
+  if (!files.length || files.length > 20) {
+    redirect(`/t/${tenantSlug}/mail/migration?error=files`);
+  }
+  if (files.some((file) => !file.name.toLowerCase().endsWith('.eml') && file.type !== 'message/rfc822')) {
     redirect(`/t/${tenantSlug}/mail/migration?error=type`);
   }
-  const total=files.reduce((sum,file)=>sum+file.size,0);
-  if(total>25_000_000||files.some((file)=>file.size>10_000_000)){
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  if (total > 25_000_000 || files.some((file) => file.size > 10_000_000)) {
     redirect(`/t/${tenantSlug}/mail/migration?error=size`);
   }
 
-  let imported=0;
-  for(const file of files){
-    const bytes=new Uint8Array(await file.arrayBuffer());
-    const raw=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
-    const {headers,body}=parseHeaders(raw);
-    const from=firstAddress(headers.get('from'));
-    if(!from) continue;
+  let imported = 0;
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let parsed;
+    try {
+      parsed = await PostalMime.parse(bytes, {
+        attachmentEncoding: 'arraybuffer',
+        maxNestingDepth: 64,
+        maxHeadersSize: 1_000_000,
+        maxRfc822NestingDepth: 5,
+      });
+    } catch {
+      continue;
+    }
 
-    const messageId=crypto.randomUUID();
-    const rawR2Key=`mail/${access.tenant.id}/${mailbox.id}/migration/${messageId}/raw.eml`;
-    await storeMailContent(rawR2Key,bytes,'message/rfc822');
+    const from = addressStrings(parsed.from)[0] ?? '';
+    if (!from) continue;
 
-    const dateValue=headers.get('date');
-    const parsedDate=dateValue?new Date(dateValue):new Date();
-    const occurredAt=Number.isFinite(parsedDate.getTime())?parsedDate:new Date();
-    await db.insert(mailMessages).values({
-      id:messageId,
-      tenantId:access.tenant.id,
-      mailboxId:mailbox.id,
-      direction:'inbound',
-      providerMessageId:null,
-      internetMessageId:headers.get('message-id')?.slice(0,1000)||null,
-      fromAddress:from,
-      toJson:addressList(headers.get('to')),
-      ccJson:addressList(headers.get('cc')),
-      bccJson:[],
-      subject:headers.get('subject')?.slice(0,2000)||null,
-      preview:body.replace(/\s+/g,' ').trim().slice(0,240)||null,
-      rawR2Key,
-      status:'delivered',
-      folder:'inbox',
-      isRead:false,
-      receivedAt:occurredAt,
-      createdAt:occurredAt,
+    const to = addressStrings(parsed.to);
+    const cc = addressStrings(parsed.cc);
+    const bcc = addressStrings(parsed.bcc);
+    const text = typeof parsed.text === 'string' ? parsed.text.slice(0, 2_000_000) : '';
+    const html = typeof parsed.html === 'string' ? parsed.html.slice(0, 2_000_000) : '';
+    const subject = String(parsed.subject ?? '').slice(0, 500);
+    const occurredAtCandidate = parsed.date ? new Date(parsed.date) : new Date();
+    const occurredAt = Number.isFinite(occurredAtCandidate.getTime())
+      ? occurredAtCandidate
+      : new Date();
+
+    const messageId = crypto.randomUUID();
+    const baseKey = `mail/${access.tenant.id}/${mailbox.id}/migration/${messageId}`;
+    const rawR2Key = `${baseKey}/raw.eml`;
+    await storeMailContent(rawR2Key, bytes, 'message/rfc822');
+
+    let textR2Key: string | null = null;
+    let htmlR2Key: string | null = null;
+    if (text) {
+      textR2Key = `${baseKey}/body.txt`;
+      await storeMailContent(textR2Key, new TextEncoder().encode(text), 'text/plain; charset=utf-8');
+    }
+    if (html) {
+      htmlR2Key = `${baseKey}/body.html`;
+      await storeMailContent(htmlR2Key, new TextEncoder().encode(html), 'text/html; charset=utf-8');
+    }
+
+    const attachmentManifest: Array<{
+      filename: string;
+      contentType: string;
+      r2Key: string;
+      size: number;
+    }> = [];
+    for (let index = 0; index < parsed.attachments.length; index += 1) {
+      const attachment = parsed.attachments[index];
+      const attachmentContent = attachmentBytes(attachment.content);
+      if (!attachmentContent.byteLength) continue;
+      const filename = safeAttachmentFilename(attachment.filename, index);
+      const r2Key = `${baseKey}/attachments/${String(index + 1).padStart(3, '0')}-${filename}`;
+      const contentType = String(attachment.mimeType || 'application/octet-stream').slice(0, 255);
+      await storeMailContent(r2Key, attachmentContent, contentType);
+      attachmentManifest.push({
+        filename,
+        contentType,
+        r2Key,
+        size: attachmentContent.byteLength,
+      });
+    }
+    if (attachmentManifest.length) {
+      await storeMailContent(
+        `${baseKey}/attachments.json`,
+        new TextEncoder().encode(JSON.stringify(attachmentManifest)),
+        'application/json',
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      const [thread] = await tx.insert(mailThreads).values({
+        tenantId: access.tenant.id,
+        mailboxId: mailbox.id,
+        subject: subject || null,
+        status: 'open',
+        lastMessageAt: occurredAt,
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+      }).returning({ id: mailThreads.id });
+      if (!thread) throw new Error('Imported Mail thread could not be created.');
+
+      await tx.insert(mailMessages).values({
+        id: messageId,
+        tenantId: access.tenant.id,
+        mailboxId: mailbox.id,
+        threadId: thread.id,
+        direction: 'inbound',
+        providerMessageId: null,
+        internetMessageId: String(parsed.messageId ?? '').slice(0, 1000) || null,
+        fromAddress: from,
+        toJson: to,
+        ccJson: cc,
+        bccJson: bcc,
+        subject: subject || null,
+        preview: plainPreview(text, html) || null,
+        rawR2Key,
+        textR2Key,
+        htmlR2Key,
+        status: 'received',
+        folder: 'inbox',
+        isRead: false,
+        receivedAt: occurredAt,
+        createdAt: occurredAt,
+      });
     });
-    imported+=1;
+
+    imported += 1;
   }
 
   revalidatePath(`/t/${tenantSlug}/mail/inbox`);
