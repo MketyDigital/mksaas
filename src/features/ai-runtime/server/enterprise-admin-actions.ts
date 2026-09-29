@@ -77,50 +77,61 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
   const provisioned = await createCloudflareSaasHostname(hostname);
   const strictProviderVerified =
     provisioned.status === 'active' && provisioned.sslStatus === 'active';
-  const liveRouteProof = strictProviderVerified
-    ? null
-    : await probeEnterpriseAiHostnameRoute(hostname, tenant.id);
-  const verified =
-    strictProviderVerified ||
-    (liveRouteProof?.ok === true && liveRouteProof.tenantId === tenant.id);
-  const verificationMethod = strictProviderVerified
-    ? 'cloudflare'
-    : verified
-      ? 'live_route'
-      : 'pending';
-  const metadata = JSON.stringify({
+  const baseMetadata = {
     purpose: 'enterprise-ai',
     cnameTarget: provisioned.cnameTarget,
     cloudflareCustomHostnameId: provisioned.id,
     sslStatus: provisioned.sslStatus,
-    verificationMethod,
-    liveRouteVerifiedAt:
-      verified && verificationMethod === 'live_route'
-        ? new Date().toISOString()
-        : null,
+  };
+  const initialMetadata = JSON.stringify({
+    ...baseMetadata,
+    verificationMethod: strictProviderVerified ? 'cloudflare' : 'pending',
+    liveRouteVerifiedAt: null,
   });
-  const verification = JSON.stringify({
+  const initialVerification = JSON.stringify({
     provider: provisioned.ownershipVerification ?? {},
-    liveRouteProof,
+    liveRouteProof: null,
   });
 
+  let domainId = existing?.id;
   if (existing) {
     await db.update(customDomains).set({
       provider: 'cloudflare-for-saas',
-      providerVerified: metadata,
-      verification,
-      status: verified ? 'verified' : 'pending',
+      providerVerified: initialMetadata,
+      verification: initialVerification,
+      status: strictProviderVerified ? 'verified' : 'pending',
       updatedAt: new Date(),
     }).where(eq(customDomains.id, existing.id));
   } else {
-    await db.insert(customDomains).values({
+    const [created] = await db.insert(customDomains).values({
       tenantId: tenant.id,
       hostname,
       provider: 'cloudflare-for-saas',
-      providerVerified: metadata,
-      verification,
-      status: verified ? 'verified' : 'pending',
-    });
+      providerVerified: initialMetadata,
+      verification: initialVerification,
+      status: strictProviderVerified ? 'verified' : 'pending',
+    }).returning({ id: customDomains.id });
+    domainId = created?.id;
+  }
+  if (!domainId) throw new Error('Connected Enterprise AI hostname record could not be created.');
+
+  if (!strictProviderVerified) {
+    const liveRouteProof = await probeEnterpriseAiHostnameRoute(hostname, tenant.id);
+    const liveVerified =
+      liveRouteProof?.ok === true && liveRouteProof.tenantId === tenant.id;
+    await db.update(customDomains).set({
+      providerVerified: JSON.stringify({
+        ...baseMetadata,
+        verificationMethod: liveVerified ? 'live_route' : 'pending',
+        liveRouteVerifiedAt: liveVerified ? new Date().toISOString() : null,
+      }),
+      verification: JSON.stringify({
+        provider: provisioned.ownershipVerification ?? {},
+        liveRouteProof,
+      }),
+      status: liveVerified ? 'verified' : 'pending',
+      updatedAt: new Date(),
+    }).where(eq(customDomains.id, domainId));
   }
 
   const settings = await getTenantSettings(tenantSlug);
