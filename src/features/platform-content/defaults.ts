@@ -84,6 +84,12 @@ export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
       title: 'Manage',
       description: 'Keep projects, teams, usage, billing visibility, domains, and day-to-day operations organized.',
     },
+    {
+      key: 'domains',
+      title: 'Domains & DNS',
+      description: 'Register domains, connect custom hostnames, manage supported DNS records, and keep renewal/routing operations inside Mkety.',
+      href: '/domains',
+    },
   ],
   cta: { label: 'Explore Platform', href: '/platform' },
 };
