@@ -15,6 +15,7 @@ import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
+import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
 function channelProviderKey(channel: EnterpriseAiChannelKey) {
@@ -78,8 +79,25 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
 
   const endpointUrl = String(formData.get('endpointUrl') ?? '').trim() || null;
   if (endpointUrl) {
-    const parsed = new URL(endpointUrl);
-    if (parsed.protocol !== 'https:') throw new Error('Channel endpoints must use HTTPS.');
+    const common = { label: 'Channel endpoint' };
+    switch (channel.key) {
+      case 'whatsapp':
+      case 'instagram':
+      case 'facebook_messenger':
+        assertPublicHttpsUrl(endpointUrl, { ...common, allowedHosts: ['graph.facebook.com'] });
+        break;
+      case 'microsoft_teams':
+        assertPublicHttpsUrl(endpointUrl, {
+          ...common,
+          allowedSuffixes: ['.webhook.office.com', '.logic.azure.com', '.powerautomate.com'],
+        });
+        break;
+      case 'custom_webhook':
+        assertPublicHttpsUrl(endpointUrl, common);
+        break;
+      default:
+        assertPublicHttpsUrl(endpointUrl, common);
+    }
   }
 
   const submittedCredentials = channelCredentialsFromForm(formData);
