@@ -55,7 +55,9 @@ describe('app.mkety.com production repair workflow contract', () => {
     expect(source).toContain("'https://app.mkety.com/app'");
     expect(source).toContain("'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin'");
     expect(source).toContain("u.origin!=='https://auth.mkety.com'");
-    expect(source).toContain('workers_dev":false');
-    expect(source).toContain('preview_urls":false');
+    expect(source).toContain('/workers/scripts/$APP_WORKER_NAME/subdomain');
+    expect(source).toContain("curl -fsS -X DELETE");
+    expect(source).toContain("p.result?.enabled!==false");
+    expect(source).toContain("p.result?.previews_enabled!==false");
   });
 });
