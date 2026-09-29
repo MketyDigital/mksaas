@@ -338,8 +338,8 @@ jobs:
           set -euo pipefail
           api='https://api.cloudflare.com/client/v4'
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-          body='{"workers_dev":false,"preview_urls":false}'
-          curl -fsS -X PATCH "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/settings" >/dev/null
+          body='{"enabled":false,"previews_enabled":false}'
+          curl -fsS -X POST "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/subdomain" >/dev/null
 
       - name: Roll back app host binding if post-binding acceptance failed
         if: failure() && steps.bind.outputs.bound == 'true'
