@@ -33,7 +33,18 @@ describe('system-wide domain reseller service', () => {
     await expect(registerDomainAfterVerifiedSettlement({
       domain: 'example.com',
       years: 1,
-      contactRef: 'contact-1',
+      contact: {
+        firstName: 'Mfon',
+        lastName: 'Sambo',
+        email: 'owner@example.com',
+        address: '1 Example Street',
+        city: 'Uyo',
+        state: 'Akwa Ibom',
+        country: 'NG',
+        postalCode: '520001',
+        phoneCountryCode: '234',
+        phone: '8012345678',
+      },
       orderId: 'order-1',
       settlementVerified: false,
     })).rejects.toThrow('verified settlement');
@@ -45,7 +56,18 @@ describe('system-wide domain reseller service', () => {
     await registerDomainAfterVerifiedSettlement({
       domain: 'example.com',
       years: 1,
-      contactRef: 'contact-1',
+      contact: {
+        firstName: 'Mfon',
+        lastName: 'Sambo',
+        email: 'owner@example.com',
+        address: '1 Example Street',
+        city: 'Uyo',
+        state: 'Akwa Ibom',
+        country: 'NG',
+        postalCode: '520001',
+        phoneCountryCode: '234',
+        phone: '8012345678',
+      },
       orderId: 'order-1',
       settlementVerified: true,
     });
