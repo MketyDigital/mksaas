@@ -27,6 +27,8 @@ export const env = createEnv({
     MKETY_AI_API_KEY: z.string().optional(),
     MKETY_AI_BASE_URL: z.url().optional(),
     MKETY_CONNECTION_SECRET_ENCRYPTION_KEY: z.string().min(32).optional(),
+    MKETY_DOMAIN_RELAY_URL: z.url().optional(),
+    MKETY_DOMAIN_RELAY_SECRET: z.string().min(32).optional(),
     // Deprecated migration fallback; prefer MKETY_CONNECTION_SECRET_ENCRYPTION_KEY.
     MKETY_AI_BYOK_ENCRYPTION_KEY: z.string().min(32).optional(),
 
@@ -118,6 +120,8 @@ export const env = createEnv({
     MKETY_AI_API_KEY: process.env.MKETY_AI_API_KEY,
     MKETY_AI_BASE_URL: process.env.MKETY_AI_BASE_URL,
     MKETY_CONNECTION_SECRET_ENCRYPTION_KEY: process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY,
+    MKETY_DOMAIN_RELAY_URL: process.env.MKETY_DOMAIN_RELAY_URL,
+    MKETY_DOMAIN_RELAY_SECRET: process.env.MKETY_DOMAIN_RELAY_SECRET,
     MKETY_AI_BYOK_ENCRYPTION_KEY: process.env.MKETY_AI_BYOK_ENCRYPTION_KEY,
     MKETY_PUBLIC_AI_ENABLED: process.env.MKETY_PUBLIC_AI_ENABLED,
     MKETY_PUBLIC_AI_PRIMARY_PROVIDER: process.env.MKETY_PUBLIC_AI_PRIMARY_PROVIDER,
