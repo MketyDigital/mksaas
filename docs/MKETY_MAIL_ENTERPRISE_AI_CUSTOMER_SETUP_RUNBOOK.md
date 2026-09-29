@@ -117,9 +117,16 @@ The following are required before Starpips acceptance starts:
 - [ ] execute guarded `mkety-ai-production.yml` on the exact verified main SHA and verify `ai.mkety.com`;
 - [ ] verify `api.mkety.com/v1/ai` through the production host;
 - [ ] provision and verify `mkety-ai-delivery` Queue/DLQ and scheduler worker;
-- [ ] exact-head CI and product-host acceptance;
+- [x] pre-merge implementation exact-head CI/candidate acceptance on `5e85c2331208d5c49380cec77683c352e8fcf2ad` (CI `36563958996`, migration `36563959225`, vinext `36563959181`, workspace smoke `36563959122`, public candidate `36563959073`);
+- [ ] production product-host acceptance on the exact merged `main` SHA;
 - [ ] only then begin a real customer acceptance;
 - [ ] only after that intentionally enable production customer inference.
+
+## Stabilization certification note
+
+Pre-merge implementation certification is closed on code SHA `5e85c2331208d5c49380cec77683c352e8fcf2ad`. The final documentation-only reconciliation head still receives normal CI before merge, but it does not reopen the already-passed staging commercial/runtime acceptance unless executable behavior changes.
+
+Production Enterprise AI inference remains OFF. No Starpips acceptance has started. The next Enterprise AI steps require the merged main SHA: guarded production deployment, `ai.mkety.com` / `api.mkety.com/v1/ai` host verification, delivery Queue/DLQ/scheduler verification, then controlled real-customer acceptance.
 
 ## Mkety Mail product model
 
@@ -188,7 +195,7 @@ It reuses central Mkety identity, tenant membership, roles/PBAC, Billing and Ent
 - [x] database-backed versioned pricing path in stabilization PR;
 - [x] Admin Mail operations surface;
 - [x] public Mail page and checkout consume active plan version in stabilization PR;
-- [ ] exact-head CI for current stabilization changes;
+- [x] implementation exact-head CI for current stabilization changes on `5e85c2331208d5c49380cec77683c352e8fcf2ad`;
 - [ ] verify production `mail.mkety.com` host and current deployed SHA;
 - [ ] verify production Mail database migrations;
 - [ ] verify R2/Queue/ingress/dispatch bindings and Workers;
