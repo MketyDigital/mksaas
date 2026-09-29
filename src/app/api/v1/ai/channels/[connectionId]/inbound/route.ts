@@ -19,7 +19,6 @@ import {
 } from '@/features/ai-runtime/channels/server/conversations';
 import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
-import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
@@ -239,55 +238,29 @@ export async function POST(
               : undefined,
         });
         if (turn.kind === 'completed' && turn.text) {
-          if (turn.deliveryDelaySeconds > 0) {
-            const action = await scheduleEnterpriseAiAction({
-              tenantId: connection.tenantId!,
-              conversationId: turn.conversationId,
-              solutionInstanceId:
-                typeof connection.metadata.solutionInstanceId === 'string'
-                  ? connection.metadata.solutionInstanceId
-                  : null,
-              connectionId: connection.id,
-              kind: 'delayed_reply',
-              idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
-              dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
-              payload: {
-                recipientId: inbound.replyRecipientId,
-                contextId: inbound.conversationId,
-                text: turn.text,
-                sourceProviderMessageId: inbound.providerMessageId,
-              },
-            });
-            await enqueueEnterpriseAiScheduledAction({
-              actionId: action.id,
-              tenantId: connection.tenantId!,
-              delaySeconds: turn.deliveryDelaySeconds,
-            }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
-          } else {
-            const delivery = await deliverEnterpriseAiChannelMessage(
-              {
-                channel: channel.key,
-                endpointUrl: connection.endpointUrl,
-                metadata: connection.metadata,
-                credentials,
-              },
-              {
-                recipientId: inbound.replyRecipientId,
-                contextId: inbound.conversationId,
-                text: turn.text,
-              },
-            );
-            await recordEnterpriseAiMessage({
-              tenantId: connection.tenantId!,
-              conversationId: turn.conversationId,
-              requestId: turn.requestId,
-              direction: 'outbound',
-              role: 'assistant',
-              providerMessageId: delivery.providerMessageId ?? null,
-              content: turn.text,
-            });
-            await markEnterpriseAiConversationOutbound(turn.conversationId, connection.tenantId!);
-          }
+          const action = await scheduleEnterpriseAiAction({
+            tenantId: connection.tenantId!,
+            conversationId: turn.conversationId,
+            solutionInstanceId:
+              typeof connection.metadata.solutionInstanceId === 'string'
+                ? connection.metadata.solutionInstanceId
+                : null,
+            connectionId: connection.id,
+            kind: 'delayed_reply',
+            idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
+            dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
+            payload: {
+              recipientId: inbound.replyRecipientId,
+              contextId: inbound.conversationId,
+              text: turn.text,
+              sourceProviderMessageId: inbound.providerMessageId,
+            },
+          });
+          await enqueueEnterpriseAiScheduledAction({
+            actionId: action.id,
+            tenantId: connection.tenantId!,
+            delaySeconds: turn.deliveryDelaySeconds,
+          }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
         }
       })().catch(() => undefined));
     }
@@ -331,56 +304,30 @@ export async function POST(
     });
 
     if (turn.kind === 'completed' && turn.text) {
-      if (turn.deliveryDelaySeconds > 0) {
-        const action = await scheduleEnterpriseAiAction({
-          tenantId: connection.tenantId,
-          conversationId: turn.conversationId,
-          solutionInstanceId:
-            typeof connection.metadata.solutionInstanceId === 'string'
-              ? connection.metadata.solutionInstanceId
-              : null,
-          connectionId: connection.id,
-          kind: 'delayed_reply',
-          idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
-          dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
-          payload: {
-            recipientId: inbound.replyRecipientId,
-            replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
-            contextId: inbound.conversationId,
-            text: turn.text,
-            sourceProviderMessageId: inbound.providerMessageId,
-          },
-        });
-        await enqueueEnterpriseAiScheduledAction({
-          actionId: action.id,
-          tenantId: connection.tenantId,
-          delaySeconds: turn.deliveryDelaySeconds,
-        }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
-      } else {
-        const delivery = await deliverEnterpriseAiChannelMessage(
-          {
-            channel: channel.key,
-            endpointUrl: connection.endpointUrl,
-            metadata: connection.metadata,
-            credentials,
-          },
-          {
-            recipientId: inbound.replyRecipientId,
-            text: turn.text,
-            replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
-          },
-        );
-        await recordEnterpriseAiMessage({
-          tenantId: connection.tenantId,
-          conversationId: turn.conversationId,
-          requestId: turn.requestId,
-          direction: 'outbound',
-          role: 'assistant',
-          providerMessageId: delivery.providerMessageId ?? null,
-          content: turn.text,
-        });
-        await markEnterpriseAiConversationOutbound(turn.conversationId, connection.tenantId);
-      }
+      const action = await scheduleEnterpriseAiAction({
+        tenantId: connection.tenantId,
+        conversationId: turn.conversationId,
+        solutionInstanceId:
+          typeof connection.metadata.solutionInstanceId === 'string'
+            ? connection.metadata.solutionInstanceId
+            : null,
+        connectionId: connection.id,
+        kind: 'delayed_reply',
+        idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
+        dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
+        payload: {
+          recipientId: inbound.replyRecipientId,
+          replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
+          contextId: inbound.conversationId,
+          text: turn.text,
+          sourceProviderMessageId: inbound.providerMessageId,
+        },
+      });
+      await enqueueEnterpriseAiScheduledAction({
+        actionId: action.id,
+        tenantId: connection.tenantId,
+        delaySeconds: turn.deliveryDelaySeconds,
+      }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
     }
 
     // Duplicate provider webhook retries intentionally do not re-run AI.
