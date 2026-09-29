@@ -32,6 +32,16 @@ describe('Enterprise AI true white-label and domain contract', () => {
     expect(source).toContain("metadata.managed === true");
   });
 
+  it('accepts externally proxied customer DNS when HTTPS proves the exact tenant', async () => {
+    const acceptance = await readFile('scripts/accept-enterprise-ai-white-label-domain.ts', 'utf8');
+    expect(acceptance).toContain('resolve4');
+    expect(acceptance).toContain('resolve6');
+    expect(acceptance).toContain('dnsResolvable');
+    expect(acceptance).toContain('dnsCnameVerified');
+    expect(acceptance).toContain('/api/v1/ai/domain-route-proof');
+    expect(acceptance).not.toContain('Live DNS CNAME does not match Mkety target');
+  });
+
   it('keeps white-label hosts on the customer app instead of the Mkety management console', async () => {
     const source = await readFile('src/proxy.ts', 'utf8');
     expect(source).toContain('/enterprise-ai/customer');
