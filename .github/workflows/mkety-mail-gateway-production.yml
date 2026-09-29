@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - '.github/workflows/mkety-mail-gateway-production.yml'
+      - '.github/workflows/mkety-mail-production.yml'
       - 'ops/mail-gateway/**'
       - 'src/app/api/internal/mail/gateway/**'
       - 'src/features/mail/server/gateway-auth.ts'
