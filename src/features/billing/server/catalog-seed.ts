@@ -38,16 +38,10 @@ export async function seedSelfServiceBillingCatalog(): Promise<BillingCatalogSee
         })
         .returning();
       result.plansCreated += 1;
-    } else if (
-      planRow.name !== plan.name ||
-      planRow.description !== plan.description ||
-      planRow.status !== 'active'
-    ) {
+    } else if (planRow.status !== 'active') {
       [planRow] = await db
         .update(billingPlans)
         .set({
-          name: plan.name,
-          description: plan.description,
           status: 'active',
           updatedAt: new Date(),
         })
@@ -86,18 +80,14 @@ export async function seedSelfServiceBillingCatalog(): Promise<BillingCatalogSee
         })
         .returning();
       result.versionsCreated += 1;
-    } else {
-      const matchesCanonicalVersion =
-        versionRow.amountMinor === plan.amountMinor &&
-        versionRow.currency === plan.currency &&
-        versionRow.billingInterval === plan.billingInterval &&
-        versionRow.isPublic;
-
-      if (!matchesCanonicalVersion) {
-        throw new Error(
-          `Active billing version for ${plan.key} conflicts with the canonical self-service catalog. Create a new explicit plan version instead of rewriting history.`,
-        );
-      }
+    } else if (
+      versionRow.currency !== plan.currency ||
+      versionRow.billingInterval !== plan.billingInterval ||
+      !versionRow.isPublic
+    ) {
+      throw new Error(
+        `Active billing version for ${plan.key} uses an unsupported self-service currency, interval, or visibility setting.`,
+      );
     }
 
     for (const entitlementKey of plan.entitlements) {
