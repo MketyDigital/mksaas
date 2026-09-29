@@ -143,6 +143,10 @@ export async function POST(
           providerMessageId: inbound.providerMessageId,
           senderId: inbound.senderId,
           text: inbound.text,
+          solutionInstanceId:
+            typeof connection.metadata.solutionInstanceId === 'string'
+              ? connection.metadata.solutionInstanceId
+              : null,
           requestedModel:
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
@@ -198,6 +202,10 @@ export async function POST(
           providerMessageId: inbound.providerMessageId,
           senderId: inbound.senderId,
           text: inbound.text,
+          solutionInstanceId:
+            typeof connection.metadata.solutionInstanceId === 'string'
+              ? connection.metadata.solutionInstanceId
+              : null,
           requestedModel:
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
