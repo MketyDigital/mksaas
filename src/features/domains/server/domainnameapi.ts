@@ -14,6 +14,10 @@ export interface DomainNameApiConfig {
   baseUrl?: string;
   nameServers?: string[];
   whoisPrivacy?: boolean;
+  registrationMarkupPercent?: number;
+  renewalMarkupPercent?: number;
+  registrationFixedMarkupMinor?: bigint;
+  renewalFixedMarkupMinor?: bigint;
   relayUrl?: string;
   relaySecret?: string;
   relaySecretSeed?: string;
@@ -59,6 +63,18 @@ function parseMoneyMinor(value: unknown) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric < 0) return null;
   return BigInt(Math.round(numeric * 100));
+}
+
+function applyMarkup(
+  providerMinor: bigint | null,
+  percent: number | undefined,
+  fixedMinor: bigint | undefined,
+) {
+  if (providerMinor === null) return null;
+  const normalizedPercent = Number.isFinite(percent) ? Math.max(0, Number(percent)) : 0;
+  const basisPoints = BigInt(Math.round(normalizedPercent * 100));
+  const percentAmount = (providerMinor * basisPoints + 9999n) / 10000n;
+  return providerMinor + percentAmount + (fixedMinor ?? 0n);
 }
 
 function parseDate(value: unknown) {
@@ -244,11 +260,32 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
 
     const status = findValue(item, ['status', 'available', 'isAvailable']);
     const available = typeof status === 'boolean' ? status : successStatus(status) ?? false;
+    const providerRegistrationPriceMinor = parseMoneyMinor(
+      findValue(item, ['price', 'registrationPrice', 'registerPrice']),
+    );
+    const providerRenewalPriceMinor = parseMoneyMinor(
+      findValue(item, ['renewalPrice', 'renewPrice']),
+    );
+
     return {
       domain,
       available,
-      registrationPriceMinor: parseMoneyMinor(findValue(item, ['price', 'registrationPrice', 'registerPrice'])),
-      renewalPriceMinor: parseMoneyMinor(findValue(item, ['renewalPrice', 'renewPrice'])),
+      providerRegistrationPriceMinor,
+      providerRenewalPriceMinor,
+      registrationMarkupPercent: this.config.registrationMarkupPercent ?? 0,
+      renewalMarkupPercent: this.config.renewalMarkupPercent ?? 0,
+      registrationFixedMarkupMinor: this.config.registrationFixedMarkupMinor ?? 0n,
+      renewalFixedMarkupMinor: this.config.renewalFixedMarkupMinor ?? 0n,
+      registrationPriceMinor: applyMarkup(
+        providerRegistrationPriceMinor,
+        this.config.registrationMarkupPercent,
+        this.config.registrationFixedMarkupMinor,
+      ),
+      renewalPriceMinor: applyMarkup(
+        providerRenewalPriceMinor,
+        this.config.renewalMarkupPercent,
+        this.config.renewalFixedMarkupMinor,
+      ),
       currency: String(findValue(item, ['currency', 'currencyCode']) ?? 'USD').toUpperCase(),
       providerQuoteRef: String(findValue(item, ['quoteId', 'requestId']) ?? '') || null,
     };
