@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import { customDomains } from '@/shared/db/schema';
+import { assertPublicHostname } from '@/shared/security/outbound-url';
 
 type RouteProof = {
   ok: boolean;
@@ -15,11 +16,12 @@ export async function probeEnterpriseAiHostnameRoute(
   expectedTenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<RouteProof> {
+  const safeHostname = assertPublicHostname(hostname, 'Enterprise AI route-proof hostname');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const response = await fetchImpl(
-      `https://${hostname}/api/v1/ai/domain-route-proof`,
+      `https://${safeHostname}/api/v1/ai/domain-route-proof`,
       {
         method: 'GET',
         redirect: 'error',
@@ -38,11 +40,11 @@ export async function probeEnterpriseAiHostnameRoute(
     };
     const ok =
       body.ok === true &&
-      body.hostname === hostname &&
+      body.hostname === safeHostname &&
       body.tenant_id === expectedTenantId;
     return {
       ok,
-      hostname,
+      hostname: safeHostname,
       tenantId: body.tenant_id,
       ...(ok ? {} : { reason: 'route_probe_tenant_mismatch' }),
     };
