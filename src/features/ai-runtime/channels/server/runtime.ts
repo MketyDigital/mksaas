@@ -50,6 +50,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   text: string;
   solutionInstanceId?: string | null;
   requestedModel?: string;
+  testMode?: boolean;
 }): Promise<EnterpriseAiManagedChannelTurnResult> {
   const policy = await getEnterpriseAiRuntimePolicy();
   if (!policy.customerInferenceEnabled) return { kind: 'disabled' };
