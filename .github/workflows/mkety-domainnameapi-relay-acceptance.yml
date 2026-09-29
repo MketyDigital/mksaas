@@ -1,11 +1,6 @@
 name: Mkety DomainNameAPI Fixed-Egress Acceptance
 
 on:
-  push:
-    branches:
-      - feat/enterprise-ai-complete-platform-20260928
-    paths:
-      - .github/workflows/mkety-domainnameapi-relay-acceptance.yml
   workflow_dispatch:
 
 permissions:
