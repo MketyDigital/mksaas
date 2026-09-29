@@ -192,7 +192,24 @@ jobs:
             echo 'Trusted Mail TCP service exists but is not the managed Mkety gateway; refusing takeover.'
             exit 1
           fi
-          echo "Existing managed app: ${uuid:-none}; IMAP TLS=$imap; SMTP TLS=$smtp"
+
+          reuse_tls=false
+          if [ -n "$uuid" ] && [ "$imap" = true ] && [ "$smtp" = true ]; then
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/envs" -o /tmp/existing-envs.json
+            if node <<'NODE'
+          const rows=require('/tmp/existing-envs.json');
+          const keys=new Set((Array.isArray(rows)?rows:[]).map(v=>String(v?.key||'')));
+          process.exit(
+            keys.has('MKETY_MAIL_GATEWAY_TLS_CERT_B64') &&
+            keys.has('MKETY_MAIL_GATEWAY_TLS_KEY_B64') ? 0 : 1
+          );
+          NODE
+            then
+              reuse_tls=true
+            fi
+          fi
+          echo "reuse_tls=$reuse_tls" >> "$GITHUB_OUTPUT"
+          echo "Existing managed app: ${uuid:-none}; IMAP TLS=$imap; SMTP TLS=$smtp; reuse TLS=$reuse_tls"
 
       - name: Resolve Coolify server address and Cloudflare zone
         id: network
@@ -321,15 +338,22 @@ jobs:
           echo "::add-mask::$zone_id"
           echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
 
-      - name: Issue public TLS certificate with DNS-01
+      - name: Issue public TLS certificate with DNS-01 only when needed
         id: tls
         shell: bash
         env:
+          REUSE_TLS: ${{ steps.existing.outputs.reuse_tls }}
           CF_Token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_Account_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_Zone_ID: ${{ steps.network.outputs.zone_id }}
         run: |
           set -euo pipefail
+          if [ "$REUSE_TLS" = true ]; then
+            echo 'Existing managed gateway already serves trusted TLS on both hosts and retains its certificate/key environment; reusing it.'
+            echo 'issued=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null
           ~/.acme.sh/acme.sh --issue --dns dns_cf             -d imap.mkety.com -d smtp.mkety.com             --keylength ec-256 --server letsencrypt >/tmp/acme.log 2>&1 || {
               sed -E 's/(token|key|secret)[=: ]+[^ ]+/\1=***/gi' /tmp/acme.log | tail -80
@@ -340,6 +364,7 @@ jobs:
           openssl verify -CAfile <(curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem) /tmp/mail-gateway-tls/fullchain.pem >/dev/null || true
           openssl x509 -in /tmp/mail-gateway-tls/fullchain.pem -noout -checkhost imap.mkety.com >/dev/null
           openssl x509 -in /tmp/mail-gateway-tls/fullchain.pem -noout -checkhost smtp.mkety.com >/dev/null
+          echo 'issued=true' >> "$GITHUB_OUTPUT"
           echo 'Public TLS certificate issued for both gateway hosts.'
 
       - name: Derive isolated gateway secret
@@ -442,8 +467,12 @@ jobs:
           }
           upsert MKETY_MAIL_GATEWAY_API_BASE_URL 'https://api.mkety.com'
           upsert MKETY_MAIL_GATEWAY_INTERNAL_SECRET "$MKETY_MAIL_GATEWAY_SECRET"
-          upsert MKETY_MAIL_GATEWAY_TLS_CERT_B64 "$(base64 -w0 /tmp/mail-gateway-tls/fullchain.pem)"
-          upsert MKETY_MAIL_GATEWAY_TLS_KEY_B64 "$(base64 -w0 /tmp/mail-gateway-tls/key.pem)"
+          if [ -f /tmp/mail-gateway-tls/fullchain.pem ] && [ -f /tmp/mail-gateway-tls/key.pem ]; then
+            upsert MKETY_MAIL_GATEWAY_TLS_CERT_B64 "$(base64 -w0 /tmp/mail-gateway-tls/fullchain.pem)"
+            upsert MKETY_MAIL_GATEWAY_TLS_KEY_B64 "$(base64 -w0 /tmp/mail-gateway-tls/key.pem)"
+          else
+            echo 'Reusing existing gateway TLS certificate/key environment without modification.'
+          fi
 
       - name: Synchronize gateway secret to production Mkety app
         shell: bash
