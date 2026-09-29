@@ -25,6 +25,23 @@ describe('app.mkety.com platform host contract', () => {
     expect(appRedirect).toBeLessThan(genericPublic);
   });
 
+  it('keeps authenticated application routes off the public mkety.com host', async () => {
+    const source = await readFile(PROXY_PATH, 'utf8');
+
+    expect(source).toContain("pathname === '/app'");
+    expect(source).toContain("pathname === '/select-tenant'");
+    expect(source).toContain("pathname === '/create-workspace'");
+    expect(source).toContain("pathname.startsWith('/t/')");
+    expect(source).toContain("'https://mail.mkety.com'");
+    expect(source).toContain("'https://ai.mkety.com'");
+
+    const publicHostRedirect = source.indexOf('getPublicHostProductRedirect(requestUrl)');
+    const authRead = source.indexOf('const session = await auth(request)');
+    expect(publicHostRedirect).toBeGreaterThan(-1);
+    expect(authRead).toBeGreaterThan(-1);
+    expect(publicHostRedirect).toBeLessThan(authRead);
+  });
+
   it('keeps app.mkety.com out of generic customer custom-domain resolution', async () => {
     const source = await readFile(PROXY_PATH, 'utf8');
     expect(source).toContain('hostname === appHost ||');
