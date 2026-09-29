@@ -7,6 +7,7 @@ if (sharedSecret.length < 32) throw new Error('MKETY_DOMAIN_RELAY_SECRET must be
 
 const LIVE_BASE = 'https://api.domainresellerapi.com';
 const OTE_BASE = 'https://ote.domainresellerapi.com';
+const seenNonces = new Map();
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/v1/domain/check' }],
   ['register', { method: 'POST', path: '/v1/domain/register' }],
@@ -62,6 +63,15 @@ const server = createServer(async (req, res) => {
     }
 
     const input = JSON.parse(rawBody);
+    const nonce = String(input.nonce || '');
+    if (!/^[0-9a-f-]{36}$/i.test(nonce)) return json(res, 400, { error: 'invalid_nonce' });
+    const now = Date.now();
+    for (const [value, expiresAt] of seenNonces) {
+      if (expiresAt <= now) seenNonces.delete(value);
+    }
+    if (seenNonces.has(nonce)) return json(res, 409, { error: 'replayed_request' });
+    seenNonces.set(nonce, now + 60_000);
+
     const operation = ALLOWED.get(String(input.operation || ''));
     if (!operation) return json(res, 400, { error: 'unsupported_operation' });
     if (input.environment !== 'production' && input.environment !== 'ote') {
