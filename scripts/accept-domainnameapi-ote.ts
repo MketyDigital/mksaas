@@ -40,6 +40,8 @@ try {
     baseUrl: row.endpoint_url ? String(row.endpoint_url) : undefined,
     nameServers,
     whoisPrivacy: config.whoisPrivacy !== false,
+    relayUrl: process.env.MKETY_DOMAIN_RELAY_URL,
+    relaySecret: process.env.MKETY_DOMAIN_RELAY_SECRET,
   });
 
   const label = 'mkety-accept-' + Date.now() + '-' + crypto.randomUUID().slice(0, 8);
