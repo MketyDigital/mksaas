@@ -179,7 +179,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     return Array.from(bits, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
-  private async relayRequest(operation: 'quote' | 'register' | 'renew', payload: Record<string, unknown>) {
+  private async relayRequest(operation: 'quote' | 'pricing' | 'register' | 'renew', payload: Record<string, unknown>) {
     if (!this.relayUrl) throw new Error('DomainNameAPI relay is not configured.');
     const relaySecret = await this.resolveRelaySecret();
     const timestamp = String(Date.now());
@@ -248,6 +248,40 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     );
   }
 
+
+  private async productCatalog() {
+    const result = this.relayUrl
+      ? await this.relayRequest('pricing', { maxResultCount: 500 })
+      : await this.providerRequest('products/tlds?MaxResultCount=500&SkipCount=0', 'GET');
+    if (!result.response.ok) {
+      throw new Error(`DomainNameAPI pricing failed (${result.response.status}).`);
+    }
+    return result.payload;
+  }
+
+  private async renewalPriceForTld(tld: string, years: number) {
+    try {
+      const payload = await this.productCatalog();
+      const items = Array.isArray(payload)
+        ? payload
+        : (asRecord(payload)?.items as unknown[] | undefined) ?? [];
+      const record = items.find((entry) => String(findValue(entry, ['name', 'tld']) ?? '').replace(/^\./, '').toLowerCase() === tld);
+      if (!record) return { price: null as bigint | null, currency: null as string | null };
+      const prices = findValue(record, ['prices']);
+      const buckets = Array.isArray(prices) ? prices : [];
+      const first = buckets[0];
+      const renew = findValue(first, ['renew']);
+      const renewEntries = Array.isArray(renew) ? renew : renew ? [renew] : [];
+      const exact = renewEntries.find((entry) => Number(findValue(entry, ['period']) ?? 1) === years) ?? renewEntries[0];
+      return {
+        price: parseMoneyMinor(findValue(exact, ['price'])),
+        currency: String(findValue(exact, ['currency']) ?? '').toUpperCase() || null,
+      };
+    } catch {
+      return { price: null as bigint | null, currency: null as string | null };
+    }
+  }
+
   async quote(domainValue: string, years = 1): Promise<DomainQuote> {
     const domain = normalizeDomain(domainValue);
     const payload = await this.execute('quote', 'domains/bulk-search', { domainName: domain, period: years });
@@ -263,9 +297,16 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     const providerRegistrationPriceMinor = parseMoneyMinor(
       findValue(item, ['price', 'registrationPrice', 'registerPrice']),
     );
-    const providerRenewalPriceMinor = parseMoneyMinor(
+    let providerRenewalPriceMinor = parseMoneyMinor(
       findValue(item, ['renewalPrice', 'renewPrice']),
     );
+    let catalogCurrency: string | null = null;
+    if (providerRenewalPriceMinor === null) {
+      const tld = domain.split('.').at(-1)!;
+      const catalog = await this.renewalPriceForTld(tld, years);
+      providerRenewalPriceMinor = catalog.price;
+      catalogCurrency = catalog.currency;
+    }
 
     return {
       domain,
@@ -286,7 +327,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
         this.config.renewalMarkupPercent,
         this.config.renewalFixedMarkupMinor,
       ),
-      currency: String(findValue(item, ['currency', 'currencyCode']) ?? 'USD').toUpperCase(),
+      currency: String(findValue(item, ['currency', 'currencyCode']) ?? catalogCurrency ?? 'USD').toUpperCase(),
       providerQuoteRef: String(findValue(item, ['quoteId', 'requestId']) ?? '') || null,
     };
   }
