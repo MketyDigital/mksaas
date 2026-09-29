@@ -158,8 +158,8 @@ export default async function MketyMailPublicPage() {
         </h1>
         <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
           Run branded business inboxes on your own domain, shared support and sales inboxes, customer updates,
-          transactional application email, mail-client access, delivery analytics and domain controls with one
-          Mkety account and clear commercial limits.
+          transactional application email, delivery analytics and domain controls with one Mkety account and clear commercial limits.
+          External mail-client access will be enabled only after the dedicated gateway is production-certified.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <a href="#mail-plans" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">
