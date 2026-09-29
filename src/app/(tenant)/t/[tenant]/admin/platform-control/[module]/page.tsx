@@ -14,6 +14,7 @@ import { PaymentSettingsForm } from '@/features/payments/components/PaymentSetti
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
 import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
+import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
 import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 
@@ -36,6 +37,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
   'ai-operations': ['Review cost protection', 'Manage safe limits', 'Create future rate versions', 'Emergency-disable inference'],
   'mail-operations': ['Reconcile Mail plans', 'Operate tenant Mail state', 'Manage domain sending/routing', 'Review Mail readiness'],
+  'media-connector': ['Link tenant to existing Media workspace', 'Suspend or disconnect a link', 'Record operator verification note', 'Review linked tenant references'],
   'media-connector': ['Link verified Media workspaces', 'Suspend or disconnect links', 'Review external workspace references', 'Preserve standalone Media billing'],
   'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
@@ -119,6 +121,11 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   if (isMediaConnector) {
     await requirePermission(tenant, 'platform:plans');
     mediaLinks = await withAdminTimeout(listMediaTenantLinks(), []);
+  }
+
+  if (isMediaConnector) {
+    await requirePermission(tenant, 'platform:plans');
+    mediaTenantLinks = await withAdminTimeout(listMediaTenantLinks(), []);
   }
 
   if (isDomainsRouting) {
@@ -292,6 +299,66 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                   </div>
                 )) : (
                   <p className="text-sm text-muted-foreground">No Mkety tenant is linked to Media yet.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {isMediaConnector && mediaTenantLinks ? (
+        <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Mkety Media tenant connector</CardTitle>
+              <CardDescription>
+                Link a Mkety tenant to an existing standalone Media workspace. This stores only a verified external reference and status; Media credentials, subscription state and runtime stay outside the Platform.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <form action={saveMediaTenantLink.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Mkety customer workspace slug
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Existing Media workspace reference
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={255} name="externalWorkspaceRef" placeholder="media workspace/account reference" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Link status
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="linked" name="status">
+                    <option value="linked">Linked</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="disconnected">Disconnected</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium lg:col-span-2">
+                  Verification note
+                  <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={1000} name="note" placeholder="Optional operator note describing how this external Media workspace was verified." rows={3} />
+                </label>
+                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2" type="submit">
+                  Save verified Media link
+                </button>
+              </form>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {mediaTenantLinks.length ? mediaTenantLinks.map((link) => (
+                  <div className="rounded-xl border p-4" key={link.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{link.tenantName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{link.tenantSlug}</p>
+                      </div>
+                      <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">{link.status}</span>
+                    </div>
+                    <p className="mt-3 font-mono text-xs">{link.externalWorkspaceRef}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Updated {link.updatedAt.toLocaleString()}
+                    </p>
+                  </div>
+                )) : (
+                  <p className="text-sm text-muted-foreground">No tenant has been linked to Mkety Media yet.</p>
                 )}
               </div>
             </CardContent>
