@@ -45,7 +45,7 @@ export function DomainResellerControlPanel({
         <CardHeader>
           <CardTitle>Configure / rotate DomainNameAPI</CardTitle>
           <CardDescription>
-            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use the numerical V2 Reseller ID from Integration Details. Pair it with the Test Environment API Key for OT&amp;E, or the Live Environment API Key for production.
+            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use the exact V2 Reseller ID shown in your DomainNameAPI account. Pair it with the Test Environment API Key for OT&amp;E, or the Live Environment API Key for production.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -58,7 +58,7 @@ export function DomainResellerControlPanel({
               </select>
             </label>
             <label className="text-sm font-medium">
-              Reseller ID (V2, numbers only)
+              Reseller ID (V2, exactly as issued)
               <input autoComplete="off" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="resellerId" required />
             </label>
             <label className="text-sm font-medium">
