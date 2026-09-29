@@ -5,6 +5,7 @@ import { count, desc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { auditEvents, persons } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 import { logger } from '@/shared/lib/logger';
 
 export interface DashboardStats {
@@ -26,17 +27,23 @@ export interface DashboardStatsResult {
   error?: string;
 }
 
-export async function getDashboardStats(tenantId: string): Promise<DashboardStatsResult> {
+export async function getDashboardStats(tenantSlug: string): Promise<DashboardStatsResult> {
   try {
-    const session = await auth();
+    const [session, tenant] = await Promise.all([
+      auth(),
+      getTenantBySlug(tenantSlug),
+    ]);
     if (!session?.user?.email) {
       return { success: false, error: 'Not authenticated' };
     }
+    if (!tenant || !(tenant.slug in (session.user.roles ?? {}))) {
+      return { success: false, error: 'Not authorized' };
+    }
 
     const [[teamCount], recentEvents] = await Promise.all([
-      db.select({ count: count() }).from(persons).where(eq(persons.tenantId, tenantId)),
+      db.select({ count: count() }).from(persons).where(eq(persons.tenantId, tenant.id)),
       db.query.auditEvents.findMany({
-        where: eq(auditEvents.tenantId, tenantId),
+        where: eq(auditEvents.tenantId, tenant.id),
         orderBy: [desc(auditEvents.timestamp)],
         limit: 10,
       }),
