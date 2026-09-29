@@ -69,7 +69,7 @@ const productFeatures = [
     items: [
       'Send application and website email through the Mkety Mail developer API.',
       'Use authenticated SMTP for supported applications and frameworks when activated.',
-      'Create scoped Mkety Mail API credentials without exposing Cloudflare or other infrastructure credentials.',
+      'Create scoped Mkety Mail API credentials without exposing underlying infrastructure credentials.',
       'Receive signed delivery, deferred, bounce, failure, rejection and complaint events through webhooks.',
     ],
   },
@@ -118,7 +118,7 @@ const trustFeatures = [
     title: 'Protected infrastructure',
     Icon: ServerCog,
     description:
-      'Customers use Mkety controls rather than raw Cloudflare credentials. Edge routing, queues, object storage and delivery components stay behind Mkety-managed service boundaries.',
+      'Customers use Mkety controls while edge routing, queues, object storage and delivery components stay behind Mkety-managed service boundaries.',
   },
   {
     title: 'Secure secrets & credentials',
