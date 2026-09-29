@@ -22,4 +22,15 @@ describe('Enterprise AI channel registry', () => {
       expect(channel.entitlement).toMatch(/^ai\.channel\./);
     }
   });
+  it('only enables commitment reminders on channels with reliable asynchronous outbound', () => {
+    const supported = ENTERPRISE_AI_CHANNELS
+      .filter((item) => item.supportsCommitmentReminders)
+      .map((item) => item.key);
+
+    expect(supported).toEqual(['telegram', 'slack', 'discord', 'custom_webhook']);
+    for (const key of ['website', 'whatsapp', 'instagram', 'facebook_messenger', 'linkedin_page', 'microsoft_teams']) {
+      expect(ENTERPRISE_AI_CHANNELS.find((item) => item.key === key)?.supportsCommitmentReminders).toBe(false);
+    }
+  });
+
 });
