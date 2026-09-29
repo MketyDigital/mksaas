@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS "saas_template"."ai_conversations" (
   "connection_id" uuid NOT NULL,
   "external_conversation_id" varchar(240) NOT NULL,
   "external_user_id" varchar(240),
+  "reply_recipient_id" varchar(240),
+  "reply_context_id" varchar(240),
   "status" varchar(24) DEFAULT 'automated' NOT NULL,
   "handoff_reason" text,
   "handoff_at" timestamp with time zone,
