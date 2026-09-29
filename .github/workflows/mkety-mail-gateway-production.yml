@@ -493,6 +493,97 @@ jobs:
           done
           [ "$ready" = true ] || { echo 'Gateway readiness markers missing.'; exit 1; }
 
+      - name: Reconcile host firewall for IMAPS and SMTPS
+        shell: bash
+        env:
+          SERVER_IP: ${{ steps.network.outputs.server_ip }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID" -o /tmp/firewall-server.json
+          read -r ssh_user ssh_port key_uuid < <(node - <<'NODE'
+          const x=require('/tmp/firewall-server.json');
+          const user=String(x.user||'root').trim()||'root';
+          const port=Number(x.port||22);
+          const key=String(x.private_key_uuid||x.privateKeyUuid||'').trim();
+          if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid Coolify SSH port.');
+          process.stdout.write([user,String(port),key].join(' '));
+          NODE
+          )
+          [ -n "$key_uuid" ] || { echo 'Coolify server does not expose its configured private-key UUID to this token.'; exit 1; }
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/firewall-key.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/security/keys/$key_uuid")"
+          [ "$code" = 200 ] || { echo "Coolify SSH key lookup failed with HTTP $code. The token needs read:sensitive or root."; exit 1; }
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/firewall-key.json','utf8'));
+          const key=String(x.private_key||'');
+          if(!/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(key)) {
+            throw new Error('Coolify did not return a usable SSH private key; read:sensitive/root is required.');
+          }
+          fs.writeFileSync('/tmp/mkety-server-key',key.endsWith('\n')?key:key+'\n',{mode:0o600});
+          NODE
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -T 10 -p "$ssh_port" "$SERVER_IP" > /tmp/mkety-known-hosts 2>/dev/null
+          [ -s /tmp/mkety-known-hosts ] || { echo 'Could not obtain the OCI host SSH key on its configured port.'; exit 1; }
+
+          ssh_opts=(-i /tmp/mkety-server-key -p "$ssh_port" -o BatchMode=yes -o ConnectTimeout=15 -o UserKnownHostsFile=/tmp/mkety-known-hosts -o StrictHostKeyChecking=yes)
+          ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'true'
+
+          ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          run_root() {
+            if [ "$(id -u)" -eq 0 ]; then
+              "$@"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo -n "$@"
+            else
+              echo 'Coolify SSH user cannot obtain non-interactive root privileges required for firewall reconciliation.'
+              exit 1
+            fi
+          }
+
+          if command -v ss >/dev/null 2>&1; then
+            ss -lnt | grep -Eq ':(993|465)[[:space:]]' || {
+              echo 'Host does not show published listeners for 993/465 after the gateway deployment.'
+              exit 1
+            }
+          fi
+
+          firewall_seen=false
+          if command -v ufw >/dev/null 2>&1; then
+            status="$(run_root ufw status 2>/dev/null || true)"
+            if printf '%s\n' "$status" | grep -Fq 'Status: active'; then
+              firewall_seen=true
+              run_root ufw allow 993/tcp comment 'Mkety Mail IMAPS' >/dev/null
+              run_root ufw allow 465/tcp comment 'Mkety Mail SMTPS' >/dev/null
+              run_root ufw status | grep -E '(^|[[:space:]])(993|465)/tcp' >/dev/null
+            fi
+          fi
+
+          if command -v firewall-cmd >/dev/null 2>&1 && run_root firewall-cmd --state >/dev/null 2>&1; then
+            firewall_seen=true
+            run_root firewall-cmd --permanent --add-port=993/tcp >/dev/null
+            run_root firewall-cmd --permanent --add-port=465/tcp >/dev/null
+            run_root firewall-cmd --reload >/dev/null
+            run_root firewall-cmd --query-port=993/tcp >/dev/null
+            run_root firewall-cmd --query-port=465/tcp >/dev/null
+          fi
+
+          if [ "$firewall_seen" = false ]; then
+            echo 'No active UFW/firewalld host firewall detected; provider-level ingress remains authoritative.'
+          else
+            echo 'Host firewall allows TCP 993 and 465.'
+          fi
+          REMOTE
+
+          rm -f /tmp/mkety-server-key /tmp/firewall-key.json /tmp/mkety-known-hosts
+
       - name: Point unproxied IMAP/SMTP DNS at Coolify server
         shell: bash
         env:
