@@ -5,6 +5,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@/shared/db/cloudflare';
 import { mailAppPasswords, mailMailboxes, mailMailboxMembers } from '@/shared/db/schema';
 
+import { mailExternalClientsEnabled } from './external-clients';
 import { requireMailWorkspaceAccess } from './workspace';
 
 type State={secret?:string;error?:string};
@@ -32,6 +33,7 @@ async function ssha256(secret:string){
 }
 
 export async function createMailAppPassword(tenantSlug:string,_state:State,formData:FormData):Promise<State>{
+  if(!mailExternalClientsEnabled()) return {error:'External mail-app access is not enabled yet.'};
   const {actor,tenant,membership}=await requireMailWorkspaceAccess(tenantSlug);
   const mailboxId=String(formData.get('mailboxId')||'');
   const name=String(formData.get('name')||'').trim().slice(0,128);

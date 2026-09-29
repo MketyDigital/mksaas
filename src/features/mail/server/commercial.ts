@@ -1,22 +1,20 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 
+import { drizzleEntitlementSource } from '@/features/entitlements/server/drizzle-source';
+
 import { db } from '@/shared/db/cloudflare';
 import { billingPlans, billingPlanVersions, billingSubscriptions } from '@/shared/db/schema';
 
 import { isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 
-const QUALIFYING_MAIL_SUBSCRIPTION_STATUSES = [
-  'trialing',
-  'active',
-  'past_due',
-  'paused',
-  'cancel_at_period_end',
-] as const;
 
 export async function resolveTenantMailPlanKey(
   tenantId: string,
   fallbackPlanKey?: string | null,
 ): Promise<MailPlanKey> {
+  const currentPlanVersionIds = await drizzleEntitlementSource.getCurrentPlanVersionIds(tenantId);
+  if (!currentPlanVersionIds.length) return normalizeMailPlanKey(fallbackPlanKey);
+
   const [subscription] = await db
     .select({ planKey: billingPlans.key })
     .from(billingSubscriptions)
@@ -25,7 +23,7 @@ export async function resolveTenantMailPlanKey(
     .where(
       and(
         eq(billingSubscriptions.tenantId, tenantId),
-        inArray(billingSubscriptions.status, [...QUALIFYING_MAIL_SUBSCRIPTION_STATUSES]),
+        inArray(billingSubscriptions.planVersionId, currentPlanVersionIds),
         inArray(billingPlans.key, ['mail-starter', 'mail-growth', 'mail-business']),
       ),
     )

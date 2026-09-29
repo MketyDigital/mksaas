@@ -22,11 +22,12 @@ import Link from 'next/link';
 
 import { getActiveSelfServicePlans } from '@/features/billing/server/active-catalog';
 import { MAIL_COMMERCIAL_PLANS, MAIL_PLAN_KEYS, type MailPlanKey } from '@/features/mail/commercial/plans';
+import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
 
 export const metadata = {
   title: 'Mkety Mail — Professional business email, shared inboxes and transactional email',
   description:
-    'Mkety Mail combines professional business email, team inboxes, customer updates, transactional API/SMTP, delivery analytics, secure mail-app setup, domain verification and Enterprise controls in one Mkety product.',
+    'Mkety Mail combines professional business email, team inboxes, customer updates, transactional API, delivery analytics, domain verification and Enterprise controls in one Mkety product.',
 };
 
 function usd(amountMinor: bigint) {
@@ -69,7 +70,7 @@ const productFeatures = [
     Icon: Code2,
     items: [
       'Send application and website email through the Mkety Mail developer API.',
-      'Use authenticated SMTP for supported applications and frameworks when activated.',
+      'Use the transactional REST API today; SMTP is available only after the dedicated gateway is production-certified.',
       'Create scoped Mkety Mail API credentials without exposing underlying infrastructure credentials.',
       'Receive signed delivery, deferred, bounce, failure, rejection and complaint events through webhooks.',
     ],
@@ -78,9 +79,9 @@ const productFeatures = [
     title: 'Mail apps & device setup',
     Icon: Smartphone,
     items: [
-      'Connect supported desktop and mobile mail clients with secure app passwords.',
-      'Autoconfiguration and autodiscover endpoints reduce manual setup where the client supports them.',
-      'Mkety publishes standard IMAP/SMTP connection details for supported external mail clients.',
+      'External IMAP/SMTP mail-client access is available only after the dedicated gateway passes production acceptance.',
+      'Autoconfiguration and autodiscover remain disabled until external-client gateway acceptance.',
+      'Mkety publishes IMAP/SMTP connection details only after the gateway is production-certified.',
       'App credentials can be revoked independently without changing your main Mkety login.',
     ],
   },
@@ -136,6 +137,7 @@ const trustFeatures = [
 ];
 
 export default async function MketyMailPublicPage() {
+  const externalClientsEnabled=mailExternalClientsEnabled();
   const activePlans = await getActiveSelfServicePlans(MAIL_PLAN_KEYS);
   const plans = activePlans.map((active) => ({
     ...MAIL_COMMERCIAL_PLANS[active.key as MailPlanKey],
@@ -156,8 +158,8 @@ export default async function MketyMailPublicPage() {
         </h1>
         <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
           Run branded business inboxes on your own domain, shared support and sales inboxes, customer updates,
-          transactional application email, mail-client access, delivery analytics and domain controls with one
-          Mkety account and clear commercial limits.
+          transactional application email, delivery analytics and domain controls with one Mkety account and clear commercial limits.
+          External mail-client access will be enabled only after the dedicated gateway is production-certified.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <a href="#mail-plans" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">
@@ -276,7 +278,7 @@ export default async function MketyMailPublicPage() {
                   <li>{limits.customerUpdateDeliveriesPerMonth.toLocaleString()} Customer Update deliveries / month</li>
                   <li>Up to {limits.maxRecipientsPerCustomerUpdate.toLocaleString()} recipients per Customer Update</li>
                   <li>Inbox, aliases, forwarding, templates, API access, webhooks and analytics</li>
-                  <li>Secure app-password and mail-client setup</li>
+                  <li>{externalClientsEnabled?'Secure app-password and mail-client setup':'Mail-client access after gateway certification'}</li>
                 </ul>
                 <div className="mt-8 grid gap-2">
                   <Link className="inline-flex justify-center rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/signup?plan=${plan.key}`}>
@@ -327,7 +329,7 @@ export default async function MketyMailPublicPage() {
           <h2 className="mt-4 text-xl font-semibold">Built to connect</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Mkety Mail is designed to work with websites, applications, automations and external mail clients through Mkety APIs,
-            signed webhooks, supported SMTP/IMAP access and product integrations while preserving tenant and credential boundaries.
+            signed webhooks, product integrations and SMTP/IMAP only after that dedicated gateway is production-certified, while preserving tenant and credential boundaries.
           </p>
         </div>
       </section>

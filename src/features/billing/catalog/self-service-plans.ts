@@ -67,7 +67,7 @@ export const SELF_SERVICE_BILLING_PLANS = {
   'mail-business': {
     key: 'mail-business',
     name: 'Mail Business',
-    description: 'Higher-capacity business email, API/SMTP and team communication controls.',
+    description: 'Higher-capacity business email, transactional API and team communication controls.',
     amountMinor: 2499n,
     currency: 'USD',
     billingInterval: 'monthly',

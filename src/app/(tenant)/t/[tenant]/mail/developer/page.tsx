@@ -3,6 +3,7 @@ import { Code2 } from 'lucide-react';
 
 import { CreateMailApiKeyForm } from '@/features/mail/components/CreateMailApiKeyForm';
 import { revokeMailApiKey } from '@/features/mail/server/api-key-actions';
+import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
 import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
@@ -14,6 +15,7 @@ export const dynamic='force-dynamic';
 export default async function MailDeveloperPage({params}:{params:Promise<{tenant:string}>}){
   const {tenant}=await params;
   const access=await requireMailWorkspaceAccess(tenant);
+  const smtpEnabled=mailExternalClientsEnabled();
   const keys=await db.query.mailApiKeys.findMany({where:eq(mailApiKeys.tenantId,access.tenant.id),orderBy:[desc(mailApiKeys.createdAt)]});
   const revoke=revokeMailApiKey.bind(null,tenant);
   return <div className="space-y-8">
@@ -25,6 +27,6 @@ export default async function MailDeveloperPage({params}:{params:Promise<{tenant
 
     <Card className="rounded-2xl"><CardHeader><CardTitle>Webhooks</CardTitle><CardDescription>Receive signed delivery, bounce, failure and complaint events in your own application.</CardDescription></CardHeader><CardContent><a className="inline-flex rounded-xl border px-4 py-2.5 font-semibold" href={`/t/${tenant}/admin/integrations/webhooks`}>Manage webhooks</a><p className="mt-3 text-xs text-muted-foreground">Available Mail events include sent, delivered, deferred, bounced, failed, rejected and complained.</p></CardContent></Card>
 
-    <Card className="rounded-2xl"><CardHeader><CardTitle>SMTP</CardTitle><CardDescription>Authenticated Mkety SMTP for existing applications and common frameworks.</CardDescription></CardHeader><CardContent><p className="font-medium">smtp.mkety.com</p><p className="text-sm text-muted-foreground">TLS · app credentials · infrastructure credentials stay protected</p><p className="mt-2 text-xs text-muted-foreground">SMTP gateway activation follows the same tenant and sender verification rules as the API.</p></CardContent></Card>
+    <Card className="rounded-2xl"><CardHeader><CardTitle>SMTP</CardTitle><CardDescription>{smtpEnabled?'Authenticated Mkety SMTP for existing applications and common frameworks.':'SMTP gateway access is not enabled yet.'}</CardDescription></CardHeader><CardContent>{smtpEnabled?<><p className="font-medium">smtp.mkety.com</p><p className="text-sm text-muted-foreground">TLS · app credentials · infrastructure credentials stay protected</p></>:<p className="text-sm text-muted-foreground">Use the transactional REST API today. SMTP will be enabled only after the dedicated gateway passes production acceptance.</p>}</CardContent></Card>
   </div>;
 }

@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 
+import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
+
 function esc(value:string){
   return value.replace(/[<>&"']/g,(char)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[char]||char));
 }
 
 export async function POST(request:Request){
+  if(!mailExternalClientsEnabled()) {
+    return NextResponse.json({ok:false,error:'external_mail_clients_unavailable'},{status:503,headers:{'cache-control':'no-store'}});
+  }
   const raw=await request.text();
   const match=raw.match(/<EMailAddress>([^<]+)<\/EMailAddress>/i);
   const email=String(match?.[1]||'');
