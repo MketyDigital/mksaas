@@ -14,6 +14,7 @@ import {
   resolveActiveAiRateCard,
 } from '@/features/ai-runtime/server/commercial-rates';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
+import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import {
   calculateProviderCostUsdMicros,
   getManagedAiCostRate,
@@ -21,6 +22,7 @@ import {
 } from '@/features/ai-runtime/server/provider-cost';
 import { db } from '@/shared/db/cloudflare';
 import { aiRequests } from '@/shared/db/schema';
+import { aiSolutionInstances } from '@/shared/db/schema/ai-runtime';
 
 export type EnterpriseAiManagedChannelTurnResult =
   | { kind: 'completed'; requestId: string; text: string }
@@ -34,12 +36,33 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   providerMessageId: string;
   senderId: string;
   text: string;
+  solutionInstanceId?: string | null;
   requestedModel?: string;
 }): Promise<EnterpriseAiManagedChannelTurnResult> {
   const policy = await getEnterpriseAiRuntimePolicy();
   if (!policy.customerInferenceEnabled) return { kind: 'disabled' };
 
-  const requestedModel = input.requestedModel ?? 'gemma-4';
+  const solution = input.solutionInstanceId
+    ? await db.query.aiSolutionInstances.findFirst({
+        where: and(
+          eq(aiSolutionInstances.id, input.solutionInstanceId),
+          eq(aiSolutionInstances.tenantId, input.tenantId),
+        ),
+      })
+    : null;
+  if (input.solutionInstanceId && !solution) {
+    throw new Error('Managed channel solution is unavailable.');
+  }
+
+  const configuration = parseEnterpriseAiSolutionConfiguration(solution?.configuration);
+  if (solution?.status === 'disabled' || configuration.paused) {
+    return { kind: 'disabled' };
+  }
+
+  const requestedModel =
+    input.requestedModel ??
+    configuration.defaultModelAlias ??
+    'mkety-economy';
   const resolved = await resolveAiModelRoute({
     tenantId: input.tenantId,
     projectId: input.projectId ?? null,
@@ -53,7 +76,10 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
   if (!providerRate) throw new Error('Managed channel provider cost is not verified.');
 
-  const messageBytes = new TextEncoder().encode(input.text).byteLength;
+  const contextText = [configuration.systemPrompt, configuration.knowledgeText, input.text]
+    .filter(Boolean)
+    .join('\n\n');
+  const messageBytes = new TextEncoder().encode(contextText).byteLength;
   const inputTokenUpperBound = conservativeInputTokenUpperBound(Math.max(1, messageBytes));
   const modelMaxOutput = typeof resolved.model.limits.maxOutputTokens === 'number'
     ? resolved.model.limits.maxOutputTokens
@@ -106,6 +132,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     providerCostMetadata: {
       requestFingerprint,
       channelConnectionId: input.connectionId,
+      solutionInstanceId: solution?.id ?? null,
       inputTokenUpperBound: inputTokenUpperBound.toString(),
       effectiveMaxOutput,
     },
@@ -142,7 +169,18 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       apiKeyId: null,
       actorUserId: null,
       requestedModel: resolved.alias.alias,
-      messages: [{ role: 'user', content: input.text }],
+      messages: [
+        ...(configuration.systemPrompt
+          ? [{ role: 'system' as const, content: configuration.systemPrompt }]
+          : []),
+        ...(configuration.knowledgeText
+          ? [{
+              role: 'system' as const,
+              content: `Approved business knowledge:\n${configuration.knowledgeText}`,
+            }]
+          : []),
+        { role: 'user' as const, content: input.text },
+      ],
       maxOutputTokens: effectiveMaxOutput,
       metadata: {
         requestId,
