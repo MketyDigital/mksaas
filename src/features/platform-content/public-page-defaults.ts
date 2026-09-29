@@ -93,6 +93,112 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     ],
   },
   {
+    slug: 'domains',
+    title: 'Mkety Domains',
+    seoTitle: 'Mkety Domains | Register domains, manage DNS and connect custom hostnames',
+    seoDescription:
+      'Register domains, manage DNS, connect custom hostnames, configure nameservers and operate domain routing from one Mkety experience.',
+    eyebrow: 'Mkety Domains',
+    headline: 'Your domains, DNS and custom hostnames—managed through Mkety.',
+    intro:
+      'Search and register domains, manage DNS and nameservers, connect custom domains to Mkety products, and keep renewal and routing operations together without dealing with multiple infrastructure providers.',
+    sections: [
+      {
+        eyebrow: 'Domain registration',
+        title: 'Find and register domains with live pricing.',
+        description:
+          'Mkety checks live domain availability and provider pricing, then applies the current Mkety pricing policy before checkout. Registration happens only after verified payment settlement.',
+        items: [
+          {
+            key: 'search',
+            title: 'Live domain search',
+            description:
+              'Check domain availability and current registration pricing through Mkety before purchasing.',
+          },
+          {
+            key: 'register',
+            title: 'Register through Mkety',
+            description:
+              'Complete domain registration with your registrant details after verified settlement, with supported privacy and registrar-lock controls applied by Mkety.',
+          },
+          {
+            key: 'renew',
+            title: 'Renewal management',
+            description:
+              'See renewal pricing and keep domain renewal operations connected to your Mkety account instead of managing a separate registrar portal.',
+          },
+          {
+            key: 'pricing',
+            title: 'Transparent Mkety pricing',
+            description:
+              'Customer pricing starts from current upstream domain cost and uses Mkety’s published commercial margin policy. Current prices can vary by extension and provider cost.',
+          },
+        ],
+        cta: { label: 'Open Mkety', href: '/app' },
+      },
+      {
+        eyebrow: 'Mkety DNS',
+        title: 'Connect domains to websites, apps, email and other Mkety products.',
+        description:
+          'Mkety DNS and domain routing keep custom-hostname setup inside the same operating experience, with validation, HTTPS and supported routing handled through Mkety-managed infrastructure.',
+        items: [
+          {
+            key: 'dns',
+            title: 'DNS management',
+            description:
+              'Manage supported DNS records, nameservers and routing settings from Mkety without needing to work directly with infrastructure vendors.',
+          },
+          {
+            key: 'custom-hostnames',
+            title: 'Custom hostnames',
+            description:
+              'Connect your own domain to supported Mkety deployments, websites, Enterprise AI and other products with guided hostname verification.',
+          },
+          {
+            key: 'managed-hostnames',
+            title: 'Managed Mkety hostnames',
+            description:
+              'Use supported Mkety-managed hostnames where available, including approved *.mkety.app application hostnames.',
+          },
+          {
+            key: 'https',
+            title: 'HTTPS & validation',
+            description:
+              'Mkety coordinates supported certificate validation and secure routing so customers manage the result rather than the underlying provider workflow.',
+          },
+        ],
+        cta: { label: 'Explore Mkety infrastructure', href: '/infrastructure' },
+      },
+      {
+        eyebrow: 'One Mkety experience',
+        title: 'Infrastructure providers stay behind Mkety.',
+        description:
+          'Customers buy and operate domains through Mkety. Registrar, DNS, certificate and routing providers are implementation details managed behind Mkety’s protected platform boundary.',
+        items: [
+          {
+            key: 'single-account',
+            title: 'One account',
+            description:
+              'Use the same Mkety organization, workspace, billing and permissions model for domain operations.',
+          },
+          {
+            key: 'connected-products',
+            title: 'Connected products',
+            description:
+              'Domains can be used across supported Mkety websites, deployments, Mail, AI and Enterprise products instead of being configured as isolated infrastructure.',
+          },
+          {
+            key: 'operations',
+            title: 'Operational visibility',
+            description:
+              'Track supported status, verification, routing and domain lifecycle information from Mkety.',
+          },
+        ],
+        cta: { label: 'Get started with Mkety', href: '/signup' },
+      },
+    ],
+  },
+  {
     slug: 'workspaces',
     title: 'Mkety Workspaces',
     seoTitle: 'Mkety Workspaces | AI, Automation and Deploy',
