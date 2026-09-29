@@ -17,13 +17,29 @@ export type RegisteredDomain = {
   providerDomainRef: string;
 };
 
+export type DomainRegistrationContact = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  companyName?: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  phoneCountryCode: string;
+  phone: string;
+  faxCountryCode?: string;
+  fax?: string;
+};
+
 export interface DomainResellerAdapter {
   quote(domain: string, years?: number): Promise<DomainQuote>;
   register(input: {
     domain: string;
     years: number;
     idempotencyKey: string;
-    contactRef: string;
+    contact: DomainRegistrationContact;
   }): Promise<RegisteredDomain>;
   renew(input: {
     providerDomainRef: string;
