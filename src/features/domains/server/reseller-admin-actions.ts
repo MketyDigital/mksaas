@@ -28,22 +28,23 @@ export async function getDomainResellerConnections() {
 export async function saveDomainNameApiConnection(tenantSlug: string, formData: FormData) {
   const actor = await requireDomainOps(tenantSlug);
   const mode = String(formData.get('mode') ?? 'ote') === 'production' ? 'production' : 'ote';
-  const username = String(formData.get('username') ?? '').trim();
-  const apiToken = String(formData.get('apiToken') ?? '').trim();
+  const resellerId = String(formData.get('resellerId') ?? '').trim();
+  const apiKey = String(formData.get('apiKey') ?? '').trim();
   const endpointUrl = String(formData.get('endpointUrl') ?? '').trim();
   const nameservers = String(formData.get('nameServers') ?? '')
     .split(/[\n,]+/)
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
 
-  if (!username || !apiToken) throw new Error('DomainNameAPI reseller ID/username and API token are required.');
+  if (!/^\d+$/.test(resellerId)) throw new Error('DomainNameAPI V2 requires the numerical Reseller ID.');
+  if (!apiKey) throw new Error('DomainNameAPI V2 API Key is required.');
   if (endpointUrl) new URL(endpointUrl);
 
   await savePlatformServiceConnection({
     serviceKey: 'domains',
     providerKey: 'domainnameapi',
     mode,
-    secret: { username, apiToken },
+    secret: { resellerId, apiKey },
     endpointUrl: endpointUrl || null,
     config: {
       nameServers: nameservers,
