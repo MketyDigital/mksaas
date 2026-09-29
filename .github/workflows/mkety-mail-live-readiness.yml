@@ -1,0 +1,114 @@
+name: Mkety Mail Live Readiness
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mkety-mail-live-readiness.yml'
+      - '.github/workflows/mkety-mail-production.yml'
+      - 'src/app/api/mail/autoconfig/route.ts'
+      - 'src/app/api/mail/autodiscover/route.ts'
+      - 'src/app/(tenant)/t/[tenant]/mail/apps/page.tsx'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify production Mail HTTP surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fetch_expected() {
+            label="$1"
+            url="$2"
+            expected_codes="$3"
+            output="$4"
+            method="${5:-GET}"
+            body="${6:-}"
+            code='000'
+
+            for attempt in 1 2 3 4 5; do
+              args=(--connect-timeout 10 --max-time 30 -L -sS -o "$output" -w '%{http_code}')
+              if [ "$method" = 'POST' ]; then
+                args+=(-X POST -H 'Content-Type: application/json' --data "$body")
+              fi
+              code="$(curl "${args[@]}" "$url" || true)"
+              echo "$label attempt $attempt: HTTP $code"
+              case " $expected_codes " in
+                *" $code "*) return 0 ;;
+              esac
+              sleep 3
+            done
+
+            echo "::error::$label failed; last HTTP $code"
+            head -c 500 "$output" 2>/dev/null || true
+            echo
+            return 1
+          }
+
+          fetch_expected 'Mail app host' 'https://mail.mkety.com/' '200 302 307' /tmp/mail-home
+          fetch_expected 'Public Mail page' 'https://mkety.com/mail' '200' /tmp/mail-public
+          grep -Fq 'Business email made simple' /tmp/mail-public
+          fetch_expected 'Autoconfig' 'https://autoconfig.mkety.com/mail/config-v1.1.xml?emailaddress=hello%40example.com' '200' /tmp/mail-autoconfig
+          grep -Fq 'imap.mkety.com' /tmp/mail-autoconfig
+          grep -Fq 'smtp.mkety.com' /tmp/mail-autoconfig
+          fetch_expected 'Mail API fail-closed' 'https://api.mkety.com/api/v1/mail/send' '401' /tmp/mail-api POST '{}'
+          fetch_expected 'Mail content fail-closed' 'https://mail-content.mkety.com' '401' /tmp/mail-content POST '{"key":"mail/nope"}'
+
+      - name: Diagnose external-client IMAP/SMTP gateway
+        id: gateway
+        shell: bash
+        run: |
+          set -u
+
+          probe_tls() {
+            label="$1"
+            host="$2"
+            port="$3"
+            output="$4"
+
+            if ! getent ahosts "$host" >/tmp/"$label"-dns 2>/dev/null; then
+              echo "$label DNS: unavailable"
+              return 1
+            fi
+
+            if timeout 15 openssl s_client -connect "$host:$port" -servername "$host" -brief </dev/null >"$output" 2>&1; then
+              echo "$label TLS: reachable"
+              return 0
+            fi
+
+            echo "$label TLS: unavailable"
+            cat "$output" || true
+            return 1
+          }
+
+          imap='false'
+          smtp='false'
+          probe_tls imap imap.mkety.com 993 /tmp/imap-tls && imap='true'
+          probe_tls smtp smtp.mkety.com 465 /tmp/smtp-tls && smtp='true'
+
+          echo "imap_ready=$imap" >> "$GITHUB_OUTPUT"
+          echo "smtp_ready=$smtp" >> "$GITHUB_OUTPUT"
+
+          {
+            echo '## Mkety Mail external-client gateway diagnostic'
+            echo
+            echo "- IMAP `imap.mkety.com:993`: **$imap**"
+            echo "- SMTP `smtp.mkety.com:465`: **$smtp**"
+            echo
+            if [ "$imap" != 'true' ] || [ "$smtp" != 'true' ]; then
+              echo '> External-client support is not production-accepted. Keep app-password/IMAP/SMTP UI claims gated until a dedicated TCP gateway is deployed and accepted.'
+            else
+              echo '> TCP/TLS reachability exists. This is not credential/protocol acceptance; app-password authentication and mailbox/send behavior still require a controlled functional test.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Advisory only: HTTP Mail readiness is the required gate. Gateway
+          # reachability is recorded independently until the dedicated TCP
+          # service is part of the production acceptance contract.
+          exit 0
