@@ -9,6 +9,7 @@ import {
   saveEnterpriseAiChannelConnection,
 } from '@/features/ai-runtime/channels/server/connections';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { listEnterpriseAiSolutionInstances } from '@/features/ai-runtime/server/business-solutions';
 import {
   Button,
   Card,
@@ -35,7 +36,10 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
   if (!tenant) redirect('/select-tenant');
   if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
 
-  const connections = await listEnterpriseAiChannelConnections(tenant.id);
+  const [connections, solutions] = await Promise.all([
+    listEnterpriseAiChannelConnections(tenant.id),
+    listEnterpriseAiSolutionInstances(tenant.id),
+  ]);
   const connectionByChannel = new Map(connections.map((item) => [channelKey(item.providerKey), item]));
 
   return (
@@ -83,6 +87,24 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
                   <summary className="cursor-pointer font-semibold">{connection ? 'Update connection' : 'Connect channel'}</summary>
                   <form action={saveEnterpriseAiChannelConnection.bind(null, tenantSlug)} className="mt-4 grid gap-3">
                     <input type="hidden" name="channel" value={channel.key} />
+
+                    <div>
+                      <Label htmlFor={`${channel.key}-solution`}>AI solution</Label>
+                      <select
+                        className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                        defaultValue={value('solutionInstanceId')}
+                        id={`${channel.key}-solution`}
+                        name="solutionInstanceId"
+                      >
+                        <option value="">Choose a solution</option>
+                        {solutions.filter((item) => item.status !== 'disabled').map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        This channel uses that solution&apos;s instructions, approved knowledge, model and pause state.
+                      </p>
+                    </div>
 
                     {channel.key === 'telegram' ? (
                       <>
