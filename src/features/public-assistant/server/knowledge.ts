@@ -60,6 +60,7 @@ export async function searchPublicDocs(query: string): Promise<PublicKnowledgeRe
 const SEARCHABLE_PUBLIC_PAGE_SLUGS = [
   'platform',
   'workspaces',
+  'domains',
   'solutions',
   'academy',
   'pricing',
@@ -148,6 +149,7 @@ export async function getPublicProductKnowledge(product: string) {
   const aliases: Array<[string[], string]> = [
     [['platform', 'mkety platform', 'ai', 'agent builder'], 'platform'],
     [['workspace', 'workspaces', 'automation', 'automate', 'deploy', 'mkety one'], 'workspaces'],
+    [['domain', 'domains', 'domain registration', 'buy domain', 'register domain', 'dns', 'nameserver', 'nameservers', 'custom domain', 'hostname'], 'domains'],
     [['solutionhub', 'solution hub', 'solutions', 'templates'], 'solutions'],
     [['academy', 'training', 'education'], 'academy'],
     [['enterprise', 'custom'], 'enterprise'],
