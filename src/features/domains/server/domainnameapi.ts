@@ -92,6 +92,9 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     if (!config.resellerId.trim() || !config.apiKey.trim()) {
       throw new Error('DomainNameAPI Reseller ID and API Key are required.');
     }
+    if (!/^\d+$/.test(config.resellerId.trim())) {
+      throw new Error('DomainNameAPI V2 requires the numerical Reseller ID from Integration Details, not the reseller-panel username.');
+    }
     this.legacyAuth = `Basic ${base64(`${config.resellerId.trim()}:${config.apiKey.trim()}`)}`;
   }
 
