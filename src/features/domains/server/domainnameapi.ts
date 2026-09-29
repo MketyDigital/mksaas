@@ -1,4 +1,9 @@
-import type { DomainQuote, DomainResellerAdapter, RegisteredDomain } from './reseller';
+import type {
+  DomainQuote,
+  DomainRegistrationContact,
+  DomainResellerAdapter,
+  RegisteredDomain,
+} from './reseller';
 
 type DomainNameApiEnvironment = 'ote' | 'production';
 
@@ -22,21 +27,10 @@ function normalizeDomain(value: string) {
   return domain;
 }
 
-function splitDomain(domain: string) {
-  const labels = domain.split('.');
-  if (labels.length < 2) throw new Error('Domain name must include an extension.');
-  return { name: labels.slice(0, -1).join('.'), tld: labels.at(-1)! };
-}
-
-function base64(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function findValue(value: unknown, keys: string[]): unknown {
@@ -82,9 +76,46 @@ function successStatus(value: unknown) {
   return null;
 }
 
+function providerContact(contact: DomainRegistrationContact, contactType: 'Registrant' | 'Admin' | 'Tech' | 'Billing') {
+  const required = [
+    contact.firstName,
+    contact.lastName,
+    contact.email,
+    contact.address,
+    contact.city,
+    contact.state,
+    contact.country,
+    contact.postalCode,
+    contact.phoneCountryCode,
+    contact.phone,
+  ];
+  if (required.some((value) => !value?.trim())) {
+    throw new Error('DomainNameAPI registration requires complete registrant contact details.');
+  }
+  if (!/^[A-Za-z]{2}$/.test(contact.country.trim())) {
+    throw new Error('DomainNameAPI contact country must be a 2-character ISO code.');
+  }
+  return {
+    contactType,
+    firstName: contact.firstName.trim(),
+    lastName: contact.lastName.trim(),
+    companyName: contact.companyName?.trim() ?? '',
+    eMail: contact.email.trim(),
+    address: contact.address.trim(),
+    city: contact.city.trim(),
+    state: contact.state.trim(),
+    country: contact.country.trim().toUpperCase(),
+    postalCode: contact.postalCode.trim(),
+    phoneCountryCode: contact.phoneCountryCode.replace(/\D/g, ''),
+    phone: contact.phone.replace(/\D/g, ''),
+    faxCountryCode: contact.faxCountryCode?.replace(/\D/g, '') ?? '',
+    fax: contact.fax?.replace(/\D/g, '') ?? '',
+    isHidden: false,
+  };
+}
+
 export class DomainNameApiAdapter implements DomainResellerAdapter {
   private readonly baseUrl: string;
-  private readonly legacyAuth: string;
   private readonly relayUrl: string | null;
   private readonly relaySecret: string | null;
   private readonly relaySecretSeed: string | null;
@@ -93,12 +124,11 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     const environment = config.environment ?? 'ote';
     this.baseUrl = (config.baseUrl
       ?? (environment === 'production'
-        ? 'https://api.domainresellerapi.com'
-        : 'https://ote.domainresellerapi.com')).replace(/\/+$/, '');
+        ? 'https://api.domainresellerapi.com/api/v1'
+        : 'https://ote.domainresellerapi.com/api/v1')).replace(/\/+$/, '');
     if (!config.resellerId.trim() || !config.apiKey.trim()) {
       throw new Error('DomainNameAPI Reseller ID and API Key are required.');
     }
-    this.legacyAuth = `Basic ${base64(`${config.resellerId.trim()}:${config.apiKey.trim()}`)}`;
     this.relayUrl = config.relayUrl?.trim().replace(/\/+$/, '') || null;
     this.relaySecret = config.relaySecret?.trim() || null;
     this.relaySecretSeed = config.relaySecretSeed?.trim() || null;
@@ -133,16 +163,19 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     return Array.from(bits, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
-  private async relayRequest(operation: 'quote' | 'register' | 'renew' | 'info', body: string) {
+  private async relayRequest(operation: 'quote' | 'register' | 'renew', payload: Record<string, unknown>) {
     if (!this.relayUrl) throw new Error('DomainNameAPI relay is not configured.');
     const relaySecret = await this.resolveRelaySecret();
     const timestamp = String(Date.now());
-    const nonce = crypto.randomUUID();
     const raw = JSON.stringify({
-      nonce,
+      nonce: crypto.randomUUID(),
       operation,
       environment: this.config.environment ?? 'ote',
-      payload: JSON.parse(body) as Record<string, unknown>,
+      payload: {
+        resellerId: this.config.resellerId.trim(),
+        apiKey: this.config.apiKey.trim(),
+        ...payload,
+      },
     });
     const key = await crypto.subtle.importKey(
       'raw',
@@ -167,132 +200,57 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       },
       body: raw,
     });
+    let body: unknown = null;
+    try { body = await response.json(); } catch { body = null; }
+    return { response, payload: body };
+  }
+
+  private async providerRequest(path: string, method: 'GET' | 'POST', body?: unknown) {
+    const response = await fetch(`${this.baseUrl}/${path.replace(/^\/+/, '')}`, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-API-KEY': this.config.apiKey.trim(),
+        __reseller: this.config.resellerId.trim(),
+      },
+      ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+    });
     let payload: unknown = null;
     try { payload = await response.json(); } catch { payload = null; }
     return { response, payload };
   }
 
-  private async request(path: string, init: RequestInit, authMode: 'v2' | 'legacy-basic' = 'v2') {
-    if (this.relayUrl && authMode === 'v2') {
-      const operation = path === '/v1/domain/check'
-        ? 'quote'
-        : path === '/v1/domain/register'
-          ? 'register'
-          : path === '/v1/domain/renew'
-            ? 'renew'
-            : path.startsWith('/api/v1/domains/info?')
-              ? 'info'
-              : null;
-      if (!operation) throw new Error('DomainNameAPI relay refuses unsupported endpoint fallback.');
-      const relayBody = operation === 'info'
-        ? JSON.stringify({ domainName: new URL(this.baseUrl + path).searchParams.get('domainName') ?? '' })
-        : String(init.body ?? '{}');
-      return this.relayRequest(operation, relayBody);
-    }
-
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        ...(authMode === 'legacy-basic' ? { Authorization: this.legacyAuth } : {}),
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...init.headers,
-      },
-    });
-    let payload: unknown = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    return { response, payload };
-  }
-
-  private async mutation(paths: string[], body: Record<string, unknown>) {
-    let lastStatus = 0;
-    let lastPayload: unknown = null;
-    for (const path of paths) {
-      const legacyBody = path.startsWith('/v1/domain/')
-        ? {
-            ...body,
-            resellerId: this.config.resellerId.trim(),
-            apiKey: this.config.apiKey.trim(),
-          }
-        : body;
-      const { response, payload } = await this.request(path, {
-        method: 'POST',
-        body: JSON.stringify(legacyBody),
-      });
-      lastStatus = response.status;
-      lastPayload = payload;
-      if (response.ok) return payload;
-      if (this.relayUrl) break;
-      // Endpoint-shape fallback is safe only when the attempted route does not exist.
-      if (response.status !== 404 && response.status !== 405) break;
-    }
-    const message = findValue(lastPayload, ['message', 'errorMessage', 'error', 'detail']);
-    throw new Error(`DomainNameAPI request failed (${lastStatus})${typeof message === 'string' ? `: ${message}` : ''}.`);
+  private async execute(operation: 'quote' | 'register' | 'renew', path: string, body: Record<string, unknown>) {
+    const result = this.relayUrl
+      ? await this.relayRequest(operation, body)
+      : await this.providerRequest(path, 'POST', operation === 'quote' ? [{ domainName: body.domainName }] : body);
+    if (result.response.ok) return result.payload;
+    const message = findValue(result.payload, ['message', 'errorMessage', 'error', 'detail']);
+    throw new Error(
+      `DomainNameAPI ${operation} failed (${result.response.status})${typeof message === 'string' ? `: ${message}` : ''}.`,
+    );
   }
 
   async quote(domainValue: string, years = 1): Promise<DomainQuote> {
     const domain = normalizeDomain(domainValue);
-    const { name, tld } = splitDomain(domain);
+    const payload = await this.execute('quote', 'domains/bulk-search', { domainName: domain, period: years });
+    const items = Array.isArray(payload)
+      ? payload
+      : (asRecord(payload)?.infos as unknown[] | undefined) ?? [];
+    const item = items.find((entry) => String(findValue(entry, ['domainName']) ?? '').toLowerCase() === domain)
+      ?? items[0]
+      ?? payload;
 
-    let payload: unknown;
-    // DomainNameAPI's current Swagger contract documents availability through
-    // POST /v1/domain/check with the Reseller ID and API key in the request body.
-    // Only fall back to alternate endpoint shapes when that route is genuinely absent;
-    // authentication/authorization failures must remain visible and fail closed.
-    const v1 = await this.request('/v1/domain/check', {
-      method: 'POST',
-      body: JSON.stringify({
-        resellerId: this.config.resellerId.trim(),
-        apiKey: this.config.apiKey.trim(),
-        domainName: domain,
-        period: years,
-      }),
-    });
-    if (v1.response.ok) {
-      payload = v1.payload;
-    } else if (!this.relayUrl && (v1.response.status === 404 || v1.response.status === 405)) {
-      const params = new URLSearchParams({
-        domainNames: name,
-        tlds: tld,
-        period: String(years),
-        command: 'create',
-      });
-      const legacyBasic = await this.request(`/api/domain/check?${params.toString()}`, { method: 'GET' }, 'legacy-basic');
-      if (legacyBasic.response.ok) {
-        payload = legacyBasic.payload;
-      } else if (legacyBasic.response.status === 404 || legacyBasic.response.status === 405) {
-        const modern = await this.request('/api/v1/domains/search', {
-          method: 'POST',
-          body: JSON.stringify({ domainName: domain, period: years, command: 'create' }),
-        });
-        if (!modern.response.ok) {
-          throw new Error(`DomainNameAPI availability check failed (${modern.response.status}).`);
-        }
-        payload = modern.payload;
-      } else {
-        throw new Error(`DomainNameAPI availability check failed (${legacyBasic.response.status}).`);
-      }
-    } else {
-      throw new Error(`DomainNameAPI availability check failed (${v1.response.status}).`);
-    }
-
-    const status = findValue(payload, ['status', 'available', 'isAvailable']);
+    const status = findValue(item, ['status', 'available', 'isAvailable']);
     const available = typeof status === 'boolean' ? status : successStatus(status) ?? false;
-    const registration = findValue(payload, ['registrationPrice', 'registerPrice', 'price', 'createPrice']);
-    const renewal = findValue(payload, ['renewalPrice', 'renewPrice']);
-    const currency = String(findValue(payload, ['currency', 'currencyCode']) ?? 'USD').toUpperCase();
-
     return {
       domain,
       available,
-      registrationPriceMinor: parseMoneyMinor(registration),
-      renewalPriceMinor: parseMoneyMinor(renewal),
-      currency,
-      providerQuoteRef: String(findValue(payload, ['quoteId', 'orderId', 'requestId']) ?? '') || null,
+      registrationPriceMinor: parseMoneyMinor(findValue(item, ['price', 'registrationPrice', 'registerPrice'])),
+      renewalPriceMinor: parseMoneyMinor(findValue(item, ['renewalPrice', 'renewPrice'])),
+      currency: String(findValue(item, ['currency', 'currencyCode']) ?? 'USD').toUpperCase(),
+      providerQuoteRef: String(findValue(item, ['quoteId', 'requestId']) ?? '') || null,
     };
   }
 
@@ -300,30 +258,28 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     domain: string;
     years: number;
     idempotencyKey: string;
-    contactRef: string;
+    contact: DomainRegistrationContact;
   }): Promise<RegisteredDomain> {
     const domain = normalizeDomain(input.domain);
-    void input.idempotencyKey; // Mkety owns idempotency; DomainNameAPI does not document a stable idempotency header.
-    const payload = await this.mutation(
-      ['/v1/domain/register', '/api/v1/domains/register'],
-      {
-        domainName: domain,
-        period: input.years,
-        registrantContactId: input.contactRef,
-        nameServers: this.config.nameServers?.length
-          ? this.config.nameServers
-          : ['tr.apiname.com', 'eu.apiname.com'],
-        whoisPrivacy: this.config.whoisPrivacy ?? true,
-      },
-    );
-
+    void input.idempotencyKey;
+    const contacts = (['Registrant', 'Admin', 'Tech', 'Billing'] as const)
+      .map((type) => providerContact(input.contact, type));
+    const payload = await this.execute('register', 'domains/register-with-contacts', {
+      domainName: domain,
+      period: input.years,
+      nameServers: this.config.nameServers?.length
+        ? this.config.nameServers
+        : ['tr.apiname.com', 'eu.apiname.com'],
+      isLocked: true,
+      privacyEnabled: this.config.whoisPrivacy ?? true,
+      contacts,
+      tldAttributes: {},
+    });
     const status = successStatus(findValue(payload, ['status', 'success']));
-    if (status === false) {
-      throw new Error('DomainNameAPI did not confirm domain registration.');
-    }
+    if (status === false) throw new Error('DomainNameAPI did not confirm domain registration.');
     return {
       domain,
-      expiresAt: parseDate(findValue(payload, ['expiryDate', 'expiresAt', 'expirationDate'])),
+      expiresAt: parseDate(findValue(payload, ['expirationDate', 'expiryDate', 'expiresAt'])),
       providerDomainRef: String(findValue(payload, ['domainName']) ?? domain),
     };
   }
@@ -335,32 +291,16 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
   }): Promise<RegisteredDomain> {
     const domain = normalizeDomain(input.providerDomainRef);
     void input.idempotencyKey;
-
-    let currentExpiryDate: string | undefined;
-    const info = await this.request(
-      `/api/v1/domains/info?domainName=${encodeURIComponent(domain)}`,
-      { method: 'GET' },
-    );
-    if (info.response.ok) {
-      const value = findValue(info.payload, ['expiryDate', 'expiresAt', 'expirationDate']);
-      if (typeof value === 'string' && value.trim()) currentExpiryDate = value.trim();
-    }
-
-    const payload = await this.mutation(
-      ['/v1/domain/renew', '/api/v1/domains/renew'],
-      {
-        domainName: domain,
-        period: input.years,
-        ...(currentExpiryDate ? { currentExpiryDate } : {}),
-      },
-    );
+    const payload = await this.execute('renew', 'domains/renew', {
+      domainName: domain,
+      period: input.years,
+    });
     const status = successStatus(findValue(payload, ['status', 'success']));
     if (status === false) throw new Error('DomainNameAPI did not confirm domain renewal.');
     return {
       domain,
-      expiresAt: parseDate(findValue(payload, ['expiryDate', 'expiresAt', 'expirationDate'])),
+      expiresAt: parseDate(findValue(payload, ['expirationDate', 'expiryDate', 'expiresAt'])),
       providerDomainRef: String(findValue(payload, ['domainName']) ?? domain),
     };
   }
 }
-
