@@ -47,9 +47,9 @@ export async function getDomainResellerAdapter(): Promise<DomainResellerAdapter>
   });
   if (!connection) throw new Error('Domain reseller adapter is not configured.');
 
-  const username = String(connection.secret.username ?? '').trim();
-  const apiToken = String(connection.secret.apiToken ?? '').trim();
-  if (!username || !apiToken) throw new Error('DomainNameAPI reseller credentials are incomplete.');
+  const resellerId = String(connection.secret.resellerId ?? connection.secret.username ?? '').trim();
+  const apiKey = String(connection.secret.apiKey ?? connection.secret.apiToken ?? '').trim();
+  if (!resellerId || !apiKey) throw new Error('DomainNameAPI reseller credentials are incomplete.');
 
   const config = connection.config ?? {};
   const nameServers = Array.isArray(config.nameServers)
@@ -57,8 +57,8 @@ export async function getDomainResellerAdapter(): Promise<DomainResellerAdapter>
     : [];
 
   return new DomainNameApiAdapter({
-    username,
-    apiToken,
+    resellerId,
+    apiKey,
     environment: connection.mode === 'production' ? 'production' : 'ote',
     baseUrl: connection.endpointUrl ?? undefined,
     nameServers,
