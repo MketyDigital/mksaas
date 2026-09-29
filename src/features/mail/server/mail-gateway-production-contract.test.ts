@@ -61,6 +61,8 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain("firewall-cmd --permanent --add-port=993/tcp");
     expect(workflow).toContain("firewall-cmd --permanent --add-port=465/tcp");
     expect(workflow).toContain("Host does not show published listeners for 993/465");
+    expect(workflow).toContain('Optional host-firewall reconciliation returned exit');
+    expect(workflow).toContain('continuing to authoritative OCI NSG reconciliation');
   });
 
   it('uses a dedicated OCI NSG for provider-level Mail ingress', () => {
