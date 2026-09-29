@@ -210,8 +210,39 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
               content: `Approved business knowledge:\n${configuration.knowledgeText}`,
             }]
           : []),
+        ...(configuration.commitmentRemindersEnabled
+          ? [{
+              role: 'system' as const,
+              content: [
+                `Current UTC time: ${new Date().toISOString()}.`,
+                `Business reminder timezone: ${configuration.reminderTimezone}.`,
+                'If and only if the customer clearly commits to a future action and provides an unambiguous date/time, you may call schedule_commitment_reminder once.',
+                'Do not schedule from vague statements such as later, soon, maybe, or someday. Do not invent a date.',
+                'The acknowledgement must not claim a reminder was scheduled unless you call the tool.',
+              ].join(' '),
+            }]
+          : []),
         { role: 'user' as const, content: input.text },
       ],
+      ...(configuration.commitmentRemindersEnabled
+        ? {
+            tools: [{
+              name: 'schedule_commitment_reminder',
+              description: 'Schedule one reminder for an explicit future commitment stated by the customer.',
+              inputSchema: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['dueAtIso', 'commitment', 'reminderText', 'acknowledgement'],
+                properties: {
+                  dueAtIso: { type: 'string', description: 'Unambiguous ISO-8601 timestamp with UTC offset.' },
+                  commitment: { type: 'string', minLength: 1, maxLength: 500 },
+                  reminderText: { type: 'string', minLength: 1, maxLength: 1200 },
+                  acknowledgement: { type: 'string', minLength: 1, maxLength: 1200 },
+                },
+              },
+            }],
+          }
+        : {}),
       maxOutputTokens: effectiveMaxOutput,
       metadata: {
         requestId,
