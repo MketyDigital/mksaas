@@ -6,6 +6,7 @@ type R2Object={
 
 type Bucket={
   get(key:string):Promise<R2Object|null>;
+  put(key:string,value:ArrayBuffer|Uint8Array|string,options?:{httpMetadata?:{contentType?:string}}):Promise<unknown>;
 };
 
 type Env={
@@ -20,6 +21,21 @@ export default {
       return new Response('Unauthorized',{status:401});
     }
     if(request.method!=='POST') return new Response('Method not allowed',{status:405});
+    const operation=request.headers.get('x-mkety-operation')||'get';
+
+    if(operation==='put'){
+      const key=String(request.headers.get('x-mkety-key')||'');
+      if(!key.startsWith('mail/')||key.includes('..')) return new Response('Invalid key',{status:400});
+      const length=Number(request.headers.get('content-length')||0);
+      if(Number.isFinite(length)&&length>25_000_000) return new Response('Payload too large',{status:413});
+      const bytes=await request.arrayBuffer();
+      if(bytes.byteLength<=0||bytes.byteLength>25_000_000) return new Response('Payload too large',{status:413});
+      await env.MAIL_STORAGE.put(key,bytes,{
+        httpMetadata:{contentType:request.headers.get('content-type')||'application/octet-stream'},
+      });
+      return Response.json({ok:true,key,size:bytes.byteLength});
+    }
+
     const payload=await request.json().catch(()=>null) as {key?:string}|null;
     const key=String(payload?.key||'');
     if(!key.startsWith('mail/')||key.includes('..')) return new Response('Invalid key',{status:400});
