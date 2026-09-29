@@ -1,3 +1,5 @@
+ALTER TABLE "saas_template"."custom_domains" ALTER COLUMN "provider" SET DEFAULT 'mkety';
+--> statement-breakpoint
 DO $$ BEGIN
   CREATE TYPE "saas_template"."managed_domain_status" AS ENUM('pending', 'active', 'expired', 'suspended');
 EXCEPTION
