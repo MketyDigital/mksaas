@@ -6,8 +6,8 @@ function required(name: string) {
   return value;
 }
 
-const username = required('DOMAINNAMEAPI_USERNAME');
-const apiToken = required('DOMAINNAMEAPI_API_TOKEN');
+const resellerId = required('DOMAINNAMEAPI_USERNAME');
+const apiKey = required('DOMAINNAMEAPI_API_TOKEN');
 const baseUrl = process.env.DOMAINNAMEAPI_OTE_BASE_URL?.trim() || undefined;
 const nameServers = (process.env.DOMAINNAMEAPI_NAME_SERVERS || '')
   .split(/[,\n]+/)
@@ -15,8 +15,8 @@ const nameServers = (process.env.DOMAINNAMEAPI_NAME_SERVERS || '')
   .filter(Boolean);
 
 const adapter = new DomainNameApiAdapter({
-  username,
-  apiToken,
+  resellerId,
+  apiKey,
   environment: 'ote',
   baseUrl,
   nameServers,
