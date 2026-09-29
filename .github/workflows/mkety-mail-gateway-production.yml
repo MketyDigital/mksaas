@@ -550,6 +550,7 @@ jobs:
             exit 0
           fi
 
+          set +e
           ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'bash -s' <<'REMOTE'
           set -euo pipefail
           run_root() {
@@ -583,6 +584,11 @@ jobs:
           fi
           [ "$firewall_seen" = true ] && echo 'Host firewall reconciled for TCP 993/465.' || echo 'No active UFW/firewalld host firewall detected.'
           REMOTE
+          remote_status=$?
+          set -e
+          if [ "$remote_status" -ne 0 ]; then
+            echo "Optional host-firewall reconciliation returned exit $remote_status; continuing to authoritative OCI NSG reconciliation."
+          fi
 
           rm -f /tmp/mkety-server-key /tmp/firewall-key.json /tmp/mkety-known-hosts
 
