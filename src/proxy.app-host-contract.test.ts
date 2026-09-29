@@ -37,8 +37,8 @@ describe('app.mkety.com platform host contract', () => {
     expect(workflow).toContain('APP_WORKER_NAME: mkety-app-host');
     expect(workflow).toContain('REPAIR APP.MKETY.COM');
     expect(workflow).toContain('verified_sha');
-    expect(workflow).toContain('refs/pull/160/head');
-    expect(workflow).toContain('persistent PR 160 head ref');
+    expect(workflow).toContain('RELEASE_BRANCH: main');
+    expect(workflow).toContain('Verify SHA matches current main');
     expect(workflow).toContain('mkety-production-db-v2');
     expect(workflow).toContain('app.mkety.com');
     expect(workflow).toContain('workers/domains');
