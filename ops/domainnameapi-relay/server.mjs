@@ -7,23 +7,11 @@ if (sharedSecret.length < 32) throw new Error('MKETY_DOMAIN_RELAY_SECRET must be
 
 const LIVE_BASE = 'https://api.domainresellerapi.com';
 const OTE_BASE = 'https://ote.domainresellerapi.com';
-const seenNonces = new Map();
-
-function rejectReplay(nonce) {
-  if (!/^[0-9a-f-]{36}$/i.test(nonce)) return true;
-  const now = Date.now();
-  for (const [key, expiresAt] of seenNonces) {
-    if (expiresAt <= now) seenNonces.delete(key);
-  }
-  if (seenNonces.has(nonce)) return true;
-  seenNonces.set(nonce, now + 60_000);
-  return false;
-}
-
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/v1/domain/check' }],
   ['register', { method: 'POST', path: '/v1/domain/register' }],
   ['renew', { method: 'POST', path: '/v1/domain/renew' }],
+  ['info', { method: 'GET', path: '/api/v1/domains/info' }],
 ]);
 
 function json(res, status, payload) {
@@ -74,9 +62,6 @@ const server = createServer(async (req, res) => {
     }
 
     const input = JSON.parse(rawBody);
-    if (rejectReplay(String(input.nonce || ''))) {
-      return json(res, 409, { error: 'replayed_or_invalid_nonce' });
-    }
     const operation = ALLOWED.get(String(input.operation || ''));
     if (!operation) return json(res, 400, { error: 'unsupported_operation' });
     if (input.environment !== 'production' && input.environment !== 'ote') {
@@ -87,10 +72,13 @@ const server = createServer(async (req, res) => {
     }
 
     const base = input.environment === 'production' ? LIVE_BASE : OTE_BASE;
-    const upstream = await fetch(base + operation.path, {
+    const upstreamPath = String(input.operation) === 'info'
+      ? operation.path + '?domainName=' + encodeURIComponent(String(input.payload.domainName || ''))
+      : operation.path;
+    const upstream = await fetch(base + upstreamPath, {
       method: operation.method,
       headers: { accept: 'application/json', 'content-type': 'application/json' },
-      body: JSON.stringify(input.payload),
+      ...(operation.method === 'POST' ? { body: JSON.stringify(input.payload) } : {}),
       signal: AbortSignal.timeout(20_000),
     });
     const text = await upstream.text();
