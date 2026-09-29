@@ -1,7 +1,7 @@
 'use server';
 
 import { addMonths } from 'date-fns';
-import { and, desc, eq, isNull, like } from 'drizzle-orm';
+import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
