@@ -494,6 +494,7 @@ jobs:
           [ "$ready" = true ] || { echo 'Gateway readiness markers missing.'; exit 1; }
 
       - name: Reconcile host firewall when direct SSH is reachable
+        continue-on-error: true
         shell: bash
         env:
           SERVER_IP: ${{ steps.network.outputs.server_ip }}
