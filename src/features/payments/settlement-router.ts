@@ -8,6 +8,7 @@ import {
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
 import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server/repository';
+import { grantCurrentPeriodAllowance } from '@/features/usage-credits/server/period-grants';
 import { db } from '@/shared/db';
 
 import type { MketyPaymentSource } from './reference';
@@ -94,6 +95,7 @@ async function applySaasSettlement(input: {
   const repository = createDrizzleBillingRepository(db);
   const result = await applyVerifiedSettlement(repository, settlement, input.occurredAt);
   await markBillingCheckoutCompleted(input.checkoutId, input.occurredAt);
+  await grantCurrentPeriodAllowance(context.tenantId);
   return { settled: true, status: result.status };
 }
 
