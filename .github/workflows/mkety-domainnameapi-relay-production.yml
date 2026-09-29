@@ -31,6 +31,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       MKETY_CONNECTION_SECRET_ENCRYPTION_KEY: ${{ secrets.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY }}
+      MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
       PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
@@ -50,7 +51,10 @@ jobs:
           fi
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Target SHA must be a full SHA." >&2; exit 1; }
           [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo "Missing COOLIFY_TOKEN." >&2; exit 1; }
-          [ -n "${MKETY_CONNECTION_SECRET_ENCRYPTION_KEY:-}" ] || { echo "Missing MKETY_CONNECTION_SECRET_ENCRYPTION_KEY." >&2; exit 1; }
+          [ -n "${MKETY_CONNECTION_SECRET_ENCRYPTION_KEY:-}" ] || [ -n "${MKETY_AUTH_SESSION_SECRET:-}" ] || {
+            echo "Missing relay root seed: neither MKETY_CONNECTION_SECRET_ENCRYPTION_KEY nor MKETY_AUTH_SESSION_SECRET is available." >&2
+            exit 1
+          }
 
       - uses: actions/checkout@v4
         with:
@@ -74,7 +78,7 @@ jobs:
           set -euo pipefail
           derived="$(node - <<'NODE'
           const {hkdfSync}=require('node:crypto');
-          const seed=process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY;
+          const seed=process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY || process.env.MKETY_AUTH_SESSION_SECRET;
           const out=hkdfSync('sha256', Buffer.from(seed), Buffer.from('mkety-domain-relay-v1'), Buffer.from('request-hmac'), 32);
           process.stdout.write(Buffer.from(out).toString('hex'));
           NODE
@@ -247,8 +251,8 @@ jobs:
               continue
             fi
             npx --yes wrangler@4.129.0 secret list --name "$worker" --format json >/tmp/"$worker"-secrets.json
-            if ! FILE=/tmp/"$worker"-secrets.json node -e "const fs=require('node:fs');const a=JSON.parse(fs.readFileSync(process.env.FILE,'utf8'));process.exit(a.some(v=>v.name==='MKETY_CONNECTION_SECRET_ENCRYPTION_KEY')?0:1)"; then
-              echo "$worker exists but does not yet have MKETY_CONNECTION_SECRET_ENCRYPTION_KEY; leaving relay URL for the guarded Enterprise promotion."
+            if ! FILE=/tmp/"$worker"-secrets.json node -e "const fs=require('node:fs');const a=JSON.parse(fs.readFileSync(process.env.FILE,'utf8'));const names=new Set(a.map(v=>v.name));process.exit(names.has('MKETY_CONNECTION_SECRET_ENCRYPTION_KEY')||names.has('MKETY_AUTH_SESSION_SECRET')?0:1)"; then
+              echo "$worker exists but has no supported relay root seed; leaving relay URL for the guarded Enterprise promotion."
               continue
             fi
             printf '%s' "$RELAY_URL" | npx --yes wrangler@4.129.0 secret put MKETY_DOMAIN_RELAY_URL --name "$worker" >/dev/null
