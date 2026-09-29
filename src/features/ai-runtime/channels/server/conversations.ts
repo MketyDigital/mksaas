@@ -1,4 +1,4 @@
-import { and, eq, lte, or } from 'drizzle-orm';
+import { and, eq, lte, or, sql } from 'drizzle-orm';
 
 import type { EnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { db } from '@/shared/db/cloudflare';
@@ -171,7 +171,7 @@ export async function claimEnterpriseAiScheduledAction(id: string, tenantId: str
   const [claimed] = await db.update(aiScheduledActions).set({
     status: 'claimed',
     claimUntil,
-    attempts: aiScheduledActions.attempts,
+    attempts: sql`${aiScheduledActions.attempts} + 1`,
     updatedAt: now,
   }).where(and(
     eq(aiScheduledActions.id, id),
