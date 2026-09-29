@@ -10,6 +10,7 @@ import { requireTenantAdmin } from '@/shared/lib/rbac';
 import {
   createCloudflareManagedZone,
   deleteCloudflareDnsRecord,
+  findCloudflareManagedZone,
   getCloudflareManagedZone,
   listCloudflareDnsRecords,
   saveCloudflareDnsRecord,
@@ -54,7 +55,7 @@ async function provisionManagedDomainDnsInternal(tenantId: string, managedDomain
   let nameServers = Array.isArray(row.nameServers) ? row.nameServers : [];
 
   if (!zoneId) {
-    const zone = await createCloudflareManagedZone(domain);
+    const zone = await findCloudflareManagedZone(domain) ?? await createCloudflareManagedZone(domain);
     zoneId = zone.id;
     nameServers = zone.nameServers;
     await db.update(managedDomains).set({
