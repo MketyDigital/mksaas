@@ -142,6 +142,10 @@ export async function POST(
           connectionId: connection.id,
           providerMessageId: inbound.providerMessageId,
           senderId: inbound.senderId,
+          externalConversationId: inbound.conversationId,
+          replyRecipientId: inbound.replyRecipientId,
+          contextId: inbound.conversationId,
+          replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
           text: inbound.text,
           solutionInstanceId:
             typeof connection.metadata.solutionInstanceId === 'string'
@@ -201,6 +205,10 @@ export async function POST(
           connectionId: connection.id,
           providerMessageId: inbound.providerMessageId,
           senderId: inbound.senderId,
+          externalConversationId: inbound.conversationId,
+          replyRecipientId: inbound.replyRecipientId,
+          contextId: inbound.conversationId,
+          replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
           text: inbound.text,
           solutionInstanceId:
             typeof connection.metadata.solutionInstanceId === 'string'
@@ -251,6 +259,10 @@ export async function POST(
       connectionId: connection.id,
       providerMessageId: inbound.providerMessageId,
       senderId: inbound.senderId,
+      externalConversationId: inbound.conversationId,
+      replyRecipientId: inbound.replyRecipientId,
+      contextId: inbound.conversationId,
+      replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
       text: inbound.text,
       solutionInstanceId:
         typeof connection.metadata.solutionInstanceId === 'string'
