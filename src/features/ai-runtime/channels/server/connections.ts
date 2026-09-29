@@ -112,16 +112,6 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     });
     if (!solution) throw new Error('Selected AI solution is not available to this workspace.');
   }
-  if (metadata.solutionInstanceId) {
-    const solution = await db.query.aiSolutionInstances.findFirst({
-      where: and(
-        eq(aiSolutionInstances.id, metadata.solutionInstanceId),
-        eq(aiSolutionInstances.tenantId, tenant.id),
-      ),
-      columns: { id: true },
-    });
-    if (!solution) throw new Error('Selected AI solution is not available to this workspace.');
-  }
 
   const existing = await db.query.aiProviderConnections.findFirst({
     where: and(
