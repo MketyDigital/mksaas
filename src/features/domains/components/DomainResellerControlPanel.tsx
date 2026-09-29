@@ -45,7 +45,7 @@ export function DomainResellerControlPanel({
         <CardHeader>
           <CardTitle>Configure / rotate DomainNameAPI</CardTitle>
           <CardDescription>
-            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use the OT&amp;E Reseller ID + OT&amp;E API Key for sandbox testing; use the Live Reseller ID + Live API Key only for production.
+            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use the numerical V2 Reseller ID from Integration Details. Pair it with the Test Environment API Key for OT&amp;E, or the Live Environment API Key for production.
           </CardDescription>
         </CardHeader>
         <CardContent>
