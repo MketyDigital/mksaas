@@ -1,3 +1,41 @@
+# 2026-09-29 pre-Starpips platform stabilization
+
+Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4` (PR #172).
+
+## Current production truth
+
+- PR #159 is merged. The Enterprise AI / Platform / Mail / Domains implementation is no longer a pending completion candidate.
+- Production hardening/finalization PRs #162, #163, #164, #165, #166, #167, #168, #170, #171 and #172 are merged.
+- `app.mkety.com` is served by the dedicated `mkety-app-host` Worker; root/app/login/auth routing, production Hyperdrive/runtime bindings and the Worker Custom Domain were accepted in production.
+- Auxiliary workers.dev and preview URLs for the production app host are disabled.
+- DomainNameAPI fixed-egress relay acceptance has passed in both Live and OT&E quote-only modes through `registrar-relay.mkety.com`; the old HTTP 401 / missing-credential blocker below is historical.
+- Production Enterprise AI `customerInferenceEnabled` remains deliberately OFF. Starpips real-customer acceptance has NOT started and must not start during this stabilization workstream.
+- PR #169 and historical certification PR #147 were closed as superseded on 2026-09-29.
+
+## Active workstream
+
+Before any Starpips production acceptance, stabilize and simplify the authenticated Mkety application so completed backend/product capabilities are actually discoverable, manageable and fast in the UI.
+
+Scope, in order:
+
+1. audit/refactor `app.mkety.com` information architecture, first-login/dashboard experience, tenant/workspace navigation and admin navigation;
+2. keep public `mkety.com` routes public-facing and ensure authenticated/admin/workspace routes live on their intended application/product hosts rather than leaking into public-site navigation;
+3. reconcile implemented backend capabilities with customer UI and Platform Control/admin UI, especially Mkety Mail, Enterprise AI, Workspaces, Billing/Usage/Credits, Domains/DNS and entitlement-aware product entry points;
+4. expose safe editable configuration through Platform Control where architecture already permits it, while keeping secrets, settlement, tenant isolation and immutable accounting protected;
+5. verify `ai.mkety.com` and `api.mkety.com` route/host contracts and implement missing customer-visible Enterprise AI console entry points without enabling production customer inference;
+6. design the non-destructive `media.mkety.com` connector/add-on path for normal Mkety workspace customers while preserving the existing standalone Media production customer/runtime/billing boundary;
+7. remove stale/duplicate app-side paths, simplify navigation, reduce avoidable repeated reads, and add route/navigation/performance contract tests;
+8. compare the uploaded legacy StarAI application only for customer-facing capabilities (assistant settings, knowledge, channels, human takeover, test console, logs, etc.); do not import its separate Worker/database architecture into Mkety;
+9. certify exact-head CI/build/type/lint/tests and targeted host/navigation/product-surface smokes before beginning Starpips acceptance.
+
+## Commercial behavior to preserve
+
+Enterprise AI supports separately entitled/contracted customers. A customer may have a recurring commercial subscription (for example $100/month) plus included/prepaid usage. Billing/entitlement state must gate the service: when a subscription or required prepaid entitlement is inactive/expired and no allowed grace/committed capacity applies, customer-facing Enterprise AI execution must fail closed while preserving data/configuration. Add-ons/extra capacity must remain additive rather than replacing the base contract.
+
+The exact customer price is a commercial configuration decision, not a hard-coded runtime amount. Verified payment/settlement remains authoritative; browser/client claims never grant service.
+
+---
+
 ## 2026-09-28 sequencing update
 
 Repository merge is no longer waiting on the real customer-hostname test. The remaining DomainNameAPI authentication issue and real white-label hostname acceptance remain unresolved external acceptance items. Enterprise customer inference remains disabled until those later acceptance requirements are intentionally completed.
