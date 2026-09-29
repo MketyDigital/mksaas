@@ -21,6 +21,7 @@ export default async function MailMigrationPage({
   const {tenant:tenantSlug}=await params;
   const query=await searchParams;
   const access=await requireMailWorkspaceAccess(tenantSlug);
+  if(!['admin','manager'].includes(String(access.membership.role))) redirect(`/t/${tenantSlug}/mail`);
   const workspace=await getMailWorkspace(tenantSlug);
   if(!workspace) redirect(`/t/${tenantSlug}/mail`);
 
