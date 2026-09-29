@@ -106,13 +106,17 @@ The following are required before Starpips acceptance starts:
 - [ ] bind channel connections to a selected solution instance;
 - [ ] make channel runtime consume selected solution instructions/knowledge/model/pause;
 - [ ] count injected instruction/knowledge context in reservation/accounting;
-- [ ] add deterministic customer test/playground for a selected solution;
-- [ ] expose customer-safe request/run logs;
-- [ ] persist conversations/messages;
-- [ ] implement per-conversation human takeover / resume rather than conflating it with global pause;
-- [ ] connect recurring Enterprise AI contract/subscription lifecycle directly to product entitlement;
-- [ ] verify `ai.mkety.com` production hostname/deployment;
+- [x] add deterministic customer test/playground for a selected solution;
+- [x] expose customer-safe request/run logs;
+- [x] persist conversations/messages;
+- [x] implement per-conversation human takeover / resume rather than conflating it with global pause;
+- [x] add configurable deterministic reply pacing backed by durable scheduled delivery rather than in-request sleeps;
+- [x] add explicit future-commitment reminders with source-quote/date validation, idempotency, cancellation, retries and delivery-time entitlement checks;
+- [x] connect recurring Enterprise AI contract/subscription lifecycle directly to product entitlement;
+- [x] add tenant-specific versioned Enterprise AI contract pricing, included entitlements and billing-period credits;
+- [ ] execute guarded `mkety-enterprise-ai-production.yml` on the exact verified main SHA and verify `ai.mkety.com`;
 - [ ] verify `api.mkety.com/v1/ai` through the production host;
+- [ ] provision and verify `mkety-ai-delivery` Queue/DLQ and scheduler worker;
 - [ ] exact-head CI and product-host acceptance;
 - [ ] only then begin a real customer acceptance;
 - [ ] only after that intentionally enable production customer inference.
@@ -188,6 +192,7 @@ It reuses central Mkety identity, tenant membership, roles/PBAC, Billing and Ent
 - [ ] verify production `mail.mkety.com` host and current deployed SHA;
 - [ ] verify production Mail database migrations;
 - [ ] verify R2/Queue/ingress/dispatch bindings and Workers;
+- [x] customer Mail migration/portability center: contact CSV, workspace JSON, EML import, RFC822/EML export;
 - [ ] real inbound-domain test;
 - [ ] real outbound transactional test;
 - [ ] Customer Update queue/suppression test;
@@ -209,7 +214,8 @@ Do not onboard a waiting customer merely because a UI route exists. For each pro
 7. verify inbound and outbound mail;
 8. verify inbox, storage and delivery event;
 9. optionally create app password and external-client test;
-10. only then call the Mail setup complete.
+10. optionally test portability by exporting one RFC822/EML message and/or importing a small standards-compliant EML sample;
+11. only then call the Mail setup complete.
 
 ### Enterprise AI
 1. confirm tenant/account and negotiated recurring contract;
@@ -220,10 +226,12 @@ Do not onboard a waiting customer merely because a UI route exists. For each pro
 6. choose managed model or approved BYOK route;
 7. connect Website/Telegram/other entitled channels to that solution;
 8. configure branding and hostname;
-9. use test/playground and inspect logs/accounting;
-10. verify human-handoff behavior;
-11. run guarded real-host/customer acceptance;
-12. only after all gates pass enable production inference for customers.
+9. configure reply pacing/reminders only if the business needs them;
+10. use test/playground and inspect logs/accounting;
+11. verify human-handoff behavior on one conversation while another remains automated;
+12. test a future commitment reminder and cancellation/takeover behavior;
+13. run guarded real-host/customer acceptance;
+14. only after all gates pass enable production inference for customers.
 
 ## Release rule
 
