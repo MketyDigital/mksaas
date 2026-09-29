@@ -493,7 +493,7 @@ jobs:
           done
           [ "$ready" = true ] || { echo 'Gateway readiness markers missing.'; exit 1; }
 
-      - name: Reconcile host firewall for IMAPS and SMTPS
+      - name: Reconcile host firewall when direct SSH is reachable
         shell: bash
         env:
           SERVER_IP: ${{ steps.network.outputs.server_ip }}
@@ -511,8 +511,16 @@ jobs:
           process.stdout.write([user,String(port),key].join(' '));
           NODE
           )
-          [ -n "$key_uuid" ] || { echo 'Coolify server does not expose its configured private-key UUID to this token.'; exit 1; }
 
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if ! ssh-keyscan -T 10 -p "$ssh_port" "$SERVER_IP" > /tmp/mkety-known-hosts 2>/dev/null || [ ! -s /tmp/mkety-known-hosts ]; then
+            echo 'MKETY_MAIL_HOST_FIREWALL_RECONCILIATION=SKIPPED_DIRECT_SSH_UNREACHABLE'
+            echo 'Direct GitHub-runner SSH to the OCI host is unavailable. Continuing to public DNS/TCP acceptance so provider-level ingress is diagnosed independently.'
+            exit 0
+          fi
+
+          [ -n "$key_uuid" ] || { echo 'Coolify server does not expose its configured private-key UUID to this token.'; exit 1; }
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/firewall-key.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/security/keys/$key_uuid")"
           [ "$code" = 200 ] || { echo "Coolify SSH key lookup failed with HTTP $code. The token needs read:sensitive or root."; exit 1; }
 
@@ -525,11 +533,6 @@ jobs:
           }
           fs.writeFileSync('/tmp/mkety-server-key',key.endsWith('\n')?key:key+'\n',{mode:0o600});
           NODE
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -T 10 -p "$ssh_port" "$SERVER_IP" > /tmp/mkety-known-hosts 2>/dev/null
-          [ -s /tmp/mkety-known-hosts ] || { echo 'Could not obtain the OCI host SSH key on its configured port.'; exit 1; }
 
           ssh_opts=(-i /tmp/mkety-server-key -p "$ssh_port" -o BatchMode=yes -o ConnectTimeout=15 -o UserKnownHostsFile=/tmp/mkety-known-hosts -o StrictHostKeyChecking=yes)
           ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'true'
@@ -662,6 +665,8 @@ jobs:
               sleep 2
             done
             cat /tmp/"$host"-tls.txt || true
+            echo "MKETY_MAIL_ORIGIN_TCP_ACCEPTANCE=FAILED host=$host port=$port"
+            echo 'Cloudflare authoritative/public DNS is already verified and the gateway container is healthy. A timeout here indicates upstream OCI security-list/NSG ingress or host firewall is still blocking this raw TCP port.'
             return 1
           }
 
