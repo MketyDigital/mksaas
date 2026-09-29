@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 12
     environment: preview
     env:
-      DOMAINNAMEAPI_OTE_USERNAME: ${{ secrets.DOMAINNAMEAPI_OTE_USERNAME }}
+      DOMAINNAMEAPI_RESELLER_ID: ${{ secrets.DOMAINNAMEAPI_USERNAME }}
       DOMAINNAMEAPI_OTE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN }}
       DOMAINNAMEAPI_LIVE_USERNAME: ${{ secrets.DOMAINNAMEAPI_USERNAME }}
       DOMAINNAMEAPI_LIVE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_API_TOKEN }}
@@ -38,9 +38,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${DOMAINNAMEAPI_OTE_USERNAME:-}" ] && [ -n "${DOMAINNAMEAPI_OTE_API_TOKEN:-}" ]; then
+          if [ -n "${DOMAINNAMEAPI_RESELLER_ID:-}" ] && [ -n "${DOMAINNAMEAPI_OTE_API_TOKEN:-}" ]; then
             echo 'ote_available=true' >> "$GITHUB_OUTPUT"
-            echo "::add-mask::$DOMAINNAMEAPI_OTE_USERNAME"
+            echo "::add-mask::$DOMAINNAMEAPI_RESELLER_ID"
             echo "::add-mask::$DOMAINNAMEAPI_OTE_API_TOKEN"
           else
             echo 'ote_available=false' >> "$GITHUB_OUTPUT"
@@ -58,7 +58,7 @@ jobs:
         continue-on-error: true
         if: steps.credentials.outputs.ote_available == 'true'
         env:
-          DOMAINNAMEAPI_USERNAME: ${{ env.DOMAINNAMEAPI_OTE_USERNAME }}
+          DOMAINNAMEAPI_USERNAME: ${{ env.DOMAINNAMEAPI_RESELLER_ID }}
           DOMAINNAMEAPI_API_TOKEN: ${{ env.DOMAINNAMEAPI_OTE_API_TOKEN }}
         shell: bash
         run: |
@@ -108,7 +108,7 @@ jobs:
             rows.push('- Live currency: '+live.currency);
           }
           if(!oteCredentials){
-            rows.push('- OT&E lifecycle blocker: add DOMAINNAMEAPI_OTE_USERNAME and DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Live credentials are deliberately never sent to OT&E.');
+            rows.push('- OT&E lifecycle blocker: add DOMAINNAMEAPI_RESELLER_ID and DOMAINNAMEAPI_OTE_API_TOKEN to the preview GitHub Environment. Live credentials are deliberately never sent to OT&E.');
           }
           if(!liveCredentials){
             rows.push('- Live read-only blocker: DOMAINNAMEAPI_USERNAME / DOMAINNAMEAPI_API_TOKEN are unavailable in the preview GitHub Environment.');
