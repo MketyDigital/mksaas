@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
+import { getEnterpriseAiChannel, type EnterpriseAiChannelKey } from '@/features/ai-runtime/channels/registry';
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import {
@@ -41,6 +42,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   tenantId: string;
   projectId?: string | null;
   connectionId: string;
+  channelKey?: EnterpriseAiChannelKey;
   providerMessageId: string;
   senderId: string;
   externalConversationId: string;
@@ -94,7 +96,11 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     return { kind: 'handoff', conversationId: conversation.id };
   }
 
-  const remindersEnabled = configuration.commitmentRemindersEnabled && !input.testMode;
+  const channel = input.channelKey ? getEnterpriseAiChannel(input.channelKey) : null;
+  const remindersEnabled =
+    configuration.commitmentRemindersEnabled &&
+    !input.testMode &&
+    channel?.supportsCommitmentReminders === true;
 
   const requestedModel =
     input.requestedModel ??
