@@ -1,5 +1,3 @@
-'use server';
-
 import { addMonths } from 'date-fns';
 import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -58,6 +56,7 @@ export async function createEnterpriseAiContractVersion(
   opsTenantSlug: string,
   formData: FormData,
 ) {
+  'use server';
   await requirePermission(opsTenantSlug, 'platform:plans');
   const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
   const target = await getTenantBySlug(targetTenantSlug);
