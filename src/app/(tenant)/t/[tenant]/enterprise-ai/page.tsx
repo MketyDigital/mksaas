@@ -1,4 +1,4 @@
-import { ArrowRight, Code2, CreditCard, Globe2, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
+import { ArrowRight, Code2, CreditCard, Globe2, Headphones, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -136,7 +136,11 @@ export default async function EnterpriseAiConsolePage({
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card className="rounded-2xl">
+          <CardHeader><Headphones className="h-5 w-5 text-primary" /><CardTitle>Conversations & handoff</CardTitle><CardDescription>Review customer chats, take over one conversation, reply as an operator, and resume AI when ready.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/conversations`}>Open operator inbox <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
         <Card className="rounded-2xl">
           <CardHeader><Palette className="h-5 w-5 text-primary" /><CardTitle>Brand & white-label</CardTitle><CardDescription>{canWhiteLabel ? 'Use your own name, logo, colors, support and legal links.' : 'Available with Enterprise AI white-label access.'}</CardDescription></CardHeader>
           <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Open branding <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
