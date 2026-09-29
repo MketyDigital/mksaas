@@ -88,6 +88,29 @@ export async function updateEnterpriseAiSolutionConfiguration(
   const knowledgeText = boundedText(formData, 'knowledgeText', 120_000);
   const defaultModelAlias = boundedText(formData, 'defaultModelAlias', 128) || 'mkety-economy';
   const paused = formData.get('paused') === 'on';
+  const replyDelayModeValue = String(formData.get('replyDelayMode') ?? 'off');
+  const replyDelayMode =
+    replyDelayModeValue === 'fixed' || replyDelayModeValue === 'range'
+      ? replyDelayModeValue
+      : 'off';
+  const minRaw = Number(formData.get('replyDelayMinSeconds') ?? 0);
+  const maxRaw = Number(formData.get('replyDelayMaxSeconds') ?? 0);
+  const replyDelayMinSeconds = Number.isFinite(minRaw) ? Math.max(0, Math.min(900, Math.trunc(minRaw))) : 0;
+  const replyDelayMaxSeconds = Number.isFinite(maxRaw) ? Math.max(0, Math.min(900, Math.trunc(maxRaw))) : 0;
+  if (replyDelayMode === 'range' && replyDelayMaxSeconds < replyDelayMinSeconds) {
+    throw new Error('Maximum reply delay must be greater than or equal to the minimum delay.');
+  }
+  const commitmentRemindersEnabled = formData.get('commitmentRemindersEnabled') === 'on';
+  const reminderTimezone = boundedText(formData, 'reminderTimezone', 80) || 'UTC';
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: reminderTimezone }).format(new Date());
+  } catch {
+    throw new Error('Reminder timezone must be a valid IANA timezone.');
+  }
+  const reminderLeadRaw = Number(formData.get('reminderLeadMinutes') ?? 0);
+  const reminderLeadMinutes = Number.isFinite(reminderLeadRaw)
+    ? Math.max(0, Math.min(10_080, Math.trunc(reminderLeadRaw)))
+    : 0;
   const statusValue = String(formData.get('status') ?? instance.status);
   const status = ['draft', 'active', 'disabled'].includes(statusValue) ? statusValue : instance.status;
 
@@ -102,6 +125,12 @@ export async function updateEnterpriseAiSolutionConfiguration(
         knowledgeText,
         defaultModelAlias,
         paused,
+        replyDelayMode,
+        replyDelayMinSeconds,
+        replyDelayMaxSeconds: replyDelayMode === 'fixed' ? replyDelayMinSeconds : replyDelayMaxSeconds,
+        commitmentRemindersEnabled,
+        reminderTimezone,
+        reminderLeadMinutes,
       },
       updatedAt: new Date(),
     })
