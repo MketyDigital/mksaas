@@ -77,6 +77,13 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('skipping optional NSG reconciliation because public protocol acceptance is authoritative');
   });
 
+  it('reuses an already valid managed gateway certificate instead of reissuing on every release', () => {
+    expect(workflow).toContain('reuse_tls=$reuse_tls');
+    expect(workflow).toContain('Existing managed gateway already serves trusted TLS on both hosts');
+    expect(workflow).toContain('issued=false');
+    expect(workflow).toContain('Reusing existing gateway TLS certificate/key environment without modification.');
+  });
+
   it('requires authoritative/public DNS plus trusted origin TLS and protocol greetings', () => {
     expect(workflow).toContain('Accept public DNS, TLS and protocol greetings');
     expect(workflow).toContain("r.proxied===false");
