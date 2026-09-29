@@ -1,15 +1,15 @@
 import { and, eq } from 'drizzle-orm';
 
 import { revealChannelCredentials } from '@/features/ai-runtime/channels/credentials';
-import { getEnterpriseAiChannel, type EnterpriseAiChannelKey } from '@/features/ai-runtime/channels/registry';
+import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import {
+  type EnterpriseAiScheduledPayload,
   claimEnterpriseAiScheduledAction,
   completeEnterpriseAiScheduledAction,
   failEnterpriseAiScheduledAction,
   markEnterpriseAiConversationOutbound,
   markEnterpriseAiScheduledActionReconciliationRequired,
   recordEnterpriseAiMessage,
-  type EnterpriseAiScheduledPayload,
 } from '@/features/ai-runtime/channels/server/conversations';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
