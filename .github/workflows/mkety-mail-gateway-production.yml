@@ -99,7 +99,7 @@ jobs:
           verify_success() {
             workflow="$1"; label="$2"
             for attempt in $(seq 1 60); do
-              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'                 "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$TARGET_SHA&status=success&per_page=20")"
+              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$TARGET_SHA&status=success&per_page=20")"
               if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
                 echo "Verified $label."
                 return 0
@@ -111,12 +111,42 @@ jobs:
             return 1
           }
 
+          verify_ancestor_proof() {
+            workflow="$1"
+            label="$2"
+            invalidating_paths="$3"
+
+            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$TARGET_SHA&status=success&per_page=20")"
+            if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+              echo "Verified exact-SHA $label."
+              return 0
+            fi
+
+            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=50")"
+            printf '%s' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const x=JSON.parse(s||'{}');for(const r of x.workflow_runs||[])if(r.head_sha)console.log(r.head_sha)})" >/tmp/gateway-proof-candidates
+
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              git cat-file -e "$candidate^{commit}" 2>/dev/null || continue
+              git merge-base --is-ancestor "$candidate" "$TARGET_SHA" || continue
+              changed="$(git diff --name-only "$candidate" "$TARGET_SHA")"
+              if [ -n "$changed" ] && printf '%s\n' "$changed" | grep -Eq "$invalidating_paths"; then
+                continue
+              fi
+              echo "Verified inherited $label proof from ancestor $candidate; no $label trigger paths changed afterward."
+              return 0
+            done </tmp/gateway-proof-candidates
+
+            echo "No acceptable $label proof found."
+            return 1
+          }
+
           verify_success type-check.yml Typecheck
           verify_success lint.yml Lint
           verify_success tests.yml Tests
           verify_success build.yml Build
-          verify_success mkety-migration-baseline.yml Migration-Baseline
-          verify_success mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
+          verify_ancestor_proof mkety-migration-baseline.yml Migration-Baseline '^(src/shared/db/migrations/|migrations/|scripts/check-migration-baseline\.ts$|src/shared/db/__tests__/migration-baseline\.test\.ts$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/mkety-migration-baseline\.yml$)'
+          verify_ancestor_proof mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke '^(src/|package\.json$|pnpm-lock\.yaml$|vite\.config\.ts$|wrangler\.jsonc$|\.github/workflows/mkety-cloudflare-vinext-smoke\.yml$)'
           verify_success mkety-mail-production.yml Mail-Production
 
       - name: Install deployment tooling

@@ -122,18 +122,29 @@ jobs:
           verify_infra_proof() {
             workflow="$1"
             label="$2"
+            invalidating_paths="$3"
+
             response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
             if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
               echo "Verified successful $label for exact SHA."
               return 0
             fi
-            if [ "$proof_sha" != "$VERIFIED_SHA" ]; then
-              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$proof_sha&status=success&per_page=20")"
-              if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
-                echo "Verified inherited $label proof from last non-workflow release $proof_sha."
-                return 0
+
+            response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=50")"
+            printf '%s' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const x=JSON.parse(s||'{}');for(const r of x.workflow_runs||[])if(r.head_sha)console.log(r.head_sha)})" >/tmp/mail-infra-proof-candidates
+
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              git cat-file -e "$candidate^{commit}" 2>/dev/null || continue
+              git merge-base --is-ancestor "$candidate" "$VERIFIED_SHA" || continue
+              changed="$(git diff --name-only "$candidate" "$VERIFIED_SHA")"
+              if [ -n "$changed" ] && printf '%s\n' "$changed" | grep -Eq "$invalidating_paths"; then
+                continue
               fi
-            fi
+              echo "Verified inherited $label proof from ancestor $candidate; no $label trigger paths changed afterward."
+              return 0
+            done </tmp/mail-infra-proof-candidates
+
             echo "No acceptable $label proof found."
             return 1
           }
@@ -175,7 +186,7 @@ jobs:
           }
 
           verify_migration_proof
-          verify_infra_proof mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
+          verify_infra_proof mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke '^(src/|package\.json$|pnpm-lock\.yaml$|vite\.config\.ts$|wrangler\.jsonc$|\.github/workflows/mkety-cloudflare-vinext-smoke\.yml$)'
 
           main_after="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main")"
           head_after="$(MAIN="$main_after" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
