@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 
 import { withRequestDatabase } from '@/shared/db/request';
 
@@ -18,10 +19,7 @@ export async function getSessionToken(request?: Request): Promise<string | null>
   return cookieStore.get(MKETY_SESSION_COOKIE)?.value ?? null;
 }
 
-export async function auth(request?: Request): Promise<MketySession | null> {
-  const token = await getSessionToken(request);
-  if (!token) return null;
-
+async function resolveSessionFromToken(token: string): Promise<MketySession | null> {
   return withRequestDatabase(async (database) => {
     const session = await getSessionByToken(token, database);
     if (!session) return null;
@@ -35,6 +33,22 @@ export async function auth(request?: Request): Promise<MketySession | null> {
       },
     };
   });
+}
+
+// React cache deduplicates repeated server-component/auth reads within one request.
+// API handlers that supply an explicit Request remain independently authenticated
+// from that Request's cookie header.
+const authForCurrentRequest = cache(async (): Promise<MketySession | null> => {
+  const token = await getSessionToken();
+  return token ? resolveSessionFromToken(token) : null;
+});
+
+export async function auth(request?: Request): Promise<MketySession | null> {
+  if (request) {
+    const token = await getSessionToken(request);
+    return token ? resolveSessionFromToken(token) : null;
+  }
+  return authForCurrentRequest();
 }
 
 export async function requireAuth(request?: Request): Promise<MketySession> {

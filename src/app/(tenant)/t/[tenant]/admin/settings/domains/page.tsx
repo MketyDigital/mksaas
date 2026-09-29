@@ -1,9 +1,12 @@
 import { Globe2 } from 'lucide-react';
 
 import { listDomains } from '@/features/admin/services/domains-service';
+import { listManagedDomains } from '@/features/domains/server/managed-domain-service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
+import { DomainSearchClient } from './DomainSearchClient';
 import { DomainsClient } from './DomainsClient';
+import { ManagedDomainsClient } from './ManagedDomainsClient';
 
 interface DomainsPageProps {
   params: Promise<{ tenant: string }>;
@@ -11,7 +14,10 @@ interface DomainsPageProps {
 
 export default async function DomainsPage({ params }: DomainsPageProps) {
   const { tenant } = await params;
-  const result = await listDomains(tenant);
+  const [result, managedDomains] = await Promise.all([
+    listDomains(tenant),
+    listManagedDomains(tenant).catch(() => []),
+  ]);
   const domains = result.success && Array.isArray(result.data) ? result.data : [];
 
   return (
@@ -19,18 +25,42 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
       <div>
         <div className="flex items-center gap-2">
           <Globe2 className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold text-foreground">Custom Domains</h1>
+          <h1 className="text-2xl font-bold text-foreground">Mkety Domains</h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Attach a custom hostname to this workspace. Vercel integration is optional during development.
+          Connect your own domain to this workspace through Mkety-managed routing and HTTPS.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Domain management</CardTitle>
+          <CardTitle>Find a domain</CardTitle>
           <CardDescription>
-            Add your domain now. When Vercel credentials are configured, the same screen can register and verify it automatically.
+            Search live availability and current Mkety registration and renewal pricing.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DomainSearchClient tenantSlug={tenant} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Registered with Mkety</CardTitle>
+          <CardDescription>
+            Domains purchased through Mkety appear here with renewal and authoritative DNS status. DNS records stay live in Mkety DNS rather than being duplicated into the app database.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ManagedDomainsClient tenantSlug={tenant} initialDomains={managedDomains} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Custom domain connections</CardTitle>
+          <CardDescription>
+            Add a hostname, follow the Mkety DNS target shown after creation, then verify when DNS has propagated.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -42,6 +72,6 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
 }
 
 export const metadata = {
-  title: 'Custom Domains | Admin',
+  title: 'Mkety Domains | Admin',
   description: 'Manage custom domains for your workspace',
 };

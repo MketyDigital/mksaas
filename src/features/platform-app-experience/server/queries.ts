@@ -28,6 +28,37 @@ async function withFallback<T>(read: () => Promise<T | null | undefined>, fallba
   }
 }
 
+export async function getPublishedDashboardSettings() {
+  return withFallback(async () => {
+    const dashboard = await db.query.platformAppDashboardSettings.findFirst({
+      where: and(
+        eq(platformAppDashboardSettings.status, PUBLISHED),
+        eq(platformAppDashboardSettings.environment, 'production'),
+        isNull(platformAppDashboardSettings.tenantId),
+      ),
+      orderBy: [asc(platformAppDashboardSettings.createdAt)],
+    });
+
+    if (!dashboard) return null;
+    return appDashboardSettingsSchema.parse({
+      headline: dashboard.headline,
+      description: dashboard.description ?? defaultAppExperience.dashboard.description,
+      primaryCta: {
+        label: dashboard.primaryCtaLabel,
+        href: dashboard.primaryCtaHref,
+      },
+      secondaryCta:
+        dashboard.secondaryCtaLabel && dashboard.secondaryCtaHref
+          ? { label: dashboard.secondaryCtaLabel, href: dashboard.secondaryCtaHref }
+          : undefined,
+      support:
+        dashboard.supportLabel && dashboard.supportHref
+          ? { label: dashboard.supportLabel, href: dashboard.supportHref }
+          : undefined,
+    });
+  }, defaultAppExperience.dashboard);
+}
+
 export async function getPublishedAppExperience() {
   return withFallback(async () => {
     const dashboard = await db.query.platformAppDashboardSettings.findFirst({

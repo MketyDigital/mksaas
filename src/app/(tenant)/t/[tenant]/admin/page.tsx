@@ -30,7 +30,7 @@ export default async function AdminDashboard({ params }: AdminDashboardProps) {
   const statCards = [
     { name: 'Team Members', value: stats.persons, icon: Users, href: 'members' },
     { name: 'Roles', value: stats.roles, icon: BarChart3, href: 'roles' },
-    { name: 'Integration Jobs', value: stats.integrationJobs, icon: Clock, href: 'processing' },
+    { name: 'Integration Jobs', value: stats.integrationJobs, icon: Clock, href: 'integrations' },
   ];
 
   return (

@@ -4020,3 +4020,45 @@ This section is newer than the protected historical blueprint above and override
 
 Historical certification/recovery branches and PRs must not be merged blindly. Reconcile any still-needed intent onto current `main`, then run fresh verification. The current production baseline takes precedence over stale branch state.
 
+
+
+# 2026-09-28 Enterprise AI White-label and Customer Domain Override
+
+For Enterprise AI, white-label means a genuine customer-facing product identity, not only a logo swap.
+
+- Entitled white-label customers may replace Enterprise AI product/brand name, logo, favicon, colors, support/legal links and customer login presentation.
+- A customer hostname is routing context for the existing Mkety tenant/workspace. Never create a duplicate tenant, membership directory, billing ledger or AI runtime for a custom domain.
+- Every Enterprise AI tenant may use the managed `<tenant>.mkety.app` fallback.
+- Customer-owned hostnames use Cloudflare for SaaS and should normally require one customer CNAME record; Mkety owns certificate provisioning, verification and routing.
+- Domains purchased through Mkety use the server-owned registrar/reseller abstraction and then enter the same Cloudflare/custom-hostname path.
+- Host-to-host login uses one-time destination-bound product handoff and host-scoped session cookies. Do not reintroduce wildcard Mkety cookies.
+- Day-one Enterprise AI channels are Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API; future channels extend the adapter layer rather than fork the runtime.
+- Enterprise customers must be able to understand plan, subscription, usage and customer cost/credits without needing developer knowledge.
+- Raw provider cost remains internal commercial telemetry. Customer charging remains versioned, prepaid/fail-closed by default and separate from provider cost.
+- Production managed inference may only run after credit and every applicable budget reservation succeed, and it must settle actual usage against the immutable admitted rate-card version.
+
+# 2026-09-28 Enterprise AI channel and managed-model authority reconciliation
+
+This section is newer than the earlier Enterprise AI override above and resolves the final launch-candidate architecture against PR #159.
+
+- The implemented Enterprise AI channel registry is: Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook, and custom webhook/API.
+- Discord is an authenticated conversational channel. LinkedIn support is limited to approved Page Community organization comment/mention workflows; do not claim unrestricted LinkedIn inbox or direct-message access.
+- Microsoft Teams inbound is not yet part of the production contract. Current Teams support is outbound workflow/webhook delivery until a Bot Framework identity path is implemented and verified.
+- The managed Workers AI benchmark set is Gemma 4 26B A4B, GLM-5.3 Flash, and Qwen 3.8 27B. Gemma remains the initial managed candidate; the second managed model must be selected from recorded benchmark evidence rather than documentation preference.
+- Production managed customer inference remains fail-closed. `customerInferenceEnabled` must stay off until the paid benchmark, tiny real AI Gateway/accounting acceptance, real customer-domain white-label/isolation acceptance, registrar/reseller adapter verification, and guarded production promotion are all recorded.
+
+
+
+# 2026-09-28 Central Mkety AI Runtime and Dynamic Connection Authority
+
+This section is newer than all earlier Public AI, Platform AI, Enterprise AI, provider and registrar wording above and supersedes any conflicting implementation guidance.
+
+- Public Mkety AI, authenticated Workspace AI, managed Agent Builder/Automation execution, Workspace knowledge embeddings, Enterprise AI and the Enterprise AI API are separate product/data/policy experiences that consume one shared central Mkety AI transport/control layer. “Separate” means isolation of memory, tenant data, policy, credentials, entitlements, budgets and audit scope; it does **not** mean maintaining duplicate provider transports.
+- Mkety-managed inference uses Workers AI through the shared runtime. The selected managed routes are `mkety-economy` -> Gemma 4 and `mkety-smart` -> GLM-5.3 Flash. Qwen 3.8 27B is a benchmarked reserve. Normal Workspace chat routes by task class rather than random/round-robin distribution. Heavy work starts on GLM-5.3 Flash until a separately validated full GLM-5.3 escalation tier is introduced.
+- Public AI may use the managed Workers AI routes or isolated Mkety-owned external-provider system connections. Tenant Workspace/Enterprise BYOK uses tenant/project-scoped connections. Approved external adapters are OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare AI and AWS Bedrock.
+- A selected BYOK connection is fail-closed: provider/credential failure must never silently fall back to Mkety-paid inference.
+- Rotatable provider/customer/reseller credentials must be encrypted database-backed connections and must not require an application build/redeploy to rotate. Mutable provider selection, model choice, fallback order, endpoints, regions and reseller settings are database-backed configuration.
+- Only genuine bootstrap/root/infrastructure secrets belong in Worker/server secret storage. The shared connection-encryption root is `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY`; provider API keys and DomainNameAPI reseller credentials are not deployment configuration.
+- Domain registration is a system-wide Mkety service. DomainNameAPI is the concrete reseller adapter behind the shared domain abstraction. Enterprise AI and other products consume the Domains service; they do not own registrar credentials.
+- Managed-model benchmark gate is complete: run `36425084523` recorded Gemma 4 at 8/10, GLM-5.3 Flash at 9/10 and Qwen 3.8 27B at 9/10 with zero provider errors. Gemma + GLM-5.3 Flash are the selected managed pair.
+- Production Enterprise customer inference remains OFF until the tiny managed commercial/accounting acceptance, real customer white-label hostname/login isolation acceptance, DomainNameAPI live reseller acceptance and explicit guarded production promotion are recorded.

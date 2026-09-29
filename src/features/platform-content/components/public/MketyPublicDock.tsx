@@ -5,6 +5,7 @@ import {
   Boxes,
   BriefcaseBusiness,
   CircleHelp,
+  Globe2,
   GraduationCap,
   House,
   Layers3,
@@ -26,6 +27,7 @@ const primaryItems = [
 const moreItems = [
   { label: 'Workspaces', href: '/workspaces', icon: Layers3 },
   { label: 'Pricing', href: '/pricing', icon: Tags },
+  { label: 'Domains', href: '/domains', icon: Globe2 },
   { label: 'Enterprise', href: '/enterprise', icon: BriefcaseBusiness },
   { label: 'Docs', href: '/docs', icon: BookOpen },
   { label: 'About', href: '/about', icon: UsersRound },

@@ -1,0 +1,85 @@
+name: Mkety AI Commercial Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN_TINY_AI_COMMERCIAL_ACCEPTANCE
+        required: true
+        type: string
+      base_url:
+        description: Non-production Mkety API origin, for example a preview workers.dev URL
+        required: true
+        type: string
+      model:
+        description: Managed model alias to accept
+        required: false
+        default: mkety-economy
+        type: string
+      project_id:
+        description: Optional project UUID when the acceptance API key is not project-bound
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  tiny-commercial-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: preview
+    env:
+      AI_ACCEPTANCE_BASE_URL: ${{ inputs.base_url }}
+      AI_ACCEPTANCE_MODEL: ${{ inputs.model }}
+      AI_ACCEPTANCE_PROJECT_ID: ${{ inputs.project_id }}
+      AI_ACCEPTANCE_API_KEY: ${{ secrets.MKETY_AI_ACCEPTANCE_API_KEY }}
+      AI_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+    steps:
+      - name: Require explicit non-production authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${{ inputs.confirmation }}" = "RUN_TINY_AI_COMMERCIAL_ACCEPTANCE" ] || {
+            echo "Refusing paid commercial acceptance without exact confirmation." >&2
+            exit 1
+          }
+          case "$AI_ACCEPTANCE_BASE_URL" in
+            https://mkety.com*|https://app.mkety.com*|https://api.mkety.com*|https://ai.mkety.com*)
+              echo "Refusing to run this acceptance against a production Mkety hostname." >&2
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate acceptance credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${AI_ACCEPTANCE_API_KEY:-}" ] || { echo "Missing preview secret MKETY_AI_ACCEPTANCE_API_KEY." >&2; exit 1; }
+          [ -n "${AI_ACCEPTANCE_DATABASE_URL:-}" ] || { echo "Missing preview STAGING_DATABASE_URL." >&2; exit 1; }
+          echo "::add-mask::$AI_ACCEPTANCE_API_KEY"
+          echo "::add-mask::$AI_ACCEPTANCE_DATABASE_URL"
+
+      - name: Execute one real managed request and verify accounting
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/accept-mkety-ai-commercial.ts | tee /tmp/mkety-ai-commercial-acceptance.json
+
+      - name: Publish acceptance evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/mkety-ai-commercial-acceptance.json','utf8')); const rows=['## Mkety AI commercial acceptance','','- Environment: non-production preview','- Managed request: completed','- Model alias: '+x.modelAlias,'- Native model: '+x.nativeModel,'- Provider: '+x.provider,'- Reserved credits: '+x.reservedCredits,'- Settled credits: '+x.settledCredits,'- Input/output tokens: '+x.inputTokens+' / '+x.outputTokens,'- Provider cost (micro-USD): '+x.providerCostUsdMicros,'- Budget reservations settled: '+x.budgetReservations,'- Idempotent replay: '+x.idempotentReplay]; fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, rows.join('\\n')+'\\n');"

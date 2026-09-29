@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Command,
   Database,
+  Globe2,
   LayoutDashboard,
   Link2,
   Mail,
@@ -132,6 +133,12 @@ export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNa
                 href={`${adminBase}/settings/storage`}
                 label={tAdmin('settingsTabs.storage')}
                 icon={Database}
+                onClick={onItemClick}
+              />
+              <SidebarNavItem
+                href={`${adminBase}/settings/domains`}
+                label="Domains & DNS"
+                icon={Globe2}
                 onClick={onItemClick}
               />
             </>

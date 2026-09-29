@@ -57,7 +57,7 @@ export const getCurrentTenant = cache(async () => {
  * @param slug - Tenant slug
  * @returns Tenant object or null if not found
  */
-export async function getTenantBySlug(slug: string) {
+export const getTenantBySlug = cache(async (slug: string) => {
   try {
     const tenant = await db.query.tenants.findFirst({
       where: eq(tenants.slug, slug),
@@ -67,7 +67,7 @@ export async function getTenantBySlug(slug: string) {
     const cause = getCauseMessage(err);
     throw new Error(`Tenant lookup failed for slug "${slug}": ${cause}`, { cause: err });
   }
-}
+});
 
 /**
  * Validate that a tenant slug exists.

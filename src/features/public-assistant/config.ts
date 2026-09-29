@@ -40,6 +40,7 @@ export interface PublicAIProviderConfig {
 }
 
 const PUBLIC_AI_PROVIDER_IDS: readonly PublicAIProviderId[] = [
+  'workers-ai',
   'openai',
   'azure-openai',
   'gemini',
@@ -83,6 +84,8 @@ export function parsePublicAIProviderConfig(environment: PublicAssistantEnvironm
 
 function hasProviderCredential(provider: PublicAIProviderId, environment: PublicAssistantEnvironment): boolean {
   switch (provider) {
+    case 'workers-ai':
+      return true;
     case 'openai':
       return Boolean(environment.MKETY_PUBLIC_OPENAI_API_KEY ?? environment.OPENAI_API_KEY);
     case 'azure-openai':

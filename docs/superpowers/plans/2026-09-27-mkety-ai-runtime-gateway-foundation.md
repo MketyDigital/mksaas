@@ -1,3 +1,40 @@
+## Progress update — 2026-09-28 Enterprise AI completion candidate
+
+The original AI-01 foundation described below is no longer the current next step. It is implemented on main.
+
+Current continuation is PR #159, based on main `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`.
+
+Completed or implemented in the candidate:
+
+- business-oriented Enterprise AI console and solution drafts;
+- Workers AI binding + AI Gateway runtime path;
+- commercial admission before provider invocation;
+- exact token-based settlement after provider success;
+- reconciliation-required state after upstream success/local accounting failure;
+- verification-dated provider-cost accounting separated from customer charge;
+- internal margin/overhead floor calculation;
+- OpenAI-compatible tool and structured-output normalization;
+- true white-label brand profile and branded customer login;
+- managed `*.mkety.app` host path;
+- Cloudflare for SaaS custom-hostname provisioning/readiness;
+- host-bound one-time product-session handoff;
+- provider-neutral domain-reseller seam;
+- non-technical customer plan/subscription/usage/credits summary;
+- day-one channel registry for Website, WhatsApp, Telegram, Instagram, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook and custom webhook/API.
+
+Repository certification is green on implementation SHA `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`, including CI/build/type-check/tests/lint, migration baseline, Platform Core Workspaces Smoke, Cloudflare vinext Smoke, Content DB Smoke, and Public Candidate Deploy run `36415088152`.
+
+Still gated before production inference:
+
+- guarded paid model benchmark and tiny real-provider acceptance;
+- settlement/reconciliation verification against real Cloudflare usage;
+- real white-label hostname/TLS/login acceptance;
+- selected registrar adapter binding and sandbox/live-safe verification;
+- explicit guarded promotion of `customerInferenceEnabled`.
+
+Do not treat the older “Current next step: AI-01” wording later in this document as current authority.
+
+
 # Mkety AI Runtime & Gateway Foundation — Implementation Plan
 
 Date: 2026-09-27

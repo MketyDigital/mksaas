@@ -1,13 +1,40 @@
 # Mkety AI Runtime, Gateway & Enterprise AI Architecture
 
-> Status: design foundation
-> Branch: `feat/mkety-ai-runtime-gateway-foundation-20260927`
+## 2026-09-28 central AI runtime and dynamic-configuration authority
+
+This section supersedes earlier statements below that describe Workspace AI, Enterprise BYOK, provider selection, or registrar integration as still separate/unimplemented.
+
+- Mkety AI is one shared central transport/control layer with strict caller and credential isolation. Public AI, authenticated Workspace chat, managed Agent Builder/Automation execution, knowledge embeddings, the Enterprise AI product, and the Enterprise AI API consume that shared layer rather than maintaining independent provider transports.
+- Managed Mkety inference remains Workers AI: `mkety-economy` resolves through the database model alias/route tables (currently Gemma 4), while `mkety-smart` resolves through those same tables (currently GLM-5.3 Flash). Routing is task-class based, not round-robin. Qwen 3.8 27B remains a benchmarked reserve. Because managed execution resolves active aliases/routes at request time, an approved model swap does not require an application rebuild.
+- The shared external-provider adapter catalog is OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare AI and AWS Bedrock. Public AI uses isolated Mkety-owned system connections; tenant Workspace/Enterprise BYOK uses tenant/project-scoped connections. A BYOK failure never silently falls back to Mkety-paid inference.
+- Enterprise API BYOK execution is implemented through explicit `provider_connection_id`. Customer-provider token spend belongs to the customer provider account and is recorded separately from Mkety managed inference; Mkety does not manufacture managed-token charges for that call.
+- Public AI routing, enablement, primary/fallback order and per-provider model selection are database-backed in Platform Control. Public AI provider credentials are encrypted database system connections. The old environment-based Public AI provider configuration is migration fallback only and is not the operational source of truth.
+- Customer BYOK credentials and Mkety system-provider credentials are encrypted at rest and are never returned after save. Routine rotation does not require build/redeploy.
+- Only bootstrap/root or infrastructure secrets belong in Worker/server secret storage. The shared connection-encryption root is `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY`; the older `MKETY_AI_BYOK_ENCRYPTION_KEY` name is migration compatibility only. Mutable provider credentials, endpoints, model choices, routing, fallback order and reseller settings do not belong in deployment-time environment configuration.
+- Domain registration is a system-wide Mkety service. DomainNameAPI is the concrete reseller adapter behind the shared domain-reseller abstraction; Enterprise AI, Deploy and future products consume it rather than owning registrar credentials.
+- DomainNameAPI reseller credentials are encrypted in the database. OT&E/production mode, API endpoint override, nameservers and WHOIS privacy are database-backed Platform Control settings. Routine reseller credential rotation or configuration changes require no application redeploy.
+- A guarded DomainNameAPI OT&E workflow exists for read-only transport/authentication verification. Production registrar mutations remain gated until OT&E lifecycle acceptance is recorded.
+- Production Enterprise customer inference remains OFF. The shared runtime itself is not globally disabled by that Enterprise kill switch; the Enterprise commercial/API boundary enforces `customerInferenceEnabled` so Public/Workspace/internal isolated consumers are not incorrectly disabled.
+
+Remaining release evidence is live rather than architectural: exact-head repository certification, tiny non-production managed commercial/accounting acceptance, DomainNameAPI OT&E/lifecycle verification with the real reseller account, a real customer white-label hostname/login isolation test, and explicit production Enterprise inference promotion.
+
+
+> Status: implemented foundation + PR #159 completion candidate; production managed inference remains gated
+> Active completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159
 > Date: 2026-09-27
 > Governing authority: `AGENTS.md` and `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`
 >
 > This document does not supersede `AGENTS.md`. If there is a conflict, `AGENTS.md` wins until the authority is deliberately updated.
 >
 > Detailed product, team/RBAC, pricing, overage, payments, cache, security, reliability and operations policy is defined in `docs/MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`.
+
+## 2026-09-28 implementation authority update
+
+The AI-01 foundation and the Enterprise AI completion candidate are implemented. The authoritative continuation is PR #159 plus `docs/handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`.
+
+The current managed-model decision is intentionally incomplete: Gemma 4 is the initial candidate, while GLM-5.3 Flash and Qwen 3.8 27B compete for the second slot through the guarded paid benchmark. Production `customerInferenceEnabled` remains off until the live benchmark/accounting/domain/registrar gates and explicit production promotion are recorded.
+
+The implemented launch channel registry additionally includes Discord and LinkedIn Page Community. LinkedIn is limited to approved organization community/comment workflows, and Microsoft Teams remains outbound workflow/webhook only until inbound Bot Framework identity verification exists.
 
 ## 1. Product intent
 
@@ -871,3 +898,25 @@ Before any Enterprise inference/channel/action operation, the runtime must resol
 Only then may the runtime invoke the model/channel/tool.
 
 This keeps Enterprise commercial enforcement independent from ordinary AI Workspace access while still reusing the same low-level runtime.
+
+
+## 2026-09-28 white-label, domain and execution clarification
+
+Enterprise AI customer applications are logical tenant configurations on the shared Mkety AI runtime unless a dedicated contract explicitly requires isolated infrastructure.
+
+White-label tenants may fully replace customer-facing Enterprise AI product identity: product/brand name, logos, favicon, colors, support/legal links and customer login presentation. White-label does not create a new tenant, user directory, ledger or AI runtime.
+
+Hostname hierarchy:
+
+- canonical Enterprise console: `ai.mkety.com`;
+- managed customer fallback: `<tenant>.mkety.app`;
+- customer-owned hostname: Cloudflare for SaaS custom hostname mapped to the same tenant;
+- future Mkety-purchased domain: registrar/reseller adapter -> DNS/custom-hostname provisioning -> same tenant.
+
+Customer-owned hostname setup should normally require one CNAME record. Mkety owns certificate provisioning, hostname verification, routing and rollback.
+
+Managed provider execution is now explicitly:
+
+`auth/entitlement -> model/rate policy -> credit reservation -> all budgets -> Workers AI + AI Gateway -> normalized usage -> exact settlement -> provider-cost record`.
+
+An upstream success followed by local accounting failure is a reconciliation state, never permission to replay the upstream request.

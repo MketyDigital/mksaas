@@ -1,0 +1,83 @@
+name: Mkety DomainNameAPI Fixed-Egress Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quote-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production
+    env:
+      DOMAINNAMEAPI_RESELLER_ID: ${{ secrets.DOMAINNAMEAPI_USERNAME }}
+      DOMAINNAMEAPI_LIVE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_API_TOKEN }}
+      DOMAINNAMEAPI_OTE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      MKETY_DOMAIN_RELAY_URL: https://registrar-relay.mkety.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate read-only acceptance inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DOMAINNAMEAPI_RESELLER_ID DOMAINNAMEAPI_LIVE_API_TOKEN DOMAINNAMEAPI_OTE_API_TOKEN COOLIFY_API_TOKEN; do
+            [ -n "${!name:-}" ] || { echo "Missing production acceptance secret: $name" >&2; exit 1; }
+            echo "::add-mask::${!name}"
+          done
+
+      - name: Derive isolated relay HMAC key
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="$(node - <<'NODE'
+          const {hkdfSync}=require('node:crypto');
+          const out=hkdfSync(
+            'sha256',
+            Buffer.from(process.env.COOLIFY_API_TOKEN),
+            Buffer.from('mkety-domain-relay-v1'),
+            Buffer.from('request-hmac'),
+            32,
+          );
+          process.stdout.write(Buffer.from(out).toString('hex'));
+          NODE
+          )"
+          echo "::add-mask::$derived"
+          echo "MKETY_DOMAIN_RELAY_SECRET=$derived" >> "$GITHUB_ENV"
+
+      - name: Verify Live and OT&E through fixed OCI egress
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/verify-domainnameapi-relay-readonly.ts | tee /tmp/domainnameapi-relay-acceptance.json
+          node -e "const x=require('/tmp/domainnameapi-relay-acceptance.json');if(x.ok!==true||x.transport!=='fixed-egress-relay'||x.mutationPerformed!==false)process.exit(1)"
+
+      - name: Publish fixed-egress evidence
+        if: always()
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs');
+          let x=null;
+          try{x=JSON.parse(fs.readFileSync('/tmp/domainnameapi-relay-acceptance.json','utf8'))}catch{}
+          const rows=[
+            '## DomainNameAPI fixed-egress quote acceptance',
+            '',
+            '- Relay: https://registrar-relay.mkety.com',
+            '- Expected OCI outbound IP: 89.168.70.209',
+            '- Mutation performed: '+String(x?.mutationPerformed ?? false),
+            '- Live quote: '+(x?.live ? 'passed' : 'not confirmed'),
+            '- OT&E quote: '+(x?.ote ? 'passed' : 'not confirmed'),
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, rows.join('\n')+'\n');
+          NODE

@@ -183,6 +183,48 @@
       "when": 1790568600000,
       "tag": "0025_ai_commercial_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790572200000,
+      "tag": "0026_ai_business_solutions",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790575800000,
+      "tag": "0027_ai_managed_model_selection",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790579400000,
+      "tag": "0028_agent_provider_connection_refs",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790583000000,
+      "tag": "0029_platform_service_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790586600000,
+      "tag": "0030_ai_managed_model_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790590200000,
+      "tag": "0031_managed_domains_dns",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,94 @@
+name: Mkety Live Gate Readiness Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/accept-domainnameapi-ote.ts'
+      - 'scripts/accept-mkety-ai-commercial.ts'
+      - '.github/workflows/mkety-domainnameapi-ote-acceptance.yml'
+      - '.github/workflows/mkety-ai-commercial-acceptance.yml'
+      - '.github/workflows/mkety-live-gate-readiness-diagnostic.yml'
+      - 'src/features/domains/server/domainnameapi.ts'
+      - 'src/features/domains/server/reseller.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: preview
+    env:
+      DOMAIN_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      MKETY_CONNECTION_SECRET_ENCRYPTION_KEY: ${{ secrets.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Inspect staging live-gate readiness
+        id: inspect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${DOMAIN_ACCEPTANCE_DATABASE_URL:-}" ]; then
+            echo 'database=false' >> "$GITHUB_OUTPUT"
+            echo 'domain_ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'database=true' >> "$GITHUB_OUTPUT"
+          echo "::add-mask::$DOMAIN_ACCEPTANCE_DATABASE_URL"
+          node --input-type=module <<'NODE' >/tmp/live-gate-readiness.json
+          import postgres from 'postgres';
+          const sql=postgres(process.env.DOMAIN_ACCEPTANCE_DATABASE_URL,{max:1,prepare:false});
+          try {
+            const [domain]=await sql.unsafe("select id, mode, status, endpoint_url, config, secret_ref is not null as has_secret from saas_template.platform_service_connections where service_key='domains' and provider_key='domainnameapi' and status='active' order by updated_at desc limit 1");
+            const [policy]=await sql.unsafe("select key, prepaid_only, customer_inference_enabled from saas_template.ai_runtime_policies where key='enterprise-default'");
+            const aliases=await sql.unsafe("select a.alias,m.provider_key,m.native_model,m.enabled,m.status, exists(select 1 from saas_template.ai_rate_cards rc where rc.model_id=m.id and rc.status='active' and rc.effective_from<=now() and (rc.effective_to is null or rc.effective_to>now())) as active_rate from saas_template.ai_model_aliases a join saas_template.ai_models m on m.id=a.model_id where a.alias in ('mkety-economy','mkety-smart') order by a.alias");
+            const result={
+              domain:domain?{configured:true,mode:domain.mode,status:domain.status,hasSecret:domain.has_secret,hasEndpoint:Boolean(domain.endpoint_url),nameServerCount:Array.isArray(domain.config?.nameServers)?domain.config.nameServers.length:0}:{configured:false},
+              ai:{policy:policy?{prepaidOnly:policy.prepaid_only,customerInferenceEnabled:policy.customer_inference_enabled}:null,aliases}
+            };
+            process.stdout.write(JSON.stringify(result,null,2));
+          } finally { await sql.end(); }
+          NODE
+          domain_ready="$(node -e "const x=require('/tmp/live-gate-readiness.json');process.stdout.write(String(Boolean(x.domain?.configured&&x.domain?.mode==='ote'&&x.domain?.hasSecret)))")"
+          echo "domain_ready=$domain_ready" >> "$GITHUB_OUTPUT"
+
+      - name: Run real DomainNameAPI OT&E quote when database connection is ready
+        if: steps.inspect.outputs.domain_ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${MKETY_CONNECTION_SECRET_ENCRYPTION_KEY:-}" ] || { echo 'Active DomainNameAPI connection exists but preview encryption key is unavailable.' >&2; exit 1; }
+          echo "::add-mask::$MKETY_CONNECTION_SECRET_ENCRYPTION_KEY"
+          DOMAIN_ACCEPTANCE_LIFECYCLE=false pnpm exec tsx scripts/accept-domainnameapi-ote.ts | tee /tmp/domainnameapi-quote.json
+
+      - name: Publish readiness evidence
+        if: always()
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          let readiness={domain:{configured:false},ai:{policy:null,aliases:[]}};
+          try{readiness=JSON.parse(fs.readFileSync('/tmp/live-gate-readiness.json','utf8'))}catch{}
+          let quote=null;try{quote=JSON.parse(fs.readFileSync('/tmp/domainnameapi-quote.json','utf8'))}catch{}
+          const rows=['## Live gate readiness diagnostic','',
+            '- Staging database available: ${{ steps.inspect.outputs.database || 'false' }}',
+            '- DomainNameAPI connection configured: '+Boolean(readiness.domain?.configured),
+            '- DomainNameAPI mode: '+(readiness.domain?.mode||'—'),
+            '- DomainNameAPI encrypted credential present: '+Boolean(readiness.domain?.hasSecret),
+            '- DomainNameAPI real OT&E quote executed: '+Boolean(quote?.ok),
+            '- AI prepaid-only policy: '+String(readiness.ai?.policy?.prepaidOnly ?? '—'),
+            '- AI customer inference currently enabled: '+String(readiness.ai?.policy?.customerInferenceEnabled ?? '—'),
+            '- Managed alias readiness: `'+JSON.stringify(readiness.ai?.aliases||[])+'`'
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\n')+'\n');
+          console.log(JSON.stringify({readiness,quote},null,2));
+          NODE

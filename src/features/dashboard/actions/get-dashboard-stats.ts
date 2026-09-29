@@ -33,13 +33,14 @@ export async function getDashboardStats(tenantId: string): Promise<DashboardStat
       return { success: false, error: 'Not authenticated' };
     }
 
-    const [teamCount] = await db.select({ count: count() }).from(persons).where(eq(persons.tenantId, tenantId));
-
-    const recentEvents = await db.query.auditEvents.findMany({
-      where: eq(auditEvents.tenantId, tenantId),
-      orderBy: [desc(auditEvents.timestamp)],
-      limit: 10,
-    });
+    const [[teamCount], recentEvents] = await Promise.all([
+      db.select({ count: count() }).from(persons).where(eq(persons.tenantId, tenantId)),
+      db.query.auditEvents.findMany({
+        where: eq(auditEvents.tenantId, tenantId),
+        orderBy: [desc(auditEvents.timestamp)],
+        limit: 10,
+      }),
+    ]);
 
     const recentActivity: ActivityItem[] = recentEvents.map((e) => ({
       id: e.id,

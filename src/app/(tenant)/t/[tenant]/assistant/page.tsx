@@ -1,6 +1,9 @@
 import type { UIMessage } from 'ai';
 
 import { getConversation, getInitialData } from '@/features/assistant';
+import { listByokProviderConnections } from '@/features/ai-runtime/server/provider-connections';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 
 import { AssistantClient } from './AssistantClient';
 
@@ -13,6 +16,18 @@ export default async function AssistantPage({ params, searchParams }: AssistantP
   const { tenant: tenantSlug } = await params;
   const { chat: conversationId } = await searchParams;
   const initialData = await getInitialData(tenantSlug);
+  const tenant = await getTenantBySlug(tenantSlug);
+  const byokEnabled = tenant
+    ? await hasEntitlement({ tenantId: tenant.id, entitlement: 'ai.byok' })
+    : false;
+  const byokConnections = tenant && byokEnabled
+    ? (await listByokProviderConnections({ tenantId: tenant.id }))
+        .filter((connection) => connection.status === 'active')
+        .map((connection) => ({
+          id: connection.id,
+          providerKey: connection.providerKey,
+        }))
+    : [];
 
   const conversation =
     conversationId && conversationId.trim() !== '' ? await getConversation(tenantSlug, conversationId.trim()) : null;
@@ -24,6 +39,7 @@ export default async function AssistantPage({ params, searchParams }: AssistantP
         conversationId={conversation?.id}
         initialMessages={(conversation?.messages as UIMessage[]) ?? undefined}
         initialTitle={conversation?.title}
+        providerOptions={byokConnections}
       />
     </div>
   );

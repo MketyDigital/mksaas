@@ -1,4 +1,239 @@
+## 2026-09-28 post-hotfix reconciliation and exact-head verification
+
+- PR #160 merged to main as `909c3d31a524075763c0a1c7d7985f89254e0b3a`; its guarded app.mkety.com repair workflow has not yet been executed in production.
+- PR #159 was reconciled with that main through merge commit `f70a37414ac9e3494cb638274322babbdf76747e`; it is 0 behind main and mergeable.
+- Exact-head CI `36475433490`, migration baseline `36475433506`, AI workspace smoke `36475433627`, Platform workspace smoke `36475433433`, vinext smoke `36475433555`, live-gate diagnostic `36475433650`, and app-host diagnostic `36475433582` all passed.
+- Integrated Public Candidate run `36475433480`, attempt 3, passed the complete sequence including connected database verification, isolated Worker deployment, real managed-AI commercial/accounting acceptance, public/docs routes, Enterprise payment safety, and Public Mkety AI privacy/commercial grounding. Attempt 2 had failed only on one HTTP 000 docs-link transport timeout; the unchanged retry passed, confirming it was transient.
+- DomainNameAPI live credentials are present, but the safe quote-only provider probe currently receives HTTP 401. No registrar mutation was performed. Genuine OT&E lifecycle acceptance remains external and incomplete.
+- Real customer white-label hostname acceptance remains deliberately deferred until an actual controlled customer hostname is connected.
+- Production Enterprise customer inference remains OFF and must stay OFF until the external promotion evidence is intentionally completed.
+
+## 2026-09-28 final central-AI / live-gate repository certification
+
+Certified implementation SHA: `de0cc9c27cb5d6b10b5c3561dbb365573584e53f`.
+
+Exact-head evidence:
+- CI `36463882071` — SUCCESS.
+- Migration Baseline `36463882626` — SUCCESS.
+- Mkety AI Workspace Foundation Smoke `36463882405` — SUCCESS.
+- Mkety Platform Core Workspaces Smoke `36463882573` — SUCCESS.
+- Mkety Cloudflare vinext Smoke `36463882696` — SUCCESS.
+- Mkety Public Candidate Deploy `36463882316` — SUCCESS.
+- Production App Host Diagnostic `36463882391` — SUCCESS as a read-only diagnostic; it proves the current production defect, not a repair.
+- Live Gate Readiness Diagnostic `36463882183` — SUCCESS.
+- DomainNameAPI Direct OT&E Diagnostic `36463882234` — SUCCESS as a credential-readiness diagnostic; no preview DomainNameAPI credentials are currently configured.
+
+The public candidate now performs the complete connected acceptance sequence:
+1. applies the base Drizzle migrations before legacy Mkety content migrations;
+2. verifies the connected staging database;
+3. deploys an isolated candidate Worker with the real Workers AI binding and non-production AI Gateway;
+4. creates a self-cleaning ephemeral Enterprise AI tenant/API key/credits/budget fixture;
+5. temporarily enables customer inference in staging only;
+6. performs a real managed Workers AI request;
+7. verifies immutable rate-card selection, provider usage/cost evidence, credit/budget reservation and settlement, and idempotent replay;
+8. restores the previous staging AI runtime policy and deletes the ephemeral fixture;
+9. completes public-route/copy, Enterprise payment-safety and Public Mkety AI memory/privacy/commercial-grounding smokes.
+
+The real commercial inference/accounting gate is therefore CLOSED on this implementation SHA.
+
+Acceptance evidence from Public Candidate run `36463882316`:
+- request `3c764161-8c05-4d5c-99a7-e4dc1505c91e`;
+- `mkety-economy` -> `@cf/google/gemma-4-26b-a4b-it` via `workers-ai`;
+- 24 input tokens / 8 output tokens / 0 cached input tokens;
+- 3 credits reserved / 2 credits settled;
+- provider cost 6 micro-USD / minimum revenue floor 21 micro-USD;
+- one budget reservation settled;
+- exact idempotent replay blocked without provider redispatch.
+
+Managed-model benchmark remains closed by run `36425084523`:
+- `mkety-economy` -> Gemma 4;
+- `mkety-smart` -> GLM-5.3 Flash;
+- Qwen remains disabled reserve.
+Migration `0027_ai_managed_model_selection.sql` encodes this selection.
+
+app.mkety.com:
+- live diagnostics prove production is currently misconfigured: no Worker Custom Domain, a proxied CNAME target of `mkety.com/app`, and HTTP 530 on `/` and `/app`;
+- repository-side repair is isolated in draft PR #160 from current `main`;
+- PR #160 is green in full CI and vinext;
+- its manual production workflow deploys a dedicated `mkety-app-host` Worker, preserves the public `mkety.com`/`www.mkety.com` Worker, binds existing production Hyperdrive, adds app callback/logout URIs to ZITADEL non-destructively, backs up/restores app DNS, attaches only `app.mkety.com`, verifies `/ -> /app -> /login -> auth.mkety.com`, then disables workers.dev/preview exposure.
+No production app-host mutation has been executed yet.
+
+Still intentionally deferred real external gates:
+- DomainNameAPI real OT&E quote/lifecycle: code and workflows are complete, but preview GitHub Environment currently has no `DOMAINNAMEAPI_USERNAME` or `DOMAINNAMEAPI_API_TOKEN`;
+- real customer white-label hostname acceptance: requires an actual controlled customer hostname;
+- production app.mkety.com repair execution: manual PR #160 workflow only after choosing to perform the production mutation;
+- production Enterprise AI promotion: `customerInferenceEnabled` remains OFF and must stay OFF until the remaining external evidence is recorded.
+
+## 2026-09-28 final repository certification and live-release tooling
+
+Certified implementation head: `106390643a63ad4ecaa7bbaa0f4edc10a976c72f`.
+
+Exact-head evidence:
+- CI run `36445378970` — SUCCESS: Build, Test, Lint and Type-check all passed.
+- Migration Baseline `36445379145` — SUCCESS.
+- Mkety AI Workspace Foundation Smoke `36445378931` — SUCCESS.
+- Mkety Platform Core Workspaces Smoke `36445378968` — SUCCESS.
+- Mkety Cloudflare vinext Smoke `36445379557` — SUCCESS.
+- Mkety Content DB Smoke `36445379296` — SUCCESS.
+- Mkety Public Candidate Deploy `36445379381` — SUCCESS, including tests/type/lint/vinext, connected DB application, payment-gateway checks, isolated Worker build/deploy, public-route/copy smoke, payment safety and Public Mkety AI memory/privacy/commercial-grounding smoke.
+
+The previous Public AI candidate failure was a false-positive acceptance rule that treated legitimate product names such as Mail Growth as a retired Platform plan. Candidate and production acceptance now reject only retired `Growth|Pro|Business` plan/tier/workspace phrases; the corrected integrated candidate passed.
+
+Repository-side release tooling is now complete:
+- `.github/workflows/mkety-ai-commercial-acceptance.yml` / `scripts/accept-mkety-ai-commercial.ts`: one tiny non-production managed request with direct DB verification of immutable rate-card selection, credit/budget holds and settlement, normalized usage, provider-cost evidence, and idempotency.
+- `.github/workflows/mkety-domainnameapi-ote-acceptance.yml` / `scripts/accept-domainnameapi-ote.ts`: reads the active encrypted database DomainNameAPI connection, refuses non-OT&E operation, verifies availability transport, and optionally performs OT&E registration + renewal lifecycle acceptance.
+- `.github/workflows/mkety-enterprise-ai-white-label-domain-acceptance.yml` / `scripts/accept-enterprise-ai-white-label-domain.ts`: read-only real-host acceptance for CNAME, HTTPS tenant proof, database tenant ownership, configured white-label login identity and wrong-tenant-path isolation.
+- `.github/workflows/mkety-enterprise-ai-inference-promotion.yml` / `scripts/promote-enterprise-ai-inference.ts`: separate production operator enable/disable path. Enablement requires benchmark, commercial, domain and registrar evidence plus managed-route/rate/prepaid readiness. The application UI remains disable-only.
+
+Production `customerInferenceEnabled` remains OFF. PR #159 must remain draft until the two remaining external real-environment acceptances are run and recorded: DomainNameAPI OT&E/lifecycle acceptance and a real customer white-label hostname acceptance. The managed commercial/accounting acceptance is already closed by run `36463882316`. Only after the external evidence is recorded may the guarded production promotion workflow be used.
+
+## 2026-09-28 central AI runtime and dynamic-configuration authority
+
+This section supersedes earlier statements below that describe Workspace AI, Enterprise BYOK, provider selection, or registrar integration as still separate/unimplemented.
+
+- Mkety AI is one shared central transport/control layer with strict caller and credential isolation. Public AI, authenticated Workspace chat, managed Agent Builder/Automation execution, knowledge embeddings, the Enterprise AI product, and the Enterprise AI API consume that shared layer rather than maintaining independent provider transports.
+- Managed Mkety inference remains Workers AI: `mkety-economy` resolves through the database model alias/route tables (currently Gemma 4), while `mkety-smart` resolves through those same tables (currently GLM-5.3 Flash). Routing is task-class based, not round-robin. Qwen 3.8 27B remains a benchmarked reserve. Because managed execution resolves active aliases/routes at request time, an approved model swap does not require an application rebuild.
+- The shared external-provider adapter catalog is OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare AI and AWS Bedrock. Public AI uses isolated Mkety-owned system connections; tenant Workspace/Enterprise BYOK uses tenant/project-scoped connections. A BYOK failure never silently falls back to Mkety-paid inference.
+- Enterprise API BYOK execution is implemented through explicit `provider_connection_id`. Customer-provider token spend belongs to the customer provider account and is recorded separately from Mkety managed inference; Mkety does not manufacture managed-token charges for that call.
+- Public AI routing, enablement, primary/fallback order and per-provider model selection are database-backed in Platform Control. Public AI provider credentials are encrypted database system connections. The old environment-based Public AI provider configuration is migration fallback only and is not the operational source of truth.
+- Customer BYOK credentials and Mkety system-provider credentials are encrypted at rest and are never returned after save. Routine rotation does not require build/redeploy.
+- Only bootstrap/root or infrastructure secrets belong in Worker/server secret storage. The shared connection-encryption root is `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY`; the older `MKETY_AI_BYOK_ENCRYPTION_KEY` name is migration compatibility only. Mutable provider credentials, endpoints, model choices, routing, fallback order and reseller settings do not belong in deployment-time environment configuration.
+- Domain registration is a system-wide Mkety service. DomainNameAPI is the concrete reseller adapter behind the shared domain-reseller abstraction; Enterprise AI, Deploy and future products consume it rather than owning registrar credentials.
+- DomainNameAPI reseller credentials are encrypted in the database. OT&E/production mode, API endpoint override, nameservers and WHOIS privacy are database-backed Platform Control settings. Routine reseller credential rotation or configuration changes require no application redeploy.
+- A guarded DomainNameAPI OT&E workflow exists for read-only transport/authentication verification. Production registrar mutations remain gated until OT&E lifecycle acceptance is recorded.
+- Production Enterprise customer inference remains OFF. The shared runtime itself is not globally disabled by that Enterprise kill switch; the Enterprise commercial/API boundary enforces `customerInferenceEnabled` so Public/Workspace/internal isolated consumers are not incorrectly disabled.
+
+Remaining release evidence is external/live rather than architectural: DomainNameAPI OT&E/lifecycle verification with the real reseller account, a real customer white-label hostname/login isolation test, the separate app.mkety.com production repair execution, and explicit production Enterprise inference promotion. Exact-head repository certification and the tiny managed commercial/accounting acceptance are already closed.
+
+
+
+## 2026-09-28 managed-model benchmark decision
+
+- Guarded paid benchmark rerun `36425084523` succeeded on commit `0b3fb85c78443cb471caeef7b66ac397535b607a` through isolated AI Gateway `mkety-ai-benchmark` using standard/postpaid Workers AI billing.
+- Corrected benchmark evidence: Gemma 4 passed 8/10, GLM-5.3 Flash 9/10, Qwen 3.8 27B 9/10; provider errors were zero for all three.
+- Managed launch selection is now Gemma 4 as the primary/economy model and GLM-5.3 Flash as the smart/complex model. Qwen remains a benchmarked reserve, not a default route.
+- Routing is task-class based rather than round-robin: economy/general work -> Gemma; smart/complex work -> GLM-5.3 Flash; heavy work starts on GLM-5.3 Flash and may later escalate to full GLM-5.3 after a separate benchmark/integration decision.
+- Public Mkety AI already has concrete adapters for OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Cloudflare AI and AWS Bedrock. This is a separate public-runtime provider configuration boundary.
+- Enterprise BYOK currently has entitlement, provider-connection schema and route abstractions, but the commercial Enterprise execution path still invokes managed Workers AI only. Do not claim tenant BYOK execution is complete until provider adapters/secret-resolution are wired into that path.
+- The ordinary authenticated Workspace chat still uses its older environment-wide OpenAI-compatible provider layer (OpenAI/Groq/OpenRouter/custom); it is not yet unified with Enterprise BYOK/model routing.
+- Production `customerInferenceEnabled` remains OFF. The next live gate is tiny non-production commercial inference/accounting acceptance through the real Mkety Enterprise API path.
+# 2026-09-28 continuation audit reconciliation
+
+Continuation audit started from PR #159 docs-only head `8dfa0d61296177e6ca59e8ff77a732cdfc579984`.
+
+- Certified implementation SHA remains `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`.
+- Public Candidate Deploy run `36415088152` is confirmed SUCCESS in addition to the recorded CI, migration, workspace, vinext and Content DB gates.
+- PR #159 remains open, mergeable and draft. PR #147 remains historical; stale AI PRs #145/#154/#157/#158 remain superseded.
+- Documentation authority has been reconciled so Discord and LinkedIn Page Community match the implemented channel registry, Teams inbound is not claimed, and GLM/Qwen remain benchmark candidates rather than a preselected second managed model.
+- Remaining blockers are live/external only: paid benchmark, tiny real provider/accounting acceptance, real customer-domain white-label/isolation acceptance, registrar/reseller adapter verification, and explicit guarded production promotion.
+- Production `customerInferenceEnabled` remains OFF.
+
+Use PR #159 itself for the latest docs-only branch head; do not encode a self-referential “current head” SHA into this file.
+
+# 2026-09-28 exact session handoff pointer
+
+Authoritative dated handoff:
+`docs/handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`
+
+Current handoff/docs branch head at the time this pointer was written:
+`fa10bce4b0a274df5eb318fbfaf51c1e3a621043`
+
+Certified implementation SHA immediately before the docs-only handoff commit:
+`6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`
+
+Verified on that implementation SHA:
+- CI run `36415088209` — success (build, type-check, tests, lint);
+- Migration Baseline `36415088127` — success;
+- Platform Core Workspaces Smoke `36415088120` — success;
+- Cloudflare vinext Smoke `36415088190` — success;
+- Content DB Smoke `36415088033` — success.
+
+PR #159 remains draft intentionally. Production Enterprise AI inference remains fail-closed pending the manual paid model benchmark, tiny live provider/accounting acceptance, real customer-domain white-label acceptance, registrar/reseller adapter verification and guarded production promotion.
+
+First action in the next session: read the dated handoff and current PR #159 workflow conclusions before making runtime changes.
+
+
+# 2026-09-28 Platform, Mail and Enterprise AI completion update
+
+Current completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159.
+
+In addition to the Enterprise AI runtime/commercial/white-label work already recorded below, the same completion branch now includes:
+
+- Discord as a real Enterprise AI conversational channel with Ed25519 Interaction verification, deferred responses, background AI execution and outbound bot delivery.
+- LinkedIn Page Community as an approval-gated connector for supported organization comments/mentions. It validates LinkedIn challenge/HMAC requests, retrieves the actual comment, and replies as the connected organization. It does not claim unrestricted LinkedIn inbox/DM access.
+- Trading-style custom-domain verification fallback: strict Cloudflare for SaaS active+SSL-active remains accepted, but if provider SSL state lags, Mkety can verify a hostname only when a live HTTPS route proof reaches Mkety and returns the exact expected tenant identity.
+- `app.mkety.com` hot-path optimization: request-cached auth/session, tenant lookup and effective entitlements; single-snapshot workspace filtering; concurrent dashboard metrics; reduced repeated membership/PBAC/entitlement reads.
+- A new entitlement-aware tenant product dashboard with correct Projects, Billing, Usage & Credits, Mail, Enterprise AI, Media and Enterprise entry points.
+- A real tenant Billing index showing all current Platform/Mail-family subscriptions, verified settlements, ledger activity and self-service checkout links. Platform and Mail subscriptions remain independently composable.
+- Persistent Mkety Mail customer navigation covering overview, inbox, shared inboxes, domains, mailboxes, contacts, templates, customer updates, developer tools, analytics, apps and automation.
+- Mail first-time onboarding now starts at domain verification before mailbox creation, and the `mail.mkety.com` workspace chooser resolves multi-tenant Mail access in parallel.
+- Tenant user navigation now exposes Plan & Billing, Usage & Credits, Mkety Mail when entitled and Enterprise AI when entitled.
+- Missing Admin routes are repaired: Analytics, Departments and Settings -> Features now have real destinations; the stale Integration Jobs -> /processing link now routes to Integrations.
+- Navigation route-contract tests lock Admin, Mail, Billing, Enterprise AI and product-host handoff routes.
+
+Release/certification rule remains unchanged:
+
+1. exact-head CI/type/lint/tests/build/migration/vinext/core-workspace/content-db smoke must all pass;
+2. production `customerInferenceEnabled` stays fail-closed until the guarded paid Workers AI benchmark and tiny live provider/accounting acceptance are explicitly run and recorded;
+3. a real customer hostname must prove HTTPS, tenant-bound live-route identity and branded-login isolation before production white-label promotion;
+4. registrar/domain-reseller checkout stays behind the provider-neutral adapter until the configured registrar implementation is identified and verified;
+5. Mail/product/payment changes must preserve existing verified-settlement, entitlement and provider-secret boundaries.
+
+
+# 2026-09-28 Enterprise AI completion handoff
+
+**Current workstream:** complete and certify Enterprise Mkety AI on PR #159.
+
+**Base main:** `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`.
+
+Current implementation state:
+
+- AI runtime foundation, credit reservations, layered budgets, versioned rate cards, commercial controls and fail-closed admission are already on `main`.
+- PR #159 is the clean continuation branch. Do not merge stale AI PRs #145, #154, #157 or #158.
+- The business-facing `ai.mkety.com` console is reconciled onto current main.
+- Managed Workers AI execution now sits behind Enterprise entitlement, route/model policy, verified provider cost, prepaid credit reservation and all applicable budget reservations.
+- Actual provider usage settles the admitted rate-card charge. If upstream succeeds but local settlement fails, the request is marked `reconciliation_required` and must never be resent upstream under the same idempotency key.
+- Provider cost is stored separately from customer charge in micro-USD with verification date metadata. Current planning floor targets 65% gross margin plus 15% overhead reserve; this is an internal floor, not public pricing.
+- Workers AI uses the Cloudflare `AI` binding and explicit AI Gateway ID. Production customer inference stays off until guarded promotion.
+- True white-label is entitlement-gated and supports customer product name, logos, favicon, colors, support/legal links and branded tenant login.
+- White-label domains map to the same tenant/workspace. Customers can use `<tenant>.mkety.app` or connect their own hostname through Cloudflare for SaaS with one CNAME instruction; TLS/routing remain Mkety-managed.
+- Product handoff tokens are one-time and bound to the destination hostname, avoiding wildcard cross-domain session cookies.
+- Domain purchase is behind a provider-neutral server-side reseller adapter; bind the already-configured registrar account there without exposing credentials.
+- Day-one channel registry includes Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. New channels must implement the same adapter/security/usage/handoff contracts rather than fork the runtime.
+- Authenticated inbound channel adapters now verify Telegram secret tokens, Slack signed requests with replay-window checks, Meta HMAC signatures for WhatsApp/Messenger/Instagram, and signed custom webhooks before any AI credits can be consumed. Microsoft Teams is outbound workflow/webhook only until Bot Framework inbound identity verification is implemented.
+- The customer console exposes plan/subscription, current-period billing, prepaid credits, request usage and charged credits in non-technical language.
+
+Promotion gate:
+
+1. exact-head CI, migration baseline, Cloudflare vinext smoke, Platform core workspaces smoke and Content DB smoke are green on the completion candidate; keep PR #159 draft until the paid/non-production provider acceptance and real hostname checks below are also recorded;
+2. run non-production model benchmark and tiny real inference acceptance through AI Gateway;
+3. verify actual token usage, provider cost and commercial settlement against Cloudflare evidence;
+4. verify white-label host login, TLS and tenant isolation on a real test domain;
+5. bind/test the selected registrar adapter before exposing domain checkout;
+6. do not enable `customerInferenceEnabled` in production until those checks pass and guarded production promotion is explicitly authorized.
+
+
 # Mkety Development Continuation Roadmap
+
+## 2026-09-28 Enterprise AI continuation authority
+
+The current Enterprise AI continuation is PR #159 on `feat/enterprise-ai-complete-platform-20260928`, based directly on main `8f42835f7973d5c319e60a8bb6d4979208fc8d8a`.
+
+Continue in this order:
+
+1. keep the reconciled business console, white-label branding, host-bound login and Cloudflare for SaaS domain path on current main;
+2. keep Website, WhatsApp, Telegram, Instagram, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API behind one channel-adapter contract;
+3. complete exact-head CI/migration/vinext/public-candidate verification;
+4. run the guarded managed-model benchmark and record actual provider cost/latency/quality;
+5. verify Workers AI through the isolated AI Gateway with production customer inference still disabled;
+6. prove exact reservation, provider execution, settlement, provider-failure release, post-provider accounting repair and replay/idempotency behavior;
+7. bind the configured registrar/reseller implementation to the provider-neutral domain adapter without exposing registrar credentials;
+8. promote customer inference only through the existing runtime policy after exact production acceptance;
+9. add streaming only after cancellation/partial-output settlement is proven;
+10. add BYOK/private provider execution without any silent Mkety-paid fallback.
+
+Stale AI PRs #145, #154, #157 and #158 are historical implementation branches. Do not merge them onto current main.
+
 
 ## 2026-09-21 verified production baseline
 

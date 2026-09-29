@@ -9,9 +9,17 @@ interface TenantLoginFormProps {
   tenantSlug: string;
   tenantName: string;
   initialEmail?: string;
+  authLabel?: string;
+  handoffUrl?: string;
 }
 
-export function TenantLoginForm({ tenantSlug, tenantName, initialEmail: _initialEmail = '' }: TenantLoginFormProps) {
+export function TenantLoginForm({
+  tenantSlug,
+  tenantName,
+  initialEmail: _initialEmail = '',
+  authLabel = 'secure authentication',
+  handoffUrl,
+}: TenantLoginFormProps) {
   const { login, isLoading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -20,6 +28,10 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail: _initial
     setIsLoading(true);
     setServerError(null);
     try {
+      if (handoffUrl) {
+        window.location.assign(handoffUrl);
+        return;
+      }
       await login(`/t/${tenantSlug}`);
     } catch {
       setServerError('Failed to initiate sign in');
@@ -33,7 +45,7 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail: _initial
     <Card className="w-full border shadow-xl bg-card">
       <CardHeader className="space-y-1 text-center">
         <CardTitle className="text-2xl">Sign in to {tenantName}</CardTitle>
-        <CardDescription>Continue securely with Mkety authentication</CardDescription>
+        <CardDescription>Continue securely with {authLabel}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <FormGlobalError visible={!!serverError} id="tenant-login-error">
@@ -46,7 +58,7 @@ export function TenantLoginForm({ tenantSlug, tenantName, initialEmail: _initial
           disabled={busy}
           aria-busy={busy}
         >
-          {busy ? 'Signing in...' : 'Continue to Mkety'}
+          {busy ? 'Signing in...' : 'Continue securely'}
         </Button>
         <p className="text-xs text-center text-muted-foreground mt-4">
           By signing in, you agree to access {tenantName}&apos;s workspace.

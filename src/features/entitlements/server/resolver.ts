@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { ENTITLEMENT_KEYS, type EntitlementKey, isEntitlementKey } from '../entitlement-keys';
 import type { EffectiveEntitlement, EntitlementCheckInput, EntitlementOverrideEffect } from '../types';
 
@@ -53,12 +55,23 @@ export async function getTenantEntitlements(
   });
 }
 
+const getTenantEntitlementsForRequestCached = cache(async (tenantId: string) =>
+  getTenantEntitlements(tenantId),
+);
+
+export async function getTenantEntitlementsForRequest(tenantId: string) {
+  return getTenantEntitlementsForRequestCached(tenantId);
+}
+
 export async function hasEntitlement(
   input: EntitlementCheckInput,
   source?: EntitlementSource,
 ): Promise<boolean> {
   if (!isEntitlementKey(input.entitlement)) return false;
 
-  const entitlements = await getTenantEntitlements(input.tenantId, { now: input.now, source });
+  const entitlements =
+    !source && !input.now
+      ? await getTenantEntitlementsForRequest(input.tenantId)
+      : await getTenantEntitlements(input.tenantId, { now: input.now, source });
   return entitlements.find((item) => item.entitlement === input.entitlement)?.allowed ?? false;
 }

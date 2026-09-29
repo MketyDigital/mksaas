@@ -121,3 +121,60 @@ export const drizzleBillingSummarySource: BillingSummarySource = {
       .limit(10);
   },
 };
+
+
+export async function getTenantCurrentSubscriptions(tenantId: string) {
+  const subscriptions = await db
+    .select({
+      id: billingSubscriptions.id,
+      planKey: billingPlans.key,
+      planName: billingPlans.name,
+      planVersion: billingPlanVersions.version,
+      status: billingSubscriptions.status,
+      renewalMode: billingSubscriptions.renewalMode,
+      autoRenew: billingSubscriptions.autoRenew,
+      currentPeriodStart: billingSubscriptions.currentPeriodStart,
+      currentPeriodEnd: billingSubscriptions.currentPeriodEnd,
+      gracePeriodEnd: billingSubscriptions.gracePeriodEnd,
+      updatedAt: billingSubscriptions.updatedAt,
+    })
+    .from(billingSubscriptions)
+    .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
+    .innerJoin(billingPlans, eq(billingPlans.id, billingPlanVersions.planId))
+    .where(
+      and(
+        eq(billingSubscriptions.tenantId, tenantId),
+        inArray(billingSubscriptions.status, [...CURRENT_SUBSCRIPTION_STATUSES]),
+      ),
+    )
+    .orderBy(desc(billingSubscriptions.updatedAt));
+
+  return Promise.all(
+    subscriptions.map(async (subscription) => {
+      const [period] = await db
+        .select({
+          amountDueMinor: billingPeriods.amountDueMinor,
+          currency: billingPeriods.currency,
+          periodStart: billingPeriods.periodStart,
+          periodEnd: billingPeriods.periodEnd,
+        })
+        .from(billingPeriods)
+        .where(
+          and(
+            eq(billingPeriods.tenantId, tenantId),
+            eq(billingPeriods.subscriptionId, subscription.id),
+          ),
+        )
+        .orderBy(desc(billingPeriods.periodEnd))
+        .limit(1);
+
+      return {
+        ...subscription,
+        amountDueMinor: period?.amountDueMinor ?? 0n,
+        currency: period?.currency ?? 'USD',
+        periodStart: subscription.currentPeriodStart ?? period?.periodStart ?? null,
+        periodEnd: subscription.currentPeriodEnd ?? period?.periodEnd ?? null,
+      };
+    }),
+  );
+}

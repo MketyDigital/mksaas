@@ -11,6 +11,9 @@ on:
       - 'migrations/0001_platform_app_experience.sql'
       - 'migrations/0002_public_ai_memory.sql'
       - 'migrations/0003_platform_enterprise_orders.sql'
+      - 'src/shared/db/migrations/**'
+      - 'src/shared/db/schema/**'
+      - 'scripts/verify-managed-ai-selection.ts'
       - 'scripts/migrate-mkety-platform-content.ts'
       - 'scripts/seed-mkety-platform-content.ts'
       - 'scripts/smoke-mkety-platform-content.ts'
@@ -66,23 +69,26 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Apply base Drizzle migrations
-        run: pnpm db:migrate
+        run: timeout --signal=TERM 360s pnpm db:migrate
 
       - name: Apply Mkety CMS migrations
-        run: pnpm db:migrate:mkety-content
+        run: timeout --signal=TERM 180s pnpm db:migrate:mkety-content
 
       - name: Seed Mkety CMS content
-        run: pnpm db:seed:mkety-content
+        run: timeout --signal=TERM 180s pnpm db:seed:mkety-content
 
       - name: Seed Mkety Billing catalog
-        run: pnpm db:seed:billing-catalog
+        run: timeout --signal=TERM 180s pnpm db:seed:billing-catalog
+
+      - name: Verify managed AI model selection
+        run: pnpm exec tsx scripts/verify-managed-ai-selection.ts
 
       - name: Smoke-test Mkety CMS content
         shell: bash
         run: |
-          set -o pipefail
-          pnpm db:smoke:mkety-content 2>&1 | tee /tmp/mkety-content-db-smoke.log
-          pnpm db:smoke:billing-catalog 2>&1 | tee /tmp/mkety-billing-catalog-smoke.log
+          set -euo pipefail
+          timeout --signal=TERM 180s pnpm db:smoke:mkety-content 2>&1 | tee /tmp/mkety-content-db-smoke.log
+          timeout --signal=TERM 180s pnpm db:smoke:billing-catalog 2>&1 | tee /tmp/mkety-billing-catalog-smoke.log
 
       - name: Upload content DB smoke diagnostics
         if: always()

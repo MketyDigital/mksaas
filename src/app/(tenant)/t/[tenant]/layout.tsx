@@ -1,16 +1,15 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { hasEntitlement } from '@/features/entitlements/server/resolver';
+import { getTenantEntitlementsForRequest } from '@/features/entitlements/server/resolver';
 import { ThemeCSSInjector } from '@/shared/components/providers/theme-css-injector';
-import { getCurrentUserPermissions } from '@/shared/lib/permissions';
+import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 import { parseTenantSettings } from '@/shared/lib/tenant-settings';
 import { TenantProvider } from '@/shared/providers';
 
 import { TenantLayoutClient } from './TenantLayoutClient';
 
-// Ensure permissions and auth are always resolved (no static cache)
 export const dynamic = 'force-dynamic';
 
 interface TenantLayoutProps {
@@ -18,33 +17,30 @@ interface TenantLayoutProps {
   params: Promise<{ tenant: string }>;
 }
 
-/**
- * Tenant-scoped layout
- *
- * This layout wraps all pages under /t/{tenant}/ and provides:
- * - Tenant validation (404 if tenant doesn't exist)
- * - TenantProvider context for client components (includes settings)
- * - Tenant-specific styling/branding (future)
- *
- * Note: Sidebar visibility is handled by TenantLayoutClient using usePathname()
- * to ensure correct behavior during client-side navigation.
- */
 export default async function TenantLayout({ children, params }: TenantLayoutProps) {
   const { tenant: tenantSlug } = await params;
+  const [tenant, session] = await Promise.all([
+    getTenantBySlug(tenantSlug),
+    auth(),
+  ]);
 
-  // Validate tenant exists
-  const tenant = await getTenantBySlug(tenantSlug);
+  if (!tenant) notFound();
+  if (!session?.user) redirect('/login');
 
-  if (!tenant) {
-    notFound();
+  // auth() refreshes the user's current tenant memberships from the database.
+  // Keep navigation visibility cheap by reusing that request-cached session snapshot.
+  if (!(tenant.slug in (session.user.roles ?? {}))) {
+    redirect(`/select-tenant?error=unauthorized`);
   }
 
-  // Parse tenant settings
   const settings = parseTenantSettings(tenant.settings);
-
-  // Permissions for sidebar/nav (may be returned from session when set by auth callback)
-  const permissions = await getCurrentUserPermissions(tenant.slug);
-  const hasMailAccess = await hasEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' });
+  const entitlements = await getTenantEntitlementsForRequest(tenant.id);
+  const allowedEntitlements = new Set(
+    entitlements.filter((item) => item.allowed).map((item) => item.entitlement),
+  );
+  const permissions = session.user.permissions?.[tenant.slug] ?? [];
+  const hasMailAccess = allowedEntitlements.has('workspace.mail');
+  const hasEnterpriseAiAccess = allowedEntitlements.has('workspace.ai.enterprise');
 
   return (
     <TenantProvider
@@ -56,7 +52,12 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
       }}
     >
       <ThemeCSSInjector />
-      <TenantLayoutClient tenantSlug={tenant.slug} permissions={permissions} hasMailAccess={hasMailAccess}>
+      <TenantLayoutClient
+        tenantSlug={tenant.slug}
+        permissions={permissions}
+        hasMailAccess={hasMailAccess}
+        hasEnterpriseAiAccess={hasEnterpriseAiAccess}
+      >
         {children}
       </TenantLayoutClient>
     </TenantProvider>

@@ -18,11 +18,13 @@ const models = [
     key: 'glm-5.3-flash',
     nativeModel: '@cf/zai-org/glm-5.3-flash',
     price: { input: 0.15, output: 0.50, cachedInput: 0.03 },
+    reasoningEffort: 'low',
   },
   {
     key: 'qwen-3.8-27b',
     nativeModel: '@cf/qwen/qwen3.8-27b',
     price: { input: 0.45, output: 3.20, cachedInput: 0.05 },
+    reasoningEffort: 'low',
   },
 ] as const;
 
@@ -63,7 +65,7 @@ const cases: BenchmarkCase[] = [
         role: 'user',
         content: 'Reply in exactly three lines. Line 1 must be "STATUS: READY". Line 2 must be "REGION: AFRICA". Line 3 must be "MODE: ENTERPRISE". Do not add anything else.',
       }],
-      max_completion_tokens: 80,
+      max_completion_tokens: 256,
     },
     check(response) {
       return { passed: textContent(response).trim() === 'STATUS: READY\nREGION: AFRICA\nMODE: ENTERPRISE' };
@@ -77,7 +79,7 @@ const cases: BenchmarkCase[] = [
         role: 'user',
         content: `Use only the corpus below. What is Project CALYPSO's launch code and owner? Answer exactly "CODE | OWNER".\n\n${longCorpus}`,
       }],
-      max_completion_tokens: 80,
+      max_completion_tokens: 256,
     },
     check(response) {
       const text = textContent(response).trim();
@@ -103,7 +105,7 @@ const cases: BenchmarkCase[] = [
         },
       }],
       tool_choice: 'required',
-      max_completion_tokens: 120,
+      max_completion_tokens: 384,
     },
     check(response) {
       const toolCalls = firstMessage(response).tool_calls;
@@ -135,7 +137,7 @@ const cases: BenchmarkCase[] = [
           },
         },
       },
-      max_completion_tokens: 120,
+      max_completion_tokens: 384,
     },
     check(response) {
       try {
@@ -154,7 +156,7 @@ const cases: BenchmarkCase[] = [
         role: 'user',
         content: 'Fix this TypeScript function with the smallest correct patch. Return only the corrected function.\nfunction total(values:number[]){ values.reduce((a,b)=>a+b,0); }',
       }],
-      max_completion_tokens: 220,
+      max_completion_tokens: 512,
     },
     check(response) {
       const text = textContent(response);
@@ -169,7 +171,7 @@ const cases: BenchmarkCase[] = [
         role: 'user',
         content: 'A job has tasks A=4 min, B=7 min, C=3 min. B can start only after A. C can run in parallel with A. With two workers, what is the minimum completion time? Answer only the integer number of minutes.',
       }],
-      max_completion_tokens: 80,
+      max_completion_tokens: 256,
     },
     check(response) {
       return { passed: textContent(response).trim() === '11' };
@@ -186,7 +188,7 @@ const cases: BenchmarkCase[] = [
           { type: 'image_url', image_url: { url: redPixel } },
         ],
       }],
-      max_completion_tokens: 40,
+      max_completion_tokens: 256,
     },
     check(response) {
       return { passed: textContent(response).trim().toLowerCase() === 'red' };
@@ -197,7 +199,7 @@ const cases: BenchmarkCase[] = [
     category: 'latency',
     body: {
       messages: [{ role: 'user', content: 'Reply only: pong' }],
-      max_completion_tokens: 20,
+      max_completion_tokens: 128,
     },
     check(response) {
       return { passed: textContent(response).trim().toLowerCase() === 'pong' };
@@ -245,6 +247,7 @@ async function runCase(model: typeof models[number], testCase: BenchmarkCase, re
         body: JSON.stringify({
           model: model.nativeModel,
           ...testCase.body,
+          ...('reasoningEffort' in model ? { reasoning_effort: model.reasoningEffort } : {}),
           options: { rejectIfBusy: true },
         }),
         signal: AbortSignal.timeout(60_000),

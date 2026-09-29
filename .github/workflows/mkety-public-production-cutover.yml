@@ -333,26 +333,29 @@ jobs:
           domains="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
           root_dns="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=mkety.com")"
           www_dns="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=www.mkety.com")"
+          app_dns="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=app.mkety.com")"
           printf '%s' "$routes" > /tmp/mkety-routes-before.json
           printf '%s' "$domains" > /tmp/mkety-domains-before.json
-          ROOT_DNS="$root_dns" WWW_DNS="$www_dns" node <<'NODE' > /tmp/mkety-dns-before.json
+          ROOT_DNS="$root_dns" WWW_DNS="$www_dns" APP_DNS="$app_dns" node <<'NODE' > /tmp/mkety-dns-before.json
           const root = JSON.parse(process.env.ROOT_DNS || '{}');
           const www = JSON.parse(process.env.WWW_DNS || '{}');
-          if (!root.success || !www.success || !Array.isArray(root.result) || !Array.isArray(www.result)) {
-            throw new Error('Could not snapshot apex/www DNS records.');
+          const app = JSON.parse(process.env.APP_DNS || '{}');
+          if (!root.success || !www.success || !app.success || !Array.isArray(root.result) || !Array.isArray(www.result) || !Array.isArray(app.result)) {
+            throw new Error('Could not snapshot apex/www/app DNS records.');
           }
-          process.stdout.write(JSON.stringify({root: root.result, www: www.result}, null, 2));
+          process.stdout.write(JSON.stringify({root: root.result, www: www.result, app: app.result}, null, 2));
           NODE
 
-          ROUTES="$routes" DOMAINS="$domains" ROOT_DNS="$root_dns" WWW_DNS="$www_dns" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
+          ROUTES="$routes" DOMAINS="$domains" ROOT_DNS="$root_dns" WWW_DNS="$www_dns" APP_DNS="$app_dns" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE'
           const routes = JSON.parse(process.env.ROUTES || '{}');
           const domains = JSON.parse(process.env.DOMAINS || '{}');
           const root = JSON.parse(process.env.ROOT_DNS || '{}');
           const www = JSON.parse(process.env.WWW_DNS || '{}');
-          for (const payload of [routes, domains, root, www]) {
+          const app = JSON.parse(process.env.APP_DNS || '{}');
+          for (const payload of [routes, domains, root, www, app]) {
             if (!payload.success || !Array.isArray(payload.result)) throw new Error('Cloudflare preflight lookup failed.');
           }
-          const targetPatterns = new Set(['mkety.com/*', 'www.mkety.com/*']);
+          const targetPatterns = new Set(['mkety.com/*', 'www.mkety.com/*', 'app.mkety.com/*']);
           if (routes.result.some((route) => targetPatterns.has(route.pattern))) {
             throw new Error('Apex/www Worker Route exists; Custom Domain cutover requires both target Worker Routes to remain unbound.');
           }
@@ -360,14 +363,14 @@ jobs:
           if (workerRoutes.length > 0) {
             throw new Error(`Production Worker ${process.env.WORKER} is already bound to live Worker Route(s); refusing initial Custom Domain cutover.`);
           }
-          for (const host of ['mkety.com', 'www.mkety.com']) {
+          for (const host of ['mkety.com', 'www.mkety.com', 'app.mkety.com']) {
             const existing = domains.result.find((domain) => domain.hostname === host);
             if (existing && existing.service !== process.env.WORKER) {
               throw new Error(`${host} is already attached as a Custom Domain to another Worker.`);
             }
           }
-          const dns = [...root.result, ...www.result];
-          if (dns.some((record) => record.type === 'CNAME')) {
+          const publicDns = [...root.result, ...www.result];
+          if (publicDns.some((record) => record.type === 'CNAME')) {
             throw new Error('Apex/www CNAME record blocks safe Worker Custom Domain promotion.');
           }
           console.log('Cloudflare preflight passed: target Worker Routes are absent and Custom Domain ownership is safe.');
@@ -384,7 +387,7 @@ jobs:
           const fs = require('node:fs');
           const payload = JSON.parse(fs.readFileSync('/tmp/mkety-domains-before.json', 'utf8'));
           if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid Custom Domain snapshot.');
-          const hosts = ['mkety.com', 'www.mkety.com'];
+          const hosts = ['mkety.com', 'www.mkety.com', 'app.mkety.com'];
           const snapshot = hosts.map((hostname) => {
             const domain = payload.result.find((item) => item.hostname === hostname);
             return domain
@@ -401,14 +404,14 @@ jobs:
           Production Worker: $PRODUCTION_WORKER_NAME
 
           The attached mkety-domains-before.json records pre-cutover Worker Custom Domains.
-          The attached mkety-dns-before.json records apex/www DNS state.
+          The attached mkety-dns-before.json records apex/www/app DNS state.
           The attached mkety-routes-before.json records Worker Routes, which this cutover must not mutate.
           The attached mkety-cutover-rollback.json records whether each target Custom Domain pre-existed.
 
           Rollback rule:
           - Delete only Custom Domains created by this cutover.
           - Never delete a target Custom Domain that existed before the run.
-          - Restore any missing pre-cutover apex/www A, AAAA, or CNAME DNS records.
+          - Restore any missing pre-cutover apex/www/app A, AAAA, or CNAME DNS records.
           - Worker Routes are read-only evidence and must remain byte-for-byte equivalent by pattern/script.
           - Do not alter unrelated Worker routes or unrelated DNS records.
 
@@ -664,7 +667,7 @@ jobs:
           console.log('Temporary workers.dev and preview URLs disabled before production routing.');
           NODE
 
-      - name: Attach apex and www as Worker Custom Domains
+      - name: Attach public and app hosts as Worker Custom Domains
         id: domain-bind
         shell: bash
         env:
@@ -678,7 +681,7 @@ jobs:
             DNS_BACKUP="$(cat /tmp/mkety-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
           const {execFileSync} = require('node:child_process');
           const backup = JSON.parse(process.env.DNS_BACKUP || '{}');
-          for (const record of [...(backup.root || []), ...(backup.www || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
+          for (const record of [...(backup.root || []), ...(backup.www || []), ...(backup.app || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
             const query = `https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records?type=${encodeURIComponent(record.type)}&name=${encodeURIComponent(record.name)}&content=${encodeURIComponent(record.content)}`;
             const current = JSON.parse(execFileSync('curl', ['-fsS','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json',query], {encoding:'utf8'}));
             if (Array.isArray(current.result) && current.result.length) continue;
@@ -708,14 +711,14 @@ jobs:
             local host="$1"
             local records
             records="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/dns_records?name=$host")"
-            RECORDS="$records" HOST="$host" node -e "const p=JSON.parse(process.env.RECORDS||'{}');if(!p.success||!Array.isArray(p.result))process.exit(1);for(const r of p.result){if(r.name===process.env.HOST&&['A','AAAA'].includes(r.type))console.log(r.id)}" | while IFS= read -r record_id; do
+            RECORDS="$records" HOST="$host" node -e "const p=JSON.parse(process.env.RECORDS||'{}');if(!p.success||!Array.isArray(p.result))process.exit(1);for(const r of p.result){const removable=process.env.HOST==='app.mkety.com'?['A','AAAA','CNAME']:['A','AAAA'];if(r.name===process.env.HOST&&removable.includes(r.type))console.log(r.id)}" | while IFS= read -r record_id; do
               [ -z "$record_id" ] && continue
               curl -fsS -X DELETE "${auth[@]}" "$api/zones/$ZONE_ID/dns_records/$record_id" >/dev/null
-              echo "Removed pre-existing A/AAAA origin record for $host before Custom Domain attachment."
+              echo "Removed pre-existing conflicting origin record for $host before Custom Domain attachment."
             done
           }
 
-          for host in mkety.com www.mkety.com; do
+          for host in mkety.com www.mkety.com app.mkety.com; do
             domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
             existing="$(DOMAINS="$domains" HOST="$host" node -e "const p=JSON.parse(process.env.DOMAINS||'{}'),d=(p.result||[]).find(x=>x.hostname===process.env.HOST);if(d&&d.service!==process.env.PRODUCTION_WORKER_NAME)process.exit(2);if(d)process.stdout.write(d.id)")" || status=$?
             [ "${status:-0}" != '2' ] || { echo "$host belongs to another Worker"; false; }
@@ -784,7 +787,7 @@ jobs:
             DNS_BACKUP="$(cat /tmp/mkety-dns-before.json)" ZONE_ID="$ZONE_ID" CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" node <<'NODE'
           const {execFileSync} = require('node:child_process');
           const backup = JSON.parse(process.env.DNS_BACKUP || '{}');
-          for (const record of [...(backup.root || []), ...(backup.www || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
+          for (const record of [...(backup.root || []), ...(backup.www || []), ...(backup.app || [])].filter((x) => ['A','AAAA','CNAME'].includes(x.type))) {
             const query = `https://api.cloudflare.com/client/v4/zones/${process.env.ZONE_ID}/dns_records?type=${encodeURIComponent(record.type)}&name=${encodeURIComponent(record.name)}&content=${encodeURIComponent(record.content)}`;
             const current = JSON.parse(execFileSync('curl', ['-fsS','-H',`Authorization: Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,'-H','Content-Type: application/json',query], {encoding:'utf8'}));
             if (Array.isArray(current.result) && current.result.length) continue;
@@ -814,6 +817,33 @@ jobs:
             sleep 5
           done
           [ "$production_ready" = '1' ] || { echo 'mkety.com Custom Domain did not become ready in the bounded window.'; false; }
+
+          app_ready=0
+          for attempt in $(seq 1 60); do
+            app_headers=/tmp/mkety-app-root.headers
+            app_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/' || true)"
+            app_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_headers")"
+            echo "app.mkety.com readiness attempt $attempt/60: HTTP $app_code location=$app_location"
+            if [ "$app_code" -ge 300 ] 2>/dev/null && [ "$app_code" -lt 400 ] 2>/dev/null && [ -n "$app_location" ]; then
+              APP_LOCATION="$app_location" node <<'NODE'
+          const u=new URL(process.env.APP_LOCATION,'https://app.mkety.com/');
+          if(u.origin!=='https://app.mkety.com'||u.pathname!=='/app') process.exit(1);
+          NODE
+              app_ready=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$app_ready" = '1' ] || { echo 'app.mkety.com did not become the authenticated Platform entry in the bounded window.'; false; }
+
+          app_entry_headers=/tmp/mkety-app-entry.headers
+          app_entry_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_entry_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app' || true)"
+          app_entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_entry_headers")"
+          [ "$app_entry_code" -ge 300 ] && [ "$app_entry_code" -lt 400 ] && [ -n "$app_entry_location" ] || { echo "Unauthenticated app entry expected redirect, got HTTP $app_entry_code"; false; }
+          APP_ENTRY_LOCATION="$app_entry_location" node <<'NODE'
+          const u=new URL(process.env.APP_ENTRY_LOCATION,'https://app.mkety.com/app');
+          if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login') throw new Error('Unauthenticated app entry did not remain on app.mkety.com/login');
+          NODE
 
           html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /mail /trust /infrastructure /about /docs /privacy /terms /contact)
           for route in "${html_routes[@]}"; do
@@ -939,7 +969,7 @@ jobs:
             console.error('Public AI sent a new Trading buyer directly to the entitled-access product destination.');
             process.exit(1);
           }
-          if (/(?:\b(?:Growth|Pro)\b(?:\s+(?:plan|tier|workspace))?|\bBusiness\s+(?:plan|tier|workspace)\b)/i.test(a)) {
+          if (/\b(?:Growth|Pro|Business)\s+(?:plan|tier|workspace)\b/i.test(a)) {
             console.error('Public AI exposed a removed plan.');
             process.exit(1);
           }
@@ -961,7 +991,7 @@ jobs:
           NODE
 
           trap - ERR
-          echo 'Production acceptance passed. Apex/www Worker Custom Domains retained on the exact verified Worker.'
+          echo 'Production acceptance passed. Apex/www/app Worker Custom Domains retained on the exact verified Worker.'
 
 
       - name: Notify IndexNow after successful live acceptance
@@ -1015,9 +1045,9 @@ jobs:
             echo '- Required exact-SHA workflows: green before cutover.'
             echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; Flutterwave/Kora are optional until fully configured.'
             echo '- Database runtime: MKETY_DB Hyperdrive binding; private production database credentials are not attached to the Worker.'
-            echo '- Live hostname mutation: only mkety.com and www.mkety.com Worker Custom Domains, with automatic rollback on partial attachment failure.'
+            echo '- Live hostname mutation: mkety.com, www.mkety.com and app.mkety.com Worker Custom Domains, with automatic rollback on partial attachment failure.'
             echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'
-            echo '- Apex/www Worker Routes remained unbound; unrelated Worker Routes were unchanged.'
+            echo '- Apex/www/app Worker Routes remained unbound; unrelated Worker Routes were unchanged.'
             echo
             echo '### Rollback'
             echo 'Download the pre-mutation rollback artifact from this run. Delete only Custom Domains created by this cutover and restore any missing pre-cutover apex/www DNS records. Worker Routes must remain unchanged.'

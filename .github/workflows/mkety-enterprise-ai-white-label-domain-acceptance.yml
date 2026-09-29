@@ -1,0 +1,76 @@
+name: Mkety Enterprise AI White-label Domain Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN_WHITE_LABEL_DOMAIN_ACCEPTANCE
+        required: true
+        type: string
+      environment_name:
+        description: GitHub Environment containing MKETY_ACCEPTANCE_DATABASE_URL
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+      hostname:
+        description: Real connected customer Enterprise AI hostname
+        required: true
+        type: string
+      tenant_slug:
+        description: Expected Mkety tenant slug for this hostname
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  white-label-domain-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment_name }}
+    env:
+      WHITE_LABEL_ACCEPTANCE_DATABASE_URL: ${{ secrets.MKETY_ACCEPTANCE_DATABASE_URL }}
+      WHITE_LABEL_ACCEPTANCE_HOSTNAME: ${{ inputs.hostname }}
+      WHITE_LABEL_ACCEPTANCE_TENANT_SLUG: ${{ inputs.tenant_slug }}
+    steps:
+      - name: Require explicit read-only acceptance authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${{ inputs.confirmation }}" = "RUN_WHITE_LABEL_DOMAIN_ACCEPTANCE" ] || {
+            echo "Refusing white-label domain acceptance without exact confirmation." >&2
+            exit 1
+          }
+          [ -n "${WHITE_LABEL_ACCEPTANCE_DATABASE_URL:-}" ] || {
+            echo "Missing MKETY_ACCEPTANCE_DATABASE_URL in the selected GitHub Environment." >&2
+            exit 1
+          }
+          echo "::add-mask::$WHITE_LABEL_ACCEPTANCE_DATABASE_URL"
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify DNS, HTTPS tenant proof, branded login and tenant isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/accept-enterprise-ai-white-label-domain.ts | tee /tmp/white-label-domain-acceptance.json
+
+      - name: Publish white-label evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/white-label-domain-acceptance.json','utf8'));const rows=['## Enterprise AI white-label domain acceptance','','- Environment: ${{ inputs.environment_name }}','- Hostname: '+x.hostname,'- Tenant: '+x.tenantSlug,'- CNAME target: '+x.cnameTarget,'- DNS CNAME: verified','- HTTPS tenant proof: verified','- White-label login identity: '+x.brandName+' / '+x.productName,'- Wrong-tenant path isolation: verified'];fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\\n')+'\\n');"

@@ -23,9 +23,9 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
   accentColor: '#22D3EE',
-  defaultSeoTitle: 'Mkety | AI, Automation, Deployments, Mail, Media & Enterprise',
+  defaultSeoTitle: 'Mkety | AI, Automation, Deployments, Domains, Mail, Media & Enterprise',
   defaultSeoDescription:
-    'Build AI agents, automate workflows, deploy applications, run business email, manage media, and deliver custom business systems with Mkety.',
+    'Build AI agents, automate workflows, deploy applications, register and manage domains, run business email, manage media, and deliver custom business systems with Mkety.',
   contactEmail: 'support@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
@@ -45,6 +45,7 @@ export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
   { label: 'Platform', href: '/platform', area: 'header', enabled: true, external: false, sortOrder: 10 },
   { label: 'Workspaces', href: '/workspaces', area: 'header', enabled: true, external: false, sortOrder: 20 },
   { label: 'SolutionHub', href: '/solutions', area: 'header', enabled: true, external: false, sortOrder: 30 },
+  { label: 'Domains', href: '/domains', area: 'header', enabled: true, external: false, sortOrder: 35 },
   { label: 'Academy', href: '/academy', area: 'header', enabled: true, external: false, sortOrder: 40 },
   { label: 'Pricing', href: '/pricing', area: 'header', enabled: true, external: false, sortOrder: 50 },
   { label: 'Enterprise', href: '/enterprise', area: 'header', enabled: true, external: false, sortOrder: 60 },
@@ -82,6 +83,12 @@ export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
       key: 'operate',
       title: 'Manage',
       description: 'Keep projects, teams, usage, billing visibility, domains, and day-to-day operations organized.',
+    },
+    {
+      key: 'domains',
+      title: 'Domains & DNS',
+      description: 'Register domains, connect custom hostnames, manage supported DNS records, and keep renewal/routing operations inside Mkety.',
+      href: '/domains',
     },
   ],
   cta: { label: 'Explore Platform', href: '/platform' },
@@ -364,6 +371,11 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
       'No. Mkety includes AI, automation, deployment, media storage and delivery, integrations, business solutions, practical learning, and Enterprise implementation support.',
   },
   {
+    question: 'Can I register domains and manage DNS through Mkety?',
+    answer:
+      'Yes. Mkety Domains supports live domain search and registration pricing, managed domain ownership, renewal settings, authoritative Mkety DNS for supported registered domains, and custom-domain connections for supported Mkety products.',
+  },
+  {
     question: 'How do Mkety Mail and Enterprise AI fit with the normal Workspaces?',
     answer:
       'Mkety Mail is a separately subscribed workspace/add-on with Mail Starter, Mail Growth and Mail Business plans plus Enterprise Mail. Enterprise AI is also separately entitled from the normal AI Workspace. Buying AI Workspace or Mkety One does not automatically grant Enterprise AI or Mkety Mail.',
@@ -413,6 +425,7 @@ export const defaultFooterGroups: PlatformFooterGroupInput[] = [
       { label: 'Workspaces', href: '/workspaces' },
       { label: 'SolutionHub', href: '/solutions' },
       { label: 'Pricing', href: '/pricing' },
+      { label: 'Mkety Domains', href: '/domains' },
       { label: 'Mkety Mail', href: '/mail' },
     ],
   },
@@ -666,6 +679,15 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     bodyMarkdown:
       '# Account, workspace and checkout\n\nFor self-service plans, choose a plan and billing term, sign in or create your Mkety account, choose or create a workspace, and then complete the authenticated checkout for that workspace. Plan access is activated from verified payment settlement; a browser return or success screen alone does not grant entitlements.',
     sortOrder: 30,
+  },
+  {
+    categoryKey: 'platform',
+    slug: 'mkety-domains-and-dns',
+    title: 'Mkety Domains and DNS',
+    excerpt: 'Register domains, understand live pricing, manage DNS, and connect custom hostnames through Mkety.',
+    bodyMarkdown:
+      '# Mkety Domains and DNS\n\nMkety Domains is the customer-facing domain service inside Mkety Platform. Customers use Mkety to search supported domains, see current registration and renewal pricing, register after verified payment settlement, manage renewal preferences, and operate supported DNS records.\n\nDomain prices are not a fixed Platform subscription feature. The customer price is quoted from current upstream extension-specific cost plus the active Mkety commercial pricing policy at the time of the quote.\n\nDomains registered through Mkety can use Mkety-managed authoritative DNS. Mkety provisions the DNS zone, connects the registrar nameservers, and lets authorized tenant administrators manage supported A, AAAA, CNAME, TXT, MX, SRV and CAA records. Provider-managed NS/SOA records are protected.\n\nCustomer-owned domains can also be connected to supported Mkety products through Mkety-managed custom-hostname validation and HTTPS. Customers interact with Mkety; registrar, DNS and certificate providers remain protected implementation details.',
+    sortOrder: 25,
   },
   {
     categoryKey: 'platform',

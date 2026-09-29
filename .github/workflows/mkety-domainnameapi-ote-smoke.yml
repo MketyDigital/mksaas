@@ -1,0 +1,79 @@
+name: Mkety DomainNameAPI OT&E Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN_DOMAINNAMEAPI_OTE_SMOKE
+        required: true
+        type: string
+      domain_label:
+        description: Availability-check label without TLD
+        required: false
+        default: mkety-ote-check
+        type: string
+      tld:
+        description: TLD to check
+        required: false
+        default: com
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ote-read-only-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DOMAINNAMEAPI_USERNAME: ${{ secrets.DOMAINNAMEAPI_OTE_USERNAME }}
+      DOMAINNAMEAPI_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN }}
+    steps:
+      - name: Require explicit OT&E authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${{ inputs.confirmation }}" = "RUN_DOMAINNAMEAPI_OTE_SMOKE" ] || {
+            echo "Refusing DomainNameAPI smoke without exact OT&E confirmation." >&2
+            exit 1
+          }
+
+      - name: Validate OT&E credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${DOMAINNAMEAPI_USERNAME:-}" ] || { echo "Missing DomainNameAPI OT&E reseller ID/username." >&2; exit 1; }
+          [ -n "${DOMAINNAMEAPI_API_TOKEN:-}" ] || { echo "Missing DomainNameAPI OT&E API token." >&2; exit 1; }
+          echo "::add-mask::${DOMAINNAMEAPI_USERNAME}"
+          echo "::add-mask::${DOMAINNAMEAPI_API_TOKEN}"
+
+      - name: Run read-only OT&E availability check
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="${{ inputs.domain_label }}"
+          tld="${{ inputs.tld }}"
+          case "$label" in *[!a-zA-Z0-9-]*|'') echo "Invalid domain label." >&2; exit 1;; esac
+          case "$tld" in *[!a-zA-Z0-9-]*|'') echo "Invalid TLD." >&2; exit 1;; esac
+
+          code="$(curl --silent --show-error --output /tmp/domainnameapi-ote.json --write-out '%{http_code}'             --user "${DOMAINNAMEAPI_USERNAME}:${DOMAINNAMEAPI_API_TOKEN}"             --get             --data-urlencode "domainNames=${label}"             --data-urlencode "tlds=${tld}"             --data-urlencode "period=1"             --data-urlencode "command=create"             "https://ote.domainresellerapi.com/api/domain/check")"
+
+          [ "$code" = "200" ] || {
+            echo "DomainNameAPI OT&E availability check failed with HTTP $code." >&2
+            python -c "import json,pathlib; p=pathlib.Path('/tmp/domainnameapi-ote.json'); data=json.loads(p.read_text()); print(json.dumps({k:v for k,v in data.items() if str(k).lower() not in {'apikey','token','password','secret'}})[:1500])" || true
+            exit 1
+          }
+
+          python -c "import json,pathlib; data=json.loads(pathlib.Path('/tmp/domainnameapi-ote.json').read_text()); print('DomainNameAPI OT&E authentication and read-only availability transport: OK'); print('Response type:', type(data).__name__)"
+
+      - name: Publish smoke evidence
+        shell: bash
+        run: |
+          {
+            echo "## DomainNameAPI OT&E smoke"
+            echo
+            echo "- Environment: OT&E only"
+            echo "- Operation: read-only availability"
+            echo "- Real registration/renewal: not attempted"
+            echo "- Authentication/transport: passed"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,23 +1,26 @@
 import type { WorkspaceCardInput } from '@/features/platform-app-experience/schemas';
+import { isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 
-import { type EntitlementSource, hasEntitlement } from './resolver';
+import {
+  type EntitlementSource,
+  getTenantEntitlements,
+  getTenantEntitlementsForRequest,
+} from './resolver';
 
 export async function filterWorkspaceCardsByEntitlement(
   workspaces: WorkspaceCardInput[],
   tenantId: string,
   source?: EntitlementSource,
 ): Promise<WorkspaceCardInput[]> {
-  const decisions = await Promise.all(
-    workspaces.map(async (workspace) => {
-      if (!workspace.requiresEntitlement) return { workspace, allowed: true };
-
-      const allowed = await hasEntitlement(
-        { tenantId, entitlement: workspace.requiresEntitlement },
-        source,
-      );
-      return { workspace, allowed };
-    }),
+  const entitlements = source
+    ? await getTenantEntitlements(tenantId, { source })
+    : await getTenantEntitlementsForRequest(tenantId);
+  const allowed = new Set(
+    entitlements.filter((item) => item.allowed).map((item) => item.entitlement),
   );
 
-  return decisions.filter((decision) => decision.allowed).map((decision) => decision.workspace);
+  return workspaces.filter((workspace) => {
+    if (!workspace.requiresEntitlement) return true;
+    return isEntitlementKey(workspace.requiresEntitlement) && allowed.has(workspace.requiresEntitlement);
+  });
 }

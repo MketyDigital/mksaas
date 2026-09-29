@@ -788,3 +788,23 @@ Across all capabilities, Enterprise Mkety AI should behave predictably:
 New product features should be built by composing shared primitives—identity/PBAC, entitlements, projects, knowledge, agents, workflows, tools, channels, runtime routing, usage/credits, budgets, audit, evaluations, integrations, and observability—rather than creating industry-specific security or billing silos.
 
 This lets Mkety AI Enterprise become highly feature-rich across industries while keeping the security and commercial core understandable, testable, and reliable.
+
+
+## 2026-09-28 launch composition
+
+The first Enterprise AI product composition must include:
+
+- outcome-first business console for non-technical customers;
+- plan/subscription/usage/credit visibility;
+- full white-label brand controls when entitled;
+- managed `*.mkety.app` customer hostname;
+- Cloudflare for SaaS customer-owned hostname path with simple CNAME onboarding;
+- provider-neutral domain purchase/reseller path;
+- Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook and custom webhook/API channel families;
+- LinkedIn Page Community is limited to approved organization community/comment workflows; it is not unrestricted LinkedIn inbox/DM automation;
+- Microsoft Teams inbound remains outside the launch contract until Bot Framework identity verification is implemented; current Teams support is outbound workflow/webhook;
+- human-handoff capability on conversational channels;
+- provider-neutral managed inference with exact prepaid admission and settlement;
+- internal provider-cost and margin telemetry separated from customer billing.
+
+Adding a channel, domain or brand never creates a second tenant or identity system.

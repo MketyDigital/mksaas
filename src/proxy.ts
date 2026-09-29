@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
+import { resolveEnterpriseAiHostname } from '@/features/ai-runtime/server/enterprise-hostnames';
 import { getCanonicalMketyPublicUrl } from '@/features/platform-content/public-host-routing';
 import { db } from '@/shared/db/cloudflare';
 import { customDomains, tenants } from '@/shared/db/schema';
@@ -65,6 +66,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   let effectivePathname = pathname;
   const appHost=(() => { try { return new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://app.mkety.com').hostname.toLowerCase(); } catch { return 'app.mkety.com'; } })();
   const mailHost=(process.env.MKETY_MAIL_HOST||'mail.mkety.com').toLowerCase();
+  const aiHost=(process.env.MKETY_AI_HOST||'ai.mkety.com').toLowerCase();
   const apiHost=(process.env.MKETY_API_HOST||'api.mkety.com').toLowerCase();
   const autoconfigHost=(process.env.MKETY_MAIL_AUTOCONFIG_HOST||'autoconfig.mkety.com').toLowerCase();
   const autodiscoverHost=(process.env.MKETY_MAIL_AUTODISCOVER_HOST||'autodiscover.mkety.com').toLowerCase();
@@ -112,9 +114,55 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.redirect(url);
   }
 
+  if(hostname.toLowerCase()===aiHost && (pathname==='/' || pathname==='/ai/app') && !session){
+    let centralOrigin='https://app.mkety.com';
+    try {
+      centralOrigin=new URL(process.env.NEXT_PUBLIC_APP_URL || centralOrigin).origin;
+    } catch {
+      centralOrigin='https://app.mkety.com';
+    }
+    const url=new URL('/api/auth/product-handoff/start',centralOrigin);
+    url.searchParams.set('product','ai');
+    url.searchParams.set('returnTo','/ai/app');
+    return NextResponse.redirect(url);
+  }
+  if(hostname.toLowerCase()===aiHost && pathname==='/' && session){
+    const url=new URL(request.url);
+    url.pathname='/ai/app';
+    url.search='';
+    return NextResponse.redirect(url);
+  }
+
   const canonicalPublicUrl = getCanonicalMketyPublicUrl(new URL(request.url));
   if (canonicalPublicUrl) {
     return NextResponse.redirect(canonicalPublicUrl, 308);
+  }
+
+  // Enterprise AI customer hostnames are routing context only. They resolve to the
+  // same tenant/workspace and use a host-bound one-time auth handoff so no wildcard
+  // cross-domain session cookie is required.
+  if (!pathname.startsWith('/api/') && hostname.toLowerCase() !== aiHost) {
+    try {
+      const enterpriseHost = await resolveEnterpriseAiHostname(hostname);
+      if (enterpriseHost) {
+        if (!session) {
+          const loginUrl = new URL(request.url);
+          loginUrl.pathname = `/t/${enterpriseHost.tenant.slug}/login`;
+          loginUrl.search = '';
+          loginUrl.searchParams.set('enterpriseAiHost', hostname.toLowerCase());
+          return NextResponse.rewrite(loginUrl);
+        }
+
+        const rewriteUrl = new URL(request.url);
+        // Customer-owned and managed *.mkety.app hosts expose the customer app,
+        // not Mkety's management console. Administration stays on ai.mkety.com/app.mkety.com.
+        rewriteUrl.pathname = `/t/${enterpriseHost.tenant.slug}/enterprise-ai/customer`;
+        rewriteUrl.search = '';
+        return NextResponse.rewrite(rewriteUrl);
+      }
+    } catch {
+      // Enterprise hostname lookup is fail-closed and must not break canonical hosts.
+    }
   }
 
   if (!pathname.startsWith('/t/') && hostname) {
@@ -123,6 +171,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     const isKnownAppHost =
       hostname === appHost ||
       hostname.toLowerCase() === mailHost ||
+      hostname.toLowerCase() === aiHost ||
       hostname.toLowerCase() === apiHost ||
       hostname.toLowerCase() === autoconfigHost ||
       hostname.toLowerCase() === autodiscoverHost ||

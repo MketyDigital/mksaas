@@ -3,6 +3,12 @@
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
+import {
+  createCloudflareSaasHostname,
+  deleteCloudflareSaasHostname,
+  getCloudflareSaasHostname,
+  retryCloudflareSaasHostnameValidation,
+} from '@/features/domains/server/cloudflare-saas';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import { requireTenantAdmin } from '@/shared/lib/rbac';
@@ -11,19 +17,16 @@ export type DomainActionResult<T = unknown> =
   | { success: true; data: T; message?: string }
   | { success: false; error: string };
 
-function getVercelConfig() {
-  const token = process.env.VERCEL_AUTH_BEARER_TOKEN?.trim();
-  const projectId = process.env.VERCEL_PROJECT_ID?.trim();
-  const teamId = process.env.VERCEL_TEAM_ID?.trim();
-  const apiUrl = (process.env.VERCEL_API_URL || 'https://api.vercel.com').replace(/\/$/, '');
-
-  if (!token || !projectId) return null;
-  return { token, projectId, teamId, apiUrl };
-}
-
-function withTeam(url: string, teamId?: string) {
-  return teamId ? `${url}${url.includes('?') ? '&' : '?'}teamId=${encodeURIComponent(teamId)}` : url;
-}
+type MketyDomainVerification = {
+  providerHostnameId: string;
+  cnameTarget: string;
+  ownershipVerification?: {
+    type?: string;
+    name?: string;
+    value?: string;
+  } | null;
+  sslStatus?: string | null;
+};
 
 function normalizeHostname(value: string) {
   const raw = value.trim().toLowerCase();
@@ -33,6 +36,20 @@ function normalizeHostname(value: string) {
   if (!hostname || hostname.includes('..') || hostname.length > 255) throw new Error('Invalid hostname');
   if (!hostname.includes('.')) throw new Error('Enter a real domain such as app.example.com');
   return hostname;
+}
+
+function parseVerification(value: string | null): MketyDomainVerification | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as MketyDomainVerification;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function revalidate(tenantSlug: string) {
+  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
 }
 
 export async function listDomains(tenantSlug: string): Promise<DomainActionResult> {
@@ -65,50 +82,47 @@ export async function addDomain(tenantSlug: string, hostnameInput: string): Prom
   if (!tenant) return { success: false, error: 'Tenant not found' };
 
   const existing = await db.query.customDomains.findFirst({ where: eq(schema.customDomains.hostname, hostname) });
-  if (existing) return { success: false, error: 'This domain is already registered.' };
+  if (existing) return { success: false, error: 'This domain is already connected to Mkety.' };
 
-  let providerVerified = 'false';
-  let verification: unknown = null;
-  let message = 'Domain saved locally. Connect Vercel domain credentials to activate provider management.';
-  const vercel = getVercelConfig();
-
-  if (vercel) {
-    const url = withTeam(`${vercel.apiUrl}/v10/projects/${encodeURIComponent(vercel.projectId)}/domains`, vercel.teamId);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${vercel.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: hostname }),
-      cache: 'no-store',
-    });
-
-    const body = (await response.json().catch(() => ({}))) as {
-      verified?: boolean;
-      verification?: unknown;
-      error?: { message?: string };
+  let managed;
+  try {
+    managed = await createCloudflareSaasHostname(hostname);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error
+        ? error.message
+        : 'Mkety could not create the custom hostname.',
     };
-
-    if (!response.ok) return { success: false, error: body.error?.message || `Vercel rejected the domain (${response.status}).` };
-
-    providerVerified = String(Boolean(body.verified));
-    verification = body.verification ?? null;
-    message = body.verified
-      ? 'Domain added to Vercel. Check DNS configuration, then use Verify.'
-      : 'Domain added to Vercel. Complete the displayed verification/DNS steps, then use Verify.';
   }
+
+  const verification: MketyDomainVerification = {
+    providerHostnameId: managed.id,
+    cnameTarget: managed.cnameTarget,
+    ownershipVerification: managed.ownershipVerification ?? null,
+    sslStatus: managed.sslStatus,
+  };
 
   const [domain] = await db
     .insert(schema.customDomains)
     .values({
       tenantId: tenant.id,
       hostname,
-      providerVerified,
-      verification: verification ? JSON.stringify(verification) : null,
-      status: 'pending',
+      provider: 'mkety',
+      providerVerified: String(managed.status === 'active' && managed.sslStatus === 'active'),
+      verification: JSON.stringify(verification),
+      status: managed.status === 'active' && managed.sslStatus === 'active' ? 'verified' : 'pending',
     })
     .returning();
 
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
-  return { success: true, data: domain, message };
+  revalidate(tenantSlug);
+  return {
+    success: true,
+    data: domain,
+    message: managed.status === 'active' && managed.sslStatus === 'active'
+      ? 'Domain connected and HTTPS is active.'
+      : `Domain added. Point the hostname to ${managed.cnameTarget}, then verify again.`,
+  };
 }
 
 export async function verifyDomain(tenantSlug: string, hostnameInput: string): Promise<DomainActionResult> {
@@ -130,35 +144,52 @@ export async function verifyDomain(tenantSlug: string, hostnameInput: string): P
   });
   if (!domain) return { success: false, error: 'Domain not found' };
 
-  const vercel = getVercelConfig();
-  if (!vercel) {
-    return { success: true, data: domain, message: 'Provider verification is disabled until Vercel credentials are configured.' };
+  const verification = parseVerification(domain.verification);
+  if (!verification?.providerHostnameId) {
+    return {
+      success: false,
+      error: 'This domain uses a legacy provider record. Remove it and reconnect through Mkety Domains.',
+    };
   }
 
-  const url = withTeam(
-    `${vercel.apiUrl}/v6/domains/${encodeURIComponent(hostname)}/config`,
-    vercel.teamId,
-  );
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${vercel.token}` },
-    cache: 'no-store',
-  });
-  const body = (await response.json().catch(() => ({}))) as { misconfigured?: boolean; error?: { message?: string } };
+  let provider;
+  try {
+    provider = await retryCloudflareSaasHostnameValidation(verification.providerHostnameId);
+    if (provider.status !== 'active' || provider.ssl?.status !== 'active') {
+      provider = await getCloudflareSaasHostname(verification.providerHostnameId);
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Mkety could not verify this hostname.',
+    };
+  }
 
-  if (!response.ok) return { success: false, error: body.error?.message || `Unable to inspect DNS (${response.status}).` };
-
-  const verified = body.misconfigured === false;
+  const verified = provider.status === 'active' && provider.ssl?.status === 'active';
+  const nextVerification: MketyDomainVerification = {
+    ...verification,
+    ownershipVerification: provider.ownership_verification ?? verification.ownershipVerification ?? null,
+    sslStatus: provider.ssl?.status ?? null,
+  };
   const [updated] = await db
     .update(schema.customDomains)
-    .set({ status: verified ? 'verified' : 'pending', providerVerified: String(verified), updatedAt: new Date() })
+    .set({
+      status: verified ? 'verified' : 'pending',
+      provider: 'mkety',
+      providerVerified: String(verified),
+      verification: JSON.stringify(nextVerification),
+      updatedAt: new Date(),
+    })
     .where(eq(schema.customDomains.id, domain.id))
     .returning();
 
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
+  revalidate(tenantSlug);
   return {
     success: true,
     data: updated,
-    message: verified ? 'Domain is configured correctly.' : 'DNS is not configured yet. Check the required records in Vercel.',
+    message: verified
+      ? 'Domain verified. Mkety routing and HTTPS are active.'
+      : `Verification is still pending. Confirm the CNAME points to ${verification.cnameTarget} and try again.`,
   };
 }
 
@@ -181,24 +212,19 @@ export async function removeDomain(tenantSlug: string, hostnameInput: string): P
   });
   if (!domain) return { success: false, error: 'Domain not found' };
 
-  const vercel = getVercelConfig();
-  if (vercel) {
-    const url = withTeam(
-      `${vercel.apiUrl}/v9/projects/${encodeURIComponent(vercel.projectId)}/domains/${encodeURIComponent(hostname)}`,
-      vercel.teamId,
-    );
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${vercel.token}` },
-      cache: 'no-store',
-    });
-    if (!response.ok && response.status !== 404) {
-      const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-      return { success: false, error: body.error?.message || `Unable to remove domain from Vercel (${response.status}).` };
+  const verification = parseVerification(domain.verification);
+  if (verification?.providerHostnameId) {
+    try {
+      await deleteCloudflareSaasHostname(verification.providerHostnameId);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Mkety could not remove the managed hostname.',
+      };
     }
   }
 
   await db.delete(schema.customDomains).where(eq(schema.customDomains.id, domain.id));
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
-  return { success: true, data: null, message: 'Domain removed.' };
+  revalidate(tenantSlug);
+  return { success: true, data: null, message: 'Domain removed from Mkety.' };
 }

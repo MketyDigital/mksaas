@@ -45,7 +45,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
   }
 
   const items=[
-    {title:'Professional Email',description:'Connect your business domain and create mailboxes.',icon:Globe2,status:workspace.onboardingStep==='domain'?'Start here':'Ready',href:`/t/${tenant}/mail/mailboxes`},
+    {title:'Professional Email',description:'Connect your business domain, verify mail DNS and then create mailboxes.',icon:Globe2,status:workspace.onboardingStep==='domain'?'Start here':'Ready',href:workspace.onboardingStep==='domain'?`/t/${tenant}/mail/domains`:`/t/${tenant}/mail/mailboxes`},
     {title:'Inbox',description:'Receive, read, reply, forward, archive and search.',icon:Inbox,status:'Included',href:`/t/${tenant}/mail/inbox`},
     {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included',href:`/t/${tenant}/mail/shared`},
     {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included',href:`/t/${tenant}/mail/customer-updates`},

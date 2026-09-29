@@ -25,7 +25,14 @@ type WorkersAiChatResponse = {
   choices?: Array<{
     finish_reason?: string | null;
     message?: {
-      content?: string | null;
+      content?: string | Array<{ type?: string; text?: string; content?: string }> | null;
+      tool_calls?: Array<{
+        id?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
+      }>;
     };
   }>;
   usage?: {
@@ -39,7 +46,7 @@ type WorkersAiChatResponse = {
     output_tokens?: number;
     cached_input_tokens?: number;
   };
-  response?: string;
+  response?: string | Array<{ type?: string; text?: string; content?: string }>;
 };
 
 function nonNegativeBigInt(value: unknown) {
@@ -73,11 +80,40 @@ function normalizeWorkersAiResponse(
 
   const value = response as WorkersAiChatResponse;
   const choice = value.choices?.[0];
-  const text = typeof choice?.message?.content === 'string'
-    ? choice.message.content
-    : typeof value.response === 'string'
-      ? value.response
-      : undefined;
+  const content = choice?.message?.content;
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content
+          .map((part) => {
+            if (!part || typeof part !== 'object') return '';
+            if (typeof part.text === 'string') return part.text;
+            if (typeof part.content === 'string') return part.content;
+            return '';
+          })
+          .join('')
+          .trim() || undefined
+      : typeof value.response === 'string'
+        ? value.response
+        : Array.isArray(value.response)
+          ? value.response
+              .map((part) => {
+                if (!part || typeof part !== 'object') return '';
+                if (typeof part.text === 'string') return part.text;
+                if (typeof part.content === 'string') return part.content;
+                return '';
+              })
+              .join('')
+              .trim() || undefined
+          : undefined;
+
+  const toolCalls = choice?.message?.tool_calls
+    ?.filter((item) => item.function?.name)
+    .map((item) => ({
+      id: item.id,
+      name: item.function!.name!,
+      argumentsJson: item.function?.arguments ?? '{}',
+    }));
 
   const usage = value.usage;
   const inputTokens = nonNegativeBigInt(usage?.prompt_tokens ?? usage?.input_tokens);
@@ -89,6 +125,7 @@ function normalizeWorkersAiResponse(
   return {
     nativeModel: value.model ?? nativeModel,
     text,
+    ...(toolCalls?.length ? { toolCalls } : {}),
     finishReason: normalizeFinishReason(choice?.finish_reason),
     usage: {
       inputTokens,
@@ -145,9 +182,15 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
           ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
         })),
         stream: false,
+        ...(nativeModel === '@cf/google/gemma-4-26b-a4b-it'
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : {}),
         ...(request.maxOutputTokens ? { max_completion_tokens: request.maxOutputTokens } : {}),
         ...(request.tools?.length ? { tools: mapTools(request) } : {}),
         ...(request.structuredOutput ? { response_format: mapResponseFormat(request) } : {}),
+        ...(nativeModel === '@cf/google/gemma-4-26b-a4b-it'
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : {}),
       },
       {
         rejectIfBusy: true,
@@ -164,6 +207,31 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
     );
 
     const normalized = normalizeWorkersAiResponse(response, nativeModel);
+    if (!normalized.text && !normalized.toolCalls?.length) {
+      const record = response && typeof response === 'object'
+        ? response as Record<string, unknown>
+        : {};
+      const choice = Array.isArray(record.choices) && record.choices[0] && typeof record.choices[0] === 'object'
+        ? record.choices[0] as Record<string, unknown>
+        : {};
+      const message = choice.message && typeof choice.message === 'object'
+        ? choice.message as Record<string, unknown>
+        : {};
+      console.warn('Workers AI returned no normalized text/tool call', {
+        nativeModel,
+        topLevelKeys: Object.keys(record).sort(),
+        choiceKeys: Object.keys(choice).sort(),
+        messageKeys: Object.keys(message).sort(),
+        responseType: typeof record.response,
+        responseArray: Array.isArray(record.response),
+        contentType: typeof message.content,
+        contentArray: Array.isArray(message.content),
+        usageKeys: record.usage && typeof record.usage === 'object'
+          ? Object.keys(record.usage as Record<string, unknown>).sort()
+          : [],
+      });
+      throw new Error('Workers AI returned no assistant text or tool call.');
+    }
     return {
       requestId: crypto.randomUUID(),
       provider: this.key,

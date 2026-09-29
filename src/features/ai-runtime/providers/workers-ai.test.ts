@@ -37,6 +37,7 @@ describe('WorkersAiProviderAdapter', () => {
       expect.objectContaining({
         messages: [{ role: 'user', content: 'hello' }],
         stream: false,
+        chat_template_kwargs: { enable_thinking: false },
         max_completion_tokens: 500,
       }),
       {
@@ -58,6 +59,77 @@ describe('WorkersAiProviderAdapter', () => {
         cachedInputTokens: 2n,
         outputTokens: 4n,
       },
+    });
+  });
+
+
+  it('normalizes the native Workers AI text-generation response shape', async () => {
+    const run = jest.fn().mockResolvedValue({
+      response: 'MKETY_ACCEPTANCE_OK',
+      usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+    });
+    const adapter = new WorkersAiProviderAdapter({ run }, { gatewayId: 'mkety-ai-nonprod' });
+
+    const result = await adapter.complete({
+      ...request,
+      maxOutputTokens: 64,
+      requestedModel: 'mkety-economy',
+    }, '@cf/google/gemma-4-26b-a4b-it');
+
+    expect(result.text).toBe('MKETY_ACCEPTANCE_OK');
+    expect(result.usage).toEqual({
+      inputTokens: 8n,
+      cachedInputTokens: 0n,
+      outputTokens: 4n,
+    });
+    expect(run.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      chat_template_kwargs: { enable_thinking: false },
+    }));
+  });
+
+
+  it('normalizes array-form message content', async () => {
+    const run = jest.fn().mockResolvedValue({
+      choices: [{
+        finish_reason: 'stop',
+        message: {
+          content: [
+            { type: 'text', text: 'MKETY_' },
+            { type: 'text', text: 'ACCEPTANCE_OK' },
+          ],
+        },
+      }],
+      usage: { input_tokens: 5, output_tokens: 2 },
+    });
+    const adapter = new WorkersAiProviderAdapter({ run }, { gatewayId: 'mkety-ai-nonprod' });
+
+    const result = await adapter.complete(request, '@cf/google/gemma-4-26b-a4b-it');
+
+    expect(result.text).toBe('MKETY_ACCEPTANCE_OK');
+    expect(result.usage).toEqual({
+      inputTokens: 5n,
+      cachedInputTokens: 0n,
+      outputTokens: 2n,
+    });
+  });
+
+  it('normalizes array-form top-level response content', async () => {
+    const run = jest.fn().mockResolvedValue({
+      response: [
+        { type: 'output_text', text: 'MKETY_' },
+        { type: 'output_text', text: 'ACCEPTANCE_OK' },
+      ],
+      usage: { input_tokens: 4, output_tokens: 2 },
+    });
+    const adapter = new WorkersAiProviderAdapter({ run }, { gatewayId: 'mkety-ai-nonprod' });
+
+    const result = await adapter.complete(request, '@cf/google/gemma-4-26b-a4b-it');
+
+    expect(result.text).toBe('MKETY_ACCEPTANCE_OK');
+    expect(result.usage).toEqual({
+      inputTokens: 4n,
+      cachedInputTokens: 0n,
+      outputTokens: 2n,
     });
   });
 
@@ -113,6 +185,8 @@ describe('WorkersAiProviderAdapter', () => {
         },
       },
     );
+    const [, glmPayload] = run.mock.calls[0]!;
+    expect(glmPayload).not.toHaveProperty('chat_template_kwargs');
   });
 
   it('rejects malformed provider responses instead of fabricating success', async () => {

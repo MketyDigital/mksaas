@@ -1,11 +1,19 @@
 # Mkety AI Product, Commercial, Security & Operations Specification
 
-> Status: proposed product/commercial specification
+> Status: approved product/commercial authority with an implemented September 28 launch subset; production managed inference remains gated
 > Date: 2026-09-27
-> Branch: `feat/mkety-ai-runtime-gateway-foundation-20260927`
+> Active completion branch: `feat/enterprise-ai-complete-platform-20260928` / PR #159
 > Governing authority: `AGENTS.md`, `docs/MKETY_PRODUCT_COMMERCIAL_SOURCE_OF_TRUTH.md`, `docs/MKETY_SHARED_PAYMENTS.md`, `docs/ROLES_AND_PERMISSIONS.md`, and `docs/MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md`.
 >
 > This document is additive. Where it conflicts with an existing authority, the existing authority wins until deliberately reconciled.
+
+### 2026-09-28 implementation reconciliation
+
+PR #159 has implemented the commercial admission/settlement foundation, provider-cost separation, white-label/domain shell, and current channel registry described by the newer handoff. The production inference switch remains off.
+
+For managed Workers AI, Gemma 4 is the initial managed candidate. GLM-5.3 Flash and Qwen 3.8 27B are benchmark candidates for the second managed slot; no document may lock the second model before the guarded benchmark evidence is recorded.
+
+The launch channel registry includes Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Discord, LinkedIn Page Community, Microsoft Teams outbound workflow/webhook, and custom webhook/API. LinkedIn does not imply unrestricted inbox/DM access, and Teams inbound is not implemented.
 
 ## 1. Product definition
 
@@ -240,7 +248,7 @@ Initial managed models should be intentionally small in number and expandable.
 **Day-one managed-provider policy:**
 
 - Cloudflare Workers AI hosted open models only for Mkety-managed inference.
-- Initial routes: `@cf/google/gemma-4-26b-a4b-it` and `@cf/qwen/qwen3.8-27b`.
+- Initial managed candidate: `@cf/google/gemma-4-26b-a4b-it`. Benchmark candidates for the second managed slot: `@cf/zai-org/glm-5.3-flash` and `@cf/qwen/qwen3.8-27b`. The second slot is selected only from recorded benchmark evidence.
 - Third-party frontier models are **not** to be purchased through Cloudflare Unified Billing/prepaid AI Gateway credits as a normal Mkety-managed route.
 - OpenAI, Anthropic, Gemini, xAI and similar third-party providers are supported through **customer BYOK** where enabled.
 - Mkety may later operate its own private/self-hosted model endpoint on OCI, AWS, Azure or another approved GPU platform.
@@ -255,33 +263,34 @@ Expose stable aliases:
 - `mkety/reasoning`
 - `mkety/private/<deployment>`
 
-### 4.1.1 Day-one Workers AI cost baseline — verified 2026-09-27
+### 4.1.1 Workers AI candidate cost baseline — verified 2026-09-28
 
 Current Cloudflare Workers AI published unit pricing:
 
 | Model | Input | Output | Cached input | Primary role |
 | --- | ---: | ---: | ---: | --- |
-| `@cf/google/gemma-4-26b-a4b-it` | $0.10 / 1M tokens | $0.30 / 1M tokens | not separately listed | economical default / vision / tools |
-| `@cf/qwen/qwen3.8-27b` | $0.45 / 1M tokens | $3.20 / 1M tokens | $0.05 / 1M tokens | higher-capability reasoning / vision / tools |
+| `@cf/google/gemma-4-26b-a4b-it` | $0.10 / 1M tokens | $0.30 / 1M tokens | not separately listed | initial managed candidate |
+| `@cf/zai-org/glm-5.3-flash` | $0.15 / 1M tokens | $0.50 / 1M tokens | $0.03 / 1M tokens | lower-cost second-slot benchmark candidate |
+| `@cf/qwen/qwen3.8-27b` | $0.45 / 1M tokens | $3.20 / 1M tokens | $0.05 / 1M tokens | higher-cost second-slot benchmark candidate |
 
 Cloudflare currently meters Workers AI in neurons internally and publishes equivalent per-model token pricing. The account receives a 10,000-neuron daily free allocation; usage above that allocation on Workers Paid is billed at the model's published unit economics. The free allocation is an infrastructure benefit and must never be promised as a customer entitlement.
 
 Illustrative raw upstream cost, excluding Worker requests, storage, Gateway, retrieval, tools, payment fees and Mkety margin:
 
-| Workload example | Tokens | Gemma 4 raw cost | Qwen 3.8 raw cost |
-| --- | --- | ---: | ---: |
-| Light chat | 1,000 in / 300 out | ~$0.00019 | ~$0.00141 |
-| Normal chat | 2,000 in / 500 out | ~$0.00035 | ~$0.00250 |
-| RAG-style answer | 5,000 in / 800 out | ~$0.00074 | ~$0.00481 |
-| Heavy agent turn | 10,000 in / 2,000 out | ~$0.00160 | ~$0.01090 |
+| Workload example | Tokens | Gemma 4 raw cost | GLM-5.3 Flash raw cost | Qwen 3.8 raw cost |
+| --- | --- | ---: | ---: | ---: |
+| Light chat | 1,000 in / 300 out | ~$0.00019 | ~$0.00030 | ~$0.00141 |
+| Normal chat | 2,000 in / 500 out | ~$0.00035 | ~$0.00055 | ~$0.00250 |
+| RAG-style answer | 5,000 in / 800 out | ~$0.00074 | ~$0.00115 | ~$0.00481 |
+| Heavy agent turn | 10,000 in / 2,000 out | ~$0.00160 | ~$0.00250 | ~$0.01090 |
 
-For 1,000 "normal chat" turns at the example size, raw model inference is approximately $0.35 on Gemma 4 versus $2.50 on Qwen 3.8 before all other Mkety costs.
+For 1,000 "normal chat" turns at the example size, raw model inference is approximately $0.35 on Gemma 4, $0.55 on GLM-5.3 Flash, and $2.50 on Qwen 3.8 before all other Mkety costs.
 
 Commercial consequences:
 
 - `mkety/default` should initially prefer Gemma 4 for ordinary workloads unless evaluation quality says otherwise.
-- Qwen 3.8 should be a higher-capability route rather than the universal default because its output cost is materially higher.
-- model aliases and policy routing should decide whether a request truly needs Qwen;
+- GLM-5.3 Flash and Qwen 3.8 must be compared on quality, capability, latency, reliability and measured cost before either receives the second managed slot.
+- Do not assign a permanent "higher-capability" production role to either second-slot candidate from documentation alone; model aliases and policy routing follow benchmark evidence.
 - Enterprise and API rate cards should price against measured blended workloads, not merely multiply provider token rates;
 - image/vision inputs, long contexts, reasoning behavior and agent tool loops must be benchmarked before publishing final credit conversion.
 
@@ -294,13 +303,15 @@ Provisional managed-inference reference:
 | Model | Raw input / 1M | Raw output / 1M | Provisional Mkety input / 1M | Provisional Mkety output / 1M |
 | --- | ---: | ---: | ---: | ---: |
 | Gemma 4 | $0.10 | $0.30 | $0.30 | $0.90 |
+| GLM-5.3 Flash | $0.15 | $0.50 | $0.45 | $1.50 |
 | Qwen 3.8 27B | $0.45 | $3.20 | $1.35 | $9.60 |
 
-Qwen cached input raw pricing is $0.05/M; a provisional 3x reference would be $0.15/M cached input.
+GLM cached input raw pricing is $0.03/M and Qwen cached input is $0.05/M; provisional 3x references would be $0.09/M and $0.15/M respectively.
 
 At the illustrative 2,000-input/500-output "normal chat" workload:
 
 - Gemma raw ~= $0.00035; provisional managed inference ~= $0.00105 per turn, or ~= $1.05 per 1,000 turns.
+- GLM raw ~= $0.00055; provisional managed inference ~= $0.00165 per turn, or ~= $1.65 per 1,000 turns.
 - Qwen raw ~= $0.00250; provisional managed inference ~= $0.00750 per turn, or ~= $7.50 per 1,000 turns.
 
 This inference rate is **not the whole Enterprise price**. Enterprise pricing must recover and monetize:
@@ -1600,3 +1611,14 @@ Mkety tenant
 ```
 
 The future Media integration should follow the same central-product pattern while retaining Media's isolated operational runtime/storage. This gives users one Mkety identity, team, billing and entitlement system without scattering product ownership or forcing all products into one runtime.
+
+
+## 2026-09-28 Enterprise customer experience and margin policy
+
+Enterprise customer-facing billing/usage must be understandable without technical knowledge. At minimum show the active plan/contract label, subscription state, current billing period/renewal context, prepaid credits remaining, requests/usage for the current period and customer credits consumed. Raw provider account secrets, other-tenant usage and internal infrastructure capacity remain operations-only.
+
+Provider cost and customer charge are separate records. For managed Workers AI, persist normalized actual token usage and a verification-dated provider-cost estimate/measurement. Pricing must cover provider spend, shared platform overhead, payment/FX/support/observability/domain/channel costs and profit. The default planning floor is a 65% provider-level gross-margin target plus a 15% overhead reserve, but public prices are set only from representative workload measurements and current verified provider rates.
+
+White-label access is separately entitlement-controlled. It may remove Mkety branding from the customer's Enterprise AI application/login presentation and use a verified customer hostname while identity, billing, commercial admission and audit remain centrally enforced.
+
+Day-one channel families are Website, WhatsApp Business, Telegram, Instagram Direct, Facebook Messenger, Slack, Microsoft Teams and custom webhook/API. Additional channels must plug into the shared channel adapter/security/accounting/handoff contracts rather than duplicating runtime or tenant state.

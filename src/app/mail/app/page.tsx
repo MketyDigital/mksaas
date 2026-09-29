@@ -25,12 +25,21 @@ export default async function MailWorkspaceChooser() {
     orderBy: (table, { asc }) => [asc(table.createdAt)],
   });
 
-  const entitled: Array<{ slug: string; name: string }> = [];
-  for (const membership of memberships) {
-    if (await hasEntitlement({ tenantId: membership.tenant.id, entitlement: 'workspace.mail' })) {
-      entitled.push({ slug: membership.tenant.slug, name: membership.tenant.name });
-    }
-  }
+  const entitlementDecisions = await Promise.all(
+    memberships.map(async (membership) => ({
+      membership,
+      allowed: await hasEntitlement({
+        tenantId: membership.tenant.id,
+        entitlement: 'workspace.mail',
+      }),
+    })),
+  );
+  const entitled = entitlementDecisions
+    .filter((item) => item.allowed)
+    .map(({ membership }) => ({
+      slug: membership.tenant.slug,
+      name: membership.tenant.name,
+    }));
 
   if (entitled.length === 1) redirect(`/t/${entitled[0].slug}/mail`);
 

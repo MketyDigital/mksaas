@@ -10,6 +10,7 @@ interface AssistantClientProps {
   conversationId?: string | null;
   initialMessages?: UIMessage[];
   initialTitle?: string;
+  providerOptions?: Array<{ id: string; providerKey: string }>;
 }
 
 export function AssistantClient({
@@ -17,6 +18,7 @@ export function AssistantClient({
   conversationId,
   initialMessages,
   initialTitle: _initialTitle,
+  providerOptions = [],
 }: AssistantClientProps) {
   const [refetchTrigger, setRefetchTrigger] = useState(0);
   const handleConversationCreated = useCallback(() => {
@@ -34,6 +36,7 @@ export function AssistantClient({
           suggestedQuestions={initialData.suggestedQuestions}
           capabilities={initialData.capabilities}
           onConversationCreated={handleConversationCreated}
+          providerOptions={providerOptions}
         />
       </div>
     </div>

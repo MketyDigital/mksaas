@@ -12,6 +12,10 @@ const CANDIDATE_PATH = path.resolve(
   process.cwd(),
   '.github/workflows/mkety-public-candidate-deploy.yml',
 );
+const AUTH_RECONCILE_PATH = path.resolve(
+  process.cwd(),
+  '.github/workflows/mkety-production-auth-reconcile.yml',
+);
 
 describe('production cutover private database gate', () => {
   it('authorizes one exact integrated candidate before private DB mutation and Custom Domain deploy', async () => {
@@ -53,11 +57,14 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain("'NEXT_PUBLIC_APP_URL'");
 
     expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
-    expect(workflow).toContain('Attach apex and www as Worker Custom Domains');
-    expect(workflow).toContain('Business\\s+(?:plan|tier|workspace)');
+    expect(workflow).toContain('Attach public and app hosts as Worker Custom Domains');
+    expect(workflow).toContain('(?:Growth|Pro|Business)\\s+(?:plan|tier|workspace)');
     expect(workflow).not.toContain('\\b(Growth|Pro|Business)\\b');
-    expect(workflow).toContain('for host in mkety.com www.mkety.com');
+    expect(workflow).toContain('for host in mkety.com www.mkety.com app.mkety.com');
     expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
+    expect(workflow).toContain('app.mkety.com');
+    expect(workflow).toContain("u.pathname!=='/app'");
+    expect(workflow).toContain("u.pathname!=='/login'");
     expect(workflow).toContain('Verify unrelated Worker Routes remain unchanged');
     expect(workflow).not.toContain('Bind only apex and www Worker routes');
     expect(workflow).not.toContain("bind_pattern 'mkety.com/*'");
@@ -81,6 +88,16 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain(
       'MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL: ${{ secrets.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL || vars.MKETY_MEDIA_FLUTTERWAVE_WEBHOOK_URL }}',
     );
+  });
+
+  it('keeps app.mkety.com as the canonical production auth origin', async () => {
+    const workflow = await readFile(AUTH_RECONCILE_PATH, 'utf8');
+
+    expect(workflow).toContain('MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback');
+    expect(workflow).toContain('MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login');
+    expect(workflow).toContain('NEXT_PUBLIC_APP_URL: https://app.mkety.com');
+    expect(workflow).toContain('https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin');
+    expect(workflow).not.toContain('NEXT_PUBLIC_APP_URL: https://mkety.com');
   });
 
   it('upserts and verifies the Coolify migration secret without blindly replaying creates', async () => {

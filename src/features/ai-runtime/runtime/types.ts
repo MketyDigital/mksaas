@@ -33,6 +33,12 @@ export interface AiRuntimeRequest {
   idempotencyKey: string;
 }
 
+export interface AiRuntimeToolCall {
+  id?: string;
+  name: string;
+  argumentsJson: string;
+}
+
 export interface AiRuntimeUsage {
   inputTokens: bigint;
   cachedInputTokens: bigint;
@@ -46,6 +52,7 @@ export interface AiRuntimeResult {
   provider: string;
   nativeModel: string;
   text?: string;
+  toolCalls?: AiRuntimeToolCall[];
   finishReason: AiRuntimeFinishReason;
   usage: AiRuntimeUsage;
   providerRequestId?: string;

@@ -1,8 +1,9 @@
 FROM alpine:3.22
-RUN apk add --no-cache openssl && mkdir -p /etc/mkety/coolify-ca-dir /etc/mkety && ln -s /etc/mkety/coolify-ca.crt /etc/mkety/coolify-ca-dir/coolify-ca.crt
+RUN apk add --no-cache openssl && adduser -D -u 10001 mkety && mkdir -p /etc/mkety/coolify-ca-dir /etc/mkety && ln -s /etc/mkety/coolify-ca.crt /etc/mkety/coolify-ca-dir/coolify-ca.crt
 WORKDIR /app
-COPY ops/coolify-ca-mount-diagnostic/run.sh /app/run.sh
+COPY --chown=mkety:mkety ops/coolify-ca-mount-diagnostic/run.sh /app/run.sh
 RUN chmod +x /app/run.sh
+USER mkety
 EXPOSE 3000
 HEALTHCHECK --interval=5s --timeout=3s --start-period=3s --retries=12 CMD wget -q -O- http://127.0.0.1:3000/ >/dev/null || exit 1
 CMD ["/app/run.sh"]

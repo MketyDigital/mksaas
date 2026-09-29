@@ -3,18 +3,28 @@ import { z } from 'zod';
 
 import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
 import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
+import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
+import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import {
   admitAiCommercialRequest,
   releaseAiCommercialRequest,
+  settleAiCommercialRequest,
 } from '@/features/ai-runtime/server/commercial-admission';
 import { conservativeInputTokenUpperBound } from '@/features/ai-runtime/server/commercial-estimation';
 import { getEnterpriseAiRuntimePolicy } from '@/features/ai-runtime/server/commercial-policy';
 import {
+  calculateAiCredits,
   estimateAiReservationCredits,
   resolveActiveAiRateCard,
 } from '@/features/ai-runtime/server/commercial-rates';
+import {
+  calculateProviderCostUsdMicros,
+  getManagedAiCostRate,
+  minimumCustomerRevenueUsdMicros,
+} from '@/features/ai-runtime/server/provider-cost';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { aiRequests, projects } from '@/shared/db/schema';
 
 const ABSOLUTE_MAX_REQUEST_BYTES = 5_000_000;
@@ -30,8 +40,23 @@ const requestSchema = z.object({
   max_tokens: z.number().int().positive().max(131_072).optional(),
   max_completion_tokens: z.number().int().positive().max(131_072).optional(),
   stream: z.boolean().optional().default(false),
-  tools: z.array(z.unknown()).max(256).optional(),
-  response_format: z.unknown().optional(),
+  tools: z.array(z.object({
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string().min(1).max(128),
+      description: z.string().max(2_000).optional(),
+      parameters: z.record(z.string(), z.unknown()),
+    }),
+  })).max(256).optional(),
+  provider_connection_id: z.string().uuid().optional(),
+  response_format: z.object({
+    type: z.literal('json_schema'),
+    json_schema: z.object({
+      name: z.string().min(1).max(128).optional(),
+      strict: z.boolean().optional(),
+      schema: z.record(z.string(), z.unknown()),
+    }),
+  }).optional(),
 });
 
 function errorResponse(status: number, code: string, message: string, requestId?: string) {
@@ -69,7 +94,60 @@ async function readJsonBody(request: Request, maxRequestBytes: number) {
   }
 }
 
-function duplicateResponse(existing: typeof aiRequests.$inferSelect) {
+type DuplicateRequestRecord = Pick<
+  typeof aiRequests.$inferSelect,
+  'id' | 'errorCode' | 'providerCostMetadata'
+>;
+
+function requestFingerprintFromMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>).requestFingerprint;
+  return typeof value === 'string' ? value : null;
+}
+
+async function findExistingRequest(tenantId: string, idempotencyKey: string): Promise<DuplicateRequestRecord | null> {
+  const [row] = await db
+    .select({
+      id: aiRequests.id,
+      errorCode: aiRequests.errorCode,
+      providerCostMetadata: aiRequests.providerCostMetadata,
+    })
+    .from(aiRequests)
+    .where(and(
+      eq(aiRequests.tenantId, tenantId),
+      eq(aiRequests.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
+async function resolveIdempotencyReplay(input: {
+  tenantId: string;
+  idempotencyKey: string;
+  requestFingerprint: string;
+}) {
+  try {
+    const existing = await findExistingRequest(input.tenantId, input.idempotencyKey);
+    if (!existing) return null;
+    const existingFingerprint = requestFingerprintFromMetadata(existing.providerCostMetadata);
+    if (existingFingerprint !== input.requestFingerprint) {
+      return errorResponse(
+        409,
+        'idempotency_conflict',
+        'Idempotency-Key was already used with a different request.',
+      );
+    }
+    return duplicateResponse(existing);
+  } catch {
+    return errorResponse(
+      503,
+      'idempotency_lookup_unavailable',
+      'Idempotency state could not be verified safely. The request was not sent upstream.',
+    );
+  }
+}
+
+function duplicateResponse(existing: DuplicateRequestRecord) {
   const messages: Record<string, string> = {
     runtime_disabled: 'Enterprise AI customer inference is not enabled yet.',
     provider_unavailable: 'Managed inference is not enabled on this route yet.',
@@ -85,7 +163,7 @@ function duplicateResponse(existing: typeof aiRequests.$inferSelect) {
   );
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const key = await authenticateAiApiKey(request, 'ai:chat');
   if (!key) return errorResponse(401, 'unauthorized', 'Invalid API key.');
 
@@ -138,21 +216,125 @@ export async function POST(request: Request) {
     body: parsed.data,
   }));
 
-  const existing = await db.query.aiRequests.findFirst({
-    where: and(
-      eq(aiRequests.tenantId, key.tenantId),
-      eq(aiRequests.idempotencyKey, idempotencyKey),
-    ),
+  const replay = await resolveIdempotencyReplay({
+    tenantId: key.tenantId,
+    idempotencyKey,
+    requestFingerprint,
   });
+  if (replay) return replay;
 
-  if (existing) {
-    const existingFingerprint = typeof existing.providerCostMetadata.requestFingerprint === 'string'
-      ? existing.providerCostMetadata.requestFingerprint
-      : null;
-    if (existingFingerprint !== requestFingerprint) {
-      return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+  if (parsed.data.provider_connection_id) {
+    if (!policy.customerInferenceEnabled) {
+      return errorResponse(503, 'runtime_disabled', 'Enterprise AI customer inference is not enabled yet.');
     }
-    return duplicateResponse(existing);
+    if (parsed.data.tools?.length) {
+      return errorResponse(400, 'byok_tools_not_supported', 'Tool calling is not enabled for this BYOK provider route yet.');
+    }
+    if (parsed.data.response_format) {
+      return errorResponse(400, 'byok_structured_output_not_supported', 'Structured output is not enabled for this BYOK provider route yet.');
+    }
+
+    const requestId = crypto.randomUUID();
+    const startedAt = new Date();
+    try {
+      await db.insert(aiRequests).values({
+        id: requestId,
+        tenantId: key.tenantId,
+        projectId,
+        apiKeyId: key.id,
+        idempotencyKey,
+        modelAlias: parsed.data.model,
+        providerKey: 'byok',
+        nativeModel: parsed.data.model,
+        reservedCredits: 0n,
+        settledCredits: 0n,
+        status: 'provider_dispatch',
+        providerCostMetadata: {
+          requestFingerprint,
+          commercialMode: 'byok',
+          providerCostOwnership: 'customer',
+        },
+        startedAt,
+      });
+    } catch {
+      const raced = await resolveIdempotencyReplay({
+        tenantId: key.tenantId,
+        idempotencyKey,
+        requestFingerprint,
+      });
+      return raced ?? errorResponse(
+        503,
+        'idempotency_lookup_unavailable',
+        'Idempotency state could not be verified safely. The request was not sent upstream.',
+      );
+    }
+
+    try {
+      const result = await runCentralAi({
+        tenantId: key.tenantId,
+        projectId,
+        apiKeyId: key.id,
+        providerConnectionId: parsed.data.provider_connection_id,
+        model: parsed.data.model,
+        system: '',
+        messages: parsed.data.messages
+          .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
+          .map((message) => ({
+            role: message.role as 'system' | 'user' | 'assistant',
+            content: message.content,
+          })),
+        maxOutputTokens: parsed.data.max_completion_tokens ?? parsed.data.max_tokens ?? policy.maxOutputTokens,
+        idempotencyKey,
+      });
+
+      await db.update(aiRequests).set({
+        providerKey: result.provider,
+        nativeModel: result.nativeModel,
+        status: 'completed',
+        inputTokens: BigInt(result.usage?.inputTokens ?? 0),
+        outputTokens: BigInt(result.usage?.outputTokens ?? 0),
+        cachedInputTokens: 0n,
+        settledCredits: 0n,
+        providerCostMetadata: {
+          requestFingerprint,
+          commercialMode: 'byok',
+          providerCostOwnership: 'customer',
+          mketyProviderCostUsdMicros: '0',
+          providerRequestId: result.providerRequestId ?? null,
+        },
+        completedAt: new Date(),
+      }).where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+
+      return Response.json({
+        id: requestId,
+        object: 'chat.completion',
+        model: result.nativeModel,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: result.text || null },
+          finish_reason: 'stop',
+        }],
+        usage: {
+          prompt_tokens: result.usage?.inputTokens ?? 0,
+          completion_tokens: result.usage?.outputTokens ?? 0,
+          total_tokens: result.usage?.totalTokens ?? ((result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0)),
+        },
+        mkety_commercial_mode: 'byok',
+      });
+    } catch {
+      await db.update(aiRequests).set({
+        status: 'provider_unavailable',
+        errorCode: 'byok_provider_failed',
+        completedAt: new Date(),
+      }).where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+
+      return errorResponse(
+        503,
+        'byok_provider_failed',
+        'The customer-owned provider request failed. Mkety did not fall back to managed inference.',
+        requestId,
+      );
+    }
   }
 
   const resolved = await resolveAiModelRoute({
@@ -220,17 +402,16 @@ export async function POST(request: Request) {
       startedAt,
     });
   } catch {
-    const raced = await db.query.aiRequests.findFirst({
-      where: and(
-        eq(aiRequests.tenantId, key.tenantId),
-        eq(aiRequests.idempotencyKey, idempotencyKey),
-      ),
+    const raced = await resolveIdempotencyReplay({
+      tenantId: key.tenantId,
+      idempotencyKey,
+      requestFingerprint,
     });
-    const racedFingerprint = raced && typeof raced.providerCostMetadata.requestFingerprint === 'string'
-      ? raced.providerCostMetadata.requestFingerprint
-      : null;
-    if (raced && racedFingerprint === requestFingerprint) return duplicateResponse(raced);
-    return errorResponse(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    return raced ?? errorResponse(
+      503,
+      'idempotency_lookup_unavailable',
+      'Idempotency state could not be verified safely. The request was not sent upstream.',
+    );
   }
 
   if (!policy.customerInferenceEnabled) {
@@ -269,23 +450,94 @@ export async function POST(request: Request) {
     return errorResponse(402, 'commercial_admission_denied', 'Prepaid credits or budget do not authorize this request.', requestId);
   }
 
+  const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
+  if (!providerRate) {
+    try {
+      await releaseAiCommercialRequest({ admission, reason: 'provider_cost_unavailable' });
+    } catch {
+      await db
+        .update(aiRequests)
+        .set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        })
+        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+      return errorResponse(503, 'commercial_reconciliation_required', 'Commercial holds require reconciliation.', requestId);
+    }
+
+    await db
+      .update(aiRequests)
+      .set({
+        status: 'provider_unavailable',
+        errorCode: 'provider_cost_unavailable',
+        completedAt: new Date(),
+      })
+      .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+    return errorResponse(503, 'provider_cost_unavailable', 'Provider cost is not verified for this model.', requestId);
+  }
+
+  if (resolved.model.providerKey !== 'workers-ai') {
+    try {
+      await releaseAiCommercialRequest({ admission, reason: 'provider_not_supported' });
+    } catch {
+      await db
+        .update(aiRequests)
+        .set({ status: 'reconciliation_required', errorCode: 'commercial_reconciliation_required', completedAt: new Date() })
+        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+      return errorResponse(503, 'commercial_reconciliation_required', 'Commercial holds require reconciliation.', requestId);
+    }
+    return errorResponse(503, 'provider_unavailable', 'The selected managed provider is not enabled.', requestId);
+  }
+
+  let result;
   try {
-    await releaseAiCommercialRequest({
-      admission,
-      reason: 'provider_unavailable',
-    });
+    const provider = getManagedWorkersAiProvider();
+    result = await provider.complete({
+      tenantId: key.tenantId,
+      projectId,
+      apiKeyId: key.id,
+      actorUserId: null,
+      requestedModel: resolved.alias.alias,
+      messages: parsed.data.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.name ? { name: message.name } : {}),
+        ...(message.tool_call_id ? { toolCallId: message.tool_call_id } : {}),
+      })),
+      maxOutputTokens: effectiveMaxOutput,
+      tools: parsed.data.tools?.map((tool) => ({
+        name: tool.function.name,
+        description: tool.function.description,
+        inputSchema: tool.function.parameters,
+      })),
+      structuredOutput: parsed.data.response_format
+        ? {
+            name: parsed.data.response_format.json_schema.name,
+            strict: parsed.data.response_format.json_schema.strict,
+            schema: parsed.data.response_format.json_schema.schema,
+          }
+        : undefined,
+      idempotencyKey,
+      metadata: { requestId },
+    }, resolved.model.nativeModel);
   } catch {
+    // Once provider invocation begins, an exception can be ambiguous: the upstream
+    // provider may have accepted or completed work even if the Worker lost the
+    // response. Preserve commercial holds and require reconciliation rather than
+    // releasing value and risking untracked provider spend.
     await db
       .update(aiRequests)
       .set({
         status: 'reconciliation_required',
-        errorCode: 'commercial_reconciliation_required',
+        errorCode: 'provider_outcome_unknown',
         providerCostMetadata: {
           requestFingerprint,
           inputTokenUpperBound: inputTokenUpperBound.toString(),
           effectiveMaxOutput,
           creditReservationId: admission.creditReservation.id,
           budgetReservationIds: admission.budgetReservations.map((item) => item.id),
+          providerOutcome: 'unknown_after_dispatch',
         },
         completedAt: new Date(),
       })
@@ -293,8 +545,59 @@ export async function POST(request: Request) {
 
     return errorResponse(
       503,
+      'provider_outcome_unknown',
+      'The provider outcome is unknown and the request is awaiting reconciliation. It will not be sent upstream again.',
+      requestId,
+    );
+  }
+
+  const actualCredits = calculateAiCredits({
+    inputTokens: result.usage.inputTokens,
+    cachedInputTokens: result.usage.cachedInputTokens,
+    outputTokens: result.usage.outputTokens,
+    rate,
+  });
+
+  const providerCostUsdMicros = calculateProviderCostUsdMicros({
+    rate: providerRate,
+    inputTokens: result.usage.inputTokens,
+    cachedInputTokens: result.usage.cachedInputTokens,
+    outputTokens: result.usage.outputTokens,
+  });
+  const minimumRevenueUsdMicros = minimumCustomerRevenueUsdMicros(providerCostUsdMicros);
+
+  try {
+    await settleAiCommercialRequest({
+      admission,
+      actualCredits,
+      settledAt: new Date(),
+    });
+  } catch {
+    await db
+      .update(aiRequests)
+      .set({
+        status: 'reconciliation_required',
+        errorCode: 'commercial_reconciliation_required',
+        inputTokens: result.usage.inputTokens,
+        cachedInputTokens: result.usage.cachedInputTokens,
+        outputTokens: result.usage.outputTokens,
+        providerCostMetadata: {
+          requestFingerprint,
+          providerRequestId: result.providerRequestId ?? null,
+          providerCostUsdMicros: providerCostUsdMicros.toString(),
+          providerCostVerifiedAt: providerRate.verifiedAt,
+          minimumRevenueUsdMicros: minimumRevenueUsdMicros.toString(),
+          actualCredits: actualCredits.toString(),
+          creditReservationId: admission.creditReservation.id,
+          budgetReservationIds: admission.budgetReservations.map((item) => item.id),
+        },
+        completedAt: new Date(),
+      })
+      .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+    return errorResponse(
+      503,
       'commercial_reconciliation_required',
-      'Request was not sent to a provider and its commercial holds require reconciliation.',
+      'The provider completed the request but accounting requires reconciliation. The request will not be sent upstream again.',
       requestId,
     );
   }
@@ -302,12 +605,19 @@ export async function POST(request: Request) {
   await db
     .update(aiRequests)
     .set({
-      status: 'provider_unavailable',
-      errorCode: 'provider_unavailable',
+      status: 'completed',
+      errorCode: null,
+      settledCredits: actualCredits,
+      inputTokens: result.usage.inputTokens,
+      cachedInputTokens: result.usage.cachedInputTokens,
+      outputTokens: result.usage.outputTokens,
       providerCostMetadata: {
         requestFingerprint,
-        inputTokenUpperBound: inputTokenUpperBound.toString(),
-        effectiveMaxOutput,
+        providerRequestId: result.providerRequestId ?? null,
+        providerCostUsdMicros: providerCostUsdMicros.toString(),
+          providerCostVerifiedAt: providerRate.verifiedAt,
+        minimumRevenueUsdMicros: minimumRevenueUsdMicros.toString(),
+        actualCredits: actualCredits.toString(),
         creditReservationId: admission.creditReservation.id,
         budgetReservationIds: admission.budgetReservations.map((item) => item.id),
       },
@@ -315,10 +625,40 @@ export async function POST(request: Request) {
     })
     .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
 
-  return errorResponse(
-    503,
-    'provider_unavailable',
-    'Commercial admission passed and was released; managed inference is still disabled on this route.',
-    requestId,
-  );
+  return Response.json({
+    id: requestId,
+    object: 'chat.completion',
+    model: resolved.alias.alias,
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: result.text ?? null,
+        ...(result.toolCalls?.length
+          ? {
+              tool_calls: result.toolCalls.map((toolCall, index) => ({
+                id: toolCall.id ?? `call_${index + 1}`,
+                type: 'function',
+                function: {
+                  name: toolCall.name,
+                  arguments: toolCall.argumentsJson,
+                },
+              })),
+            }
+          : {}),
+      },
+      finish_reason: result.finishReason,
+    }],
+    usage: {
+      prompt_tokens: Number(result.usage.inputTokens),
+      completion_tokens: Number(result.usage.outputTokens),
+      total_tokens: Number(result.usage.inputTokens + result.usage.outputTokens),
+      cached_input_tokens: Number(result.usage.cachedInputTokens),
+    },
+  });
+}
+
+
+export async function POST(request: Request) {
+  return withRequestDatabase(async () => handlePost(request));
 }

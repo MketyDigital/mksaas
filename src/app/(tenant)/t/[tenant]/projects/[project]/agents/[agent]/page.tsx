@@ -1,6 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 
+import { listByokProviderConnections } from '@/features/ai-runtime/server/provider-connections';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { createAgentVersion, publishAgentVersionAction, updateAgent } from '@/features/projects/agent-actions';
 import { AgentPlayground } from '@/features/projects/AgentPlayground';
 import { requireProjectAccess } from '@/features/projects/server/access';
@@ -37,6 +39,16 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
     orderBy: [desc(agentVersions.version)],
   });
   const publishedVersion = versions.find((version) => version.status === 'published');
+  const canByok = await hasEntitlement({ tenantId: access.tenant.id, entitlement: 'ai.byok' });
+  const byokConnections = canByok
+    ? await listByokProviderConnections({ tenantId: access.tenant.id, projectId: access.project.id })
+    : [];
+  const tenantByokConnections = canByok
+    ? await listByokProviderConnections({ tenantId: access.tenant.id })
+    : [];
+  const availableByokConnections = [...tenantByokConnections, ...byokConnections]
+    .filter((connection, index, values) => values.findIndex((candidate) => candidate.id === connection.id) === index)
+    .filter((connection) => connection.status === 'active');
 
   return (
     <WorkspaceShell
@@ -109,16 +121,20 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
             <label className="grid gap-2 text-sm">
               <span>Provider</span>
               <select name="provider" defaultValue={agent.provider} className="rounded-md border bg-background px-3 py-2">
-                <option value="platform">Mkety Platform</option>
-                <option value="openai">OpenAI</option>
-                <option value="groq">Groq</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="custom">Custom</option>
+                <option value="platform">Mkety managed AI (smart routing)</option>
+                {availableByokConnections.map((connection) => (
+                  <option key={connection.id} value={`byok:${connection.id}`}>
+                    BYOK · {connection.providerKey}
+                  </option>
+                ))}
+                {!agent.provider.startsWith('byok:') && agent.provider !== 'platform' && agent.provider !== 'workers-ai' ? (
+                  <option value={agent.provider}>Legacy · {agent.provider}</option>
+                ) : null}
               </select>
             </label>
             <label className="grid gap-2 text-sm">
               <span>Model</span>
-              <input name="model" defaultValue={agent.model ?? ''} placeholder="e.g. gpt-4o-mini" className="rounded-md border bg-background px-3 py-2" />
+              <input name="model" defaultValue={agent.model ?? ''} placeholder="Leave blank for Mkety routing, or enter the BYOK provider model" className="rounded-md border bg-background px-3 py-2" />
             </label>
           </div>
         </section>
