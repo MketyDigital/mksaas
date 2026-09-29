@@ -73,6 +73,7 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain("destinationPortRange:{min:port,max:port}");
     expect(workflow).toContain('oci network vnic update --vnic-id "$vnic_id" --nsg-ids');
     expect(workflow).toContain('Dedicated OCI NSG is attached to the gateway VNIC with TCP 993/465 ingress only.');
+    expect(workflow).toContain('skipping optional NSG reconciliation because public protocol acceptance is authoritative');
   });
 
   it('requires authoritative/public DNS plus trusted origin TLS and protocol greetings', () => {
