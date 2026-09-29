@@ -10,6 +10,7 @@ const OTE_BASE = 'https://ote.domainresellerapi.com';
 const seenNonces = new Map();
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/v1/domain/check' }],
+  ['quote-basic', { method: 'GET', path: '/api/domain/check' }],
   ['register', { method: 'POST', path: '/v1/domain/register' }],
   ['renew', { method: 'POST', path: '/v1/domain/renew' }],
   ['info', { method: 'GET', path: '/api/v1/domains/info' }],
@@ -82,12 +83,27 @@ const server = createServer(async (req, res) => {
     }
 
     const base = input.environment === 'production' ? LIVE_BASE : OTE_BASE;
-    const upstreamPath = String(input.operation) === 'info'
+    const op = String(input.operation);
+    const upstreamPath = op === 'info'
       ? operation.path + '?domainName=' + encodeURIComponent(String(input.payload.domainName || ''))
-      : operation.path;
+      : op === 'quote-basic'
+        ? operation.path + '?' + new URLSearchParams({
+            domainNames: String(input.payload.domainNames || ''),
+            tlds: String(input.payload.tlds || ''),
+            period: String(input.payload.period || 1),
+            command: 'create',
+          }).toString()
+        : operation.path;
+    const basicAuth = op === 'quote-basic'
+      ? 'Basic ' + Buffer.from(String(input.payload.resellerId || '') + ':' + String(input.payload.apiKey || '')).toString('base64')
+      : null;
     const upstream = await fetch(base + upstreamPath, {
       method: operation.method,
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      headers: {
+        accept: 'application/json',
+        ...(operation.method === 'POST' ? { 'content-type': 'application/json' } : {}),
+        ...(basicAuth ? { authorization: basicAuth } : {}),
+      },
       ...(operation.method === 'POST' ? { body: JSON.stringify(input.payload) } : {}),
       signal: AbortSignal.timeout(20_000),
     });
