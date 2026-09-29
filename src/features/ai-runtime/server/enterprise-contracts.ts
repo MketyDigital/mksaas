@@ -1,0 +1,357 @@
+'use server';
+
+import { addMonths } from 'date-fns';
+import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
+
+import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
+import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/entitlement-keys';
+import { db } from '@/shared/db';
+import {
+  billingCheckouts,
+  billingPeriods,
+  billingPlans,
+  billingPlanVersionCreditAllowances,
+  billingPlanVersionEntitlements,
+  billingPlanVersions,
+  billingSubscriptions,
+  tenants,
+} from '@/shared/db/schema';
+import { requirePermission } from '@/shared/lib/permissions';
+import { getTenantBySlug } from '@/shared/lib/tenant';
+
+const CONTRACT_PREFIX = 'enterprise-ai-contract-';
+
+const ALLOWED_CONTRACT_ENTITLEMENTS = [
+  'workspace.ai.enterprise',
+  'ai.api',
+  'ai.byok',
+  'ai.private_model',
+  'ai.channel.website',
+  'ai.channel.telegram',
+  'ai.channel.whatsapp',
+  'ai.channel.instagram',
+  'ai.channel.facebook_messenger',
+  'ai.channel.slack',
+  'ai.channel.discord',
+  'ai.channel.linkedin_page',
+  'ai.channel.microsoft_teams',
+  'ai.channel.custom_webhook',
+  'ai.whitelabel',
+  'ai.domain.purchase',
+  'ai.provider.gemini',
+  'ai.provider.anthropic',
+] as const satisfies readonly EntitlementKey[];
+
+export const ENTERPRISE_AI_CONTRACT_ENTITLEMENTS = ALLOWED_CONTRACT_ENTITLEMENTS;
+
+function contractPlanKey(tenantId: string) {
+  return `${CONTRACT_PREFIX}${tenantId}`;
+}
+
+function parseUsdMinor(value: FormDataEntryValue | null) {
+  const text = String(value ?? '').trim();
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) throw new Error('Enter a valid monthly USD amount.');
+  const fraction = (match[2] ?? '').padEnd(2, '0');
+  const amount = BigInt(match[1]) * 100n + BigInt(fraction || '0');
+  if (amount <= 0n) throw new Error('Monthly price must be greater than zero.');
+  return amount;
+}
+
+function parseCredits(value: FormDataEntryValue | null) {
+  const text = String(value ?? '0').trim();
+  if (!/^\d{1,15}$/.test(text)) throw new Error('Included credits must be a whole number.');
+  return BigInt(text);
+}
+
+function parseIncludedEntitlements(formData: FormData) {
+  const requested = new Set(formData.getAll('entitlements').map((value) => String(value)));
+  requested.add('workspace.ai.enterprise');
+  return [...requested].filter((key): key is EntitlementKey =>
+    isEntitlementKey(key) && (ALLOWED_CONTRACT_ENTITLEMENTS as readonly string[]).includes(key),
+  );
+}
+
+export async function createEnterpriseAiContractVersion(
+  opsTenantSlug: string,
+  formData: FormData,
+) {
+  await requirePermission(opsTenantSlug, 'platform:plans');
+  const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
+  const target = await getTenantBySlug(targetTenantSlug);
+  if (!target) throw new Error('Target customer workspace was not found.');
+
+  const amountMinor = parseUsdMinor(formData.get('monthlyPriceUsd'));
+  const includedCredits = parseCredits(formData.get('includedCredits'));
+  const entitlements = parseIncludedEntitlements(formData);
+  const name = String(formData.get('name') ?? '').trim().slice(0, 255)
+    || `${target.name} Enterprise AI`;
+  const description = String(formData.get('description') ?? '').trim().slice(0, 2000)
+    || 'Tenant-specific recurring Enterprise AI agreement.';
+
+  await db.transaction(async (tx) => {
+    const key = contractPlanKey(target.id);
+    let plan = await tx.query.billingPlans.findFirst({ where: eq(billingPlans.key, key) });
+    if (!plan) {
+      const [created] = await tx.insert(billingPlans).values({
+        key,
+        name,
+        description,
+        status: 'active',
+      }).returning();
+      if (!created) throw new Error('Enterprise AI contract plan could not be created.');
+      plan = created;
+    } else {
+      await tx.update(billingPlans).set({
+        name,
+        description,
+        status: 'active',
+        updatedAt: new Date(),
+      }).where(eq(billingPlans.id, plan.id));
+    }
+
+    const [latest] = await tx
+      .select({ id: billingPlanVersions.id, version: billingPlanVersions.version })
+      .from(billingPlanVersions)
+      .where(eq(billingPlanVersions.planId, plan.id))
+      .orderBy(desc(billingPlanVersions.version))
+      .limit(1);
+
+    const now = new Date();
+    await tx.update(billingPlanVersions).set({ effectiveTo: now }).where(and(
+      eq(billingPlanVersions.planId, plan.id),
+      isNull(billingPlanVersions.effectiveTo),
+    ));
+
+    const [version] = await tx.insert(billingPlanVersions).values({
+      planId: plan.id,
+      version: (latest?.version ?? 0) + 1,
+      amountMinor,
+      currency: 'USD',
+      billingInterval: 'monthly',
+      isPublic: false,
+      metadataReference: `enterprise-ai-contract:${target.id}`,
+      effectiveFrom: now,
+    }).returning({ id: billingPlanVersions.id });
+    if (!version) throw new Error('Enterprise AI contract version could not be created.');
+
+    await tx.insert(billingPlanVersionEntitlements).values(
+      entitlements.map((entitlementKey) => ({
+        planVersionId: version.id,
+        entitlementKey,
+        enabled: true,
+      })),
+    );
+
+    if (includedCredits > 0n) {
+      await tx.insert(billingPlanVersionCreditAllowances).values({
+        planVersionId: version.id,
+        creditAmount: includedCredits,
+        grantInterval: 'billing_period',
+      });
+    }
+  });
+
+  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/ai-operations`);
+  revalidatePath(`/t/${target.slug}/enterprise-ai`);
+}
+
+export async function getActiveEnterpriseAiContract(tenantId: string) {
+  const [row] = await db
+    .select({
+      planId: billingPlans.id,
+      planKey: billingPlans.key,
+      planName: billingPlans.name,
+      planDescription: billingPlans.description,
+      planVersionId: billingPlanVersions.id,
+      version: billingPlanVersions.version,
+      amountMinor: billingPlanVersions.amountMinor,
+      currency: billingPlanVersions.currency,
+      billingInterval: billingPlanVersions.billingInterval,
+      effectiveFrom: billingPlanVersions.effectiveFrom,
+    })
+    .from(billingPlans)
+    .innerJoin(billingPlanVersions, eq(billingPlanVersions.planId, billingPlans.id))
+    .where(and(
+      eq(billingPlans.key, contractPlanKey(tenantId)),
+      eq(billingPlans.status, 'active'),
+      isNull(billingPlanVersions.effectiveTo),
+    ))
+    .orderBy(desc(billingPlanVersions.version))
+    .limit(1);
+
+  if (!row) return null;
+
+  const [entitlements, allowance] = await Promise.all([
+    db.select({ key: billingPlanVersionEntitlements.entitlementKey })
+      .from(billingPlanVersionEntitlements)
+      .where(and(
+        eq(billingPlanVersionEntitlements.planVersionId, row.planVersionId),
+        eq(billingPlanVersionEntitlements.enabled, true),
+      )),
+    db.query.billingPlanVersionCreditAllowances.findFirst({
+      where: and(
+        eq(billingPlanVersionCreditAllowances.planVersionId, row.planVersionId),
+        eq(billingPlanVersionCreditAllowances.grantInterval, 'billing_period'),
+      ),
+    }),
+  ]);
+
+  return {
+    ...row,
+    entitlements: entitlements.map((item) => item.key),
+    includedCredits: allowance?.creditAmount ?? 0n,
+  };
+}
+
+export async function listEnterpriseAiContracts() {
+  const rows = await db
+    .select({
+      planId: billingPlans.id,
+      planKey: billingPlans.key,
+      name: billingPlans.name,
+      description: billingPlans.description,
+      versionId: billingPlanVersions.id,
+      version: billingPlanVersions.version,
+      amountMinor: billingPlanVersions.amountMinor,
+      currency: billingPlanVersions.currency,
+      effectiveFrom: billingPlanVersions.effectiveFrom,
+    })
+    .from(billingPlans)
+    .innerJoin(billingPlanVersions, eq(billingPlanVersions.planId, billingPlans.id))
+    .where(and(
+      like(billingPlans.key, `${CONTRACT_PREFIX}%`),
+      isNull(billingPlanVersions.effectiveTo),
+    ))
+    .orderBy(desc(billingPlanVersions.effectiveFrom));
+
+  const tenantRows = await db.select({ id: tenants.id, slug: tenants.slug, name: tenants.name }).from(tenants);
+  const tenantById = new Map(tenantRows.map((item) => [item.id, item]));
+  return rows.map((row) => {
+    const tenantId = row.planKey.slice(CONTRACT_PREFIX.length);
+    return { ...row, tenant: tenantById.get(tenantId) ?? null };
+  });
+}
+
+export async function createEnterpriseAiContractCheckout(input: {
+  tenantId: string;
+  adapter: BillingGatewayAdapter;
+  returnUrl: string;
+  cancelUrl: string;
+  customer?: { email: string; name?: string };
+  collectionCurrency?: string;
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  const contract = await getActiveEnterpriseAiContract(input.tenantId);
+  if (!contract) throw new Error('Enterprise AI contract is not configured.');
+  if (contract.currency !== 'USD' || contract.billingInterval !== 'monthly') {
+    throw new Error('Enterprise AI contract billing configuration is invalid.');
+  }
+
+  const prepared = await db.transaction(async (tx) => {
+    const current = await tx
+      .select({ id: billingSubscriptions.id, status: billingSubscriptions.status })
+      .from(billingSubscriptions)
+      .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
+      .where(and(
+        eq(billingSubscriptions.tenantId, input.tenantId),
+        eq(billingPlanVersions.planId, contract.planId),
+        ne(billingSubscriptions.status, 'cancelled'),
+      ))
+      .orderBy(desc(billingSubscriptions.updatedAt))
+      .limit(1);
+
+    if (current[0]) {
+      throw new Error('This workspace already has a current Enterprise AI contract subscription.');
+    }
+
+    const periodStart = now;
+    const periodEnd = addMonths(periodStart, 1);
+    const [subscription] = await tx.insert(billingSubscriptions).values({
+      tenantId: input.tenantId,
+      planVersionId: contract.planVersionId,
+      status: 'pending_payment',
+      renewalMode: 'invoice_required',
+      autoRenew: true,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      gatewayProvider: input.adapter.provider,
+    }).returning({ id: billingSubscriptions.id });
+    if (!subscription) throw new Error('Enterprise AI subscription could not be prepared.');
+
+    const [period] = await tx.insert(billingPeriods).values({
+      tenantId: input.tenantId,
+      subscriptionId: subscription.id,
+      periodStart,
+      periodEnd,
+      amountDueMinor: contract.amountMinor,
+      currency: contract.currency,
+      collectionStatus: 'open',
+      dueAt: now,
+    }).returning({ id: billingPeriods.id });
+    if (!period) throw new Error('Enterprise AI billing period could not be prepared.');
+
+    const [checkout] = await tx.insert(billingCheckouts).values({
+      tenantId: input.tenantId,
+      subscriptionId: subscription.id,
+      billingPeriodId: period.id,
+      provider: input.adapter.provider,
+      amountExpectedMinor: contract.amountMinor,
+      currency: contract.currency,
+      status: 'created',
+    }).returning({ id: billingCheckouts.id });
+    if (!checkout) throw new Error('Enterprise AI checkout could not be prepared.');
+
+    return {
+      checkoutId: checkout.id,
+      subscriptionId: subscription.id,
+      billingPeriodId: period.id,
+    };
+  });
+
+  try {
+    const gateway = await input.adapter.createCheckout({
+      checkoutId: prepared.checkoutId,
+      tenantId: input.tenantId,
+      subscriptionId: prepared.subscriptionId,
+      billingPeriodId: prepared.billingPeriodId,
+      amountExpectedMinor: contract.amountMinor,
+      currency: contract.currency,
+      returnUrl: input.returnUrl,
+      cancelUrl: input.cancelUrl,
+      collectionCurrency: input.collectionCurrency,
+      customer: input.customer,
+    });
+
+    await db.update(billingCheckouts).set({
+      providerCheckoutId: gateway.providerCheckoutId ?? null,
+      checkoutUrl: gateway.checkoutUrl,
+      providerAmountExpectedMinor: gateway.providerAmountExpectedMinor ?? null,
+      providerCurrency: gateway.providerCurrency ?? null,
+      expiresAt: gateway.expiresAt ?? null,
+      status: 'redirected',
+      updatedAt: now,
+    }).where(eq(billingCheckouts.id, prepared.checkoutId));
+
+    return {
+      checkoutId: prepared.checkoutId,
+      subscriptionId: prepared.subscriptionId,
+      checkoutUrl: gateway.checkoutUrl,
+      provider: gateway.provider,
+    };
+  } catch (error) {
+    await db.transaction(async (tx) => {
+      await tx.update(billingCheckouts).set({ status: 'failed', updatedAt: now })
+        .where(eq(billingCheckouts.id, prepared.checkoutId));
+      await tx.update(billingSubscriptions).set({
+        status: 'cancelled',
+        cancelledAt: now,
+        cancellationReason: 'checkout_provider_failure',
+        updatedAt: now,
+      }).where(eq(billingSubscriptions.id, prepared.subscriptionId));
+    });
+    throw error;
+  }
+}
