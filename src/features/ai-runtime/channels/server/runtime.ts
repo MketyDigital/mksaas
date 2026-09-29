@@ -93,6 +93,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     return { kind: 'handoff', conversationId: conversation.id };
   }
 
+  const remindersEnabled = configuration.commitmentRemindersEnabled && !input.testMode;
+
   const requestedModel =
     input.requestedModel ??
     configuration.defaultModelAlias ??
@@ -213,7 +215,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
               content: `Approved business knowledge:\n${configuration.knowledgeText}`,
             }]
           : []),
-        ...(configuration.commitmentRemindersEnabled
+        ...(remindersEnabled
           ? [{
               role: 'system' as const,
               content: [
@@ -227,7 +229,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
           : []),
         { role: 'user' as const, content: input.text },
       ],
-      ...(configuration.commitmentRemindersEnabled
+      ...(remindersEnabled
         ? {
             tools: [{
               name: 'schedule_commitment_reminder',
@@ -278,7 +280,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     sourceQuote: string;
     reminderText: string;
   } | null = null;
-  const reminderCall = configuration.commitmentRemindersEnabled
+  const reminderCall = remindersEnabled
     ? result.toolCalls?.find((item) => item.name === 'schedule_commitment_reminder')
     : undefined;
   if (reminderCall) {
@@ -405,10 +407,9 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     reminderScheduled = true;
   }
 
-  const deliveryDelaySeconds = await deterministicReplyDelaySeconds(
-    configuration,
-    input.providerMessageId,
-  );
+  const deliveryDelaySeconds = input.testMode
+    ? 0
+    : await deterministicReplyDelaySeconds(configuration, input.providerMessageId);
 
   return {
     kind: 'completed',
