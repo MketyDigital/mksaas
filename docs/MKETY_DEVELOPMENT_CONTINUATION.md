@@ -4,7 +4,7 @@ Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4
 
 ## 2026-09-29 stabilization implementation progress
 
-- Draft PR #173 is the active pre-Starpips stabilization branch.
+- PR #173 is the active pre-Starpips stabilization branch and has completed implementation-level pre-merge certification; it remains unmerged until the documentation-only reconciliation head is rechecked.
 - AI Workspace and Enterprise AI are explicitly separate product entitlements and user experiences. Shared identity, PBAC, billing, credits and runtime are platform primitives only.
 - Tenant navigation has been simplified into Workspace / Products / Account; Admin exposes direct Product Operations entries.
 - Public/app/product host separation is being enforced for `mkety.com`, `app.mkety.com`, `mail.mkety.com`, `ai.mkety.com` and `api.mkety.com`.
@@ -19,7 +19,12 @@ Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4
 - Mail now exposes customer portability: existing contact CSV import/export plus workspace JSON export, RFC822/EML message export, and bounded authenticated EML import through the Mail content worker. Credentials, API keys, app passwords, provider secrets and verified settlements are intentionally excluded.
 - Guarded workflow `.github/workflows/mkety-ai-production.yml` now defines exact-SHA deployment for `ai.mkety.com`, `api.mkety.com/v1/ai`, the AI delivery Queue/DLQ and scheduler worker. The workflow explicitly does not enable production inference.
 - Dedicated customer setup/readiness runbook: `docs/MKETY_MAIL_ENTERPRISE_AI_CUSTOMER_SETUP_RUNBOOK.md`.
-- Still incomplete before first Enterprise AI customer: exact-head CI, guarded production execution/acceptance for `ai.mkety.com`, `api.mkety.com/v1/ai`, delivery Queue/DLQ/scheduler verification, and then real customer acceptance before inference promotion.
+- Certified stabilization implementation SHA: `5e85c2331208d5c49380cec77683c352e8fcf2ad`.
+- Exact implementation evidence: CI `36563958996` SUCCESS; Migration Baseline `36563959225` SUCCESS; Mkety Cloudflare vinext Smoke `36563959181` SUCCESS; Mkety Platform Core Workspaces Smoke `36563959122` SUCCESS; Production App Host Diagnostic `36563959087` SUCCESS; Public Candidate Deploy `36563959073` rerun SUCCESS.
+- The successful Public Candidate run includes connected staging DB verification, payment-gateway checks, isolated Worker deploy, real managed-AI commercial/accounting acceptance, public route/copy and rendered-Docs smokes, Enterprise payment safety, and Public Mkety AI memory/privacy/commercial grounding.
+- Dashboard stats authorization was tightened so a Server Action cannot query another tenant merely by supplying its UUID; tenant membership is checked from the authenticated tenant-role snapshot before stats reads.
+- Candidate and production public-content acceptance now use bounded retry helpers for follow-up content fetches, preventing one transient edge/database 5xx from falsely failing an otherwise healthy release while preserving the full content assertions.
+- Still incomplete before first Enterprise AI customer: guarded production-main execution/acceptance for `ai.mkety.com`, `api.mkety.com/v1/ai`, delivery Queue/DLQ/scheduler verification, and then real customer acceptance before inference promotion. Pre-merge implementation CI/candidate acceptance is closed.
 - Starpips production acceptance remains blocked until this stabilization checklist is closed.
 
 ## Current production truth
@@ -43,7 +48,7 @@ Scope, in order:
 3. reconcile implemented backend capabilities with customer UI and Platform Control/admin UI, especially Mkety Mail, Enterprise AI, Workspaces, Billing/Usage/Credits, Domains/DNS and entitlement-aware product entry points;
 4. expose safe editable configuration through Platform Control where architecture already permits it, while keeping secrets, settlement, tenant isolation and immutable accounting protected;
 5. verify `ai.mkety.com` and `api.mkety.com` route/host contracts and implement missing customer-visible Enterprise AI console entry points without enabling production customer inference;
-6. design the non-destructive `media.mkety.com` connector/add-on path for normal Mkety workspace customers while preserving the existing standalone Media production customer/runtime/billing boundary;
+6. preserve the implemented non-destructive `media.mkety.com` tenant connector/add-on path while keeping the existing standalone Media production customer/runtime/billing boundary; true Media-side SSO/sync requires a separately verified Media API;
 7. remove stale/duplicate app-side paths, simplify navigation, reduce avoidable repeated reads, and add route/navigation/performance contract tests;
 8. compare the uploaded legacy StarAI application only for customer-facing capabilities (assistant settings, knowledge, channels, human takeover, test console, logs, etc.); do not import its separate Worker/database architecture into Mkety;
 9. certify exact-head CI/build/type/lint/tests and targeted host/navigation/product-surface smokes before beginning Starpips acceptance.
