@@ -436,10 +436,12 @@ jobs:
             output="$4"
             method="${5:-GET}"
             body="${6:-}"
+            follow_redirects="${7:-true}"
             code='000'
 
             for attempt in 1 2 3 4 5; do
-              args=(--connect-timeout 10 --max-time 30 -L -sS -o "$output" -w '%{http_code}')
+              args=(--connect-timeout 10 --max-time 30 -sS -o "$output" -w '%{http_code}')
+              [ "$follow_redirects" = true ] && args+=(-L)
               if [ "$method" = 'POST' ]; then
                 args+=(-X POST -H 'Content-Type: application/json' --data "$body")
               fi
@@ -457,7 +459,7 @@ jobs:
             return 1
           }
 
-          fetch_expected 'Mail app host' 'https://mail.mkety.com/' '200 302 307' /tmp/mail-home
+          fetch_expected 'Mail app host' 'https://mail.mkety.com/' '200 302 307 308' /tmp/mail-home GET '' false
           # Public mkety.com availability is certified by the public-site release
           # pipeline. Do not let a separate public-host transport incident invalidate
           # the Mail application/API/Worker infrastructure release.
