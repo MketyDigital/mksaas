@@ -5,14 +5,13 @@ const port = Number(process.env.PORT || 3000);
 const sharedSecret = String(process.env.MKETY_DOMAIN_RELAY_SECRET || '').trim();
 if (sharedSecret.length < 32) throw new Error('MKETY_DOMAIN_RELAY_SECRET must be at least 32 characters.');
 
-const LIVE_BASE = 'https://api.domainresellerapi.com';
-const OTE_BASE = 'https://ote.domainresellerapi.com';
+const LIVE_BASE = 'https://api.domainresellerapi.com/api/v1';
+const OTE_BASE = 'https://ote.domainresellerapi.com/api/v1';
 const seenNonces = new Map();
 const ALLOWED = new Map([
-  ['quote', { method: 'POST', path: '/v1/domain/check' }],
-  ['register', { method: 'POST', path: '/v1/domain/register' }],
-  ['renew', { method: 'POST', path: '/v1/domain/renew' }],
-  ['info', { method: 'GET', path: '/api/v1/domains/info' }],
+  ['quote', { method: 'POST', path: '/domains/bulk-search' }],
+  ['register', { method: 'POST', path: '/domains/register-with-contacts' }],
+  ['renew', { method: 'POST', path: '/domains/renew' }],
 ]);
 
 function json(res, status, payload) {
@@ -81,17 +80,25 @@ const server = createServer(async (req, res) => {
       return json(res, 400, { error: 'invalid_payload' });
     }
 
+    const resellerId = String(input.payload.resellerId || '').trim();
+    const apiKey = String(input.payload.apiKey || '').trim();
+    if (!resellerId || !apiKey) return json(res, 400, { error: 'missing_provider_credentials' });
+
+    const { resellerId: _resellerId, apiKey: _apiKey, ...providerPayload } = input.payload;
+    const body = input.operation === 'quote'
+      ? JSON.stringify([{ domainName: String(providerPayload.domainName || '') }])
+      : JSON.stringify(providerPayload);
+
     const base = input.environment === 'production' ? LIVE_BASE : OTE_BASE;
-    const upstreamPath = String(input.operation) === 'info'
-      ? operation.path + '?domainName=' + encodeURIComponent(String(input.payload.domainName || ''))
-      : operation.path;
-    const upstream = await fetch(base + upstreamPath, {
+    const upstream = await fetch(base + operation.path, {
       method: operation.method,
       headers: {
         accept: 'application/json',
         'content-type': 'application/json',
+        'X-API-KEY': apiKey,
+        '__reseller': resellerId,
       },
-      ...(operation.method === 'POST' ? { body: JSON.stringify(input.payload) } : {}),
+      body,
       signal: AbortSignal.timeout(20_000),
     });
     const text = await upstream.text();
