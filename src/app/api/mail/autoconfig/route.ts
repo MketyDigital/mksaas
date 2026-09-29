@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 
+import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
+
 function xml(value:string){
   return value.replace(/[<>&"']/g,(char)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[char]||char));
 }
 
 export async function GET(request:Request){
+  if(!mailExternalClientsEnabled()) {
+    return NextResponse.json({ok:false,error:'external_mail_clients_unavailable'},{status:503,headers:{'cache-control':'no-store'}});
+  }
   const url=new URL(request.url);
   const email=String(url.searchParams.get('emailaddress')||url.searchParams.get('email')||'%EMAILADDRESS%');
   const domain=email.includes('@')?email.split('@').pop()||'':'';
