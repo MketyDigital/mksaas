@@ -61,12 +61,13 @@ jobs:
           fetch_expected 'Mail host app handoff' 'https://mail.mkety.com/mail/app' '302 303 307 308' /tmp/mail-app || failures=$((failures+1))
           fetch_expected 'Central Mail handoff start' 'https://app.mkety.com/api/auth/product-handoff/start?product=mail&returnTo=%2Fmail%2Fapp' '302 303 307 308' /tmp/mail-handoff || failures=$((failures+1))
 
-          fetch_expected 'Public Mail page' 'https://mkety.com/mail' '200' /tmp/mail-public || failures=$((failures+1))
-          grep -Fq 'Business email made simple' /tmp/mail-public || { echo '::error::Public Mail page missing product copy.'; failures=$((failures+1)); }
+          if fetch_expected 'Public Mail page' 'https://mkety.com/mail' '200' /tmp/mail-public; then
+            grep -Fq 'Mkety Mail' /tmp/mail-public || { echo '::error::Public Mail page missing Mkety Mail identity.'; failures=$((failures+1)); }
+          else
+            failures=$((failures+1))
+          fi
 
-          fetch_expected 'Autoconfig' 'https://autoconfig.mkety.com/mail/config-v1.1.xml?emailaddress=hello%40example.com' '200' /tmp/mail-autoconfig || failures=$((failures+1))
-          grep -Fq 'imap.mkety.com' /tmp/mail-autoconfig || { echo '::error::Autoconfig missing IMAP host.'; failures=$((failures+1)); }
-          grep -Fq 'smtp.mkety.com' /tmp/mail-autoconfig || { echo '::error::Autoconfig missing SMTP host.'; failures=$((failures+1)); }
+          fetch_expected 'Autoconfig fail-closed' 'https://autoconfig.mkety.com/mail/config-v1.1.xml?emailaddress=hello%40example.com' '503' /tmp/mail-autoconfig || failures=$((failures+1))
 
           fetch_expected 'Mail API fail-closed' 'https://api.mkety.com/api/v1/mail/send' '401' /tmp/mail-api POST '{}' || failures=$((failures+1))
           fetch_expected 'Mail content fail-closed' 'https://mail-content.mkety.com' '401' /tmp/mail-content POST '{"key":"mail/nope"}' || failures=$((failures+1))
@@ -116,8 +117,8 @@ jobs:
           {
             echo '## Mkety Mail external-client gateway diagnostic'
             echo
-            echo "- IMAP `imap.mkety.com:993`: **$imap**"
-            echo "- SMTP `smtp.mkety.com:465`: **$smtp**"
+            printf '%s\n' "- IMAP \`imap.mkety.com:993\`: **$imap**"
+            printf '%s\n' "- SMTP \`smtp.mkety.com:465\`: **$smtp**"
             echo
             if [ "$imap" != 'true' ] || [ "$smtp" != 'true' ]; then
               echo '> External-client support is not production-accepted. Keep app-password/IMAP/SMTP UI claims gated until a dedicated TCP gateway is deployed and accepted.'
