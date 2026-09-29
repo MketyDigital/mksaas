@@ -13,6 +13,7 @@ const ALLOWED = new Map([
   ['pricing', { method: 'GET', path: '/products/tlds' }],
   ['register', { method: 'POST', path: '/domains/register-with-contacts' }],
   ['renew', { method: 'POST', path: '/domains/renew' }],
+  ['nameservers', { method: 'PUT', path: '/domains/dns/name-server' }],
 ]);
 
 function json(res, status, payload) {
