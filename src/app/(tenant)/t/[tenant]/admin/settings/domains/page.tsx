@@ -19,18 +19,18 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
       <div>
         <div className="flex items-center gap-2">
           <Globe2 className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold text-foreground">Custom Domains</h1>
+          <h1 className="text-2xl font-bold text-foreground">Mkety Domains</h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Attach a custom hostname to this workspace. Vercel integration is optional during development.
+          Connect your own domain to this workspace through Mkety-managed routing and HTTPS.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Domain management</CardTitle>
+          <CardTitle>Custom domain connections</CardTitle>
           <CardDescription>
-            Add your domain now. When Vercel credentials are configured, the same screen can register and verify it automatically.
+            Add a hostname, follow the Mkety DNS target shown after creation, then verify when DNS has propagated.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -42,6 +42,6 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
 }
 
 export const metadata = {
-  title: 'Custom Domains | Admin',
+  title: 'Mkety Domains | Admin',
   description: 'Manage custom domains for your workspace',
 };
