@@ -66,7 +66,7 @@ export const MAIL_COMMERCIAL_PLANS: Record<MailPlanKey, MailCommercialPlan> = {
     amountMinor: 2499n,
     currency: 'USD',
     billingInterval: 'monthly',
-    description: 'Higher-capacity business email, API/SMTP and team communication controls.',
+    description: 'Higher-capacity business email, transactional API and team communication controls.',
     limits: {
       domains: 10,
       mailboxes: 50,
