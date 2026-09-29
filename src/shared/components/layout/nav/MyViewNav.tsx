@@ -33,7 +33,7 @@ export function MyViewNav({ basePath, onItemClick, hasMailAccess = false, hasEnt
         {hasMailAccess ? (
           <SidebarNavItem href={`${basePath}/mail`} label="Mkety Mail" icon={Mail} iconTint="primary" onClick={onItemClick} />
         ) : null}
-        <SidebarNavItem href="https://media.mkety.com" label="Mkety Media" icon={Image} iconTint="primary" onClick={onItemClick} />
+        <SidebarNavItem href={`${basePath}/media`} label="Mkety Media" icon={Image} iconTint="primary" onClick={onItemClick} />
       </SidebarSection>
 
       <SidebarSection title="Account" icon={<CreditCard className="h-4 w-4" />} variant="settings">
