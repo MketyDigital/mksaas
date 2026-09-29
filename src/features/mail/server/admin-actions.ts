@@ -6,12 +6,12 @@ import { revalidatePath } from 'next/cache';
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
-import { billingPlanVersionEntitlements, billingPlanVersions, billingPlans, mailDomains, mailWorkspaces } from '@/shared/db/schema';
+import { billingPlans, billingPlanVersionEntitlements, billingPlanVersions, mailDomains, mailWorkspaces } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
-import { isMailPlanKey } from '../commercial/plans';
 import { resolveTenantMailPlanKey } from './commercial';
+import { isMailPlanKey } from '../commercial/plans';
 
 async function requireMailOps(opsTenantSlug: string) {
   const actor = await requirePlatformControlAccess(opsTenantSlug);
