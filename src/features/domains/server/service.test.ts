@@ -1,3 +1,7 @@
+jest.mock('./managed-domain-service', () => ({
+  recordManagedDomainAfterRegistration: jest.fn(async () => null),
+}));
+
 import { configureDomainResellerAdapter } from './reseller';
 import {
   quoteDomainRegistration,
@@ -9,12 +13,14 @@ describe('system-wide domain reseller service', () => {
   const quote = jest.fn();
   const register = jest.fn();
   const renew = jest.fn();
+  const setNameServers = jest.fn();
 
   beforeEach(() => {
     quote.mockReset();
     register.mockReset();
     renew.mockReset();
-    configureDomainResellerAdapter({ quote, register, renew });
+    setNameServers.mockReset();
+    configureDomainResellerAdapter({ quote, register, renew, setNameServers });
   });
 
   it('delegates quotes to the configured system-wide reseller', async () => {
@@ -31,6 +37,7 @@ describe('system-wide domain reseller service', () => {
 
   it('never registers before verified settlement', async () => {
     await expect(registerDomainAfterVerifiedSettlement({
+      tenantId: '00000000-0000-0000-0000-000000000001',
       domain: 'example.com',
       years: 1,
       contact: {
@@ -54,6 +61,7 @@ describe('system-wide domain reseller service', () => {
   it('derives stable Mkety idempotency keys from verified orders', async () => {
     register.mockResolvedValue({ domain: 'example.com', expiresAt: null, providerDomainRef: 'example.com' });
     await registerDomainAfterVerifiedSettlement({
+      tenantId: '00000000-0000-0000-0000-000000000001',
       domain: 'example.com',
       years: 1,
       contact: {
