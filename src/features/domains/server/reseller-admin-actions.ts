@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import {
   disablePlatformServiceConnection,
+  getActivePlatformServiceConnection,
   listPlatformServiceConnections,
   savePlatformServiceConnection,
 } from '@/features/platform-connections/server/service';
@@ -82,6 +83,60 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
 }
 
 export async function disableDomainResellerConnection(
+  tenantSlug: string,
+  connectionId: string,
+) {
+  const actor = await requireDomainOps(tenantSlug);
+  await disablePlatformServiceConnection({ id: connectionId, actorUserId: actor.userId });
+  revalidate(tenantSlug);
+}
+
+
+export async function saveCloudflareDomainRoutingConnection(tenantSlug: string, formData: FormData) {
+  const actor = await requireDomainOps(tenantSlug);
+  const apiTokenInput = String(formData.get('apiToken') ?? '').trim();
+  const saasZoneId = String(formData.get('saasZoneId') ?? '').trim();
+  const appZoneId = String(formData.get('appZoneId') ?? '').trim();
+  const cnameTarget = String(formData.get('cnameTarget') ?? '').trim().toLowerCase();
+  const minTlsVersion = String(formData.get('minTlsVersion') ?? '1.2').trim();
+  const managedDnsProxied = formData.get('managedDnsProxied') === 'on';
+
+  if (!saasZoneId || !appZoneId || !cnameTarget) {
+    throw new Error('Cloudflare SaaS zone, app zone and CNAME target are required.');
+  }
+  if (!/^[a-z0-9.-]+$/i.test(cnameTarget)) throw new Error('Cloudflare CNAME target is invalid.');
+  if (!['1.2', '1.3'].includes(minTlsVersion)) throw new Error('Minimum TLS version must be 1.2 or 1.3.');
+
+  let apiToken = apiTokenInput;
+  if (!apiToken) {
+    const existing = await getActivePlatformServiceConnection({
+      serviceKey: 'domains',
+      providerKey: 'cloudflare-saas',
+    });
+    apiToken = String(existing?.secret.apiToken ?? '').trim();
+  }
+  if (!apiToken) throw new Error('Cloudflare API token is required for first-time configuration.');
+
+  await savePlatformServiceConnection({
+    serviceKey: 'domains',
+    providerKey: 'cloudflare-saas',
+    mode: 'production',
+    secret: { apiToken },
+    config: {
+      saasZoneId,
+      appZoneId,
+      cnameTarget,
+      minTlsVersion,
+      managedDnsProxied,
+    },
+    actorUserId: actor.userId,
+    exclusiveProviderModes: true,
+  });
+
+  revalidate(tenantSlug);
+}
+
+export async function disableCloudflareDomainRoutingConnection(
   tenantSlug: string,
   connectionId: string,
 ) {
