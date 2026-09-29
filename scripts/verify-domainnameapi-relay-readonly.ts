@@ -75,6 +75,22 @@ async function probeCurrentOfficialLive(apiKey: string) {
   };
 }
 
+async function probeCurrent(environment: 'production' | 'ote', apiKey: string) {
+  const domain = 'mkety-' + (environment === 'production' ? 'live' : 'ote') + '-current-' + Date.now() + '-' + crypto.randomUUID().slice(0, 8) + '.com';
+  const result = await signedRelayRequest('quote-current', environment, {
+    resellerId,
+    apiKey,
+    domainName: domain,
+    period: 1,
+  });
+  return {
+    environment,
+    status: result.status,
+    ok: result.ok,
+    body: sanitizeProviderBody(result.body),
+  };
+}
+
 async function probeBasic(environment: 'production' | 'ote', apiKey: string) {
   const label = 'mkety-' + (environment === 'production' ? 'live' : 'ote') + '-basic-' + Date.now();
   const result = await signedRelayRequest('quote-basic', environment, {
