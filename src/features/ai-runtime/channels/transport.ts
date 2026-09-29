@@ -1,5 +1,6 @@
 import type { EnterpriseAiChannelKey } from './registry';
 import type { EnterpriseAiChannelCredentials } from './credentials';
+import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 
 export type EnterpriseAiChannelConnection = {
   channel: EnterpriseAiChannelKey;
@@ -100,7 +101,10 @@ export async function deliverEnterpriseAiChannelMessage(
     case 'instagram':
     case 'facebook_messenger': {
       const token = required(connection.credentials.accessToken, 'Meta access token');
-      const endpoint = required(connection.endpointUrl ?? undefined, 'Meta messaging endpoint');
+      const endpoint = assertPublicHttpsUrl(
+        required(connection.endpointUrl ?? undefined, 'Meta messaging endpoint'),
+        { label: 'Meta messaging endpoint', allowedHosts: ['graph.facebook.com'] },
+      ).toString();
       const recipient = required(message.recipientId, 'Meta recipient ID');
       const body = connection.channel === 'whatsapp'
         ? {
@@ -195,7 +199,13 @@ export async function deliverEnterpriseAiChannelMessage(
     }
 
     case 'microsoft_teams': {
-      const endpoint = required(connection.endpointUrl ?? undefined, 'Microsoft Teams webhook endpoint');
+      const endpoint = assertPublicHttpsUrl(
+        required(connection.endpointUrl ?? undefined, 'Microsoft Teams webhook endpoint'),
+        {
+          label: 'Microsoft Teams webhook endpoint',
+          allowedSuffixes: ['.webhook.office.com', '.logic.azure.com', '.powerautomate.com'],
+        },
+      ).toString();
       await jsonRequest(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +215,10 @@ export async function deliverEnterpriseAiChannelMessage(
     }
 
     case 'custom_webhook': {
-      const endpoint = required(connection.endpointUrl ?? undefined, 'Webhook endpoint');
+      const endpoint = assertPublicHttpsUrl(
+        required(connection.endpointUrl ?? undefined, 'Webhook endpoint'),
+        { label: 'Webhook endpoint' },
+      ).toString();
       const secret = connection.credentials.webhookSecret;
       const timestamp = Date.now().toString();
       const raw = JSON.stringify({
