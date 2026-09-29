@@ -114,7 +114,7 @@ The following are required before Starpips acceptance starts:
 - [x] add explicit future-commitment reminders with source-quote/date validation, idempotency, cancellation, retries and delivery-time entitlement checks;
 - [x] connect recurring Enterprise AI contract/subscription lifecycle directly to product entitlement;
 - [x] add tenant-specific versioned Enterprise AI contract pricing, included entitlements and billing-period credits;
-- [ ] execute guarded `mkety-enterprise-ai-production.yml` on the exact verified main SHA and verify `ai.mkety.com`;
+- [ ] execute guarded `mkety-ai-production.yml` on the exact verified main SHA and verify `ai.mkety.com`;
 - [ ] verify `api.mkety.com/v1/ai` through the production host;
 - [ ] provision and verify `mkety-ai-delivery` Queue/DLQ and scheduler worker;
 - [ ] exact-head CI and product-host acceptance;
