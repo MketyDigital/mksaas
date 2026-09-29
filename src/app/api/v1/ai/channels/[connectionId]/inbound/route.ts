@@ -385,7 +385,8 @@ export async function POST(
       ok: true,
       request_id: 'requestId' in turn ? turn.requestId ?? null : null,
       duplicate: turn.kind === 'duplicate',
-      runtime_disabled: turn.kind === 'disabled',\n      human_handoff: turn.kind === 'handoff',
+      runtime_disabled: turn.kind === 'disabled',
+      human_handoff: turn.kind === 'handoff',
     });
   } catch {
     // Do not reveal tenant/provider/accounting detail to external webhook callers.
