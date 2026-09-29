@@ -8,146 +8,85 @@ function mockJsonResponse(payload: unknown, status: number) {
   } as unknown as Response;
 }
 
+const contact = {
+  firstName: 'Mfon',
+  lastName: 'Sambo',
+  email: 'owner@example.com',
+  companyName: 'Mkety',
+  address: '1 Example Street',
+  city: 'Uyo',
+  state: 'Akwa Ibom',
+  country: 'NG',
+  postalCode: '520001',
+  phoneCountryCode: '234',
+  phone: '8012345678',
+};
+
 describe('DomainNameApiAdapter', () => {
   afterEach(() => {
     jest.clearAllMocks();
     jest.restoreAllMocks();
   });
 
-  it('accepts an alphanumeric provider-issued V2 Reseller ID exactly as supplied', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }, 200),
-    );
-    const adapter = new DomainNameApiAdapter({
-      resellerId: 'Mkety-AB12CD34',
-      apiKey: 'test-token',
-      environment: 'production',
-    });
-    await adapter.quote('issued-id.example');
-    expect(fetchMock.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({
-      body: JSON.stringify({
-        resellerId: 'Mkety-AB12CD34',
-        apiKey: 'test-token',
-        domainName: 'issued-id.example',
-        period: 1,
-      }),
-    }));
-  });
-
-  it('uses the documented v1 check endpoint and parses an available-domain quote', async () => {
+  it('uses the official REST SDK auth headers and bulk-search endpoint', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({
-        status: 'available',
-        price: 10.81,
-        renewalPrice: 12.5,
-        currency: 'USD',
+        infos: [{
+          domainName: 'example.com',
+          status: 'available',
+          price: 10.81,
+          currency: 'USD',
+        }],
       }, 200),
     );
 
     const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
+      resellerId: 'provider-issued-reseller-id',
       apiKey: 'test-token',
       environment: 'ote',
     });
+
     await expect(adapter.quote('example.com')).resolves.toMatchObject({
       domain: 'example.com',
       available: true,
       registrationPriceMinor: 1081n,
-      renewalPriceMinor: 1250n,
       currency: 'USD',
     });
+
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://ote.domainresellerapi.com/v1/domain/check',
+      'https://ote.domainresellerapi.com/api/v1/domains/bulk-search',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({
-          resellerId: '123456',
-          apiKey: 'test-token',
-          domainName: 'example.com',
-          period: 1,
+        headers: expect.objectContaining({
+          'X-API-KEY': 'test-token',
+          __reseller: 'provider-issued-reseller-id',
         }),
-        headers: expect.not.objectContaining({ Authorization: expect.anything() }),
+        body: JSON.stringify([{ domainName: 'example.com' }]),
       }),
     );
   });
 
-  it('falls back to Basic-auth availability discovery only when v1 is absent', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse(null, 404))
-      .mockResolvedValueOnce(mockJsonResponse({
-        Status: 'available',
-        Price: '9.99',
-        Currency: 'USD',
-      }, 200));
-
-    const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
-      apiKey: 'test-token',
-      environment: 'ote',
-    });
-    await expect(adapter.quote('hello.com')).resolves.toMatchObject({ available: true });
-    const legacyCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/domain/check?'));
-    expect(legacyCall).toBeDefined();
-    expect(legacyCall?.[1]).toEqual(expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: expect.stringMatching(/^Basic /) }),
-    }));
-  });
-
-  it('does not hide v1 authentication failures behind endpoint fallbacks', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ message: 'Unauthorized' }, 401),
-    );
-
-    const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
-      apiKey: 'test-token',
-      environment: 'production',
-    });
-
-    await expect(adapter.quote('example.com')).rejects.toThrow('DomainNameAPI availability check failed (401)');
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('https://api.domainresellerapi.com/v1/domain/check');
-  });
-
-  it('does not retry registration on an ambiguous server error', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ message: 'upstream timeout' }, 500),
-    );
-
-    const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
-      apiKey: 'test-token',
-      environment: 'ote',
-    });
-
-    await expect(adapter.register({
-      domain: 'example.com',
-      years: 1,
-      idempotencyKey: 'order-1',
-      contactRef: 'contact-1',
-    })).rejects.toThrow('DomainNameAPI request failed (500)');
-    const registrationCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('/domain/register'));
-    expect(registrationCalls).toHaveLength(1);
-  });
-
   it('keeps production opt-in explicit', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }, 200),
+      mockJsonResponse({ infos: [{ domainName: 'example.net', status: 'available', price: 10, currency: 'USD' }] }, 200),
     );
     const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
+      resellerId: 'provider-issued-reseller-id',
       apiKey: 'test-token',
       environment: 'production',
     });
     await adapter.quote('example.net');
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('https://api.domainresellerapi.com/'))).toBe(true);
-  });
-  it('routes v2 traffic through the fixed-egress relay without direct provider fallback', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ status: 'available', price: 8.25, currency: 'USD' }, 200),
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(
+      'https://api.domainresellerapi.com/api/v1/domains/bulk-search',
     );
+  });
 
+  it('routes official REST quote traffic through the fixed-egress relay', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ infos: [{ domainName: 'relay-test.com', status: 'available', price: 8.25, currency: 'USD' }] }, 200),
+    );
     const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
+      resellerId: 'provider-issued-reseller-id',
       apiKey: 'live-api-key',
       environment: 'production',
       relayUrl: 'https://registrar-relay.mkety.com/',
@@ -159,45 +98,70 @@ describe('DomainNameApiAdapter', () => {
       registrationPriceMinor: 825n,
     });
 
-    const relayCalls = fetchMock.mock.calls.filter(([url]) => url === 'https://registrar-relay.mkety.com/v1/domainnameapi');
-    expect(relayCalls).toHaveLength(1);
-    const [url, init] = relayCalls[0]!;
-    expect(url).toBe('https://registrar-relay.mkety.com/v1/domainnameapi');
-    expect(init).toEqual(expect.objectContaining({
-      method: 'POST',
-      headers: expect.objectContaining({
-        'X-Mkety-Timestamp': expect.stringMatching(/^\d+$/),
-        'X-Mkety-Signature': expect.stringMatching(/^[a-f0-9]{64}$/),
-      }),
-    }));
+    const [, init] = fetchMock.mock.calls.at(-1)!;
     const relayBody = JSON.parse(String(init?.body));
     expect(relayBody).toEqual(expect.objectContaining({
       operation: 'quote',
       environment: 'production',
       nonce: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-      payload: expect.objectContaining({
-        resellerId: '123456',
+      payload: {
+        resellerId: 'provider-issued-reseller-id',
         apiKey: 'live-api-key',
         domainName: 'relay-test.com',
-      }),
+        period: 1,
+      },
     }));
   });
 
-  it('keeps renewal info and renew calls on the fixed-egress relay', async () => {
-    const fetchMock = jest.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse({ expiryDate: '2027-10-01' }, 200))
-      .mockResolvedValueOnce(mockJsonResponse({
-        status: 'Success',
-        domainName: 'renew-me.com',
-        expiryDate: '2028-10-01',
-      }, 200));
-
+  it('registers only with the official full-contact REST payload', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({
+        domainName: 'example.com',
+        expirationDate: '2027-10-01T00:00:00Z',
+      }, 200),
+    );
     const adapter = new DomainNameApiAdapter({
-      resellerId: '123456',
-      apiKey: 'live-api-key',
+      resellerId: 'provider-issued-reseller-id',
+      apiKey: 'test-token',
+      environment: 'ote',
+    });
+
+    await expect(adapter.register({
+      domain: 'example.com',
+      years: 1,
+      idempotencyKey: 'order-1',
+      contact,
+    })).resolves.toMatchObject({ domain: 'example.com' });
+
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(url).toBe('https://ote.domainresellerapi.com/api/v1/domains/register-with-contacts');
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual(expect.objectContaining({
+      domainName: 'example.com',
+      period: 1,
+      isLocked: true,
+      privacyEnabled: true,
+      contacts: expect.arrayContaining([
+        expect.objectContaining({ contactType: 'Registrant', country: 'NG', eMail: 'owner@example.com' }),
+        expect.objectContaining({ contactType: 'Admin' }),
+        expect.objectContaining({ contactType: 'Tech' }),
+        expect.objectContaining({ contactType: 'Billing' }),
+      ]),
+      tldAttributes: {},
+    }));
+  });
+
+  it('uses the official renewal endpoint without legacy expiry lookups', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({
+        domainName: 'renew-me.com',
+        expirationDate: '2028-10-01T00:00:00Z',
+      }, 200),
+    );
+    const adapter = new DomainNameApiAdapter({
+      resellerId: 'provider-issued-reseller-id',
+      apiKey: 'test-token',
       environment: 'production',
-      relayUrl: 'https://registrar-relay.mkety.com',
-      relaySecret: '0123456789abcdef0123456789abcdef',
     });
 
     await expect(adapter.renew({
@@ -206,18 +170,31 @@ describe('DomainNameApiAdapter', () => {
       idempotencyKey: 'renew-order-1',
     })).resolves.toMatchObject({ domain: 'renew-me.com' });
 
-    const relayBodies = fetchMock.mock.calls
-      .filter(([url]) => url === 'https://registrar-relay.mkety.com/v1/domainnameapi')
-      .map(([, init]) => JSON.parse(String(init?.body)));
-    expect(relayBodies.map((body) => body.operation)).toEqual(['info', 'renew']);
-    expect(relayBodies[0].payload).toEqual({ domainName: 'renew-me.com' });
-    expect(relayBodies[1].payload).toEqual(expect.objectContaining({
-      domainName: 'renew-me.com',
-      period: 1,
-      currentExpiryDate: '2027-10-01',
-      resellerId: '123456',
-      apiKey: 'live-api-key',
-    }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.domainresellerapi.com/api/v1/domains/renew',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ domainName: 'renew-me.com', period: 1 }),
+      }),
+    );
   });
 
+  it('does not retry an ambiguous provider mutation failure', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ message: 'upstream timeout' }, 500),
+    );
+    const adapter = new DomainNameApiAdapter({
+      resellerId: 'provider-issued-reseller-id',
+      apiKey: 'test-token',
+      environment: 'ote',
+    });
+    await expect(adapter.register({
+      domain: 'example.com',
+      years: 1,
+      idempotencyKey: 'order-1',
+      contact,
+    })).rejects.toThrow('DomainNameAPI register failed (500)');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
