@@ -1,5 +1,6 @@
 import { extractGeminiText, extractOpenAIResponseText, readCentralProviderJson } from './external-http';
 import type { CentralAiProviderAdapter, CentralAiProviderId } from './external-types';
+import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 
 export type CentralAiProviderCredentials =
   | { provider: 'openai'; apiKey: string }
@@ -121,7 +122,10 @@ export function createCentralExternalProvider(credentials: CentralAiProviderCred
         },
       };
     case 'azure-openai': {
-      const base = credentials.endpoint.replace(/\/+$/, '');
+      const base = assertPublicHttpsUrl(credentials.endpoint, {
+        label: 'Azure OpenAI endpoint',
+        allowedSuffixes: ['.openai.azure.com', '.services.ai.azure.com'],
+      }).toString().replace(/\/+$/, '');
       return {
         id: 'azure-openai',
         async generate(request) {
