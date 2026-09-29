@@ -231,6 +231,20 @@ export async function failEnterpriseAiScheduledAction(
   }).where(and(eq(aiScheduledActions.id, id), eq(aiScheduledActions.tenantId, tenantId)));
 }
 
+export async function markEnterpriseAiScheduledActionReconciliationRequired(
+  id: string,
+  tenantId: string,
+  error: string,
+) {
+  const now = new Date();
+  await db.update(aiScheduledActions).set({
+    status: 'reconciliation_required',
+    claimUntil: null,
+    lastError: error.slice(0, 1000),
+    updatedAt: now,
+  }).where(and(eq(aiScheduledActions.id, id), eq(aiScheduledActions.tenantId, tenantId)));
+}
+
 export async function cancelEnterpriseAiScheduledActionsForConversation(conversationId: string, tenantId: string) {
   const now = new Date();
   await db.update(aiScheduledActions).set({
