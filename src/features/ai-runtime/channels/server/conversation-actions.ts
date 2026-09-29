@@ -157,8 +157,8 @@ export async function sendEnterpriseAiHumanReply(
       credentials: revealChannelCredentials(connection.secretRef),
     },
     {
-      recipientId: conversation.externalConversationId,
-      contextId: conversation.externalConversationId,
+      recipientId: conversation.replyRecipientId ?? conversation.externalUserId ?? conversation.externalConversationId,
+      contextId: conversation.replyContextId ?? conversation.externalConversationId,
       text,
     },
   );
