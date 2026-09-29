@@ -14,12 +14,24 @@ describe('DomainNameApiAdapter', () => {
     jest.restoreAllMocks();
   });
 
-  it('rejects a reseller-panel username in place of the V2 numerical Reseller ID', () => {
-    expect(() => new DomainNameApiAdapter({
-      resellerId: 'Mkety',
+  it('accepts an alphanumeric provider-issued V2 Reseller ID exactly as supplied', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }, 200),
+    );
+    const adapter = new DomainNameApiAdapter({
+      resellerId: 'Mkety-AB12CD34',
       apiKey: 'test-token',
       environment: 'production',
-    })).toThrow('numerical Reseller ID');
+    });
+    await adapter.quote('issued-id.example');
+    expect(fetchMock.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({
+      body: JSON.stringify({
+        resellerId: 'Mkety-AB12CD34',
+        apiKey: 'test-token',
+        domainName: 'issued-id.example',
+        period: 1,
+      }),
+    }));
   });
 
   it('uses the documented v1 check endpoint and parses an available-domain quote', async () => {
