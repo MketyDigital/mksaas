@@ -124,6 +124,21 @@ jobs:
             [ "$code" = 201 ] || { echo "Coolify relay app creation failed HTTP $code."; cat /tmp/create-response.json; exit 1; }
             uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
           fi
+
+          TARGET_SHA="$TARGET_SHA" node <<'NODE' >/tmp/pin-release.json
+          process.stdout.write(JSON.stringify({
+            git_branch: process.env.RELEASE_BRANCH,
+            git_commit_sha: process.env.TARGET_SHA,
+            is_preserve_repository_enabled: false
+          }));
+          NODE
+          pin_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/pin-release-response.json -w '%{http_code}'             -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/pin-release.json "$base/applications/$uuid")"
+          [ "$pin_code" = 200 ] || {
+            echo "Coolify exact-SHA pin failed HTTP $pin_code." >&2
+            cat /tmp/pin-release-response.json
+            exit 1
+          }
+
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
 
       - name: Upsert derived relay secret
