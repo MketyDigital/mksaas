@@ -5,6 +5,9 @@ describe('Enterprise AI true white-label and domain contract', () => {
     const source = await readFile('src/features/domains/server/cloudflare-saas.ts', 'utf8');
     expect(source).toContain("method: 'http'");
     expect(source).toContain('MKETY_SAAS_CNAME_TARGET');
+    expect(source).toContain("discoverCloudflareZoneId(apiToken, accountId, 'mkety.com')");
+    expect(source).toContain("discoverCloudflareZoneId(apiToken, accountId, 'mkety.app')");
+    expect(source).toContain('/custom_hostnames/fallback_origin');
     expect(source).toContain('provisionMketyAppManagedHostname');
     expect(source).toContain("type: 'CNAME'");
   });
