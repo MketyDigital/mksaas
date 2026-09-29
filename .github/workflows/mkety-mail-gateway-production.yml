@@ -200,6 +200,12 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
+          cf='https://api.cloudflare.com/client/v4'
+
+          zones="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/zones?name=mkety.com&status=active")"
+          zone_id="$(ZONES="$zones" node -e "const x=JSON.parse(process.env.ZONES||'{}');const a=x.result||[];if(!x.success||a.length!==1)process.exit(1);process.stdout.write(a[0].id)")"
+          [ -n "$zone_id" ] || { echo 'Cloudflare mkety.com zone could not be resolved.'; exit 1; }
+
           curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID" -o /tmp/server.json
           server_address="$(node - <<'NODE'
           const x=require('/tmp/server.json');
@@ -212,23 +218,55 @@ jobs:
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID/domains" -o /tmp/server-domains.json
             server_address="$(node - <<'NODE'
           const x=require('/tmp/server-domains.json');
-          const rows=Array.isArray(x)?x:[];
-          process.stdout.write(rows.map(v=>String(v?.ip||'').trim()).find(Boolean)||'');
+          const rows=Array.isArray(x)?x:(Array.isArray(x?.data)?x.data:[]);
+          const candidates=[];
+          for(const row of rows){
+            for(const key of ['ip','ip_address','public_ip','server_ip','address','host','hostname','domain']){
+              const value=String(row?.[key]||'').trim();
+              if(value)candidates.push(value);
+            }
+          }
+          process.stdout.write(candidates[0]||'');
           NODE
             )"
           fi
-          [ -n "$server_address" ] || { echo 'Coolify server address unavailable.'; exit 1; }
+
+          normalize_host() {
+            printf '%s' "$1" |
+              sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^@/]+@##; s#/.*$##; s#:[0-9]+$##'
+          }
 
           resolve_ipv4() {
-            value="$1"
+            value="$(normalize_host "$1")"
+            [ -n "$value" ] || return 1
             if VALUE="$value" node -e "const net=require('node:net');process.exit(net.isIP(process.env.VALUE)===4?0:1)"; then
               printf '%s' "$value"
               return 0
             fi
             getent ahostsv4 "$value" 2>/dev/null | awk 'NR==1 {print $1}'
           }
-          server_ip="$(resolve_ipv4 "$server_address" || true)"
-          [ -n "$server_ip" ] || { echo 'Coolify server address did not resolve to IPv4.'; exit 1; }
+
+          server_ip=''
+          if [ -n "$server_address" ]; then
+            server_ip="$(resolve_ipv4 "$server_address" || true)"
+          fi
+
+          # A self-managed Coolify installation may intentionally describe its
+          # local server with an internal address. In that case use the origin
+          # already configured for the known Coolify control-plane hostname in
+          # Mkety's authoritative Cloudflare zone rather than guessing an OCI IP.
+          if [ -z "$server_ip" ]; then
+            deploy_dns="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/zones/$zone_id/dns_records?name=deploy.mkety.com&per_page=100")"
+            server_ip="$(DEPLOY_DNS="$deploy_dns" node - <<'NODE'
+          const x=JSON.parse(process.env.DEPLOY_DNS||'{}');
+          const rows=Array.isArray(x.result)?x.result:[];
+          const a=rows.filter(r=>r.type==='A' && /^\d{1,3}(\.\d{1,3}){3}$/.test(String(r.content||'')));
+          if(a.length!==1) process.exit(0);
+          process.stdout.write(String(a[0].content));
+          NODE
+            )"
+          fi
+          [ -n "$server_ip" ] || { echo 'No authoritative public IPv4 could be derived for the Coolify server.'; exit 1; }
 
           IP="$server_ip" node - <<'NODE'
           const ip=process.env.IP||'';
@@ -240,17 +278,13 @@ jobs:
             (parts[0]===169&&parts[1]===254)||
             (parts[0]===172&&parts[1]>=16&&parts[1]<=31)||
             (parts[0]===192&&parts[1]===168);
-          if(privateOrReserved) throw new Error('Coolify server did not resolve to a public IPv4.');
+          if(privateOrReserved) throw new Error('Derived Coolify server address is not a routable public IPv4.');
           NODE
 
-          echo "::add-mask::$server_address"
+          [ -z "$server_address" ] || echo "::add-mask::$server_address"
           echo "::add-mask::$server_ip"
-          echo "server_ip=$server_ip" >> "$GITHUB_OUTPUT"
-
-          cf='https://api.cloudflare.com/client/v4'
-          zones="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/zones?name=mkety.com&status=active")"
-          zone_id="$(ZONES="$zones" node -e "const x=JSON.parse(process.env.ZONES||'{}');const a=x.result||[];if(!x.success||a.length!==1)process.exit(1);process.stdout.write(a[0].id)")"
           echo "::add-mask::$zone_id"
+          echo "server_ip=$server_ip" >> "$GITHUB_OUTPUT"
           echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
 
       - name: Issue public TLS certificate with DNS-01
