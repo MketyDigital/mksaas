@@ -75,20 +75,41 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
   if (existing && existing.tenantId !== tenant.id) throw new Error('That hostname is already connected.');
 
   const provisioned = await createCloudflareSaasHostname(hostname);
+  const strictProviderVerified =
+    provisioned.status === 'active' && provisioned.sslStatus === 'active';
+  const liveRouteProof = strictProviderVerified
+    ? null
+    : await probeEnterpriseAiHostnameRoute(hostname, tenant.id);
+  const verified =
+    strictProviderVerified ||
+    (liveRouteProof?.ok === true && liveRouteProof.tenantId === tenant.id);
+  const verificationMethod = strictProviderVerified
+    ? 'cloudflare'
+    : verified
+      ? 'live_route'
+      : 'pending';
   const metadata = JSON.stringify({
     purpose: 'enterprise-ai',
     cnameTarget: provisioned.cnameTarget,
     cloudflareCustomHostnameId: provisioned.id,
     sslStatus: provisioned.sslStatus,
+    verificationMethod,
+    liveRouteVerifiedAt:
+      verified && verificationMethod === 'live_route'
+        ? new Date().toISOString()
+        : null,
   });
-  const verification = JSON.stringify(provisioned.ownershipVerification ?? {});
+  const verification = JSON.stringify({
+    provider: provisioned.ownershipVerification ?? {},
+    liveRouteProof,
+  });
 
   if (existing) {
     await db.update(customDomains).set({
       provider: 'cloudflare-for-saas',
       providerVerified: metadata,
       verification,
-      status: provisioned.status === 'active' ? 'verified' : 'pending',
+      status: verified ? 'verified' : 'pending',
       updatedAt: new Date(),
     }).where(eq(customDomains.id, existing.id));
   } else {
@@ -98,7 +119,7 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
       provider: 'cloudflare-for-saas',
       providerVerified: metadata,
       verification,
-      status: provisioned.status === 'active' ? 'verified' : 'pending',
+      status: verified ? 'verified' : 'pending',
     });
   }
 
