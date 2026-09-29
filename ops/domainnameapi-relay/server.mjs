@@ -11,6 +11,7 @@ const seenNonces = new Map();
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/v1/domain/check' }],
   ['quote-basic', { method: 'GET', path: '/api/domain/check' }],
+  ['quote-current-live', { method: 'POST', path: '/v1/domain/check' }],
   ['register', { method: 'POST', path: '/v1/domain/register' }],
   ['renew', { method: 'POST', path: '/v1/domain/renew' }],
   ['info', { method: 'GET', path: '/api/v1/domains/info' }],
@@ -82,8 +83,13 @@ const server = createServer(async (req, res) => {
       return json(res, 400, { error: 'invalid_payload' });
     }
 
-    const base = input.environment === 'production' ? LIVE_BASE : OTE_BASE;
     const op = String(input.operation);
+    if (op === 'quote-current-live' && input.environment !== 'production') {
+      return json(res, 400, { error: 'unsupported_environment_for_operation' });
+    }
+    const base = op === 'quote-current-live'
+      ? 'https://api.domainnameapi.com'
+      : input.environment === 'production' ? LIVE_BASE : OTE_BASE;
     const upstreamPath = op === 'info'
       ? operation.path + '?domainName=' + encodeURIComponent(String(input.payload.domainName || ''))
       : op === 'quote-basic'
@@ -104,7 +110,17 @@ const server = createServer(async (req, res) => {
         ...(operation.method === 'POST' ? { 'content-type': 'application/json' } : {}),
         ...(basicAuth ? { authorization: basicAuth } : {}),
       },
-      ...(operation.method === 'POST' ? { body: JSON.stringify(input.payload) } : {}),
+      ...(operation.method === 'POST'
+        ? {
+            body: JSON.stringify(op === 'quote-current-live'
+              ? {
+                  resellerId: input.payload.resellerId,
+                  apiKey: input.payload.apiKey,
+                  domain: input.payload.domain,
+                }
+              : input.payload),
+          }
+        : {}),
       signal: AbortSignal.timeout(20_000),
     });
     const text = await upstream.text();
