@@ -34,6 +34,7 @@ describe('Platform navigation route contract', () => {
     for (const destination of [
       '/platform-control/ai-operations',
       '/platform-control/mail',
+      '/platform-control/media',
       '/platform-control/billing',
       '/platform-control/payments',
       '/platform-control/domains-routing',
@@ -47,7 +48,7 @@ describe('Platform navigation route contract', () => {
     expect(nav).toContain('title="Workspace"');
     expect(nav).toContain('title="Products"');
     expect(nav).toContain('title="Account"');
-    expect(nav).toContain('https://media.mkety.com');
+    expect(nav).toContain('`${basePath}/media`');
     expect(nav).toContain('hasEnterpriseAiAccess');
     expect(nav).toContain('hasMailAccess');
   });
@@ -65,6 +66,7 @@ describe('Platform navigation route contract', () => {
       'mail/developer/page.tsx',
       'mail/analytics/page.tsx',
       'mail/apps/page.tsx',
+      'mail/migration/page.tsx',
       'mail/automation/page.tsx',
     ];
     for (const candidate of expected) {
@@ -80,6 +82,11 @@ describe('Platform navigation route contract', () => {
       'billing/page.tsx',
       'billing/checkout/page.tsx',
       'enterprise-ai/page.tsx',
+      'enterprise-ai/playground/page.tsx',
+      'enterprise-ai/runs/page.tsx',
+      'enterprise-ai/conversations/page.tsx',
+      'enterprise-ai/reminders/page.tsx',
+      'media/page.tsx',
     ]) {
       expect(existsSync(route(candidate))).toBe(true);
     }
