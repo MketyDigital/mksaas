@@ -6,8 +6,8 @@ describe('Mkety public pages admin collection', () => {
     const parsed = publicPagesAdminPayloadSchema.parse({ pages: MKETY_PUBLIC_PAGE_DEFAULTS });
     expect(parsed.pages.map((page) => page.slug)).toEqual([
       'platform',
-      'workspaces',
       'domains',
+      'workspaces',
       'solutions',
       'academy',
       'pricing',
