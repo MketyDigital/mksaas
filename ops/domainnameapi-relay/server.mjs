@@ -64,12 +64,12 @@ const server = createServer(async (req, res) => {
 
     const input = JSON.parse(rawBody);
     const nonce = String(input.nonce || '');
-    if (!/^[0-9a-f-]{36}$/i.test(nonce)) return json(res, 400, { error: 'invalid_nonce' });
+    if (!/^[0-9a-f-]{36}$/i.test(nonce)) return json(res, 400, { error: 'replayed_or_invalid_nonce' });
     const now = Date.now();
     for (const [value, expiresAt] of seenNonces) {
       if (expiresAt <= now) seenNonces.delete(value);
     }
-    if (seenNonces.has(nonce)) return json(res, 409, { error: 'replayed_request' });
+    if (seenNonces.has(nonce)) return json(res, 409, { error: 'replayed_or_invalid_nonce' });
     seenNonces.set(nonce, now + 60_000);
 
     const operation = ALLOWED.get(String(input.operation || ''));
