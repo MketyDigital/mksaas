@@ -139,6 +139,14 @@ jobs:
             exit 1
           }
 
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid" -o /tmp/pinned-app.json
+          pinned_sha="$(node -e "const x=require('/tmp/pinned-app.json');process.stdout.write(String(x.git_commit_sha||''))")"
+          [ "$pinned_sha" = "$TARGET_SHA" ] || {
+            echo "Coolify did not persist the requested exact git_commit_sha." >&2
+            exit 1
+          }
+          echo "Verified Coolify relay is pinned to exact SHA $TARGET_SHA."
+
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
 
       - name: Upsert derived relay secret
