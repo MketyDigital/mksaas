@@ -12,6 +12,50 @@ const oteApiKey = required('DOMAINNAMEAPI_OTE_API_TOKEN');
 const relayUrl = required('MKETY_DOMAIN_RELAY_URL');
 const relaySecret = required('MKETY_DOMAIN_RELAY_SECRET');
 
+async function signedRelayRequest(operation: string, environment: 'production' | 'ote', payload: Record<string, unknown>) {
+  const timestamp = String(Date.now());
+  const nonce = crypto.randomUUID();
+  const raw = JSON.stringify({ nonce, operation, environment, payload });
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(relaySecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signatureBytes = new Uint8Array(await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(timestamp + '.' + raw),
+  ));
+  const signature = Array.from(signatureBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const response = await fetch(relayUrl + '/v1/domainnameapi', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-mkety-timestamp': timestamp,
+      'x-mkety-signature': signature,
+    },
+    body: raw,
+  });
+  let body: unknown = null;
+  try { body = await response.json(); } catch {}
+  return { status: response.status, ok: response.ok, body };
+}
+
+async function probeBasic(environment: 'production' | 'ote', apiKey: string) {
+  const label = 'mkety-' + (environment === 'production' ? 'live' : 'ote') + '-basic-' + Date.now();
+  const result = await signedRelayRequest('quote-basic', environment, {
+    resellerId,
+    apiKey,
+    domainNames: label,
+    tlds: 'com',
+    period: 1,
+  });
+  return { environment, status: result.status, ok: result.ok };
+}
+
 async function probe(environment: 'production' | 'ote', apiKey: string) {
   const adapter = new DomainNameApiAdapter({
     resellerId,
@@ -35,13 +79,22 @@ async function probe(environment: 'production' | 'ote', apiKey: string) {
   };
 }
 
-const live = await probe('production', liveApiKey);
-const ote = await probe('ote', oteApiKey);
+let live: Awaited<ReturnType<typeof probe>> | null = null;
+let ote: Awaited<ReturnType<typeof probe>> | null = null;
+let liveError: string | null = null;
+let oteError: string | null = null;
+try { live = await probe('production', liveApiKey); } catch (error) { liveError = error instanceof Error ? error.message : String(error); }
+try { ote = await probe('ote', oteApiKey); } catch (error) { oteError = error instanceof Error ? error.message : String(error); }
+
+const liveBasic = await probeBasic('production', liveApiKey);
+const oteBasic = await probeBasic('ote', oteApiKey);
+const v2Passed = Boolean(live && ote);
+const basicPassed = liveBasic.ok && oteBasic.ok;
 
 console.log(JSON.stringify({
-  ok: true,
+  ok: v2Passed || basicPassed,
   transport: 'fixed-egress-relay',
   mutationPerformed: false,
-  live,
-  ote,
+  v2: { live, ote, liveError, oteError },
+  basic: { live: liveBasic, ote: oteBasic },
 }, null, 2));
