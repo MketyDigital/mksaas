@@ -65,5 +65,6 @@ export async function getDomainResellerAdapter(): Promise<DomainResellerAdapter>
     whoisPrivacy: config.whoisPrivacy !== false,
     relayUrl: process.env.MKETY_DOMAIN_RELAY_URL,
     relaySecret: process.env.MKETY_DOMAIN_RELAY_SECRET,
+    relaySecretSeed: process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY,
   });
 }
