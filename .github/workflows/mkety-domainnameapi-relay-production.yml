@@ -1,0 +1,254 @@
+name: Mkety DomainNameAPI Relay Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      verified_sha:
+        description: Exact PR #159 head SHA to deploy
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY DOMAIN RELAY
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_CONNECTION_SECRET_ENCRYPTION_KEY: ${{ secrets.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      APP_NAME: mkety-domainnameapi-relay
+      RELEASE_BRANCH: feat/enterprise-ai-complete-platform-20260928
+
+    steps:
+      - name: Authorize exact release
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${{ inputs.confirmation }}" = "DEPLOY DOMAIN RELAY" ] || { echo "Exact confirmation is required." >&2; exit 1; }
+          [[ "${{ inputs.verified_sha }}" =~ ^[0-9a-f]{40}$ ]] || { echo "verified_sha must be a full SHA." >&2; exit 1; }
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo "Missing COOLIFY_TOKEN." >&2; exit 1; }
+          [ -n "${MKETY_CONNECTION_SECRET_ENCRYPTION_KEY:-}" ] || { echo "Missing MKETY_CONNECTION_SECRET_ENCRYPTION_KEY." >&2; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_BRANCH }}
+          fetch-depth: 1
+
+      - name: Freeze exact branch head
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          [ "$actual" = "${{ inputs.verified_sha }}" ] || {
+            echo "Refusing deployment: verified SHA does not equal current release branch head." >&2
+            exit 1
+          }
+
+      - name: Derive isolated relay HMAC key
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="$(node - <<'NODE'
+          const {hkdfSync}=require('node:crypto');
+          const seed=process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY;
+          const out=hkdfSync('sha256', Buffer.from(seed), Buffer.from('mkety-domain-relay-v1'), Buffer.from('request-hmac'), 32);
+          process.stdout.write(Buffer.from(out).toString('hex'));
+          NODE
+          )"
+          echo "::add-mask::$derived"
+          echo "DERIVED_RELAY_SECRET=$derived" >> "$GITHUB_ENV"
+
+      - name: Create or reuse lightweight Coolify relay app
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          uuid="$(APP_NAME="$APP_NAME" node - <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const list=Array.isArray(x)?x:Array.isArray(x.data)?x.data:[];
+          const app=list.find(v=>v?.name===process.env.APP_NAME);
+          process.stdout.write(app?.uuid||'');
+          NODE
+          )"
+
+          if [ -z "$uuid" ]; then
+            TARGET_SHA="${{ inputs.verified_sha }}" node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:process.env.RELEASE_BRANCH,
+            git_commit_sha:process.env.TARGET_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/domainnameapi-relay/Dockerfile',
+            ports_exposes:'3000',
+            name:process.env.APP_NAME,
+            description:'Lightweight fixed-egress relay for DomainNameAPI V2',
+            autogenerate_domain:true,
+            connect_to_docker_network:true,
+            instant_deploy:false,
+            limits_cpus:'0.25',
+            limits_memory:'128m',
+            docker_images_to_keep:1,
+            max_restart_count:5
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}'               -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/create.json "$base/applications/public")"
+            [ "$code" = 201 ] || { echo "Coolify relay app creation failed HTTP $code."; cat /tmp/create-response.json; exit 1; }
+            uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          fi
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert derived relay secret
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          endpoint="$base/applications/$APP_UUID/envs"
+          VALUE="$DERIVED_RELAY_SECRET" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({
+            key:'MKETY_DOMAIN_RELAY_SECRET',
+            value:process.env.VALUE,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:true
+          }));
+          NODE
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" -o /tmp/env-list.json
+          exists="$(node - <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/env-list.json','utf8'));
+          process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key==='MKETY_DOMAIN_RELAY_SECRET')?'true':'false');
+          NODE
+          )"
+          method=POST
+          [ "$exists" = true ] && method=PATCH
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}'             -X "$method" -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/env.json "$endpoint")"
+          [ "$code" = 201 ] || { echo "Relay secret upsert failed HTTP $code."; exit 1; }
+
+      - name: Deploy relay
+        id: deploy
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "Relay deployment request failed HTTP $code."; exit 1; }
+          dep="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          status=''
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+            status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) echo "Relay deployment failed: $status"; exit 1 ;;
+            esac
+            sleep 3
+          done
+          case "${status,,}" in finished|success|successful|succeeded|completed) ;; *) echo "Relay deployment timed out: $status"; exit 1 ;; esac
+
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/app.json
+          fqdn="$(node - <<'NODE'
+          const x=require('/tmp/app.json');
+          const raw=String(x.fqdn||x.domains||'').split(',').map(v=>v.trim()).find(Boolean)||'';
+          process.stdout.write(raw);
+          NODE
+          )"
+          [ -n "$fqdn" ] || { echo "Coolify did not return an autogenerated relay hostname." >&2; exit 1; }
+          case "$fqdn" in http://*|https://*) relay_url="$fqdn" ;; *) relay_url="https://$fqdn" ;; esac
+          relay_url="${relay_url%/}"
+          echo "relay_url=$relay_url" >> "$GITHUB_OUTPUT"
+
+          ready=false
+          for i in $(seq 1 40); do
+            if curl --proto '=https' --tlsv1.2 -fsS --connect-timeout 5 --max-time 15 "$relay_url/health" -o /tmp/health.json               && node -e "const x=require('/tmp/health.json');process.exit(x.ok===true?0:1)"; then
+              ready=true
+              break
+            fi
+            sleep 3
+          done
+          [ "$ready" = true ] || { echo "Relay health check failed." >&2; exit 1; }
+
+      - name: Resolve actual OCI outbound IP from relay logs
+        id: egress
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          ip=''
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$APP_UUID/logs?lines=200&show_timestamps=false" -o /tmp/logs.json || true
+            ip="$(node - <<'NODE'
+          const fs=require('node:fs');
+          let raw='';
+          try { raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||''); } catch {}
+          const m=raw.match(/MKETY_RELAY_OUTBOUND_IP=([0-9a-f:.]+)/i);
+          process.stdout.write(m?.[1]||'');
+          NODE
+            )"
+            [ -n "$ip" ] && break
+            sleep 2
+          done
+          [ -n "$ip" ] || { echo "Could not resolve relay outbound IP." >&2; exit 1; }
+          echo "ip=$ip" >> "$GITHUB_OUTPUT"
+          echo "Relay outbound IP: $ip"
+
+      - name: Attach relay URL to existing Mkety Workers
+        env:
+          RELAY_URL: ${{ steps.deploy.outputs.relay_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || {
+            echo "Cloudflare credentials unavailable; relay deployed but Worker URL attachment skipped."
+            exit 0
+          }
+          services="$(curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services")"
+          for worker in mkety-platform mkety-app-host; do
+            if SERVICES="$services" WORKER="$worker" node -e "const x=JSON.parse(process.env.SERVICES||'{}');process.exit((x.result||[]).some(v=>v.id===process.env.WORKER)?0:1)"; then
+              meta="$(node -e "process.stdout.write(JSON.stringify({main_module:'worker.js',bindings:[{type:'secret_text',name:'MKETY_DOMAIN_RELAY_URL',text:process.env.RELAY_URL}]}))" RELAY_URL="$RELAY_URL")"
+              echo "Relay URL attachment deferred to the normal Worker promotion flow for $worker; existing scripts are not rewritten here."
+            fi
+          done
+
+      - name: Publish relay evidence
+        env:
+          RELAY_URL: ${{ steps.deploy.outputs.relay_url }}
+          EGRESS_IP: ${{ steps.egress.outputs.ip }}
+        shell: bash
+        run: |
+          {
+            echo '## DomainNameAPI fixed-egress relay'
+            echo
+            echo "- Release SHA: ${{ inputs.verified_sha }}"
+            echo "- Coolify application: $APP_NAME"
+            echo "- Relay URL: $RELAY_URL"
+            echo "- OCI outbound IP to whitelist in DomainNameAPI: $EGRESS_IP"
+            echo "- Resource cap: 0.25 CPU / 128 MB memory"
+            echo "- Provider credentials stored on relay: no"
+            echo "- HMAC root secret stored on relay: no; only an HKDF-derived key is injected"
+          } >> "$GITHUB_STEP_SUMMARY"
