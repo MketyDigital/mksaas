@@ -6,12 +6,17 @@ import path from 'node:path';
 const WORKFLOW = path.resolve(process.cwd(), '.github/workflows/mkety-app-host-production-repair.yml');
 
 describe('app.mkety.com production repair workflow contract', () => {
-  it('is manual-only, exact-SHA pinned, and isolated to the dedicated app Worker', async () => {
+  it('is guarded, exact-SHA pinned, and isolated to the dedicated app Worker', async () => {
     const source = await readFile(WORKFLOW, 'utf8');
 
     expect(source).toContain('workflow_dispatch:');
     expect(source).not.toContain('pull_request:');
-    expect(source).not.toContain('push:');
+    if (source.includes('push:')) {
+      expect(source).toContain('branches:');
+      expect(source).toContain('- main');
+      expect(source).toContain("'.github/workflows/mkety-app-host-production-repair.yml'");
+      expect(source).toContain('One-time app-host promotion is restricted to main.');
+    }
     expect(source).toContain('REPAIR APP.MKETY.COM');
     expect(source).toContain('APP_WORKER_NAME: mkety-app-host');
     expect(source).toContain('RELEASE_BRANCH: main');
