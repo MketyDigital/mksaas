@@ -12,6 +12,7 @@ type CloudflareCustomHostname = {
 
 type CloudflareDomainConfig = {
   apiToken: string;
+  accountId: string;
   saasZoneId: string;
   appZoneId: string;
   cnameTarget: string;
@@ -27,6 +28,7 @@ async function cloudflareDomainConfig(): Promise<CloudflareDomainConfig> {
 
   const config = connection?.config ?? {};
   const apiToken = String(connection?.secret.apiToken ?? process.env.CLOUDFLARE_API_TOKEN ?? '').trim();
+  const accountId = String(config.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? '').trim();
   const saasZoneId = String(config.saasZoneId ?? process.env.MKETY_SAAS_ZONE_ID ?? '').trim();
   const appZoneId = String(config.appZoneId ?? process.env.MKETY_APP_ZONE_ID ?? '').trim();
   const cnameTarget = String(config.cnameTarget ?? process.env.MKETY_SAAS_CNAME_TARGET ?? '').trim().toLowerCase();
@@ -36,12 +38,14 @@ async function cloudflareDomainConfig(): Promise<CloudflareDomainConfig> {
     : false;
 
   if (!apiToken) throw new Error('Cloudflare domain API token is not configured.');
+  if (!accountId) throw new Error('Cloudflare account ID is not configured.');
   if (!saasZoneId) throw new Error('Cloudflare SaaS zone ID is not configured.');
   if (!appZoneId) throw new Error('Cloudflare app zone ID is not configured.');
   if (!cnameTarget) throw new Error('Cloudflare SaaS CNAME target is not configured.');
 
   return {
     apiToken,
+    accountId,
     saasZoneId,
     appZoneId,
     cnameTarget,
@@ -191,4 +195,108 @@ export async function provisionMketyAppManagedHostname(subdomain: string) {
     sslStatus: current.ssl?.status ?? null,
     ready: current.status === 'active' && current.ssl?.status === 'active',
   };
+}
+
+
+export type MketyDnsRecordInput = {
+  id?: string;
+  type: 'A' | 'AAAA' | 'CNAME' | 'TXT' | 'MX' | 'SRV' | 'CAA';
+  name: string;
+  content: string;
+  ttl?: number;
+  proxied?: boolean;
+  priority?: number;
+};
+
+export async function createCloudflareManagedZone(domain: string) {
+  const config = await cloudflareDomainConfig();
+  const normalized = domain.trim().toLowerCase().replace(/\.$/, '');
+  const zone = await cf<{
+    id: string;
+    name: string;
+    status: string;
+    name_servers?: string[];
+  }>(config, '/zones', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: normalized,
+      account: { id: config.accountId },
+      type: 'full',
+      jump_start: false,
+    }),
+  });
+  return {
+    id: zone.id,
+    name: zone.name,
+    status: zone.status,
+    nameServers: Array.isArray(zone.name_servers) ? zone.name_servers : [],
+  };
+}
+
+export async function getCloudflareManagedZone(zoneId: string) {
+  const config = await cloudflareDomainConfig();
+  return cf<{
+    id: string;
+    name: string;
+    status: string;
+    name_servers?: string[];
+  }>(config, `/zones/${encodeURIComponent(zoneId)}`);
+}
+
+export async function deleteCloudflareManagedZone(zoneId: string) {
+  const config = await cloudflareDomainConfig();
+  return cf<{ id: string }>(config, `/zones/${encodeURIComponent(zoneId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function listCloudflareDnsRecords(zoneId: string) {
+  const config = await cloudflareDomainConfig();
+  return cf<Array<{
+    id: string;
+    type: string;
+    name: string;
+    content: string;
+    ttl: number;
+    proxied?: boolean;
+    priority?: number;
+  }>>(config, `/zones/${encodeURIComponent(zoneId)}/dns_records?per_page=500`);
+}
+
+export async function saveCloudflareDnsRecord(zoneId: string, input: MketyDnsRecordInput) {
+  const config = await cloudflareDomainConfig();
+  const type = input.type.toUpperCase() as MketyDnsRecordInput['type'];
+  const allowed = new Set(['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'SRV', 'CAA']);
+  if (!allowed.has(type)) throw new Error('Unsupported Mkety DNS record type.');
+  const name = input.name.trim().toLowerCase();
+  const content = input.content.trim();
+  if (!name || !content) throw new Error('DNS record name and content are required.');
+  const proxiedAllowed = type === 'A' || type === 'AAAA' || type === 'CNAME';
+  const body = JSON.stringify({
+    type,
+    name,
+    content,
+    ttl: input.ttl && input.ttl >= 60 ? input.ttl : 1,
+    ...(proxiedAllowed ? { proxied: input.proxied === true } : {}),
+    ...(type === 'MX' && Number.isFinite(input.priority) ? { priority: input.priority } : {}),
+  });
+  if (input.id) {
+    return cf(config, `/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(input.id)}`, {
+      method: 'PUT',
+      body,
+    });
+  }
+  return cf(config, `/zones/${encodeURIComponent(zoneId)}/dns_records`, {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function deleteCloudflareDnsRecord(zoneId: string, recordId: string) {
+  const config = await cloudflareDomainConfig();
+  return cf<{ id: string }>(
+    config,
+    `/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`,
+    { method: 'DELETE' },
+  );
 }
