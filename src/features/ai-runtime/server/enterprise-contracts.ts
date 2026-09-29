@@ -1,7 +1,7 @@
 'use server';
 
 import { addMonths } from 'date-fns';
-import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
+import { and, desc, eq, isNull, like } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
@@ -9,13 +9,11 @@ import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/e
 import { db } from '@/shared/db';
 import {
   billingCheckouts,
-  billingLedgerEntries,
   billingPeriods,
   billingPlans,
   billingPlanVersionCreditAllowances,
   billingPlanVersionEntitlements,
   billingPlanVersions,
-  billingSettlements,
   billingSubscriptions,
   tenants,
 } from '@/shared/db/schema';
@@ -236,6 +234,43 @@ export async function listEnterpriseAiContracts() {
   });
 }
 
+export async function getEnterpriseAiContractBillingState(tenantId: string) {
+  const contract = await getActiveEnterpriseAiContract(tenantId);
+  if (!contract) return { contract: null, subscription: null, period: null };
+
+  const [subscription] = await db
+    .select({
+      id: billingSubscriptions.id,
+      status: billingSubscriptions.status,
+      renewalMode: billingSubscriptions.renewalMode,
+      autoRenew: billingSubscriptions.autoRenew,
+      currentPeriodStart: billingSubscriptions.currentPeriodStart,
+      currentPeriodEnd: billingSubscriptions.currentPeriodEnd,
+      gracePeriodEnd: billingSubscriptions.gracePeriodEnd,
+      updatedAt: billingSubscriptions.updatedAt,
+    })
+    .from(billingSubscriptions)
+    .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
+    .where(and(
+      eq(billingSubscriptions.tenantId, tenantId),
+      eq(billingPlanVersions.planId, contract.planId),
+    ))
+    .orderBy(desc(billingSubscriptions.updatedAt))
+    .limit(1);
+
+  const period = subscription
+    ? await db.query.billingPeriods.findFirst({
+        where: and(
+          eq(billingPeriods.tenantId, tenantId),
+          eq(billingPeriods.subscriptionId, subscription.id),
+        ),
+        orderBy: (table, { desc: orderDesc }) => [orderDesc(table.periodEnd)],
+      })
+    : null;
+
+  return { contract, subscription: subscription ?? null, period: period ?? null };
+}
+
 export async function createEnterpriseAiContractCheckout(input: {
   tenantId: string;
   adapter: BillingGatewayAdapter;
@@ -253,20 +288,34 @@ export async function createEnterpriseAiContractCheckout(input: {
   }
 
   const prepared = await db.transaction(async (tx) => {
-    const current = await tx
-      .select({ id: billingSubscriptions.id, status: billingSubscriptions.status })
+    const currentRows = await tx
+      .select({
+        id: billingSubscriptions.id,
+        status: billingSubscriptions.status,
+        currentPeriodEnd: billingSubscriptions.currentPeriodEnd,
+      })
       .from(billingSubscriptions)
       .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
       .where(and(
         eq(billingSubscriptions.tenantId, input.tenantId),
         eq(billingPlanVersions.planId, contract.planId),
-        ne(billingSubscriptions.status, 'cancelled'),
       ))
-      .orderBy(desc(billingSubscriptions.updatedAt))
-      .limit(1);
+      .orderBy(desc(billingSubscriptions.updatedAt));
 
-    if (current[0]) {
-      throw new Error('This workspace already has a current Enterprise AI contract subscription.');
+    const pending = currentRows.find((item) => item.status === 'pending_payment');
+    if (pending) {
+      throw new Error('This workspace already has an Enterprise AI payment awaiting completion.');
+    }
+
+    const paidThroughFuture = currentRows.find((item) =>
+      ['trialing', 'active', 'cancel_at_period_end'].includes(item.status)
+      && item.currentPeriodEnd
+      && item.currentPeriodEnd.getTime() > now.getTime()
+    );
+    if (paidThroughFuture) {
+      throw new Error(
+        `Enterprise AI is already paid through ${paidThroughFuture.currentPeriodEnd!.toISOString()}.`,
+      );
     }
 
     const periodStart = now;
