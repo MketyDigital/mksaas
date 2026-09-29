@@ -208,16 +208,20 @@ jobs:
           NODE
           )"
 
-          if [ -z "$server_address" ]; then
-            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID/domains" -o /tmp/server-domains.json
-            server_address="$(node - <<'NODE'
+          # Coolify's server-domain endpoint is the authoritative source for the
+          # routable address associated with resources on this server. Always
+          # fetch it even when the server's primary SSH/control address is set,
+          # because that address may be private, tunnel-backed, or non-routable.
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID/domains" -o /tmp/server-domains.json
+
+          domain_server_address="$(node - <<'NODE'
           const x=require('/tmp/server-domains.json');
           const rows=Array.isArray(x)?x:[];
           process.stdout.write(rows.map(v=>String(v?.ip||'').trim()).find(Boolean)||'');
           NODE
-            )"
-          fi
-          [ -n "$server_address" ] || { echo 'Coolify server address unavailable.'; exit 1; }
+          )"
+
+          [ -n "$domain_server_address" ] || [ -n "$server_address" ] || { echo 'Coolify server address unavailable.'; exit 1; }
 
           server_ip="$(node - <<'NODE'
           const fs=require('node:fs');
