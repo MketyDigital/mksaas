@@ -52,7 +52,7 @@ For the active Enterprise AI completion, use PR #159, the September 28 dated han
 
 PR #159 (`feat/enterprise-ai-complete-platform-20260928`) is the authoritative completion candidate. Repository verification is recorded against certified implementation SHA `6304ba5b30f39a7f9cf9f83c736155ddd9aaa833`; docs-only heads may be newer.
 
-Production `customerInferenceEnabled` remains off until the guarded paid model benchmark, tiny real Workers AI + AI Gateway accounting acceptance, real customer-hostname white-label/isolation acceptance, concrete registrar/reseller adapter verification, and explicit guarded production promotion are completed and documented.
+Production `customerInferenceEnabled` remains off. The guarded paid model benchmark, tiny real Workers AI + AI Gateway accounting acceptance, registrar/reseller fixed-egress verification, and Enterprise AI infrastructure promotion are already completed and documented in the current status/continuation evidence. The remaining gate is controlled first-real-customer acceptance, including customer-hostname white-label/isolation and end-to-end commercial/runtime verification, followed by an explicit intentional inference-enable decision.
 
 ## Legacy/reference documents
 
