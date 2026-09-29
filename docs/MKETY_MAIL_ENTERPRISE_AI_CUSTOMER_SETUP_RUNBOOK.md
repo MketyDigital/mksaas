@@ -3,6 +3,22 @@
 Date: 2026-09-29
 Status: pre-Starpips stabilization; production customer inference remains disabled until explicit promotion.
 
+## 2026-09-29 production audit update
+
+Current audited release truth:
+
+- stabilization PR #173 is merged;
+- guarded release SHA `3c1d5eb2f8b1312b02ea733ba053fa9b6e684104` executed Mkety Enterprise AI Production run `36568179070` successfully;
+- that Enterprise AI run completed exact-SHA authorization, production database migration, AI delivery Queue/DLQ provisioning, production application deploy, `mkety-ai-delivery` worker deploy, internal-secret synchronization, `ai.mkety.com` / `api.mkety.com` domain attachment, and fail-closed production smoke;
+- production customer inference was not enabled by that workflow and remains intentionally OFF pending real-customer acceptance;
+- the same production database migration applied the repository schema on the guarded release SHA, so the Mail/AI stabilization migrations are present in production;
+- Mkety Mail Production run `36568179379` stopped in authorization before any Mail deployment or infrastructure mutation. Migration proof inheritance passed; Cloudflare-smoke proof inheritance was rejected because the combined Mail/AI release also touched the AI production workflow/docs;
+- PR #175 fixed only that neutral proof-chain classification and merged as `50a41b0695f6ff4204250676d25d40befaa356fc`;
+- exact-main CI on `50a41b06…` is green for tests, type-check, build and lint;
+- this runbook-only release marker exists to re-run the guarded Mail production workflow without invalidating infrastructure/migration proof.
+
+This section supersedes older pre-production statements below where they conflict with the audited production state.
+
 ## Product boundary: AI Workspace vs Enterprise AI
 
 AI Workspace and Enterprise AI are distinct products that share Mkety infrastructure but do not share entitlement by accident.
@@ -114,11 +130,11 @@ The following are required before Starpips acceptance starts:
 - [x] add explicit future-commitment reminders with source-quote/date validation, idempotency, cancellation, retries and delivery-time entitlement checks;
 - [x] connect recurring Enterprise AI contract/subscription lifecycle directly to product entitlement;
 - [x] add tenant-specific versioned Enterprise AI contract pricing, included entitlements and billing-period credits;
-- [ ] execute guarded `mkety-ai-production.yml` on the exact verified main SHA and verify `ai.mkety.com`;
-- [ ] verify `api.mkety.com/v1/ai` through the production host;
-- [ ] provision and verify `mkety-ai-delivery` Queue/DLQ and scheduler worker;
+- [x] execute guarded `mkety-ai-production.yml` on exact release SHA `3c1d5eb2f8b1312b02ea733ba053fa9b6e684104` and verify `ai.mkety.com` (run `36568179070`);
+- [x] verify `api.mkety.com/v1/ai` through the production host with fail-closed unauthenticated smoke (run `36568179070`);
+- [x] provision and verify `mkety-ai-delivery` Queue/DLQ and scheduler worker (run `36568179070`);
 - [x] pre-merge implementation exact-head CI/candidate acceptance on `5e85c2331208d5c49380cec77683c352e8fcf2ad` (CI `36563958996`, migration `36563959225`, vinext `36563959181`, workspace smoke `36563959122`, public candidate `36563959073`);
-- [ ] production product-host acceptance on the exact merged `main` SHA;
+- [x] production product-host/infrastructure acceptance on release SHA `3c1d5eb2f8b1312b02ea733ba053fa9b6e684104`;
 - [ ] only then begin a real customer acceptance;
 - [ ] only after that intentionally enable production customer inference.
 
@@ -126,7 +142,7 @@ The following are required before Starpips acceptance starts:
 
 Pre-merge implementation certification is closed on code SHA `5e85c2331208d5c49380cec77683c352e8fcf2ad`. The final documentation-only reconciliation head still receives normal CI before merge, but it does not reopen the already-passed staging commercial/runtime acceptance unless executable behavior changes.
 
-Production Enterprise AI inference remains OFF. No Starpips acceptance has started. The next Enterprise AI steps require the merged main SHA: guarded production deployment, `ai.mkety.com` / `api.mkety.com/v1/ai` host verification, delivery Queue/DLQ/scheduler verification, then controlled real-customer acceptance.
+Production Enterprise AI inference remains OFF. No Starpips acceptance has started. Guarded production deployment, `ai.mkety.com` / `api.mkety.com/v1/ai` host verification, and delivery Queue/DLQ/scheduler verification are now complete on run `36568179070`. The next Enterprise AI step is controlled real-customer acceptance; inference must remain OFF until that acceptance passes.
 
 ## Mkety Mail product model
 
@@ -197,7 +213,7 @@ It reuses central Mkety identity, tenant membership, roles/PBAC, Billing and Ent
 - [x] public Mail page and checkout consume active plan version in stabilization PR;
 - [x] implementation exact-head CI for current stabilization changes on `5e85c2331208d5c49380cec77683c352e8fcf2ad`;
 - [ ] verify production `mail.mkety.com` host and current deployed SHA;
-- [ ] verify production Mail database migrations;
+- [x] verify production Mail database migrations through the successful exact-SHA shared production migration in Enterprise AI production run `36568179070`;
 - [ ] verify R2/Queue/ingress/dispatch bindings and Workers;
 - [x] customer Mail migration/portability center: contact CSV, workspace JSON, EML import, RFC822/EML export;
 - [ ] real inbound-domain test;
