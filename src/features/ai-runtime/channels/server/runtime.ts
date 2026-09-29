@@ -389,32 +389,36 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
 
   let reminderScheduled = false;
   if (pendingReminder) {
-    const reminder = await scheduleEnterpriseAiAction({
-      tenantId: input.tenantId,
-      conversationId: conversation.id,
-      solutionInstanceId: solution?.id ?? null,
-      connectionId: input.connectionId,
-      kind: 'commitment_reminder',
-      idempotencyKey: `reminder:${input.connectionId}:${input.providerMessageId}`,
-      dueAt: pendingReminder.dueAt,
-      payload: {
-        recipientId: input.replyRecipientId,
-        contextId: input.contextId,
-        text: pendingReminder.reminderText,
-        sourceProviderMessageId: input.providerMessageId,
-        commitment: pendingReminder.commitment,
-        sourceQuote: pendingReminder.sourceQuote,
-      },
-    });
-    const delaySeconds = Math.max(0, Math.ceil((pendingReminder.dueAt.getTime() - Date.now()) / 1_000));
-    if (delaySeconds <= 86_400) {
-      await enqueueEnterpriseAiScheduledAction({
-        actionId: reminder.id,
+    try {
+      const reminder = await scheduleEnterpriseAiAction({
         tenantId: input.tenantId,
-        delaySeconds,
-      }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
+        conversationId: conversation.id,
+        solutionInstanceId: solution?.id ?? null,
+        connectionId: input.connectionId,
+        kind: 'commitment_reminder',
+        idempotencyKey: `reminder:${input.connectionId}:${input.providerMessageId}`,
+        dueAt: pendingReminder.dueAt,
+        payload: {
+          recipientId: input.replyRecipientId,
+          contextId: input.contextId,
+          text: pendingReminder.reminderText,
+          sourceProviderMessageId: input.providerMessageId,
+          commitment: pendingReminder.commitment,
+          sourceQuote: pendingReminder.sourceQuote,
+        },
+      });
+      const delaySeconds = Math.max(0, Math.ceil((pendingReminder.dueAt.getTime() - Date.now()) / 1_000));
+      if (delaySeconds <= 86_400) {
+        await enqueueEnterpriseAiScheduledAction({
+          actionId: reminder.id,
+          tenantId: input.tenantId,
+          delaySeconds,
+        }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
+      }
+      reminderScheduled = true;
+    } catch {
+      responseText = 'I understood your commitment, but I could not save the reminder safely. Please ask me again to schedule it.';
     }
-    reminderScheduled = true;
   }
 
   const deliveryDelaySeconds = input.testMode
