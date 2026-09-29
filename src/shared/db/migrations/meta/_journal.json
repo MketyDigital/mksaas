@@ -239,6 +239,13 @@
       "when": 1790604600000,
       "tag": "0033_media_tenant_links",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790607600000,
+      "tag": "0034_mail_imap_uid",
+      "breakpoints": true
     }
   ]
 }
