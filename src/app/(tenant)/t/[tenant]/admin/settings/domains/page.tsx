@@ -4,6 +4,7 @@ import { listDomains } from '@/features/admin/services/domains-service';
 import { listManagedDomains } from '@/features/domains/server/managed-domain-service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
+import { DomainSearchClient } from './DomainSearchClient';
 import { DomainsClient } from './DomainsClient';
 import { ManagedDomainsClient } from './ManagedDomainsClient';
 
@@ -33,9 +34,21 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
 
       <Card>
         <CardHeader>
+          <CardTitle>Find a domain</CardTitle>
+          <CardDescription>
+            Search live availability and current Mkety registration and renewal pricing.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DomainSearchClient tenantSlug={tenant} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Registered with Mkety</CardTitle>
           <CardDescription>
-            Domains purchased through Mkety appear here with renewal and authoritative DNS status. DNS records stay live with Mkety’s managed DNS provider rather than being duplicated into the app database.
+            Domains purchased through Mkety appear here with renewal and authoritative DNS status. DNS records stay live in Mkety DNS rather than being duplicated into the app database.
           </CardDescription>
         </CardHeader>
         <CardContent>
