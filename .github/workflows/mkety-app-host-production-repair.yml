@@ -199,7 +199,6 @@ jobs:
           put_secret MKETY_AUTH_CLIENT_ID "$CLIENT_ID"
           put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
           put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
-          put_secret NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
           if [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
             [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] && [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ] || {
               echo "MKETY_DOMAIN_RELAY_URL and MKETY_DOMAIN_RELAY_SECRET must be configured together." >&2
