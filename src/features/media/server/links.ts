@@ -1,5 +1,3 @@
-'use server';
-
 import { desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
@@ -37,6 +35,7 @@ export async function saveMediaTenantLink(
   opsTenantSlug: string,
   formData: FormData,
 ) {
+  'use server';
   const actor = await requirePermission(opsTenantSlug, 'platform:plans');
   const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
   const externalWorkspaceRef = String(formData.get('externalWorkspaceRef') ?? '').trim().slice(0, 255);
