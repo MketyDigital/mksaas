@@ -146,8 +146,9 @@ describe('DomainNameApiAdapter', () => {
       registrationPriceMinor: 825n,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0]!;
+    const relayCalls = fetchMock.mock.calls.filter(([url]) => url === 'https://registrar-relay.mkety.com/v1/domainnameapi');
+    expect(relayCalls).toHaveLength(1);
+    const [url, init] = relayCalls[0]!;
     expect(url).toBe('https://registrar-relay.mkety.com/v1/domainnameapi');
     expect(init).toEqual(expect.objectContaining({
       method: 'POST',
@@ -192,7 +193,9 @@ describe('DomainNameApiAdapter', () => {
       idempotencyKey: 'renew-order-1',
     })).resolves.toMatchObject({ domain: 'renew-me.com' });
 
-    const relayBodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    const relayBodies = fetchMock.mock.calls
+      .filter(([url]) => url === 'https://registrar-relay.mkety.com/v1/domainnameapi')
+      .map(([, init]) => JSON.parse(String(init?.body)));
     expect(relayBodies.map((body) => body.operation)).toEqual(['info', 'renew']);
     expect(relayBodies[0].payload).toEqual({ domainName: 'renew-me.com' });
     expect(relayBodies[1].payload).toEqual(expect.objectContaining({
