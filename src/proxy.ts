@@ -113,7 +113,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.rewrite(url);
   }
 
-  if(hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/mail/')){
+  if(hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/')){
     const url=new URL(request.url);
     url.pathname='/api'+pathname;
     return NextResponse.rewrite(url);
