@@ -56,7 +56,7 @@ export default {
     }
   },
 
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+  async scheduled(_controller: unknown, env: Env): Promise<void> {
     await post(env, '/api/internal/ai/scheduled-actions/dispatch-due');
   },
 };
