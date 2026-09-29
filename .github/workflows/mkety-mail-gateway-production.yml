@@ -514,34 +514,82 @@ jobs:
             [ "$code" = 200 ] || { echo "DNS upsert failed for $host HTTP $code"; cat /tmp/dns-response.json; exit 1; }
           done
 
-      - name: Accept public TLS and protocol greetings
+      - name: Accept public DNS, TLS and protocol greetings
         shell: bash
+        env:
+          SERVER_IP: ${{ steps.network.outputs.server_ip }}
+          ZONE_ID: ${{ steps.network.outputs.zone_id }}
         run: |
           set -euo pipefail
-          wait_tls() {
-            host="$1"; port="$2"
-            for i in $(seq 1 40); do
-              if timeout 15 openssl s_client -connect "$host:$port" -servername "$host" -verify_return_error </dev/null >/tmp/tls.txt 2>&1; then
-                openssl s_client -connect "$host:$port" -servername "$host" </dev/null 2>/dev/null                   | openssl x509 -noout -checkhost "$host" >/dev/null
+          cf='https://api.cloudflare.com/client/v4'
+
+          verify_authoritative_dns() {
+            host="$1"
+            response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/zones/$ZONE_ID/dns_records?name=$host&type=A&per_page=100")"
+            HOST="$host" IP="$SERVER_IP" RESPONSE="$response" node <<'NODE'
+          const x=JSON.parse(process.env.RESPONSE||'{}');
+          const rows=Array.isArray(x.result)?x.result:[];
+          const matches=rows.filter(r=>
+            r.type==='A' &&
+            String(r.name||'').toLowerCase()===String(process.env.HOST||'').toLowerCase() &&
+            String(r.content||'')===process.env.IP &&
+            r.proxied===false
+          );
+          if(!x.success || matches.length!==1){
+            throw new Error('Authoritative Cloudflare DNS is not the expected single unproxied A record.');
+          }
+          NODE
+          }
+
+          wait_public_dns() {
+            host="$1"
+            for i in $(seq 1 30); do
+              response="$(curl -fsS -G -H 'Accept: application/dns-json' --data-urlencode "name=$host" --data-urlencode 'type=A' https://cloudflare-dns.com/dns-query || true)"
+              if HOST="$host" IP="$SERVER_IP" RESPONSE="$response" node <<'NODE'
+          const raw=process.env.RESPONSE||'';
+          if(!raw) process.exit(1);
+          const x=JSON.parse(raw);
+          const answers=Array.isArray(x.Answer)?x.Answer:[];
+          process.exit(answers.some(a=>Number(a.type)===1 && String(a.data||'')===process.env.IP)?0:1);
+          NODE
+              then
+                echo "$host is visible through public recursive DNS."
                 return 0
               fi
               sleep 3
             done
-            cat /tmp/tls.txt || true
+            echo "Public recursive DNS did not expose the expected A record for $host."
             return 1
           }
-          wait_tls imap.mkety.com 993
-          wait_tls smtp.mkety.com 465
 
-          printf 'a1 CAPABILITY\r\na2 LOGOUT\r\n' | timeout 15 openssl s_client -quiet -connect imap.mkety.com:993 -servername imap.mkety.com 2>/dev/null >/tmp/imap.txt || true
+          wait_tls_origin() {
+            host="$1"; port="$2"
+            for i in $(seq 1 20); do
+              if timeout 8 openssl s_client -connect "$SERVER_IP:$port" -servername "$host" -verify_hostname "$host" -verify_return_error </dev/null >/tmp/"$host"-tls.txt 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            cat /tmp/"$host"-tls.txt || true
+            return 1
+          }
+
+          verify_authoritative_dns imap.mkety.com
+          verify_authoritative_dns smtp.mkety.com
+          wait_public_dns imap.mkety.com
+          wait_public_dns smtp.mkety.com
+          wait_tls_origin imap.mkety.com 993
+          wait_tls_origin smtp.mkety.com 465
+
+          printf 'a1 CAPABILITY\r\na2 LOGOUT\r\n' | timeout 15 openssl s_client -quiet -connect "$SERVER_IP:993" -servername imap.mkety.com -verify_hostname imap.mkety.com -verify_return_error 2>/dev/null >/tmp/imap.txt || true
           grep -Fq 'IMAP4rev1' /tmp/imap.txt
           grep -Fq 'a1 OK CAPABILITY completed' /tmp/imap.txt
 
-          printf 'EHLO acceptance.mkety.com\r\nQUIT\r\n' | timeout 15 openssl s_client -quiet -connect smtp.mkety.com:465 -servername smtp.mkety.com 2>/dev/null >/tmp/smtp.txt || true
+          printf 'EHLO acceptance.mkety.com\r\nQUIT\r\n' | timeout 15 openssl s_client -quiet -connect "$SERVER_IP:465" -servername smtp.mkety.com -verify_hostname smtp.mkety.com -verify_return_error 2>/dev/null >/tmp/smtp.txt || true
           grep -Fq '220 smtp.mkety.com ESMTP Mkety Mail' /tmp/smtp.txt
           grep -Fq '250-AUTH PLAIN LOGIN' /tmp/smtp.txt
 
-          code="$(curl -sS -o /tmp/internal -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}'             https://api.mkety.com/api/internal/mail/gateway/auth)"
+          code="$(curl -sS -o /tmp/internal -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' https://api.mkety.com/api/internal/mail/gateway/auth)"
           [ "$code" = 401 ] || { echo "Gateway internal API expected fail-closed 401, got $code"; exit 1; }
 
       - name: Publish gateway infrastructure acceptance
