@@ -44,6 +44,22 @@ async function signedRelayRequest(operation: string, environment: 'production' |
   return { status: response.status, ok: response.ok, body };
 }
 
+function sanitizeProviderBody(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeProviderBody);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (/api.?key|token|password|authorization|reseller.?id|username/i.test(key)) {
+        out[key] = '[redacted]';
+      } else {
+        out[key] = sanitizeProviderBody(item);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
 async function probeBasic(environment: 'production' | 'ote', apiKey: string) {
   const label = 'mkety-' + (environment === 'production' ? 'live' : 'ote') + '-basic-' + Date.now();
   const result = await signedRelayRequest('quote-basic', environment, {
@@ -53,7 +69,12 @@ async function probeBasic(environment: 'production' | 'ote', apiKey: string) {
     tlds: 'com',
     period: 1,
   });
-  return { environment, status: result.status, ok: result.ok };
+  return {
+    environment,
+    status: result.status,
+    ok: result.ok,
+    body: sanitizeProviderBody(result.body),
+  };
 }
 
 async function probe(environment: 'production' | 'ote', apiKey: string) {
