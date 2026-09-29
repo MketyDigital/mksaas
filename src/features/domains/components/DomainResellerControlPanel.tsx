@@ -45,7 +45,7 @@ export function DomainResellerControlPanel({
         <CardHeader>
           <CardTitle>Configure / rotate DomainNameAPI</CardTitle>
           <CardDescription>
-            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use OT&amp;E until registration and renewal acceptance are complete.
+            Saving replaces the encrypted credentials immediately. No build or redeploy is required. Use the OT&amp;E Reseller ID + OT&amp;E API Key for sandbox testing; use the Live Reseller ID + Live API Key only for production.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -58,12 +58,12 @@ export function DomainResellerControlPanel({
               </select>
             </label>
             <label className="text-sm font-medium">
-              Reseller ID / username
-              <input autoComplete="off" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="username" required />
+              Reseller ID (V2, numbers only)
+              <input autoComplete="off" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="resellerId" required />
             </label>
             <label className="text-sm font-medium">
-              API token
-              <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiToken" required type="password" />
+              API Key
+              <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiKey" required type="password" />
             </label>
             <label className="text-sm font-medium">
               Custom API base URL
