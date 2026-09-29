@@ -19,6 +19,7 @@ export type EnterpriseAiChannelDescriptor = {
   supportsInbound: boolean;
   supportsOutbound: boolean;
   supportsHumanHandoff: boolean;
+  supportsCommitmentReminders: boolean;
 };
 
 export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = [
@@ -31,6 +32,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: false,
   },
   {
     key: 'whatsapp',
@@ -41,6 +43,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: false,
   },
   {
     key: 'telegram',
@@ -51,6 +54,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: true,
   },
   {
     key: 'instagram',
@@ -61,6 +65,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: false,
   },
   {
     key: 'facebook_messenger',
@@ -71,6 +76,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: false,
   },
   {
     key: 'slack',
@@ -81,6 +87,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: true,
   },
   {
     key: 'discord',
@@ -91,6 +98,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: true,
   },
   {
     key: 'linkedin_page',
@@ -101,6 +109,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: false,
+    supportsCommitmentReminders: false,
   },
   {
     key: 'microsoft_teams',
@@ -111,6 +120,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: false,
     supportsOutbound: true,
     supportsHumanHandoff: true,
+    supportsCommitmentReminders: false,
   },
   {
     key: 'custom_webhook',
@@ -121,6 +131,7 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsInbound: true,
     supportsOutbound: true,
     supportsHumanHandoff: false,
+    supportsCommitmentReminders: true,
   },
 ] as const;
 
