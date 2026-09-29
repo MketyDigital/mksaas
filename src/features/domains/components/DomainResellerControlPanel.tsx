@@ -129,19 +129,19 @@ export function DomainResellerControlPanel({
             </label>
             <label className="text-sm font-medium">
               Cloudflare account ID
-              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.accountId ?? '')} name="accountId" required />
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? '')} name="accountId" required />
             </label>
             <label className="text-sm font-medium">
               Cloudflare for SaaS zone ID
-              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.saasZoneId ?? '')} name="saasZoneId" required />
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.saasZoneId ?? process.env.MKETY_SAAS_ZONE_ID ?? '')} name="saasZoneId" required />
             </label>
             <label className="text-sm font-medium">
               mkety.app DNS zone ID
-              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.appZoneId ?? '')} name="appZoneId" required />
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.appZoneId ?? process.env.MKETY_APP_ZONE_ID ?? '')} name="appZoneId" required />
             </label>
             <label className="text-sm font-medium">
               SaaS CNAME target
-              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.cnameTarget ?? '')} name="cnameTarget" placeholder="origin.example.com" required />
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.cnameTarget ?? process.env.MKETY_SAAS_CNAME_TARGET ?? '')} name="cnameTarget" placeholder="origin.example.com" required />
             </label>
             <label className="text-sm font-medium">
               Minimum TLS
