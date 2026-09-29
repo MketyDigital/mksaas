@@ -2,8 +2,6 @@ export async function fetchMailContent(key:string){
   const url=process.env.MKETY_MAIL_CONTENT_URL||'';
   const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
   if(!url||!secret||!key) return null;
-  const bodyBytes=new Uint8Array(bytes.byteLength);
-  bodyBytes.set(bytes);
   const response=await fetch(url,{
     method:'POST',
     headers:{authorization:`Bearer ${secret}`,'content-type':'application/json'},
@@ -61,6 +59,8 @@ export async function storeMailContent(
   if(bytes.byteLength<=0||bytes.byteLength>25_000_000){
     throw new Error('Mail content is outside the supported migration size.');
   }
+  const bodyBytes=new Uint8Array(bytes.byteLength);
+  bodyBytes.set(bytes);
   const response=await fetch(url,{
     method:'POST',
     headers:{
