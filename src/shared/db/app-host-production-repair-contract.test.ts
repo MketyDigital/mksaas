@@ -9,13 +9,13 @@ const WORKFLOW_PATH = path.resolve(
 );
 
 describe('app.mkety.com production repair workflow', () => {
-  it('pins an exact hotfix SHA and isolates the repair to the dedicated app Worker', async () => {
+  it('pins an exact current main SHA and isolates the promotion to the dedicated app Worker', async () => {
     const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
     expect(workflow).toContain('verified_sha');
     expect(workflow).toContain('REPAIR APP.MKETY.COM');
     expect(workflow).toContain('APP_WORKER_NAME: mkety-app-host');
-    expect(workflow).toContain('HOTFIX_PR_REF: refs/pull/160/head');
+    expect(workflow).toContain('RELEASE_BRANCH: main');
     expect(workflow).toContain('MKETY_HYPERDRIVE_NAME: mkety-production-db-v2');
     expect(workflow).not.toContain('APP_WORKER_NAME: mkety-platform');
   });
