@@ -2,6 +2,20 @@
 
 Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4` (PR #172).
 
+## 2026-09-29 stabilization implementation progress
+
+- Draft PR #173 is the active pre-Starpips stabilization branch.
+- AI Workspace and Enterprise AI are explicitly separate product entitlements and user experiences. Shared identity, PBAC, billing, credits and runtime are platform primitives only.
+- Tenant navigation has been simplified into Workspace / Products / Account; Admin exposes direct Product Operations entries.
+- Public/app/product host separation is being enforced for `mkety.com`, `app.mkety.com`, `mail.mkety.com`, `ai.mkety.com` and `api.mkety.com`.
+- Mail pricing is moving to active immutable database billing versions; Admin changes create a new version instead of rewriting history.
+- Paid entitlements now fail closed after the paid period/grace window rather than treating paused or indefinitely past-due subscriptions as active.
+- Enterprise AI solution settings now have real editable system instructions, approved solution knowledge, managed model selection and global pause state.
+- Enterprise AI channel connections now support binding to a tenant-owned solution instance; the managed channel runtime consumes that solution's instructions/knowledge/model/pause and includes hidden context in reservation estimates.
+- Dedicated customer setup/readiness runbook: `docs/MKETY_MAIL_ENTERPRISE_AI_CUSTOMER_SETUP_RUNBOOK.md`.
+- Still incomplete before first Enterprise AI customer: deterministic playground/test flow, request/run logs, persisted conversations/messages, per-conversation human handoff/resume, recurring Enterprise AI contract-to-entitlement bridge, and production host acceptance for `ai.mkety.com` / `api.mkety.com/v1/ai`.
+- Starpips production acceptance remains blocked until this stabilization checklist is closed.
+
 ## Current production truth
 
 - PR #159 is merged. The Enterprise AI / Platform / Mail / Domains implementation is no longer a pending completion candidate.
