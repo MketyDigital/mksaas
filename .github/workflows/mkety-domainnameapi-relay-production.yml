@@ -1,12 +1,6 @@
 name: Mkety DomainNameAPI Relay Production
 
 on:
-  push:
-    branches:
-      - feat/enterprise-ai-complete-platform-20260928
-    paths:
-      - .github/workflows/mkety-domainnameapi-relay-production.yml
-      - ops/domainnameapi-relay/**
   workflow_dispatch:
     inputs:
       verified_sha:
