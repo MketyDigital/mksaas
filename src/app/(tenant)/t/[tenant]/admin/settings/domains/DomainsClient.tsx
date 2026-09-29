@@ -9,6 +9,19 @@ interface Props {
   initialDomains: CustomDomain[];
 }
 
+function domainSetup(value: string | null) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as {
+      cnameTarget?: string;
+      ownershipVerification?: { type?: string; name?: string; value?: string } | null;
+    };
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function DomainsClient({ tenantSlug, initialDomains }: Props) {
   const [domains, setDomains] = useState(initialDomains);
   const [hostname, setHostname] = useState('');
@@ -67,36 +80,57 @@ export function DomainsClient({ tenantSlug, initialDomains }: Props) {
         {domains.length === 0 ? (
           <p className="text-sm text-muted-foreground">No custom domains have been added.</p>
         ) : (
-          domains.map((domain) => (
-            <div key={domain.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-medium">{domain.hostname}</p>
-                <p className="text-xs text-muted-foreground capitalize">
-                  {domain.status} · Mkety managed
-                </p>
+          domains.map((domain) => {
+            const setup = domainSetup(domain.verification);
+            return (
+              <div key={domain.id} className="rounded-lg border p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{domain.hostname}</p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {domain.status} · Mkety managed
+                    </p>
+                    {domain.status !== 'verified' && setup?.cnameTarget ? (
+                      <div className="mt-3 rounded-md bg-muted/40 p-3 text-xs">
+                        <p className="font-medium text-foreground">DNS target</p>
+                        <p className="mt-1 break-all font-mono text-muted-foreground">{setup.cnameTarget}</p>
+                        {setup.ownershipVerification?.name && setup.ownershipVerification?.value ? (
+                          <>
+                            <p className="mt-3 font-medium text-foreground">
+                              {setup.ownershipVerification.type?.toUpperCase() || 'Verification'} record
+                            </p>
+                            <p className="mt-1 break-all font-mono text-muted-foreground">
+                              {setup.ownershipVerification.name} → {setup.ownershipVerification.value}
+                            </p>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    {domain.status !== 'verified' && (
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => call('PUT', { hostname: domain.hostname })}
+                        className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                      >
+                        Verify
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => call('DELETE', { hostname: domain.hostname })}
+                      className="rounded-md border px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-2">
-                {domain.status !== 'verified' && (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => call('PUT', { hostname: domain.hostname })}
-                    className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                  >
-                    Verify
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={() => call('DELETE', { hostname: domain.hostname })}
-                  className="rounded-md border px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
