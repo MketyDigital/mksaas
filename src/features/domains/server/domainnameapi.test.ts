@@ -45,6 +45,7 @@ describe('DomainNameApiAdapter', () => {
           domainName: 'example.com',
           period: 1,
         }),
+        headers: expect.not.objectContaining({ Authorization: expect.anything() }),
       }),
     );
   });
@@ -64,7 +65,11 @@ describe('DomainNameApiAdapter', () => {
       environment: 'ote',
     });
     await expect(adapter.quote('hello.com')).resolves.toMatchObject({ available: true });
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/domain/check?'))).toBe(true);
+    const legacyCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/domain/check?'));
+    expect(legacyCall).toBeDefined();
+    expect(legacyCall?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: expect.stringMatching(/^Basic /) }),
+    }));
   });
 
   it('does not hide v1 authentication failures behind endpoint fallbacks', async () => {
