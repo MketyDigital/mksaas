@@ -1,4 +1,9 @@
-import { type DomainQuote, getDomainResellerAdapter, type RegisteredDomain } from './reseller';
+import {
+  type DomainQuote,
+  type DomainRegistrationContact,
+  getDomainResellerAdapter,
+  type RegisteredDomain,
+} from './reseller';
 
 function years(value: number) {
   if (!Number.isInteger(value) || value < 1 || value > 10) {
@@ -14,7 +19,7 @@ export async function quoteDomainRegistration(domain: string, registrationYears 
 export async function registerDomainAfterVerifiedSettlement(input: {
   domain: string;
   years: number;
-  contactRef: string;
+  contact: DomainRegistrationContact;
   orderId: string;
   settlementVerified: boolean;
 }): Promise<RegisteredDomain> {
@@ -22,12 +27,14 @@ export async function registerDomainAfterVerifiedSettlement(input: {
     throw new Error('Domain registration requires verified settlement.');
   }
   if (!input.orderId.trim()) throw new Error('Domain registration order ID is required.');
-  if (!input.contactRef.trim()) throw new Error('Domain registrant contact reference is required.');
+  if (!input.contact.firstName.trim() || !input.contact.lastName.trim() || !input.contact.email.trim()) {
+    throw new Error('Domain registrant contact details are required.');
+  }
 
   return (await getDomainResellerAdapter()).register({
     domain: input.domain,
     years: years(input.years),
-    contactRef: input.contactRef.trim(),
+    contact: input.contact,
     idempotencyKey: `domain-register:${input.orderId.trim()}`,
   });
 }
