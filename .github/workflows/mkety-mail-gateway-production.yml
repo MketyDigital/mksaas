@@ -219,6 +219,25 @@ jobs:
           fi
           [ -n "$server_address" ] || { echo 'Coolify server address unavailable.'; exit 1; }
 
+          normalize_server_host() {
+            VALUE="$1" node - <<'NODE'
+          const raw=String(process.env.VALUE||'').trim();
+          let value=raw;
+          value=value.replace(/^[a-z][a-z0-9+.-]*:\/\//i,'');
+          value=value.replace(/^[^@/]+@/,'');
+          value=value.replace(/\/.*$/,'');
+          if(value.startsWith('[') && value.includes(']')){
+            value=value.slice(1,value.indexOf(']'));
+          } else {
+            value=value.replace(/:\d+$/,'');
+          }
+          process.stdout.write(value);
+          NODE
+          }
+
+          server_host="$(normalize_server_host "$server_address")"
+          [ -n "$server_host" ] || { echo 'Coolify server host unavailable after normalization.'; exit 1; }
+
           resolve_ipv4() {
             value="$1"
             if VALUE="$value" node -e "const net=require('node:net');process.exit(net.isIP(process.env.VALUE)===4?0:1)"; then
@@ -227,7 +246,7 @@ jobs:
             fi
             getent ahostsv4 "$value" 2>/dev/null | awk 'NR==1 {print $1}'
           }
-          server_ip="$(resolve_ipv4 "$server_address" || true)"
+          server_ip="$(resolve_ipv4 "$server_host" || true)"
           [ -n "$server_ip" ] || { echo 'Coolify server address did not resolve to IPv4.'; exit 1; }
 
           IP="$server_ip" node - <<'NODE'
