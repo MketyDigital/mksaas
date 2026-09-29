@@ -3,8 +3,8 @@ import type { DomainQuote, DomainResellerAdapter, RegisteredDomain } from './res
 type DomainNameApiEnvironment = 'ote' | 'production';
 
 export interface DomainNameApiConfig {
-  username: string;
-  apiToken: string;
+  resellerId: string;
+  apiKey: string;
   environment?: DomainNameApiEnvironment;
   baseUrl?: string;
   nameServers?: string[];
@@ -81,7 +81,7 @@ function successStatus(value: unknown) {
 
 export class DomainNameApiAdapter implements DomainResellerAdapter {
   private readonly baseUrl: string;
-  private readonly auth: string;
+  private readonly legacyAuth: string;
 
   constructor(private readonly config: DomainNameApiConfig) {
     const environment = config.environment ?? 'ote';
@@ -89,17 +89,17 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       ?? (environment === 'production'
         ? 'https://api.domainresellerapi.com'
         : 'https://ote.domainresellerapi.com')).replace(/\/+$/, '');
-    if (!config.username.trim() || !config.apiToken.trim()) {
-      throw new Error('DomainNameAPI username and API token are required.');
+    if (!config.resellerId.trim() || !config.apiKey.trim()) {
+      throw new Error('DomainNameAPI Reseller ID and API Key are required.');
     }
-    this.auth = `Basic ${base64(`${config.username.trim()}:${config.apiToken.trim()}`)}`;
+    this.legacyAuth = `Basic ${base64(`${config.resellerId.trim()}:${config.apiKey.trim()}`)}`;
   }
 
-  private async request(path: string, init: RequestInit) {
+  private async request(path: string, init: RequestInit, authMode: 'v2' | 'legacy-basic' = 'v2') {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
-        Authorization: this.auth,
+        ...(authMode === 'legacy-basic' ? { Authorization: this.legacyAuth } : {}),
         Accept: 'application/json',
         'Content-Type': 'application/json',
         ...init.headers,
@@ -121,8 +121,8 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       const legacyBody = path.startsWith('/v1/domain/')
         ? {
             ...body,
-            resellerId: this.config.username.trim(),
-            apiKey: this.config.apiToken.trim(),
+            resellerId: this.config.resellerId.trim(),
+            apiKey: this.config.apiKey.trim(),
           }
         : body;
       const { response, payload } = await this.request(path, {
@@ -151,8 +151,8 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     const v1 = await this.request('/v1/domain/check', {
       method: 'POST',
       body: JSON.stringify({
-        resellerId: this.config.username.trim(),
-        apiKey: this.config.apiToken.trim(),
+        resellerId: this.config.resellerId.trim(),
+        apiKey: this.config.apiKey.trim(),
         domainName: domain,
         period: years,
       }),
@@ -166,7 +166,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
         period: String(years),
         command: 'create',
       });
-      const legacyBasic = await this.request(`/api/domain/check?${params.toString()}`, { method: 'GET' });
+      const legacyBasic = await this.request(`/api/domain/check?${params.toString()}`, { method: 'GET' }, 'legacy-basic');
       if (legacyBasic.response.ok) {
         payload = legacyBasic.payload;
       } else if (legacyBasic.response.status === 404 || legacyBasic.response.status === 405) {
