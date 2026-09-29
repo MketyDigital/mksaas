@@ -60,12 +60,46 @@ jobs:
           echo "::add-mask::$derived"
           echo "MKETY_DOMAIN_RELAY_SECRET=$derived" >> "$GITHUB_ENV"
 
+      - name: Verify relay health
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsS --connect-timeout 5 --max-time 15 "$MKETY_DOMAIN_RELAY_URL/health" -o /tmp/relay-health.json
+          node -e "const x=require('/tmp/relay-health.json');if(x.ok!==true)process.exit(1)"
+
       - name: Verify Live and OT&E through fixed OCI egress
         shell: bash
         run: |
           set -euo pipefail
           pnpm exec tsx scripts/verify-domainnameapi-relay-readonly.ts | tee /tmp/domainnameapi-relay-acceptance.json
           node -e "const x=require('/tmp/domainnameapi-relay-acceptance.json');if(x.ok!==true||x.transport!=='fixed-egress-relay'||x.mutationPerformed!==false)process.exit(1)"
+
+      - name: Capture safe relay logs on failure
+        if: failure()
+        shell: bash
+        env:
+          COOLIFY_URL: https://deploy.mkety.com
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json || exit 0
+          uuid="$(node - <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const list=Array.isArray(x)?x:Array.isArray(x.data)?x.data:[];
+          const app=list.find(v=>v?.name==='mkety-domainnameapi-relay');
+          process.stdout.write(app?.uuid||'');
+          NODE
+          )"
+          [ -n "$uuid" ] || exit 0
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid/logs?lines=120&show_timestamps=false" -o /tmp/relay-logs.json || exit 0
+          node <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/relay-logs.json','utf8'));
+          const raw=String(x.logs||'');
+          const safe=raw.split(/\r?\n/).filter(line => /listening|OUTBOUND_IP|upstream_failure|body_too_large|replayed_or_invalid_nonce|unsupported_operation|invalid_environment|missing_provider_credentials/i.test(line)).slice(-40);
+          if (safe.length) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'\n### Relay diagnostic log\n\n```text\n'+safe.join('\n')+'\n```\n');
+          NODE
 
       - name: Publish fixed-egress evidence
         if: always()
