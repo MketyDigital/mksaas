@@ -6,12 +6,12 @@ function required(name: string) {
   return value;
 }
 
-const username = required('DOMAINNAMEAPI_LIVE_USERNAME');
-const apiToken = required('DOMAINNAMEAPI_LIVE_API_TOKEN');
+const resellerId = required('DOMAINNAMEAPI_LIVE_USERNAME');
+const apiKey = required('DOMAINNAMEAPI_LIVE_API_TOKEN');
 
 const adapter = new DomainNameApiAdapter({
-  username,
-  apiToken,
+  resellerId,
+  apiKey,
   environment: 'production',
   whoisPrivacy: true,
 });
