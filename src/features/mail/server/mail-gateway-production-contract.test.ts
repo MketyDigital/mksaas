@@ -8,6 +8,10 @@ describe('Mkety Mail gateway production contract', () => {
   const workflowPath = path.join(root, '.github/workflows/mkety-mail-gateway-production.yml');
   const gateway = fs.readFileSync(gatewayPath, 'utf8');
   const workflow = fs.readFileSync(workflowPath, 'utf8');
+  const gatewayAuth = fs.readFileSync(
+    path.join(root, 'src/features/mail/server/gateway-auth.ts'),
+    'utf8',
+  );
 
   it('keeps the gateway runtime syntax-valid and stateless', () => {
     const check = spawnSync(process.execPath, ['--check', gatewayPath], { encoding: 'utf8' });
@@ -49,6 +53,16 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Coolify server payload exposed no public IPv4');
   });
 
+  it('reconciles supported host firewalls before public gateway acceptance', () => {
+    expect(workflow).toContain('Reconcile host firewall for IMAPS and SMTPS');
+    expect(workflow).toContain('/security/keys/$key_uuid');
+    expect(workflow).toContain("ufw allow 993/tcp");
+    expect(workflow).toContain("ufw allow 465/tcp");
+    expect(workflow).toContain("firewall-cmd --permanent --add-port=993/tcp");
+    expect(workflow).toContain("firewall-cmd --permanent --add-port=465/tcp");
+    expect(workflow).toContain("Host does not show published listeners for 993/465");
+  });
+
   it('requires authoritative/public DNS plus trusted origin TLS and protocol greetings', () => {
     expect(workflow).toContain('Accept public DNS, TLS and protocol greetings');
     expect(workflow).toContain("r.proxied===false");
@@ -58,6 +72,13 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain("grep -Fq 'IMAP4rev1'");
     expect(workflow).toContain("grep -Fq '250-AUTH PLAIN LOGIN'");
     expect(workflow).toContain('Gateway internal API expected fail-closed 401');
+  });
+
+
+  it('rechecks active Mail commercial access for every external-client login', () => {
+    expect(gatewayAuth).toContain("entitlement: 'workspace.mail'");
+    expect(gatewayAuth).toContain("eq(mailWorkspaces.status, 'active')");
+    expect(gatewayAuth).toContain('if (!workspace || !entitled || !mailbox) return null;');
   });
 
   it('does not silently expose external clients before functional acceptance', () => {
