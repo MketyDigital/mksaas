@@ -7,6 +7,7 @@ import {
   completeEnterpriseAiScheduledAction,
   failEnterpriseAiScheduledAction,
   markEnterpriseAiConversationOutbound,
+  markEnterpriseAiScheduledActionReconciliationRequired,
   recordEnterpriseAiMessage,
   type EnterpriseAiScheduledPayload,
 } from '@/features/ai-runtime/channels/server/conversations';
@@ -71,7 +72,7 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
     ),
   });
   if (!action) return { ok: false as const, reason: 'not_found' as const };
-  if (['sent', 'cancelled', 'failed'].includes(action.status)) {
+  if (['sent', 'cancelled', 'failed', 'reconciliation_required'].includes(action.status)) {
     return { ok: true as const, duplicate: true as const, status: action.status };
   }
   if (action.dueAt.getTime() > now.getTime()) {
@@ -80,6 +81,8 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
 
   const claimed = await claimEnterpriseAiScheduledAction(action.id, action.tenantId, now);
   if (!claimed) return { ok: true as const, duplicate: true as const, status: 'claimed' };
+
+  let providerDispatchStarted = false;
 
   try {
     const runtimePolicy = await getEnterpriseAiRuntimePolicy();
@@ -150,6 +153,7 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
     if (!payload) throw new Error('scheduled_payload_invalid');
 
     const credentials = revealChannelCredentials(connection.secretRef);
+    providerDispatchStarted = true;
     const delivery = await deliverEnterpriseAiChannelMessage(
       {
         channel: channel.key,
@@ -187,13 +191,22 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
   } catch (error) {
     const attempts = Number(claimed.attempts ?? 1);
     const message = error instanceof Error ? error.message : 'scheduled_delivery_failed';
-    await failEnterpriseAiScheduledAction(
-      action.id,
-      action.tenantId,
-      attempts,
-      action.maxAttempts,
-      message,
-    );
+
+    if (providerDispatchStarted) {
+      await markEnterpriseAiScheduledActionReconciliationRequired(
+        action.id,
+        action.tenantId,
+        message,
+      );
+    } else {
+      await failEnterpriseAiScheduledAction(
+        action.id,
+        action.tenantId,
+        attempts,
+        action.maxAttempts,
+        message,
+      );
+    }
     throw error;
   }
 }
