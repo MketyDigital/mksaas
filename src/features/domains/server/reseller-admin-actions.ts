@@ -29,8 +29,8 @@ export async function getDomainResellerConnections() {
 export async function saveDomainNameApiConnection(tenantSlug: string, formData: FormData) {
   const actor = await requireDomainOps(tenantSlug);
   const mode = String(formData.get('mode') ?? 'ote') === 'production' ? 'production' : 'ote';
-  const resellerId = String(formData.get('resellerId') ?? '').trim();
-  const apiKey = String(formData.get('apiKey') ?? '').trim();
+  let resellerId = String(formData.get('resellerId') ?? '').trim();
+  let apiKey = String(formData.get('apiKey') ?? '').trim();
   const endpointUrl = String(formData.get('endpointUrl') ?? '').trim();
   const registrationMarkupPercent = Number(formData.get('registrationMarkupPercent') ?? 0);
   const renewalMarkupPercent = Number(formData.get('renewalMarkupPercent') ?? 0);
@@ -41,8 +41,18 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
 
-  if (!resellerId) throw new Error('DomainNameAPI V2 Reseller ID is required.');
-  if (!apiKey) throw new Error('DomainNameAPI V2 API Key is required.');
+  if (!resellerId || !apiKey) {
+    const existing = await getActivePlatformServiceConnection({
+      serviceKey: 'domains',
+      providerKey: 'domainnameapi',
+    });
+    if (existing?.mode === mode) {
+      resellerId ||= String(existing.secret.resellerId ?? existing.secret.username ?? '').trim();
+      apiKey ||= String(existing.secret.apiKey ?? existing.secret.apiToken ?? '').trim();
+    }
+  }
+  if (!resellerId) throw new Error('Registrar Reseller ID is required for this environment.');
+  if (!apiKey) throw new Error('Registrar API key is required for this environment.');
   if (endpointUrl) new URL(endpointUrl);
   for (const [label, value] of [
     ['Registration markup', registrationMarkupPercent],
