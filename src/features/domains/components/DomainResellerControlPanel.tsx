@@ -62,11 +62,11 @@ export function DomainResellerControlPanel({
             </label>
             <label className="text-sm font-medium">
               Registrar Reseller ID
-              <input autoComplete="off" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="resellerId" required />
+              <input autoComplete="off" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="resellerId" placeholder={current ? 'Leave blank to keep the current Reseller ID' : 'Required'} required={!current} />
             </label>
             <label className="text-sm font-medium">
               Registrar API key
-              <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiKey" required type="password" />
+              <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiKey" placeholder={current ? 'Leave blank to keep the encrypted key' : 'Required'} required={!current} type="password" />
             </label>
             <label className="text-sm font-medium">
               Custom API base URL
