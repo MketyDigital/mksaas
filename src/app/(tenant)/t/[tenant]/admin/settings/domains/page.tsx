@@ -1,9 +1,11 @@
 import { Globe2 } from 'lucide-react';
 
 import { listDomains } from '@/features/admin/services/domains-service';
+import { listManagedDomains } from '@/features/domains/server/managed-domain-service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 import { DomainsClient } from './DomainsClient';
+import { ManagedDomainsClient } from './ManagedDomainsClient';
 
 interface DomainsPageProps {
   params: Promise<{ tenant: string }>;
@@ -11,7 +13,10 @@ interface DomainsPageProps {
 
 export default async function DomainsPage({ params }: DomainsPageProps) {
   const { tenant } = await params;
-  const result = await listDomains(tenant);
+  const [result, managedDomains] = await Promise.all([
+    listDomains(tenant),
+    listManagedDomains(tenant).catch(() => []),
+  ]);
   const domains = result.success && Array.isArray(result.data) ? result.data : [];
 
   return (
@@ -25,6 +30,18 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
           Connect your own domain to this workspace through Mkety-managed routing and HTTPS.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Registered with Mkety</CardTitle>
+          <CardDescription>
+            Domains purchased through Mkety appear here with renewal and authoritative DNS status. DNS records stay live with Mkety’s managed DNS provider rather than being duplicated into the app database.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ManagedDomainsClient tenantSlug={tenant} initialDomains={managedDomains} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
