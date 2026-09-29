@@ -6,7 +6,7 @@ import { getTenantSettings } from '@/features/admin/services/settings-service';
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
 import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
-import { getActiveEnterpriseAiContract } from '@/features/ai-runtime/server/enterprise-contracts';
+import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import {
   listEnterpriseAiSolutionInstances,
   listEnterpriseAiSolutionTemplates,
@@ -31,7 +31,9 @@ export default async function EnterpriseAiConsolePage({
   if (!tenant) redirect('/select-tenant');
 
   if (!(await hasEnterpriseAiAccess(tenant.id))) {
-    const contract = await getActiveEnterpriseAiContract(tenant.id);
+    const contractState = await getEnterpriseAiContractBillingState(tenant.id);
+    const contract = contractState.contract;
+    const paymentPending = contractState.subscription?.status === 'pending_payment';
     return (
       <div className="mx-auto max-w-3xl space-y-4 py-8">
         <Card className="rounded-3xl">
@@ -53,14 +55,20 @@ export default async function EnterpriseAiConsolePage({
                   <p className="mt-2 text-sm text-muted-foreground">{contract.planDescription}</p>
                   <p className="mt-3 text-xs text-muted-foreground">{contract.includedCredits.toString()} included credits per billing period · {contract.entitlements.length} included capabilities</p>
                 </div>
-                <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-[1fr_auto]" method="post">
-                  <select className="rounded-xl border bg-background px-3 py-3 text-sm" defaultValue="nowpayments" name="provider">
-                    <option value="nowpayments">Crypto / NOWPayments</option>
-                    <option value="flutterwave">Card / bank · Flutterwave</option>
-                    <option value="kora">Card / bank · Kora</option>
-                  </select>
-                  <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Pay & activate Enterprise AI</button>
-                </form>
+                {paymentPending ? (
+                  <p className="rounded-xl border bg-amber-500/5 p-3 text-sm">
+                    A payment is already awaiting confirmation. Complete that checkout or allow it to reach a terminal state before starting another.
+                  </p>
+                ) : (
+                  <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-[1fr_auto]" method="post">
+                    <select className="rounded-xl border bg-background px-3 py-3 text-sm" defaultValue="nowpayments" name="provider">
+                      <option value="nowpayments">Crypto / NOWPayments</option>
+                      <option value="flutterwave">Card / bank · Flutterwave</option>
+                      <option value="kora">Card / bank · Kora</option>
+                    </select>
+                    <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Pay & activate Enterprise AI</button>
+                  </form>
+                )}
                 <p className="text-xs text-muted-foreground">If payment is later overdue, Enterprise AI follows the contract period and configured grace window, then stops inference while preserving your setup.</p>
               </>
             ) : (
