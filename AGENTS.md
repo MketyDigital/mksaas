@@ -4045,7 +4045,7 @@ This section is newer than the earlier Enterprise AI override above and resolves
 - Discord is an authenticated conversational channel. LinkedIn support is limited to approved Page Community organization comment/mention workflows; do not claim unrestricted LinkedIn inbox or direct-message access.
 - Microsoft Teams inbound is not yet part of the production contract. Current Teams support is outbound workflow/webhook delivery until a Bot Framework identity path is implemented and verified.
 - The managed Workers AI benchmark set is Gemma 4 26B A4B, GLM-5.3 Flash, and Qwen 3.8 27B. Gemma remains the initial managed candidate; the second managed model must be selected from recorded benchmark evidence rather than documentation preference.
-- Production managed customer inference remains fail-closed. `customerInferenceEnabled` must stay off until the paid benchmark, tiny real AI Gateway/accounting acceptance, real customer-domain white-label/isolation acceptance, registrar/reseller adapter verification, and guarded production promotion are all recorded.
+- Production managed customer inference remains fail-closed. The paid managed-model benchmark, tiny real AI Gateway/accounting acceptance, registrar/reseller fixed-egress verification, and guarded Enterprise AI infrastructure promotion are already recorded as accepted in the current status/continuation evidence. `customerInferenceEnabled` must remain OFF until the controlled first real-customer acceptance verifies the customer hostname/white-label isolation and end-to-end commercial/runtime behavior, followed by an explicit intentional inference-enable decision.
 
 
 
