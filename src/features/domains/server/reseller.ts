@@ -85,6 +85,10 @@ export async function getDomainResellerAdapter(): Promise<DomainResellerAdapter>
     baseUrl: connection.endpointUrl ?? undefined,
     nameServers,
     whoisPrivacy: config.whoisPrivacy !== false,
+    registrationMarkupPercent: Number(config.registrationMarkupPercent ?? 0),
+    renewalMarkupPercent: Number(config.renewalMarkupPercent ?? 0),
+    registrationFixedMarkupMinor: BigInt(Math.max(0, Number(config.registrationFixedMarkupMinor ?? 0))),
+    renewalFixedMarkupMinor: BigInt(Math.max(0, Number(config.renewalFixedMarkupMinor ?? 0))),
     relayUrl: process.env.MKETY_DOMAIN_RELAY_URL,
     relaySecret: process.env.MKETY_DOMAIN_RELAY_SECRET,
     relaySecretSeed: process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY
