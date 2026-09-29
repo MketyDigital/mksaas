@@ -124,7 +124,7 @@ export async function saveCloudflareDomainRoutingConnection(tenantSlug: string, 
       serviceKey: 'domains',
       providerKey: 'cloudflare-saas',
     });
-    apiToken = String(existing?.secret.apiToken ?? '').trim();
+    apiToken = String(existing?.secret.apiToken ?? process.env.CLOUDFLARE_API_TOKEN ?? '').trim();
   }
   if (!apiToken) throw new Error('Cloudflare API token is required for first-time configuration.');
 
