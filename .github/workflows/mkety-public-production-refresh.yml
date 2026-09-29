@@ -1,0 +1,164 @@
+name: Mkety Public Production Refresh
+
+on:
+  push:
+    branches:
+      - release/production-finalize-20260929
+    paths:
+      - .github/workflows/mkety-public-production-refresh.yml
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: 3e6518ce70dcf7bb0f68feb3cbda1ef8221dc119
+  PRODUCTION_WORKER_NAME: mkety-platform
+  APP_WORKER_NAME: mkety-app-host
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Authorize merged-main refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${{ github.ref_name }}" = "release/production-finalize-20260929" ] || exit 1
+          main_head="$(git ls-remote https://github.com/MketyDigital/mksaas refs/heads/main | awk '{print $1}')"
+          [ "$main_head" = "$TARGET_SHA" ] || {
+            echo "Refusing production refresh: TARGET_SHA is not current main." >&2
+            exit 1
+          }
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || {
+            echo "Cloudflare production credentials are required." >&2
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Snapshot production Custom Domain ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/tmp/domains-before.json
+          DOMAINS="$(cat /tmp/domains-before.json)" node <<'NODE'
+          const p=JSON.parse(process.env.DOMAINS||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Custom Domain lookup failed');
+          const owner=(host)=>p.result.find(x=>x.hostname===host)?.service||null;
+          if(owner('mkety.com')!=='mkety-platform') throw new Error('mkety.com is not owned by mkety-platform');
+          if(owner('www.mkety.com')!=='mkety-platform') throw new Error('www.mkety.com is not owned by mkety-platform');
+          if(owner('app.mkety.com')!=='mkety-app-host') throw new Error('app.mkety.com is not owned by mkety-app-host');
+          NODE
+
+      - name: Resolve production Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HD="$response" NAME="$MKETY_HYPERDRIVE_NAME" node <<'NODE' >/tmp/hd-id
+          const p=JSON.parse(process.env.HD||'{}');
+          const matches=(p.result||[]).filter(x=>x.name===process.env.NAME);
+          if(!p.success||matches.length!==1) throw new Error('Expected exactly one production Hyperdrive');
+          process.stdout.write(matches[0].id);
+          NODE
+          echo "id=$(cat /tmp/hd-id)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure production Worker without routing mutation
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const p='wrangler.jsonc';
+          const c=JSON.parse(fs.readFileSync(p,'utf8'));
+          c.name=process.env.PRODUCTION_WORKER_NAME;
+          c.workers_dev=false;
+          c.preview_urls=false;
+          c.keep_vars=true;
+          c.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          delete c.route;
+          delete c.routes;
+          fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');
+          NODE
+
+      - name: Build and deploy merged main
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm build
+          for attempt in 1 2 3; do
+            if pnpm run deploy 2>&1 | tee /tmp/public-refresh.log; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep "$((attempt*10))"; fi
+          done
+          exit 1
+
+      - name: Verify Custom Domain ownership unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/tmp/domains-after.json
+          DOMAINS="$(cat /tmp/domains-after.json)" node <<'NODE'
+          const p=JSON.parse(process.env.DOMAINS||'{}');
+          if(!p.success||!Array.isArray(p.result)) throw new Error('Custom Domain lookup failed');
+          const owner=(host)=>p.result.find(x=>x.hostname===host)?.service||null;
+          if(owner('mkety.com')!=='mkety-platform') throw new Error('mkety.com ownership changed');
+          if(owner('www.mkety.com')!=='mkety-platform') throw new Error('www.mkety.com ownership changed');
+          if(owner('app.mkety.com')!=='mkety-app-host') throw new Error('app.mkety.com ownership changed');
+          NODE
+
+      - name: Smoke public Mkety Domains and app isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            home="$(curl -fsS --connect-timeout 10 --max-time 30 https://mkety.com/ || true)"
+            domains="$(curl -fsS --connect-timeout 10 --max-time 30 https://mkety.com/domains || true)"
+            if printf '%s' "$domains" | grep -q 'Mkety Domains'               && printf '%s' "$domains" | grep -q 'DNS'               && printf '%s' "$home" | grep -q 'Mkety'; then
+              break
+            fi
+            [ "$attempt" -lt 30 ] || { echo "Public Domains presentation did not become ready." >&2; exit 1; }
+            sleep 5
+          done
+          root_headers=/tmp/app-root.headers
+          code="$(curl -sS -D "$root_headers" -o /dev/null -w '%{http_code}' https://app.mkety.com/)"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$root_headers")"
+          [ "$code" -ge 300 ] && [ "$code" -lt 400 ] || exit 1
+          LOCATION="$location" node -e "const u=new URL(process.env.LOCATION,'https://app.mkety.com/');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/app')process.exit(1)"
+
+      - name: Publish refresh evidence
+        shell: bash
+        run: |
+          {
+            echo '## Mkety public production refresh'
+            echo
+            echo "- Source: main @ $TARGET_SHA"
+            echo '- mkety.com: mkety-platform'
+            echo '- www.mkety.com: mkety-platform'
+            echo '- app.mkety.com: mkety-app-host (preserved)'
+            echo '- Mkety Domains public page: verified'
+            echo '- Routing mutation: none'
+          } >> "$GITHUB_STEP_SUMMARY"
