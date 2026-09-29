@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       const repository = createDrizzleBillingRepository(db);
       const result = await applyVerifiedSettlement(repository, settlement, now);
       await markBillingCheckoutCompleted(checkoutId, now);
-      await grantCurrentPeriodAllowance(settlement.tenantId);
+      await grantCurrentPeriodAllowance(context.tenantId);
 
       return json({
         success: true,
