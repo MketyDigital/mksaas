@@ -2,9 +2,9 @@ import { notFound } from 'next/navigation';
 
 import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
 import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
+import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
 import {
   createEnterpriseAiContractVersion,
-  ENTERPRISE_AI_CONTRACT_ENTITLEMENTS,
   listEnterpriseAiContracts,
 } from '@/features/ai-runtime/server/enterprise-contracts';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
