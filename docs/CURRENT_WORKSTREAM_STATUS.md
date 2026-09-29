@@ -1,3 +1,11 @@
+## 2026-09-29 production completion
+
+Production Domains/DNS, the fixed-egress registrar relay, the dedicated app.mkety.com Worker, public Mkety Domains presentation, production content seed/smoke, and branded app auth handoff have been completed and live-verified.
+
+The remaining planned customer acceptance is the Starpips real-world white-label test. Customer inference remains intentionally OFF until that acceptance is complete.
+
+See: docs/handoffs/2026-09-29-production-completion-starpips-next.md
+
 ## 2026-09-28 sequencing update
 
 Repository merge is no longer waiting on the real customer-hostname test. The remaining DomainNameAPI authentication issue and real white-label hostname acceptance remain unresolved external acceptance items. Enterprise customer inference remains disabled until those later acceptance requirements are intentionally completed.
