@@ -1,3 +1,47 @@
+# 2026-09-29 final customer-readiness update
+
+This section is authoritative over older production-state notes below.
+
+## Production state before customer onboarding
+
+- Enterprise AI infrastructure is production-accepted by run `36568179070`; customer inference remains deliberately OFF until controlled customer acceptance.
+- Mkety Mail application/runtime is production-accepted on exact main `f581b31443f255bbf8786d873562a390ee6698b3` by run `36639931406`.
+- The dedicated Mail gateway is deployed, configured and healthy in Coolify/OCI with trusted TLS material and protected central Mkety APIs. Cloudflare authoritative/public DNS is correct.
+- Public raw TCP 993/465 is still blocked upstream at OCI/provider ingress. External-client UI therefore remains OFF until public protocol acceptance and app-password functional acceptance pass.
+
+## Enterprise AI: what Mkety configures vs what the customer can do
+
+**Mkety/Platform operator must do once for a negotiated customer:**
+1. ensure the customer has a Mkety tenant/account and appropriate owner/admin membership;
+2. create the tenant-specific Enterprise AI contract version with negotiated monthly USD price, included credits and included capabilities. The contract builder always includes the base `workspace.ai.enterprise` entitlement and may add approved channel/API/white-label entitlements;
+3. leave the subscription in billing authority—do not manually grant paid service from a browser claim;
+4. if the commercial deal includes custom white-label/channel/API capabilities, include those entitlements in the active contract version;
+5. keep global customer inference OFF until the platform/customer acceptance is complete.
+
+**Customer flow after the contract exists:**
+1. the tenant’s Enterprise AI page displays the negotiated agreement and **Pay & activate Enterprise AI**;
+2. the customer selects an enabled payment method and completes checkout;
+3. Mkety waits for verified provider settlement. Only server-side Billing settlement/subscription state activates the plan entitlement and included credits; the browser redirect itself cannot grant access;
+4. once entitled, the customer can enter the Enterprise AI console and self-configure solution instances, instructions, approved knowledge, managed model/BYOK where entitled, channel connections, branding/white-label, managed/custom hostname, reply pacing/reminders, playground/tests, operator handoff, runs/logs, usage/credits and billing views;
+5. renewal/past-due/grace rules remain server-authoritative. When the paid/grace period ends, inference fails closed while configuration/history is preserved, and valid renewal restores service without rebuilding the assistant.
+
+**Managed service option:** Mkety can perform all of the customer setup on the customer’s behalf (solutions, channels, branding, domain and acceptance). The architecture does not require that; after verified payment and entitlement, the intended normal path is customer self-service with Mkety/Admin retaining commercial, routing, emergency-kill-switch and audit controls.
+
+## Customer custom domains / Cloudflare-for-SaaS behavior
+
+A customer domain may be hosted in another Cloudflare account or any other DNS provider. The customer only needs to publish the DNS ownership/routing records Mkety instructs them to add. Mkety’s domain acceptance must treat real route/HTTPS proof as authoritative when the customer hostname is demonstrably serving the expected Mkety tenant, rather than remaining blocked forever solely because a Cloudflare-for-SaaS dashboard SSL status is stale/pending. Provider state is still recorded for diagnostics and genuine routing/TLS failures remain fail-closed.
+
+## Remaining launch order
+
+1. close OCI raw-TCP ingress for Mail 993/465;
+2. pass Mail gateway public TLS/protocol acceptance;
+3. pass controlled app-password login/sync/send/revoke acceptance and only then enable external-client UI;
+4. run the first Enterprise AI tenant through contract -> verified settlement -> entitlement/credits -> solution/channel/domain/playground/accounting acceptance while inference remains OFF;
+5. deliberately enable Enterprise AI customer inference;
+6. then onboard Starpips and subsequent real customers.
+
+---
+
 # Mkety Mail and Enterprise AI — customer setup and readiness runbook
 
 Date: 2026-09-29
