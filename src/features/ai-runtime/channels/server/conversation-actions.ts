@@ -4,7 +4,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { revealChannelCredentials } from '@/features/ai-runtime/channels/credentials';
-import { getEnterpriseAiChannel, type EnterpriseAiChannelKey } from '@/features/ai-runtime/channels/registry';
+import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import {
   cancelEnterpriseAiScheduledActionsForConversation,
   markEnterpriseAiConversationOutbound,
