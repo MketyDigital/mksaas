@@ -7,6 +7,7 @@ import {
   getSelfServiceBillingPlan,
   getSelfServiceBillingTerm,
   isSelfServiceBillingPlanKey,
+  SELF_SERVICE_BILLING_PLANS,
   type SelfServiceBillingPlanKey,
   type SelfServiceBillingTermKey,
 } from '../catalog/self-service-plans';
@@ -106,7 +107,7 @@ export async function getActiveSelfServiceBillingQuote(
 }
 
 export async function getActiveSelfServicePlans(planKeys?: readonly SelfServiceBillingPlanKey[]) {
-  const keys = planKeys ?? Object.keys(await import('../catalog/self-service-plans').then((m) => m.SELF_SERVICE_BILLING_PLANS)) as SelfServiceBillingPlanKey[];
+  const keys = planKeys ?? (Object.keys(SELF_SERVICE_BILLING_PLANS) as SelfServiceBillingPlanKey[]);
   const safeKeys = keys.filter((key): key is SelfServiceBillingPlanKey => isSelfServiceBillingPlanKey(key));
   return Promise.all(safeKeys.map((key) => getActiveSelfServiceBillingPlan(key)));
 }
