@@ -169,12 +169,39 @@ describe('DomainNameApiAdapter', () => {
     }));
   });
 
-  it('rejects the reseller panel username for v2', () => {
-    expect(() => new DomainNameApiAdapter({
-      resellerId: 'Mkety',
-      apiKey: 'test-token',
+  it('keeps renewal info and renew calls on the fixed-egress relay', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ expiryDate: '2027-10-01' }, 200))
+      .mockResolvedValueOnce(mockJsonResponse({
+        status: 'Success',
+        domainName: 'renew-me.com',
+        expiryDate: '2028-10-01',
+      }, 200));
+
+    const adapter = new DomainNameApiAdapter({
+      resellerId: '123456',
+      apiKey: 'live-api-key',
       environment: 'production',
-    })).toThrow('numerical Reseller ID');
+      relayUrl: 'https://registrar-relay.mkety.com',
+      relaySecret: '0123456789abcdef0123456789abcdef',
+    });
+
+    await expect(adapter.renew({
+      providerDomainRef: 'renew-me.com',
+      years: 1,
+      idempotencyKey: 'renew-order-1',
+    })).resolves.toMatchObject({ domain: 'renew-me.com' });
+
+    const relayBodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(relayBodies.map((body) => body.operation)).toEqual(['info', 'renew']);
+    expect(relayBodies[0].payload).toEqual({ domainName: 'renew-me.com' });
+    expect(relayBodies[1].payload).toEqual(expect.objectContaining({
+      domainName: 'renew-me.com',
+      period: 1,
+      currentExpiryDate: '2027-10-01',
+      resellerId: '123456',
+      apiKey: 'live-api-key',
+    }));
   });
 
 });
