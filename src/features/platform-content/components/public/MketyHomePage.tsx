@@ -290,7 +290,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety Mail</p>
               <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Professional email and customer communication in Mkety.</h2>
               <p className="mt-4 max-w-3xl leading-7 text-muted-foreground">
-                Run business mailboxes, aliases, forwarding, shared inboxes, Customer Updates, templates, transactional API/SMTP and delivery analytics with separately subscribed Mail plans and clear usage limits.
+                Run business mailboxes, aliases, forwarding, shared inboxes, Customer Updates, templates, transactional API and delivery analytics with separately subscribed Mail plans and clear usage limits.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button asChild className="rounded-xl">
