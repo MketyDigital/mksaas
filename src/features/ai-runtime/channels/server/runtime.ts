@@ -287,7 +287,9 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   if (reminderCall) {
     try {
       const args = JSON.parse(reminderCall.argumentsJson) as Record<string, unknown>;
-      const dueAt = new Date(String(args.dueAtIso ?? ''));
+      const dueAtIso = String(args.dueAtIso ?? '').trim();
+      const dueAt = new Date(dueAtIso);
+      const hasExplicitOffset = /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(dueAtIso);
       const commitment = String(args.commitment ?? '').trim().slice(0, 500);
       const sourceQuote = String(args.sourceQuote ?? '').trim().slice(0, 300);
       const reminderText = String(args.reminderText ?? '').trim().slice(0, 1200);
@@ -295,6 +297,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       const now = Date.now();
       const maxFuture = now + 366 * 24 * 60 * 60 * 1000;
       if (
+        hasExplicitOffset &&
         Number.isFinite(dueAt.getTime()) &&
         dueAt.getTime() > now + 60_000 &&
         dueAt.getTime() <= maxFuture &&
