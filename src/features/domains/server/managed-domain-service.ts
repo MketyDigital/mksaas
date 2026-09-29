@@ -175,7 +175,9 @@ export async function listManagedDnsRecords(tenantSlug: string, managedDomainId:
   if (!tenant) throw new Error('Tenant not found.');
   const domain = await managedDomainForTenant(tenant.id, managedDomainId);
   if (!domain?.dnsZoneId) throw new Error('Mkety DNS is not provisioned for this domain.');
-  return listCloudflareDnsRecords(domain.dnsZoneId);
+  const records = await listCloudflareDnsRecords(domain.dnsZoneId);
+  const editable = new Set(['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'SRV', 'CAA']);
+  return records.filter((record) => editable.has(String(record.type).toUpperCase()));
 }
 
 export async function saveManagedDnsRecord(
