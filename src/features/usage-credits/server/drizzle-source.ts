@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
 import { billingPeriods } from '@/shared/db/schema/billing-periods';
@@ -28,11 +28,8 @@ import {
   UsageCreditError,
 } from '../types';
 
-const QUALIFYING_SUBSCRIPTION_STATUSES = [
-  'trialing',
+const CREDIT_GRANT_SUBSCRIPTION_STATUSES = [
   'active',
-  'past_due',
-  'paused',
   'cancel_at_period_end',
 ] as const;
 
@@ -93,7 +90,8 @@ export const drizzleBillingCreditAllowanceSource: BillingCreditAllowanceSource =
       .where(
         and(
           eq(billingSubscriptions.tenantId, tenantId),
-          inArray(billingSubscriptions.status, [...QUALIFYING_SUBSCRIPTION_STATUSES]),
+          inArray(billingSubscriptions.status, [...CREDIT_GRANT_SUBSCRIPTION_STATUSES]),
+          gt(billingSubscriptions.currentPeriodEnd, new Date()),
         ),
       )
       .orderBy(desc(billingSubscriptions.updatedAt))
@@ -108,6 +106,8 @@ export const drizzleBillingCreditAllowanceSource: BillingCreditAllowanceSource =
         and(
           eq(billingPeriods.tenantId, tenantId),
           eq(billingPeriods.subscriptionId, subscription.id),
+          eq(billingPeriods.collectionStatus, 'paid'),
+          gt(billingPeriods.periodEnd, new Date()),
         ),
       )
       .orderBy(desc(billingPeriods.periodStart))
