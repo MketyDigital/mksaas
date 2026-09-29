@@ -19,6 +19,14 @@ Current audited release truth:
 
 This section supersedes older pre-production statements below where they conflict with the audited production state.
 
+## 2026-09-29 Mail production acceptance update
+
+- Production main `455a1359cbde16d9eae34b6683c19cb4088d481e` passed Mkety Mail Production run `36576563773`.
+- Production DB migration, R2/Queues, Mail ingress/dispatch/events/content workers, central app deployment/auth bindings, Mail application domains and production smoke are accepted.
+- The external-client TCP gateway remains separate: latest diagnostic `36574979021` found trusted TLS unavailable on `imap.mkety.com:993` and `smtp.mkety.com:465`.
+- Active gateway work is documented in `docs/handoffs/2026-09-29-mail-production-gateway-next.md`.
+- `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` remains false until controlled real app-password acceptance.
+
 ## Product boundary: AI Workspace vs Enterprise AI
 
 AI Workspace and Enterprise AI are distinct products that share Mkety infrastructure but do not share entitlement by accident.
@@ -212,9 +220,9 @@ It reuses central Mkety identity, tenant membership, roles/PBAC, Billing and Ent
 - [x] Admin Mail operations surface;
 - [x] public Mail page and checkout consume active plan version in stabilization PR;
 - [x] implementation exact-head CI for current stabilization changes on `5e85c2331208d5c49380cec77683c352e8fcf2ad`;
-- [ ] verify production `mail.mkety.com` host and current deployed SHA;
+- [x] verify production `mail.mkety.com` host/runtime on main `455a1359cbde16d9eae34b6683c19cb4088d481e` via Mail Production run `36576563773`;
 - [x] verify production Mail database migrations through the successful exact-SHA shared production migration in Enterprise AI production run `36568179070`;
-- [ ] verify R2/Queue/ingress/dispatch bindings and Workers;
+- [x] verify R2/Queue/ingress/dispatch/events/content bindings and Workers via Mail Production run `36576563773`;
 - [x] customer Mail migration/portability center: contact CSV, workspace JSON, EML import, RFC822/EML export;
 - [ ] real inbound-domain test;
 - [ ] real outbound transactional test;
