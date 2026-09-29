@@ -1,5 +1,7 @@
 import {
+  disableCloudflareDomainRoutingConnection,
   disableDomainResellerConnection,
+  saveCloudflareDomainRoutingConnection,
   saveDomainNameApiConnection,
 } from '@/features/domains/server/reseller-admin-actions';
 import type { listPlatformServiceConnections } from '@/features/platform-connections/server/service';
@@ -15,6 +17,7 @@ export function DomainResellerControlPanel({
   connections: Connection[];
 }) {
   const current = connections.find((item) => item.providerKey === 'domainnameapi' && item.status === 'active');
+  const cloudflare = connections.find((item) => item.providerKey === 'cloudflare-saas' && item.status === 'active');
 
   return (
     <div className="space-y-6">
@@ -69,6 +72,30 @@ export function DomainResellerControlPanel({
               Custom API base URL
               <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={current?.endpointUrl ?? ''} name="endpointUrl" placeholder="Leave blank for DomainNameAPI default" />
             </label>
+            <div className="grid gap-4 rounded-xl border bg-muted/20 p-4 md:col-span-2 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <p className="font-semibold">Customer pricing</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Mkety starts from DomainNameAPI&apos;s real provider price, then applies these editable markups to the customer sell price.
+                </p>
+              </div>
+              <label className="text-sm font-medium">
+                Registration markup %
+                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={Number(current?.config?.registrationMarkupPercent ?? 0)} min="0" max="1000" name="registrationMarkupPercent" step="0.01" type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Renewal markup %
+                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={Number(current?.config?.renewalMarkupPercent ?? 0)} min="0" max="1000" name="renewalMarkupPercent" step="0.01" type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Registration fixed add-on
+                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={Number(current?.config?.registrationFixedMarkupMinor ?? 0) / 100} min="0" name="registrationFixedMarkup" step="0.01" type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Renewal fixed add-on
+                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={Number(current?.config?.renewalFixedMarkupMinor ?? 0) / 100} min="0" name="renewalFixedMarkup" step="0.01" type="number" />
+              </label>
+            </div>
             <label className="text-sm font-medium md:col-span-2">
               Nameservers
               <textarea className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={Array.isArray(current?.config?.nameServers) ? current.config.nameServers.join('\n') : ''} name="nameServers" placeholder={'ns1.example.com\nns2.example.com'} rows={3} />
@@ -81,6 +108,60 @@ export function DomainResellerControlPanel({
               <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
                 Save encrypted reseller connection
               </button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Cloudflare domains, DNS &amp; custom hostnames</CardTitle>
+          <CardDescription>
+            Editable production routing for Cloudflare for SaaS and managed *.mkety.app DNS. Existing environment values remain a bootstrap fallback until this connection is saved.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={saveCloudflareDomainRoutingConnection.bind(null, tenant)} className="grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium md:col-span-2">
+              Cloudflare API token
+              <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="apiToken" placeholder={cloudflare ? 'Leave blank to keep the currently encrypted token' : 'Required for first setup'} type="password" />
+            </label>
+            <label className="text-sm font-medium">
+              Cloudflare for SaaS zone ID
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.saasZoneId ?? '')} name="saasZoneId" required />
+            </label>
+            <label className="text-sm font-medium">
+              mkety.app DNS zone ID
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.appZoneId ?? '')} name="appZoneId" required />
+            </label>
+            <label className="text-sm font-medium">
+              SaaS CNAME target
+              <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.cnameTarget ?? '')} name="cnameTarget" placeholder="origin.example.com" required />
+            </label>
+            <label className="text-sm font-medium">
+              Minimum TLS
+              <select className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue={String(cloudflare?.config?.minTlsVersion ?? '1.2')} name="minTlsVersion">
+                <option value="1.2">TLS 1.2</option>
+                <option value="1.3">TLS 1.3</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium md:col-span-2">
+              <input defaultChecked={cloudflare?.config?.managedDnsProxied === true} name="managedDnsProxied" type="checkbox" />
+              Proxy managed mkety.app CNAME records through Cloudflare
+            </label>
+            <div className="flex flex-wrap gap-3 md:col-span-2">
+              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                Save Cloudflare routing configuration
+              </button>
+              {cloudflare ? (
+                <button
+                  className="rounded-xl border border-destructive px-4 py-2 text-sm font-semibold text-destructive"
+                  formAction={disableCloudflareDomainRoutingConnection.bind(null, tenant, cloudflare.id)}
+                >
+                  Disable Cloudflare routing connection
+                </button>
+              ) : null}
             </div>
           </form>
         </CardContent>
