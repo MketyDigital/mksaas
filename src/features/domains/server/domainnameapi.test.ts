@@ -13,6 +13,14 @@ describe('DomainNameApiAdapter', () => {
     jest.restoreAllMocks();
   });
 
+  it('rejects a reseller-panel username in place of the V2 numerical Reseller ID', () => {
+    expect(() => new DomainNameApiAdapter({
+      resellerId: 'Mkety',
+      apiKey: 'test-token',
+      environment: 'production',
+    })).toThrow('numerical Reseller ID');
+  });
+
   it('uses the documented v1 check endpoint and parses an available-domain quote', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({
@@ -24,7 +32,7 @@ describe('DomainNameApiAdapter', () => {
     );
 
     const adapter = new DomainNameApiAdapter({
-      resellerId: '00000000-0000-0000-0000-000000000000',
+      resellerId: '123456',
       apiKey: 'test-token',
       environment: 'ote',
     });
@@ -40,7 +48,7 @@ describe('DomainNameApiAdapter', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          resellerId: '00000000-0000-0000-0000-000000000000',
+          resellerId: '123456',
           apiKey: 'test-token',
           domainName: 'example.com',
           period: 1,
@@ -60,7 +68,7 @@ describe('DomainNameApiAdapter', () => {
       }, 200));
 
     const adapter = new DomainNameApiAdapter({
-      resellerId: '00000000-0000-0000-0000-000000000000',
+      resellerId: '123456',
       apiKey: 'test-token',
       environment: 'ote',
     });
@@ -78,7 +86,7 @@ describe('DomainNameApiAdapter', () => {
     );
 
     const adapter = new DomainNameApiAdapter({
-      resellerId: '00000000-0000-0000-0000-000000000000',
+      resellerId: '123456',
       apiKey: 'test-token',
       environment: 'production',
     });
@@ -93,7 +101,7 @@ describe('DomainNameApiAdapter', () => {
     );
 
     const adapter = new DomainNameApiAdapter({
-      resellerId: '00000000-0000-0000-0000-000000000000',
+      resellerId: '123456',
       apiKey: 'test-token',
       environment: 'ote',
     });
@@ -113,7 +121,7 @@ describe('DomainNameApiAdapter', () => {
       mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }, 200),
     );
     const adapter = new DomainNameApiAdapter({
-      resellerId: '00000000-0000-0000-0000-000000000000',
+      resellerId: '123456',
       apiKey: 'test-token',
       environment: 'production',
     });
