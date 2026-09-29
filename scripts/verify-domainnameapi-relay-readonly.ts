@@ -60,6 +60,21 @@ function sanitizeProviderBody(value: unknown): unknown {
   return value;
 }
 
+async function probeCurrentOfficialLive(apiKey: string) {
+  const domain = 'mkety-current-live-' + Date.now() + '-' + crypto.randomUUID().slice(0, 8) + '.com';
+  const result = await signedRelayRequest('quote-current-live', 'production', {
+    resellerId,
+    apiKey,
+    domain,
+  });
+  return {
+    environment: 'production' as const,
+    status: result.status,
+    ok: result.ok,
+    body: sanitizeProviderBody(result.body),
+  };
+}
+
 async function probeBasic(environment: 'production' | 'ote', apiKey: string) {
   const label = 'mkety-' + (environment === 'production' ? 'live' : 'ote') + '-basic-' + Date.now();
   const result = await signedRelayRequest('quote-basic', environment, {
@@ -109,13 +124,16 @@ try { ote = await probe('ote', oteApiKey); } catch (error) { oteError = error in
 
 const liveBasic = await probeBasic('production', liveApiKey);
 const oteBasic = await probeBasic('ote', oteApiKey);
+const currentOfficialLive = await probeCurrentOfficialLive(liveApiKey);
 const v2Passed = Boolean(live && ote);
 const basicPassed = liveBasic.ok && oteBasic.ok;
+const currentOfficialPassed = currentOfficialLive.ok;
 
 console.log(JSON.stringify({
-  ok: v2Passed || basicPassed,
+  ok: v2Passed || basicPassed || currentOfficialPassed,
   transport: 'fixed-egress-relay',
   mutationPerformed: false,
   v2: { live, ote, liveError, oteError },
   basic: { live: liveBasic, ote: oteBasic },
+  currentOfficialLive,
 }, null, 2));
