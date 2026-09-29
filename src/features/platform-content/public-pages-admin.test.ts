@@ -7,6 +7,7 @@ describe('Mkety public pages admin collection', () => {
     expect(parsed.pages.map((page) => page.slug)).toEqual([
       'platform',
       'workspaces',
+      'domains',
       'solutions',
       'academy',
       'pricing',
