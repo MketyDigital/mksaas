@@ -7,14 +7,9 @@ if (sharedSecret.length < 32) throw new Error('MKETY_DOMAIN_RELAY_SECRET must be
 
 const LIVE_BASE = 'https://api.domainresellerapi.com';
 const OTE_BASE = 'https://ote.domainresellerapi.com';
-const CURRENT_LIVE_BASE = 'https://api.domainnameapi.com';
-const CURRENT_OTE_BASE = 'https://rest-test.domainnameapi.com';
 const seenNonces = new Map();
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/v1/domain/check' }],
-  ['quote-basic', { method: 'GET', path: '/api/domain/check' }],
-  ['quote-current', { method: 'POST', path: '/v1/domain/check' }],
-  ['quote-current-live', { method: 'POST', path: '/v1/domain/check' }],
   ['register', { method: 'POST', path: '/v1/domain/register' }],
   ['renew', { method: 'POST', path: '/v1/domain/renew' }],
   ['info', { method: 'GET', path: '/api/v1/domains/info' }],
@@ -86,44 +81,17 @@ const server = createServer(async (req, res) => {
       return json(res, 400, { error: 'invalid_payload' });
     }
 
-    const op = String(input.operation);
-    if (op === 'quote-current-live' && input.environment !== 'production') {
-      return json(res, 400, { error: 'unsupported_environment_for_operation' });
-    }
-    const base = op === 'quote-current-live'
-      ? 'https://api.domainnameapi.com'
-      : input.environment === 'production' ? LIVE_BASE : OTE_BASE;
-    const upstreamPath = op === 'info'
+    const base = input.environment === 'production' ? LIVE_BASE : OTE_BASE;
+    const upstreamPath = String(input.operation) === 'info'
       ? operation.path + '?domainName=' + encodeURIComponent(String(input.payload.domainName || ''))
-      : op === 'quote-basic'
-        ? operation.path + '?' + new URLSearchParams({
-            domainNames: String(input.payload.domainNames || ''),
-            tlds: String(input.payload.tlds || ''),
-            period: String(input.payload.period || 1),
-            command: 'create',
-          }).toString()
-        : operation.path;
-    const basicAuth = op === 'quote-basic'
-      ? 'Basic ' + Buffer.from(String(input.payload.resellerId || '') + ':' + String(input.payload.apiKey || '')).toString('base64')
-      : null;
+      : operation.path;
     const upstream = await fetch(base + upstreamPath, {
       method: operation.method,
       headers: {
         accept: 'application/json',
-        ...(operation.method === 'POST' ? { 'content-type': 'application/json' } : {}),
-        ...(basicAuth ? { authorization: basicAuth } : {}),
+        'content-type': 'application/json',
       },
-      ...(operation.method === 'POST'
-        ? {
-            body: JSON.stringify(op === 'quote-current-live'
-              ? {
-                  resellerId: input.payload.resellerId,
-                  apiKey: input.payload.apiKey,
-                  domain: input.payload.domain,
-                }
-              : input.payload),
-          }
-        : {}),
+      ...(operation.method === 'POST' ? { body: JSON.stringify(input.payload) } : {}),
       signal: AbortSignal.timeout(20_000),
     });
     const text = await upstream.text();
