@@ -101,13 +101,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     eyebrow: 'Mkety Domains',
     headline: 'Your domains, DNS and custom hostnames—managed through Mkety.',
     intro:
-      'Search and register domains, manage DNS and nameservers, connect custom domains to Mkety products, and keep renewal and routing operations together without dealing with multiple infrastructure providers.',
+      'Search and register domains, manage DNS and nameservers, connect custom domains to Mkety products, and keep renewal and routing operations together without leaving Mkety.',
     sections: [
       {
         eyebrow: 'Domain registration',
         title: 'Find and register domains with live pricing.',
         description:
-          'Mkety checks live domain availability and provider pricing, then applies the current Mkety pricing policy before checkout. Registration happens only after verified payment settlement.',
+          'Mkety checks live domain availability and current pricing before checkout. Registration happens only after verified payment settlement.',
         items: [
           {
             key: 'search',
@@ -131,7 +131,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'pricing',
             title: 'Transparent Mkety pricing',
             description:
-              'Customer pricing starts from current upstream domain cost and uses Mkety’s published commercial margin policy. Current prices can vary by extension and provider cost.',
+              'Mkety shows the current sell price for each extension before checkout. Prices can vary by extension, registration period and current domain-market cost.',
           },
         ],
         cta: { label: 'Open Mkety', href: '/app' },
@@ -164,16 +164,16 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'https',
             title: 'HTTPS & validation',
             description:
-              'Mkety coordinates supported certificate validation and secure routing so customers manage the result rather than the underlying provider workflow.',
+              'Mkety coordinates supported certificate validation and secure routing from one guided experience.',
           },
         ],
         cta: { label: 'Explore Mkety infrastructure', href: '/infrastructure' },
       },
       {
         eyebrow: 'One Mkety experience',
-        title: 'Infrastructure providers stay behind Mkety.',
+        title: 'Domains and DNS stay inside Mkety.',
         description:
-          'Customers buy and operate domains through Mkety. Registrar, DNS, certificate and routing providers are implementation details managed behind Mkety’s protected platform boundary.',
+          'Customers buy and operate domains, DNS, certificates and routing through Mkety from one account and one operating experience.',
         items: [
           {
             key: 'single-account',
