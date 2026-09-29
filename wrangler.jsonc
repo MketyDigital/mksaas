@@ -3,7 +3,10 @@
   "name": "mkety-platform",
   "main": "vinext/server/fetch-handler",
   "compatibility_date": "2026-09-06",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
   "workers_dev": false,
   "preview_urls": false,
   "keep_vars": true,
@@ -46,5 +49,13 @@
         "binding": "AI"
       }
     }
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "MKETY_AI_DELIVERY_QUEUE",
+        "queue": "mkety-ai-delivery"
+      }
+    ]
   }
 }
