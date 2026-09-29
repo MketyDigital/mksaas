@@ -1,3 +1,30 @@
+# 2026-09-29 continuation — exact current blocker after Mail gateway deployment
+
+This section is authoritative over all older continuation sequences below.
+
+Production truth:
+- `main` release SHA: `f581b31443f255bbf8786d873562a390ee6698b3` (PR #189).
+- Mkety Mail Production run `36639931406`: SUCCESS through migration, app/workers/secrets/domains and final production smoke.
+- Enterprise AI production infrastructure run `36568179070`: SUCCESS; customer inference remains OFF.
+- Mail gateway container is deployed and healthy in Coolify/OCI with trusted DNS-01 TLS and exact-SHA readiness markers.
+- Cloudflare authoritative and public recursive DNS for `imap.mkety.com` / `smtp.mkety.com` are correct and unproxied.
+- Direct origin TCP 993 is still unreachable from the public runner. This is now isolated to OCI/provider ingress or equivalent upstream host-network policy, not Cloudflare DNS or the gateway process.
+- Direct GitHub-runner SSH to the OCI host is also unavailable, so UFW/firewalld cannot be safely reconciled from that runner. The instance-principal signer exists but has no usable VCN network read/manage permission (network read returned 404).
+- External-client UI remains OFF.
+
+Continue in this exact order:
+1. open/reconcile OCI Security List/NSG ingress for TCP 993 and 465 on the validated Coolify origin, or provide the workflow a usable OCI control-plane credential/IAM path;
+2. rerun gateway production acceptance and require trusted TLS + IMAP/SMTP protocol greetings;
+3. perform a controlled/self-cleaning app-password login/sync/send/revoke/fail acceptance before enabling external clients;
+4. update the final status/handoff with the accepted run SHA/IDs;
+5. then set up the first Enterprise AI customer contract/payment/configuration and run customer acceptance while inference is still OFF;
+6. deliberately promote Enterprise AI customer inference only after that acceptance;
+7. then begin Starpips real-customer acceptance.
+
+Do not reopen general feature development. The remaining Mail issue is a narrow OCI raw-TCP ingress gate.
+
+---
+
 # 2026-09-29 continuation — Mail gateway before customer acceptance
 
 This section is authoritative over older continuation sequences below.
