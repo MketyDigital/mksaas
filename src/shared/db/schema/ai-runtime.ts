@@ -216,6 +216,8 @@ export const aiConversations = appSchema.table('ai_conversations', {
   connectionId: uuid('connection_id').notNull().references(() => aiProviderConnections.id, { onDelete: 'cascade' }),
   externalConversationId: varchar('external_conversation_id', { length: 240 }).notNull(),
   externalUserId: varchar('external_user_id', { length: 240 }),
+  replyRecipientId: varchar('reply_recipient_id', { length: 240 }),
+  replyContextId: varchar('reply_context_id', { length: 240 }),
   status: varchar('status', { length: 24 }).notNull().default('automated'),
   handoffReason: text('handoff_reason'),
   handoffAt: timestamp('handoff_at', { withTimezone: true }),
