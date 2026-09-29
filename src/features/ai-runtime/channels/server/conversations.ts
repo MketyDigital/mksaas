@@ -26,6 +26,8 @@ export async function ensureEnterpriseAiConversation(input: {
   connectionId: string;
   externalConversationId: string;
   externalUserId?: string | null;
+  replyRecipientId?: string | null;
+  replyContextId?: string | null;
 }) {
   const existing = await db.query.aiConversations.findFirst({
     where: and(
@@ -37,6 +39,8 @@ export async function ensureEnterpriseAiConversation(input: {
   if (existing) {
     await db.update(aiConversations).set({
       externalUserId: input.externalUserId ?? existing.externalUserId,
+      replyRecipientId: input.replyRecipientId ?? existing.replyRecipientId,
+      replyContextId: input.replyContextId ?? existing.replyContextId,
       solutionInstanceId: input.solutionInstanceId ?? existing.solutionInstanceId,
       projectId: input.projectId ?? existing.projectId,
       lastInboundAt: now,
@@ -55,6 +59,8 @@ export async function ensureEnterpriseAiConversation(input: {
     connectionId: input.connectionId,
     externalConversationId: input.externalConversationId,
     externalUserId: input.externalUserId ?? null,
+    replyRecipientId: input.replyRecipientId ?? null,
+    replyContextId: input.replyContextId ?? null,
     status: 'automated',
     lastInboundAt: now,
   }).returning();
