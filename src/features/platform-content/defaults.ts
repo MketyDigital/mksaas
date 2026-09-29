@@ -373,7 +373,7 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Can I register domains and manage DNS through Mkety?',
     answer:
-      'Yes. Mkety Domains supports live domain search and registration pricing, managed domain ownership, renewal settings, authoritative DNS for supported Mkety-registered domains, and custom-domain connections for supported Mkety products. Underlying registrar and DNS providers remain behind Mkety.',
+      'Yes. Mkety Domains supports live domain search and registration pricing, managed domain ownership, renewal settings, authoritative Mkety DNS for supported registered domains, and custom-domain connections for supported Mkety products.',
   },
   {
     question: 'How do Mkety Mail and Enterprise AI fit with the normal Workspaces?',
