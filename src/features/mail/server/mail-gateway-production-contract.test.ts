@@ -49,8 +49,12 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Coolify server payload exposed no public IPv4');
   });
 
-  it('requires publicly trusted TLS and protocol greetings', () => {
-    expect(workflow).toContain('openssl s_client -connect "$host:$port"');
+  it('requires authoritative/public DNS plus trusted origin TLS and protocol greetings', () => {
+    expect(workflow).toContain('Accept public DNS, TLS and protocol greetings');
+    expect(workflow).toContain("r.proxied===false");
+    expect(workflow).toContain('https://cloudflare-dns.com/dns-query');
+    expect(workflow).toContain('openssl s_client -connect "$SERVER_IP:$port"');
+    expect(workflow).toContain('-verify_hostname "$host"');
     expect(workflow).toContain("grep -Fq 'IMAP4rev1'");
     expect(workflow).toContain("grep -Fq '250-AUTH PLAIN LOGIN'");
     expect(workflow).toContain('Gateway internal API expected fail-closed 401');
