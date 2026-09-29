@@ -1,0 +1,291 @@
+name: Mkety Enterprise AI Production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-ai-production.yml'
+      - '.github/workflows/mkety-coolify-production-db-executor.yml'
+      - 'src/app/**/enterprise-ai/**'
+      - 'src/app/api/v1/ai/**'
+      - 'src/app/api/internal/ai/**'
+      - 'src/app/api/tenants/**/enterprise-ai/**'
+      - 'src/features/ai-runtime/**'
+      - 'src/features/entitlements/**'
+      - 'src/features/usage-credits/**'
+      - 'src/shared/db/schema/ai-runtime.ts'
+      - 'src/shared/db/migrations/0032_ai_conversations_scheduled_actions.sql'
+      - 'workers/ai-delivery/**'
+      - 'wrangler.jsonc'
+      - 'src/proxy.ts'
+      - 'docs/MKETY_AI_*.md'
+  workflow_dispatch:
+    inputs:
+      verified_sha:
+        description: Exact fully verified main SHA to deploy
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY MKETY ENTERPRISE AI
+        required: true
+        type: string
+
+concurrency:
+  group: mkety-enterprise-ai-production-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  statuses: write
+
+env:
+  PRODUCTION_WORKER_NAME: mkety-platform
+  AI_DELIVERY_WORKER: mkety-ai-delivery
+  AI_DELIVERY_QUEUE: mkety-ai-delivery
+  AI_DELIVERY_DEAD_QUEUE: mkety-ai-delivery-dead
+  MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
+
+jobs:
+  authorize:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ai-production]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      verified_sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate exact main SHA and release authorization
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA_INPUT: ${{ inputs.verified_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          PUSH_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            VERIFIED_SHA="$VERIFIED_SHA_INPUT"
+            [ "$CONFIRMATION" = 'DEPLOY MKETY ENTERPRISE AI' ] || { echo 'Confirmation phrase did not match.'; exit 1; }
+          else
+            VERIFIED_SHA="$PUSH_SHA"
+            printf '%s' "$PUSH_MESSAGE" | grep -Fq '[ai-production]' || { echo 'Push is not an authorized Enterprise AI production merge.'; exit 1; }
+          fi
+          [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'verified_sha must be a 40-character SHA.'; exit 1; }
+          echo "sha=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
+
+          main="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main")"
+          head="$(MAIN="$main" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
+          [ "$head" = "$VERIFIED_SHA" ] || { echo "main head is $head, not $VERIFIED_SHA"; exit 1; }
+
+          verify_success() {
+            workflow="$1"
+            label="$2"
+            for attempt in $(seq 1 60); do
+              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'                 "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$VERIFIED_SHA&status=success&per_page=20")"
+              if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+                echo "Verified successful $label for exact SHA."
+                return 0
+              fi
+              echo "Waiting for $label on exact SHA ($attempt/60)..."
+              sleep 15
+            done
+            echo "Missing successful $label for exact SHA after bounded wait."
+            return 1
+          }
+
+          verify_success type-check.yml Typecheck
+          verify_success lint.yml Lint
+          verify_success tests.yml Tests
+          verify_success build.yml Build
+          verify_success mkety-migration-baseline.yml Migration-Baseline
+          verify_success mkety-cloudflare-vinext-smoke.yml Cloudflare-Smoke
+
+          main_after="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/main")"
+          head_after="$(MAIN="$main_after" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
+          [ "$head_after" = "$VERIFIED_SHA" ] || { echo "main advanced to $head_after while authorization was running"; exit 1; }
+
+  production-db:
+    needs: authorize
+    uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
+    with:
+      verified_sha: ${{ needs.authorize.outputs.verified_sha }}
+      release_branch: main
+    secrets:
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+
+  deploy-ai:
+    needs: [authorize, production-db]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      VERIFIED_SHA: ${{ needs.authorize.outputs.verified_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.verified_sha }}
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'CLOUDFLARE_API_TOKEN missing'; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'CLOUDFLARE_ACCOUNT_ID missing'; exit 1; }
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID" >/tmp/cf-account.json
+
+      - name: Provision AI delivery queues idempotently
+        id: queues
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          ensure_queue() {
+            name="$1"
+            queues="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/queues")"
+            id="$(QUEUES="$queues" NAME="$name" node -e "const x=JSON.parse(process.env.QUEUES||'{}');const a=Array.isArray(x.result)?x.result:(x.result?.queues||[]);const q=a.find(v=>(v.queue_name||v.name)===process.env.NAME);if(q)process.stdout.write(String(q.queue_id||q.id||''))")"
+            if [ -z "$id" ]; then
+              body="$(NAME="$name" node -e "process.stdout.write(JSON.stringify({queue_name:process.env.NAME}))")"
+              created="$(curl -fsS -X POST "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/queues")"
+              id="$(CREATED="$created" node -e "const x=JSON.parse(process.env.CREATED||'{}');process.stdout.write(String(x.result?.queue_id||x.result?.id||''))")"
+            fi
+            [ -n "$id" ] || { echo "Could not resolve queue id for $name"; exit 1; }
+            printf '%s' "$id"
+          }
+
+          delivery_id="$(ensure_queue "$AI_DELIVERY_QUEUE")"
+          dead_id="$(ensure_queue "$AI_DELIVERY_DEAD_QUEUE")"
+          echo "delivery_queue_id=$delivery_id" >> "$GITHUB_OUTPUT"
+          echo "dead_queue_id=$dead_id" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve production Hyperdrive
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
+          HYPERDRIVES="$response" NAME="$MKETY_HYPERDRIVE_NAME" node <<'NODE' >/tmp/mkety-ai-hyperdrive-id
+          const x=JSON.parse(process.env.HYPERDRIVES||'{}');
+          const matches=(x.result||[]).filter((item)=>item.name===process.env.NAME);
+          if(!x.success||matches.length!==1||!matches[0]?.id) throw new Error('Expected exactly one production Mkety Hyperdrive.');
+          process.stdout.write(matches[0].id);
+          NODE
+          echo "id=$(cat /tmp/mkety-ai-hyperdrive-id)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and deploy exact Mkety application SHA
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: ${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          if(!process.env.MKETY_HYPERDRIVE_ID) throw new Error('Missing production Hyperdrive id.');
+          config.name=process.env.PRODUCTION_WORKER_NAME;
+          config.workers_dev=true;
+          config.preview_urls=true;
+          config.keep_vars=true;
+          config.vars={...(config.vars||{}),SKIP_ENV_VALIDATION:'true'};
+          config.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          config.queues={producers:[{binding:'MKETY_AI_DELIVERY_QUEUE',queue:process.env.AI_DELIVERY_QUEUE}]};
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
+          NODE
+          pnpm build
+          pnpm run deploy --dry-run
+          pnpm run deploy
+
+      - name: Deploy Enterprise AI delivery worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler deploy -c workers/ai-delivery/wrangler.jsonc
+
+      - name: Synchronize internal delivery secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          internal_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$internal_secret"
+
+          put() {
+            worker="$1"; name="$2"; value="$3"
+            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$worker" >/dev/null
+          }
+
+          put "$AI_DELIVERY_WORKER" MKETY_AI_DELIVERY_INTERNAL_SECRET "$internal_secret"
+          put "$AI_DELIVERY_WORKER" MKETY_AI_DELIVERY_CALLBACK_BASE_URL 'https://api.mkety.com'
+          put "$PRODUCTION_WORKER_NAME" MKETY_AI_DELIVERY_INTERNAL_SECRET "$internal_secret"
+
+      - name: Attach Enterprise AI application domains
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zone_response="$(curl -fsS "${auth[@]}" "$api/zones?name=mkety.com&status=active")"
+          zone_id="$(ZONE="$zone_response" node -e "const x=JSON.parse(process.env.ZONE||'{}');const z=(x.result||[])[0];if(!z?.id)process.exit(1);process.stdout.write(z.id)")"
+
+          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+          for host in ai.mkety.com api.mkety.com; do
+            existing="$(DOMAINS="$domains" HOST="$host" node -e "const x=JSON.parse(process.env.DOMAINS||'{}');const d=(x.result||[]).find(v=>v.hostname===process.env.HOST);if(d)process.stdout.write(String(d.id||''))")"
+            if [ -z "$existing" ]; then
+              body="$(HOST="$host" ZONE="$zone_id" WORKER="$PRODUCTION_WORKER_NAME" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:process.env.WORKER,zone_id:process.env.ZONE,zone_name:'mkety.com'}))")"
+              curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" >/dev/null
+            fi
+          done
+
+      - name: Production fail-closed smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            code="$(curl -L -sS --connect-timeout 10 --max-time 20 -o /tmp/ai-home -w '%{http_code}' https://ai.mkety.com/ || true)"
+            if [ "$code" = '200' ] || [ "$code" = '302' ] || [ "$code" = '307' ]; then break; fi
+            [ "$attempt" -lt 24 ] || { echo "ai.mkety.com not ready: HTTP $code"; exit 1; }
+            sleep 5
+          done
+
+          api_code="$(curl -sS -o /tmp/ai-api -w '%{http_code}' -X POST             -H 'Content-Type: application/json' --data '{}'             'https://api.mkety.com/v1/ai/chat/completions')"
+          [ "$api_code" = '401' ] || { echo "AI API fail-closed smoke expected 401, got $api_code"; exit 1; }
+
+          internal_code="$(curl -sS -o /tmp/ai-internal -w '%{http_code}' -X POST             -H 'Content-Type: application/json' --data '{}'             'https://api.mkety.com/api/internal/ai/scheduled-actions/deliver')"
+          [ "$internal_code" = '401' ] || { echo "AI internal delivery endpoint expected 401, got $internal_code"; exit 1; }
+
+      - name: Publish deployment evidence
+        shell: bash
+        run: |
+          {
+            echo '## Mkety Enterprise AI production infrastructure'
+            echo "- SHA: `$VERIFIED_SHA`"
+            echo "- app host: `ai.mkety.com`"
+            echo "- API host: `api.mkety.com/v1/ai/*`"
+            echo "- delivery queue: `$AI_DELIVERY_QUEUE`"
+            echo "- delivery DLQ: `$AI_DELIVERY_DEAD_QUEUE`"
+            echo "- delivery worker: `$AI_DELIVERY_WORKER`"
+            echo '- Product/API/internal fail-closed smoke: PASS'
+            echo '- Production customer inference gate was not modified by this workflow.'
+            echo '- Internal delivery secret was rotated during deployment and never printed.'
+          } >> "$GITHUB_STEP_SUMMARY"
