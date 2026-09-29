@@ -39,11 +39,12 @@ describe('Mkety Mail gateway production contract', () => {
 
   it('resolves the Coolify server address safely before publishing Mail DNS', () => {
     expect(workflow).toContain('/servers/$SERVER_UUID/domains');
+    expect(workflow).toContain("const values=[]");
+    expect(workflow).toContain("const isPublic=(ip)=>");
+    expect(workflow).toContain("value.match(/(?:\\d{1,3}\\.){3}\\d{1,3}/g)");
     expect(workflow).toContain('normalize_server_host');
-    expect(workflow).toContain("value=value.replace(/^[^@/]+@/,'')");
-    expect(workflow).toContain("value=value.replace(/:\\d+$/,'')");
     expect(workflow).toContain('getent ahostsv4');
-    expect(workflow).toContain('Coolify server did not resolve to a public IPv4.');
+    expect(workflow).toContain('Coolify server payload exposed no public IPv4');
   });
 
   it('requires publicly trusted TLS and protocol greetings', () => {
