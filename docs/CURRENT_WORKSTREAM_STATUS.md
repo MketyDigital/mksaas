@@ -1,4 +1,32 @@
-# 2026-09-29 pre-Starpips platform stabilization
+# 2026-09-29 production Mail accepted — external-client gateway workstream
+
+**Current production main:** `455a1359cbde16d9eae34b6683c19cb4088d481e`.
+
+## Current authoritative truth
+
+- Stabilization PR #173 is merged and repository-certified.
+- Enterprise AI infrastructure production run `36568179070` is successful: production DB migration, `ai.mkety.com`, `api.mkety.com`, Queue/DLQ, scheduler worker and fail-closed host/API smoke passed.
+- Enterprise AI customer inference remains intentionally OFF until first-customer acceptance.
+- Mkety Mail Production run `36576563773` is successful on current production main: exact-main authorization, production DB migration, Cloudflare permission preflight, Hyperdrive/app deploy, R2/Queues, ingress/dispatch/events/content workers, secret synchronization, Mail application domains and production smoke all passed.
+- Latest Mail live-readiness diagnostic `36574979021` proved the dedicated external-client TCP layer is still absent: trusted TLS was unavailable on both `imap.mkety.com:993` and `smtp.mkety.com:465`.
+- External-client customer UI remains fail-closed with `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED=false`.
+- Active branch `feat/mail-external-client-gateway-20260929` adds the dedicated lightweight stateless IMAP/SMTP gateway, stable IMAP UIDs, protected internal gateway APIs, guarded Coolify deployment and certificate renewal.
+- Latest handoff: `docs/handoffs/2026-09-29-mail-production-gateway-next.md`.
+- No Starpips production acceptance has begun.
+
+## Exact next sequence
+
+1. certify this gateway branch with exact-head tests/type/lint/build/migration/vinext;
+2. merge with `[mail-production] [mail-gateway-production]` so Mail Production first migrates/deploys the exact SHA;
+3. require the gateway workflow to reuse/create one `mkety-mail-gateway` Coolify app at 0.25 CPU / 128 MB, expose only health 8080 + IMAPS 993 + SMTPS 465, issue trusted TLS, synchronize the internal secret and pass protocol/fail-closed smoke;
+4. record exact production SHA/run evidence in this status + latest handoff;
+5. next session begin one controlled real Mail customer acceptance, including the first real app-password IMAP/SMTP functional test and revoke/fail test;
+6. after Mail acceptance, configure/accept the first Enterprise AI customer;
+7. only then intentionally promote Enterprise AI customer inference;
+8. only after these customer gates begin Starpips production acceptance.
+
+---
+
 
 Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4` (PR #172).
 
