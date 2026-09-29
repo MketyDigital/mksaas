@@ -39,6 +39,8 @@ describe('Mkety Mail gateway production contract', () => {
 
   it('resolves the Coolify server address safely before publishing Mail DNS', () => {
     expect(workflow).toContain('/servers/$SERVER_UUID/domains');
+    expect(workflow).toContain('Always');
+    expect(workflow).toContain('domain_server_address=');
     expect(workflow).toContain("const values=[]");
     expect(workflow).toContain("const isPublic=(ip)=>");
     expect(workflow).toContain("value.match(/(?:\\d{1,3}\\.){3}\\d{1,3}/g)");
