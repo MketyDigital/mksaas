@@ -1,6 +1,11 @@
 name: Mkety DomainNameAPI Relay Production
 
 on:
+  push:
+    branches:
+      - feat/enterprise-ai-complete-platform-20260928
+    paths:
+      - .github/workflows/mkety-domainnameapi-relay-production.yml
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -31,14 +36,19 @@ jobs:
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       APP_NAME: mkety-domainnameapi-relay
       RELEASE_BRANCH: feat/enterprise-ai-complete-platform-20260928
+      TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified_sha || github.sha }}
 
     steps:
       - name: Authorize exact release
         shell: bash
         run: |
           set -euo pipefail
-          [ "${{ inputs.confirmation }}" = "DEPLOY DOMAIN RELAY" ] || { echo "Exact confirmation is required." >&2; exit 1; }
-          [[ "${{ inputs.verified_sha }}" =~ ^[0-9a-f]{40}$ ]] || { echo "verified_sha must be a full SHA." >&2; exit 1; }
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.confirmation }}" = "DEPLOY DOMAIN RELAY" ] || { echo "Exact confirmation is required." >&2; exit 1; }
+          else
+            [ "${{ github.ref_name }}" = "$RELEASE_BRANCH" ] || { echo "One-time bootstrap is restricted to the release branch." >&2; exit 1; }
+          fi
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Target SHA must be a full SHA." >&2; exit 1; }
           [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo "Missing COOLIFY_TOKEN." >&2; exit 1; }
           [ -n "${MKETY_CONNECTION_SECRET_ENCRYPTION_KEY:-}" ] || { echo "Missing MKETY_CONNECTION_SECRET_ENCRYPTION_KEY." >&2; exit 1; }
 
@@ -52,8 +62,9 @@ jobs:
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          [ "$actual" = "${{ inputs.verified_sha }}" ] || {
-            echo "Refusing deployment: verified SHA does not equal current release branch head." >&2
+          remote="$(git ls-remote origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
+          [ "$actual" = "$TARGET_SHA" ] && [ "$remote" = "$TARGET_SHA" ] || {
+            echo "Refusing deployment: target SHA is no longer the exact release branch head." >&2
             exit 1
           }
 
@@ -88,7 +99,7 @@ jobs:
           )"
 
           if [ -z "$uuid" ]; then
-            TARGET_SHA="${{ inputs.verified_sha }}" node <<'NODE' >/tmp/create.json
+            TARGET_SHA="$TARGET_SHA" node <<'NODE' >/tmp/create.json
           process.stdout.write(JSON.stringify({
             project_uuid:process.env.PROJECT_UUID,
             server_uuid:process.env.SERVER_UUID,
@@ -218,6 +229,7 @@ jobs:
           echo "Relay outbound IP: $ip"
 
       - name: Attach relay URL to existing Mkety Workers
+        id: worker-bindings
         env:
           RELAY_URL: ${{ steps.deploy.outputs.relay_url }}
         shell: bash
@@ -225,15 +237,26 @@ jobs:
           set -euo pipefail
           [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || {
             echo "Cloudflare credentials unavailable; relay deployed but Worker URL attachment skipped."
+            echo "attached=none" >> "$GITHUB_OUTPUT"
             exit 0
           }
           services="$(curl --proto '=https' --tlsv1.2 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services")"
+          attached=()
           for worker in mkety-platform mkety-app-host; do
-            if SERVICES="$services" WORKER="$worker" node -e "const x=JSON.parse(process.env.SERVICES||'{}');process.exit((x.result||[]).some(v=>v.id===process.env.WORKER)?0:1)"; then
-              meta="$(node -e "process.stdout.write(JSON.stringify({main_module:'worker.js',bindings:[{type:'secret_text',name:'MKETY_DOMAIN_RELAY_URL',text:process.env.RELAY_URL}]}))" RELAY_URL="$RELAY_URL")"
-              echo "Relay URL attachment deferred to the normal Worker promotion flow for $worker; existing scripts are not rewritten here."
+            if ! SERVICES="$services" WORKER="$worker" node -e "const x=JSON.parse(process.env.SERVICES||'{}');process.exit((x.result||[]).some(v=>v.id===process.env.WORKER)?0:1)"; then
+              continue
             fi
+            npx --yes wrangler@4.129.0 secret list --name "$worker" --format json >/tmp/"$worker"-secrets.json
+            if ! FILE=/tmp/"$worker"-secrets.json node -e "const fs=require('node:fs');const a=JSON.parse(fs.readFileSync(process.env.FILE,'utf8'));process.exit(a.some(v=>v.name==='MKETY_CONNECTION_SECRET_ENCRYPTION_KEY')?0:1)"; then
+              echo "$worker exists but does not yet have MKETY_CONNECTION_SECRET_ENCRYPTION_KEY; leaving relay URL for the guarded Enterprise promotion."
+              continue
+            fi
+            printf '%s' "$RELAY_URL" | npx --yes wrangler@4.129.0 secret put MKETY_DOMAIN_RELAY_URL --name "$worker" >/dev/null
+            attached+=("$worker")
+            echo "Attached relay URL to $worker."
           done
+          joined="$(IFS=,; echo "${attached[*]:-none}")"
+          echo "attached=$joined" >> "$GITHUB_OUTPUT"
 
       - name: Publish relay evidence
         env:
@@ -244,11 +267,12 @@ jobs:
           {
             echo '## DomainNameAPI fixed-egress relay'
             echo
-            echo "- Release SHA: ${{ inputs.verified_sha }}"
+            echo "- Release SHA: $TARGET_SHA"
             echo "- Coolify application: $APP_NAME"
             echo "- Relay URL: $RELAY_URL"
             echo "- OCI outbound IP to whitelist in DomainNameAPI: $EGRESS_IP"
             echo "- Resource cap: 0.25 CPU / 128 MB memory"
             echo "- Provider credentials stored on relay: no"
             echo "- HMAC root secret stored on relay: no; only an HKDF-derived key is injected"
+            echo "- Worker relay URL bindings attached: ${{ steps.worker-bindings.outputs.attached }}"
           } >> "$GITHUB_STEP_SUMMARY"
