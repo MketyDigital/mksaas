@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Code2, CreditCard, FlaskConical, Globe2, Headphones, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
+import { Activity, ArrowRight, BellRing, Code2, CreditCard, FlaskConical, Globe2, Headphones, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -182,6 +182,10 @@ export default async function EnterpriseAiConsolePage({
         <Card className="rounded-2xl">
           <CardHeader><Headphones className="h-5 w-5 text-primary" /><CardTitle>Conversations & handoff</CardTitle><CardDescription>Review customer chats, take over one conversation, reply as an operator, and resume AI when ready.</CardDescription></CardHeader>
           <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/conversations`}>Open operator inbox <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader><BellRing className="h-5 w-5 text-primary" /><CardTitle>Commitment reminders</CardTitle><CardDescription>Review reminders created from explicit customer promises, cancel pending ones, and inspect any delivery that requires reconciliation.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/reminders`}>Manage reminders <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader><Palette className="h-5 w-5 text-primary" /><CardTitle>Brand & white-label</CardTitle><CardDescription>{canWhiteLabel ? 'Use your own name, logo, colors, support and legal links.' : 'Available with Enterprise AI white-label access.'}</CardDescription></CardHeader>
