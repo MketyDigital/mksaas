@@ -53,8 +53,9 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Coolify server payload exposed no public IPv4');
   });
 
-  it('reconciles supported host firewalls before public gateway acceptance', () => {
-    expect(workflow).toContain('Reconcile host firewall for IMAPS and SMTPS');
+  it('reconciles supported host firewalls when direct SSH is reachable and otherwise continues to provider-ingress acceptance', () => {
+    expect(workflow).toContain('Reconcile host firewall when direct SSH is reachable');
+    expect(workflow).toContain('MKETY_MAIL_HOST_FIREWALL_RECONCILIATION=SKIPPED_DIRECT_SSH_UNREACHABLE');
     expect(workflow).toContain('/security/keys/$key_uuid');
     expect(workflow).toContain("ufw allow 993/tcp");
     expect(workflow).toContain("ufw allow 465/tcp");
@@ -71,6 +72,8 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('-verify_hostname "$host"');
     expect(workflow).toContain("grep -Fq 'IMAP4rev1'");
     expect(workflow).toContain("grep -Fq '250-AUTH PLAIN LOGIN'");
+    expect(workflow).toContain('MKETY_MAIL_ORIGIN_TCP_ACCEPTANCE=FAILED');
+    expect(workflow).toContain('upstream OCI security-list/NSG ingress or host firewall');
     expect(workflow).toContain('Gateway internal API expected fail-closed 401');
   });
 
