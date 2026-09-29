@@ -1,4 +1,4 @@
-import { resolveCname } from 'node:dns/promises';
+import { resolve4, resolve6, resolveCname } from 'node:dns/promises';
 import postgres from 'postgres';
 
 function required(name: string) {
@@ -49,8 +49,20 @@ try {
   const cnameTarget = String(providerVerified.cnameTarget ?? '').trim().toLowerCase().replace(/\.$/, '');
   if (!cnameTarget) throw new Error('Enterprise hostname has no recorded CNAME target.');
 
-  const cnames = (await resolveCname(hostname)).map((value) => value.toLowerCase().replace(/\.$/, ''));
-  if (!cnames.includes(cnameTarget)) throw new Error('Live DNS CNAME does not match Mkety target. Expected ' + cnameTarget + ', received ' + cnames.join(', '));
+  let cnames: string[] = [];
+  try {
+    cnames = (await resolveCname(hostname)).map((value) => value.toLowerCase().replace(/\.$/, ''));
+  } catch {
+    // A customer may proxy the CNAME through their own Cloudflare account, in which
+    // case public DNS exposes A/AAAA records instead of the underlying CNAME.
+  }
+  const addresses = [
+    ...(await resolve4(hostname).catch(() => [])),
+    ...(await resolve6(hostname).catch(() => [])),
+  ];
+  const dnsResolvable = cnames.length > 0 || addresses.length > 0;
+  if (!dnsResolvable) throw new Error('Customer hostname does not resolve in public DNS.');
+  const dnsCnameVerified = cnames.includes(cnameTarget);
 
   const proofResponse = await fetch('https://' + hostname + '/api/v1/ai/domain-route-proof', {
     redirect: 'error',
@@ -89,7 +101,9 @@ try {
     tenantId,
     tenantSlug: tenant.slug,
     cnameTarget,
-    dnsCnameVerified: true,
+    dnsResolvable,
+    dnsCnameVerified,
+    dnsCnameObserved: cnames,
     httpsTenantProofVerified: true,
     brandName,
     productName,
