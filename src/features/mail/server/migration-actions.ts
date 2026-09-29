@@ -55,6 +55,9 @@ function plainPreview(text: string, html: string) {
 
 export async function importMailEmlFiles(tenantSlug: string, formData: FormData) {
   const access = await requireMailWorkspaceAccess(tenantSlug);
+  if (!['admin', 'manager'].includes(String(access.membership.role))) {
+    throw new Error('Mail migration requires workspace manager access.');
+  }
   const mailboxId = String(formData.get('mailboxId') || '');
   const mailbox = await db.query.mailMailboxes.findFirst({
     where: and(
