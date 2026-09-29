@@ -12,6 +12,12 @@ import {
 } from '@/features/ai-runtime/channels/inbound';
 import { resolveLinkedInCommunityNotification } from '@/features/ai-runtime/channels/linkedin-community';
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
+import {
+  markEnterpriseAiConversationOutbound,
+  recordEnterpriseAiMessage,
+  scheduleEnterpriseAiAction,
+} from '@/features/ai-runtime/channels/server/conversations';
+import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
@@ -220,19 +226,55 @@ export async function POST(
               : undefined,
         });
         if (turn.kind === 'completed' && turn.text) {
-          await deliverEnterpriseAiChannelMessage(
-            {
-              channel: channel.key,
-              endpointUrl: connection.endpointUrl,
-              metadata: connection.metadata,
-              credentials,
-            },
-            {
-              recipientId: inbound.replyRecipientId,
-              contextId: inbound.conversationId,
-              text: turn.text,
-            },
-          );
+          if (turn.deliveryDelaySeconds > 0) {
+            const action = await scheduleEnterpriseAiAction({
+              tenantId: connection.tenantId!,
+              conversationId: turn.conversationId,
+              solutionInstanceId:
+                typeof connection.metadata.solutionInstanceId === 'string'
+                  ? connection.metadata.solutionInstanceId
+                  : null,
+              connectionId: connection.id,
+              kind: 'delayed_reply',
+              idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
+              dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
+              payload: {
+                recipientId: inbound.replyRecipientId,
+                contextId: inbound.conversationId,
+                text: turn.text,
+                sourceProviderMessageId: inbound.providerMessageId,
+              },
+            });
+            await enqueueEnterpriseAiScheduledAction({
+              actionId: action.id,
+              tenantId: connection.tenantId!,
+              delaySeconds: turn.deliveryDelaySeconds,
+            }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
+          } else {
+            const delivery = await deliverEnterpriseAiChannelMessage(
+              {
+                channel: channel.key,
+                endpointUrl: connection.endpointUrl,
+                metadata: connection.metadata,
+                credentials,
+              },
+              {
+                recipientId: inbound.replyRecipientId,
+                contextId: inbound.conversationId,
+                text: turn.text,
+              },
+            );
+            await recordEnterpriseAiMessage({
+              tenantId: connection.tenantId!,
+              conversationId: turn.conversationId,
+              requestId: turn.requestId,
+              direction: 'outbound',
+              role: 'assistant',
+              providerMessageId: delivery.providerMessageId ?? null,
+              content: turn.text,
+            });
+            await markEnterpriseAiConversationOutbound(turn.conversationId, connection.tenantId!);
+          }
         }
       })().catch(() => undefined));
     }
