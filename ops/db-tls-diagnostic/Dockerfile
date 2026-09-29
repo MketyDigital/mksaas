@@ -5,7 +5,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /diag
-COPY ops/db-tls-diagnostic/run.sh /diag/run.sh
+COPY --chown=node:node ops/db-tls-diagnostic/run.sh /diag/run.sh
 RUN chmod +x /diag/run.sh
+USER node
 EXPOSE 3000
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=20 CMD node -e "const r=require('http').get('http://127.0.0.1:3000/',x=>process.exit(x.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.setTimeout(2000,()=>{r.destroy();process.exit(1)})"
 CMD ["/diag/run.sh"]
