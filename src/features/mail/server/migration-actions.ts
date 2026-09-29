@@ -46,10 +46,10 @@ function attachmentBytes(value: unknown): Uint8Array {
 }
 
 function plainPreview(text: string, html: string) {
-  const source = text || html
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ');
+  // This produces plain preview text only; it is not an HTML sanitizer.
+  // React renders the resulting preview as text, while the original HTML
+  // remains stored separately for controlled message rendering.
+  const source = text || html.replace(/<[^>]*>/g, ' ');
   return source.replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
