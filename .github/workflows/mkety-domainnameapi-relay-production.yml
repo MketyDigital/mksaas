@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       verified_sha:
-        description: Exact PR #159 head SHA to deploy
+        description: Exact current main SHA to deploy
         required: true
         type: string
       confirmation:
@@ -32,7 +32,7 @@ jobs:
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
       APP_NAME: mkety-domainnameapi-relay
-      RELEASE_BRANCH: feat/enterprise-ai-complete-platform-20260928
+      RELEASE_BRANCH: main
       TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified_sha || github.sha }}
 
     steps:
@@ -60,7 +60,7 @@ jobs:
           actual="$(git rev-parse HEAD)"
           remote="$(git ls-remote origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
           [ "$actual" = "$TARGET_SHA" ] && [ "$remote" = "$TARGET_SHA" ] || {
-            echo "Refusing deployment: target SHA is no longer the exact release branch head." >&2
+            echo "Refusing deployment: target SHA is no longer the exact main head." >&2
             exit 1
           }
 
