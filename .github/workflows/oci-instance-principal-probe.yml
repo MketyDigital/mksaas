@@ -1,0 +1,128 @@
+name: OCI Instance Principal Probe
+
+on:
+  push:
+    branches:
+      - fix/oci-mail-ingress-20260929
+    paths:
+      - 'ops/oci-ingress-probe/**'
+      - '.github/workflows/oci-instance-principal-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      APP_NAME: mkety-oci-ingress-probe
+      TARGET_SHA: ${{ github.sha }}
+    steps:
+      - name: Require Coolify access
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$COOLIFY_API_TOKEN" ] || { echo 'COOLIFY_TOKEN unavailable.'; exit 1; }
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "${COOLIFY_URL%/}/api/v1/health" >/dev/null
+
+      - name: Create deploy and inspect disposable OCI probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          cleanup() {
+            if [ -n "${app_uuid:-}" ]; then
+              curl --proto '=https' --tlsv1.2 -sS -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$app_uuid" >/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          app_uuid="$(APP_NAME="$APP_NAME" node - <<'NODE'
+          const x=require('/tmp/apps.json'); const rows=Array.isArray(x)?x:(x.data||[]);
+          const row=rows.find(r=>String(r.name||'')===process.env.APP_NAME);
+          process.stdout.write(String(row?.uuid||''));
+          NODE
+          )"
+
+          if [ -z "$app_uuid" ]; then
+            node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'fix/oci-mail-ingress-20260929',
+            git_commit_sha:process.env.TARGET_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/oci-ingress-probe/Dockerfile',
+            name:process.env.APP_NAME,
+            description:'Disposable non-public OCI instance-principal capability probe',
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false,
+            health_check_enabled:false,
+            limits_cpus:'0.10',
+            limits_memory:'128m',
+            docker_images_to_keep:1,
+            max_restart_count:0
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/create.json "$base/applications/public")"
+            [ "$code" = 201 ] || { echo "Probe app create failed HTTP $code"; cat /tmp/create-response.json; exit 1; }
+            app_uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          else
+            UUID="$app_uuid" node <<'NODE' >/tmp/update.json
+          process.stdout.write(JSON.stringify({
+            git_branch:'fix/oci-mail-ingress-20260929',
+            git_commit_sha:process.env.TARGET_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/oci-ingress-probe/Dockerfile',
+            health_check_enabled:false,
+            limits_cpus:'0.10',
+            limits_memory:'128m',
+            max_restart_count:0
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/update-response.json -w '%{http_code}' -X PATCH               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/update.json "$base/applications/$app_uuid")"
+            [ "$code" = 200 ] || { echo "Probe app update failed HTTP $code"; cat /tmp/update-response.json; exit 1; }
+          fi
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$app_uuid&force=true")"
+          [ "$code" = 200 ] || { echo "Probe deploy failed HTTP $code"; cat /tmp/deploy.json; exit 1; }
+          dep="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+            status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) echo "Probe deployment failed: $status"; exit 1 ;;
+            esac
+            [ "$i" -lt 120 ] || { echo 'Probe deployment timed out.'; exit 1; }
+            sleep 3
+          done
+
+          found=false
+          for i in $(seq 1 60); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$app_uuid/logs?lines=200&show_timestamps=false" -o /tmp/logs.json || true
+            node <<'NODE' >/tmp/probe-lines || true
+          const fs=require('node:fs');let raw='';
+          try{raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          for(const line of raw.split(/\r?\n/)){
+            if(/^MKETY_OCI_[A-Z0-9_]+=/.test(line.trim())) console.log(line.trim());
+          }
+          NODE
+            if grep -Eq '^MKETY_OCI_(NETWORK_READ|SIGNER_ERROR)=' /tmp/probe-lines; then
+              cat /tmp/probe-lines
+              found=true
+              break
+            fi
+            sleep 2
+          done
+          [ "$found" = true ] || { echo 'OCI probe did not produce capability markers.'; cat /tmp/probe-lines || true; exit 1; }
