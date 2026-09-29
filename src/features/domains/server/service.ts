@@ -1,3 +1,4 @@
+import { recordManagedDomainAfterRegistration } from './managed-domain-service';
 import {
   type DomainQuote,
   type DomainRegistrationContact,
@@ -17,6 +18,7 @@ export async function quoteDomainRegistration(domain: string, registrationYears 
 }
 
 export async function registerDomainAfterVerifiedSettlement(input: {
+  tenantId: string;
   domain: string;
   years: number;
   contact: DomainRegistrationContact;
@@ -26,17 +28,24 @@ export async function registerDomainAfterVerifiedSettlement(input: {
   if (!input.settlementVerified) {
     throw new Error('Domain registration requires verified settlement.');
   }
+  if (!input.tenantId.trim()) throw new Error('Domain registration tenant ID is required.');
   if (!input.orderId.trim()) throw new Error('Domain registration order ID is required.');
   if (!input.contact.firstName.trim() || !input.contact.lastName.trim() || !input.contact.email.trim()) {
     throw new Error('Domain registrant contact details are required.');
   }
 
-  return (await getDomainResellerAdapter()).register({
+  const registered = await (await getDomainResellerAdapter()).register({
     domain: input.domain,
     years: years(input.years),
     contact: input.contact,
     idempotencyKey: `domain-register:${input.orderId.trim()}`,
   });
+  await recordManagedDomainAfterRegistration({
+    tenantId: input.tenantId.trim(),
+    orderId: input.orderId.trim(),
+    registered,
+  });
+  return registered;
 }
 
 export async function renewDomainAfterVerifiedSettlement(input: {
