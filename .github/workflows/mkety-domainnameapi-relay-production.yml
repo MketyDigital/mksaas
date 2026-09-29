@@ -30,6 +30,9 @@ jobs:
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DOMAINNAMEAPI_RESELLER_ID: ${{ secrets.DOMAINNAMEAPI_USERNAME }}
+      DOMAINNAMEAPI_LIVE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_API_TOKEN }}
+      DOMAINNAMEAPI_OTE_API_TOKEN: ${{ secrets.DOMAINNAMEAPI_OTE_API_TOKEN }}
       PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
@@ -309,6 +312,73 @@ jobs:
           done
           [ "$ready" = true ] || { echo "HTTPS relay health check failed." >&2; exit 1; }
           echo "relay_url=$relay_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify registrar Live and OT&E quote-only acceptance
+        env:
+          RELAY_URL: ${{ steps.secure-host.outputs.relay_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DOMAINNAMEAPI_RESELLER_ID DOMAINNAMEAPI_LIVE_API_TOKEN DOMAINNAMEAPI_OTE_API_TOKEN; do
+            [ -n "${!name:-}" ] || { echo "Missing registrar acceptance secret: $name" >&2; exit 1; }
+            echo "::add-mask::${!name}"
+          done
+          RELAY_URL="$RELAY_URL" DERIVED_RELAY_SECRET="$DERIVED_RELAY_SECRET" node <<'NODE'
+          const { createHmac, randomUUID } = require('node:crypto');
+
+          async function probe(environment, apiKey) {
+            const timestamp = String(Date.now());
+            const domain = `mkety-${environment === 'production' ? 'live' : 'ote'}-${Date.now()}-${randomUUID().slice(0,8)}.com`;
+            const raw = JSON.stringify({
+              nonce: randomUUID(),
+              operation: 'quote',
+              environment,
+              payload: {
+                resellerId: process.env.DOMAINNAMEAPI_RESELLER_ID,
+                apiKey,
+                domainName: domain,
+                period: 1,
+              },
+            });
+            const signature = createHmac('sha256', process.env.DERIVED_RELAY_SECRET)
+              .update(timestamp + '.' + raw)
+              .digest('hex');
+            const response = await fetch(process.env.RELAY_URL + '/v1/domainnameapi', {
+              method: 'POST',
+              headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                'x-mkety-timestamp': timestamp,
+                'x-mkety-signature': signature,
+              },
+              body: raw,
+              signal: AbortSignal.timeout(20000),
+            });
+            let body = null;
+            try { body = await response.json(); } catch {}
+            if (!response.ok) {
+              const detail = body && typeof body === 'object'
+                ? String(body.message || body.error || body.detail || '')
+                : '';
+              throw new Error(`Domain registrar ${environment} quote failed HTTP ${response.status}${detail ? ': ' + detail : ''}`);
+            }
+            return { environment, domain, status: response.status };
+          }
+
+          Promise.all([
+            probe('production', process.env.DOMAINNAMEAPI_LIVE_API_TOKEN),
+            probe('ote', process.env.DOMAINNAMEAPI_OTE_API_TOKEN),
+          ]).then((results) => {
+            console.log('MKETY_DOMAIN_REGISTRAR_ACCEPTANCE=' + JSON.stringify({
+              ok: true,
+              mutationPerformed: false,
+              results,
+            }));
+          }).catch((error) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
+          });
+          NODE
 
       - name: Attach relay URL to existing Mkety Workers
         id: worker-bindings
