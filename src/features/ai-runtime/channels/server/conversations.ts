@@ -63,9 +63,20 @@ export async function ensureEnterpriseAiConversation(input: {
     replyContextId: input.replyContextId ?? null,
     status: 'automated',
     lastInboundAt: now,
+  }).onConflictDoNothing({
+    target: [aiConversations.connectionId, aiConversations.externalConversationId],
   }).returning();
-  if (!created) throw new Error('Enterprise AI conversation could not be created.');
-  return created;
+  if (created) return created;
+
+  const raced = await db.query.aiConversations.findFirst({
+    where: and(
+      eq(aiConversations.connectionId, input.connectionId),
+      eq(aiConversations.externalConversationId, input.externalConversationId),
+      eq(aiConversations.tenantId, input.tenantId),
+    ),
+  });
+  if (!raced) throw new Error('Enterprise AI conversation could not be created.');
+  return raced;
 }
 
 export async function recordEnterpriseAiMessage(input: {
