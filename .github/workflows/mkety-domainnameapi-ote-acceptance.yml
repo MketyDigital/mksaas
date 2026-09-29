@@ -8,12 +8,12 @@ on:
         required: true
         type: string
       lifecycle:
-        description: Also perform OT&E register + renew using the configured contact reference
+        description: Also perform OT&E register + renew using structured registrant contact JSON
         required: false
         default: false
         type: boolean
-      contact_ref:
-        description: OT&E registrant contact reference required only for lifecycle acceptance
+      contact_json:
+        description: JSON registrant contact required only for lifecycle acceptance
         required: false
         type: string
 
@@ -31,7 +31,7 @@ jobs:
       MKETY_DOMAIN_RELAY_URL: ${{ secrets.MKETY_DOMAIN_RELAY_URL || vars.MKETY_DOMAIN_RELAY_URL }}
       MKETY_DOMAIN_RELAY_SECRET: ${{ secrets.MKETY_DOMAIN_RELAY_SECRET }}
       DOMAIN_ACCEPTANCE_LIFECYCLE: ${{ inputs.lifecycle }}
-      DOMAIN_ACCEPTANCE_CONTACT_REF: ${{ inputs.contact_ref }}
+      DOMAIN_ACCEPTANCE_CONTACT_JSON: ${{ inputs.contact_json }}
     steps:
       - name: Require explicit OT&E authorization
         shell: bash
@@ -62,8 +62,8 @@ jobs:
           [ -n "${MKETY_CONNECTION_SECRET_ENCRYPTION_KEY:-}" ] || { echo "Missing preview MKETY_CONNECTION_SECRET_ENCRYPTION_KEY." >&2; exit 1; }
           echo "::add-mask::$DOMAIN_ACCEPTANCE_DATABASE_URL"
           echo "::add-mask::$MKETY_CONNECTION_SECRET_ENCRYPTION_KEY"
-          if [ "${DOMAIN_ACCEPTANCE_LIFECYCLE}" = "true" ] && [ -z "${DOMAIN_ACCEPTANCE_CONTACT_REF:-}" ]; then
-            echo "Lifecycle acceptance requires an OT&E contact_ref input." >&2
+          if [ "${DOMAIN_ACCEPTANCE_LIFECYCLE}" = "true" ] && [ -z "${DOMAIN_ACCEPTANCE_CONTACT_JSON:-}" ]; then
+            echo "Lifecycle acceptance requires an OT&E contact_json input." >&2
             exit 1
           fi
 
