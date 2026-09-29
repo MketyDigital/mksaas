@@ -1,4 +1,4 @@
-import { ArrowRight, Code2, CreditCard, Globe2, Headphones, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
+import { Activity, ArrowRight, Code2, CreditCard, FlaskConical, Globe2, Headphones, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -163,6 +163,14 @@ export default async function EnterpriseAiConsolePage({
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
+        <Card className="rounded-2xl">
+          <CardHeader><FlaskConical className="h-5 w-5 text-primary" /><CardTitle>Playground</CardTitle><CardDescription>Test the selected solution with its real instructions, knowledge, model, credits and commercial safeguards before customer use.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/playground`}>Test solution <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader><Activity className="h-5 w-5 text-primary" /><CardTitle>Runs & logs</CardTitle><CardDescription>Inspect customer-safe request status, token usage, model and credits without exposing provider secrets or internal margins.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/runs`}>Open runs <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
         <Card className="rounded-2xl">
           <CardHeader><Headphones className="h-5 w-5 text-primary" /><CardTitle>Conversations & handoff</CardTitle><CardDescription>Review customer chats, take over one conversation, reply as an operator, and resume AI when ready.</CardDescription></CardHeader>
           <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/conversations`}>Open operator inbox <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
