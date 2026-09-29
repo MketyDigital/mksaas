@@ -11,7 +11,7 @@ export const managedDomainStatusEnum = appSchema.enum('managed_domain_status', [
   'suspended',
 ]);
 
-/** Custom domains attached to a tenant. Vercel integration is optional for testing. */
+/** Customer-owned custom hostnames attached to a tenant through Mkety-managed routing. */
 export const customDomains = appSchema.table(
   'custom_domains',
   {
@@ -21,7 +21,7 @@ export const customDomains = appSchema.table(
       .references(() => tenants.id, { onDelete: 'cascade' }),
     hostname: varchar('hostname', { length: 255 }).notNull().unique(),
     status: customDomainStatusEnum('status').notNull().default('pending'),
-    provider: varchar('provider', { length: 50 }).notNull().default('vercel'),
+    provider: varchar('provider', { length: 50 }).notNull().default('mkety'),
     providerVerified: text('provider_verified'),
     verification: text('verification'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
