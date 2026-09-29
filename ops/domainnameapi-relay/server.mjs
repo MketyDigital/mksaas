@@ -7,10 +7,13 @@ if (sharedSecret.length < 32) throw new Error('MKETY_DOMAIN_RELAY_SECRET must be
 
 const LIVE_BASE = 'https://api.domainresellerapi.com';
 const OTE_BASE = 'https://ote.domainresellerapi.com';
+const CURRENT_LIVE_BASE = 'https://api.domainnameapi.com';
+const CURRENT_OTE_BASE = 'https://rest-test.domainnameapi.com';
 const seenNonces = new Map();
 const ALLOWED = new Map([
   ['quote', { method: 'POST', path: '/v1/domain/check' }],
   ['quote-basic', { method: 'GET', path: '/api/domain/check' }],
+  ['quote-current', { method: 'POST', path: '/v1/domain/check' }],
   ['quote-current-live', { method: 'POST', path: '/v1/domain/check' }],
   ['register', { method: 'POST', path: '/v1/domain/register' }],
   ['renew', { method: 'POST', path: '/v1/domain/renew' }],
