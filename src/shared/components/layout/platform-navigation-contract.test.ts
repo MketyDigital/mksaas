@@ -9,7 +9,7 @@ describe('Platform navigation route contract', () => {
   it('keeps every Admin sidebar destination backed by a real route', () => {
     const expected = [
       'admin/page.tsx',
-      'admin/platform-control/page.tsx',
+      'admin/platform-control/page.tsx',\n      'admin/platform-control/[module]/page.tsx',
       'admin/analytics/page.tsx',
       'admin/members/page.tsx',
       'admin/invites/page.tsx',
@@ -26,6 +26,29 @@ describe('Platform navigation route contract', () => {
     for (const candidate of expected) {
       expect(existsSync(route(candidate))).toBe(true);
     }
+  });
+
+  it('keeps product-operations modules discoverable from the Admin sidebar', () => {
+    const nav = readFileSync(resolve(process.cwd(), 'src/shared/components/layout/nav/AdminViewNav.tsx'), 'utf8');
+    for (const destination of [
+      '/platform-control/ai-operations',
+      '/platform-control/mail',
+      '/platform-control/billing',
+      '/platform-control/payments',
+      '/platform-control/domains-routing',
+    ]) {
+      expect(nav).toContain(destination);
+    }
+  });
+
+  it('keeps tenant product navigation simple and product-aware', () => {
+    const nav = readFileSync(resolve(process.cwd(), 'src/shared/components/layout/nav/MyViewNav.tsx'), 'utf8');
+    expect(nav).toContain('title="Workspace"');
+    expect(nav).toContain('title="Products"');
+    expect(nav).toContain('title="Account"');
+    expect(nav).toContain('https://media.mkety.com');
+    expect(nav).toContain('hasEnterpriseAiAccess');
+    expect(nav).toContain('hasMailAccess');
   });
 
   it('keeps Mkety Mail shell destinations backed by customer routes', () => {
