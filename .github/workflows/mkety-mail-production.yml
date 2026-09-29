@@ -110,7 +110,7 @@ jobs:
           proof_sha="$VERIFIED_SHA"
           for depth in $(seq 1 8); do
             curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$proof_sha" -o /tmp/mail-proof-commit.json
-            next_parent="$(node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/mail-proof-commit.json','utf8'));const files=(x.files||[]).map(f=>f.filename).sort();const p=(x.parents||[])[0]?.sha||'';const neutral=files.length>0&&files.every(file=>file==='.github/workflows/mkety-mail-production.yml'||file.startsWith('docs/MKETY_MAIL_'));if(neutral&&p)process.stdout.write(p)")"
+            next_parent="$(node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/mail-proof-commit.json','utf8'));const files=(x.files||[]).map(f=>f.filename).sort();const p=(x.parents||[])[0]?.sha||'';const neutral=files.length>0&&files.every(file=>file==='.github/workflows/mkety-mail-production.yml'||file==='.github/workflows/mkety-ai-production.yml'||file.startsWith('docs/MKETY_MAIL_')||file.startsWith('docs/MKETY_AI_'));if(neutral&&p)process.stdout.write(p)")"
             [ -n "$next_parent" ] || break
             proof_sha="$next_parent"
           done
