@@ -208,6 +208,24 @@ export type MketyDnsRecordInput = {
   priority?: number;
 };
 
+
+export async function findCloudflareManagedZone(domain: string) {
+  const config = await cloudflareDomainConfig();
+  const normalized = domain.trim().toLowerCase().replace(/\.$/, '');
+  const query = new URLSearchParams({
+    name: normalized,
+    'account.id': config.accountId,
+    per_page: '50',
+  });
+  const zones = await cf<Array<{
+    id: string;
+    name: string;
+    status: string;
+    name_servers?: string[];
+  }>>(config, `/zones?${query.toString()}`);
+  return zones.find((zone) => zone.name.toLowerCase() === normalized) ?? null;
+}
+
 export async function createCloudflareManagedZone(domain: string) {
   const config = await cloudflareDomainConfig();
   const normalized = domain.trim().toLowerCase().replace(/\.$/, '');
