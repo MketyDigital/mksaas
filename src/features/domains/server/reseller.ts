@@ -63,5 +63,7 @@ export async function getDomainResellerAdapter(): Promise<DomainResellerAdapter>
     baseUrl: connection.endpointUrl ?? undefined,
     nameServers,
     whoisPrivacy: config.whoisPrivacy !== false,
+    relayUrl: process.env.MKETY_DOMAIN_RELAY_URL,
+    relaySecret: process.env.MKETY_DOMAIN_RELAY_SECRET,
   });
 }
