@@ -50,6 +50,9 @@ export function ManagedDomainsClient({
   return (
     <div className="space-y-3">
       {message ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">{message}</div> : null}
+      <p className="text-xs text-muted-foreground">
+        Auto-renew preference keeps the domain queued for renewal, but Mkety renews only after the renewal payment is verified.
+      </p>
       {domains.map((domain) => (
         <div key={domain.id} className="rounded-xl border p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -80,7 +83,7 @@ export function ManagedDomainsClient({
                   disabled={isPending}
                   onChange={(event) => update({ id: domain.id, autoRenew: event.target.checked }, 'PATCH')}
                 />
-                Auto-renew
+                Auto-renew preference
               </label>
               {domain.dnsZoneId ? (
                 <Link
