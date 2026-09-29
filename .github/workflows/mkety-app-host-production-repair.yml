@@ -1,6 +1,11 @@
 name: Mkety App Host Production Repair
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-app-host-production-repair.yml'
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -22,6 +27,7 @@ env:
   MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
   MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login
   NEXT_PUBLIC_APP_URL: https://app.mkety.com
+  TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified_sha || github.sha }}
 
 jobs:
   repair:
@@ -42,11 +48,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "${{ inputs.confirmation }}" = "REPAIR APP.MKETY.COM" ] || {
-            echo "Exact production promotion confirmation is required." >&2
-            exit 1
-          }
-          case "${{ inputs.verified_sha }}" in
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.confirmation }}" = "REPAIR APP.MKETY.COM" ] || {
+              echo "Exact production promotion confirmation is required." >&2
+              exit 1
+            }
+          else
+            [ "${{ github.ref_name }}" = "$RELEASE_BRANCH" ] || {
+              echo "One-time app-host promotion is restricted to main." >&2
+              exit 1
+            }
+          fi
+          case "$TARGET_SHA" in
             [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
             *) echo "verified_sha must be a full 40-character commit SHA." >&2; exit 1 ;;
           esac
@@ -54,7 +67,7 @@ jobs:
       - name: Checkout exact certified main release
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.verified_sha }}
+          ref: ${{ env.TARGET_SHA }}
           fetch-depth: 1
 
       - name: Verify SHA matches current main
@@ -63,7 +76,7 @@ jobs:
           set -euo pipefail
           certified_head="$(git ls-remote origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
           [ -n "$certified_head" ] || { echo "main head was not found." >&2; exit 1; }
-          [ "$certified_head" = "${{ inputs.verified_sha }}" ] || {
+          [ "$certified_head" = "${{ env.TARGET_SHA }}" ] || {
             echo "Refusing production promotion: verified SHA does not match current main." >&2
             exit 1
           }
@@ -371,7 +384,7 @@ jobs:
           {
             echo '## app.mkety.com production repair'
             echo
-            echo '- Exact production SHA: `${{ inputs.verified_sha }}`'
+            echo '- Exact production SHA: `${{ env.TARGET_SHA }}`'
             echo '- Dedicated Worker: `mkety-app-host`'
             echo '- Public mkety.com/www Worker: unchanged'
             echo '- Production DB: existing MKETY_DB Hyperdrive'
