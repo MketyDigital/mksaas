@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       verified_sha:
-        description: Exact certified PR #160 head SHA
+        description: Exact certified current main SHA
         required: true
         type: string
       confirmation:
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  HOTFIX_PR_REF: refs/pull/160/head
+  RELEASE_BRANCH: main
   APP_WORKER_NAME: mkety-app-host
   MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
   MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
@@ -38,12 +38,12 @@ jobs:
       MKETY_DOMAIN_RELAY_URL: ${{ secrets.MKETY_DOMAIN_RELAY_URL || vars.MKETY_DOMAIN_RELAY_URL }}
       MKETY_DOMAIN_RELAY_SECRET: ${{ secrets.MKETY_DOMAIN_RELAY_SECRET }}
     steps:
-      - name: Authorize exact hotfix SHA
+      - name: Authorize exact production SHA
         shell: bash
         run: |
           set -euo pipefail
           [ "${{ inputs.confirmation }}" = "REPAIR APP.MKETY.COM" ] || {
-            echo "Exact repair confirmation is required." >&2
+            echo "Exact production promotion confirmation is required." >&2
             exit 1
           }
           case "${{ inputs.verified_sha }}" in
@@ -51,20 +51,20 @@ jobs:
             *) echo "verified_sha must be a full 40-character commit SHA." >&2; exit 1 ;;
           esac
 
-      - name: Checkout exact certified hotfix
+      - name: Checkout exact certified main release
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.verified_sha }}
           fetch-depth: 1
 
-      - name: Verify SHA matches the persistent PR 160 head ref
+      - name: Verify SHA matches current main
         shell: bash
         run: |
           set -euo pipefail
-          certified_head="$(git ls-remote origin "$HOTFIX_PR_REF" | awk '{print $1}')"
-          [ -n "$certified_head" ] || { echo "PR #160 head ref was not found." >&2; exit 1; }
+          certified_head="$(git ls-remote origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
+          [ -n "$certified_head" ] || { echo "main head was not found." >&2; exit 1; }
           [ "$certified_head" = "${{ inputs.verified_sha }}" ] || {
-            echo "Refusing repair: verified SHA does not match the certified PR #160 head ref." >&2
+            echo "Refusing production promotion: verified SHA does not match current main." >&2
             exit 1
           }
 
@@ -372,11 +372,11 @@ jobs:
           {
             echo '## app.mkety.com production repair'
             echo
-            echo '- Exact hotfix SHA: `${{ inputs.verified_sha }}`'
+            echo '- Exact production SHA: `${{ inputs.verified_sha }}`'
             echo '- Dedicated Worker: `mkety-app-host`'
             echo '- Public mkety.com/www Worker: unchanged'
             echo '- Production DB: existing MKETY_DB Hyperdrive'
-            echo '- ZITADEL callback/logout: app.mkety.com added non-destructively'
-            echo '- Bad app DNS record: replaced by Worker Custom Domain'
+            echo '- ZITADEL callback/logout: app.mkety.com reconciled non-destructively'
+            echo '- app.mkety.com Worker Custom Domain: verified/preserved'
             echo '- Live root/app/auth handoff: verified'
           } >> "$GITHUB_STEP_SUMMARY"
