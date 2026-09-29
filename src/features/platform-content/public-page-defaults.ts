@@ -107,7 +107,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Domain registration',
         title: 'Find and register domains with live pricing.',
         description:
-          'Mkety checks live availability and current extension-specific pricing before checkout. The price shown is the active Mkety sell price, and registration happens only after verified payment settlement.'
+          'Mkety checks live availability and current extension-specific pricing before checkout. The price shown is the active Mkety sell price, and registration happens only after verified payment settlement.',
         items: [
           {
             key: 'search',
