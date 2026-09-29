@@ -78,6 +78,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     connectionId: input.connectionId,
     externalConversationId: input.externalConversationId,
     externalUserId: input.senderId,
+    replyRecipientId: input.replyRecipientId,
+    replyContextId: input.contextId ?? input.externalConversationId,
   });
   await recordEnterpriseAiMessage({
     tenantId: input.tenantId,
