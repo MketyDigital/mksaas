@@ -1,6 +1,11 @@
 name: Mkety App Host Production Repair
 
 on:
+  push:
+    branches:
+      - release/production-finalize-20260929
+    paths:
+      - .github/workflows/mkety-app-host-production-repair.yml
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -16,7 +21,8 @@ permissions:
   contents: read
 
 env:
-  HOTFIX_PR_REF: refs/pull/160/head
+  RELEASE_BRANCH: main
+  TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified_sha || '3e6518ce70dcf7bb0f68feb3cbda1ef8221dc119' }}
   APP_WORKER_NAME: mkety-app-host
   MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
   MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
@@ -38,33 +44,40 @@ jobs:
       MKETY_DOMAIN_RELAY_URL: ${{ secrets.MKETY_DOMAIN_RELAY_URL || vars.MKETY_DOMAIN_RELAY_URL }}
       MKETY_DOMAIN_RELAY_SECRET: ${{ secrets.MKETY_DOMAIN_RELAY_SECRET }}
     steps:
-      - name: Authorize exact hotfix SHA
+      - name: Authorize exact production SHA
         shell: bash
         run: |
           set -euo pipefail
-          [ "${{ inputs.confirmation }}" = "REPAIR APP.MKETY.COM" ] || {
-            echo "Exact repair confirmation is required." >&2
-            exit 1
-          }
-          case "${{ inputs.verified_sha }}" in
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.confirmation }}" = "REPAIR APP.MKETY.COM" ] || {
+              echo "Exact repair confirmation is required." >&2
+              exit 1
+            }
+          else
+            [ "${{ github.ref_name }}" = "release/production-finalize-20260929" ] || {
+              echo "One-time production finalization trigger is restricted to the authorized release branch." >&2
+              exit 1
+            }
+          fi
+          case "$TARGET_SHA" in
             [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
             *) echo "verified_sha must be a full 40-character commit SHA." >&2; exit 1 ;;
           esac
 
-      - name: Checkout exact certified hotfix
+      - name: Checkout exact certified production source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.verified_sha }}
+          ref: ${{ env.TARGET_SHA }}
           fetch-depth: 1
 
-      - name: Verify SHA matches the persistent PR 160 head ref
+      - name: Verify SHA matches current main
         shell: bash
         run: |
           set -euo pipefail
-          certified_head="$(git ls-remote origin "$HOTFIX_PR_REF" | awk '{print $1}')"
-          [ -n "$certified_head" ] || { echo "PR #160 head ref was not found." >&2; exit 1; }
-          [ "$certified_head" = "${{ inputs.verified_sha }}" ] || {
-            echo "Refusing repair: verified SHA does not match the certified PR #160 head ref." >&2
+          actual="$(git rev-parse HEAD)"
+          main_head="$(git ls-remote origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
+          [ "$actual" = "$TARGET_SHA" ] && [ "$main_head" = "$TARGET_SHA" ] || {
+            echo "Refusing repair: target SHA is not the exact current main head." >&2
             exit 1
           }
 
@@ -372,7 +385,7 @@ jobs:
           {
             echo '## app.mkety.com production repair'
             echo
-            echo '- Exact hotfix SHA: `${{ inputs.verified_sha }}`'
+            echo '- Exact hotfix SHA: `$TARGET_SHA`'
             echo '- Dedicated Worker: `mkety-app-host`'
             echo '- Public mkety.com/www Worker: unchanged'
             echo '- Production DB: existing MKETY_DB Hyperdrive'
