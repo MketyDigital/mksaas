@@ -2,6 +2,7 @@ import { BadgeCheck, Cloud, CreditCard, Globe2, KeyRound, LayoutDashboard, Mail,
 import Link from 'next/link';
 
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
+import { listPlatformServiceConnections } from '@/features/platform-connections/server/service';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
@@ -31,7 +32,16 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
   const { tenant } = await params;
   await requirePlatformControlAccess(tenant);
 
-  const modules = await getPublishedControlCenterModules();
+  const [modules, domainConnections] = await Promise.all([
+    getPublishedControlCenterModules(),
+    listPlatformServiceConnections('domains').catch(() => []),
+  ]);
+  const domainRegistrarReady = domainConnections.some(
+    (item) => item.providerKey === 'domainnameapi' && item.status === 'active',
+  );
+  const domainDnsReady = domainConnections.some(
+    (item) => item.providerKey === 'cloudflare-saas' && item.status === 'active',
+  );
   const paymentReadiness = {
     nowpayments: Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET),
     flutterwave: Boolean(
@@ -61,7 +71,7 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
             Runtime readiness is shown without exposing provider secrets. Business payment settings remain editable in Payments.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Link href={`/t/${tenant}/admin/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">NOWPayments</p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -78,6 +88,18 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
             <p className="font-semibold">Kora</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {readinessLabel(paymentReadiness.kora, 'Ready · embedded checkout', 'Deferred · hidden until configured')}
+            </p>
+          </Link>
+          <Link href={`/t/${tenant}/admin/platform-control/domains-routing`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+            <p className="font-semibold">Mkety Domains</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {readinessLabel(domainRegistrarReady, 'Ready · registration and pricing connected', 'Needs registrar connection')}
+            </p>
+          </Link>
+          <Link href={`/t/${tenant}/admin/platform-control/domains-routing`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+            <p className="font-semibold">Mkety DNS</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {readinessLabel(domainDnsReady, 'Ready · DNS and custom hostnames connected', 'Needs DNS routing connection')}
             </p>
           </Link>
         </CardContent>
