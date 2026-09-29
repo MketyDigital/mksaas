@@ -68,7 +68,7 @@ export async function storeMailContent(
       'x-mkety-operation':'put',
       'x-mkety-key':key,
     },
-    body:bytes,
+    body:bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),
     cache:'no-store',
   });
   if(!response.ok) throw new Error('Mkety Mail content storage rejected the migration object.');
