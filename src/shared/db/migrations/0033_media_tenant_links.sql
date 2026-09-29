@@ -13,9 +13,9 @@ CREATE TABLE IF NOT EXISTS "saas_template"."media_tenant_links" (
   CONSTRAINT "media_tenant_links_tenant_id_tenants_id_fk"
     FOREIGN KEY ("tenant_id") REFERENCES "saas_template"."tenants"("id") ON DELETE cascade,
   CONSTRAINT "media_tenant_links_created_by_user_id_users_id_fk"
-    FOREIGN KEY ("created_by_user_id") REFERENCES "saas_template"."user"("id") ON DELETE set null,
+    FOREIGN KEY ("created_by_user_id") REFERENCES "saas_template"."users"("id") ON DELETE set null,
   CONSTRAINT "media_tenant_links_updated_by_user_id_users_id_fk"
-    FOREIGN KEY ("updated_by_user_id") REFERENCES "saas_template"."user"("id") ON DELETE set null
+    FOREIGN KEY ("updated_by_user_id") REFERENCES "saas_template"."users"("id") ON DELETE set null
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "media_tenant_links_tenant_uidx"
