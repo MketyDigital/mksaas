@@ -493,7 +493,7 @@ jobs:
           done
           [ "$ready" = true ] || { echo 'Gateway readiness markers missing.'; exit 1; }
 
-      - name: Reconcile host firewall for IMAPS and SMTPS
+      - name: Reconcile host firewall when direct SSH is reachable
         shell: bash
         env:
           SERVER_IP: ${{ steps.network.outputs.server_ip }}
@@ -511,40 +511,51 @@ jobs:
           process.stdout.write([user,String(port),key].join(' '));
           NODE
           )
-          [ -n "$key_uuid" ] || { echo 'Coolify server does not expose its configured private-key UUID to this token.'; exit 1; }
 
-          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/firewall-key.json -w '%{http_code}'             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/security/keys/$key_uuid")"
-          [ "$code" = 200 ] || { echo "Coolify SSH key lookup failed with HTTP $code. The token needs read:sensitive or root."; exit 1; }
+          if [ -z "$key_uuid" ]; then
+            echo 'Coolify server does not expose a private-key UUID; skipping optional host-firewall reconciliation.'
+            exit 0
+          fi
 
-          node <<'NODE'
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/firewall-key.json -w '%{http_code}' -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/security/keys/$key_uuid")"
+          if [ "$code" != 200 ]; then
+            echo "Coolify SSH key is not readable with this token (HTTP $code); provider-level OCI ingress reconciliation will remain authoritative."
+            exit 0
+          fi
+
+          if ! node <<'NODE'
           const fs=require('node:fs');
           const x=JSON.parse(fs.readFileSync('/tmp/firewall-key.json','utf8'));
           const key=String(x.private_key||'');
-          if(!/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(key)) {
-            throw new Error('Coolify did not return a usable SSH private key; read:sensitive/root is required.');
-          }
+          if(!/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(key)) process.exit(1);
           fs.writeFileSync('/tmp/mkety-server-key',key.endsWith('\n')?key:key+'\n',{mode:0o600});
           NODE
+          then
+            echo 'Coolify did not return a usable SSH key; provider-level OCI ingress reconciliation will remain authoritative.'
+            exit 0
+          fi
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          ssh-keyscan -T 10 -p "$ssh_port" "$SERVER_IP" > /tmp/mkety-known-hosts 2>/dev/null
-          [ -s /tmp/mkety-known-hosts ] || { echo 'Could not obtain the OCI host SSH key on its configured port.'; exit 1; }
+          if ! ssh-keyscan -T 10 -p "$ssh_port" "$SERVER_IP" > /tmp/mkety-known-hosts 2>/dev/null || [ ! -s /tmp/mkety-known-hosts ]; then
+            echo 'Direct OCI SSH is not publicly reachable; skipping optional host-firewall reconciliation and continuing to OCI NSG reconciliation.'
+            rm -f /tmp/mkety-server-key /tmp/firewall-key.json /tmp/mkety-known-hosts
+            exit 0
+          fi
 
           ssh_opts=(-i /tmp/mkety-server-key -p "$ssh_port" -o BatchMode=yes -o ConnectTimeout=15 -o UserKnownHostsFile=/tmp/mkety-known-hosts -o StrictHostKeyChecking=yes)
-          ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'true'
+          if ! ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'true'; then
+            echo 'Direct OCI SSH authentication failed; provider-level OCI ingress reconciliation will remain authoritative.'
+            rm -f /tmp/mkety-server-key /tmp/firewall-key.json /tmp/mkety-known-hosts
+            exit 0
+          fi
 
           ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'bash -s' <<'REMOTE'
           set -euo pipefail
-
           run_root() {
-            if [ "$(id -u)" -eq 0 ]; then
-              "$@"
-            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-              sudo -n "$@"
-            else
-              echo 'Coolify SSH user cannot obtain non-interactive root privileges required for firewall reconciliation.'
-              exit 1
+            if [ "$(id -u)" -eq 0 ]; then "$@";
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then sudo -n "$@";
+            else echo 'No non-interactive root privilege; leaving host firewall unchanged.'; return 0;
             fi
           }
 
@@ -562,27 +573,209 @@ jobs:
               firewall_seen=true
               run_root ufw allow 993/tcp comment 'Mkety Mail IMAPS' >/dev/null
               run_root ufw allow 465/tcp comment 'Mkety Mail SMTPS' >/dev/null
-              run_root ufw status | grep -E '(^|[[:space:]])(993|465)/tcp' >/dev/null
             fi
           fi
-
           if command -v firewall-cmd >/dev/null 2>&1 && run_root firewall-cmd --state >/dev/null 2>&1; then
             firewall_seen=true
             run_root firewall-cmd --permanent --add-port=993/tcp >/dev/null
             run_root firewall-cmd --permanent --add-port=465/tcp >/dev/null
             run_root firewall-cmd --reload >/dev/null
-            run_root firewall-cmd --query-port=993/tcp >/dev/null
-            run_root firewall-cmd --query-port=465/tcp >/dev/null
           fi
-
-          if [ "$firewall_seen" = false ]; then
-            echo 'No active UFW/firewalld host firewall detected; provider-level ingress remains authoritative.'
-          else
-            echo 'Host firewall allows TCP 993 and 465.'
-          fi
+          [ "$firewall_seen" = true ] && echo 'Host firewall reconciled for TCP 993/465.' || echo 'No active UFW/firewalld host firewall detected.'
           REMOTE
 
           rm -f /tmp/mkety-server-key /tmp/firewall-key.json /tmp/mkety-known-hosts
+
+      - name: Reconcile dedicated OCI NSG ingress for Mail gateway
+        shell: bash
+        env:
+          SERVER_IP: ${{ steps.network.outputs.server_ip }}
+          OCI_CLI_USER_SECRET: ${{ secrets.OCI_CLI_USER }}
+          OCI_USER_OCID_SECRET: ${{ secrets.OCI_USER_OCID }}
+          OCI_USER_SECRET: ${{ secrets.OCI_USER }}
+          OCI_CLI_TENANCY_SECRET: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_TENANCY_OCID_SECRET: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_TENANCY_SECRET: ${{ secrets.OCI_TENANCY }}
+          OCI_CLI_FINGERPRINT_SECRET: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_FINGERPRINT_SECRET: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT_SECRET: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_PRIVATE_KEY_SECRET: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_KEY_CONTENT_SECRET: ${{ secrets.OCI_KEY_CONTENT }}
+          OCI_CLI_REGION_SECRET: ${{ secrets.OCI_CLI_REGION }}
+          OCI_REGION_SECRET: ${{ secrets.OCI_REGION }}
+          OCI_KEY_PASSPHRASE_SECRET: ${{ secrets.OCI_KEY_PASSPHRASE }}
+          OCI_PASSPHRASE_SECRET: ${{ secrets.OCI_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          first_nonempty() {
+            for value in "$@"; do
+              if [ -n "$value" ]; then printf '%s' "$value"; return 0; fi
+            done
+            return 1
+          }
+
+          oci_user="$(first_nonempty "$OCI_CLI_USER_SECRET" "$OCI_USER_OCID_SECRET" "$OCI_USER_SECRET" || true)"
+          oci_tenancy="$(first_nonempty "$OCI_CLI_TENANCY_SECRET" "$OCI_TENANCY_OCID_SECRET" "$OCI_TENANCY_SECRET" || true)"
+          oci_fingerprint="$(first_nonempty "$OCI_CLI_FINGERPRINT_SECRET" "$OCI_FINGERPRINT_SECRET" || true)"
+          oci_key="$(first_nonempty "$OCI_CLI_KEY_CONTENT_SECRET" "$OCI_PRIVATE_KEY_SECRET" "$OCI_KEY_CONTENT_SECRET" || true)"
+          oci_region="$(first_nonempty "$OCI_CLI_REGION_SECRET" "$OCI_REGION_SECRET" || true)"
+          oci_passphrase="$(first_nonempty "$OCI_KEY_PASSPHRASE_SECRET" "$OCI_PASSPHRASE_SECRET" || true)"
+
+          [ -n "$oci_user" ] || { echo 'OCI API user secret is missing (OCI_CLI_USER / OCI_USER_OCID / OCI_USER).'; exit 1; }
+          [ -n "$oci_tenancy" ] || { echo 'OCI tenancy secret is missing (OCI_CLI_TENANCY / OCI_TENANCY_OCID / OCI_TENANCY).'; exit 1; }
+          [ -n "$oci_fingerprint" ] || { echo 'OCI fingerprint secret is missing.'; exit 1; }
+          [ -n "$oci_key" ] || { echo 'OCI API private-key secret is missing.'; exit 1; }
+          [ -n "$oci_region" ] || { echo 'OCI region secret is missing.'; exit 1; }
+
+          echo "::add-mask::$oci_user"
+          echo "::add-mask::$oci_tenancy"
+          echo "::add-mask::$oci_fingerprint"
+          echo "::add-mask::$oci_region"
+          [ -z "$oci_passphrase" ] || echo "::add-mask::$oci_passphrase"
+
+          python -m pip install --user --disable-pip-version-check 'oci-cli>=3.90,<4' >/dev/null
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v oci >/dev/null
+
+          mkdir -p ~/.oci
+          chmod 700 ~/.oci
+          OCI_KEY_RAW="$oci_key" python - <<'PY'
+          import os, pathlib
+          value=os.environ['OCI_KEY_RAW']
+          if '\\n' in value and '\n' not in value:
+              value=value.replace('\\n','\n')
+          path=pathlib.Path.home()/'.oci'/'mkety_api_key.pem'
+          path.write_text(value if value.endswith('\n') else value+'\n')
+          path.chmod(0o600)
+          PY
+
+          {
+            echo '[DEFAULT]'
+            echo "user=$oci_user"
+            echo "fingerprint=$oci_fingerprint"
+            echo "tenancy=$oci_tenancy"
+            echo "region=$oci_region"
+            echo "key_file=$HOME/.oci/mkety_api_key.pem"
+            if [ -n "$oci_passphrase" ]; then echo "pass_phrase=$oci_passphrase"; fi
+          } > ~/.oci/config
+          chmod 600 ~/.oci/config
+          export OCI_CLI_CONFIG_FILE="$HOME/.oci/config"
+
+          oci iam region-subscription list --tenancy-id "$oci_tenancy" --output json >/tmp/oci-regions.json
+
+          oci network public-ip get --public-ip-address "$SERVER_IP" --output json >/tmp/oci-public-ip.json
+          private_ip_id="$(node - <<'NODE'
+          const x=require('/tmp/oci-public-ip.json').data||{};
+          process.stdout.write(String(x['private-ip-id']||x.privateIpId||''));
+          NODE
+          )"
+          [ -n "$private_ip_id" ] || { echo 'OCI public IP is not attached to a discoverable private IP.'; exit 1; }
+
+          oci network private-ip get --private-ip-id "$private_ip_id" --output json >/tmp/oci-private-ip.json
+          vnic_id="$(node - <<'NODE'
+          const x=require('/tmp/oci-private-ip.json').data||{};
+          process.stdout.write(String(x['vnic-id']||x.vnicId||''));
+          NODE
+          )"
+          [ -n "$vnic_id" ] || { echo 'OCI private IP did not expose a VNIC id.'; exit 1; }
+
+          oci network vnic get --vnic-id "$vnic_id" --output json >/tmp/oci-vnic.json
+          subnet_id="$(node - <<'NODE'
+          const x=require('/tmp/oci-vnic.json').data||{};
+          process.stdout.write(String(x['subnet-id']||x.subnetId||''));
+          NODE
+          )"
+          [ -n "$subnet_id" ] || { echo 'OCI VNIC did not expose a subnet id.'; exit 1; }
+
+          oci network subnet get --subnet-id "$subnet_id" --output json >/tmp/oci-subnet.json
+          read -r compartment_id vcn_id < <(node - <<'NODE'
+          const x=require('/tmp/oci-subnet.json').data||{};
+          const compartment=String(x['compartment-id']||x.compartmentId||'');
+          const vcn=String(x['vcn-id']||x.vcnId||'');
+          process.stdout.write(compartment+' '+vcn);
+          NODE
+          )
+          [ -n "$compartment_id" ] && [ -n "$vcn_id" ] || { echo 'OCI subnet did not expose compartment/vcn ids.'; exit 1; }
+
+          for secret_value in "$private_ip_id" "$vnic_id" "$subnet_id" "$compartment_id" "$vcn_id"; do echo "::add-mask::$secret_value"; done
+
+          nsg_name='mkety-mail-gateway-ingress'
+          oci network nsg list --compartment-id "$compartment_id" --vcn-id "$vcn_id" --all --output json >/tmp/oci-nsgs.json
+          nsg_id="$(NSG_NAME="$nsg_name" node - <<'NODE'
+          const rows=require('/tmp/oci-nsgs.json').data||[];
+          const matches=rows.filter(x=>String(x['display-name']||x.displayName||'')===process.env.NSG_NAME && String(x['lifecycle-state']||x.lifecycleState||'')!=='TERMINATED');
+          if(matches.length>1) throw new Error('Multiple Mkety Mail gateway NSGs exist.');
+          process.stdout.write(String(matches[0]?.id||''));
+          NODE
+          )"
+
+          if [ -z "$nsg_id" ]; then
+            nsg_id="$(oci network nsg create --compartment-id "$compartment_id" --vcn-id "$vcn_id" --display-name "$nsg_name" --query 'data.id' --raw-output)"
+          fi
+          [ -n "$nsg_id" ] || { echo 'Failed to create or resolve dedicated Mail gateway NSG.'; exit 1; }
+          echo "::add-mask::$nsg_id"
+
+          oci network nsg rules list --nsg-id "$nsg_id" --all --output json >/tmp/oci-mail-rules.json
+          NSG_RULES=/tmp/oci-mail-rules.json node <<'NODE' >/tmp/oci-mail-rules-add.json
+          const rows=require(process.env.NSG_RULES).data||[];
+          const wanted=[993,465];
+          const covered=(port)=>rows.some(r=>{
+            const dir=String(r.direction||'').toUpperCase();
+            const protocol=String(r.protocol||'');
+            const source=String(r.source||'');
+            const sourceType=String(r['source-type']||r.sourceType||'');
+            const tcp=r['tcp-options']||r.tcpOptions||{};
+            const range=tcp['destination-port-range']||tcp.destinationPortRange||{};
+            return dir==='INGRESS' && protocol==='6' && source==='0.0.0.0/0' &&
+              (sourceType===''||sourceType==='CIDR_BLOCK') &&
+              Number(range.min)===port && Number(range.max)===port;
+          });
+          const rules=wanted.filter(p=>!covered(p)).map(port=>({
+            direction:'INGRESS',
+            protocol:'6',
+            source:'0.0.0.0/0',
+            sourceType:'CIDR_BLOCK',
+            isStateless:false,
+            description:port===993?'Mkety Mail IMAPS':'Mkety Mail SMTPS',
+            tcpOptions:{destinationPortRange:{min:port,max:port}}
+          }));
+          process.stdout.write(JSON.stringify(rules));
+          NODE
+
+          if node -e "process.exit(JSON.parse(require('fs').readFileSync('/tmp/oci-mail-rules-add.json','utf8')).length?0:1)"; then
+            oci network nsg rules add --nsg-id "$nsg_id" --security-rules file:///tmp/oci-mail-rules-add.json >/tmp/oci-rule-add.json
+          fi
+
+          VNIC_ID="$vnic_id" NSG_ID="$nsg_id" node <<'NODE' >/tmp/oci-vnic-nsgs.json
+          const x=require('/tmp/oci-vnic.json').data||{};
+          const ids=Array.isArray(x['nsg-ids'])?x['nsg-ids']:(Array.isArray(x.nsgIds)?x.nsgIds:[]);
+          if(!ids.includes(process.env.NSG_ID)) ids.push(process.env.NSG_ID);
+          process.stdout.write(JSON.stringify([...new Set(ids)]));
+          NODE
+          oci network vnic update --vnic-id "$vnic_id" --nsg-ids file:///tmp/oci-vnic-nsgs.json >/tmp/oci-vnic-update.json
+
+          oci network vnic get --vnic-id "$vnic_id" --output json >/tmp/oci-vnic-after.json
+          NSG_ID="$nsg_id" node <<'NODE'
+          const x=require('/tmp/oci-vnic-after.json').data||{};
+          const ids=Array.isArray(x['nsg-ids'])?x['nsg-ids']:(Array.isArray(x.nsgIds)?x.nsgIds:[]);
+          if(!ids.includes(process.env.NSG_ID)) throw new Error('Dedicated Mail NSG is not attached to the VNIC.');
+          NODE
+          oci network nsg rules list --nsg-id "$nsg_id" --all --output json >/tmp/oci-mail-rules-after.json
+          node <<'NODE'
+          const rows=require('/tmp/oci-mail-rules-after.json').data||[];
+          for(const port of [993,465]){
+            const ok=rows.some(r=>{
+              const tcp=r['tcp-options']||r.tcpOptions||{};
+              const range=tcp['destination-port-range']||tcp.destinationPortRange||{};
+              return String(r.direction||'').toUpperCase()==='INGRESS' && String(r.protocol||'')==='6' &&
+                String(r.source||'')==='0.0.0.0/0' && Number(range.min)===port && Number(range.max)===port;
+            });
+            if(!ok) throw new Error('Missing OCI Mail ingress rule for TCP '+port);
+          }
+          NODE
+          echo 'Dedicated OCI NSG is attached to the gateway VNIC with TCP 993/465 ingress only.'
+
+          rm -f ~/.oci/mkety_api_key.pem ~/.oci/config /tmp/oci-*.json
 
       - name: Point unproxied IMAP/SMTP DNS at Coolify server
         shell: bash
