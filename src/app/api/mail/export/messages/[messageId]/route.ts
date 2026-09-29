@@ -58,7 +58,8 @@ export async function GET(request:Request,context:{params:Promise<{messageId:str
     bytes=new TextEncoder().encode(lines.join('\r\n'));
   }
 
-  const responseBody=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+  const responseBody=new Uint8Array(bytes.byteLength);
+  responseBody.set(bytes);
   return new Response(responseBody,{
     headers:{
       'content-type':'message/rfc822',
