@@ -2,6 +2,7 @@ import { Code2, Globe2, Inbox, Mail, Megaphone, Send, Smartphone, Users } from '
 
 import { enableMketyMail } from '@/features/mail/server/actions';
 import { getCustomerMailUsageSummary } from '@/features/mail/server/usage';
+import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
 import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
@@ -12,6 +13,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
   const {tenant}=await params;
   await requireMailWorkspaceAccess(tenant);
   const workspace=await getMailWorkspace(tenant);
+  const externalClientsEnabled=mailExternalClientsEnabled();
   const usage=workspace?await getCustomerMailUsageSummary(tenant):null;
 
   if(!workspace){
@@ -49,8 +51,8 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
     {title:'Inbox',description:'Receive, read, reply, forward, archive and search.',icon:Inbox,status:'Included',href:`/t/${tenant}/mail/inbox`},
     {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included',href:`/t/${tenant}/mail/shared`},
     {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included',href:`/t/${tenant}/mail/customer-updates`},
-    {title:'Transactional Email',description:'API, SMTP, templates, webhooks and delivery logs.',icon:Code2,status:'Included',href:`/t/${tenant}/mail/developer`},
-    {title:'Mail Apps',description:'Apple Mail, Outlook, Gmail mobile and Thunderbird setup with secure app passwords.',icon:Smartphone,status:'Setup ready',href:`/t/${tenant}/mail/apps`},
+    {title:'Transactional Email',description:externalClientsEnabled?'API, SMTP, templates, webhooks and delivery logs.':'API, templates, webhooks and delivery logs. SMTP is pending gateway acceptance.',icon:Code2,status:'Included',href:`/t/${tenant}/mail/developer`},
+    {title:'Mail Apps',description:externalClientsEnabled?'Apple Mail, Outlook, Gmail mobile and Thunderbird setup with secure app passwords.':'IMAP/SMTP external-client access is pending gateway acceptance.',icon:Smartphone,status:externalClientsEnabled?'Setup ready':'Coming Soon',href:`/t/${tenant}/mail/apps`},
     {title:'Marketing',description:'Newsletters, promotions and campaign automation.',icon:Megaphone,status:'Coming Soon',href:''},
   ];
 
