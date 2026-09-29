@@ -218,6 +218,13 @@
       "when": 1790586600000,
       "tag": "0030_ai_managed_model_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790590200000,
+      "tag": "0031_managed_domains_dns",
+      "breakpoints": true
     }
   ]
 }
