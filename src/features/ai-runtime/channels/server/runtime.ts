@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
+import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import {
   deterministicReplyDelaySeconds,
   ensureEnterpriseAiConversation,
@@ -369,7 +370,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
 
   let reminderScheduled = false;
   if (pendingReminder) {
-    await scheduleEnterpriseAiAction({
+    const reminder = await scheduleEnterpriseAiAction({
       tenantId: input.tenantId,
       conversationId: conversation.id,
       solutionInstanceId: solution?.id ?? null,
@@ -385,6 +386,14 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         commitment: pendingReminder.commitment,
       },
     });
+    const delaySeconds = Math.max(0, Math.ceil((pendingReminder.dueAt.getTime() - Date.now()) / 1_000));
+    if (delaySeconds <= 86_400) {
+      await enqueueEnterpriseAiScheduledAction({
+        actionId: reminder.id,
+        tenantId: input.tenantId,
+        delaySeconds,
+      }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
+    }
     reminderScheduled = true;
   }
 
