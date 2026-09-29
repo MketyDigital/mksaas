@@ -35,6 +35,8 @@ jobs:
       MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL || vars.ZITADEL_URL }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
       CONFIGURED_MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
+      MKETY_DOMAIN_RELAY_URL: ${{ secrets.MKETY_DOMAIN_RELAY_URL || vars.MKETY_DOMAIN_RELAY_URL }}
+      MKETY_DOMAIN_RELAY_SECRET: ${{ secrets.MKETY_DOMAIN_RELAY_SECRET }}
     steps:
       - name: Authorize exact hotfix SHA
         shell: bash
@@ -185,6 +187,14 @@ jobs:
           put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
           put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
           put_secret NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
+          if [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
+            [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] && [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ] || {
+              echo "MKETY_DOMAIN_RELAY_URL and MKETY_DOMAIN_RELAY_SECRET must be configured together." >&2
+              exit 1
+            }
+            put_secret MKETY_DOMAIN_RELAY_URL "$MKETY_DOMAIN_RELAY_URL"
+            put_secret MKETY_DOMAIN_RELAY_SECRET "$MKETY_DOMAIN_RELAY_SECRET"
+          fi
           if [ "$WRITE_SESSION_SECRET" = true ]; then
             put_secret MKETY_AUTH_SESSION_SECRET "$SESSION_SECRET"
           fi
