@@ -12,8 +12,14 @@ Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4
 - Paid entitlements now fail closed after the paid period/grace window rather than treating paused or indefinitely past-due subscriptions as active.
 - Enterprise AI solution settings now have real editable system instructions, approved solution knowledge, managed model selection and global pause state.
 - Enterprise AI channel connections now support binding to a tenant-owned solution instance; the managed channel runtime consumes that solution's instructions/knowledge/model/pause and includes hidden context in reservation estimates.
+- Enterprise AI now persists conversations/messages and exposes a per-conversation operator inbox with human takeover, manual reply, scheduled-action cancellation, and resume-to-AI.
+- Enterprise AI now supports owner-configured reply pacing (0-900 seconds) and explicit future-commitment reminders. Scheduled work is persisted in Postgres, near-term work is queue-delayed, a minute sweep recovers missed/long-term work, and delivery re-checks entitlement/channel/solution/handoff state before sending.
+- Enterprise AI recurring commercial access now has tenant-specific non-public versioned contract plans, negotiated monthly pricing, included entitlements/credits, verified Billing checkout activation, and fail-closed access after paid/grace periods.
+- Enterprise AI now has a real playground and customer-safe runs view; playground disables reminder/pacing side effects but still uses commercial admission.
+- Mail now exposes customer portability: existing contact CSV import/export plus workspace JSON export, RFC822/EML message export, and bounded authenticated EML import through the Mail content worker. Credentials, API keys, app passwords, provider secrets and verified settlements are intentionally excluded.
+- Guarded workflow `.github/workflows/mkety-enterprise-ai-production.yml` now defines exact-SHA deployment for `ai.mkety.com`, `api.mkety.com/v1/ai`, the AI delivery Queue/DLQ and scheduler worker. The workflow explicitly does not enable production inference.
 - Dedicated customer setup/readiness runbook: `docs/MKETY_MAIL_ENTERPRISE_AI_CUSTOMER_SETUP_RUNBOOK.md`.
-- Still incomplete before first Enterprise AI customer: deterministic playground/test flow, request/run logs, persisted conversations/messages, per-conversation human handoff/resume, recurring Enterprise AI contract-to-entitlement bridge, and production host acceptance for `ai.mkety.com` / `api.mkety.com/v1/ai`.
+- Still incomplete before first Enterprise AI customer: exact-head CI, guarded production execution/acceptance for `ai.mkety.com`, `api.mkety.com/v1/ai`, delivery Queue/DLQ/scheduler verification, and then real customer acceptance before inference promotion.
 - Starpips production acceptance remains blocked until this stabilization checklist is closed.
 
 ## Current production truth
