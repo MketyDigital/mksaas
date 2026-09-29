@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { importMailEmlFiles } from '@/features/mail/server/migration-actions';
-import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
+import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMessages } from '@/shared/db/schema';
@@ -21,7 +21,8 @@ export default async function MailMigrationPage({
   const {tenant:tenantSlug}=await params;
   const query=await searchParams;
   const access=await requireMailWorkspaceAccess(tenantSlug);
-  if(!access.workspace) redirect(`/t/${tenantSlug}/mail`);
+  const workspace=await getMailWorkspace(tenantSlug);
+  if(!workspace) redirect(`/t/${tenantSlug}/mail`);
 
   const [mailboxes,domains,recentMessages]=await Promise.all([
     db.query.mailMailboxes.findMany({
