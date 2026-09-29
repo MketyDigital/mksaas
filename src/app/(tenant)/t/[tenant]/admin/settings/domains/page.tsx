@@ -28,15 +28,15 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
           <h1 className="text-2xl font-bold text-foreground">Mkety Domains</h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Connect your own domain to this workspace through Mkety-managed routing and HTTPS.
+          Register new domains, manage Mkety DNS, renew domains and connect existing hostnames from one place.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Find a domain</CardTitle>
+          <CardTitle>Register a new domain</CardTitle>
           <CardDescription>
-            Search live availability and current Mkety registration and renewal pricing.
+            Search live availability and see the current Mkety registration and renewal price before checkout.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -58,9 +58,9 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Custom domain connections</CardTitle>
+          <CardTitle>Connect an existing domain</CardTitle>
           <CardDescription>
-            Add a hostname, follow the Mkety DNS target shown after creation, then verify when DNS has propagated.
+            Already own a domain elsewhere? Connect its hostname to supported Mkety products without moving the registration.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -73,5 +73,5 @@ export default async function DomainsPage({ params }: DomainsPageProps) {
 
 export const metadata = {
   title: 'Mkety Domains | Admin',
-  description: 'Manage custom domains for your workspace',
+  description: 'Register domains, manage Mkety DNS, renew domains and connect existing hostnames',
 };
