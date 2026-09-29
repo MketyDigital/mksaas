@@ -136,7 +136,6 @@ jobs:
           put_secret MKETY_AUTH_CLIENT_ID "$CLIENT_ID"
           put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
           put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
-          put_secret NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
           if [ "$WRITE_SESSION_SECRET" = true ]; then
             put_secret MKETY_AUTH_SESSION_SECRET "$SESSION_SECRET"
           fi
@@ -195,7 +194,7 @@ jobs:
           const m=raw.match(/\[\s*(?:\{|\])/);
           const entries=m?JSON.parse(raw.slice(m.index)):[];
           const names=new Set(entries.map(x=>x.name));
-          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET','NEXT_PUBLIC_APP_URL'];
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_REDIRECT_URI','MKETY_AUTH_POST_LOGOUT_REDIRECT_URI','MKETY_AUTH_SESSION_SECRET'];
           const missing=required.filter(k=>!names.has(k));
           if(missing.length) throw new Error('Missing production auth bindings: '+missing.join(', '));
           console.log('Production Mkety Auth bindings verified by name.');
