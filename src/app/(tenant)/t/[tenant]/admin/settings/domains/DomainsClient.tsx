@@ -72,7 +72,7 @@ export function DomainsClient({ tenantSlug, initialDomains }: Props) {
               <div>
                 <p className="font-medium">{domain.hostname}</p>
                 <p className="text-xs text-muted-foreground capitalize">
-                  {domain.status} · {domain.provider}
+                  {domain.status} · Mkety managed
                 </p>
               </div>
               <div className="flex gap-2">
@@ -101,9 +101,9 @@ export function DomainsClient({ tenantSlug, initialDomains }: Props) {
       </div>
 
       <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground">Development mode</p>
+        <p className="font-medium text-foreground">How connection works</p>
         <p className="mt-1">
-          If VERCEL_AUTH_BEARER_TOKEN and VERCEL_PROJECT_ID are blank, domains are stored safely in the database but no external Vercel API call is made.
+          Mkety creates and verifies the managed hostname, then keeps HTTPS and routing status connected to this workspace. Infrastructure providers remain behind Mkety.
         </p>
       </div>
     </div>
