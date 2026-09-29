@@ -53,6 +53,16 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Coolify server payload exposed no public IPv4');
   });
 
+  it('reconciles supported host firewalls before public gateway acceptance', () => {
+    expect(workflow).toContain('Reconcile host firewall for IMAPS and SMTPS');
+    expect(workflow).toContain('/security/keys/$key_uuid');
+    expect(workflow).toContain("ufw allow 993/tcp");
+    expect(workflow).toContain("ufw allow 465/tcp");
+    expect(workflow).toContain("firewall-cmd --permanent --add-port=993/tcp");
+    expect(workflow).toContain("firewall-cmd --permanent --add-port=465/tcp");
+    expect(workflow).toContain("Host does not show published listeners for 993/465");
+  });
+
   it('requires authoritative/public DNS plus trusted origin TLS and protocol greetings', () => {
     expect(workflow).toContain('Accept public DNS, TLS and protocol greetings');
     expect(workflow).toContain("r.proxied===false");
