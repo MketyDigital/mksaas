@@ -9,6 +9,7 @@ import {
   CreditCard,
   Database,
   Globe2,
+  Image as ImageIcon,
   LayoutDashboard,
   Link2,
   Mail,
@@ -84,6 +85,13 @@ export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNa
                   href={`${adminBase}/platform-control/mail`}
                   label="Mkety Mail"
                   icon={Mail}
+                  iconTint="primary"
+                  onClick={onItemClick}
+                />
+                <SidebarNavItem
+                  href={`${adminBase}/platform-control/media`}
+                  label="Mkety Media"
+                  icon={ImageIcon}
                   iconTint="primary"
                   onClick={onItemClick}
                 />
