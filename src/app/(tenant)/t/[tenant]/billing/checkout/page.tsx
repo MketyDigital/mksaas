@@ -4,12 +4,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import {
-  getSelfServiceBillingPlan,
-  getSelfServiceBillingQuote,
   isSelfServiceBillingPlanKey,
   isSelfServiceBillingTermKey,
   SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
+import { getActiveSelfServiceBillingQuote } from '@/features/billing/server/active-catalog';
 import {
   getEnabledMketyFlutterwaveCurrencies,
   isMketyFlutterwaveCollectionCurrency,
@@ -57,9 +56,9 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const query = await searchParams;
   if (!query.plan || !isSelfServiceBillingPlanKey(query.plan)) notFound();
 
-  const plan = getSelfServiceBillingPlan(query.plan);
   const termKey = query.term && isSelfServiceBillingTermKey(query.term) ? query.term : '1m';
-  const quote = getSelfServiceBillingQuote(plan.key, termKey);
+  const quote = await getActiveSelfServiceBillingQuote(query.plan, termKey);
+  const plan = quote.plan;
   const returned = query.payment === 'returned';
   const cancelled = query.payment === 'cancelled';
   const isMailPlan = plan.key.startsWith('mail-');
