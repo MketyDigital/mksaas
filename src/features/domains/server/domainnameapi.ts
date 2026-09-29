@@ -110,7 +110,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     }
   }
 
-  private async relayRequest(operation: 'quote' | 'register' | 'renew', body: string) {
+  private async relayRequest(operation: 'quote' | 'register' | 'renew' | 'info', body: string) {
     if (!this.relayUrl || !this.relaySecret) throw new Error('DomainNameAPI relay is not configured.');
     const timestamp = String(Date.now());
     const nonce = crypto.randomUUID();
@@ -156,9 +156,14 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
           ? 'register'
           : path === '/v1/domain/renew'
             ? 'renew'
-            : null;
+            : path.startsWith('/api/v1/domains/info?')
+              ? 'info'
+              : null;
       if (!operation) throw new Error('DomainNameAPI relay refuses unsupported endpoint fallback.');
-      return this.relayRequest(operation, String(init.body ?? '{}'));
+      const relayBody = operation === 'info'
+        ? JSON.stringify({ domainName: new URL(this.baseUrl + path).searchParams.get('domainName') ?? '' })
+        : String(init.body ?? '{}');
+      return this.relayRequest(operation, relayBody);
     }
 
     const response = await fetch(`${this.baseUrl}${path}`, {
