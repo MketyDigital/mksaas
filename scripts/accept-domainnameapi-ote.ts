@@ -24,9 +24,9 @@ try {
   if (!row.secret_ref) throw new Error('Active DomainNameAPI connection has no encrypted credential reference.');
 
   const secret = await decryptConnectionSecret(String(row.secret_ref), encryptionKey);
-  const username = String(secret.username ?? '').trim();
-  const apiToken = String(secret.apiToken ?? '').trim();
-  if (!username || !apiToken) throw new Error('Decrypted DomainNameAPI OT&E credentials are incomplete.');
+  const resellerId = String(secret.resellerId ?? secret.username ?? '').trim();
+  const apiKey = String(secret.apiKey ?? secret.apiToken ?? '').trim();
+  if (!resellerId || !apiKey) throw new Error('Decrypted DomainNameAPI OT&E credentials are incomplete.');
 
   const config = row.config && typeof row.config === 'object' ? row.config as Record<string, unknown> : {};
   const nameServers = Array.isArray(config.nameServers)
@@ -34,8 +34,8 @@ try {
     : [];
 
   const adapter = new DomainNameApiAdapter({
-    username,
-    apiToken,
+    resellerId,
+    apiKey,
     environment: 'ote',
     baseUrl: row.endpoint_url ? String(row.endpoint_url) : undefined,
     nameServers,
