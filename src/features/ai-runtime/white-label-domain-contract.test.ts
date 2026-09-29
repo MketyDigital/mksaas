@@ -12,6 +12,19 @@ describe('Enterprise AI true white-label and domain contract', () => {
     expect(source).toContain("type: 'CNAME'");
   });
 
+  it('can promote a pending custom hostname from a real HTTPS tenant route proof', async () => {
+    const proof = await readFile('src/features/ai-runtime/server/domain-route-proof.ts', 'utf8');
+    const admin = await readFile('src/features/ai-runtime/server/enterprise-admin-actions.ts', 'utf8');
+    const resolver = await readFile('src/features/ai-runtime/server/enterprise-hostnames.ts', 'utf8');
+
+    expect(proof).toContain("where: eq(customDomains.hostname, normalized)");
+    expect(proof).not.toContain("eq(customDomains.status, 'verified')");
+    expect(admin).toContain("verificationMethod = strictProviderVerified");
+    expect(admin).toContain("'live_route'");
+    expect(admin).toContain("status: verified ? 'verified' : 'pending'");
+    expect(resolver).toContain("eq(customDomains.status, 'verified')");
+  });
+
   it('never treats an unprovisioned mkety.app slug as a live hostname', async () => {
     const source = await readFile('src/features/ai-runtime/server/enterprise-hostnames.ts', 'utf8');
     expect(source).toContain("eq(customDomains.status, 'verified')");
