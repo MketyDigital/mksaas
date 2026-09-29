@@ -24,8 +24,8 @@ describe('DomainNameApiAdapter', () => {
     );
 
     const adapter = new DomainNameApiAdapter({
-      username: '00000000-0000-0000-0000-000000000000',
-      apiToken: 'test-token',
+      resellerId: '00000000-0000-0000-0000-000000000000',
+      apiKey: 'test-token',
       environment: 'ote',
     });
     await expect(adapter.quote('example.com')).resolves.toMatchObject({
@@ -59,8 +59,8 @@ describe('DomainNameApiAdapter', () => {
       }, 200));
 
     const adapter = new DomainNameApiAdapter({
-      username: '00000000-0000-0000-0000-000000000000',
-      apiToken: 'test-token',
+      resellerId: '00000000-0000-0000-0000-000000000000',
+      apiKey: 'test-token',
       environment: 'ote',
     });
     await expect(adapter.quote('hello.com')).resolves.toMatchObject({ available: true });
@@ -73,8 +73,8 @@ describe('DomainNameApiAdapter', () => {
     );
 
     const adapter = new DomainNameApiAdapter({
-      username: '00000000-0000-0000-0000-000000000000',
-      apiToken: 'test-token',
+      resellerId: '00000000-0000-0000-0000-000000000000',
+      apiKey: 'test-token',
       environment: 'production',
     });
 
@@ -88,8 +88,8 @@ describe('DomainNameApiAdapter', () => {
     );
 
     const adapter = new DomainNameApiAdapter({
-      username: '00000000-0000-0000-0000-000000000000',
-      apiToken: 'test-token',
+      resellerId: '00000000-0000-0000-0000-000000000000',
+      apiKey: 'test-token',
       environment: 'ote',
     });
 
@@ -108,8 +108,8 @@ describe('DomainNameApiAdapter', () => {
       mockJsonResponse({ status: 'available', price: 10, currency: 'USD' }, 200),
     );
     const adapter = new DomainNameApiAdapter({
-      username: '00000000-0000-0000-0000-000000000000',
-      apiToken: 'test-token',
+      resellerId: '00000000-0000-0000-0000-000000000000',
+      apiKey: 'test-token',
       environment: 'production',
     });
     await adapter.quote('example.net');
