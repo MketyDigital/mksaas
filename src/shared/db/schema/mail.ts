@@ -1,4 +1,5 @@
 import { bigint, boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import { users } from './auth';
 import { appSchema } from './schema';
@@ -102,6 +103,7 @@ export const mailMessages = appSchema.table('mail_messages', {
   direction: varchar('direction', { length: 16 }).notNull(),
   providerMessageId: text('provider_message_id'),
   internetMessageId: text('internet_message_id'),
+  imapUid: bigint('imap_uid', { mode: 'number' }).notNull().default(sql`nextval('saas_template.mail_message_imap_uid_seq')`),
   fromAddress: varchar('from_address', { length: 320 }).notNull(),
   toJson: jsonb('to_json').$type<string[]>().notNull().default([]),
   ccJson: jsonb('cc_json').$type<string[]>().notNull().default([]),
@@ -122,6 +124,7 @@ export const mailMessages = appSchema.table('mail_messages', {
   index('mail_messages_tenant_mailbox_idx').on(table.tenantId, table.mailboxId),
   index('mail_messages_thread_idx').on(table.threadId),
   index('mail_messages_created_idx').on(table.createdAt),
+  uniqueIndex('mail_messages_mailbox_imap_uid_uidx').on(table.mailboxId, table.imapUid),
 ]);
 
 
