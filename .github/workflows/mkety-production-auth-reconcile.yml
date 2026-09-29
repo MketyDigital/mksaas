@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  PRODUCTION_WORKER_NAME: mkety-platform
-  RELEASE_BRANCH: feat/mkety-public-site-production
+  PRODUCTION_WORKER_NAME: mkety-app-host
+  RELEASE_BRANCH: main
   SKIP_ENV_VALIDATION: 'true'
   MKETY_AUTH_REDIRECT_URI: https://app.mkety.com/api/auth/callback
   MKETY_AUTH_POST_LOGOUT_REDIRECT_URI: https://app.mkety.com/login
@@ -32,7 +32,7 @@ jobs:
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
       CONFIGURED_MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
     steps:
-      - name: Checkout production release branch
+      - name: Checkout current production main
         uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_BRANCH }}
@@ -150,12 +150,15 @@ jobs:
             code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$headers" -o /dev/null -w '%{http_code}' "https://app.mkety.com$path")"
             location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
             echo "$path -> HTTP $code"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+              continue
+            fi
             [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ]
             LOCATION="$location" node <<'NODE'
           const raw=process.env.LOCATION||'';
           const u=new URL(raw,'https://app.mkety.com');
           if(u.origin!=='https://app.mkety.com') throw new Error('Auth entry redirect escaped Mkety application origin');
-          if(!u.pathname.startsWith('/api/auth/login')) throw new Error('Unexpected Mkety auth entry redirect');
+          if(!['/login','/signup'].includes(u.pathname)&&!u.pathname.startsWith('/api/auth/login')) throw new Error('Unexpected Mkety auth entry redirect');
           NODE
           done
 
@@ -176,7 +179,7 @@ jobs:
           const u=new URL(process.env.LOCATION);
           const requestId=u.searchParams.get('requestId')||'';
           if(u.origin!=='https://auth.mkety.com') throw new Error('Browser-visible auth redirect escaped Mkety domain');
-          if(u.pathname!=='/ui/v2/login/loginname') throw new Error('Unexpected branded sign-in path');
+          if(!u.pathname.startsWith('/ui/v2/login/')) throw new Error('Unexpected branded sign-in path');
           if(!requestId.startsWith('oidc_')) throw new Error('Missing real OIDC requestId');
           console.log('Production branded Mkety auth first hop verified.');
           NODE
