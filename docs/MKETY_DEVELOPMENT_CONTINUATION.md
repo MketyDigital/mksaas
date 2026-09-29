@@ -1,3 +1,24 @@
+# 2026-09-29 continuation — Mail gateway before customer acceptance
+
+This section is authoritative over older continuation sequences below.
+
+Production state:
+- Enterprise AI infrastructure accepted by run `36568179070`; customer inference remains OFF.
+- Mkety Mail Cloudflare/runtime production accepted by run `36576563773` on main `455a1359cbde16d9eae34b6683c19cb4088d481e`.
+- Dedicated external-client IMAP/SMTP gateway is the only active infrastructure implementation before controlled customer acceptance.
+- Latest handoff: `docs/handoffs/2026-09-29-mail-production-gateway-next.md`.
+
+Continue in this exact order:
+1. complete/certify/deploy the lightweight Coolify Mail gateway;
+2. keep external-client UI flag OFF during infrastructure deployment;
+3. record trusted TLS + IMAP/SMTP greeting acceptance;
+4. next session perform controlled real Mail customer acceptance and first app-password/client authentication/send/sync/revocation test;
+5. only after Mail customer acceptance begin first Enterprise AI customer setup/acceptance;
+6. only after Enterprise AI customer acceptance deliberately enable production customer inference;
+7. then proceed to Starpips production acceptance.
+
+---
+
 # 2026-09-29 pre-Starpips platform stabilization
 
 Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4` (PR #172).
