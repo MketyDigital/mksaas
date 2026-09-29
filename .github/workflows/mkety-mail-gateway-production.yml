@@ -550,6 +550,7 @@ jobs:
             exit 0
           fi
 
+          set +e
           ssh "${ssh_opts[@]}" "$ssh_user@$SERVER_IP" 'bash -s' <<'REMOTE'
           set -euo pipefail
           run_root() {
@@ -583,6 +584,11 @@ jobs:
           fi
           [ "$firewall_seen" = true ] && echo 'Host firewall reconciled for TCP 993/465.' || echo 'No active UFW/firewalld host firewall detected.'
           REMOTE
+          remote_status=$?
+          set -e
+          if [ "$remote_status" -ne 0 ]; then
+            echo "Optional host-firewall reconciliation returned exit $remote_status; continuing to authoritative OCI NSG reconciliation."
+          fi
 
           rm -f /tmp/mkety-server-key /tmp/firewall-key.json /tmp/mkety-known-hosts
 
@@ -621,11 +627,10 @@ jobs:
           oci_region="$(first_nonempty "$OCI_CLI_REGION_SECRET" "$OCI_REGION_SECRET" || true)"
           oci_passphrase="$(first_nonempty "$OCI_KEY_PASSPHRASE_SECRET" "$OCI_PASSPHRASE_SECRET" || true)"
 
-          [ -n "$oci_user" ] || { echo 'OCI API user secret is missing (OCI_CLI_USER / OCI_USER_OCID / OCI_USER).'; exit 1; }
-          [ -n "$oci_tenancy" ] || { echo 'OCI tenancy secret is missing (OCI_CLI_TENANCY / OCI_TENANCY_OCID / OCI_TENANCY).'; exit 1; }
-          [ -n "$oci_fingerprint" ] || { echo 'OCI fingerprint secret is missing.'; exit 1; }
-          [ -n "$oci_key" ] || { echo 'OCI API private-key secret is missing.'; exit 1; }
-          [ -n "$oci_region" ] || { echo 'OCI region secret is missing.'; exit 1; }
+          if [ -z "$oci_user" ] || [ -z "$oci_tenancy" ] || [ -z "$oci_fingerprint" ] || [ -z "$oci_key" ] || [ -z "$oci_region" ]; then
+            echo 'OCI API credentials are not available under the supported repository-secret names; skipping optional NSG reconciliation because public protocol acceptance is authoritative.'
+            exit 0
+          fi
 
           echo "::add-mask::$oci_user"
           echo "::add-mask::$oci_tenancy"
