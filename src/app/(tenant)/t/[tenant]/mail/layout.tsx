@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Mail,
   Megaphone,
+  MoveRight,
   Network,
   Users,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ const items = [
   { href: '/developer', label: 'Developer', icon: Code2 },
   { href: '/analytics', label: 'Analytics', icon: Activity },
   { href: '/apps', label: 'Mail apps', icon: AppWindow },
+  { href: '/migration', label: 'Migration', icon: MoveRight },
   { href: '/automation', label: 'Automation', icon: Network },
 ] as const;
 

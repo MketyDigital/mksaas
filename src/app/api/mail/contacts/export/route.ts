@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/shared/db/cloudflare';
@@ -19,9 +19,13 @@ export async function GET(request:Request){
   const tenant=await getTenantBySlug(tenantSlug);
   if(!tenant) return NextResponse.json({ok:false},{status:404});
   const membership=await db.query.tenantMemberships.findFirst({
-    where:eq(tenantMemberships.userId,session.user.id),
+    where:and(
+      eq(tenantMemberships.userId,session.user.id),
+      eq(tenantMemberships.tenantId,tenant.id),
+    ),
   });
-  if(!membership||membership.tenantId!==tenant.id) return NextResponse.json({ok:false},{status:403});
+  if(!membership) return NextResponse.json({ok:false},{status:403});
+  if(!['admin','manager'].includes(String(membership.role))) return NextResponse.json({ok:false},{status:403});
 
   const contacts=await db.query.mailContacts.findMany({
     where:eq(mailContacts.tenantId,tenant.id),

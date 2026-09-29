@@ -5,6 +5,54 @@ import { db } from '@/shared/db/cloudflare';
 import { projects } from '@/shared/db/schema';
 import { aiSolutionInstances, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 
+
+export type EnterpriseAiSolutionConfiguration = {
+  systemPrompt: string;
+  knowledgeText: string;
+  defaultModelAlias: string;
+  paused: boolean;
+  replyDelayMode: 'off' | 'fixed' | 'range';
+  replyDelayMinSeconds: number;
+  replyDelayMaxSeconds: number;
+  commitmentRemindersEnabled: boolean;
+  reminderTimezone: string;
+  reminderLeadMinutes: number;
+};
+
+export function parseEnterpriseAiSolutionConfiguration(value: Record<string, unknown> | null | undefined): EnterpriseAiSolutionConfiguration {
+  const source = value ?? {};
+  return {
+    systemPrompt: typeof source.systemPrompt === 'string' ? source.systemPrompt : '',
+    knowledgeText: typeof source.knowledgeText === 'string' ? source.knowledgeText : '',
+    defaultModelAlias:
+      typeof source.defaultModelAlias === 'string' && source.defaultModelAlias.trim()
+        ? source.defaultModelAlias.trim()
+        : 'mkety-economy',
+    paused: source.paused === true,
+    replyDelayMode:
+      source.replyDelayMode === 'fixed' || source.replyDelayMode === 'range'
+        ? source.replyDelayMode
+        : 'off',
+    replyDelayMinSeconds:
+      typeof source.replyDelayMinSeconds === 'number' && Number.isFinite(source.replyDelayMinSeconds)
+        ? Math.max(0, Math.min(900, Math.trunc(source.replyDelayMinSeconds)))
+        : 0,
+    replyDelayMaxSeconds:
+      typeof source.replyDelayMaxSeconds === 'number' && Number.isFinite(source.replyDelayMaxSeconds)
+        ? Math.max(0, Math.min(900, Math.trunc(source.replyDelayMaxSeconds)))
+        : 0,
+    commitmentRemindersEnabled: source.commitmentRemindersEnabled === true,
+    reminderTimezone:
+      typeof source.reminderTimezone === 'string' && source.reminderTimezone.trim()
+        ? source.reminderTimezone.trim().slice(0, 80)
+        : 'UTC',
+    reminderLeadMinutes:
+      typeof source.reminderLeadMinutes === 'number' && Number.isFinite(source.reminderLeadMinutes)
+        ? Math.max(0, Math.min(10_080, Math.trunc(source.reminderLeadMinutes)))
+        : 0,
+  };
+}
+
 export async function listEnterpriseAiSolutionTemplates() {
   const rows = await db.select().from(aiSolutionTemplates)
     .where(eq(aiSolutionTemplates.enabled, true))

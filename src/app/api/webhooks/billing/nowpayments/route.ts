@@ -11,6 +11,7 @@ import {
 } from '@/features/billing/server/drizzle-checkout-settlement';
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
+import { grantCurrentPeriodAllowance } from '@/features/usage-credits/server/period-grants';
 import { db } from '@/shared/db';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
       const repository = createDrizzleBillingRepository(db);
       const result = await applyVerifiedSettlement(repository, settlement, now);
       await markBillingCheckoutCompleted(checkoutId, now);
+      await grantCurrentPeriodAllowance(context.tenantId);
 
       return json({
         success: true,

@@ -4,7 +4,7 @@ import { ENTITLEMENT_KEYS, type EntitlementKey, isEntitlementKey } from '../enti
 import type { EffectiveEntitlement, EntitlementCheckInput, EntitlementOverrideEffect } from '../types';
 
 export interface EntitlementSource {
-  getCurrentPlanVersionIds(tenantId: string): Promise<string[]>;
+  getCurrentPlanVersionIds(tenantId: string, now?: Date): Promise<string[]>;
   getPlanEntitlements(planVersionId: string): Promise<Array<{ entitlementKey: string; enabled: boolean }>>;
   getTenantOverrides(
     tenantId: string,
@@ -28,7 +28,7 @@ export async function getTenantEntitlements(
   const source = options.source ?? (await getDefaultSource());
 
   const [planVersionIds, overrides] = await Promise.all([
-    source.getCurrentPlanVersionIds(tenantId),
+    source.getCurrentPlanVersionIds(tenantId, now),
     source.getTenantOverrides(tenantId),
   ]);
   const planRows = (await Promise.all(planVersionIds.map((planVersionId) => source.getPlanEntitlements(planVersionId)))).flat();

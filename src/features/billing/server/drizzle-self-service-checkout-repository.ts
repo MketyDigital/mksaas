@@ -10,14 +10,12 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
-import { getSelfServiceBillingPlan, getSelfServiceBillingPlanFamily, getSelfServiceBillingQuote, isSelfServiceBillingPlanKey } from '../catalog/self-service-plans';
+import { getSelfServiceBillingPlanFamily, isSelfServiceBillingPlanKey } from '../catalog/self-service-plans';
+import { calculateSelfServiceTermQuote } from './active-catalog';
 import type { SelfServiceCheckoutRepository } from './self-service-checkout';
 
 export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository = {
   async prepareCheckout(input) {
-    const catalogPlan = getSelfServiceBillingPlan(input.planKey);
-    const quote = getSelfServiceBillingQuote(input.planKey, input.termKey);
-
     return db.transaction(async (tx) => {
       const currentSubscriptions = await tx
         .select({
@@ -72,14 +70,11 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
         throw new Error('The selected Mkety billing plan is not configured.');
       }
 
-      if (
-        activeVersion.amountMinor !== catalogPlan.amountMinor ||
-        activeVersion.currency !== catalogPlan.currency ||
-        activeVersion.billingInterval !== catalogPlan.billingInterval
-      ) {
-        throw new Error('The selected Mkety billing plan does not match the canonical commercial catalog.');
+      if (activeVersion.currency !== 'USD' || activeVersion.billingInterval !== 'monthly') {
+        throw new Error('The selected Mkety billing plan is not compatible with self-service checkout.');
       }
 
+      const quote = calculateSelfServiceTermQuote(activeVersion.amountMinor, input.termKey);
       const periodStart = input.now;
       const periodEnd = addMonths(periodStart, quote.term.months);
 

@@ -1,7 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 
-import { drizzleBillingSummarySource } from '@/features/billing/server/drizzle-queries';
-import { getTenantBillingSummary } from '@/features/billing/server/queries';
+import { getEnterpriseAiContractBillingSummary } from '@/features/ai-runtime/server/enterprise-contracts';
 import { getCreditBalance } from '@/features/usage-credits/server/service';
 import { db } from '@/shared/db/cloudflare';
 import { aiRequests } from '@/shared/db/schema';
@@ -13,7 +12,7 @@ function startOfMonth(now: Date) {
 export async function getEnterpriseAiCustomerSummary(tenantId: string, now = new Date()) {
   const periodStart = startOfMonth(now);
   const [billing, credits, usageRows] = await Promise.all([
-    getTenantBillingSummary(drizzleBillingSummarySource, tenantId),
+    getEnterpriseAiContractBillingSummary(tenantId),
     getCreditBalance(tenantId),
     db
       .select({

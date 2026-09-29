@@ -207,6 +207,74 @@ export const aiSolutionInstances = appSchema.table('ai_solution_instances', {
   index('ai_solution_instances_project_idx').on(table.projectId),
 ]);
 
+
+export const aiConversations = appSchema.table('ai_conversations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  solutionInstanceId: uuid('solution_instance_id').references(() => aiSolutionInstances.id, { onDelete: 'set null' }),
+  connectionId: uuid('connection_id').notNull().references(() => aiProviderConnections.id, { onDelete: 'cascade' }),
+  externalConversationId: varchar('external_conversation_id', { length: 240 }).notNull(),
+  externalUserId: varchar('external_user_id', { length: 240 }),
+  replyRecipientId: varchar('reply_recipient_id', { length: 240 }),
+  replyContextId: varchar('reply_context_id', { length: 240 }),
+  status: varchar('status', { length: 24 }).notNull().default('automated'),
+  handoffReason: text('handoff_reason'),
+  handoffAt: timestamp('handoff_at', { withTimezone: true }),
+  resumedAt: timestamp('resumed_at', { withTimezone: true }),
+  lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
+  lastOutboundAt: timestamp('last_outbound_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('ai_conversations_connection_external_uidx').on(table.connectionId, table.externalConversationId),
+  index('ai_conversations_tenant_status_idx').on(table.tenantId, table.status, table.updatedAt),
+  index('ai_conversations_solution_idx').on(table.solutionInstanceId, table.updatedAt),
+]);
+
+export const aiMessages = appSchema.table('ai_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  conversationId: uuid('conversation_id').notNull().references(() => aiConversations.id, { onDelete: 'cascade' }),
+  requestId: uuid('request_id'),
+  direction: varchar('direction', { length: 16 }).notNull(),
+  role: varchar('role', { length: 16 }).notNull(),
+  providerMessageId: varchar('provider_message_id', { length: 240 }),
+  content: text('content').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('ai_messages_conversation_created_idx').on(table.conversationId, table.createdAt),
+  index('ai_messages_tenant_created_idx').on(table.tenantId, table.createdAt),
+  uniqueIndex('ai_messages_conversation_provider_uidx').on(table.conversationId, table.providerMessageId),
+]);
+
+export const aiScheduledActions = appSchema.table('ai_scheduled_actions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  conversationId: uuid('conversation_id').references(() => aiConversations.id, { onDelete: 'cascade' }),
+  solutionInstanceId: uuid('solution_instance_id').references(() => aiSolutionInstances.id, { onDelete: 'set null' }),
+  connectionId: uuid('connection_id').notNull().references(() => aiProviderConnections.id, { onDelete: 'cascade' }),
+  kind: varchar('kind', { length: 32 }).notNull(),
+  idempotencyKey: varchar('idempotency_key', { length: 180 }).notNull(),
+  status: varchar('status', { length: 24 }).notNull().default('pending'),
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+  claimUntil: timestamp('claim_until', { withTimezone: true }),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(12),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+  lastError: text('last_error'),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('ai_scheduled_actions_tenant_idempotency_uidx').on(table.tenantId, table.idempotencyKey),
+  index('ai_scheduled_actions_due_idx').on(table.status, table.dueAt),
+  index('ai_scheduled_actions_conversation_idx').on(table.conversationId, table.dueAt),
+  check('ai_scheduled_actions_attempts_check', sql`${table.attempts} >= 0 AND ${table.maxAttempts} BETWEEN 1 AND 100`),
+]);
+
 export const aiRequests = appSchema.table('ai_requests', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),

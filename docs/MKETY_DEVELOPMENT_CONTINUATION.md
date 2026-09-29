@@ -1,3 +1,66 @@
+# 2026-09-29 pre-Starpips platform stabilization
+
+Current production baseline: `main` at `8ec1bf52f96a7377490fb7fc4ccd2f1bcc031bf4` (PR #172).
+
+## 2026-09-29 stabilization implementation progress
+
+- PR #173 is the active pre-Starpips stabilization branch and has completed implementation-level pre-merge certification; it remains unmerged until the documentation-only reconciliation head is rechecked.
+- AI Workspace and Enterprise AI are explicitly separate product entitlements and user experiences. Shared identity, PBAC, billing, credits and runtime are platform primitives only.
+- Tenant navigation has been simplified into Workspace / Products / Account; Admin exposes direct Product Operations entries.
+- Public/app/product host separation is being enforced for `mkety.com`, `app.mkety.com`, `mail.mkety.com`, `ai.mkety.com` and `api.mkety.com`.
+- Mail pricing is moving to active immutable database billing versions; Admin changes create a new version instead of rewriting history.
+- Paid entitlements now fail closed after the paid period/grace window rather than treating paused or indefinitely past-due subscriptions as active.
+- Enterprise AI solution settings now have real editable system instructions, approved solution knowledge, managed model selection and global pause state.
+- Enterprise AI channel connections now support binding to a tenant-owned solution instance; the managed channel runtime consumes that solution's instructions/knowledge/model/pause and includes hidden context in reservation estimates.
+- Enterprise AI now persists conversations/messages and exposes a per-conversation operator inbox with human takeover, manual reply, scheduled-action cancellation, and resume-to-AI.
+- Enterprise AI now supports owner-configured reply pacing (0-900 seconds) and explicit future-commitment reminders. Scheduled work is persisted in Postgres, near-term work is queue-delayed, a minute sweep recovers missed/long-term work, and delivery re-checks entitlement/channel/solution/handoff state before sending.
+- Enterprise AI recurring commercial access now has tenant-specific non-public versioned contract plans, negotiated monthly pricing, included entitlements/credits, verified Billing checkout activation, and fail-closed access after paid/grace periods.
+- Enterprise AI now has a real playground and customer-safe runs view; playground disables reminder/pacing side effects but still uses commercial admission.
+- Mail now exposes customer portability: existing contact CSV import/export plus workspace JSON export, RFC822/EML message export, and bounded authenticated EML import through the Mail content worker. Credentials, API keys, app passwords, provider secrets and verified settlements are intentionally excluded.
+- Guarded workflow `.github/workflows/mkety-ai-production.yml` now defines exact-SHA deployment for `ai.mkety.com`, `api.mkety.com/v1/ai`, the AI delivery Queue/DLQ and scheduler worker. The workflow explicitly does not enable production inference.
+- Dedicated customer setup/readiness runbook: `docs/MKETY_MAIL_ENTERPRISE_AI_CUSTOMER_SETUP_RUNBOOK.md`.
+- Certified stabilization implementation SHA: `5e85c2331208d5c49380cec77683c352e8fcf2ad`.
+- Exact implementation evidence: CI `36563958996` SUCCESS; Migration Baseline `36563959225` SUCCESS; Mkety Cloudflare vinext Smoke `36563959181` SUCCESS; Mkety Platform Core Workspaces Smoke `36563959122` SUCCESS; Production App Host Diagnostic `36563959087` SUCCESS; Public Candidate Deploy `36563959073` rerun SUCCESS.
+- The successful Public Candidate run includes connected staging DB verification, payment-gateway checks, isolated Worker deploy, real managed-AI commercial/accounting acceptance, public route/copy and rendered-Docs smokes, Enterprise payment safety, and Public Mkety AI memory/privacy/commercial grounding.
+- Dashboard stats authorization was tightened so a Server Action cannot query another tenant merely by supplying its UUID; tenant membership is checked from the authenticated tenant-role snapshot before stats reads.
+- Candidate and production public-content acceptance now use bounded retry helpers for follow-up content fetches, preventing one transient edge/database 5xx from falsely failing an otherwise healthy release while preserving the full content assertions.
+- Still incomplete before first Enterprise AI customer: guarded production-main execution/acceptance for `ai.mkety.com`, `api.mkety.com/v1/ai`, delivery Queue/DLQ/scheduler verification, and then real customer acceptance before inference promotion. Pre-merge implementation CI/candidate acceptance is closed.
+- Starpips production acceptance remains blocked until this stabilization checklist is closed.
+
+## Current production truth
+
+- PR #159 is merged. The Enterprise AI / Platform / Mail / Domains implementation is no longer a pending completion candidate.
+- Production hardening/finalization PRs #162, #163, #164, #165, #166, #167, #168, #170, #171 and #172 are merged.
+- `app.mkety.com` is served by the dedicated `mkety-app-host` Worker; root/app/login/auth routing, production Hyperdrive/runtime bindings and the Worker Custom Domain were accepted in production.
+- Auxiliary workers.dev and preview URLs for the production app host are disabled.
+- DomainNameAPI fixed-egress relay acceptance has passed in both Live and OT&E quote-only modes through `registrar-relay.mkety.com`; the old HTTP 401 / missing-credential blocker below is historical.
+- Production Enterprise AI `customerInferenceEnabled` remains deliberately OFF. Starpips real-customer acceptance has NOT started and must not start during this stabilization workstream.
+- PR #169 and historical certification PR #147 were closed as superseded on 2026-09-29.
+
+## Active workstream
+
+Before any Starpips production acceptance, stabilize and simplify the authenticated Mkety application so completed backend/product capabilities are actually discoverable, manageable and fast in the UI.
+
+Scope, in order:
+
+1. audit/refactor `app.mkety.com` information architecture, first-login/dashboard experience, tenant/workspace navigation and admin navigation;
+2. keep public `mkety.com` routes public-facing and ensure authenticated/admin/workspace routes live on their intended application/product hosts rather than leaking into public-site navigation;
+3. reconcile implemented backend capabilities with customer UI and Platform Control/admin UI, especially Mkety Mail, Enterprise AI, Workspaces, Billing/Usage/Credits, Domains/DNS and entitlement-aware product entry points;
+4. expose safe editable configuration through Platform Control where architecture already permits it, while keeping secrets, settlement, tenant isolation and immutable accounting protected;
+5. verify `ai.mkety.com` and `api.mkety.com` route/host contracts and implement missing customer-visible Enterprise AI console entry points without enabling production customer inference;
+6. preserve the implemented non-destructive `media.mkety.com` tenant connector/add-on path while keeping the existing standalone Media production customer/runtime/billing boundary; true Media-side SSO/sync requires a separately verified Media API;
+7. remove stale/duplicate app-side paths, simplify navigation, reduce avoidable repeated reads, and add route/navigation/performance contract tests;
+8. compare the uploaded legacy StarAI application only for customer-facing capabilities (assistant settings, knowledge, channels, human takeover, test console, logs, etc.); do not import its separate Worker/database architecture into Mkety;
+9. certify exact-head CI/build/type/lint/tests and targeted host/navigation/product-surface smokes before beginning Starpips acceptance.
+
+## Commercial behavior to preserve
+
+Enterprise AI supports separately entitled/contracted customers. A customer may have a recurring commercial subscription (for example $100/month) plus included/prepaid usage. Billing/entitlement state must gate the service: when a subscription or required prepaid entitlement is inactive/expired and no allowed grace/committed capacity applies, customer-facing Enterprise AI execution must fail closed while preserving data/configuration. Add-ons/extra capacity must remain additive rather than replacing the base contract.
+
+The exact customer price is a commercial configuration decision, not a hard-coded runtime amount. Verified payment/settlement remains authoritative; browser/client claims never grant service.
+
+---
+
 ## 2026-09-28 post-hotfix reconciliation and exact-head verification
 
 - PR #160 merged to main as `909c3d31a524075763c0a1c7d7985f89254e0b3a`; its guarded app.mkety.com repair workflow has not yet been executed in production.

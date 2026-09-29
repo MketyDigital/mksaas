@@ -6,15 +6,20 @@ import {
   Building2,
   ClipboardList,
   Command,
+  CreditCard,
   Database,
   Globe2,
+  Image as ImageIcon,
   LayoutDashboard,
   Link2,
   Mail,
   Palette,
+  Route,
   Settings,
   Sliders,
+  Sparkles,
   Users,
+  WalletCards,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -27,7 +32,6 @@ import { SidebarSeparator } from '../SidebarSeparator';
 interface AdminViewNavProps {
   basePath: string;
   permissions?: string[];
-  /** Callback when a nav item is clicked (for closing mobile drawer) */
   onItemClick?: () => void;
 }
 
@@ -37,7 +41,6 @@ export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNa
 
   return (
     <>
-      {/* Dashboard & Analytics - root level with color */}
       {canShowNav(permissions, 'admin:dashboard') && (
         <>
           <SidebarNavItem
@@ -65,107 +68,104 @@ export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNa
         </>
       )}
 
+      {canShowNavAny(permissions, ['platform:plans', 'platform:billing', 'platform:deployments']) && (
+        <>
+          <SidebarSeparator />
+          <SidebarSection title="Product Operations" icon={<Sparkles className="h-4 w-4" />} variant="admin">
+            {canShowNav(permissions, 'platform:plans') && (
+              <>
+                <SidebarNavItem
+                  href={`${adminBase}/platform-control/ai-operations`}
+                  label="Enterprise AI"
+                  icon={Sparkles}
+                  iconTint="assistant"
+                  onClick={onItemClick}
+                />
+                <SidebarNavItem
+                  href={`${adminBase}/platform-control/mail`}
+                  label="Mkety Mail"
+                  icon={Mail}
+                  iconTint="primary"
+                  onClick={onItemClick}
+                />
+                <SidebarNavItem
+                  href={`${adminBase}/platform-control/media`}
+                  label="Mkety Media"
+                  icon={ImageIcon}
+                  iconTint="primary"
+                  onClick={onItemClick}
+                />
+              </>
+            )}
+            {canShowNav(permissions, 'platform:billing') && (
+              <>
+                <SidebarNavItem
+                  href={`${adminBase}/platform-control/billing`}
+                  label="Billing & Ledger"
+                  icon={WalletCards}
+                  iconTint="primary"
+                  onClick={onItemClick}
+                />
+                <SidebarNavItem
+                  href={`${adminBase}/platform-control/payments`}
+                  label="Payments"
+                  icon={CreditCard}
+                  iconTint="primary"
+                  onClick={onItemClick}
+                />
+              </>
+            )}
+            {canShowNav(permissions, 'platform:deployments') && (
+              <SidebarNavItem
+                href={`${adminBase}/platform-control/domains-routing`}
+                label="Domains & DNS"
+                icon={Route}
+                iconTint="primary"
+                onClick={onItemClick}
+              />
+            )}
+          </SidebarSection>
+        </>
+      )}
+
       <SidebarSeparator />
 
-      {/* People & Operations */}
       {canShowNavAny(permissions, ['admin:members', 'admin:invites', 'admin:settings']) && (
         <SidebarSection title={tAdmin('members')} icon={<Users className="h-4 w-4" />} variant="team">
           {canShowNav(permissions, 'admin:members') && (
-            <SidebarNavItem
-              href={`${adminBase}/members`}
-              label={tAdmin('members')}
-              icon={Users}
-              onClick={onItemClick}
-            />
+            <SidebarNavItem href={`${adminBase}/members`} label={tAdmin('members')} icon={Users} onClick={onItemClick} />
           )}
           {canShowNav(permissions, 'admin:invites') && (
             <SidebarNavItem href={`${adminBase}/invites`} label={tAdmin('invites')} icon={Mail} onClick={onItemClick} />
           )}
           {canShowNav(permissions, 'admin:settings') && (
-            <SidebarNavItem
-              href={`${adminBase}/departments`}
-              label={tAdmin('departments')}
-              icon={Building2}
-              onClick={onItemClick}
-            />
+            <SidebarNavItem href={`${adminBase}/departments`} label={tAdmin('departments')} icon={Building2} onClick={onItemClick} />
           )}
         </SidebarSection>
       )}
 
       <SidebarSeparator />
 
-      {/* Settings & System - collapsible by default */}
       {canShowNavAny(permissions, ['admin:settings', 'admin:roles', 'admin:audit', 'admin:integrations']) && (
-        <SidebarSection
-          title="Settings & System"
-          icon={<Settings className="h-4 w-4" />}
-          variant="admin"
-          defaultExpanded={false}
-        >
+        <SidebarSection title="Settings & System" icon={<Settings className="h-4 w-4" />} variant="admin" defaultExpanded={false}>
           {canShowNav(permissions, 'admin:settings') && (
             <>
-              <SidebarNavItem
-                href={`${adminBase}/settings`}
-                label={tAdmin('settingsTabs.general')}
-                icon={Settings}
-                exact
-                onClick={onItemClick}
-              />
-              <SidebarNavItem
-                href={`${adminBase}/settings/features`}
-                label={tAdmin('settingsTabs.features')}
-                icon={Sliders}
-                onClick={onItemClick}
-              />
-              <SidebarNavItem
-                href={`${adminBase}/settings/branding`}
-                label={tAdmin('settingsTabs.branding')}
-                icon={Palette}
-                onClick={onItemClick}
-              />
-              <SidebarNavItem
-                href={`${adminBase}/settings/ai-provider`}
-                label={tAdmin('settingsTabs.aiProvider')}
-                icon={Brain}
-                onClick={onItemClick}
-              />
-              <SidebarNavItem
-                href={`${adminBase}/settings/storage`}
-                label={tAdmin('settingsTabs.storage')}
-                icon={Database}
-                onClick={onItemClick}
-              />
-              <SidebarNavItem
-                href={`${adminBase}/settings/domains`}
-                label="Domains & DNS"
-                icon={Globe2}
-                onClick={onItemClick}
-              />
+              <SidebarNavItem href={`${adminBase}/settings`} label={tAdmin('settingsTabs.general')} icon={Settings} exact onClick={onItemClick} />
+              <SidebarNavItem href={`${adminBase}/settings/features`} label={tAdmin('settingsTabs.features')} icon={Sliders} onClick={onItemClick} />
+              <SidebarNavItem href={`${adminBase}/settings/branding`} label={tAdmin('settingsTabs.branding')} icon={Palette} onClick={onItemClick} />
+              <SidebarNavItem href={`${adminBase}/settings/ai-provider`} label={tAdmin('settingsTabs.aiProvider')} icon={Brain} onClick={onItemClick} />
+              <SidebarNavItem href={`${adminBase}/settings/storage`} label={tAdmin('settingsTabs.storage')} icon={Database} onClick={onItemClick} />
+              <SidebarNavItem href={`${adminBase}/settings/domains`} label="Domains & DNS" icon={Globe2} onClick={onItemClick} />
             </>
           )}
           {canShowNav(permissions, 'admin:roles') && (
-            <SidebarNavItem
-              href={`${adminBase}/roles`}
-              label={tAdmin('rolesAndPermissions')}
-              icon={Users}
-              onClick={onItemClick}
-            />
+            <SidebarNavItem href={`${adminBase}/roles`} label={tAdmin('rolesAndPermissions')} icon={Users} onClick={onItemClick} />
           )}
           {canShowNav(permissions, 'admin:integrations') && (
-            <SidebarNavItem
-              href={`${adminBase}/integrations`}
-              label={tAdmin('integrations')}
-              icon={Link2}
-              onClick={onItemClick}
-            />
+            <SidebarNavItem href={`${adminBase}/integrations`} label={tAdmin('integrations')} icon={Link2} onClick={onItemClick} />
           )}
           {canShowNav(permissions, 'admin:audit') && (
-            <SidebarNavItem
-              href={`${adminBase}/audit-logs`}
-              label={tAdmin('auditLogs')}
-              icon={ClipboardList}
-              onClick={onItemClick}
-            />
+            <SidebarNavItem href={`${adminBase}/audit-logs`} label={tAdmin('auditLogs')} icon={ClipboardList} onClick={onItemClick} />
           )}
         </SidebarSection>
       )}

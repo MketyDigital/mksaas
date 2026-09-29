@@ -5,6 +5,7 @@
 import { type AuthResult, createMockSession, createNullAuthResult } from '@/__tests__/mock-factories';
 
 const mockAuthFn = jest.fn<Promise<AuthResult>, []>();
+const mockGetTenantBySlug = jest.fn();
 
 jest.mock('@/shared/db', () => ({
   db: {
@@ -21,6 +22,10 @@ jest.mock('@/shared/lib/auth', () => ({
   auth: mockAuthFn,
 }));
 
+jest.mock('@/shared/lib/tenant', () => ({
+  getTenantBySlug: mockGetTenantBySlug,
+}));
+
 jest.mock('@/shared/lib/logger', () => ({
   logger: {
     error: jest.fn(),
@@ -35,18 +40,36 @@ import { getDashboardStats } from '../get-dashboard-stats';
 describe('getDashboardStats', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTenantBySlug.mockResolvedValue({
+      id: 'tenant-123',
+      slug: 'test-tenant',
+      name: 'Test Tenant',
+    });
   });
 
   it('should return error when user is not authenticated', async () => {
     mockAuthFn.mockResolvedValue(createNullAuthResult());
 
-    const result = await getDashboardStats('tenant-123');
+    const result = await getDashboardStats('test-tenant');
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Not authenticated');
   });
 
-  it('should return dashboard stats for authenticated user', async () => {
+  it('should reject an authenticated user who is not a member of the tenant', async () => {
+    mockAuthFn.mockResolvedValue(createMockSession({
+      user: { roles: { 'other-tenant': 'member' } },
+    }));
+
+    const result = await getDashboardStats('test-tenant');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Not authorized');
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockDb.query.auditEvents.findMany).not.toHaveBeenCalled();
+  });
+
+  it('should return dashboard stats for an authenticated tenant member', async () => {
     mockAuthFn.mockResolvedValue(createMockSession());
 
     (mockDb.select as jest.Mock).mockReturnValue({
@@ -66,20 +89,19 @@ describe('getDashboardStats', () => {
       },
     ]);
 
-    const result = await getDashboardStats('tenant-123');
+    const result = await getDashboardStats('test-tenant');
 
     expect(result.success).toBe(true);
     if (result.success && result.data) {
-      expect(result.data).toBeDefined();
-      expect(result.data.teamSize).toBeDefined();
-      expect(result.data.recentActivity).toBeDefined();
+      expect(result.data.teamSize).toBe(5);
+      expect(result.data.recentActivity).toHaveLength(1);
     }
   });
 
   it('should handle errors gracefully', async () => {
     mockAuthFn.mockRejectedValue(new Error('Database error'));
 
-    const result = await getDashboardStats('tenant-123');
+    const result = await getDashboardStats('test-tenant');
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Failed to fetch dashboard stats');

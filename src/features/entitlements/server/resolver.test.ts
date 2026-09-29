@@ -88,7 +88,7 @@ describe('hasEntitlement', () => {
   it('passes the requested tenant only to tenant-scoped reads', async () => {
     const storage = source();
     await hasEntitlement({ tenantId: 'tenant-a', entitlement: 'workspace.workflows', now }, storage);
-    expect(storage.getCurrentPlanVersionIds).toHaveBeenCalledWith('tenant-a');
+    expect(storage.getCurrentPlanVersionIds).toHaveBeenCalledWith('tenant-a', now);
     expect(storage.getTenantOverrides).toHaveBeenCalledWith('tenant-a');
   });
 });

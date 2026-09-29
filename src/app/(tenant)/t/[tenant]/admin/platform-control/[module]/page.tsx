@@ -2,13 +2,19 @@ import { notFound } from 'next/navigation';
 
 import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
 import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
+import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
+import {
+  createEnterpriseAiContractVersion,
+  listEnterpriseAiContracts,
+} from '@/features/ai-runtime/server/enterprise-contracts';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
-import { reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
+import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
+import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
@@ -30,6 +36,7 @@ const protectedActionsByModule: Record<string, string[]> = {
   'billing-ledger': ['View ledger history', 'Create controlled adjustments', 'Review refunds', 'Audit credit grants'],
   'ai-operations': ['Review cost protection', 'Manage safe limits', 'Create future rate versions', 'Emergency-disable inference'],
   'mail-operations': ['Reconcile Mail plans', 'Operate tenant Mail state', 'Manage domain sending/routing', 'Review Mail readiness'],
+  'media-connector': ['Link verified Media workspaces', 'Suspend or disconnect links', 'Review external workspace references', 'Preserve standalone Media billing'],
   'deployments-domains': ['Review pending candidate requests', 'Approve one execution', 'Reject unsafe requests', 'Inspect deployment history'],
   'domains-routing': [
     'Monitor mkety.com public website routing',
@@ -59,6 +66,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     billing: 'billing-ledger',
     security: 'security-audit',
     mail: 'mail-operations',
+    media: 'media-connector',
   };
   const moduleKey = moduleAliases[routeModuleKey] ?? routeModuleKey;
   const controlModule = await getPublishedControlCenterModule(moduleKey);
@@ -73,11 +81,14 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const isPayments = controlModule.key === 'payments';
   const isMailOperations = controlModule.key === 'mail-operations';
   const isAiOperations = controlModule.key === 'ai-operations';
+  const isMediaConnector = controlModule.key === 'media-connector';
   const isDomainsRouting = controlModule.key === 'domains-routing';
   let deploymentApprovalRows = null;
   let paymentSettings = null;
   let mailOperations = null;
   let aiCommercialOverview = null;
+  let enterpriseAiContracts = null;
+  let mediaLinks = null;
   let domainResellerConnections = null;
 
   if (isDeployments) {
@@ -99,7 +110,15 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
 
   if (isAiOperations) {
     await requirePermission(tenant, 'platform:plans');
-    aiCommercialOverview = await withAdminTimeout(getAiCommercialControlOverview(), null);
+    [aiCommercialOverview, enterpriseAiContracts] = await Promise.all([
+      withAdminTimeout(getAiCommercialControlOverview(), null),
+      withAdminTimeout(listEnterpriseAiContracts(), []),
+    ]);
+  }
+
+  if (isMediaConnector) {
+    await requirePermission(tenant, 'platform:plans');
+    mediaLinks = await withAdminTimeout(listMediaTenantLinks(), []);
   }
 
   if (isDomainsRouting) {
@@ -153,7 +172,131 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
 
 
       {isAiOperations && aiCommercialOverview ? (
-        <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
+        <div className="space-y-6">
+          <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Enterprise AI customer contracts</CardTitle>
+              <CardDescription>
+                Create a tenant-specific recurring contract. Saving a change creates a new immutable billing version; verified payment activates the subscription entitlement.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Customer workspace slug
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Contract name
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="name" placeholder="Customer Enterprise AI" />
+                </label>
+                <label className="text-sm font-medium">
+                  Monthly price (USD)
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="monthlyPriceUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="100.00" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Included credits per billing period
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
+                </label>
+                <label className="text-sm font-medium lg:col-span-2">
+                  Description
+                  <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={2000} name="description" rows={3} />
+                </label>
+                <div className="lg:col-span-2">
+                  <p className="text-sm font-medium">Included capabilities</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Enterprise AI base access is always included. Add only capabilities covered by the customer contract.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {ENTERPRISE_AI_CONTRACT_ENTITLEMENTS.map((entitlement) => (
+                      <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs" key={entitlement}>
+                        <input defaultChecked={entitlement === 'workspace.ai.enterprise'} disabled={entitlement === 'workspace.ai.enterprise'} name={entitlement === 'workspace.ai.enterprise' ? undefined : 'entitlements'} type="checkbox" value={entitlement} />
+                        <span className="font-mono">{entitlement}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                  Create contract version
+                </button>
+              </form>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {(enterpriseAiContracts ?? []).length ? (enterpriseAiContracts ?? []).map((contract) => (
+                  <div className="rounded-xl border p-4" key={contract.versionId}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{contract.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{contract.tenant?.slug ?? 'Unknown tenant'} · version {contract.version}</p>
+                      </div>
+                      <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                        {contract.currency} {(Number(contract.amountMinor) / 100).toFixed(2)}/mo
+                      </span>
+                    </div>
+                    {contract.description ? <p className="mt-3 text-sm text-muted-foreground">{contract.description}</p> : null}
+                  </div>
+                )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {isMediaConnector && mediaLinks ? (
+        <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Mkety Media tenant links</CardTitle>
+              <CardDescription>
+                Link an Mkety workspace to an existing standalone Media workspace. This stores only a non-secret reference; Media billing, invoices, credentials and runtime remain authoritative in Media.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <form action={saveMediaTenantLink.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Mkety workspace slug
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Existing Media workspace reference
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={255} name="externalWorkspaceRef" placeholder="Media workspace ID or canonical reference" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Link status
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="linked" name="status">
+                    <option value="linked">Linked</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="disconnected">Disconnected</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Verification note
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={1000} name="note" placeholder="How the Media workspace ownership/link was verified" />
+                </label>
+                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                  Save Media link
+                </button>
+              </form>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {mediaLinks.length ? mediaLinks.map((link) => (
+                  <div className="rounded-xl border p-4" key={link.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{link.tenantName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{link.tenantSlug}</p>
+                      </div>
+                      <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">{link.status}</span>
+                    </div>
+                    <p className="mt-3 font-mono text-xs">{link.externalWorkspaceRef}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Updated {link.updatedAt.toLocaleString()}</p>
+                  </div>
+                )) : (
+                  <p className="text-sm text-muted-foreground">No Mkety tenant is linked to Media yet.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
 
       {isDomainsRouting && domainResellerConnections ? (
@@ -178,15 +321,62 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                 </form>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-3">
+            <CardContent className="grid gap-4 lg:grid-cols-3">
               {mailOperations.catalog.map((plan) => (
-                <div key={plan.key} className="rounded-xl border bg-muted/20 p-4">
-                  <p className="font-semibold">{plan.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {String.fromCharCode(36)}{(Number(plan.amountMinor) / 100).toFixed(2)} / month
+                <form
+                  action={createMailPlanVersion.bind(null, tenant)}
+                  key={plan.key}
+                  className="rounded-xl border bg-muted/20 p-4"
+                >
+                  <input type="hidden" name="planKey" value={plan.key} />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{plan.name}</p>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key} · v{plan.version}</p>
+                    </div>
+                    <span className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                      Active
+                    </span>
+                  </div>
+                  <label className="mt-4 block text-xs font-medium">
+                    Plan name
+                    <input
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={plan.name}
+                      maxLength={255}
+                      name="name"
+                      required
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs font-medium">
+                    Description
+                    <textarea
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={plan.description ?? ''}
+                      maxLength={2000}
+                      name="description"
+                      required
+                      rows={3}
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs font-medium">
+                    Monthly price (USD)
+                    <input
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={(Number(plan.amountMinor) / 100).toFixed(2)}
+                      inputMode="decimal"
+                      name="monthlyPriceUsd"
+                      pattern="\\d{1,6}(?:\\.\\d{1,2})?"
+                      required
+                    />
+                  </label>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Saving creates a new billing version. Existing subscriptions and historical settlements keep their original version and price.
                   </p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key}</p>
-                </div>
+                  <button className="mt-4 rounded-lg border px-3 py-2 text-sm font-semibold">
+                    Create new price version
+                  </button>
+                </form>
               ))}
             </CardContent>
           </Card>
@@ -287,7 +477,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
         </div>
       ) : null}
 
-      {!isPayments && !isMailOperations && !isAiOperations && !isDomainsRouting ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {!isPayments && !isMailOperations && !isAiOperations && !isMediaConnector && !isDomainsRouting ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle>Controlled module surface</CardTitle>

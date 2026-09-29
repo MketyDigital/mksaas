@@ -17,8 +17,8 @@ describe('self-service prepaid billing production contract', () => {
       read('src/app/api/tenants/[tenant]/billing/checkout/route.ts'),
     ]);
 
-    expect(checkoutService).toContain('getSelfServiceBillingQuote(input.planKey, input.termKey)');
-    expect(checkoutService).toContain('prepared.amountExpectedMinor !== quote.amountMinor');
+    expect(checkoutService).not.toContain('getSelfServiceBillingQuote(input.planKey, input.termKey)');
+    expect(repository).toContain('calculateSelfServiceTermQuote(activeVersion.amountMinor, input.termKey)');
     expect(repository).toContain('addMonths(periodStart, quote.term.months)');
     expect(repository).toContain('amountDueMinor: quote.amountMinor');
     expect(repository).toContain('amountExpectedMinor: quote.amountMinor');
@@ -36,6 +36,7 @@ describe('self-service prepaid billing production contract', () => {
     expect(pricing).toContain('term.discountPercent');
     expect(pricing).toContain('withTerm(plan.ctaHref, termKey)');
     expect(checkout).toContain('SELF_SERVICE_BILLING_TERMS');
+    expect(checkout).toContain('getActiveSelfServiceBillingQuote(query.plan, termKey)');
     expect(checkout).toContain('name="termKey"');
     expect(checkout).toContain('quote.effectiveMonthlyMinor');
   });

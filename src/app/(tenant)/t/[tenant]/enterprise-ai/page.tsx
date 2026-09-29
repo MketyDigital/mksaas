@@ -1,4 +1,4 @@
-import { ArrowRight, Code2, CreditCard, Globe2, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
+import { Activity, ArrowRight, BellRing, Code2, CreditCard, FlaskConical, Globe2, Headphones, MessageSquareMore, Palette, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -6,6 +6,7 @@ import { getTenantSettings } from '@/features/admin/services/settings-service';
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
 import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
+import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import {
   listEnterpriseAiSolutionInstances,
   listEnterpriseAiSolutionTemplates,
@@ -30,19 +31,52 @@ export default async function EnterpriseAiConsolePage({
   if (!tenant) redirect('/select-tenant');
 
   if (!(await hasEnterpriseAiAccess(tenant.id))) {
+    const contractState = await getEnterpriseAiContractBillingState(tenant.id);
+    const contract = contractState.contract;
+    const paymentPending = contractState.subscription?.status === 'pending_payment';
     return (
-      <div className="mx-auto max-w-3xl py-8">
+      <div className="mx-auto max-w-3xl space-y-4 py-8">
         <Card className="rounded-3xl">
           <CardHeader>
             <Sparkles className="h-8 w-8 text-primary" />
-            <CardTitle className="mt-3 text-2xl">Enterprise AI is not active for this workspace</CardTitle>
+            <CardTitle className="mt-3 text-2xl">{contract ? 'Your Enterprise AI agreement is ready' : 'Enterprise AI is not active for this workspace'}</CardTitle>
             <CardDescription>
-              Enterprise Mkety AI is a separate business solution from the normal AI Workspace. Access only becomes active from Mkety-owned billing and entitlements.
+              {contract
+                ? 'Complete the verified subscription payment below. Access activates from Mkety Billing after settlement; no browser action can grant the entitlement by itself.'
+                : 'Enterprise Mkety AI is a separate business solution from the normal AI Workspace. Access only becomes active from Mkety-owned billing and entitlements.'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/enterprise">Explore Enterprise AI</a>
-            <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}`}>Back to workspace</Link>
+          <CardContent className="space-y-5">
+            {contract ? (
+              <>
+                <div className="rounded-2xl border bg-muted/20 p-4">
+                  <p className="font-semibold">{contract.planName}</p>
+                  <p className="mt-1 text-3xl font-bold">{contract.currency} {(Number(contract.amountMinor) / 100).toFixed(2)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
+                  <p className="mt-2 text-sm text-muted-foreground">{contract.planDescription}</p>
+                  <p className="mt-3 text-xs text-muted-foreground">{contract.includedCredits.toString()} included credits per billing period · {contract.entitlements.length} included capabilities</p>
+                </div>
+                {paymentPending ? (
+                  <p className="rounded-xl border bg-amber-500/5 p-3 text-sm">
+                    A payment is already awaiting confirmation. Complete that checkout or allow it to reach a terminal state before starting another.
+                  </p>
+                ) : (
+                  <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-[1fr_auto]" method="post">
+                    <select className="rounded-xl border bg-background px-3 py-3 text-sm" defaultValue="nowpayments" name="provider">
+                      <option value="nowpayments">Crypto / NOWPayments</option>
+                      <option value="flutterwave">Card / bank · Flutterwave</option>
+                      <option value="kora">Card / bank · Kora</option>
+                    </select>
+                    <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Pay & activate Enterprise AI</button>
+                  </form>
+                )}
+                <p className="text-xs text-muted-foreground">If payment is later overdue, Enterprise AI follows the contract period and configured grace window, then stops inference while preserving your setup.</p>
+              </>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/enterprise">Explore Enterprise AI</a>
+                <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}`}>Back to workspace</Link>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -63,6 +97,29 @@ export default async function EnterpriseAiConsolePage({
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 py-4">
+      {commercial.billing?.subscription.status === 'past_due' ? (
+        <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="font-semibold">Enterprise AI renewal is due</p>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Your workspace is currently inside its billing grace window. Renew now to avoid customer AI stopping when that grace period ends. Pricing is resolved server-side from your current Enterprise agreement.
+              </p>
+            </div>
+            <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="flex flex-wrap gap-2" method="post">
+              <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
+                <option value="nowpayments">NOWPayments</option>
+                <option value="flutterwave">Flutterwave</option>
+                <option value="kora">Kora</option>
+              </select>
+              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" type="submit">
+                Renew Enterprise AI
+              </button>
+            </form>
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-3xl border bg-primary/[0.04] p-6 sm:p-8">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
           <Sparkles className="h-6 w-6" />
@@ -136,7 +193,23 @@ export default async function EnterpriseAiConsolePage({
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card className="rounded-2xl">
+          <CardHeader><FlaskConical className="h-5 w-5 text-primary" /><CardTitle>Playground</CardTitle><CardDescription>Test the selected solution with its real instructions, knowledge, model, credits and commercial safeguards before customer use.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/playground`}>Test solution <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader><Activity className="h-5 w-5 text-primary" /><CardTitle>Runs & logs</CardTitle><CardDescription>Inspect customer-safe request status, token usage, model and credits without exposing provider secrets or internal margins.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/runs`}>Open runs <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader><Headphones className="h-5 w-5 text-primary" /><CardTitle>Conversations & handoff</CardTitle><CardDescription>Review customer chats, take over one conversation, reply as an operator, and resume AI when ready.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/conversations`}>Open operator inbox <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader><BellRing className="h-5 w-5 text-primary" /><CardTitle>Commitment reminders</CardTitle><CardDescription>Review reminders created from explicit customer promises, cancel pending ones, and inspect any delivery that requires reconciliation.</CardDescription></CardHeader>
+          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/reminders`}>Manage reminders <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+        </Card>
         <Card className="rounded-2xl">
           <CardHeader><Palette className="h-5 w-5 text-primary" /><CardTitle>Brand & white-label</CardTitle><CardDescription>{canWhiteLabel ? 'Use your own name, logo, colors, support and legal links.' : 'Available with Enterprise AI white-label access.'}</CardDescription></CardHeader>
           <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Open branding <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>

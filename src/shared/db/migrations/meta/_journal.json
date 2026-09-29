@@ -225,6 +225,20 @@
       "when": 1790590200000,
       "tag": "0031_managed_domains_dns",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790601000000,
+      "tag": "0032_ai_conversations_scheduled_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790604600000,
+      "tag": "0033_media_tenant_links",
+      "breakpoints": true
     }
   ]
 }

@@ -8,7 +8,7 @@ This repository is the Mkety product codebase. It is no longer governed as the u
 2. [`FEATURE_AGENT_HANDOFF_PROTOCOL.md`](./FEATURE_AGENT_HANDOFF_PROTOCOL.md) — mandatory completion/handoff discipline for every feature/workstream agent.
 3. [`CURRENT_WORKSTREAM_STATUS.md`](./CURRENT_WORKSTREAM_STATUS.md) — concise pointer to what is being worked on now, its verified state, blockers, and exact next steps.
 4. [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) — operational milestone order and long-running continuation roadmap.
-5. [`handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`](./handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md) — authoritative continuation handoff for PR #159 and its remaining live gates.
+5. [`handoffs/2026-09-29-production-ready-starpips-next.md`](./handoffs/2026-09-29-production-ready-starpips-next.md) — latest production handoff. Starpips acceptance is intentionally paused until the current pre-acceptance application stabilization is complete.\n6. [`handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`](./handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md) — historical detail for PR #159 and the live gates that were subsequently closed.
 6. The approved spec/plan for the active feature branch.
 7. Current branch code, migrations, tests, and immutable CI/deployment evidence.
 8. Older release handoffs, including `MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`, are historical unless a newer current-state record explicitly points back to them.
@@ -22,7 +22,7 @@ When an older document conflicts with `AGENTS.md` or fresher verified handoff ev
 | [`FEATURE_AGENT_HANDOFF_PROTOCOL.md`](./FEATURE_AGENT_HANDOFF_PROTOCOL.md) | Mandatory feature-agent progress, evidence, blocker, and next-step update gate |
 | [`CURRENT_WORKSTREAM_STATUS.md`](./CURRENT_WORKSTREAM_STATUS.md) | Current workstream, status, blocker, verification, and exact resume point |
 | [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
-| [`handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`](./handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md) | PR #159 Enterprise AI / Platform / Mail completion evidence and exact remaining live gates |
+| [`handoffs/2026-09-29-production-ready-starpips-next.md`](./handoffs/2026-09-29-production-ready-starpips-next.md) | Latest production-ready handoff; Starpips acceptance is paused behind pre-acceptance app stabilization |\n| [`handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md`](./handoffs/2026-09-28-enterprise-ai-platform-mail-completion.md) | Historical PR #159 implementation/certification detail |
 | [`MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md`](./MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md) | Shared AI runtime, provider, domain, channel, and Enterprise AI architecture |
 | [`MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`](./MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md) | Enterprise AI product, commercial, security, usage, and operations policy |
 | [`MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md`](./MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md) | Broad Enterprise AI capability envelope; not a claim that every capability is launch-enabled |

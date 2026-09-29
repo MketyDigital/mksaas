@@ -44,3 +44,35 @@ export async function fetchAttachmentManifest(rawR2Key:string|null|undefined){
     return [] as Array<{filename:string;contentType:string;r2Key:string;size:number}>;
   }
 }
+
+
+export async function storeMailContent(
+  key:string,
+  bytes:Uint8Array,
+  contentType='application/octet-stream',
+){
+  const url=process.env.MKETY_MAIL_CONTENT_URL||'';
+  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  if(!url||!secret||!key.startsWith('mail/')||key.includes('..')) {
+    throw new Error('Mkety Mail content storage is not configured.');
+  }
+  if(bytes.byteLength<=0||bytes.byteLength>25_000_000){
+    throw new Error('Mail content is outside the supported migration size.');
+  }
+  const bodyBytes=new Uint8Array(bytes.byteLength);
+  bodyBytes.set(bytes);
+  const response=await fetch(url,{
+    method:'POST',
+    headers:{
+      authorization:`Bearer ${secret}`,
+      'content-type':contentType,
+      'content-length':String(bytes.byteLength),
+      'x-mkety-operation':'put',
+      'x-mkety-key':key,
+    },
+    body:bodyBytes,
+    cache:'no-store',
+  });
+  if(!response.ok) throw new Error('Mkety Mail content storage rejected the migration object.');
+  return response.json().catch(()=>({ok:true,key}));
+}

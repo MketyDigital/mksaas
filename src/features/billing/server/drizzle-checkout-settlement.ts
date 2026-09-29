@@ -8,6 +8,7 @@ import {
 
 export interface BillingCheckoutSettlementContext {
   checkoutId: string;
+  tenantId: string;
   subscriptionId: string;
   billingPeriodId: string;
   amountExpectedMinor: bigint;
@@ -23,6 +24,7 @@ export async function findBillingCheckoutSettlementContext(
   const [checkout] = await db
     .select({
       checkoutId: billingCheckouts.id,
+      tenantId: billingCheckouts.tenantId,
       subscriptionId: billingCheckouts.subscriptionId,
       billingPeriodId: billingCheckouts.billingPeriodId,
       amountExpectedMinor: billingCheckouts.amountExpectedMinor,

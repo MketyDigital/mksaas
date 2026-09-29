@@ -353,18 +353,34 @@ jobs:
           done
 
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/academy" -o /tmp/mkety-academy-page.html
+          fetch_candidate_page() {
+            path="$1"
+            output="$2"
+            code='000'
+            for attempt in 1 2 3 4 5; do
+              code="$(curl --connect-timeout 10 --max-time 60 -L -sS -o "$output" -w '%{http_code}' "$CANDIDATE_URL$path" || true)"
+              echo "Candidate content fetch $path attempt $attempt: HTTP $code"
+              if [ "$code" = '200' ]; then return 0; fi
+              sleep 2
+            done
+            echo "Candidate content fetch failed: $path (last HTTP $code)"
+            head -c 400 "$output" 2>/dev/null || true
+            echo
+            return 1
+          }
+
+          fetch_candidate_page '/academy' /tmp/mkety-academy-page.html
           grep -Fq 'Courses &amp; tiers' /tmp/mkety-academy-page.html || grep -Fq 'Courses & tiers' /tmp/mkety-academy-page.html || { echo 'Academy page missing Courses & tiers section.'; exit 1; }
           grep -Fq 'Ready to learn?' /tmp/mkety-academy-page.html || { echo 'Academy page missing ready-to-learn handoff.'; exit 1; }
           grep -Fq 'Ask Mkety AI about Academy' /tmp/mkety-academy-page.html || { echo 'Academy page missing AI-first discovery CTA.'; exit 1; }
           grep -Fq 'academy.mkety.com' /tmp/mkety-academy-page.html || { echo 'Academy page missing learning-access destination.'; exit 1; }
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/domains" -o /tmp/mkety-domains-page.html
+          fetch_candidate_page '/domains' /tmp/mkety-domains-page.html
           grep -Fq 'Mkety Domains' /tmp/mkety-domains-page.html || { echo 'Domains page missing Mkety Domains product identity.'; exit 1; }
           grep -Fq 'Mkety DNS' /tmp/mkety-domains-page.html || { echo 'Domains page missing Mkety DNS product identity.'; exit 1; }
           grep -Fq 'live' /tmp/mkety-domains-page.html || { echo 'Domains page missing live-pricing positioning.'; exit 1; }
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/pricing" -o /tmp/mkety-pricing-page.html
+          fetch_candidate_page '/pricing' /tmp/mkety-pricing-page.html
           # Contract literal: data-plan-price="starter:$5.99"
           # Contract literal: Starter price card missing exact USD-formatted $5.99 amount.
           grep -Fq "data-plan-price=\"starter:\$5.99\"" /tmp/mkety-pricing-page.html || { echo "Starter price card missing exact USD-formatted \$5.99 amount."; exit 1; }
@@ -372,7 +388,7 @@ jobs:
           grep -Fq 'Custom / Enterprise' /tmp/mkety-pricing-page.html || { echo 'Pricing page missing Trading Custom / Enterprise positioning.'; exit 1; }
 
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/mail" -o /tmp/mkety-mail-page.html
+          fetch_candidate_page '/mail' /tmp/mkety-mail-page.html
           grep -Fq 'Mail Starter' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter.'; exit 1; }
           grep -Fq '$4.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter price.'; exit 1; }
           grep -Fq 'Mail Growth' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Growth.'; exit 1; }
@@ -382,15 +398,15 @@ jobs:
           grep -Fq 'Enterprise Mail' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Enterprise Mail.'; exit 1; }
           grep -Fq 'Marketing' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Marketing Coming Soon boundary.'; exit 1; }
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/enterprise" -o /tmp/mkety-enterprise-page.html
+          fetch_candidate_page '/enterprise' /tmp/mkety-enterprise-page.html
           grep -Fq 'Enterprise AI' /tmp/mkety-enterprise-page.html || { echo 'Candidate Enterprise page missing Enterprise AI.'; exit 1; }
           grep -Fq 'Enterprise Mail' /tmp/mkety-enterprise-page.html || { echo 'Candidate Enterprise page missing Enterprise Mail.'; exit 1; }
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/workspaces" -o /tmp/mkety-workspaces-page.html
+          fetch_candidate_page '/workspaces' /tmp/mkety-workspaces-page.html
           grep -Fq 'Trading Workspace' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Workspace.'; exit 1; }
           grep -Fq 'Custom / Enterprise' /tmp/mkety-workspaces-page.html || { echo 'Workspaces page missing Trading Custom / Enterprise positioning.'; exit 1; }
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/" -o /tmp/mkety-home-page.html
+          fetch_candidate_page '/' /tmp/mkety-home-page.html
           if grep -Fq 'academy.mkety.com' /tmp/mkety-home-page.html; then echo 'Homepage must not bypass AI-first Academy discovery.'; exit 1; fi
 
           for image in class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg; do
@@ -401,7 +417,7 @@ jobs:
             printf '%s' "$content_type" | grep -Eqi '^image/' || { echo "Academy asset is not an image: $image ($content_type)"; exit 1; }
           done
 
-          curl --connect-timeout 10 --max-time 60 -fsS "$CANDIDATE_URL/docs" -o /tmp/mkety-docs-index.html
+          fetch_candidate_page '/docs' /tmp/mkety-docs-index.html
           python3 <<'PY' >/tmp/mkety-doc-links
           import re
           html=open('/tmp/mkety-docs-index.html','r',encoding='utf-8',errors='replace').read()
@@ -412,8 +428,7 @@ jobs:
           [ -s /tmp/mkety-doc-links ] || { echo 'Docs index rendered no article links.'; exit 1; }
           while IFS= read -r doc_path; do
             [ -n "$doc_path" ] || continue
-            code="$(curl --connect-timeout 10 --max-time 60 -L -sS -o /tmp/mkety-doc-page -w '%{http_code}' "$CANDIDATE_URL$doc_path" || true)"
-            [ "$code" = '200' ] || { echo "Rendered docs link failed: $doc_path HTTP $code"; exit 1; }
+            fetch_candidate_page "$doc_path" /tmp/mkety-doc-page
           done </tmp/mkety-doc-links
 
       - name: Smoke Enterprise payment safety boundary

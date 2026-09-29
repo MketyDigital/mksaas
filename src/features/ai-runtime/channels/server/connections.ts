@@ -13,7 +13,7 @@ import {
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
-import { aiProviderConnections } from '@/shared/db/schema/ai-runtime';
+import { aiProviderConnections, aiSolutionInstances } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -30,7 +30,7 @@ function parseChannel(value: FormDataEntryValue | null) {
 }
 
 function safeMetadata(formData: FormData) {
-  const fields = ['displayName', 'accountId', 'pageId', 'phoneNumberId', 'teamId', 'channelId', 'botUsername', 'guildId', 'applicationId', 'organizationId', 'memberId', 'linkedinVersion', 'modelAlias'];
+  const fields = ['displayName', 'accountId', 'pageId', 'phoneNumberId', 'teamId', 'channelId', 'botUsername', 'guildId', 'applicationId', 'organizationId', 'memberId', 'linkedinVersion', 'modelAlias', 'solutionInstanceId'];
   const result: Record<string, string> = {};
   for (const field of fields) {
     const value = String(formData.get(field) ?? '').trim();
@@ -102,6 +102,17 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
 
   const submittedCredentials = channelCredentialsFromForm(formData);
   const metadata = safeMetadata(formData);
+  if (metadata.solutionInstanceId) {
+    const solution = await db.query.aiSolutionInstances.findFirst({
+      where: and(
+        eq(aiSolutionInstances.id, metadata.solutionInstanceId),
+        eq(aiSolutionInstances.tenantId, tenant.id),
+      ),
+      columns: { id: true },
+    });
+    if (!solution) throw new Error('Selected AI solution is not available to this workspace.');
+  }
+
   const existing = await db.query.aiProviderConnections.findFirst({
     where: and(
       eq(aiProviderConnections.tenantId, tenant.id),

@@ -30,6 +30,7 @@ export * from './invitations';
 export * from './knowledge';
 export * from './knowledge-chunks';
 export * from './mail';
+export * from './media-links';
 export * from './mkety-auth';
 export * from './persons';
 export * from './platform-app-experience';

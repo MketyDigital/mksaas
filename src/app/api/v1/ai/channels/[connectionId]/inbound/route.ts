@@ -12,8 +12,13 @@ import {
 } from '@/features/ai-runtime/channels/inbound';
 import { resolveLinkedInCommunityNotification } from '@/features/ai-runtime/channels/linkedin-community';
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
+import {
+  markEnterpriseAiConversationOutbound,
+  recordEnterpriseAiMessage,
+  scheduleEnterpriseAiAction,
+} from '@/features/ai-runtime/channels/server/conversations';
+import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
-import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
@@ -140,20 +145,40 @@ export async function POST(
           tenantId: connection.tenantId!,
           projectId: connection.projectId,
           connectionId: connection.id,
+          channelKey: channel.key,
           providerMessageId: inbound.providerMessageId,
           senderId: inbound.senderId,
+          externalConversationId: inbound.conversationId,
+          replyRecipientId: inbound.replyRecipientId,
+          contextId: inbound.conversationId,
+          replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
           text: inbound.text,
+          solutionInstanceId:
+            typeof connection.metadata.solutionInstanceId === 'string'
+              ? connection.metadata.solutionInstanceId
+              : null,
           requestedModel:
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
               : undefined,
         });
         if (turn.kind !== 'completed' || !turn.text) return;
-        await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
+        const delivery = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: turn.text, allowed_mentions: { parse: [] } }),
         });
+        if (!delivery.ok) throw new Error('Discord follow-up delivery failed.');
+        await recordEnterpriseAiMessage({
+          tenantId: connection.tenantId!,
+          conversationId: turn.conversationId,
+          requestId: turn.requestId,
+          direction: 'outbound',
+          role: 'assistant',
+          content: turn.text,
+          metadata: { channel: 'discord' },
+        });
+        await markEnterpriseAiConversationOutbound(turn.conversationId, connection.tenantId!);
       } catch {
         await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
           method: 'POST',
@@ -195,28 +220,47 @@ export async function POST(
           tenantId: connection.tenantId!,
           projectId: connection.projectId,
           connectionId: connection.id,
+          channelKey: channel.key,
           providerMessageId: inbound.providerMessageId,
           senderId: inbound.senderId,
+          externalConversationId: inbound.conversationId,
+          replyRecipientId: inbound.replyRecipientId,
+          contextId: inbound.conversationId,
+          replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
           text: inbound.text,
+          solutionInstanceId:
+            typeof connection.metadata.solutionInstanceId === 'string'
+              ? connection.metadata.solutionInstanceId
+              : null,
           requestedModel:
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
               : undefined,
         });
         if (turn.kind === 'completed' && turn.text) {
-          await deliverEnterpriseAiChannelMessage(
-            {
-              channel: channel.key,
-              endpointUrl: connection.endpointUrl,
-              metadata: connection.metadata,
-              credentials,
-            },
-            {
+          const action = await scheduleEnterpriseAiAction({
+            tenantId: connection.tenantId!,
+            conversationId: turn.conversationId,
+            solutionInstanceId:
+              typeof connection.metadata.solutionInstanceId === 'string'
+                ? connection.metadata.solutionInstanceId
+                : null,
+            connectionId: connection.id,
+            kind: 'delayed_reply',
+            idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
+            dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
+            payload: {
               recipientId: inbound.replyRecipientId,
               contextId: inbound.conversationId,
               text: turn.text,
+              sourceProviderMessageId: inbound.providerMessageId,
             },
-          );
+          });
+          await enqueueEnterpriseAiScheduledAction({
+            actionId: action.id,
+            tenantId: connection.tenantId!,
+            delaySeconds: turn.deliveryDelaySeconds,
+          }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
         }
       })().catch(() => undefined));
     }
@@ -241,9 +285,18 @@ export async function POST(
       tenantId: connection.tenantId,
       projectId: connection.projectId,
       connectionId: connection.id,
+      channelKey: channel.key,
       providerMessageId: inbound.providerMessageId,
       senderId: inbound.senderId,
+      externalConversationId: inbound.conversationId,
+      replyRecipientId: inbound.replyRecipientId,
+      contextId: inbound.conversationId,
+      replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
       text: inbound.text,
+      solutionInstanceId:
+        typeof connection.metadata.solutionInstanceId === 'string'
+          ? connection.metadata.solutionInstanceId
+          : null,
       requestedModel:
         typeof connection.metadata.modelAlias === 'string'
           ? connection.metadata.modelAlias
@@ -251,27 +304,39 @@ export async function POST(
     });
 
     if (turn.kind === 'completed' && turn.text) {
-      await deliverEnterpriseAiChannelMessage(
-        {
-          channel: channel.key,
-          endpointUrl: connection.endpointUrl,
-          metadata: connection.metadata,
-          credentials,
-        },
-        {
+      const action = await scheduleEnterpriseAiAction({
+        tenantId: connection.tenantId,
+        conversationId: turn.conversationId,
+        solutionInstanceId:
+          typeof connection.metadata.solutionInstanceId === 'string'
+            ? connection.metadata.solutionInstanceId
+            : null,
+        connectionId: connection.id,
+        kind: 'delayed_reply',
+        idempotencyKey: `reply:${connection.id}:${inbound.providerMessageId}`,
+        dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
+        payload: {
           recipientId: inbound.replyRecipientId,
-          text: turn.text,
           replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
+          contextId: inbound.conversationId,
+          text: turn.text,
+          sourceProviderMessageId: inbound.providerMessageId,
         },
-      );
+      });
+      await enqueueEnterpriseAiScheduledAction({
+        actionId: action.id,
+        tenantId: connection.tenantId,
+        delaySeconds: turn.deliveryDelaySeconds,
+      }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
     }
 
     // Duplicate provider webhook retries intentionally do not re-run AI.
     return Response.json({
       ok: true,
-      request_id: turn.requestId ?? null,
+      request_id: 'requestId' in turn ? turn.requestId ?? null : null,
       duplicate: turn.kind === 'duplicate',
       runtime_disabled: turn.kind === 'disabled',
+      human_handoff: turn.kind === 'handoff',
     });
   } catch {
     // Do not reveal tenant/provider/accounting detail to external webhook callers.

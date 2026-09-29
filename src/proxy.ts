@@ -43,6 +43,33 @@ function legacyPublicResponse(url: URL) {
   return null;
 }
 
+function getPublicHostProductRedirect(url: URL): URL | null {
+  const host = url.hostname.toLowerCase();
+  if (host !== 'mkety.com' && host !== 'www.mkety.com') return null;
+
+  const pathname = url.pathname;
+  const appOnly =
+    pathname === '/app' ||
+    pathname === '/select-tenant' ||
+    pathname === '/create-workspace' ||
+    pathname.startsWith('/t/');
+
+  if (appOnly) {
+    let appOrigin = 'https://app.mkety.com';
+    try {
+      appOrigin = new URL(process.env.NEXT_PUBLIC_APP_URL || appOrigin).origin;
+    } catch {
+      appOrigin = 'https://app.mkety.com';
+    }
+    return new URL(pathname + url.search, appOrigin);
+  }
+
+  if (pathname === '/mail/app') return new URL(url.search, 'https://mail.mkety.com');
+  if (pathname === '/ai/app') return new URL(url.search, 'https://ai.mkety.com');
+
+  return null;
+}
+
 function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/' ||
@@ -59,8 +86,12 @@ function isPublicPath(pathname: string): boolean {
 export default async function proxy(request: Request & { nextUrl?: URL }) {
   const nextUrl = request.nextUrl ?? new URL(request.url);
   const { pathname, hostname } = nextUrl;
-  const legacyResponse = legacyPublicResponse(new URL(request.url));
+  const requestUrl = new URL(request.url);
+  const legacyResponse = legacyPublicResponse(requestUrl);
   if (legacyResponse) return legacyResponse;
+
+  const productRedirect = getPublicHostProductRedirect(requestUrl);
+  if (productRedirect) return NextResponse.redirect(productRedirect, 308);
 
   const session = await auth(request);
   let effectivePathname = pathname;
@@ -82,7 +113,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return NextResponse.rewrite(url);
   }
 
-  if(hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/mail/')){
+  if(hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/')){
     const url=new URL(request.url);
     url.pathname='/api'+pathname;
     return NextResponse.rewrite(url);

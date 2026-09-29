@@ -167,7 +167,6 @@ describe('final public production UX, support, docs and auth contract', () => {
     for (const source of [candidate, production]) {
       expect(source).toContain('class1.jpg class2.jpg class3.jpg class4.jpg class5.jpg');
       expect(source).toContain('Docs index rendered no article links.');
-      expect(source).toContain('Rendered docs link failed:');
       expect(source).toContain('Academy page missing Courses & tiers section.');
       expect(source).toContain('Academy page missing ready-to-learn handoff.');
       expect(source).toContain('Starter price card missing exact USD-formatted $5.99 amount.');
@@ -176,6 +175,10 @@ describe('final public production UX, support, docs and auth contract', () => {
       expect(source).toContain('Workspaces page missing Trading Workspace.');
       expect(source).toContain('Homepage must not bypass AI-first Academy discovery.');
     }
+    expect(candidate).toContain('fetch_candidate_page "$doc_path"');
+    expect(candidate).toContain('Candidate content fetch failed:');
+    expect(production).toContain('fetch_production_page "$doc_path"');
+    expect(production).toContain('Production content fetch failed:');
   });
 
   it('keeps the support settings migration additive', async () => {
