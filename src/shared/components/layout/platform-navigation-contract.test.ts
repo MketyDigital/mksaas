@@ -84,6 +84,14 @@ describe('Platform navigation route contract', () => {
     }
   });
 
+  it('keeps api.mkety.com as the canonical versioned API boundary', () => {
+    const proxy = readFileSync(resolve(process.cwd(), 'src/proxy.ts'), 'utf8');
+    expect(proxy).toContain("hostname.toLowerCase()===apiHost && pathname.startsWith('/v1/')");
+    expect(proxy).toContain("url.pathname='/api'+pathname");
+    expect(existsSync(resolve(process.cwd(), 'src/app/api/v1/ai/chat/completions/route.ts'))).toBe(true);
+    expect(existsSync(resolve(process.cwd(), 'src/app/api/v1/mail/send/route.ts'))).toBe(true);
+  });
+
   it('keeps product hosts on their canonical auth handoff entries', () => {
     const proxy = readFileSync(resolve(process.cwd(), 'src/proxy.ts'), 'utf8');
     expect(proxy).toContain("url.searchParams.set('product','mail')");
