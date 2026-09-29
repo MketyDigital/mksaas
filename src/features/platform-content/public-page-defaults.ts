@@ -99,7 +99,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     seoDescription:
       'Search and register domains with live Mkety pricing, manage DNS records, nameservers, renewals and custom hostnames from one Mkety experience.',
     eyebrow: 'Mkety Domains',
-    headline: 'Buy domains, manage DNS and connect custom hostnames—all through Mkety.'
+    headline: 'Buy domains, manage DNS and connect custom hostnames—all through Mkety.',
     intro:
       'Mkety Domains gives you one place to search and register domains, see live sell prices, manage renewals, operate DNS records and nameservers, and connect custom domains to Mkety products. You stay inside Mkety while the infrastructure layer remains managed behind the scenes.',
     sections: [
@@ -107,7 +107,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
         eyebrow: 'Domain registration',
         title: 'Find and register domains with live pricing.',
         description:
-          'Mkety checks live domain availability and current pricing before checkout. Registration happens only after verified payment settlement.',
+          'Mkety checks live availability and current extension-specific pricing before checkout. The price shown is the active Mkety sell price, and registration happens only after verified payment settlement.'
         items: [
           {
             key: 'search',
