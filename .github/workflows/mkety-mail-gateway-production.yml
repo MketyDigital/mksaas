@@ -171,14 +171,366 @@ jobs:
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
           curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID" -o /tmp/server.json
-          server_ip="$(node - <<'NODE'
+          server_address="$(node - <<'NODE'
           const x=require('/tmp/server.json');
           const candidates=[x.ip,x.ip_address,x.public_ip,x.server_ip,x.settings?.public_ip];
-          const ip=candidates.map(v=>String(v||'').trim()).find(v=>/^\d{1,3}(\.\d{1,3}){3}$/.test(v));
-          if(!ip) throw new Error('Coolify server public IPv4 unavailable.');
-          process.stdout.write(ip);
+          process.stdout.write(candidates.map(v=>String(v||'').trim()).find(Boolean)||'');
           NODE
           )"
+
+          if [ -z "$server_address" ]; then
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/servers/$SERVER_UUID/domains" -o /tmp/server-domains.json
+            server_address="$(node - <<'NODE'
+          const x=require('/tmp/server-domains.json');
+          const rows=Array.isArray(x)?x:[];
+          process.stdout.write(rows.map(v=>String(v?.ip||'').trim()).find(Boolean)||'');
+          NODE
+            )"
+          fi
+          [ -n "$server_address" ] || { echo 'Coolify server address unavailable.'; exit 1; }
+
+          resolve_ipv4() {
+            value="$1"
+            if [[ "$value" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+              printf '%s' "$value"
+              return 0
+            fi
+            getent ahostsv4 "$value" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}
+
+          cf='https://api.cloudflare.com/client/v4'
+          zones="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/zones?name=mkety.com&status=active")"
+          zone_id="$(ZONES="$zones" node -e "const x=JSON.parse(process.env.ZONES||'{}');const a=x.result||[];if(!x.success||a.length!==1)process.exit(1);process.stdout.write(a[0].id)")"
+          echo "::add-mask::$zone_id"
+          echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+
+      - name: Issue public TLS certificate with DNS-01
+        id: tls
+        shell: bash
+        env:
+          CF_Token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_Account_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_Zone_ID: ${{ steps.network.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null
+          ~/.acme.sh/acme.sh --issue --dns dns_cf             -d imap.mkety.com -d smtp.mkety.com             --keylength ec-256 --server letsencrypt >/tmp/acme.log 2>&1 || {
+              sed -E 's/(token|key|secret)[=: ]+[^ ]+/\1=***/gi' /tmp/acme.log | tail -80
+              exit 1
+            }
+          mkdir -p /tmp/mail-gateway-tls
+          ~/.acme.sh/acme.sh --install-cert -d imap.mkety.com --ecc             --fullchain-file /tmp/mail-gateway-tls/fullchain.pem             --key-file /tmp/mail-gateway-tls/key.pem >/dev/null
+          openssl verify -CAfile <(curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem) /tmp/mail-gateway-tls/fullchain.pem >/dev/null || true
+          openssl x509 -in /tmp/mail-gateway-tls/fullchain.pem -noout -checkhost imap.mkety.com >/dev/null
+          openssl x509 -in /tmp/mail-gateway-tls/fullchain.pem -noout -checkhost smtp.mkety.com >/dev/null
+          echo 'Public TLS certificate issued for both gateway hosts.'
+
+      - name: Derive isolated gateway secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="$(node - <<'NODE'
+          const {hkdfSync}=require('node:crypto');
+          const seed=process.env.COOLIFY_API_TOKEN;
+          const out=hkdfSync('sha256',Buffer.from(seed),Buffer.from('mkety-mail-gateway-v1'),Buffer.from('internal-api-auth'),32);
+          process.stdout.write(Buffer.from(out).toString('hex'));
+          NODE
+          )"
+          echo "::add-mask::$derived"
+          echo "MKETY_MAIL_GATEWAY_SECRET=$derived" >> "$GITHUB_ENV"
+
+      - name: Create or reuse lightweight Coolify gateway
+        id: app
+        shell: bash
+        env:
+          EXISTING_UUID: ${{ steps.existing.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          uuid="$EXISTING_UUID"
+          if [ -z "$uuid" ]; then
+            node <<'NODE' >/tmp/create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.TARGET_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/mail-gateway/Dockerfile',
+            ports_exposes:'8080,993,465',
+            ports_mappings:'993:993,465:465',
+            name:process.env.APP_NAME,
+            description:'Lightweight stateless Mkety Mail IMAP/SMTP gateway',
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false,
+            health_check_enabled:true,
+            health_check_path:'/',
+            health_check_port:'8080',
+            limits_cpus:'0.25',
+            limits_memory:'128m',
+            docker_images_to_keep:1,
+            max_restart_count:5
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}'               -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/create.json "$base/applications/public")"
+            [ "$code" = 201 ] || { echo "Gateway create failed HTTP $code"; cat /tmp/create-response.json; exit 1; }
+            uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          fi
+
+          UUID="$uuid" node <<'NODE' >/tmp/update.json
+          process.stdout.write(JSON.stringify({
+            git_branch:'main',
+            git_commit_sha:process.env.TARGET_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/mail-gateway/Dockerfile',
+            ports_exposes:'8080,993,465',
+            ports_mappings:'993:993,465:465',
+            health_check_enabled:true,
+            health_check_path:'/',
+            health_check_port:'8080',
+            limits_cpus:'0.25',
+            limits_memory:'128m',
+            docker_images_to_keep:1,
+            max_restart_count:5
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/update-response.json -w '%{http_code}'             -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/update.json "$base/applications/$uuid")"
+          [ "$code" = 200 ] || { echo "Gateway pin/update failed HTTP $code"; cat /tmp/update-response.json; exit 1; }
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Configure gateway secrets and certificate
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          endpoint="$base/applications/$APP_UUID/envs"
+          upsert() {
+            key="$1"; value="$2"
+            KEY="$key" VALUE="$value" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,value:process.env.VALUE,is_preview:false,
+            is_literal:true,is_multiline:false,is_shown_once:true
+          }));
+          NODE
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" -o /tmp/env-list.json
+            exists="$(KEY="$key" node -e "const x=require('/tmp/env-list.json');process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key===process.env.KEY)?'true':'false')")"
+            method=POST; [ "$exists" = true ] && method=PATCH
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}'               -X "$method" -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/env.json "$endpoint")"
+            [ "$code" = 201 ] || { echo "Gateway environment upsert failed for $key HTTP $code"; exit 1; }
+          }
+          upsert MKETY_MAIL_GATEWAY_API_BASE_URL 'https://api.mkety.com'
+          upsert MKETY_MAIL_GATEWAY_INTERNAL_SECRET "$MKETY_MAIL_GATEWAY_SECRET"
+          upsert MKETY_MAIL_GATEWAY_TLS_CERT_B64 "$(base64 -w0 /tmp/mail-gateway-tls/fullchain.pem)"
+          upsert MKETY_MAIL_GATEWAY_TLS_KEY_B64 "$(base64 -w0 /tmp/mail-gateway-tls/key.pem)"
+
+      - name: Synchronize gateway secret to production Mkety app
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$MKETY_MAIL_GATEWAY_SECRET" | pnpm exec wrangler secret put MKETY_MAIL_GATEWAY_INTERNAL_SECRET --name "$PRODUCTION_WORKER_NAME" >/dev/null
+          echo 'Gateway internal secret synchronized without printing it.'
+
+      - name: Deploy exact-SHA gateway and require readiness markers
+        id: deploy
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}'             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "Gateway deploy request failed HTTP $code"; exit 1; }
+          dep="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          status=''
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+            status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled) echo "Gateway deployment failed: $status"; exit 1 ;;
+            esac
+            [ "$i" -lt 120 ] || { echo 'Gateway deployment timed out.'; exit 1; }
+            sleep 3
+          done
+
+          ready=false
+          for i in $(seq 1 60); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/logs.json || true
+            if node <<'NODE'
+          const fs=require('node:fs');let raw='';try{raw=String(JSON.parse(fs.readFileSync('/tmp/logs.json','utf8')).logs||'')}catch{}
+          const required=[
+            'MKETY_MAIL_GATEWAY_CONFIG_OK=true',
+            'MKETY_MAIL_GATEWAY_HEALTH_READY=true',
+            'MKETY_MAIL_GATEWAY_IMAP_READY=true',
+            'MKETY_MAIL_GATEWAY_SMTP_READY=true'
+          ];
+          process.exit(required.every(marker=>raw.includes(marker))?0:1);
+          NODE
+            then ready=true; break; fi
+            sleep 2
+          done
+          [ "$ready" = true ] || { echo 'Gateway readiness markers missing.'; exit 1; }
+
+      - name: Point unproxied IMAP/SMTP DNS at Coolify server
+        shell: bash
+        env:
+          SERVER_IP: ${{ steps.network.outputs.server_ip }}
+          ZONE_ID: ${{ steps.network.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          cf='https://api.cloudflare.com/client/v4'
+          for host in imap.mkety.com smtp.mkety.com; do
+            current="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$cf/zones/$ZONE_ID/dns_records?name=$host&per_page=100")"
+            count="$(CURRENT="$current" node -e "const x=JSON.parse(process.env.CURRENT||'{}');process.stdout.write(String((x.result||[]).length))")"
+            [ "$count" -le 1 ] || { echo "Multiple DNS records exist for $host; refusing ambiguous replacement."; exit 1; }
+            record_id="$(CURRENT="$current" node -e "const x=JSON.parse(process.env.CURRENT||'{}');process.stdout.write(String((x.result||[])[0]?.id||''))")"
+            HOST="$host" IP="$SERVER_IP" node <<'NODE' >/tmp/dns.json
+          process.stdout.write(JSON.stringify({type:'A',name:process.env.HOST,content:process.env.IP,ttl:300,proxied:false}));
+          NODE
+            if [ -n "$record_id" ]; then method=PUT; endpoint="$cf/zones/$ZONE_ID/dns_records/$record_id"; else method=POST; endpoint="$cf/zones/$ZONE_ID/dns_records"; fi
+            code="$(curl -sS -o /tmp/dns-response.json -w '%{http_code}' -X "$method"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/dns.json "$endpoint")"
+            [ "$code" = 200 ] || { echo "DNS upsert failed for $host HTTP $code"; cat /tmp/dns-response.json; exit 1; }
+          done
+
+      - name: Accept public TLS and protocol greetings
+        shell: bash
+        run: |
+          set -euo pipefail
+          wait_tls() {
+            host="$1"; port="$2"
+            for i in $(seq 1 40); do
+              if timeout 15 openssl s_client -connect "$host:$port" -servername "$host" -verify_return_error </dev/null >/tmp/tls.txt 2>&1; then
+                openssl s_client -connect "$host:$port" -servername "$host" </dev/null 2>/dev/null                   | openssl x509 -noout -checkhost "$host" >/dev/null
+                return 0
+              fi
+              sleep 3
+            done
+            cat /tmp/tls.txt || true
+            return 1
+          }
+          wait_tls imap.mkety.com 993
+          wait_tls smtp.mkety.com 465
+
+          printf 'a1 CAPABILITY\r\na2 LOGOUT\r\n' | timeout 15 openssl s_client -quiet -connect imap.mkety.com:993 -servername imap.mkety.com 2>/dev/null >/tmp/imap.txt || true
+          grep -Fq 'IMAP4rev1' /tmp/imap.txt
+          grep -Fq 'a1 OK CAPABILITY completed' /tmp/imap.txt
+
+          printf 'EHLO acceptance.mkety.com\r\nQUIT\r\n' | timeout 15 openssl s_client -quiet -connect smtp.mkety.com:465 -servername smtp.mkety.com 2>/dev/null >/tmp/smtp.txt || true
+          grep -Fq '220 smtp.mkety.com ESMTP Mkety Mail' /tmp/smtp.txt
+          grep -Fq '250-AUTH PLAIN LOGIN' /tmp/smtp.txt
+
+          code="$(curl -sS -o /tmp/internal -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}'             https://api.mkety.com/api/internal/mail/gateway/auth)"
+          [ "$code" = 401 ] || { echo "Gateway internal API expected fail-closed 401, got $code"; exit 1; }
+
+      - name: Publish gateway infrastructure acceptance
+        shell: bash
+        run: |
+          {
+            echo '## Mkety Mail external-client gateway'
+            echo "- exact SHA: `$TARGET_SHA`"
+            echo '- Coolify app: `mkety-mail-gateway`'
+            echo '- limits: 0.25 CPU / 128 MB'
+            echo '- IMAPS: `imap.mkety.com:993` — trusted TLS + IMAP4rev1 greeting PASS'
+            echo '- SMTPS: `smtp.mkety.com:465` — trusted TLS + ESMTP/AUTH greeting PASS'
+            echo '- internal gateway API: unauthenticated fail-closed PASS'
+            echo '- no database credentials are stored in the gateway'
+            echo '- external-client feature flag remains OFF until the first controlled app-password functional acceptance'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  renew-certificate:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Resolve existing managed gateway
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          uuid="$(APP_NAME="$APP_NAME" node - <<'NODE'
+          const x=require('/tmp/apps.json');const list=Array.isArray(x)?x:(x.data||[]);
+          const matches=list.filter(v=>v?.name===process.env.APP_NAME);
+          if(matches.length!==1) throw new Error('Expected exactly one managed Mail gateway.');
+          process.stdout.write(matches[0].uuid);
+          NODE
+          )"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Renew certificate through DNS-01
+        shell: bash
+        env:
+          CF_Token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_Account_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://get.acme.sh | sh -s email=ops@mkety.com >/dev/null
+          ~/.acme.sh/acme.sh --issue --dns dns_cf -d imap.mkety.com -d smtp.mkety.com --keylength ec-256 --server letsencrypt >/dev/null
+          mkdir -p /tmp/tls
+          ~/.acme.sh/acme.sh --install-cert -d imap.mkety.com --ecc --fullchain-file /tmp/tls/fullchain.pem --key-file /tmp/tls/key.pem >/dev/null
+
+          base="${COOLIFY_URL%/}/api/v1"
+          endpoint="$base/applications/$APP_UUID/envs"
+          upsert() {
+            key="$1"; value="$2"
+            KEY="$key" VALUE="$value" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+            curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" -o /tmp/env-list.json
+            exists="$(KEY="$key" node -e "const x=require('/tmp/env-list.json');process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key===process.env.KEY)?'true':'false')")"
+            method=POST; [ "$exists" = true ] && method=PATCH
+            code="$(curl -sS -o /tmp/env-response -w '%{http_code}' -X "$method" -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$endpoint")"
+            [ "$code" = 201 ]
+          }
+          upsert MKETY_MAIL_GATEWAY_TLS_CERT_B64 "$(base64 -w0 /tmp/tls/fullchain.pem)"
+          upsert MKETY_MAIL_GATEWAY_TLS_KEY_B64 "$(base64 -w0 /tmp/tls/key.pem)"
+
+          code="$(curl -sS -o /tmp/deploy.json -w '%{http_code}' -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ]
+          dep="$(node -e "const x=require('/tmp/deploy.json');const d=(x.deployments||[])[0];if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 120); do
+            curl -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+            status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in finished|success|successful|succeeded|completed) break;; failed|failure|error|cancelled|canceled) exit 1;; esac
+            [ "$i" -lt 120 ] || exit 1
+            sleep 3
+          done
+
+          for target in 'imap.mkety.com:993:imap.mkety.com' 'smtp.mkety.com:465:smtp.mkety.com'; do
+            IFS=: read -r host port sni <<<"$target"
+            timeout 15 openssl s_client -connect "$host:$port" -servername "$sni" -verify_return_error </dev/null >/dev/null 2>&1
+          done
+          echo 'Mail gateway certificate renewed on the existing pinned gateway application.'
+ | head -n1
+          }
+          server_ip="$(resolve_ipv4 "$server_address" || true)"
+          [ -n "$server_ip" ] || { echo 'Coolify server address did not resolve to IPv4.'; exit 1; }
+
+          IP="$server_ip" node - <<'NODE'
+          const ip=process.env.IP||'';
+          const parts=ip.split('.').map(Number);
+          const valid=parts.length===4&&parts.every(v=>Number.isInteger(v)&&v>=0&&v<=255);
+          const privateOrReserved=!valid||
+            parts[0]===0||parts[0]===10||parts[0]===127||parts[0]>=224||
+            (parts[0]===100&&parts[1]>=64&&parts[1]<=127)||
+            (parts[0]===169&&parts[1]===254)||
+            (parts[0]===172&&parts[1]>=16&&parts[1]<=31)||
+            (parts[0]===192&&parts[1]===168);
+          if(privateOrReserved) throw new Error('Coolify server did not resolve to a public IPv4.');
+          NODE
+
+          echo "::add-mask::$server_address"
           echo "::add-mask::$server_ip"
           echo "server_ip=$server_ip" >> "$GITHUB_OUTPUT"
 
