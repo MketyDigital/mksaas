@@ -12,6 +12,7 @@ import {
 } from '@/features/ai-runtime/channels/server/conversations';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { getEnterpriseAiRuntimePolicy } from '@/features/ai-runtime/server/commercial-policy';
 import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
@@ -81,6 +82,12 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
   if (!claimed) return { ok: true as const, duplicate: true as const, status: 'claimed' };
 
   try {
+    const runtimePolicy = await getEnterpriseAiRuntimePolicy();
+    if (!runtimePolicy.customerInferenceEnabled) {
+      await cancelAction(action.id, action.tenantId, 'enterprise_ai_global_inference_disabled');
+      return { ok: true as const, cancelled: true as const, reason: 'runtime_disabled' as const };
+    }
+
     if (!(await hasEnterpriseAiAccess(action.tenantId))) {
       await cancelAction(action.id, action.tenantId, 'enterprise_ai_entitlement_inactive');
       return { ok: true as const, cancelled: true as const, reason: 'entitlement_inactive' as const };
