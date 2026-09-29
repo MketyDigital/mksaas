@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM node:22-alpine
 WORKDIR /app
 COPY ops/domainnameapi-relay/package.json ./package.json
 COPY ops/domainnameapi-relay/server.mjs ./server.mjs
