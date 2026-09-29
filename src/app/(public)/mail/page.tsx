@@ -79,9 +79,9 @@ const productFeatures = [
     title: 'Mail apps & device setup',
     Icon: Smartphone,
     items: [
-      externalClientsEnabled ? 'Connect supported desktop and mobile mail clients with secure app passwords.' : 'External IMAP/SMTP mail-client access is coming after gateway production acceptance.',
-      externalClientsEnabled ? 'Autoconfiguration and autodiscover endpoints reduce manual setup where the client supports them.' : 'Autoconfiguration remains disabled until the external-client gateway is accepted.',
-      externalClientsEnabled ? 'Mkety publishes standard IMAP/SMTP connection details for supported external mail clients.' : 'Mkety does not publish active IMAP/SMTP credentials while the gateway is unavailable.',
+      'External IMAP/SMTP mail-client access is available only after the dedicated gateway passes production acceptance.',
+      'Autoconfiguration and autodiscover remain disabled until external-client gateway acceptance.',
+      'Mkety publishes IMAP/SMTP connection details only after the gateway is production-certified.',
       'App credentials can be revoked independently without changing your main Mkety login.',
     ],
   },
