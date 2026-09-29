@@ -7,6 +7,12 @@ export type DomainQuote = {
   available: boolean;
   registrationPriceMinor: bigint | null;
   renewalPriceMinor: bigint | null;
+  providerRegistrationPriceMinor?: bigint | null;
+  providerRenewalPriceMinor?: bigint | null;
+  registrationMarkupPercent?: number;
+  renewalMarkupPercent?: number;
+  registrationFixedMarkupMinor?: bigint;
+  renewalFixedMarkupMinor?: bigint;
   currency: string;
   providerQuoteRef?: string | null;
 };
