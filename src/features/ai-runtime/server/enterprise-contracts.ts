@@ -5,15 +5,17 @@ import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
-import { isEntitlementKey, type EntitlementKey } from '@/features/entitlements/entitlement-keys';
+import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { db } from '@/shared/db';
 import {
   billingCheckouts,
+  billingLedgerEntries,
   billingPeriods,
   billingPlans,
   billingPlanVersionCreditAllowances,
   billingPlanVersionEntitlements,
   billingPlanVersions,
+  billingSettlements,
   billingSubscriptions,
   tenants,
 } from '@/shared/db/schema';
