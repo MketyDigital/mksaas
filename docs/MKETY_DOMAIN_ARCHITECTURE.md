@@ -84,6 +84,19 @@ The Platform Control Center should expose a Domains & Routing module that helps 
 
 The UI may show status, verification state, and operational controls. The underlying DNS, Cloudflare, SSL, routing, and deployment logic must remain code-controlled and audit-protected.
 
+## DomainNameAPI V2 registrar egress
+
+Mkety's domain reseller integration uses DomainNameAPI V2 credentials, not reseller-panel login credentials.
+
+- Production authentication: numerical Reseller ID + Live API Key.
+- OT&E authentication: OT&E numerical Reseller ID + OT&E API Key from the reseller panel.
+- The reseller-panel username (for example a brand/account name) is not a REST V2 credential.
+- DomainNameAPI V2 IP allowlisting is part of the provider security boundary. GitHub-hosted runners are diagnostic-only and must not be treated as the stable production source IP.
+- Production registrar traffic uses the Mkety DomainNameAPI egress relay on the controlled Coolify/VPS path. DomainNameAPI must allowlist that relay host's real public outbound IP.
+- The Cloudflare application authenticates relay requests with an infrastructure HMAC secret. The relay accepts only the explicit quote/register/renew operation set, applies replay protection, never acts as a general URL proxy, and does not log provider credentials.
+- Provider credentials remain encrypted in Platform Service Connections. Routine DomainNameAPI credential rotation remains database-backed and does not require rebuilding the application.
+- Registrar mutations remain settlement-gated and idempotency remains owned by Mkety.
+
 ## Non-negotiables
 
 - Do not use Vercel production assumptions.
