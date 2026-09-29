@@ -8,7 +8,7 @@ import { getDomainResellerConnections } from '@/features/domains/server/reseller
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
-import { reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
+import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
@@ -178,15 +178,62 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                 </form>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-3">
+            <CardContent className="grid gap-4 lg:grid-cols-3">
               {mailOperations.catalog.map((plan) => (
-                <div key={plan.key} className="rounded-xl border bg-muted/20 p-4">
-                  <p className="font-semibold">{plan.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {String.fromCharCode(36)}{(Number(plan.amountMinor) / 100).toFixed(2)} / month
+                <form
+                  action={createMailPlanVersion.bind(null, tenant)}
+                  key={plan.key}
+                  className="rounded-xl border bg-muted/20 p-4"
+                >
+                  <input type="hidden" name="planKey" value={plan.key} />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{plan.name}</p>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key} · v{plan.version}</p>
+                    </div>
+                    <span className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                      Active
+                    </span>
+                  </div>
+                  <label className="mt-4 block text-xs font-medium">
+                    Plan name
+                    <input
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={plan.name}
+                      maxLength={255}
+                      name="name"
+                      required
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs font-medium">
+                    Description
+                    <textarea
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={plan.description ?? ''}
+                      maxLength={2000}
+                      name="description"
+                      required
+                      rows={3}
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs font-medium">
+                    Monthly price (USD)
+                    <input
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={(Number(plan.amountMinor) / 100).toFixed(2)}
+                      inputMode="decimal"
+                      name="monthlyPriceUsd"
+                      pattern="\\d{1,6}(?:\\.\\d{1,2})?"
+                      required
+                    />
+                  </label>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Saving creates a new billing version. Existing subscriptions and historical settlements keep their original version and price.
                   </p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key}</p>
-                </div>
+                  <button className="mt-4 rounded-lg border px-3 py-2 text-sm font-semibold">
+                    Create new price version
+                  </button>
+                </form>
               ))}
             </CardContent>
           </Card>
