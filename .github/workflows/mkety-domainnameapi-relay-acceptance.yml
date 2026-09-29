@@ -1,11 +1,6 @@
 name: Mkety DomainNameAPI Fixed-Egress Acceptance
 
 on:
-  pull_request:
-    paths:
-      - 'src/features/domains/server/domainnameapi.ts'
-      - 'scripts/verify-domainnameapi-relay-readonly.ts'
-      - '.github/workflows/mkety-domainnameapi-relay-acceptance.yml'
   workflow_dispatch:
 
 permissions:
