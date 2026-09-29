@@ -3,9 +3,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { updateEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solution-actions';
 import {
   getEnterpriseAiSolutionInstance,
   getEnterpriseAiSolutionTemplate,
+  parseEnterpriseAiSolutionConfiguration,
 } from '@/features/ai-runtime/server/business-solutions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { requireTenantMembership } from '@/shared/lib/permissions';
@@ -28,6 +30,7 @@ export default async function EnterpriseAiSolutionPage({
   if (!instance) notFound();
   const template = await getEnterpriseAiSolutionTemplate(instance.templateKey);
   if (!template) notFound();
+  const configuration = parseEnterpriseAiSolutionConfiguration(instance.configuration);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-4">
@@ -53,6 +56,72 @@ export default async function EnterpriseAiSolutionPage({
               <p className="mt-2 text-sm text-muted-foreground">{step}</p>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Assistant settings</CardTitle>
+          <CardDescription>
+            These settings are runtime inputs for connected Enterprise AI channels. Pausing stops new managed AI turns without deleting configuration or channel credentials.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={updateEnterpriseAiSolutionConfiguration.bind(null, tenantSlug, instance.id)}
+            className="grid gap-5"
+          >
+            <label className="grid gap-2 text-sm font-medium">
+              Status
+              <select className="rounded-xl border bg-background px-3 py-2.5" defaultValue={instance.status} name="status">
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Default managed model
+              <select className="rounded-xl border bg-background px-3 py-2.5" defaultValue={configuration.defaultModelAlias} name="defaultModelAlias">
+                <option value="mkety-economy">Mkety Economy · Gemma 4</option>
+                <option value="mkety-smart">Mkety Smart · GLM-5.3 Flash</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              System instructions
+              <textarea
+                className="min-h-40 rounded-xl border bg-background p-3 text-sm"
+                defaultValue={configuration.systemPrompt}
+                maxLength={40000}
+                name="systemPrompt"
+                placeholder="Describe the assistant's role, tone, rules, escalation behavior and business boundaries."
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Approved knowledge
+              <textarea
+                className="min-h-56 rounded-xl border bg-background p-3 text-sm"
+                defaultValue={configuration.knowledgeText}
+                maxLength={120000}
+                name="knowledgeText"
+                placeholder="Add approved facts, FAQs, policies, product information and operating guidance for this solution."
+              />
+              <span className="text-xs font-normal text-muted-foreground">
+                This is solution-scoped context. Project knowledge and provider credentials remain separate protected resources.
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border p-4 text-sm">
+              <input className="mt-1" defaultChecked={configuration.paused} name="paused" type="checkbox" />
+              <span>
+                <strong>Pause AI replies</strong>
+                <span className="mt-1 block text-muted-foreground">
+                  Keep the assistant, knowledge and channel setup intact while new automated replies are stopped.
+                </span>
+              </span>
+            </label>
+            <button className="w-fit rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground">
+              Save assistant settings
+            </button>
+          </form>
         </CardContent>
       </Card>
 
