@@ -113,7 +113,9 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
   private async relayRequest(operation: 'quote' | 'register' | 'renew', body: string) {
     if (!this.relayUrl || !this.relaySecret) throw new Error('DomainNameAPI relay is not configured.');
     const timestamp = String(Date.now());
+    const nonce = crypto.randomUUID();
     const raw = JSON.stringify({
+      nonce,
       operation,
       environment: this.config.environment ?? 'ote',
       payload: JSON.parse(body) as Record<string, unknown>,
