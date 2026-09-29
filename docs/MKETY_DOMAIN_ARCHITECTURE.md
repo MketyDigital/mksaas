@@ -88,9 +88,9 @@ The UI may show status, verification state, and operational controls. The underl
 
 Mkety's domain reseller integration uses DomainNameAPI V2 credentials, not reseller-panel login credentials.
 
-- Production authentication: numerical Reseller ID + Live API Key.
-- OT&E authentication: OT&E numerical Reseller ID + OT&E API Key from the reseller panel.
-- The reseller-panel username (for example a brand/account name) is not a REST V2 credential.
+- Production authentication: the exact provider-issued V2 Reseller ID + Live API Key.
+- OT&E authentication: the same provider-issued V2 Reseller ID with the separate Test/OT&E API Key when the account exposes one Test key.
+- Do not substitute the reseller-panel login username for the provider-issued Reseller ID. Reseller ID format is treated as provider-issued and is not constrained to digits by Mkety.
 - DomainNameAPI V2 IP allowlisting is part of the provider security boundary. GitHub-hosted runners are diagnostic-only and must not be treated as the stable production source IP.
 - Production registrar traffic uses the Mkety DomainNameAPI egress relay on the controlled Coolify/VPS path. DomainNameAPI must allowlist that relay host's real public outbound IP.
 - The Cloudflare application authenticates relay requests with an infrastructure HMAC secret. The relay accepts only the explicit quote/register/renew operation set, applies replay protection, never acts as a general URL proxy, and does not log provider credentials.
