@@ -53,14 +53,24 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Coolify server payload exposed no public IPv4');
   });
 
-  it('reconciles supported host firewalls before public gateway acceptance', () => {
-    expect(workflow).toContain('Reconcile host firewall for IMAPS and SMTPS');
+  it('reconciles supported host firewalls when direct SSH is reachable', () => {
+    expect(workflow).toContain('Reconcile host firewall when direct SSH is reachable');
     expect(workflow).toContain('/security/keys/$key_uuid');
     expect(workflow).toContain("ufw allow 993/tcp");
     expect(workflow).toContain("ufw allow 465/tcp");
     expect(workflow).toContain("firewall-cmd --permanent --add-port=993/tcp");
     expect(workflow).toContain("firewall-cmd --permanent --add-port=465/tcp");
     expect(workflow).toContain("Host does not show published listeners for 993/465");
+  });
+
+  it('uses a dedicated OCI NSG for provider-level Mail ingress', () => {
+    expect(workflow).toContain('Reconcile dedicated OCI NSG ingress for Mail gateway');
+    expect(workflow).toContain('oci network public-ip get --public-ip-address "$SERVER_IP"');
+    expect(workflow).toContain("nsg_name='mkety-mail-gateway-ingress'");
+    expect(workflow).toContain("source:'0.0.0.0/0'");
+    expect(workflow).toContain("destinationPortRange:{min:port,max:port}");
+    expect(workflow).toContain('oci network vnic update --vnic-id "$vnic_id" --nsg-ids');
+    expect(workflow).toContain('Dedicated OCI NSG is attached to the gateway VNIC with TCP 993/465 ingress only.');
   });
 
   it('requires authoritative/public DNS plus trusted origin TLS and protocol greetings', () => {
