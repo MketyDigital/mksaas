@@ -1,3 +1,33 @@
+# 2026-09-29 final audit update — Mail gateway deployed, OCI raw-TCP ingress remains
+
+**Current production main:** `f581b31443f255bbf8786d873562a390ee6698b3` (PR #189).
+
+## Current authoritative truth
+
+- Enterprise AI infrastructure remains production-accepted by run `36568179070`: production DB migration, `ai.mkety.com`, `api.mkety.com`, AI Queue/DLQ, scheduler/delivery worker and fail-closed host/API smoke passed. Customer inference remains intentionally OFF.
+- Mkety Mail Production run `36639931406` is SUCCESS on exact main `f581b31443f255bbf8786d873562a390ee6698b3`: authorization, production migration, exact app deploy, central-auth binding verification, R2/Queues, Mail workers, secrets, domains, production smoke and deployment evidence all passed.
+- PR #189 is deployed on that Mail release and makes every external-client app-password login re-check an active Mail workspace plus current `workspace.mail` entitlement before authenticating.
+- The lightweight `mkety-mail-gateway` is now genuinely deployed in Coolify/OCI. Gateway run `36639931332` successfully completed exact-release authorization, existing-service diagnostics, Coolify origin resolution, trusted DNS-01 TLS issuance, isolated gateway-secret derivation, app create/reuse/configuration, production-secret synchronization and exact-SHA gateway deployment/readiness markers.
+- Cloudflare DNS is not the remaining problem. Earlier corrected gateway run `36637983178` proved authoritative Cloudflare A records and public recursive DNS both resolve `imap.mkety.com` / `smtp.mkety.com` to the intended unproxied origin, then direct origin TCP/TLS on IMAPS 993 timed out.
+- Run `36639931332` additionally proved GitHub-runner direct SSH to the OCI host is unavailable, so workflow-side UFW/firewalld reconciliation cannot be the provider-control path. The workflow is being corrected to skip that non-authoritative SSH path and classify provider ingress independently.
+- A disposable same-host OCI probe obtained IMDS metadata and an OCI instance-principal signer, but OCI network reads returned HTTP 404; the instance identity therefore does not currently have usable VCN/security-list/NSG read/manage permission. Standard and common alternate OCI API secret names were also absent from the protected `production` environment under the names tested. No secret values were exposed and all probe resources were removed.
+- Therefore the one external infrastructure blocker is OCI/provider raw-TCP ingress for public TCP 993 and 465 (security list / NSG, or equivalent upstream network policy). The gateway process, certificate, Coolify deployment, Mkety internal APIs and Cloudflare DNS are already in place.
+- `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` remains OFF until public 993/465 acceptance and an app-password functional acceptance pass.
+- No real Starpips customer acceptance should begin until the synthetic/controlled acceptance gates below are closed.
+
+## Exact remaining sequence
+
+1. allow public TCP 993 and 465 to the validated Coolify origin in OCI Security List/NSG (or expose a discoverable OCI API credential/IAM path so the guarded workflow can do it);
+2. rerun `[mail-gateway-production]` and require authoritative/public DNS, trusted origin TLS, IMAP CAPABILITY and SMTP AUTH greeting acceptance;
+3. run a controlled/self-cleaning Mail app-password functional acceptance: login, sync/list, SMTP submission, revoke, then prove the revoked credential fails;
+4. only then enable the external-client customer UI/autoconfig flag;
+5. configure the first Enterprise AI tenant/contract, complete verified settlement, customer setup/playground/accounting acceptance, then deliberately enable customer inference;
+6. only after those gates begin Starpips real-customer production acceptance.
+
+This section supersedes older Mail/Enterprise continuation text below where it conflicts.
+
+---
+
 # 2026-09-29 production Mail accepted — external-client gateway workstream
 
 **Current production main:** `455a1359cbde16d9eae34b6683c19cb4088d481e`.
