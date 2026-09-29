@@ -11,6 +11,8 @@
 - Latest Mail live-readiness diagnostic `36574979021` proved the dedicated external-client TCP layer is still absent: trusted TLS was unavailable on both `imap.mkety.com:993` and `smtp.mkety.com:465`.
 - External-client customer UI remains fail-closed with `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED=false`.
 - Active branch `feat/mail-external-client-gateway-20260929` adds the dedicated lightweight stateless IMAP/SMTP gateway, stable IMAP UIDs, protected internal gateway APIs, guarded Coolify deployment and certificate renewal.
+- Architecture decision: the external-client gateway is an always-on stateless Coolify/OCI TCP service. Standard Workers cannot accept inbound raw IMAP/SMTP TCP; the gateway remains tiny (0.25 CPU / 128 MB) with no DB credential/local mail store, while Cloudflare continues to provide DNS/certificate automation. Spectrum may be considered later as an L4 proxy but would not remove the origin gateway.
+- PR #178 security audit found one CodeQL workflow-injection finding in release-message interpolation; commit `742328e7fb31ea8bb56714e1a51ad83de4130b6d` fixes it by moving GitHub event/input values into environment variables. Final exact-head checks/review resolution remain required before merge.
 - Latest handoff: `docs/handoffs/2026-09-29-mail-production-gateway-next.md`.
 - No Starpips production acceptance has begun.
 
