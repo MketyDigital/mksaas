@@ -232,6 +232,13 @@
       "when": 1790601000000,
       "tag": "0032_ai_conversations_scheduled_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790604600000,
+      "tag": "0033_media_tenant_links",
+      "breakpoints": true
     }
   ]
 }
