@@ -91,7 +91,6 @@ export async function importMailEmlFiles(tenantSlug: string, formData: FormData)
         attachmentEncoding: 'arraybuffer',
         maxNestingDepth: 64,
         maxHeadersSize: 1_000_000,
-        maxRfc822NestingDepth: 5,
       });
     } catch {
       continue;
