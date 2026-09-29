@@ -20,6 +20,58 @@ type CloudflareDomainConfig = {
   managedDnsProxied: boolean;
 };
 
+async function cloudflareBootstrapRequest<T>(
+  apiToken: string,
+  path: string,
+): Promise<T> {
+  const response = await fetch(`${CF_API}${path}`, {
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  const body = await response.json() as { success: boolean; result?: T };
+  if (!response.ok || !body.success || body.result === undefined) {
+    throw new Error(`Cloudflare bootstrap request failed with HTTP ${response.status}.`);
+  }
+  return body.result;
+}
+
+async function discoverCloudflareZoneId(
+  apiToken: string,
+  accountId: string,
+  zoneName: string,
+) {
+  const query = new URLSearchParams({
+    name: zoneName,
+    'account.id': accountId,
+    status: 'active',
+    per_page: '50',
+  });
+  const zones = await cloudflareBootstrapRequest<Array<{ id: string; name: string }>>(
+    apiToken,
+    `/zones?${query.toString()}`,
+  );
+  const matches = zones.filter((zone) => zone.name.toLowerCase() === zoneName.toLowerCase());
+  if (matches.length !== 1 || !matches[0]?.id) {
+    throw new Error(`Expected exactly one active Cloudflare zone for ${zoneName}.`);
+  }
+  return matches[0].id;
+}
+
+async function discoverCloudflareFallbackOrigin(apiToken: string, saasZoneId: string) {
+  const fallback = await cloudflareBootstrapRequest<{ origin?: string; status?: string }>(
+    apiToken,
+    `/zones/${encodeURIComponent(saasZoneId)}/custom_hostnames/fallback_origin`,
+  );
+  const origin = String(fallback.origin ?? '').trim().toLowerCase().replace(/\.$/, '');
+  if (!origin) throw new Error('Cloudflare for SaaS fallback origin is not configured.');
+  if (fallback.status && fallback.status !== 'active') {
+    throw new Error(`Cloudflare for SaaS fallback origin is not active (${fallback.status}).`);
+  }
+  return origin;
+}
+
 async function cloudflareDomainConfig(): Promise<CloudflareDomainConfig> {
   const connection = await getActivePlatformServiceConnection({
     serviceKey: 'domains',
@@ -29,9 +81,9 @@ async function cloudflareDomainConfig(): Promise<CloudflareDomainConfig> {
   const config = connection?.config ?? {};
   const apiToken = String(connection?.secret.apiToken ?? process.env.CLOUDFLARE_API_TOKEN ?? '').trim();
   const accountId = String(config.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? '').trim();
-  const saasZoneId = String(config.saasZoneId ?? process.env.MKETY_SAAS_ZONE_ID ?? '').trim();
-  const appZoneId = String(config.appZoneId ?? process.env.MKETY_APP_ZONE_ID ?? '').trim();
-  const cnameTarget = String(config.cnameTarget ?? process.env.MKETY_SAAS_CNAME_TARGET ?? '').trim().toLowerCase();
+  let saasZoneId = String(config.saasZoneId ?? process.env.MKETY_SAAS_ZONE_ID ?? '').trim();
+  let appZoneId = String(config.appZoneId ?? process.env.MKETY_APP_ZONE_ID ?? '').trim();
+  let cnameTarget = String(config.cnameTarget ?? process.env.MKETY_SAAS_CNAME_TARGET ?? '').trim().toLowerCase();
   const minTlsVersion = String(config.minTlsVersion ?? '1.2') === '1.3' ? '1.3' : '1.2';
   const managedDnsProxied = typeof config.managedDnsProxied === 'boolean'
     ? config.managedDnsProxied
@@ -39,9 +91,13 @@ async function cloudflareDomainConfig(): Promise<CloudflareDomainConfig> {
 
   if (!apiToken) throw new Error('Cloudflare domain API token is not configured.');
   if (!accountId) throw new Error('Cloudflare account ID is not configured.');
-  if (!saasZoneId) throw new Error('Cloudflare SaaS zone ID is not configured.');
-  if (!appZoneId) throw new Error('Cloudflare app zone ID is not configured.');
-  if (!cnameTarget) throw new Error('Cloudflare SaaS CNAME target is not configured.');
+
+  // Bootstrap from Cloudflare itself when Platform Control has not stored these
+  // non-secret routing values yet. This keeps managed hostname provisioning
+  // operational from the existing Cloudflare root credentials without guessing.
+  saasZoneId ||= await discoverCloudflareZoneId(apiToken, accountId, 'mkety.com');
+  appZoneId ||= await discoverCloudflareZoneId(apiToken, accountId, 'mkety.app');
+  cnameTarget ||= await discoverCloudflareFallbackOrigin(apiToken, saasZoneId);
 
   return {
     apiToken,
