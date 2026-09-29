@@ -336,10 +336,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          api='https://api.cloudflare.com/client/v4'
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-          body='{"workers_dev":false,"preview_urls":false}'
-          curl -fsS -X PATCH "${auth[@]}" --data "$body" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/settings" >/dev/null
+          node <<'NODE'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          config.workers_dev=false;
+          config.preview_urls=false;
+          config.keep_vars=true;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
+          NODE
+          pnpm run deploy 2>&1 | tee /tmp/mkety-app-host-harden.log
+          if grep -Eq 'https://[^[:space:]]+workers\.dev' /tmp/mkety-app-host-harden.log; then
+            echo 'Final hardened deployment unexpectedly exposed a workers.dev URL.' >&2
+            exit 1
+          fi
 
       - name: Roll back app host binding if post-binding acceptance failed
         if: failure() && steps.bind.outputs.bound == 'true'
