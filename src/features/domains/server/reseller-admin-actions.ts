@@ -36,7 +36,7 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
 
-  if (!/^\d+$/.test(resellerId)) throw new Error('DomainNameAPI V2 requires the numerical Reseller ID.');
+  if (!resellerId) throw new Error('DomainNameAPI V2 Reseller ID is required.');
   if (!apiKey) throw new Error('DomainNameAPI V2 API Key is required.');
   if (endpointUrl) new URL(endpointUrl);
 
