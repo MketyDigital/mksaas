@@ -179,7 +179,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     return Array.from(bits, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
-  private async relayRequest(operation: 'quote' | 'pricing' | 'register' | 'renew', payload: Record<string, unknown>) {
+  private async relayRequest(operation: 'quote' | 'pricing' | 'register' | 'renew' | 'nameservers', payload: Record<string, unknown>) {
     if (!this.relayUrl) throw new Error('DomainNameAPI relay is not configured.');
     const relaySecret = await this.resolveRelaySecret();
     const timestamp = String(Date.now());
@@ -221,7 +221,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
     return { response, payload: body };
   }
 
-  private async providerRequest(path: string, method: 'GET' | 'POST', body?: unknown) {
+  private async providerRequest(path: string, method: 'GET' | 'POST' | 'PUT', body?: unknown) {
     const response = await fetch(`${this.baseUrl}/${path.replace(/^\/+/, '')}`, {
       method,
       headers: {
@@ -230,7 +230,7 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
         'X-API-KEY': this.config.apiKey.trim(),
         __reseller: this.config.resellerId.trim(),
       },
-      ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+      ...(method === 'POST' || method === 'PUT' ? { body: JSON.stringify(body ?? {}) } : {}),
     });
     let payload: unknown = null;
     try { payload = await response.json(); } catch { payload = null; }
@@ -360,6 +360,29 @@ export class DomainNameApiAdapter implements DomainResellerAdapter {
       expiresAt: parseDate(findValue(payload, ['expirationDate', 'expiryDate', 'expiresAt'])),
       providerDomainRef: String(findValue(payload, ['domainName']) ?? domain),
     };
+  }
+
+
+  async setNameServers(input: {
+    providerDomainRef: string;
+    nameServers: string[];
+  }): Promise<void> {
+    const domain = normalizeDomain(input.providerDomainRef);
+    const nameServers = input.nameServers
+      .map((value) => value.trim().toLowerCase().replace(/\.$/, ''))
+      .filter(Boolean);
+    if (nameServers.length < 2) {
+      throw new Error('DomainNameAPI requires at least two nameservers.');
+    }
+    const result = this.relayUrl
+      ? await this.relayRequest('nameservers', { domainName: domain, nameServers })
+      : await this.providerRequest('domains/dns/name-server', 'PUT', { domainName: domain, nameServers });
+    if (!result.response.ok) {
+      const message = findValue(result.payload, ['message', 'errorMessage', 'error', 'detail']);
+      throw new Error(
+        `DomainNameAPI nameserver update failed (${result.response.status})${typeof message === 'string' ? `: ${message}` : ''}.`,
+      );
+    }
   }
 
   async renew(input: {
