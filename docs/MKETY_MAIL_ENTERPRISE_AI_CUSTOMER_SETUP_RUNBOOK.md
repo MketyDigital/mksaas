@@ -103,9 +103,9 @@ The following are required before Starpips acceptance starts:
 - [x] white-label/domain foundation;
 - [x] Enterprise AI console shell;
 - [x] solution-level editable instructions/knowledge/model/pause UI;
-- [ ] bind channel connections to a selected solution instance;
-- [ ] make channel runtime consume selected solution instructions/knowledge/model/pause;
-- [ ] count injected instruction/knowledge context in reservation/accounting;
+- [x] bind channel connections to a selected solution instance;
+- [x] make channel runtime consume selected solution instructions/knowledge/model/pause;
+- [x] count injected instruction/knowledge context in reservation/accounting;
 - [x] add deterministic customer test/playground for a selected solution;
 - [x] expose customer-safe request/run logs;
 - [x] persist conversations/messages;
@@ -232,6 +232,20 @@ Do not onboard a waiting customer merely because a UI route exists. For each pro
 12. test a future commitment reminder and cancellation/takeover behavior;
 13. run guarded real-host/customer acceptance;
 14. only after all gates pass enable production inference for customers.
+
+## Mkety Media connector boundary
+
+Mkety Media remains a standalone product/runtime with its existing commercial authority. The Platform now has a non-destructive connector for normal Mkety workspaces:
+
+- tenant route: `/t/{tenant}/media`;
+- Platform Control route: `/admin/platform-control/media`;
+- Mkety stores only an admin-verified external Media workspace reference and link status;
+- no Media API key, provider credential, invoice, subscription balance or internal customer data is copied into the Platform;
+- tenant dashboard, sidebar and Billing route through the connector page before opening `media.mkety.com`;
+- linked/suspended/disconnected state is visible to Mkety operators and the tenant;
+- Media payment references continue to route to the standalone Media commercial system.
+
+True cross-product SSO or automatic entitlement/data sync is deliberately not claimed yet. It requires a verified Media-side integration/token-consumer API. Until that exists, the safe connector is the product entry/add-on bridge and Media remains authoritative for its runtime and billing.
 
 ## Release rule
 
