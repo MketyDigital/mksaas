@@ -233,10 +233,11 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
               inputSchema: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['dueAtIso', 'commitment', 'reminderText', 'acknowledgement'],
+                required: ['dueAtIso', 'commitment', 'sourceQuote', 'reminderText', 'acknowledgement'],
                 properties: {
                   dueAtIso: { type: 'string', description: 'Unambiguous ISO-8601 timestamp with UTC offset.' },
                   commitment: { type: 'string', minLength: 1, maxLength: 500 },
+                  sourceQuote: { type: 'string', minLength: 1, maxLength: 300, description: 'Exact short quote from the customer message that contains the commitment/date.' },
                   reminderText: { type: 'string', minLength: 1, maxLength: 1200 },
                   acknowledgement: { type: 'string', minLength: 1, maxLength: 1200 },
                 },
@@ -272,6 +273,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   let pendingReminder: {
     dueAt: Date;
     commitment: string;
+    sourceQuote: string;
     reminderText: string;
   } | null = null;
   const reminderCall = configuration.commitmentRemindersEnabled
@@ -282,6 +284,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       const args = JSON.parse(reminderCall.argumentsJson) as Record<string, unknown>;
       const dueAt = new Date(String(args.dueAtIso ?? ''));
       const commitment = String(args.commitment ?? '').trim().slice(0, 500);
+      const sourceQuote = String(args.sourceQuote ?? '').trim().slice(0, 300);
       const reminderText = String(args.reminderText ?? '').trim().slice(0, 1200);
       const acknowledgement = String(args.acknowledgement ?? '').trim().slice(0, 1200);
       const now = Date.now();
@@ -291,13 +294,15 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         dueAt.getTime() > now + 60_000 &&
         dueAt.getTime() <= maxFuture &&
         commitment &&
+        sourceQuote &&
+        input.text.toLocaleLowerCase().includes(sourceQuote.toLocaleLowerCase()) &&
         reminderText &&
         acknowledgement
       ) {
         const scheduledAt = new Date(
           Math.max(now + 60_000, dueAt.getTime() - configuration.reminderLeadMinutes * 60_000),
         );
-        pendingReminder = { dueAt: scheduledAt, commitment, reminderText };
+        pendingReminder = { dueAt: scheduledAt, commitment, sourceQuote, reminderText };
         responseText = acknowledgement;
       } else if (!responseText) {
         responseText = 'Please give me a specific future date and time so I can schedule that reminder safely.';
@@ -384,6 +389,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         text: pendingReminder.reminderText,
         sourceProviderMessageId: input.providerMessageId,
         commitment: pendingReminder.commitment,
+        sourceQuote: pendingReminder.sourceQuote,
       },
     });
     const delaySeconds = Math.max(0, Math.ceil((pendingReminder.dueAt.getTime() - Date.now()) / 1_000));
