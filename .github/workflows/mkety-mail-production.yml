@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - '.github/workflows/mkety-mail-production.yml'
+      - '.github/workflows/mkety-mail-gateway-production.yml'
       - '.github/workflows/mkety-coolify-production-db-executor.yml'
       - 'src/app/**/mail/**'
       - 'src/app/api/mail/**'
