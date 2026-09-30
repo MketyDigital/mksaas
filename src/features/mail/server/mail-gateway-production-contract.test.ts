@@ -106,7 +106,8 @@ describe('Mkety Mail gateway production contract', () => {
     expect(gatewayMessagesRoute).toContain("uid: mailMessages.imapUid");
     expect(gatewayMessagesRoute).toContain("internalDate: toGatewayIso");
     expect(gatewayMessagesRoute).toContain("MKETY_MAIL_GATEWAY_MESSAGES_ERROR=");
-    expect(gatewayMessagesRoute).toContain("error: 'message_index_failed'");
+    expect(gatewayMessagesRoute).toContain("const detail = gatewayErrorMarker(error)");
+    expect(gatewayMessagesRoute).toContain("error: 'message_index_failed', detail");
     expect(gatewayMessagesRoute).not.toContain('db.query.mailMessages.findMany');
   });
 
