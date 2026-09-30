@@ -7,7 +7,7 @@ import * as schema from '@/shared/db/schema';
 
 export async function withPublicAIRequestDatabase<T>(work: (database: Database) => Promise<T>): Promise<T> {
   const connectionString = getRuntimeDatabaseConnectionString();
-  const client = postgres(connectionString, { max: 1 });
+  const client = postgres(connectionString, { max: 1, prepare: false });
   const database = drizzle(client, { schema }) as Database;
 
   try {
