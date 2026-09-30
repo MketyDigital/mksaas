@@ -17,6 +17,15 @@ export type EnterpriseAiScheduledPayload = {
   sourceProviderMessageId?: string;
   commitment?: string;
   sourceQuote?: string;
+  inboundRetry?: {
+    originalProviderMessageId: string;
+    senderId: string;
+    externalConversationId: string;
+    replyRecipientId: string;
+    replyToId?: string;
+    contextId?: string;
+    requestedModel?: string;
+  };
 };
 
 export async function ensureEnterpriseAiConversation(input: {
@@ -159,7 +168,7 @@ export async function scheduleEnterpriseAiAction(input: {
   conversationId?: string | null;
   solutionInstanceId?: string | null;
   connectionId: string;
-  kind: 'delayed_reply' | 'commitment_reminder';
+  kind: 'delayed_reply' | 'commitment_reminder' | 'inbound_retry';
   idempotencyKey: string;
   dueAt: Date;
   payload: EnterpriseAiScheduledPayload;
