@@ -1,5 +1,7 @@
 # Mkety mksaas current handoff — 2026-09-30
 
+> Superseded after PRs #223/#224 and production promotion. Continue from `2026-09-30-production-promotion-progress.md`; the pre-merge state below is retained as historical evidence.
+
 ## Decision and scope
 
 Continue the mksaas platform completion from PR [#223](https://github.com/MketyDigital/mksaas/pull/223). Keep production customer inference and external Mail clients closed until the live acceptance below succeeds. This handoff summarizes repository-wide automated checks, targeted source review, current workflow evidence and the authoritative runbooks. It is not a line-by-line certification of every source file or a claim that real customer paths have passed.
