@@ -4,6 +4,12 @@ import { revalidatePath } from 'next/cache';
 
 
 import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
+import {
+  calculateEnterpriseAiIncludedCredits,
+  DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
+  DEFAULT_ENTERPRISE_AI_OPERATIONS_RESERVE_BPS,
+  DEFAULT_ENTERPRISE_AI_RATE_MULTIPLIER_BPS,
+} from '@/features/ai-runtime/server/commercial-pricing';
 import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
@@ -65,6 +71,16 @@ function parseUsdMinor(value: FormDataEntryValue | null) {
   return amount;
 }
 
+function parseBps(value: FormDataEntryValue | null, label: string, fallback: number, min: number, max: number) {
+  const text = String(value ?? '').trim();
+  if (!text) return fallback;
+  const match = /^(\d{1,4})(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) throw new Error(`${label} must be a valid percentage.`);
+  const bps = Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
+  if (!Number.isInteger(bps) || bps < min || bps > max) throw new Error(`${label} is outside the allowed range.`);
+  return bps;
+}
+
 function parseCredits(value: FormDataEntryValue | null) {
   const text = String(value ?? '0').trim();
   if (!/^\d{1,15}$/.test(text)) throw new Error('Included credits must be a whole number.');
@@ -101,7 +117,30 @@ export async function createEnterpriseAiContractVersion(
   const managedCostShareBps = parseCostShareBps(formData.get('managedCostSharePercent'));
   const setupFeeMinor = parseUsdMinorField(formData.get('setupFeeUsd') ?? '0', 'setup fee', { allowZero: true });
   const creditRollover = String(formData.get('creditRollover') ?? 'yes') !== 'no';
-  const includedCredits = parseCredits(formData.get('includedCredits'));
+  const operationsReserveBps = parseBps(
+    formData.get('operationsReservePercent'),
+    'Operations reserve',
+    DEFAULT_ENTERPRISE_AI_OPERATIONS_RESERVE_BPS,
+    0,
+    9999,
+  );
+  const customerRateMultiplierBps = parseBps(
+    formData.get('customerRateMultiplierPercent'),
+    'Customer rate multiplier',
+    DEFAULT_ENTERPRISE_AI_RATE_MULTIPLIER_BPS,
+    10000,
+    100000,
+  );
+  const creditUsdMicros = DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS;
+  const autoIncludedCredits = String(formData.get('autoIncludedCredits') ?? 'yes') !== 'no';
+  const calculatedCredits = calculateEnterpriseAiIncludedCredits({
+    monthlyAmountMinor: amountMinor,
+    managedCostShareBps,
+    operationsReserveBps,
+    rateMultiplierBps: customerRateMultiplierBps,
+    creditUsdMicros,
+  }).includedCredits;
+  const includedCredits = autoIncludedCredits ? calculatedCredits : parseCredits(formData.get('includedCredits'));
   const entitlements = parseIncludedEntitlements(formData);
   const name = String(formData.get('name') ?? '').trim().slice(0, 255)
     || `${target.name} Enterprise AI`;
@@ -158,6 +197,9 @@ export async function createEnterpriseAiContractVersion(
       planVersionId: version.id,
       minimumFundingMinor,
       managedCostShareBps,
+      operationsReserveBps,
+      customerRateMultiplierBps,
+      creditUsdMicros,
       setupFeeMinor,
       fundingMode,
       creditRollover,
@@ -237,6 +279,9 @@ export async function getActiveEnterpriseAiContract(tenantId: string) {
       planVersionId: row.planVersionId,
       minimumFundingMinor: row.amountMinor,
       managedCostShareBps: 1500,
+      operationsReserveBps: DEFAULT_ENTERPRISE_AI_OPERATIONS_RESERVE_BPS,
+      customerRateMultiplierBps: DEFAULT_ENTERPRISE_AI_RATE_MULTIPLIER_BPS,
+      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
       setupFeeMinor: 0n,
       fundingMode: 'full_period',
       creditRollover: true,
