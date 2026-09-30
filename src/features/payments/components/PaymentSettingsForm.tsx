@@ -2,6 +2,10 @@ import {
   MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES,
   type MketyPaymentSettings,
 } from '@/features/payments/config';
+import {
+  MKETY_FLUTTERWAVE_PAYMENT_METHOD_GROUPS,
+  MKETY_FLUTTERWAVE_PAYMENT_METHODS,
+} from '@/features/payments/flutterwave-payment-methods';
 import { updateMketyPaymentSettings } from '@/features/payments/server/admin-actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
@@ -91,6 +95,40 @@ export function PaymentSettingsForm({ tenant, settings, readiness }: PaymentSett
                 </label>
               ),
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Flutterwave payment methods</CardTitle>
+          <CardDescription>
+            Mkety deliberately leaves Flutterwave payment options dashboard-controlled. Enabled methods appear
+            automatically when valid for the customer's selected currency, and methods currently pending Flutterwave
+            review can appear as soon as Flutterwave approves them without a Mkety code change.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+            Do not add a per-transaction <code>payment_options</code> allow-list. That would suppress dashboard-enabled
+            methods such as newly approved card, bank, wallet or local-payment rails.
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {MKETY_FLUTTERWAVE_PAYMENT_METHOD_GROUPS.map((group) => (
+              <div key={group} className="rounded-xl border p-4">
+                <p className="font-semibold">{group}</p>
+                <div className="mt-3 space-y-3">
+                  {MKETY_FLUTTERWAVE_PAYMENT_METHODS.filter((method) => method.group === group).map((method) => (
+                    <div key={method.key}>
+                      <p className="text-sm font-medium">{method.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {method.currencyHints.join(' · ')}{method.note ? ` · ${method.note}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

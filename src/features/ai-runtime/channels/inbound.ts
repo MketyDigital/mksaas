@@ -3,12 +3,22 @@ import { createHmac, createPublicKey, timingSafeEqual, verify as verifySignature
 import type { EnterpriseAiChannelCredentials } from './credentials';
 import type { EnterpriseAiChannelKey } from './registry';
 
+export type EnterpriseAiInboundMedia = {
+  kind: 'image' | 'audio';
+  providerFileId: string;
+  mimeType?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  durationSeconds?: number;
+};
+
 export type NormalizedEnterpriseAiInbound = {
   senderId: string;
   conversationId: string;
   providerMessageId: string;
   text: string;
   replyRecipientId: string;
+  media?: EnterpriseAiInboundMedia[];
 };
 
 function safeEqual(left: string, right: string) {
@@ -159,12 +169,71 @@ function normalizeTelegram(payload: Record<string, unknown>): NormalizedEnterpri
   if (!message) throw new Error('Telegram message payload is missing.');
   const chat = message.chat as Record<string, unknown> | undefined;
   const from = message.from as Record<string, unknown> | undefined;
+  const media: EnterpriseAiInboundMedia[] = [];
+
+  const photos = Array.isArray(message.photo)
+    ? message.photo as Array<Record<string, unknown>>
+    : [];
+  const largestPhoto = photos.at(-1);
+  if (largestPhoto?.file_id) {
+    media.push({
+      kind: 'image',
+      providerFileId: requireString(largestPhoto.file_id, 'Telegram photo file ID'),
+      mimeType: 'image/jpeg',
+      sizeBytes: typeof largestPhoto.file_size === 'number' ? largestPhoto.file_size : undefined,
+    });
+  }
+
+  const voice = message.voice as Record<string, unknown> | undefined;
+  const audio = message.audio as Record<string, unknown> | undefined;
+  const document = message.document as Record<string, unknown> | undefined;
+  const audioSource = voice?.file_id ? voice : audio?.file_id ? audio : undefined;
+  if (audioSource?.file_id) {
+    media.push({
+      kind: 'audio',
+      providerFileId: requireString(audioSource.file_id, 'Telegram audio file ID'),
+      mimeType: typeof audioSource.mime_type === 'string'
+        ? audioSource.mime_type
+        : voice?.file_id ? 'audio/ogg' : undefined,
+      fileName: typeof audioSource.file_name === 'string' ? audioSource.file_name : undefined,
+      sizeBytes: typeof audioSource.file_size === 'number' ? audioSource.file_size : undefined,
+      durationSeconds: typeof audioSource.duration === 'number' ? audioSource.duration : undefined,
+    });
+  } else if (document?.file_id && typeof document.mime_type === 'string') {
+    const mimeType = document.mime_type.toLowerCase();
+    if (mimeType.startsWith('image/')) {
+      media.push({
+        kind: 'image',
+        providerFileId: requireString(document.file_id, 'Telegram document file ID'),
+        mimeType,
+        fileName: typeof document.file_name === 'string' ? document.file_name : undefined,
+        sizeBytes: typeof document.file_size === 'number' ? document.file_size : undefined,
+      });
+    } else if (mimeType.startsWith('audio/')) {
+      media.push({
+        kind: 'audio',
+        providerFileId: requireString(document.file_id, 'Telegram document file ID'),
+        mimeType,
+        fileName: typeof document.file_name === 'string' ? document.file_name : undefined,
+        sizeBytes: typeof document.file_size === 'number' ? document.file_size : undefined,
+      });
+    }
+  }
+
+  const rawText = typeof message.text === 'string'
+    ? message.text.trim()
+    : typeof message.caption === 'string'
+      ? message.caption.trim()
+      : '';
+  if (!rawText && !media.length) throw new Error('Telegram message text or supported media is missing.');
+
   return {
     senderId: String(from?.id ?? chat?.id ?? ''),
     conversationId: String(chat?.id ?? ''),
     providerMessageId: String(message.message_id ?? ''),
-    text: requireString(message.text ?? message.caption, 'Telegram message text'),
+    text: rawText || (media.some((item) => item.kind === 'image') ? '[Image attached]' : '[Voice/audio attached]'),
     replyRecipientId: String(chat?.id ?? ''),
+    ...(media.length ? { media } : {}),
   };
 }
 

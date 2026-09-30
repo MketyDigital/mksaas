@@ -1,5 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 
+import type { EnterpriseAiChannelCredentials } from '@/features/ai-runtime/channels/credentials';
+import type { EnterpriseAiInboundMedia } from '@/features/ai-runtime/channels/inbound';
+import {
+  enterpriseAiInboundMediaPlaceholder,
+  estimateEnterpriseAiInboundMediaCostUsdMicros,
+  resolveEnterpriseAiInboundMedia,
+} from '@/features/ai-runtime/channels/media';
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import {
   deterministicReplyDelaySeconds,
@@ -55,6 +62,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   text: string;
   solutionInstanceId?: string | null;
   requestedModel?: string;
+  media?: EnterpriseAiInboundMedia[];
+  channelCredentials?: EnterpriseAiChannelCredentials;
   testMode?: boolean;
   skipInboundRecord?: boolean;
 }): Promise<EnterpriseAiManagedChannelTurnResult> {
@@ -137,12 +146,17 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
 
   const remindersEnabled = remindersRequested && resolved.model.providerKey === 'workers-ai';
 
+  const mediaPlaceholder = enterpriseAiInboundMediaPlaceholder(input.media);
   const contextText = [
     boundedSystemPrompt,
     boundedKnowledge,
     ...recentMessages.map((message) => message.content),
+    mediaPlaceholder,
   ].filter(Boolean).join('\n\n');
-  const messageBytes = new TextEncoder().encode(contextText).byteLength;
+  // Reserve enough text-token capacity for bounded image descriptions/transcripts before
+  // paying the media preprocessing cost.
+  const mediaContextReserveBytes = Math.min(60_000, (input.media?.length ?? 0) * 20_000);
+  const messageBytes = new TextEncoder().encode(contextText).byteLength + mediaContextReserveBytes;
   const inputTokenUpperBound = conservativeInputTokenUpperBound(Math.max(1, messageBytes));
   const modelMaxOutput = typeof resolved.model.limits.maxOutputTokens === 'number'
     ? resolved.model.limits.maxOutputTokens
@@ -160,6 +174,12 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     providerMessageId: input.providerMessageId,
     senderId: input.senderId,
     text: input.text,
+    media: (input.media ?? []).map((item) => ({
+      kind: item.kind,
+      providerFileId: item.providerFileId,
+      sizeBytes: item.sizeBytes ?? null,
+      durationSeconds: item.durationSeconds ?? null,
+    })),
     requestedModel,
   });
   const requestFingerprintBytes = await crypto.subtle.digest(
@@ -223,12 +243,13 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     throw new Error('Managed channel request was not commercially admitted.');
   }
 
+  const estimatedMediaProviderCostUsdMicros = estimateEnterpriseAiInboundMediaCostUsdMicros(input.media);
   const estimatedProviderCostUsdMicros = calculateProviderCostUsdMicros({
     rate: providerRate,
     inputTokens: inputTokenUpperBound,
     cachedInputTokens: 0n,
     outputTokens: BigInt(effectiveMaxOutput),
-  });
+  }) + estimatedMediaProviderCostUsdMicros;
   try {
     await assertEnterpriseAiManagedCostEnvelope({
       requestId,
@@ -254,6 +275,72 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     }).where(eq(aiRequests.id, requestId));
     throw new Error('Prepaid Enterprise AI capacity is exhausted. Add funds to continue.');
   }
+
+  let resolvedMedia = {
+    contextText: '',
+    transcriptText: '',
+    providerCostUsdMicros: 0n,
+    processed: [] as Array<{ kind: 'image' | 'audio'; model: string }>,
+  };
+  if (input.media?.length) {
+    if (!input.channelKey || !input.channelCredentials) {
+      try {
+        await releaseAiCommercialRequest({ admission, reason: 'media_credentials_unavailable' });
+      } catch {
+        await db.update(aiRequests).set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        }).where(eq(aiRequests.id, requestId));
+        throw new Error('Managed channel commercial holds require reconciliation.');
+      }
+      await db.update(aiRequests).set({
+        status: 'provider_unavailable',
+        errorCode: 'media_credentials_unavailable',
+        completedAt: new Date(),
+      }).where(eq(aiRequests.id, requestId));
+      throw new Error('Managed channel media credentials are unavailable.');
+    }
+    try {
+      resolvedMedia = await resolveEnterpriseAiInboundMedia({
+        channel: input.channelKey,
+        media: input.media,
+        credentials: input.channelCredentials,
+      });
+    } catch {
+      try {
+        await releaseAiCommercialRequest({ admission, reason: 'media_processing_failed' });
+      } catch {
+        await db.update(aiRequests).set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        }).where(eq(aiRequests.id, requestId));
+        throw new Error('Managed channel commercial holds require reconciliation.');
+      }
+      await db.update(aiRequests).set({
+        status: 'provider_unavailable',
+        errorCode: 'media_processing_failed',
+        completedAt: new Date(),
+      }).where(eq(aiRequests.id, requestId));
+      throw new Error('Managed channel media could not be processed safely.');
+    }
+  }
+
+  const effectiveUserText = [
+    input.text,
+    resolvedMedia.transcriptText && !input.text.includes(resolvedMedia.transcriptText)
+      ? resolvedMedia.transcriptText
+      : '',
+    resolvedMedia.contextText
+      ? `Attachment context:\n${resolvedMedia.contextText}`
+      : '',
+  ].filter(Boolean).join('\n\n').slice(0, 28_000);
+
+  const modelMessages = recentMessages.map((message, index, all) => {
+    if (index !== all.length - 1 || message.role !== 'user' || !effectiveUserText) return message;
+    return { ...message, content: effectiveUserText };
+  });
 
   let result;
   try {
@@ -287,7 +374,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
               ].join(' '),
             }]
           : []),
-        ...recentMessages,
+        ...modelMessages,
       ],
       ...(remindersEnabled
         ? {
@@ -326,7 +413,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
           boundedSystemPrompt,
           boundedKnowledge ? `Approved business knowledge:\n${boundedKnowledge}` : '',
         ].filter(Boolean).join('\n\n'),
-        messages: recentMessages
+        messages: modelMessages
           .filter((message): message is typeof message & { role: 'system' | 'user' | 'assistant' } => message.role !== 'tool'),
         maxOutputTokens: effectiveMaxOutput,
         idempotencyKey,
@@ -368,6 +455,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       Object.assign(retryable, {
         code: 'ENTERPRISE_AI_PROVIDER_CAPACITY_RETRYABLE',
         conversationId: conversation.id,
+        retryText: effectiveUserText || input.text,
       });
       throw retryable;
     }
@@ -417,7 +505,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         dueAt.getTime() <= maxFuture &&
         commitment &&
         sourceQuote &&
-        input.text.toLocaleLowerCase().includes(sourceQuote.toLocaleLowerCase()) &&
+        [input.text, resolvedMedia.transcriptText].filter(Boolean).join('\n').toLocaleLowerCase().includes(sourceQuote.toLocaleLowerCase()) &&
         reminderText &&
         acknowledgement
       ) {
@@ -447,7 +535,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     inputTokens: result.usage.inputTokens,
     cachedInputTokens: result.usage.cachedInputTokens,
     outputTokens: result.usage.outputTokens,
-  });
+  }) + resolvedMedia.providerCostUsdMicros;
 
   try {
     await settleAiCommercialRequest({ admission, actualCredits, settledAt: new Date() });
@@ -464,6 +552,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         providerRequestId: result.providerRequestId ?? null,
         providerCostUsdMicros: providerCostUsdMicros.toString(),
         providerCostVerifiedAt: providerRate.verifiedAt,
+        mediaProviderCostUsdMicros: resolvedMedia.providerCostUsdMicros.toString(),
+        mediaProcessed: resolvedMedia.processed,
         minimumRevenueUsdMicros: minimumCustomerRevenueUsdMicros(providerCostUsdMicros).toString(),
         actualCredits: actualCredits.toString(),
         creditReservationId: admission.creditReservation.id,
@@ -487,6 +577,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       providerRequestId: result.providerRequestId ?? null,
       providerCostUsdMicros: providerCostUsdMicros.toString(),
       providerCostVerifiedAt: providerRate.verifiedAt,
+      mediaProviderCostUsdMicros: resolvedMedia.providerCostUsdMicros.toString(),
+      mediaProcessed: resolvedMedia.processed,
       minimumRevenueUsdMicros: minimumCustomerRevenueUsdMicros(providerCostUsdMicros).toString(),
       actualCredits: actualCredits.toString(),
       creditReservationId: admission.creditReservation.id,

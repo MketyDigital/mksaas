@@ -808,3 +808,9 @@ The first Enterprise AI product composition must include:
 - internal provider-cost and margin telemetry separated from customer billing.
 
 Adding a channel, domain or brand never creates a second tenant or identity system.
+
+## Implemented channel media input
+
+Telegram is the first Enterprise channel with implemented multimodal inbound handling: photos/images are visually interpreted and voice/audio notes are transcribed before the selected assistant answers. Media is fetched only server-side from Telegram using the encrypted bot credential, with bounded file size/type/duration and the same tenant, entitlement, commercial-admission, cost-envelope, audit and human-handoff controls as text messages.
+
+The channel registry now distinguishes actual `supportsImageInput` and `supportsAudioInput` capability from general channel availability. Other channels remain text-only until their provider-specific inbound media contracts are implemented and tested.

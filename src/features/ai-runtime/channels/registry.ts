@@ -20,6 +20,8 @@ export type EnterpriseAiChannelDescriptor = {
   supportsOutbound: boolean;
   supportsHumanHandoff: boolean;
   supportsCommitmentReminders: boolean;
+  supportsImageInput: boolean;
+  supportsAudioInput: boolean;
 };
 
 export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = [
@@ -33,6 +35,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: false,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'whatsapp',
@@ -44,6 +48,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: false,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'telegram',
@@ -55,6 +61,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: true,
+    supportsImageInput: true,
+    supportsAudioInput: true,
   },
   {
     key: 'instagram',
@@ -66,6 +74,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: false,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'facebook_messenger',
@@ -77,6 +87,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: false,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'slack',
@@ -88,6 +100,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: true,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'discord',
@@ -99,6 +113,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: true,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'linkedin_page',
@@ -110,6 +126,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: false,
     supportsCommitmentReminders: false,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'microsoft_teams',
@@ -121,6 +139,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: true,
     supportsCommitmentReminders: false,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
   {
     key: 'custom_webhook',
@@ -132,6 +152,8 @@ export const ENTERPRISE_AI_CHANNELS: readonly EnterpriseAiChannelDescriptor[] = 
     supportsOutbound: true,
     supportsHumanHandoff: false,
     supportsCommitmentReminders: true,
+    supportsImageInput: false,
+    supportsAudioInput: false,
   },
 ] as const;
 

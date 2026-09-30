@@ -76,6 +76,8 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
                   {channel.supportsInbound ? <span className="rounded-full bg-muted px-2.5 py-1">Inbound</span> : null}
                   {channel.supportsOutbound ? <span className="rounded-full bg-muted px-2.5 py-1">Outbound</span> : null}
                   {channel.supportsHumanHandoff ? <span className="rounded-full bg-muted px-2.5 py-1">Human handoff</span> : null}
+                  {channel.supportsImageInput ? <span className="rounded-full bg-muted px-2.5 py-1">Image input</span> : null}
+                  {channel.supportsAudioInput ? <span className="rounded-full bg-muted px-2.5 py-1">Voice/audio input</span> : null}
                 </div>
 
                 <p className="flex items-center gap-2 text-muted-foreground">
@@ -111,6 +113,7 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
                         <div><Label htmlFor={`${channel.key}-botToken`}>Bot token</Label><Input id={`${channel.key}-botToken`} name="botToken" type="password" autoComplete="off" className="mt-1" placeholder={connection?.secretConfigured ? 'Leave blank to keep existing token' : 'Telegram bot token'} /></div>
                         <div><Label htmlFor={`${channel.key}-webhookSecret`}>Webhook secret</Label><Input id={`${channel.key}-webhookSecret`} name="webhookSecret" type="password" autoComplete="off" className="mt-1" placeholder="Webhook verification secret" /></div>
                         <div><Label htmlFor={`${channel.key}-channelId`}>Default chat/channel ID</Label><Input id={`${channel.key}-channelId`} name="channelId" defaultValue={value('channelId')} className="mt-1" /></div>
+                        <p className="text-xs text-muted-foreground">Telegram photo/image messages and voice/audio notes are understood when they pass Mkety media safety limits. Media is processed server-side; raw bot credentials are never exposed to the customer browser.</p>
                       </>
                     ) : null}
 

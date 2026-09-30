@@ -112,3 +112,15 @@ Azure OpenAI / Microsoft Foundry resource endpoints should be stored at the reso
 Customer inference stays fail-closed until the first controlled customer acceptance passes commercial settlement, tenant isolation, provider/model route, credit/accounting, white-label hostname/login, channel binding, API, operator handoff and run-log verification.
 
 Mail onboarding follows only after Enterprise AI acceptance. Mkety Mail should first power controlled Mkety system email, then ZITADEL auth email, before the first external Mail customer is accepted.
+
+## Channel multimodal inputs
+
+Telegram channel connections support inbound photo/image messages and voice/audio notes. Mkety verifies the Telegram webhook, resolves the provider file server-side with the encrypted bot token, enforces media count/size/type/duration limits, then performs managed preprocessing before the normal Enterprise AI turn:
+
+- images are converted to bounded visual context with a managed Workers AI vision model;
+- voice/audio is transcribed with managed Workers AI speech recognition;
+- the resulting context stays inside the same tenant conversation and credit/admission boundary;
+- media preprocessing provider cost is added to Mkety's internal provider-cost envelope and audit metadata, while customers continue to see normal credits/usage rather than provider-cost internals;
+- provider-capacity retries reuse the already-derived text context so Mkety does not intentionally reprocess the media on a retry.
+
+Other channels expose multimodal badges only after their inbound adapter actually implements equivalent media verification and download rules. Do not claim image/audio support from a channel merely because the underlying AI model is multimodal.

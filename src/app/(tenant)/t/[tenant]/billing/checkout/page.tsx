@@ -15,6 +15,7 @@ import {
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
+import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
@@ -82,6 +83,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
     : 'USD';
 
   let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
+  const flutterwaveMethodLabels = getMketyFlutterwaveMethodLabelsForCurrency(selectedCurrency);
   if (flutterwaveEnabled && isMketyFlutterwaveCollectionCurrency(selectedCurrency)) {
     try {
       flutterwaveQuote = await quoteFlutterwaveCollection({
@@ -178,7 +180,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                 <div className="rounded-2xl border bg-muted/30 p-4">
                   <p className="text-sm font-medium">Flutterwave payment currency</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Mkety prices remain canonically USD. Choose a configured collection currency; Mkety locks the quoted amount before opening Flutterwave Inline, and Flutterwave shows the payment methods available for that currency and merchant account.
+                    Mkety prices remain canonically USD. Choose a configured collection currency; Mkety locks the quoted amount before opening Flutterwave Inline. Mkety does not suppress Flutterwave payment methods: Flutterwave shows every dashboard-enabled or newly approved method that is valid for the selected currency and customer.
                   </p>
                   {flutterwaveQuote ? (
                     <p className="mt-3 text-sm font-semibold">
@@ -193,6 +195,10 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                       A Mkety collection rate is not currently configured for {selectedCurrency}. Choose another currency or use another payment method.
                     </p>
                   )}
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Typical eligible rails for {selectedCurrency}: {flutterwaveMethodLabels.join(', ')}. Final availability
+                    is determined live by Flutterwave account approval, currency, customer location/device and provider rules.
+                  </p>
                   <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
                     {flutterwaveCurrencies.map((currency) => (
                       <Link

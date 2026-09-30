@@ -32,6 +32,68 @@ describe('Enterprise AI channel inbound verification', () => {
     });
   });
 
+  it('normalizes Telegram photos for multimodal processing', () => {
+    const rawBody = JSON.stringify({
+      message: {
+        message_id: 56,
+        from: { id: 1001 },
+        chat: { id: 2002 },
+        caption: 'What is in this image?',
+        photo: [
+          { file_id: 'small', file_size: 1000 },
+          { file_id: 'large', file_size: 5000 },
+        ],
+      },
+    });
+    const headers = new Headers({ 'x-telegram-bot-api-secret-token': 'telegram-secret' });
+    expect(verifyAndNormalizeEnterpriseAiInbound({
+      channel: 'telegram',
+      rawBody,
+      headers,
+      credentials: { webhookSecret: 'telegram-secret' },
+    })).toMatchObject({
+      text: 'What is in this image?',
+      media: [{
+        kind: 'image',
+        providerFileId: 'large',
+        mimeType: 'image/jpeg',
+        sizeBytes: 5000,
+      }],
+    });
+  });
+
+  it('normalizes Telegram voice notes without requiring a caption', () => {
+    const rawBody = JSON.stringify({
+      message: {
+        message_id: 57,
+        from: { id: 1001 },
+        chat: { id: 2002 },
+        voice: {
+          file_id: 'voice-file',
+          file_size: 4096,
+          duration: 23,
+          mime_type: 'audio/ogg',
+        },
+      },
+    });
+    const headers = new Headers({ 'x-telegram-bot-api-secret-token': 'telegram-secret' });
+    expect(verifyAndNormalizeEnterpriseAiInbound({
+      channel: 'telegram',
+      rawBody,
+      headers,
+      credentials: { webhookSecret: 'telegram-secret' },
+    })).toMatchObject({
+      text: '[Voice/audio attached]',
+      media: [{
+        kind: 'audio',
+        providerFileId: 'voice-file',
+        mimeType: 'audio/ogg',
+        sizeBytes: 4096,
+        durationSeconds: 23,
+      }],
+    });
+  });
+
   it('rejects Slack replays outside the five-minute window and verifies valid signatures', () => {
     const now = Date.parse('2026-09-28T10:00:00Z');
     const timestamp = String(now / 1000);

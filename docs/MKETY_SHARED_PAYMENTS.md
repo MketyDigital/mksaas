@@ -374,3 +374,9 @@ A future v4 migration may be appropriate, but it must be done as a controlled re
 5. do not operate both versions as normal production payment paths on the same Flutterwave integration.
 
 Until that migration is explicitly approved and implemented, the authoritative Flutterwave architecture is v3.
+
+## Flutterwave payment-method availability
+
+Mkety v3 checkout deliberately does **not** send a per-transaction `payment_options` allow-list. Flutterwave Dashboard payment-method settings remain authoritative, so every method enabled for the merchant account can appear when valid for the selected collection currency, customer, device and region. Methods that are still under Flutterwave review must not be faked as live; once Flutterwave approves/enables them in the account, Mkety checkout can surface them without an application change.
+
+Platform Control presents the intended method families (cards, bank transfer, mobile money, pay-with-bank, wallets and local alternatives) as a coverage catalogue. The catalogue is descriptive only and never narrows the provider checkout. Currency selection remains driven by Mkety's configured commercial FX quotes, while Flutterwave performs the final payment-rail eligibility filtering.
