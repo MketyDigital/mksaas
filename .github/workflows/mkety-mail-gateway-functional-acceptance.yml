@@ -232,6 +232,8 @@ jobs:
             .replace(/mkmail-[0-9a-f]+/gi,'mkmail-***')
             .replace(/password\s*[=:]\s*[^\s]+/gi,'password=***')
             .replace(/authorization\s*[=:]\s*[^\s]+/gi,'authorization=***');
+          const marker = raw.match(/MKETY_MAIL_FUNCTIONAL_FIXTURE_ERROR=([^\n\r]+)/)?.[1];
+          if (marker) console.log('Fixture error marker: ' + marker);
           console.log(raw.slice(-12000) || 'No application logs returned.');
           NODE
             exit 1

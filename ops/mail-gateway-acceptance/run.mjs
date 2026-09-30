@@ -76,22 +76,54 @@ async function revoke() {
   if (!result.length) throw new Error('Acceptance credential was not revoked.');
 }
 
-if (mode === 'setup') {
-  await setup();
-  console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_READY=true');
-} else if (mode === 'revoke') {
-  await revoke();
-  console.log('MKETY_MAIL_FUNCTIONAL_CREDENTIAL_REVOKED=true');
-} else if (mode === 'cleanup') {
-  await cleanup();
-  console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true');
-} else {
-  throw new Error('Unsupported acceptance mode.');
+function sanitizeDiagnostic(value) {
+  return String(value || '')
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, 'postgresql://***')
+    .replace(/mkmail-[0-9a-f]+/gi, 'mkmail-***')
+    .replace(/password\s*[=:]\s*[^\s]+/gi, 'password=***')
+    .slice(0, 2000);
 }
 
-await sql.end({ timeout: 5 });
+let acceptanceError = null;
+try {
+  if (mode === 'setup') {
+    await setup();
+    console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_READY=true');
+  } else if (mode === 'revoke') {
+    await revoke();
+    console.log('MKETY_MAIL_FUNCTIONAL_CREDENTIAL_REVOKED=true');
+  } else if (mode === 'cleanup') {
+    await cleanup();
+    console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true');
+  } else {
+    throw new Error('Unsupported acceptance mode.');
+  }
+} catch (error) {
+  acceptanceError = error;
+  const name = error instanceof Error ? error.name : 'Error';
+  const message = error instanceof Error ? error.message : String(error);
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code || '') : '';
+  console.error(
+    'MKETY_MAIL_FUNCTIONAL_FIXTURE_ERROR=' +
+      sanitizeDiagnostic(JSON.stringify({ name, code, message })),
+  );
+}
+
+await sql.end({ timeout: 5 }).catch((error) => {
+  if (!acceptanceError) {
+    acceptanceError = error;
+    console.error(
+      'MKETY_MAIL_FUNCTIONAL_FIXTURE_ERROR=' +
+        sanitizeDiagnostic(JSON.stringify({
+          name: error instanceof Error ? error.name : 'Error',
+          code: error && typeof error === 'object' && 'code' in error ? String(error.code || '') : '',
+          message: error instanceof Error ? error.message : String(error),
+        })),
+    );
+  }
+});
 
 http.createServer((_req, res) => {
   res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  res.end(JSON.stringify({ ok: true, mode }));
+  res.end(JSON.stringify({ ok: !acceptanceError, mode }));
 }).listen(3000, '0.0.0.0');
