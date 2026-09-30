@@ -72,8 +72,11 @@ function safeFileName(attachment: EnterpriseAiInboundAttachment, fallback: strin
 }
 
 async function loadTelegramFile(botToken: string, attachment: EnterpriseAiInboundAttachment) {
+  if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(botToken)) {
+    throw new Error('Telegram bot token format is invalid.');
+  }
   const metadataResponse = await fetch(
-    `https://api.telegram.org/bot${encodeURIComponent(botToken)}/getFile?file_id=${encodeURIComponent(attachment.providerFileId)}`,
+    `https://api.telegram.org/bot${botToken}/getFile?file_id=${encodeURIComponent(attachment.providerFileId)}`,
   );
   const metadata = await metadataResponse.json().catch(() => null) as {
     ok?: boolean;
@@ -89,7 +92,7 @@ async function loadTelegramFile(botToken: string, attachment: EnterpriseAiInboun
   }
 
   const response = await fetch(
-    `https://api.telegram.org/file/bot${encodeURIComponent(botToken)}/${filePath.split('/').map(encodeURIComponent).join('/')}`,
+    `https://api.telegram.org/file/bot${botToken}/${filePath.split('/').map(encodeURIComponent).join('/')}`,
   );
   if (!response.ok) throw new Error('Telegram attachment download failed.');
   const bytes = await response.arrayBuffer();
