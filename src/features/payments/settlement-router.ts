@@ -3,11 +3,13 @@ import {
   findBillingCheckoutSettlementContext,
   markBillingCheckoutAwaitingConfirmation,
   markBillingCheckoutCompleted,
+  markBillingCheckoutFailedOnly,
   markBillingCheckoutTerminalFailure,
 } from '@/features/billing/server/drizzle-checkout-settlement';
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
 import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server/repository';
+import { applyEnterpriseAiFundingSettlement } from '@/features/ai-runtime/server/enterprise-funding-settlement';
 import { grantCurrentPeriodAllowance } from '@/features/usage-credits/server/period-grants';
 import { db } from '@/shared/db';
 
@@ -53,12 +55,16 @@ async function applySaasSettlement(input: {
   if (!context || context.provider !== input.provider) throw new Error('Billing checkout not found.');
 
   if (input.status === 'failed') {
-    await markBillingCheckoutTerminalFailure(
-      input.checkoutId,
-      context.subscriptionId,
-      `${input.provider}_failed`,
-      input.occurredAt,
-    );
+    if (context.purpose === 'enterprise_ai_funding') {
+      await markBillingCheckoutFailedOnly(input.checkoutId, input.occurredAt);
+    } else {
+      await markBillingCheckoutTerminalFailure(
+        input.checkoutId,
+        context.subscriptionId,
+        `${input.provider}_failed`,
+        input.occurredAt,
+      );
+    }
     return { settled: false, status: 'failed' as const };
   }
   if (input.status !== 'success') {
@@ -73,6 +79,20 @@ async function applySaasSettlement(input: {
     input.amountPaidMinor < providerAmountExpectedMinor
   ) {
     throw new Error('Provider settlement does not match the Mkety billing checkout quote.');
+  }
+
+  if (context.purpose === 'enterprise_ai_funding') {
+    const result = await applyEnterpriseAiFundingSettlement({
+      checkoutId: input.checkoutId,
+      provider: input.provider,
+      providerPaymentId: input.providerPaymentId,
+      providerEventId: input.providerEventId,
+      providerAmountPaidMinor: input.amountPaidMinor,
+      providerCurrencyPaid: input.currencyPaid,
+      rawReference: input.rawReference,
+      occurredAt: input.occurredAt,
+    });
+    return { settled: true, status: result.applied ? 'applied' as const : 'duplicate' as const };
   }
 
   const settlement: NormalizedSettlement = {
