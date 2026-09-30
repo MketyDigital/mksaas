@@ -374,3 +374,12 @@ A future v4 migration may be appropriate, but it must be done as a controlled re
 5. do not operate both versions as normal production payment paths on the same Flutterwave integration.
 
 Until that migration is explicitly approved and implemented, the authoritative Flutterwave architecture is v3.
+
+
+## Flutterwave payment-method availability
+
+Mkety intentionally does not send Flutterwave's `payment_options` parameter from Inline or Standard checkout. The Flutterwave Dashboard is the operational authority for payment-method activation, while Flutterwave filters the enabled methods against the collection currency used for the transaction. This keeps Mkety from accidentally hiding newly approved methods and lets provider-approved methods become available without an application deployment.
+
+The customer first chooses a supported Mkety collection currency. Mkety still requires an explicit database-managed commercial FX rate for every non-USD collection currency. Flutterwave then decides which account-approved methods are valid for that currency (for example cards, local bank/payment rails, mobile money, wallets, QR or transfer methods). Methods that are still pending Flutterwave review must remain unavailable until the provider approves them; Mkety must not represent a pending method as already live.
+
+Settlement safety is unchanged: browser/modal success never grants value. Mkety verifies the provider event, re-queries the transaction server-side, and validates reference, amount and currency before applying settlement.

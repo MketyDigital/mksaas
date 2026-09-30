@@ -76,6 +76,9 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
                   {channel.supportsInbound ? <span className="rounded-full bg-muted px-2.5 py-1">Inbound</span> : null}
                   {channel.supportsOutbound ? <span className="rounded-full bg-muted px-2.5 py-1">Outbound</span> : null}
                   {channel.supportsHumanHandoff ? <span className="rounded-full bg-muted px-2.5 py-1">Human handoff</span> : null}
+                  {channel.supportsImages ? <span className="rounded-full bg-muted px-2.5 py-1">Images</span> : null}
+                  {channel.supportsVoiceNotes ? <span className="rounded-full bg-muted px-2.5 py-1">Voice notes</span> : null}
+                  {channel.supportsDocuments ? <span className="rounded-full bg-muted px-2.5 py-1">Documents</span> : null}
                 </div>
 
                 <p className="flex items-center gap-2 text-muted-foreground">

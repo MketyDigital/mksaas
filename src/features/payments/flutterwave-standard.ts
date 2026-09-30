@@ -9,6 +9,17 @@ const STANDARD_ENDPOINT = 'https://api.flutterwave.com/v3/payments';
 
 export type MketyFlutterwaveFxQuoteSource = 'identity' | 'configured';
 
+/**
+ * Flutterwave payment-method availability is intentionally dashboard-driven.
+ *
+ * We do not send payment_options from Mkety. Flutterwave can then expose every
+ * method enabled/approved on the merchant account and automatically filter out
+ * methods that are not valid for the checkout currency. This also means a
+ * method that is pending provider review can become available after approval
+ * without an Mkety deploy.
+ */
+export const MKETY_FLUTTERWAVE_PAYMENT_METHOD_MODE = 'dashboard-currency-aware' as const;
+
 function minorToDecimal(value: bigint): string {
   const units = value / 100n;
   const cents = (value % 100n).toString().padStart(2, '0');
@@ -182,6 +193,8 @@ export async function createFlutterwaveHostedCheckout(input: {
         description: 'Secure Mkety payment',
         logo: 'https://mkety.com/icon.png',
       },
+      // Deliberately omit payment_options. The Flutterwave Dashboard is the
+      // authority for approved methods; Flutterwave filters them by currency.
       meta: input.metadata,
     }),
   });

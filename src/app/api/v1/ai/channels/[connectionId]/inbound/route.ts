@@ -293,6 +293,7 @@ export async function POST(
       contextId: inbound.conversationId,
       replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
       text: inbound.text,
+      attachments: inbound.attachments,
       solutionInstanceId:
         typeof connection.metadata.solutionInstanceId === 'string'
           ? connection.metadata.solutionInstanceId
@@ -363,6 +364,7 @@ export async function POST(
           contextId: inbound.conversationId,
           replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
           text: inbound.text,
+          attachments: inbound.attachments ?? [],
           sourceProviderMessageId: inbound.providerMessageId,
           inboundRetry: {
             originalProviderMessageId: inbound.providerMessageId,

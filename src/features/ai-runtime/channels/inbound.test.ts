@@ -32,6 +32,65 @@ describe('Enterprise AI channel inbound verification', () => {
     });
   });
 
+  it('normalizes Telegram image and voice-note attachments without requiring caption text', () => {
+    const headers = new Headers({ 'x-telegram-bot-api-secret-token': 'telegram-secret' });
+
+    const image = verifyAndNormalizeEnterpriseAiInbound({
+      channel: 'telegram',
+      rawBody: JSON.stringify({
+        message: {
+          message_id: 56,
+          from: { id: 1001 },
+          chat: { id: 2002 },
+          photo: [
+            { file_id: 'small-photo', file_size: 1000, width: 100, height: 100 },
+            { file_id: 'large-photo', file_size: 5000, width: 1000, height: 1000 },
+          ],
+        },
+      }),
+      headers,
+      credentials: { webhookSecret: 'telegram-secret' },
+    });
+    expect(image).toMatchObject({
+      text: 'Please analyze the attached content.',
+      attachments: [{
+        kind: 'image',
+        providerFileId: 'large-photo',
+        mimeType: 'image/jpeg',
+        sizeBytes: 5000,
+      }],
+    });
+
+    const voice = verifyAndNormalizeEnterpriseAiInbound({
+      channel: 'telegram',
+      rawBody: JSON.stringify({
+        message: {
+          message_id: 57,
+          from: { id: 1001 },
+          chat: { id: 2002 },
+          voice: {
+            file_id: 'voice-note',
+            file_size: 4096,
+            duration: 12,
+            mime_type: 'audio/ogg',
+          },
+        },
+      }),
+      headers,
+      credentials: { webhookSecret: 'telegram-secret' },
+    });
+    expect(voice).toMatchObject({
+      text: 'Please respond to this voice note.',
+      attachments: [{
+        kind: 'audio',
+        providerFileId: 'voice-note',
+        mimeType: 'audio/ogg',
+        sizeBytes: 4096,
+        durationSeconds: 12,
+      }],
+    });
+  });
+
   it('rejects Slack replays outside the five-minute window and verifies valid signatures', () => {
     const now = Date.parse('2026-09-28T10:00:00Z');
     const timestamp = String(now / 1000);

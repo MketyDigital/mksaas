@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { revealChannelCredentials } from '@/features/ai-runtime/channels/credentials';
+import type { EnterpriseAiInboundAttachment } from '@/features/ai-runtime/channels/inbound';
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import {
   beginEnterpriseAiScheduledActionDispatch,
@@ -28,6 +29,25 @@ import {
   aiScheduledActions,
   aiSolutionInstances,
 } from '@/shared/db/schema/ai-runtime';
+
+function scheduledAttachments(value: unknown): EnterpriseAiInboundAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 3).flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const kind = record.kind;
+    const providerFileId = typeof record.providerFileId === 'string' ? record.providerFileId.trim() : '';
+    if (!['image', 'audio', 'document'].includes(String(kind)) || !providerFileId) return [];
+    return [{
+      kind: kind as EnterpriseAiInboundAttachment['kind'],
+      providerFileId: providerFileId.slice(0, 300),
+      ...(typeof record.mimeType === 'string' ? { mimeType: record.mimeType.slice(0, 120) } : {}),
+      ...(typeof record.fileName === 'string' ? { fileName: record.fileName.slice(0, 240) } : {}),
+      ...(Number.isFinite(Number(record.sizeBytes)) ? { sizeBytes: Number(record.sizeBytes) } : {}),
+      ...(Number.isFinite(Number(record.durationSeconds)) ? { durationSeconds: Number(record.durationSeconds) } : {}),
+    }];
+  });
+}
 
 function parseChannel(providerKey: string) {
   if (!providerKey.startsWith('channel:')) return null;
@@ -188,6 +208,7 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
         replyToId: typeof value.replyToId === 'string' ? value.replyToId : undefined,
         contextId: typeof value.contextId === 'string' ? value.contextId : externalConversationId,
         text: inboundText,
+        attachments: scheduledAttachments(rawPayload.attachments),
         solutionInstanceId: action.solutionInstanceId,
         requestedModel: typeof value.requestedModel === 'string' ? value.requestedModel : undefined,
         skipInboundRecord: true,

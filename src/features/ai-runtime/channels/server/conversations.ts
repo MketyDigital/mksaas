@@ -1,5 +1,6 @@
 import { and, desc, eq, gt, inArray, lte, or, sql } from 'drizzle-orm';
 
+import type { EnterpriseAiInboundAttachment } from '@/features/ai-runtime/channels/inbound';
 import type { EnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { db } from '@/shared/db/cloudflare';
 import {
@@ -15,6 +16,7 @@ export type EnterpriseAiScheduledPayload = {
   replyToId?: string;
   contextId?: string;
   sourceProviderMessageId?: string;
+  attachments?: EnterpriseAiInboundAttachment[];
   commitment?: string;
   sourceQuote?: string;
   inboundRetry?: {

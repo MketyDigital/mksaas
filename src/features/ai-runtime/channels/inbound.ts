@@ -3,12 +3,22 @@ import { createHmac, createPublicKey, timingSafeEqual, verify as verifySignature
 import type { EnterpriseAiChannelCredentials } from './credentials';
 import type { EnterpriseAiChannelKey } from './registry';
 
+export type EnterpriseAiInboundAttachment = {
+  kind: 'image' | 'audio' | 'document';
+  providerFileId: string;
+  mimeType?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  durationSeconds?: number;
+};
+
 export type NormalizedEnterpriseAiInbound = {
   senderId: string;
   conversationId: string;
   providerMessageId: string;
   text: string;
   replyRecipientId: string;
+  attachments?: EnterpriseAiInboundAttachment[];
 };
 
 function safeEqual(left: string, right: string) {
@@ -159,12 +169,86 @@ function normalizeTelegram(payload: Record<string, unknown>): NormalizedEnterpri
   if (!message) throw new Error('Telegram message payload is missing.');
   const chat = message.chat as Record<string, unknown> | undefined;
   const from = message.from as Record<string, unknown> | undefined;
+  const attachments: EnterpriseAiInboundAttachment[] = [];
+
+  const photos = Array.isArray(message.photo)
+    ? message.photo.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
+  const photo = photos
+    .filter((item) => typeof item.file_id === 'string' && item.file_id)
+    .sort((left, right) => Number(right.file_size ?? 0) - Number(left.file_size ?? 0))[0];
+  if (photo) {
+    attachments.push({
+      kind: 'image',
+      providerFileId: String(photo.file_id),
+      mimeType: 'image/jpeg',
+      ...(Number.isFinite(Number(photo.file_size)) ? { sizeBytes: Number(photo.file_size) } : {}),
+    });
+  }
+
+  const voice = message.voice && typeof message.voice === 'object'
+    ? message.voice as Record<string, unknown>
+    : null;
+  const audio = message.audio && typeof message.audio === 'object'
+    ? message.audio as Record<string, unknown>
+    : null;
+  const audioSource = voice ?? audio;
+  if (audioSource && typeof audioSource.file_id === 'string' && audioSource.file_id) {
+    attachments.push({
+      kind: 'audio',
+      providerFileId: String(audioSource.file_id),
+      ...(typeof audioSource.mime_type === 'string' ? { mimeType: audioSource.mime_type } : {}),
+      ...(typeof audioSource.file_name === 'string' ? { fileName: audioSource.file_name } : {}),
+      ...(Number.isFinite(Number(audioSource.file_size)) ? { sizeBytes: Number(audioSource.file_size) } : {}),
+      ...(Number.isFinite(Number(audioSource.duration)) ? { durationSeconds: Number(audioSource.duration) } : {}),
+    });
+  }
+
+  const document = message.document && typeof message.document === 'object'
+    ? message.document as Record<string, unknown>
+    : null;
+  if (document && typeof document.file_id === 'string' && document.file_id) {
+    const mimeType = typeof document.mime_type === 'string' ? document.mime_type : '';
+    if (
+      mimeType.startsWith('image/') ||
+      mimeType === 'application/pdf' ||
+      mimeType === 'text/plain' ||
+      mimeType === 'text/csv' ||
+      mimeType.includes('word') ||
+      mimeType.includes('spreadsheet') ||
+      mimeType.includes('excel')
+    ) {
+      attachments.push({
+        kind: mimeType.startsWith('image/') ? 'image' : 'document',
+        providerFileId: String(document.file_id),
+        ...(mimeType ? { mimeType } : {}),
+        ...(typeof document.file_name === 'string' ? { fileName: document.file_name } : {}),
+        ...(Number.isFinite(Number(document.file_size)) ? { sizeBytes: Number(document.file_size) } : {}),
+      });
+    }
+  }
+
+  const rawText = typeof message.text === 'string'
+    ? message.text.trim()
+    : typeof message.caption === 'string'
+      ? message.caption.trim()
+      : '';
+  const text = rawText || (
+    attachments.some((item) => item.kind === 'audio')
+      ? 'Please respond to this voice note.'
+      : attachments.length
+        ? 'Please analyze the attached content.'
+        : ''
+  );
+  if (!text) throw new Error('Telegram message text or supported attachment is missing.');
+
   return {
     senderId: String(from?.id ?? chat?.id ?? ''),
     conversationId: String(chat?.id ?? ''),
     providerMessageId: String(message.message_id ?? ''),
-    text: requireString(message.text ?? message.caption, 'Telegram message text'),
+    text,
     replyRecipientId: String(chat?.id ?? ''),
+    ...(attachments.length ? { attachments: attachments.slice(0, 3) } : {}),
   };
 }
 

@@ -43,6 +43,9 @@ export function FlutterwaveInlineLauncher({ payload }: { payload: FlutterwaveInl
         email: payload.email,
         ...(payload.customerName ? { name: payload.customerName } : {}),
       },
+      // Do not send payment_options: Flutterwave Dashboard activation and
+      // the selected currency determine the available card/bank/wallet/mobile
+      // money methods, including methods approved after this deployment.
       meta: payload.metadata,
       customizations: {
         title: 'Mkety',
@@ -78,8 +81,9 @@ export function FlutterwaveInlineLauncher({ payload }: { payload: FlutterwaveInl
           {ready ? 'Continue with Flutterwave' : 'Loading secure checkout…'}
         </button>
         <p className="mt-4 text-xs leading-5 text-muted-foreground">
-          Payment completion in the modal does not by itself activate access. Mkety waits for a verified provider
-          webhook and server-side transaction verification.
+          Available card, bank, transfer, mobile-money and wallet methods are determined by your selected currency
+          and the methods enabled for Mkety by Flutterwave. Payment completion in the modal does not by itself activate
+          access; Mkety waits for a verified provider webhook and server-side transaction verification.
         </p>
       </div>
     </>
