@@ -135,6 +135,36 @@ describe('central Mkety AI runtime', () => {
   });
 
 
+  it('honors an operator-defined mkety-* managed alias from the database', async () => {
+    routeMock.mockResolvedValue({
+      alias: { alias: 'mkety-frontier' },
+      model: {
+        providerKey: 'workers-ai',
+        nativeModel: '@cf/zai-org/glm-5.3-flash',
+      },
+      route: { id: 'route-frontier' },
+    } as never);
+    const complete = jest.fn().mockResolvedValue({
+      text: 'frontier',
+      usage: { inputTokens: 1n, cachedInputTokens: 0n, outputTokens: 1n },
+      finishReason: 'stop',
+    });
+    managedMock.mockReturnValue({ complete } as never);
+
+    await runCentralAi({
+      tenantId: 'tenant-1',
+      model: 'mkety-frontier',
+      system: '',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    expect(routeMock).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      projectId: null,
+      requestedModel: 'mkety-frontier',
+    });
+  });
+
   it('routes a managed alias through an approved Mkety-owned external provider connection', async () => {
     routeMock.mockResolvedValue({
       alias: { alias: 'mkety-smart' },
