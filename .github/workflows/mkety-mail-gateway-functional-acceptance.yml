@@ -54,7 +54,7 @@ jobs:
           const x=require('/tmp/gateway-runs.json');
           const run=(x.workflow_runs||[]).find(r=>r.event==='push'&&r.status==='completed'&&r.conclusion==='success'&&r.head_sha);
           if(!run) process.exit(1);
-          process.stdout.write(run.head_sha+' '+run.id);
+          console.log(run.head_sha+' '+run.id);
           NODE
             )
           fi
