@@ -1,5 +1,5 @@
 import { addMonths } from 'date-fns';
-import { and, desc, eq, isNull, like, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
@@ -7,6 +7,7 @@ import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/serve
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { db } from '@/shared/db';
 import {
+  aiEnterpriseCommercialPolicies,
   billingCheckouts,
   billingLedgerEntries,
   billingPeriods,
@@ -26,6 +27,30 @@ const CONTRACT_PREFIX = 'enterprise-ai-contract-';
 
 function contractPlanKey(tenantId: string) {
   return `${CONTRACT_PREFIX}${tenantId}`;
+}
+
+
+function parseUsdMinorField(value: FormDataEntryValue | null, label: string, options: { allowZero?: boolean } = {}) {
+  const text = String(value ?? '').trim();
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) throw new Error(`Enter a valid ${label} USD amount.`);
+  const fraction = (match[2] ?? '').padEnd(2, '0');
+  const amount = BigInt(match[1]) * 100n + BigInt(fraction || '0');
+  if (options.allowZero ? amount < 0n : amount <= 0n) {
+    throw new Error(`${label} must be ${options.allowZero ? 'zero or greater' : 'greater than zero'}.`);
+  }
+  return amount;
+}
+
+function parseCostShareBps(value: FormDataEntryValue | null) {
+  const text = String(value ?? '15').trim();
+  const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) throw new Error('Managed AI cost share must be a percentage between 0.01 and 100.');
+  const bps = Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
+  if (!Number.isInteger(bps) || bps < 1 || bps > 10_000) {
+    throw new Error('Managed AI cost share must be a percentage between 0.01 and 100.');
+  }
+  return bps;
 }
 
 function parseUsdMinor(value: FormDataEntryValue | null) {
@@ -63,6 +88,16 @@ export async function createEnterpriseAiContractVersion(
   if (!target) throw new Error('Target customer workspace was not found.');
 
   const amountMinor = parseUsdMinor(formData.get('monthlyPriceUsd'));
+  const fundingMode = String(formData.get('fundingMode') ?? 'full_period') === 'prepaid_partial'
+    ? 'prepaid_partial'
+    : 'full_period';
+  const minimumFundingMinor = fundingMode === 'prepaid_partial'
+    ? parseUsdMinorField(formData.get('minimumFundingUsd') ?? formData.get('monthlyPriceUsd'), 'minimum funding')
+    : amountMinor;
+  if (minimumFundingMinor > amountMinor) throw new Error('Minimum funding cannot exceed the monthly commitment.');
+  const managedCostShareBps = parseCostShareBps(formData.get('managedCostSharePercent'));
+  const setupFeeMinor = parseUsdMinorField(formData.get('setupFeeUsd') ?? '0', 'setup fee', { allowZero: true });
+  const creditRollover = String(formData.get('creditRollover') ?? 'yes') !== 'no';
   const includedCredits = parseCredits(formData.get('includedCredits'));
   const entitlements = parseIncludedEntitlements(formData);
   const name = String(formData.get('name') ?? '').trim().slice(0, 255)
@@ -115,6 +150,16 @@ export async function createEnterpriseAiContractVersion(
       effectiveFrom: now,
     }).returning({ id: billingPlanVersions.id });
     if (!version) throw new Error('Enterprise AI contract version could not be created.');
+
+    await tx.insert(aiEnterpriseCommercialPolicies).values({
+      planVersionId: version.id,
+      minimumFundingMinor,
+      managedCostShareBps,
+      setupFeeMinor,
+      fundingMode,
+      creditRollover,
+      hardStop: true,
+    });
 
     await tx.insert(billingPlanVersionEntitlements).values(
       entitlements.map((entitlementKey) => ({
