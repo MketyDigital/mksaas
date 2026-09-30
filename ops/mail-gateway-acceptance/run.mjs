@@ -26,6 +26,19 @@ function appPasswordHash(value) {
   return '{SSHA256}' + Buffer.concat([digest, salt]).toString('base64');
 }
 
+function verifyAppPasswordHash(value, encoded) {
+  if (!String(encoded || '').startsWith('{SSHA256}')) return false;
+  const decoded = Buffer.from(String(encoded).slice('{SSHA256}'.length), 'base64');
+  if (decoded.length <= 32) return false;
+  const digest = decoded.subarray(0, 32);
+  const salt = decoded.subarray(32);
+  const actual = crypto
+    .createHash('sha256')
+    .update(Buffer.concat([Buffer.from(value, 'utf8'), salt]))
+    .digest();
+  return digest.length === actual.length && crypto.timingSafeEqual(digest, actual);
+}
+
 async function cleanup() {
   const rows = await sql`select id from saas_template.tenants where slug = ${slug} limit 1`;
   if (rows[0]?.id) await sql`delete from saas_template.tenants where id = ${rows[0].id}`;
@@ -66,6 +79,125 @@ async function setup() {
   });
 }
 
+async function verifyAuthFixture() {
+  const tenantRows = await sql`
+    select id
+    from saas_template.tenants
+    where slug = ${slug}
+    limit 1
+  `;
+  const tenantId = tenantRows[0]?.id;
+  if (!tenantId) throw new Error('auth_diag_tenant_missing');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=tenant:ok');
+
+  const domainRows = await sql`
+    select id, tenant_id, sending_enabled, routing_enabled
+    from saas_template.mail_domains
+    where domain = ${domainName}
+    limit 1
+  `;
+  const domain = domainRows[0];
+  if (!domain || domain.tenant_id !== tenantId) throw new Error('auth_diag_domain_missing');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=domain:ok');
+
+  const workspaceRows = await sql`
+    select id
+    from saas_template.mail_workspaces
+    where tenant_id = ${tenantId} and status = 'active'
+    limit 1
+  `;
+  if (!workspaceRows[0]?.id) throw new Error('auth_diag_workspace_missing');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=workspace:ok');
+
+  const mailboxRows = await sql`
+    select id, domain_id, local_part, status
+    from saas_template.mail_mailboxes
+    where tenant_id = ${tenantId}
+      and domain_id = ${domain.id}
+      and local_part = 'client'
+      and status = 'active'
+    limit 1
+  `;
+  const mailbox = mailboxRows[0];
+  if (!mailbox?.id) throw new Error('auth_diag_mailbox_missing');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=mailbox:ok');
+
+  const subscriptionRows = await sql`
+    select plan_version_id
+    from saas_template.billing_subscriptions
+    where tenant_id = ${tenantId}
+      and (
+        (
+          status in ('trialing', 'active')
+          and (current_period_end is null or current_period_end > now())
+        )
+        or (status = 'cancel_at_period_end' and current_period_end > now())
+        or (status = 'past_due' and grace_period_end > now())
+      )
+    order by updated_at desc
+  `;
+  for (const row of subscriptionRows) {
+    await sql`
+      select entitlement_key, enabled
+      from saas_template.billing_plan_version_entitlements
+      where plan_version_id = ${row.plan_version_id}
+    `;
+  }
+
+  const overrideRows = await sql`
+    select entitlement_key, effect, expires_at
+    from saas_template.tenant_entitlement_overrides
+    where tenant_id = ${tenantId}
+  `;
+  const now = Date.now();
+  const mailOverrides = overrideRows.filter((row) =>
+    row.entitlement_key === 'workspace.mail'
+    && (!row.expires_at || new Date(row.expires_at).getTime() > now)
+  );
+  if (mailOverrides.some((row) => row.effect === 'deny')) throw new Error('auth_diag_entitlement_denied');
+  if (!mailOverrides.some((row) => row.effect === 'grant')) throw new Error('auth_diag_entitlement_missing');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=entitlement:ok');
+
+  const credentialRows = await sql`
+    select id, password_prefix, password_hash, revoked_at
+    from saas_template.mail_app_passwords
+    where tenant_id = ${tenantId}
+      and mailbox_id = ${mailbox.id}
+      and revoked_at is null
+  `;
+  const credential = credentialRows.find((row) =>
+    secret.startsWith(String(row.password_prefix || ''))
+    && verifyAppPasswordHash(secret, row.password_hash)
+  );
+  if (!credential?.id) throw new Error('auth_diag_credential_hash_mismatch');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=credential:ok');
+
+  const used = await sql`
+    update saas_template.mail_app_passwords
+    set last_used_at = now()
+    where id = ${credential.id}
+    returning id
+  `;
+  if (!used[0]?.id) throw new Error('auth_diag_last_used_update_failed');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=credential_update:ok');
+
+  const messageRows = await sql`
+    select id, imap_uid, subject
+    from saas_template.mail_messages
+    where tenant_id = ${tenantId}
+      and mailbox_id = ${mailbox.id}
+      and folder = 'inbox'
+      and imap_uid > 0
+    order by imap_uid asc
+    limit 10
+  `;
+  if (!messageRows.some((row) => row.subject === 'Mkety gateway acceptance fixture')) {
+    throw new Error('auth_diag_message_index_missing');
+  }
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DIAG=message_index:ok');
+  console.log('MKETY_MAIL_FUNCTIONAL_AUTH_DB_DIAG_OK=true');
+}
+
 async function revoke() {
   const tenant = await sql`select id from saas_template.tenants where slug = ${slug} limit 1`;
   if (!tenant[0]?.id) throw new Error('Acceptance tenant not found for revocation.');
@@ -101,6 +233,7 @@ console.log('MKETY_MAIL_FUNCTIONAL_HEALTH_READY=true');
 try {
   if (mode === 'setup') {
     await setup();
+    await verifyAuthFixture();
     acceptanceReady = true;
     console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_READY=true');
   } else if (mode === 'revoke') {
