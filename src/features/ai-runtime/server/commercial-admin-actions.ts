@@ -1,14 +1,15 @@
 'use server';
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
-import { aiModels, aiRateCards, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
+import { aiModelAliases, aiModels, aiRateCards, aiRoutes, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 
 import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
+import { PUBLIC_AI_MODEL_REGISTRY, type PublicAIProviderId } from '@/features/public-assistant/models';
 
 function parsePositiveBigInt(value: FormDataEntryValue | null, label: string) {
   const raw = String(value ?? '').trim();
@@ -40,6 +41,166 @@ async function requireAiCommercialOps(tenantSlug: string) {
 function revalidateAiOps(tenantSlug: string) {
   revalidatePath(`/t/${tenantSlug}/admin/platform-control/ai-operations`);
   revalidatePath(`/t/${tenantSlug}/admin/platform-control`);
+}
+
+
+const MANAGED_PROVIDER_KEYS = [
+  'workers-ai',
+  'openai',
+  'azure-openai',
+  'gemini',
+  'vertex',
+  'cloudflare-ai',
+  'bedrock',
+  'openai-compatible',
+] as const;
+
+function parseManagedProvider(value: FormDataEntryValue | null) {
+  const provider = String(value ?? '').trim();
+  if (!(MANAGED_PROVIDER_KEYS as readonly string[]).includes(provider)) {
+    throw new Error('Unsupported managed AI provider.');
+  }
+  return provider;
+}
+
+function parseOptionalPositiveBigInt(value: FormDataEntryValue | null, label: string) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  return parsePositiveBigInt(raw, label);
+}
+
+export async function reconcilePublishedManagedAiCatalog(tenantSlug: string) {
+  await requireAiCommercialOps(tenantSlug);
+
+  for (const [providerKey, provider] of Object.entries(PUBLIC_AI_MODEL_REGISTRY) as Array<
+    [PublicAIProviderId, (typeof PUBLIC_AI_MODEL_REGISTRY)[PublicAIProviderId]]
+  >) {
+    for (const definition of provider.models) {
+      await db.insert(aiModels).values({
+        providerKey,
+        nativeModel: definition.id,
+        displayName: definition.id,
+        status: definition.status === 'current-stable' ? 'candidate' : 'limited',
+        managed: true,
+        enabled: false,
+        capabilities: {
+          text: true,
+          vision: true,
+          embeddings: false,
+          tools: true,
+          reasoning: true,
+          structuredOutput: true,
+        },
+        limits: { contextTokens: 128_000, maxOutputTokens: 32_768 },
+        providerCostMetadata: {},
+      }).onConflictDoNothing({
+        target: [aiModels.providerKey, aiModels.nativeModel],
+      });
+    }
+  }
+
+  revalidateAiOps(tenantSlug);
+}
+
+export async function upsertManagedAiModel(tenantSlug: string, formData: FormData) {
+  await requireAiCommercialOps(tenantSlug);
+  const providerKey = parseManagedProvider(formData.get('providerKey'));
+  const nativeModel = String(formData.get('nativeModel') ?? '').trim().slice(0, 200);
+  const displayName = String(formData.get('displayName') ?? '').trim().slice(0, 160) || nativeModel;
+  const alias = String(formData.get('alias') ?? '').trim().slice(0, 128);
+  if (!nativeModel) throw new Error('Native model is required.');
+  if (!alias || !/^mkety-[a-z0-9][a-z0-9-]{1,80}$/.test(alias)) {
+    throw new Error('Managed alias must use the mkety-* format.');
+  }
+
+  const contextTokens = parseIntegerInRange(formData.get('contextTokens'), 'Context tokens', 1_024, 10_000_000);
+  const maxOutputTokens = parseIntegerInRange(formData.get('maxOutputTokens'), 'Maximum output tokens', 1, 1_000_000);
+  const inputCost = parseOptionalPositiveBigInt(formData.get('inputUsdMicrosPerMillion'), 'Input provider cost');
+  const cachedCost = parseOptionalPositiveBigInt(formData.get('cachedInputUsdMicrosPerMillion'), 'Cached input provider cost');
+  const outputCost = parseOptionalPositiveBigInt(formData.get('outputUsdMicrosPerMillion'), 'Output provider cost');
+  const verifiedAt = String(formData.get('providerCostVerifiedAt') ?? '').trim();
+  const enabled = formData.get('enabled') === 'on';
+
+  if (enabled && providerKey !== 'workers-ai' && (!inputCost || !outputCost || !verifiedAt)) {
+    throw new Error('External managed models require verified input/output provider costs and a verification date before enabling.');
+  }
+
+  await db.transaction(async (tx) => {
+    const existing = await tx.query.aiModels.findFirst({
+      where: and(eq(aiModels.providerKey, providerKey), eq(aiModels.nativeModel, nativeModel)),
+    });
+    const values = {
+      displayName,
+      status: enabled ? 'approved' : 'candidate',
+      managed: true,
+      enabled,
+      capabilities: {
+        text: true,
+        vision: formData.get('vision') === 'on',
+        embeddings: false,
+        tools: formData.get('tools') === 'on',
+        reasoning: formData.get('reasoning') === 'on',
+        structuredOutput: formData.get('structuredOutput') === 'on',
+      },
+      limits: { contextTokens, maxOutputTokens },
+      providerCostMetadata: inputCost && outputCost && verifiedAt ? {
+        inputUsdMicrosPerMillion: inputCost.toString(),
+        ...(cachedCost ? { cachedInputUsdMicrosPerMillion: cachedCost.toString() } : {}),
+        outputUsdMicrosPerMillion: outputCost.toString(),
+        providerCostVerifiedAt: verifiedAt,
+      } : {},
+      updatedAt: new Date(),
+    };
+
+    let modelId: string;
+    if (existing) {
+      await tx.update(aiModels).set(values).where(eq(aiModels.id, existing.id));
+      modelId = existing.id;
+    } else {
+      const [created] = await tx.insert(aiModels).values({
+        providerKey,
+        nativeModel,
+        ...values,
+      }).returning({ id: aiModels.id });
+      if (!created) throw new Error('Managed AI model could not be created.');
+      modelId = created.id;
+    }
+
+    await tx.insert(aiModelAliases).values({
+      alias,
+      modelId,
+      stable: true,
+    }).onConflictDoUpdate({
+      target: aiModelAliases.alias,
+      set: { modelId, stable: true, updatedAt: new Date() },
+    });
+
+    const existingRoute = await tx.query.aiRoutes.findFirst({
+      where: and(
+        eq(aiRoutes.modelAlias, alias),
+        isNull(aiRoutes.tenantId),
+        isNull(aiRoutes.projectId),
+      ),
+    });
+    if (existingRoute) {
+      await tx.update(aiRoutes).set({
+        enabled,
+        priority: 100,
+        updatedAt: new Date(),
+      }).where(eq(aiRoutes.id, existingRoute.id));
+    } else {
+      await tx.insert(aiRoutes).values({
+        tenantId: null,
+        projectId: null,
+        modelAlias: alias,
+        priority: 100,
+        enabled,
+        policy: {},
+      });
+    }
+  });
+
+  revalidateAiOps(tenantSlug);
 }
 
 export async function createAiRateCard(tenantSlug: string, formData: FormData) {
