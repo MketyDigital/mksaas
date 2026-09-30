@@ -27,6 +27,7 @@ describe('Mkety Mail gateway production contract', () => {
     expect(check.stderr).toBe('');
     expect(gateway).toContain("MKETY_MAIL_GATEWAY_API_BASE_URL");
     expect(gateway).toContain("MKETY_MAIL_GATEWAY_INTERNAL_SECRET");
+    expect(gateway).toContain("payload?.detail||payload?.error");
     expect(gateway).not.toContain('DATABASE_URL');
     expect(gateway).not.toContain('postgres');
   });
