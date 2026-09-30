@@ -21,6 +21,7 @@ import { defaultAppExperience } from '@/features/platform-app-experience/default
 import { getPublishedAppExperience , getPublishedControlCenterModule } from '@/features/platform-app-experience/server/queries';
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -147,7 +148,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
           entityKey="production"
           title="App experience draft"
           description="Validate dashboard, workspace, and Platform Control Center configuration through the server-side Mkety app-experience boundary."
-          defaultPayload={currentAppExperience ?? defaultAppExperience}
+          defaultPayload={await getEditorialDraft(tenant, { area: 'app-experience', entityType: 'app_experience', entityKey: 'production' }) ?? currentAppExperience ?? defaultAppExperience}
         />
       )}
 

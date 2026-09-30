@@ -218,6 +218,22 @@ export const platformContentRevisions = appSchema.table(
   (table) => [index('platform_content_revisions_entity_idx').on(table.entityType, table.entityId), index('platform_content_revisions_actor_idx').on(table.actorId)],
 );
 
+// A staged editorial payload is separate from the canonical published records.
+// Admin saves never remove the published content while an edit awaits review.
+export const platformEditorialDrafts = appSchema.table(
+  'platform_editorial_drafts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    area: varchar('area', { length: 40 }).notNull(),
+    entityType: varchar('entity_type', { length: 40 }).notNull(),
+    entityKey: varchar('entity_key', { length: 180 }).notNull(),
+    payloadJson: jsonb('payload_json').$type<PlatformJson>().notNull(),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('platform_editorial_drafts_key_idx').on(table.area, table.entityType, table.entityKey)],
+);
+
 export const platformSiteSettingsRelations = relations(platformSiteSettings, ({ one }) => ({
   creator: one(users, { fields: [platformSiteSettings.createdBy], references: [users.id] }),
   updater: one(users, { fields: [platformSiteSettings.updatedBy], references: [users.id] }),

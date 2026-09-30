@@ -253,6 +253,13 @@
       "when": 1790611200000,
       "tag": "0035_enterprise_ai_commercial_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790614800000,
+      "tag": "0036_platform_editorial_drafts",
+      "breakpoints": true
     }
   ]
 }

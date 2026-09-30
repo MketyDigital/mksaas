@@ -14,6 +14,7 @@ import type { PlatformJson } from '@/shared/db/schema/platform-content';
 
 import { recordPlatformContentAuditEvent } from './audit';
 import { requirePlatformContentAccess } from './authorization';
+import { readEditorialDraft, removeEditorialDraft, stageEditorialDraft } from './editorial-drafts';
 
 const ENTITY_KEY = 'public-pages';
 const MANAGED_PUBLIC_PAGE_SLUGS = MKETY_PUBLIC_PAGE_DEFAULTS.map((page) => page.slug);
@@ -57,6 +58,14 @@ async function recordAuditSafely(input: {
 
 export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPagesAdminPayload) {
   const parsed = publicPagesAdminPayloadSchema.parse(payload);
+  const actor = await requirePlatformContentAccess(tenantSlug);
+  await stageEditorialDraft({ area: 'public-site', entityType: 'page', entityKey: ENTITY_KEY }, parsed, actor.userId);
+  const mutatedRecords = 1;
+  const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.draft_saved', payload: parsed, mutatedRecords });
+  return { ok: true as const, status: 'draft_saved' as const, actorEmail: actor.email, area: 'public-site' as const, entityType: 'page' as const, entityKey: ENTITY_KEY, mutatedRecords, auditRecorded };
+}
+
+async function applyPublicPagesDraft(tenantSlug: string, parsed: PublicPagesAdminPayload) {
   const actor = await requirePlatformContentAccess(tenantSlug);
 
   const mutatedRecords = await db.transaction(async (tx) => {
@@ -197,6 +206,9 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
 
 export async function publishPublicPages(tenantSlug: string) {
   const actor = await requirePlatformContentAccess(tenantSlug);
+  const draftKey = { area: 'public-site' as const, entityType: 'page' as const, entityKey: ENTITY_KEY };
+  const staged = await readEditorialDraft(draftKey);
+  if (staged) await applyPublicPagesDraft(tenantSlug, publicPagesAdminPayloadSchema.parse(staged));
   const now = new Date();
 
   const mutatedRecords = await db.transaction(async (tx) => {
@@ -248,6 +260,7 @@ export async function publishPublicPages(tenantSlug: string) {
     mutatedRecords,
   });
   revalidatePublicPages(tenantSlug, MANAGED_PUBLIC_PAGE_SLUGS);
+  if (staged) await removeEditorialDraft(draftKey);
 
   return {
     ok: true as const,

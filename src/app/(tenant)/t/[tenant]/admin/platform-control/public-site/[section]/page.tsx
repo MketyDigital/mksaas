@@ -11,6 +11,7 @@ import {
 } from '@/features/platform-content/defaults';
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
 import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
+import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
 import { getPublishedPublicPageContent } from '@/features/platform-content/server/public-page';
 import { getPublishedDocsTree, getPublishedNavigation, getPublishedPlatformSiteSettings, getPublishedPricingPlans, getRecentPublicAILeads } from '@/features/platform-content/server/queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
@@ -140,7 +141,7 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
           entityKey={sectionModule.entityKey}
           title={`${sectionModule.title} draft`}
           description="Edit the CMS payload, save it as a draft, then publish when it is ready for the public site and Public Mkety AI grounding."
-          defaultPayload={currentPayload}
+          defaultPayload={await getEditorialDraft(tenant, { area: sectionModule.area, entityType: sectionModule.entityType, entityKey: sectionModule.entityKey }) ?? currentPayload}
         />
 
         <Card className="rounded-2xl border-border/70 shadow-sm">

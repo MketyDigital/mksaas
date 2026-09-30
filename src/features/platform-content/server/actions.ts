@@ -18,6 +18,7 @@ import type {
 } from './action-schemas';
 import { recordPlatformContentAuditEvent } from './audit';
 import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
+import { readEditorialDraft, removeEditorialDraft, stageEditorialDraft } from './editorial-drafts';
 import {
   docsArticleSchema,
   docsCategorySchema,
@@ -427,7 +428,9 @@ async function recordAuditSafely(input: {
 export async function savePlatformContentDraft(tenantSlug: string, input: PlatformContentDraftActionInput): Promise<ActionResult> {
   const parsed = platformContentDraftActionSchema.parse(input);
   const actor = await requireAreaAccess(tenantSlug, parsed.area);
-  const mutatedRecords = await saveDraftRecord(parsed, actor.userId);
+  validateEditorialPayload(parsed);
+  await stageEditorialDraft(parsed, parsed.payload, actor.userId);
+  const mutatedRecords = 1;
   const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.draft_saved', contentInput: parsed, mutatedRecords });
   revalidatePlatformContentPaths(tenantSlug);
   return { ok: true, status: 'draft_saved', actorEmail: actor.email, area: parsed.area, entityType: parsed.entityType, entityKey: parsed.entityKey, mutatedRecords, auditRecorded };
@@ -436,8 +439,25 @@ export async function savePlatformContentDraft(tenantSlug: string, input: Platfo
 export async function publishPlatformContent(tenantSlug: string, input: PlatformPublishActionInput): Promise<ActionResult> {
   const parsed = platformPublishActionSchema.parse(input);
   const actor = await requireAreaAccess(tenantSlug, parsed.area);
+  const staged = await readEditorialDraft(parsed);
+  if (staged) await saveDraftRecord({ ...parsed, payload: staged }, actor.userId);
   const mutatedRecords = await publishDraftRecord(parsed, actor.userId);
+  if (staged) await removeEditorialDraft(parsed);
   const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.published', contentInput: parsed, mutatedRecords });
   revalidatePlatformContentPaths(tenantSlug);
   return { ok: true, status: 'published', actorEmail: actor.email, area: parsed.area, entityType: parsed.entityType, entityKey: parsed.entityKey, mutatedRecords, auditRecorded };
+}
+
+function validateEditorialPayload(input: PlatformContentDraftActionInput) {
+  switch (input.entityType) {
+    case 'site_settings': siteSettingsSchema.parse(input.payload); break;
+    case 'page_section':
+      if (input.entityKey === 'hero' || input.entityKey === 'home.hero') heroSectionSchema.parse(input.payload);
+      break;
+    case 'navigation_item': navigationPayloadSchema.parse(input.payload); break;
+    case 'pricing_plan': pricingPayloadSchema.parse(input.payload); break;
+    case 'docs_article': docsPayloadSchema.parse(input.payload); break;
+    case 'app_experience': appExperienceDefaultsSchema.parse(input.payload); break;
+    default: throw new Error(`Unsupported editorial entity: ${input.entityType}`);
+  }
 }
