@@ -38,6 +38,8 @@ jobs:
       CONFIGURED_MKETY_AUTH_SESSION_SECRET: ${{ secrets.MKETY_AUTH_SESSION_SECRET }}
       MKETY_DOMAIN_RELAY_URL: ${{ secrets.MKETY_DOMAIN_RELAY_URL || vars.MKETY_DOMAIN_RELAY_URL }}
       MKETY_DOMAIN_RELAY_SECRET: ${{ secrets.MKETY_DOMAIN_RELAY_SECRET }}
+      MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG || vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}
+      MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || vars.MKETY_PLATFORM_ADMIN_EMAILS }}
     steps:
       - name: Authorize exact production SHA
         shell: bash
@@ -90,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID MKETY_PLATFORM_CONTROL_TENANT_SLUG MKETY_PLATFORM_ADMIN_EMAILS; do
             [ -n "${!name:-}" ] || { echo "Missing production configuration: $name" >&2; exit 1; }
           done
           echo "::add-mask::$CLOUDFLARE_API_TOKEN"
@@ -194,6 +196,8 @@ jobs:
           put_secret MKETY_AUTH_CLIENT_ID "$CLIENT_ID"
           put_secret MKETY_AUTH_REDIRECT_URI "$MKETY_AUTH_REDIRECT_URI"
           put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
+          put_secret MKETY_PLATFORM_CONTROL_TENANT_SLUG "$MKETY_PLATFORM_CONTROL_TENANT_SLUG"
+          put_secret MKETY_PLATFORM_ADMIN_EMAILS "$MKETY_PLATFORM_ADMIN_EMAILS"
           if [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
             [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] && [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ] || {
               echo "MKETY_DOMAIN_RELAY_URL and MKETY_DOMAIN_RELAY_SECRET must be configured together." >&2
