@@ -58,7 +58,7 @@ describe('Cloudflare Worker database build wiring', () => {
         process.exit(1);
       });
     `;
-    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+    const { stdout } = await execFileAsync(process.execPath, ['--import', 'tsx', '-e', script], {
       cwd: process.cwd(),
       env: process.env,
       maxBuffer: 1024 * 1024,
@@ -96,7 +96,7 @@ describe('Cloudflare Worker database build wiring', () => {
         process.exit(1);
       });
     `;
-    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+    const { stdout } = await execFileAsync(process.execPath, ['--import', 'tsx', '-e', script], {
       cwd: process.cwd(),
       env: process.env,
       maxBuffer: 1024 * 1024,
@@ -140,7 +140,7 @@ describe('Cloudflare Worker database build wiring', () => {
         process.exit(1);
       });
     `;
-    const { stdout } = await execFileAsync('pnpm', ['exec', 'tsx', '-e', script], {
+    const { stdout } = await execFileAsync(process.execPath, ['--import', 'tsx', '-e', script], {
       cwd: process.cwd(),
       env: process.env,
       maxBuffer: 1024 * 1024,
