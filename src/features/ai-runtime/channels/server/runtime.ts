@@ -7,6 +7,7 @@ import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channe
 import {
   deterministicReplyDelaySeconds,
   ensureEnterpriseAiConversation,
+  getBoundedEnterpriseAiConversationContext,
   recordEnterpriseAiMessage,
   scheduleEnterpriseAiAction,
 } from '@/features/ai-runtime/channels/server/conversations';
@@ -98,6 +99,15 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     return { kind: 'handoff', conversationId: conversation.id };
   }
 
+  const recentMessages = await getBoundedEnterpriseAiConversationContext({
+    tenantId: input.tenantId,
+    conversationId: conversation.id,
+    maxMessages: 12,
+    maxCharacters: 24_000,
+  });
+  const boundedSystemPrompt = configuration.systemPrompt.slice(0, 12_000);
+  const boundedKnowledge = configuration.knowledgeText.slice(0, 24_000);
+
   const channel = input.channelKey ? getEnterpriseAiChannel(input.channelKey) : null;
   const remindersRequested =
     configuration.commitmentRemindersEnabled &&
@@ -124,9 +134,11 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
 
   const remindersEnabled = remindersRequested && resolved.model.providerKey === 'workers-ai';
 
-  const contextText = [configuration.systemPrompt, configuration.knowledgeText, input.text]
-    .filter(Boolean)
-    .join('\n\n');
+  const contextText = [
+    boundedSystemPrompt,
+    boundedKnowledge,
+    ...recentMessages.map((message) => message.content),
+  ].filter(Boolean).join('\n\n');
   const messageBytes = new TextEncoder().encode(contextText).byteLength;
   const inputTokenUpperBound = conservativeInputTokenUpperBound(Math.max(1, messageBytes));
   const modelMaxOutput = typeof resolved.model.limits.maxOutputTokens === 'number'
@@ -250,13 +262,13 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       actorUserId: null,
       requestedModel: resolved.alias.alias,
       messages: [
-        ...(configuration.systemPrompt
-          ? [{ role: 'system' as const, content: configuration.systemPrompt }]
+        ...(boundedSystemPrompt
+          ? [{ role: 'system' as const, content: boundedSystemPrompt }]
           : []),
-        ...(configuration.knowledgeText
+        ...(boundedKnowledge
           ? [{
               role: 'system' as const,
-              content: `Approved business knowledge:\n${configuration.knowledgeText}`,
+              content: `Approved business knowledge:\n${boundedKnowledge}`,
             }]
           : []),
         ...(remindersEnabled
@@ -271,7 +283,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
               ].join(' '),
             }]
           : []),
-        { role: 'user' as const, content: input.text },
+        ...recentMessages,
       ],
       ...(remindersEnabled
         ? {
@@ -307,10 +319,10 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         projectId: input.projectId ?? null,
         model: resolved.alias.alias,
         system: [
-          configuration.systemPrompt,
-          configuration.knowledgeText ? `Approved business knowledge:\n${configuration.knowledgeText}` : '',
+          boundedSystemPrompt,
+          boundedKnowledge ? `Approved business knowledge:\n${boundedKnowledge}` : '',
         ].filter(Boolean).join('\n\n'),
-        messages: [{ role: 'user', content: input.text }],
+        messages: recentMessages,
         maxOutputTokens: effectiveMaxOutput,
         idempotencyKey,
       });
