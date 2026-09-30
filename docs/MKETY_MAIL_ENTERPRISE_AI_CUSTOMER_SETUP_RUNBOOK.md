@@ -3,6 +3,12 @@
 Date: 2026-09-29
 Status: pre-Starpips stabilization; production customer inference remains disabled until explicit promotion.
 
+## 2026-09-30 exact-main production promotion update
+
+Current main `4508e116519e4950feeaaac4c0e41e6f401c7912` passed App Host Repair `36738352148`, Mail Production `36738755076`, Mail Gateway Production `36739410624`, real synthetic IMAP/SMTP/revocation functional acceptance `36741052849`, and Enterprise AI Production `36746234704`. The latter passed authorization, production migration, application and delivery Worker deploy, domain attachment and fail-closed smoke. Mail migration `0036_platform_editorial_drafts` was applied. See `docs/handoffs/2026-09-30-production-promotion-progress.md` for exact scope; this update supersedes the older IMAP SELECT failure and pre-release state below.
+
+The synthetic SMTP recipient is intentionally suppressed. External Mail clients remain OFF until a controlled paid customer entitlement/domain/inbound/outbound/suspension path passes. Enterprise customer inference remains OFF until managed/external/BYOK/commercial/isolation/white-label/Starpips acceptance passes and the guarded inference promotion is intentionally run. Do not onboard or claim live customer readiness from infrastructure smoke alone.
+
 ## 2026-09-30 Mail functional acceptance diagnostic update
 
 - Exact production SHA `681fea258057d484d35924c2a1346710e2302eea` passed Mkety Mail Production and Mkety Mail Gateway Production.

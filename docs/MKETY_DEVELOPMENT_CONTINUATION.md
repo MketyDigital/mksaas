@@ -1,3 +1,11 @@
+# 2026-09-30 exact-main production continuation
+
+Current main is `4508e116519e4950feeaaac4c0e41e6f401c7912`. App Host Repair `36738352148`, Mail Production `36738755076`, Gateway Production `36739410624`, synthetic real IMAP/SMTP/revocation acceptance `36741052849`, and Enterprise AI Production `36746234704` passed. The complete run map, proof limits and next customer gates are in `docs/handoffs/2026-09-30-production-promotion-progress.md`; this newer section supersedes the older pre-merge and failed-IMAP sequence below.
+
+Continue with signed-in public/app/admin role and route acceptance; controlled Mail customer checkout/domain/actual delivery/suspension; Enterprise managed/external/BYOK/commercial/tenant/white-label/Starpips acceptance; then intentional enablement of each customer flag only after its gate. `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` and `customerInferenceEnabled` remain OFF. Do not run the obsolete initial public cutover workflow on the existing bound production routes.
+
+---
+
 # 2026-09-30 repository audit — current resume authority
 
 This section supersedes older implementation/production status below.

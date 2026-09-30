@@ -1,3 +1,11 @@
+# 2026-09-30 exact-main production promotion update
+
+Current main is `4508e116519e4950feeaaac4c0e41e6f401c7912` after PRs #223 and #224. App Host Repair `36738352148`, Mail Production `36738755076`, Mail Gateway Production `36739410624`, real synthetic IMAP/SMTP/revocation acceptance `36741052849`, and Enterprise AI Production `36746234704` all succeeded. Production migration `0036_platform_editorial_drafts` was applied. Enterprise AI promotion included exact-SHA authorization, production migration, application/delivery Worker deployment, domain attachment and fail-closed smoke. See `docs/handoffs/2026-09-30-production-promotion-progress.md` for scope and limits; it supersedes the older failed IMAP SELECT and unmerged-branch state below.
+
+External Mail clients and Enterprise AI customer inference remain OFF. Controlled real customer Mail commerce/domain/send/receive/suspension and Enterprise provider/commercial/tenant/white-label/Starpips paths are required before enablement. Public/auth/app/admin signed-in role and no-code publish/rollback checks remain. Main-push MegaLinter still reports historical whole-codebase actionlint/ShellCheck debt although changed-file PR MegaLinter passed.
+
+---
+
 # 2026-09-30 repository audit — current resume authority
 
 This section supersedes older implementation/production status below.

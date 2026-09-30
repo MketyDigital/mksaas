@@ -4083,3 +4083,12 @@ This section is newer than all earlier Public AI, Platform AI, Enterprise AI, pr
 - Complete pnpm dependency audit (including build/test packages) is a blocking CI gate. Do not rely on nonblocking historical MegaLinter vulnerability scanners to certify a new lockfile. Version-scoped patch overrides preserve compatible majors; the current Sharp/esbuild boundaries require native image/build-loader checks.
 - Storybook uses the Vite framework and its dedicated browser config; application Vinext/RSC plugins must not enter that preview build. The unused webpack framework is removed.
 - Rich editor controlled value changes compare against actual editor content; retain one custom Link extension, with StarterKit Link disabled. No customer/provider/production acceptance gate is satisfied merely by these dependency or component checks.
+
+# 2026-09-30 Exact-Main Production Promotion Override
+
+- Current main is `4508e116519e4950feeaaac4c0e41e6f401c7912` after PRs #223 and #224. The current operational evidence and remaining gates are in `docs/handoffs/2026-09-30-production-promotion-progress.md`; it supersedes the older pre-merge handoff state.
+- App Host Repair `36738352148`, Mail Production `36738755076`, Mail Gateway Production `36739410624`, Mail real synthetic IMAP/SMTP/revocation acceptance `36741052849`, and Enterprise AI Production `36746234704` succeeded. Production migration `0036_platform_editorial_drafts` was applied.
+- Mail synthetic SMTP intentionally suppresses the recipient; it does not prove actual customer delivery, paid checkout, domain provisioning or suspended established sessions. `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` remains OFF until controlled customer-path acceptance and intentional enablement.
+- Enterprise AI infrastructure promotion passed fail-closed smoke. `customerInferenceEnabled` remains OFF until managed/external/BYOK, commercial/budget/provider-cost, tenant/domain/white-label and controlled Starpips channel/handoff/accounting acceptance, followed by guarded intentional promotion.
+- Public/app/admin signed-in role, route, visual and no-code draft/publish/rollback acceptance remains to be recorded. The original public cutover workflow targets an obsolete branch and is unsuitable for already bound production routes.
+- Main-push MegaLinter full-codebase mode still fails on historical actionlint/ShellCheck diagnostics; PR changed-file MegaLinter passed. Do not describe whole-codebase lint or all customer paths as clean until separately verified.
