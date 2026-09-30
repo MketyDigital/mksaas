@@ -61,7 +61,10 @@ async function listAll(session,folder){
     const {response,payload}=await jsonApi('/api/internal/mail/gateway/messages',{
       tenantId:session.tenantId,mailboxId:session.mailboxId,folder,afterUid,limit:500,
     });
-    if(!response.ok||payload.ok!==true) throw new Error('message_index_failed');
+    if(!response.ok||payload.ok!==true){
+      const detail=String(payload?.error||`http_${response.status}`).replace(/[^A-Za-z0-9_.-]/g,'').slice(0,80)||'unknown';
+      throw new Error(`message_index_failed:${detail}`);
+    }
     const rows=Array.isArray(payload.messages)?payload.messages:[];
     messages.push(...rows);
     if(rows.length<500) break;
