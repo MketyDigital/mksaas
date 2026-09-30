@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { getAdminStats } from '@/features/admin/services/admin-stats-service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db';
-import { auditEvents, tenants } from '@/shared/db/schema';
+import { auditEvents } from '@/shared/db/schema';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface AdminDashboardProps {
   params: Promise<{ tenant: string }>;
@@ -15,17 +16,17 @@ interface AdminDashboardProps {
 export default async function AdminDashboard({ params }: AdminDashboardProps) {
   const { tenant } = await params;
 
-  const stats = await getAdminStats(tenant);
-
-  // Get recent audit events
-  const tenantRecord = await db.query.tenants.findFirst({ where: eq(tenants.slug, tenant) });
-  const recentEvents = tenantRecord
-    ? await db.query.auditEvents.findMany({
-        where: eq(auditEvents.tenantId, tenantRecord.id),
-        orderBy: [desc(auditEvents.timestamp)],
-        limit: 5,
-      })
-    : [];
+  const tenantRecord = await getTenantBySlug(tenant);
+  const [stats, recentEvents] = await Promise.all([
+    getAdminStats(tenant),
+    tenantRecord
+      ? db.query.auditEvents.findMany({
+          where: eq(auditEvents.tenantId, tenantRecord.id),
+          orderBy: [desc(auditEvents.timestamp)],
+          limit: 5,
+        })
+      : Promise.resolve([]),
+  ]);
 
   const statCards = [
     { name: 'Team Members', value: stats.persons, icon: Users, href: 'members' },
