@@ -85,15 +85,31 @@ function sanitizeDiagnostic(value) {
 }
 
 let acceptanceError = null;
+let acceptanceReady = false;
+
+const server = http.createServer((_req, res) => {
+  res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify({ ok: !acceptanceError, ready: acceptanceReady, mode }));
+});
+
+await new Promise((resolve, reject) => {
+  server.once('error', reject);
+  server.listen(3000, '0.0.0.0', resolve);
+});
+console.log('MKETY_MAIL_FUNCTIONAL_HEALTH_READY=true');
+
 try {
   if (mode === 'setup') {
     await setup();
+    acceptanceReady = true;
     console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_READY=true');
   } else if (mode === 'revoke') {
     await revoke();
+    acceptanceReady = true;
     console.log('MKETY_MAIL_FUNCTIONAL_CREDENTIAL_REVOKED=true');
   } else if (mode === 'cleanup') {
     await cleanup();
+    acceptanceReady = true;
     console.log('MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true');
   } else {
     throw new Error('Unsupported acceptance mode.');
@@ -122,8 +138,3 @@ await sql.end({ timeout: 5 }).catch((error) => {
     );
   }
 });
-
-http.createServer((_req, res) => {
-  res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  res.end(JSON.stringify({ ok: !acceptanceError, mode }));
-}).listen(3000, '0.0.0.0');
