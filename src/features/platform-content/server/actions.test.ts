@@ -63,6 +63,15 @@ describe('platform content admin action schemas', () => {
     ).toThrow();
   });
 
+  it('does not let public-content permissions edit the app-experience entity', () => {
+    expect(() => platformContentDraftActionSchema.parse({
+      area: 'public-site', entityType: 'app_experience', entityKey: 'production', payload: {},
+    })).toThrow();
+    expect(() => platformPublishActionSchema.parse({
+      area: 'settings', entityType: 'app_experience', entityKey: 'production',
+    })).toThrow();
+  });
+
   it('validates publish requests without accepting arbitrary action names', () => {
     const parsed = platformPublishActionSchema.parse({
       area: 'docs',
