@@ -325,7 +325,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
           boundedSystemPrompt,
           boundedKnowledge ? `Approved business knowledge:\n${boundedKnowledge}` : '',
         ].filter(Boolean).join('\n\n'),
-        messages: recentMessages,
+        messages: recentMessages
+          .filter((message): message is typeof message & { role: 'system' | 'user' | 'assistant' } => message.role !== 'tool'),
         maxOutputTokens: effectiveMaxOutput,
         idempotencyKey,
       });
