@@ -23,9 +23,10 @@ interface UnifiedSidebarProps {
   permissions?: string[];
   hasMailAccess?: boolean;
   hasEnterpriseAiAccess?: boolean;
+  hasPlatformControlAccess?: boolean;
 }
 
-export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp, hasMailAccess = false, hasEnterpriseAiAccess = false }: UnifiedSidebarProps) {
+export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp, hasMailAccess = false, hasEnterpriseAiAccess = false, hasPlatformControlAccess = false }: UnifiedSidebarProps) {
   const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = useTranslations('nav');
@@ -70,7 +71,7 @@ export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp, hasMa
   const renderNavContent = (onItemClick?: () => void) => {
     switch (currentView) {
       case 'admin':
-        return <AdminViewNav basePath={basePath} permissions={permissions} onItemClick={onItemClick} />;
+        return <AdminViewNav basePath={basePath} permissions={permissions} hasPlatformControlAccess={hasPlatformControlAccess} onItemClick={onItemClick} />;
       default:
         return <MyViewNav basePath={basePath} hasMailAccess={hasMailAccess} hasEnterpriseAiAccess={hasEnterpriseAiAccess} onItemClick={onItemClick} />;
     }
