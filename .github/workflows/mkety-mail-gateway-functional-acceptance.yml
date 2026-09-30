@@ -299,7 +299,7 @@ jobs:
             mailboxId:x.mailboxId,
             folder:'inbox',
             afterUid:0,
-            limit:10,
+            limit:500,
           }));
           console.log('MKETY_MAIL_FUNCTIONAL_DIRECT_AUTH_OK=true');
           NODE
