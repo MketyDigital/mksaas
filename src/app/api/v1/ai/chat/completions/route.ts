@@ -552,10 +552,12 @@ async function handlePost(request: Request) {
         projectId,
         apiKeyId: key.id,
         model: resolved.alias.alias,
-        messages: parsed.data.messages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
+        messages: parsed.data.messages
+          .filter((message): message is typeof message & { role: 'system' | 'user' | 'assistant' } => message.role !== 'tool')
+          .map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
         maxOutputTokens: effectiveMaxOutput,
         idempotencyKey,
       });
