@@ -1745,3 +1745,11 @@ Enterprise Mkety AI is presented as a business solution rather than an infrastru
 9. Add BYOK after managed inference is stable and tested.
 10. Promote production/customer inference only after exact-head CI, migration, smoke, security, commercial, and live acceptance gates pass.
 
+
+## 2026-09-30 audit continuation authority
+
+PR #223 contains the Mail lifecycle/protocol repairs and Enterprise Platform Control authorization, immutable prepaid settlement, proportional credit, dashboard aggregate decoding, provider-cost reservation and durable claim/dispatch fixes. Current acceptance authority is `docs/handoffs/2026-09-30-repository-audit-results.md`; production sequence remains `docs/handoffs/2026-09-30-final-platform-completion.md`.
+
+Fresh local evidence: 241 source suites / 1,166 tests plus six script tests, TypeScript, Vinext build and migration consistency pass; repository lint has 0 errors and 11 existing image optimization warnings. Independent review found no remaining critical/important issue. The expanded branch CI passed real PostgreSQL concurrency tests and all five operations image builds. Checkov/Gitleaks pass with the precisely documented bootstrap/synthetic-fixture exceptions. Exact-head remote results and SHA are recorded in PR #223; earlier-head runs must not be represented as certifying a later revision.
+
+Production/customer readiness remains gated on certified-main promotion, app/admin authenticated navigation, fresh Mail functional/customer acceptance, and controlled Enterprise white-label/domain/channel/BYOK/external-provider/payment/accounting acceptance. Customer inference and external Mail client gates stay closed until those checks pass and enablement is intentional. No code merge or local test count completes those live gates.

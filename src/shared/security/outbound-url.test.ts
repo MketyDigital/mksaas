@@ -14,9 +14,14 @@ describe('public provider endpoint validation', () => {
   it('accepts public standard HTTPS provider endpoints', () => {
     expect(assertPublicHttpsUrl('https://inference.mkety.com/v1').hostname).toBe('inference.mkety.com');
   });
+  it('rejects embedded URL credentials', () => {
+    const endpoint = new URL('https://inference.mkety.com');
+    endpoint.username = 'synthetic-user';
+    endpoint.password = 'synthetic-password';
+    expect(() => assertPublicHttpsUrl(endpoint.toString())).toThrow();
+  });
   it.each([
     'http://inference.mkety.com/v1',
-    'https://user:password@inference.mkety.com',
     'https://inference.mkety.com:8443/v1',
   ])('rejects insecure endpoint %s', (endpoint) => {
     expect(() => assertPublicHttpsUrl(endpoint)).toThrow();
