@@ -161,6 +161,8 @@ export async function POST(
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
               : undefined,
+          media: inbound.media,
+          channelCredentials: credentials,
         });
         if (turn.kind !== 'completed' || !turn.text) return;
         const delivery = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
@@ -236,6 +238,8 @@ export async function POST(
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
               : undefined,
+          media: inbound.media,
+          channelCredentials: credentials,
         });
         if (turn.kind === 'completed' && turn.text) {
           const action = await scheduleEnterpriseAiAction({
@@ -301,6 +305,8 @@ export async function POST(
         typeof connection.metadata.modelAlias === 'string'
           ? connection.metadata.modelAlias
           : undefined,
+      media: inbound.media,
+      channelCredentials: credentials,
     });
 
     if (turn.kind === 'completed' && turn.text) {
@@ -345,6 +351,9 @@ export async function POST(
     const conversationId = error && typeof error === 'object' && 'conversationId' in error
       ? String((error as { conversationId?: unknown }).conversationId ?? '')
       : '';
+    const retryText = error && typeof error === 'object' && 'retryText' in error
+      ? String((error as { retryText?: unknown }).retryText ?? '').slice(0, 28_000)
+      : inbound.text;
 
     if (code === 'ENTERPRISE_AI_PROVIDER_CAPACITY_RETRYABLE') {
       const action = await scheduleEnterpriseAiAction({
@@ -362,7 +371,7 @@ export async function POST(
           recipientId: inbound.replyRecipientId,
           contextId: inbound.conversationId,
           replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
-          text: inbound.text,
+          text: retryText,
           sourceProviderMessageId: inbound.providerMessageId,
           inboundRetry: {
             originalProviderMessageId: inbound.providerMessageId,
