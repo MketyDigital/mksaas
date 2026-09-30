@@ -16,9 +16,10 @@ import MketyMailPublicPage from './page';
 describe('public Mail catalog request lifecycle', () => {
   it('reads active Mail plans with a fresh database context for each page request', async () => {
     const databases: unknown[] = [];
-    catalog.mockImplementation(async () => {
+    catalog.mockImplementation(async (_keys: unknown, explicitDatabase: unknown) => {
       const database = getRequestDatabaseContext();
       if (!database) throw new Error('Mail pricing read escaped its database request scope.');
+      expect(explicitDatabase).toBe(database);
       databases.push(database);
       return [];
     });

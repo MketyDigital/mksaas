@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
-import { db } from '@/shared/db';
+import { type Database, db } from '@/shared/db';
 import { billingPlans, billingPlanVersions } from '@/shared/db/schema';
 
 import {
@@ -31,9 +31,9 @@ export function calculateSelfServiceTermQuote(
   };
 }
 
-export async function getActiveSelfServiceBillingPlan(planKey: SelfServiceBillingPlanKey) {
+export async function getActiveSelfServiceBillingPlan(planKey: SelfServiceBillingPlanKey, database: Database = db) {
   const bootstrap = getSelfServiceBillingPlan(planKey);
-  const [active] = await db
+  const [active] = await database
     .select({
       planId: billingPlans.id,
       key: billingPlans.key,
@@ -106,8 +106,8 @@ export async function getActiveSelfServiceBillingQuote(
   };
 }
 
-export async function getActiveSelfServicePlans(planKeys?: readonly SelfServiceBillingPlanKey[]) {
+export async function getActiveSelfServicePlans(planKeys?: readonly SelfServiceBillingPlanKey[], database: Database = db) {
   const keys = planKeys ?? (Object.keys(SELF_SERVICE_BILLING_PLANS) as SelfServiceBillingPlanKey[]);
   const safeKeys = keys.filter((key): key is SelfServiceBillingPlanKey => isSelfServiceBillingPlanKey(key));
-  return Promise.all(safeKeys.map((key) => getActiveSelfServiceBillingPlan(key)));
+  return Promise.all(safeKeys.map((key) => getActiveSelfServiceBillingPlan(key, database)));
 }

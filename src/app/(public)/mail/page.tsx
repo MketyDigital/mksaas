@@ -139,7 +139,7 @@ const trustFeatures = [
 
 export default async function MketyMailPublicPage() {
   const externalClientsEnabled=mailExternalClientsEnabled();
-  const activePlans = await withRequestDatabase(() => getActiveSelfServicePlans(MAIL_PLAN_KEYS));
+  const activePlans = await withRequestDatabase((database) => getActiveSelfServicePlans(MAIL_PLAN_KEYS, database));
   const plans = activePlans.map((active) => ({
     ...MAIL_COMMERCIAL_PLANS[active.key as MailPlanKey],
     name: active.name,
