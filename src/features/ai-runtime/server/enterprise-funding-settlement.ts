@@ -29,20 +29,6 @@ export async function applyEnterpriseAiFundingSettlement(input: {
     if (!checkout || checkout.purpose !== 'enterprise_ai_funding') {
       throw new Error('Enterprise AI funding checkout was not found.');
     }
-    if (checkout.status === 'completed') {
-      const replay = await tx.query.billingSettlements.findFirst({
-        where: and(
-          eq(billingSettlements.billingPeriodId, checkout.billingPeriodId),
-          eq(billingSettlements.provider, input.provider),
-          or(
-            eq(billingSettlements.providerEventId, input.providerEventId),
-            eq(billingSettlements.providerPaymentId, input.providerPaymentId),
-          ),
-        ),
-      });
-      if (replay) return { applied: false as const, settlementId: replay.id, credits: 0n, tenantId: checkout.tenantId, billingPeriodId: checkout.billingPeriodId };
-    }
-
     if (checkout.provider !== input.provider) throw new Error('Enterprise AI funding provider mismatch.');
     const expectedProviderCurrency = checkout.providerCurrency ?? checkout.currency;
     const expectedProviderAmount = checkout.providerAmountExpectedMinor ?? checkout.amountExpectedMinor;
@@ -97,7 +83,28 @@ export async function applyEnterpriseAiFundingSettlement(input: {
         columns: { id: true },
       });
       if (!replay) throw new Error('Enterprise AI funding settlement conflicted without a replay identity.');
-      return { applied: false as const, settlementId: replay.id, credits: 0n, tenantId: checkout.tenantId, billingPeriodId: checkout.billingPeriodId };
+      const allowance = await tx.query.billingPlanVersionCreditAllowances.findFirst({
+        where: and(
+          eq(billingPlanVersionCreditAllowances.planVersionId, subscription.planVersionId),
+          eq(billingPlanVersionCreditAllowances.grantInterval, 'billing_period'),
+        ),
+      });
+      const policy = await tx.query.aiEnterpriseCommercialPolicies.findFirst({
+        where: eq(aiEnterpriseCommercialPolicies.planVersionId, subscription.planVersionId),
+      });
+      if (!policy || policy.fundingMode !== 'prepaid_partial') {
+        throw new Error('Enterprise AI partial funding policy is unavailable.');
+      }
+      const credits = allowance?.creditAmount && period.amountDueMinor > 0n
+        ? (allowance.creditAmount * checkout.amountExpectedMinor) / period.amountDueMinor
+        : 0n;
+      return {
+        applied: true as const,
+        settlementId: replay.id,
+        credits,
+        tenantId: checkout.tenantId,
+        billingPeriodId: checkout.billingPeriodId,
+      };
     }
 
     await tx.insert(billingLedgerEntries).values({
