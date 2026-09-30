@@ -1,6 +1,6 @@
+import { dedupePublicNavigation } from './public-navigation';
 import { defaultPlatformNavigation } from '../../defaults';
 import type { PlatformNavigationItemInput } from '../../schemas';
-import { dedupePublicNavigation } from './public-navigation';
 
 describe('dedupePublicNavigation', () => {
   it('deduplicates equivalent internal destinations while preserving the first enabled item', () => {

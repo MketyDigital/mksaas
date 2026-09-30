@@ -2,8 +2,8 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { authenticateMailApiKey } from '@/features/mail/server/api-auth';
-import { getMailSendCapacity } from '@/features/mail/server/sending-policy';
 import { pushMailQueueBatch } from '@/features/mail/server/cloudflare';
+import { getMailSendCapacity } from '@/features/mail/server/sending-policy';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMessages, mailSuppressions } from '@/shared/db/schema';
 

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 
-import { hashAiApiKey } from './api-keys';
 import { db } from '@/shared/db/cloudflare';
 import { aiApiKeys } from '@/shared/db/schema';
+import { hashAiApiKey } from './api-keys';
 
 export async function authenticateAiApiKey(request: Request, requiredScope?: string) {
   const authorization = request.headers.get('authorization') ?? '';

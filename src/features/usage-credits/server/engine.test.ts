@@ -1,10 +1,10 @@
-import { USAGE_CREDIT_ERROR_CODES, UsageCreditError } from '../types';
 import {
   assertKnownMeter,
   assertPositiveAmount,
   assertSufficientCredits,
   resolveIdempotency,
 } from './engine';
+import { USAGE_CREDIT_ERROR_CODES, UsageCreditError } from '../types';
 
 describe('usage credit mutation rules', () => {
   it('rejects zero and negative amounts', () => {

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { MketyPublicAssistant } from '@/features/public-assistant/components/MketyPublicAssistant';
 import { cn } from '@/shared/lib/utils';
 
 import { DocsHeader } from './DocsHeader';
-import { MketyPublicAssistant } from '@/features/public-assistant/components/MketyPublicAssistant';
 
 import { DocsSearch } from './DocsSearch';
 import { DocsSidebar } from './DocsSidebar';

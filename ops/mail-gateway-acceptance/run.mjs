@@ -1,6 +1,6 @@
-import http from 'node:http';
-import crypto from 'node:crypto';
 import postgres from 'postgres';
+import crypto from 'node:crypto';
+import http from 'node:http';
 
 const databaseUrl = process.env.DATABASE_URL || '';
 const mode = (process.env.MKETY_MAIL_ACCEPTANCE_MODE || 'setup').trim();

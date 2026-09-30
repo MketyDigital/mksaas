@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { getActiveSelfServicePlans } from '@/features/billing/server/active-catalog';
 import { MAIL_COMMERCIAL_PLANS, MAIL_PLAN_KEYS, type MailPlanKey } from '@/features/mail/commercial/plans';
 import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
+import { withRequestDatabase } from '@/shared/db/request';
 
 export const metadata = {
   title: 'Mkety Mail — Professional business email, shared inboxes and transactional email',
@@ -138,7 +139,7 @@ const trustFeatures = [
 
 export default async function MketyMailPublicPage() {
   const externalClientsEnabled=mailExternalClientsEnabled();
-  const activePlans = await getActiveSelfServicePlans(MAIL_PLAN_KEYS);
+  const activePlans = await withRequestDatabase((database) => getActiveSelfServicePlans(MAIL_PLAN_KEYS, database));
   const plans = activePlans.map((active) => ({
     ...MAIL_COMMERCIAL_PLANS[active.key as MailPlanKey],
     name: active.name,

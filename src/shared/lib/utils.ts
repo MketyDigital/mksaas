@@ -18,7 +18,7 @@ export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOpt
     const dateOnlyMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (dateOnlyMatch) {
       const [, year, month, day] = dateOnlyMatch;
-      d = new Date(Number(year), Number(month) - 1, Number(day));
+      d = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
     } else {
       d = new Date(date);
     }

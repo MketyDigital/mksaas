@@ -1,6 +1,6 @@
+import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 import { extractGeminiText, extractOpenAIChatText, extractOpenAIResponseText, readCentralProviderJson } from './external-http';
 import type { CentralAiProviderAdapter, CentralAiProviderId } from './external-types';
-import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 
 export type CentralAiProviderCredentials =
   | { provider: 'openai'; apiKey: string }

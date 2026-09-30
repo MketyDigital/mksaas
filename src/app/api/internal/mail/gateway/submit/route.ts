@@ -1,11 +1,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
+
 import PostalMime from 'postal-mime';
 
 import { pushMailQueueBatch } from '@/features/mail/server/cloudflare';
 import { requireMailGatewaySecret } from '@/features/mail/server/gateway-auth';
 import { getMailSendCapacity } from '@/features/mail/server/sending-policy';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import {
   mailDomains,
   mailMailboxes,
@@ -18,10 +20,7 @@ function normalizeEmail(value: unknown) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : '';
 }
 
-export async function POST(request: Request) {
-  if (!requireMailGatewaySecret(request)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+async function handlePost(request: Request) {
   const body = await request.json().catch(() => null) as {
     tenantId?: string;
     mailboxId?: string;
@@ -157,4 +156,11 @@ export async function POST(request: Request) {
       .where(inArray(mailMessages.id, created.map((item) => item.id)));
     return NextResponse.json({ ok: false, error: 'queue_failed' }, { status: 502 });
   }
+}
+
+export async function POST(request: Request) {
+  if (!requireMailGatewaySecret(request)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  return withRequestDatabase(() => handlePost(request));
 }

@@ -4,8 +4,8 @@ import { listDomains } from '@/features/admin/services/domains-service';
 import { listManagedDomains } from '@/features/domains/server/managed-domain-service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
-import { DomainSearchClient } from './DomainSearchClient';
 import { DomainsClient } from './DomainsClient';
+import { DomainSearchClient } from './DomainSearchClient';
 import { ManagedDomainsClient } from './ManagedDomainsClient';
 
 interface DomainsPageProps {

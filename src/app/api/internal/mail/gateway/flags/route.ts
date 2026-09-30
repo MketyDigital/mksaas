@@ -3,12 +3,10 @@ import { NextResponse } from 'next/server';
 
 import { requireMailGatewaySecret } from '@/features/mail/server/gateway-auth';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { mailMessages } from '@/shared/db/schema';
 
-export async function POST(request: Request) {
-  if (!requireMailGatewaySecret(request)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+async function handlePost(request: Request) {
   const body = await request.json().catch(() => null) as {
     tenantId?: string;
     mailboxId?: string;
@@ -36,4 +34,11 @@ export async function POST(request: Request) {
       eq(mailMessages.imapUid, uid),
     ));
   return NextResponse.json({ ok: true });
+}
+
+export async function POST(request: Request) {
+  if (!requireMailGatewaySecret(request)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  return withRequestDatabase(() => handlePost(request));
 }

@@ -1,6 +1,6 @@
-import type { NormalizedSettlement } from '../domain/settlement';
 import type { BillingRepository } from './repository';
 import { applyVerifiedSettlement } from './settlement-service';
+import type { NormalizedSettlement } from '../domain/settlement';
 
 const settlement: NormalizedSettlement = {
   provider: 'nowpayments',

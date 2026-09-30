@@ -3,20 +3,20 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
-import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import { fingerprintAiConnectionSecret } from '@/features/ai-runtime/channels/connection-secret-crypto';
 import {
   channelCredentialsFromForm,
   protectChannelCredentials,
   revealChannelCredentials,
 } from '@/features/ai-runtime/channels/credentials';
+import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
 import { aiProviderConnections, aiSolutionInstances } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
-import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 import { getTenantBySlug } from '@/shared/lib/tenant';
+import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 
 function channelProviderKey(channel: EnterpriseAiChannelKey) {
   return `channel:${channel}`;

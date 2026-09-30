@@ -61,7 +61,7 @@ export function RichTextEditor({
     {
       immediatelyRender: false,
       extensions: [
-        StarterKit.configure({ heading: { levels: [2, 3] } }),
+        StarterKit.configure({ heading: { levels: [2, 3] }, link: false }),
         Image.configure({ inline: false }),
         Link.configure({
           openOnClick: false,
@@ -88,7 +88,7 @@ export function RichTextEditor({
     if (!editor) return;
     const current = editor.getHTML();
     const next = toHtml(value);
-    if (next !== current && next !== initialContent) {
+    if (next !== current) {
       editor.commands.setContent(next, { emitUpdate: false });
     }
   }, [editor, value, initialContent]);

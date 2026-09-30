@@ -1,10 +1,10 @@
-import type { GatewayCapabilities } from '../domain/types';
 import {
   prepareRenewal,
   recordUnsettledRenewal,
   type RenewalRepository,
   type RenewalSubscription,
 } from './renewal-service';
+import type { GatewayCapabilities } from '../domain/types';
 
 const baseCapabilities: GatewayCapabilities = {
   supportsRecurring: true,

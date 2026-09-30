@@ -1,7 +1,8 @@
+import { db } from '@/shared/db';
+
 import { resolveAutomationWorkflowDependencies } from './agent-dependency-readiness';
 
 jest.mock('@/shared/db', () => ({ db: { query: { agents: { findFirst: jest.fn() }, agentVersions: { findFirst: jest.fn() } } } }));
-import { db } from '@/shared/db';
 const agentFind = jest.mocked(db.query.agents.findFirst);
 const versionFind = jest.mocked(db.query.agentVersions.findFirst);
 

@@ -1,5 +1,6 @@
 import { eq, isNull } from 'drizzle-orm';
 
+import { DEFAULT_MKETY_PAYMENT_SETTINGS } from '@/features/payments/config';
 import { db } from '@/shared/db';
 import {
   platformAppControlCenterModules,
@@ -7,7 +8,6 @@ import {
   platformWorkspaceCards,
 } from '@/shared/db/schema/platform-app-experience';
 
-import { DEFAULT_MKETY_PAYMENT_SETTINGS } from '@/features/payments/config';
 
 import { platformControlModules } from '../control-center-registry';
 import { defaultAppExperience } from '../defaults';

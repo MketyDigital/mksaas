@@ -1,6 +1,6 @@
+import { type EntitlementSource, hasEntitlement } from './resolver';
 import type { EntitlementCheckInput } from '../types';
 import { EntitlementDeniedError } from '../types';
-import { type EntitlementSource, hasEntitlement } from './resolver';
 
 export async function requireEntitlement(
   input: EntitlementCheckInput,

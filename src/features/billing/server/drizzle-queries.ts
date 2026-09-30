@@ -10,8 +10,8 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
-import type { RenewalMode, SubscriptionStatus } from '../domain/types';
 import type { BillingSummarySource } from './queries';
+import type { RenewalMode, SubscriptionStatus } from '../domain/types';
 
 const CURRENT_SUBSCRIPTION_STATUSES = [
   'trialing',

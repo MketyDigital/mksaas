@@ -1,5 +1,5 @@
-import type { CreditBalance } from '../types';
 import type { CreditLedgerRecord, NewCreditLedgerRecord, NewStoredUsageRecord, StoredUsageRecord } from './source';
+import type { CreditBalance } from '../types';
 
 export type StoredAiCreditReservationStatus = 'held' | 'settled' | 'released';
 

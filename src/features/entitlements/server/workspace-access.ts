@@ -1,5 +1,5 @@
-import type { WorkspaceCardInput } from '@/features/platform-app-experience/schemas';
 import { isEntitlementKey } from '@/features/entitlements/entitlement-keys';
+import type { WorkspaceCardInput } from '@/features/platform-app-experience/schemas';
 
 import {
   type EntitlementSource,

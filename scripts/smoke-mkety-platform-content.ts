@@ -11,6 +11,14 @@ import { defaultAppExperience } from '../src/features/platform-app-experience/de
 import { defaultPricingPlans } from '../src/features/platform-content/defaults';
 import { db } from '../src/shared/db/node';
 import {
+  platformEnterpriseOrders,
+  publicAIConversations,
+  publicAIMemoryFacts,
+  publicAIMessages,
+  publicAIToolRuns,
+  publicAIVisitors,
+} from '../src/shared/db/schema';
+import {
   platformAppControlCenterModules,
   platformAppDashboardSettings,
   platformWorkspaceCards,
@@ -25,14 +33,6 @@ import {
   platformPricingPlans,
   platformSiteSettings,
 } from '../src/shared/db/schema/platform-content';
-import {
-  platformEnterpriseOrders,
-  publicAIConversations,
-  publicAIMemoryFacts,
-  publicAIMessages,
-  publicAIToolRuns,
-  publicAIVisitors,
-} from '../src/shared/db/schema';
 
 const PUBLISHED = 'published' as const;
 

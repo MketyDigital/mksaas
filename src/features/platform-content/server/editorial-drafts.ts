@@ -1,0 +1,61 @@
+import { and, eq } from 'drizzle-orm';
+
+import { db } from '@/shared/db';
+import { platformEditorialDrafts, type PlatformJson } from '@/shared/db/schema/platform-content';
+
+import type { PlatformContentArea, PlatformContentEntityType } from './action-schemas';
+import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
+
+type EditorialKey = { area: PlatformContentArea; entityType: PlatformContentEntityType; entityKey: string };
+type EditorialTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type EditorialReader = Pick<typeof db, 'select'>;
+
+function matches(key: EditorialKey) {
+  return and(
+    eq(platformEditorialDrafts.area, key.area),
+    eq(platformEditorialDrafts.entityType, key.entityType),
+    eq(platformEditorialDrafts.entityKey, key.entityKey),
+  );
+}
+
+export async function getEditorialDraft(tenantSlug: string, key: EditorialKey): Promise<Record<string, unknown> | null> {
+  if (key.area === 'app-experience') await requirePlatformAppExperienceAccess(tenantSlug);
+  else await requirePlatformContentAccess(tenantSlug);
+  const row = await db.query.platformEditorialDrafts.findFirst({ where: matches(key) });
+  return (row?.payloadJson as Record<string, unknown>) ?? null;
+}
+
+export async function stageEditorialDraft(
+  key: EditorialKey,
+  payload: Record<string, unknown>,
+  actorId: string,
+  connection: Pick<typeof db, 'insert'> = db,
+) {
+  await connection.insert(platformEditorialDrafts).values({
+    ...key,
+    payloadJson: JSON.parse(JSON.stringify(payload)) as PlatformJson,
+    updatedBy: actorId,
+  }).onConflictDoUpdate({
+    target: [platformEditorialDrafts.area, platformEditorialDrafts.entityType, platformEditorialDrafts.entityKey],
+    set: { payloadJson: JSON.parse(JSON.stringify(payload)) as PlatformJson, updatedBy: actorId, updatedAt: new Date() },
+  });
+}
+
+export async function readEditorialDraft(key: EditorialKey, connection?: EditorialReader): Promise<Record<string, unknown> | null> {
+  if (connection) {
+    const [row] = await connection
+      .select({ payloadJson: platformEditorialDrafts.payloadJson })
+      .from(platformEditorialDrafts)
+      .where(matches(key))
+      .for('update')
+      .limit(1);
+    return (row?.payloadJson as Record<string, unknown>) ?? null;
+  }
+
+  const row = await db.query.platformEditorialDrafts.findFirst({ where: matches(key) });
+  return (row?.payloadJson as Record<string, unknown>) ?? null;
+}
+
+export async function removeEditorialDraft(key: EditorialKey, connection?: EditorialTransaction) {
+  await (connection ?? db).delete(platformEditorialDrafts).where(matches(key));
+}

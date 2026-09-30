@@ -1,9 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 
+import { createEnterpriseAiContractCheckout } from '@/features/ai-runtime/server/enterprise-contracts';
 import { createFlutterwaveBillingAdapter } from '@/features/billing/gateways/flutterwave';
 import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
-import { createEnterpriseAiContractCheckout } from '@/features/ai-runtime/server/enterprise-contracts';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';

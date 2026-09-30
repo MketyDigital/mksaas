@@ -99,8 +99,8 @@ export function PlatformContentDraftForm({
             spellCheck={false}
           />
           <p className="text-xs text-muted-foreground">
-            Save creates or updates draft records. Publish promotes supported draft records to published content,
-            records revisions, attempts an audit event, and revalidates Mkety public/docs/admin paths.
+            Save stores a private editorial draft and keeps the published site visible. Reopen this page to continue
+            the draft; Publish applies the reviewed draft, records revisions, and revalidates public paths.
           </p>
         </div>
 

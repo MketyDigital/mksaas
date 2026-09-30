@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
 
+import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
-import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 
 export const dynamic = 'force-dynamic';
 

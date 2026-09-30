@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 
-import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
 import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
+import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { db } from '@/shared/db/cloudflare';
 import { projects } from '@/shared/db/schema';

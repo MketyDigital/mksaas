@@ -2,6 +2,8 @@
  * Tests for utility functions
  */
 
+import { execFileSync } from 'node:child_process';
+
 import { cn, formatDate, formatRelativeTime, generateId, getInitials, sleep, truncate } from '../utils';
 
 describe('utils', () => {
@@ -43,6 +45,14 @@ describe('utils', () => {
     it('should format a date string', () => {
       const result = formatDate('2024-03-15');
       expect(result).toMatch(/Mar 15, 2024/);
+    });
+
+    it.each(['Asia/Tokyo', 'Africa/Lagos', 'America/Los_Angeles'])('preserves date-only input on a %s host', (timeZone) => {
+      const script = "import { formatDate } from './src/shared/lib/utils.ts'; process.stdout.write(formatDate('2024-03-15'));";
+      const result = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
+        cwd: process.cwd(), env: { ...process.env, TZ: timeZone }, encoding: 'utf8',
+      });
+      expect(result).toBe('Mar 15, 2024');
     });
 
     it('should accept custom options', () => {

@@ -1,14 +1,14 @@
 import { verifyNowPaymentsWebhook } from '@/features/enterprise-checkout/providers/nowpayments-webhook';
 
-import type { NormalizedSettlement } from '../domain/settlement';
-import { NOWPAYMENTS_CAPABILITIES } from './nowpayments-capabilities';
 import { parseVerifiedSettlementFields, toNormalizedSettlement } from './normalization';
+import { NOWPAYMENTS_CAPABILITIES } from './nowpayments-capabilities';
 import type {
   BillingGatewayAdapter,
   CreateCheckoutInput,
   CreateCheckoutResult,
   VerifiedGatewayEvent,
 } from './types';
+import type { NormalizedSettlement } from '../domain/settlement';
 
 const NOWPAYMENTS_INVOICE_ENDPOINT = 'https://api.nowpayments.io/v1/invoice';
 const MKETY_BILLING_WEBHOOK_URL = 'https://mkety.com/api/webhooks/billing/nowpayments';

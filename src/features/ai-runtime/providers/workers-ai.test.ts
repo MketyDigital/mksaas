@@ -1,8 +1,8 @@
-import type { AiRuntimeRequest } from '../runtime/types';
 import {
   type WorkersAiBinding,
   WorkersAiProviderAdapter,
 } from './workers-ai';
+import type { AiRuntimeRequest } from '../runtime/types';
 
 const request: AiRuntimeRequest = {
   tenantId: 'tenant-a',

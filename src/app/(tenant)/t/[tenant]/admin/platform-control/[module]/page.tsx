@@ -8,19 +8,20 @@ import {
   listEnterpriseAiContracts,
 } from '@/features/ai-runtime/server/enterprise-contracts';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
+import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
-import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
-import { getMketyPaymentSettings } from '@/features/payments/settings';
+import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
 import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
-import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
-import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
+import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
-import { getPublishedControlCenterModule } from '@/features/platform-app-experience/server/queries';
+import { getPublishedAppExperience , getPublishedControlCenterModule } from '@/features/platform-app-experience/server/queries';
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -125,6 +126,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     await requirePermission(tenant, 'platform:deployments');
     domainResellerConnections = await withAdminTimeout(getDomainResellerConnections(), []);
   }
+  const currentAppExperience = isAppExperience ? await getPublishedAppExperience() : null;
 
   return (
     <div className="space-y-8">
@@ -146,7 +148,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
           entityKey="production"
           title="App experience draft"
           description="Validate dashboard, workspace, and Platform Control Center configuration through the server-side Mkety app-experience boundary."
-          defaultPayload={defaultAppExperience}
+          defaultPayload={await getEditorialDraft(tenant, { area: 'app-experience', entityType: 'app_experience', entityKey: 'production' }) ?? currentAppExperience ?? defaultAppExperience}
         />
       )}
 

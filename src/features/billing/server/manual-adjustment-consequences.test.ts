@@ -1,5 +1,5 @@
-import type { ManualAdjustmentCommand } from './manual-adjustment-service';
 import { applyManualAdjustmentConsequences } from './manual-adjustment-consequences';
+import type { ManualAdjustmentCommand } from './manual-adjustment-service';
 
 const baseCommand: ManualAdjustmentCommand = {
   tenantId: 'tenant-1',

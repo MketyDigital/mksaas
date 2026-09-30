@@ -5,13 +5,13 @@ import { redirect } from 'next/navigation';
 import { getTenantSettings } from '@/features/admin/services/settings-service';
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
 import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
-import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
-import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import {
   listEnterpriseAiSolutionInstances,
   listEnterpriseAiSolutionTemplates,
   listTenantProjectChoices,
 } from '@/features/ai-runtime/server/business-solutions';
+import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
+import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
 import { getCreditBalance } from '@/features/usage-credits/server/service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';

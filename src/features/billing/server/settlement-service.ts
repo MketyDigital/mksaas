@@ -1,5 +1,5 @@
-import { assertApplicableSettlement, type NormalizedSettlement } from '../domain/settlement';
 import type { BillingRepository } from './repository';
+import { assertApplicableSettlement, type NormalizedSettlement } from '../domain/settlement';
 
 export type SettlementApplicationResult =
   | { status: 'applied'; settlementId: string }

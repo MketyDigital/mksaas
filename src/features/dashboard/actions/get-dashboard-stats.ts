@@ -5,8 +5,8 @@ import { count, desc, eq } from 'drizzle-orm';
 import { db } from '@/shared/db';
 import { auditEvents, persons } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
-import { getTenantBySlug } from '@/shared/lib/tenant';
 import { logger } from '@/shared/lib/logger';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 
 export interface DashboardStats {
   teamSize: number;

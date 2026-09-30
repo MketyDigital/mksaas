@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
 
 import { getTenantSettings } from '@/features/admin/services/settings-service';
-import { TenantLoginForm } from '@/features/auth/components/TenantLoginForm';
 import { hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
+import { TenantLoginForm } from '@/features/auth/components/TenantLoginForm';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';

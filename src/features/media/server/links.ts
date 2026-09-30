@@ -1,6 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
+import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
 import { mediaTenantLinks, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
@@ -36,6 +37,7 @@ export async function saveMediaTenantLink(
   formData: FormData,
 ) {
   'use server';
+  await requirePlatformControlAccess(opsTenantSlug);
   const actor = await requirePermission(opsTenantSlug, 'platform:plans');
   const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
   const externalWorkspaceRef = String(formData.get('externalWorkspaceRef') ?? '').trim().slice(0, 255);

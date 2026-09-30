@@ -8,12 +8,12 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
-import type { NormalizedSettlement } from '../domain/settlement';
 import type { BillingRepository } from './repository';
 import {
   applySettlementInsideTransaction,
   type BillingSettlementTransaction,
 } from './settlement-transaction';
+import type { NormalizedSettlement } from '../domain/settlement';
 
 type DrizzleBillingDatabase = Pick<Database, 'transaction'>;
 type DrizzleBillingTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];

@@ -14,7 +14,9 @@ import type { PlatformJson } from '@/shared/db/schema/platform-content';
 
 import { recordPlatformContentAuditEvent } from './audit';
 import { requirePlatformContentAccess } from './authorization';
+import { readEditorialDraft, removeEditorialDraft, stageEditorialDraft } from './editorial-drafts';
 
+type EditorialTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const ENTITY_KEY = 'public-pages';
 const MANAGED_PUBLIC_PAGE_SLUGS = MKETY_PUBLIC_PAGE_DEFAULTS.map((page) => page.slug);
 
@@ -58,8 +60,16 @@ async function recordAuditSafely(input: {
 export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPagesAdminPayload) {
   const parsed = publicPagesAdminPayloadSchema.parse(payload);
   const actor = await requirePlatformContentAccess(tenantSlug);
+  await stageEditorialDraft({ area: 'public-site', entityType: 'page', entityKey: ENTITY_KEY }, parsed, actor.userId);
+  const mutatedRecords = 1;
+  const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.draft_saved', payload: parsed, mutatedRecords });
+  return { ok: true as const, status: 'draft_saved' as const, actorEmail: actor.email, area: 'public-site' as const, entityType: 'page' as const, entityKey: ENTITY_KEY, mutatedRecords, auditRecorded };
+}
 
-  const mutatedRecords = await db.transaction(async (tx) => {
+async function applyPublicPagesDraft(tenantSlug: string, parsed: PublicPagesAdminPayload, connection?: EditorialTransaction) {
+  const actor = await requirePlatformContentAccess(tenantSlug);
+
+  const work = async (tx: EditorialTransaction) => {
     let count = 0;
 
     for (const pageInput of parsed.pages) {
@@ -168,9 +178,10 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
     }
 
     return count;
-  });
+  };
+  const mutatedRecords = await (connection ? work(connection) : db.transaction(work));
 
-  const auditRecorded = await recordAuditSafely({
+  const auditRecorded = connection ? false : await recordAuditSafely({
     tenantSlug,
     actorUserId: actor.userId,
     actorEmail: actor.email,
@@ -178,10 +189,7 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
     payload: parsed,
     mutatedRecords,
   });
-  revalidatePublicPages(
-    tenantSlug,
-    parsed.pages.map((page) => page.slug),
-  );
+  if (!connection) revalidatePublicPages(tenantSlug, parsed.pages.map((page) => page.slug));
 
   return {
     ok: true as const,
@@ -197,9 +205,12 @@ export async function savePublicPagesDraft(tenantSlug: string, payload: PublicPa
 
 export async function publishPublicPages(tenantSlug: string) {
   const actor = await requirePlatformContentAccess(tenantSlug);
+  const draftKey = { area: 'public-site' as const, entityType: 'page' as const, entityKey: ENTITY_KEY };
   const now = new Date();
 
   const mutatedRecords = await db.transaction(async (tx) => {
+    const staged = await readEditorialDraft(draftKey, tx);
+    if (staged) await applyPublicPagesDraft(tenantSlug, publicPagesAdminPayloadSchema.parse(staged), tx);
     const pages = await tx
       .update(schema.platformPages)
       .set({ status: 'published', publishedAt: now, updatedBy: actor.userId, updatedAt: now })
@@ -237,6 +248,7 @@ export async function publishPublicPages(tenantSlug: string) {
       }
       count += sections.length;
     }
+    if (staged) await removeEditorialDraft(draftKey, tx);
     return count;
   });
 

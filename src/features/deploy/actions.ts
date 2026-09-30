@@ -3,11 +3,11 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { requireEntitlement } from '@/features/entitlements/server/authorization';
-import { requireProjectAccess } from '@/features/projects/server/access';
 import { drizzleDeploymentExecutionRepository } from '@/features/deploy/server/execution/drizzle-repository';
 import { executeDeployment } from '@/features/deploy/server/execution/service';
 import { createCustomerCandidateProvider } from '@/features/deploy/server/providers/customer-candidate-runtime';
+import { requireEntitlement } from '@/features/entitlements/server/authorization';
+import { requireProjectAccess } from '@/features/projects/server/access';
 import { withRequestDatabase } from '@/shared/db/request';
 import {
   deployApplications,

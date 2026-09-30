@@ -1,3 +1,20 @@
+# 2026-09-30 repository audit — current resume authority
+
+This section supersedes older implementation/production status below.
+
+- Audited remote baseline: `65e1fcebefbffa1b9304d86360eeb3a2d0c77faa`.
+- Exact-main CI `36681536540`, Mail Production `36681536861`, and Mail Gateway Production `36681536393` succeeded.
+- Mail functional acceptance `36683253272` FAILED: direct authentication and direct message index succeeded, but real IMAP SELECT failed with `message_index_failed:Error`. Infrastructure acceptance is not customer acceptance.
+- The audit branch fixes request-scoped database lifecycle for all five Mail gateway APIs; serialized IMAP/SMTP command handling; IDLE termination; read-only/failure-state selection; flag replacement and backend failure handling; size-only FETCH and IMAP dates; and authorization revalidation on established connections and before SMTP submission.
+- Calendar-date formatting now preserves the intended UTC day on hosts in different time zones.
+- Local full verification and limitations are recorded in `docs/handoffs/2026-09-30-repository-audit-results.md`. This is repository verification, not production certification of the audit branch.
+- External Mail clients and production Enterprise customer inference remain gated. Real Mail domain/send/receive, white-label hostname/login isolation, Enterprise commercial/channel/BYOK/provider acceptance, and controlled Starpips acceptance remain required.
+- Existing PR #222 is a separate gateway-concurrency change. Do not merge stale branches or interrupt an exact-main release merely to bundle it into this audit.
+
+Resume with the audit PR exact-head CI/candidate verification, then guarded exact-SHA Mail application/gateway deployment and self-cleaning functional acceptance. After that, follow `docs/handoffs/2026-09-30-final-platform-completion.md` in order. Never label the whole platform complete from the local tests alone.
+
+---
+
 # 2026-09-29 continuation — Mail gateway before customer acceptance
 
 This section is authoritative over older continuation sequences below.
@@ -1728,3 +1745,13 @@ Enterprise Mkety AI is presented as a business solution rather than an infrastru
 9. Add BYOK after managed inference is stable and tested.
 10. Promote production/customer inference only after exact-head CI, migration, smoke, security, commercial, and live acceptance gates pass.
 
+
+## 2026-09-30 audit continuation authority
+
+PR #223 contains the Mail lifecycle/protocol repairs and Enterprise Platform Control authorization, immutable prepaid settlement, proportional credit, dashboard aggregate decoding, provider-cost reservation and durable claim/dispatch fixes. Current acceptance authority is `docs/handoffs/2026-09-30-repository-audit-results.md`; production sequence remains `docs/handoffs/2026-09-30-final-platform-completion.md`.
+
+Fresh local evidence: 241 source suites / 1,166 tests plus six script tests, TypeScript, Vinext build and migration consistency pass; repository lint has 0 errors and 11 existing image optimization warnings. Independent review found no remaining critical/important issue. The expanded branch CI passed real PostgreSQL concurrency tests and all five operations image builds. Checkov/Gitleaks pass with the precisely documented bootstrap/synthetic-fixture exceptions. Exact-head remote results and SHA are recorded in PR #223; earlier-head runs must not be represented as certifying a later revision.
+
+Production/customer readiness remains gated on certified-main promotion, app/admin authenticated navigation, fresh Mail functional/customer acceptance, and controlled Enterprise white-label/domain/channel/BYOK/external-provider/payment/accounting acceptance. Customer inference and external Mail client gates stay closed until those checks pass and enablement is intentional. No code merge or local test count completes those live gates.
+
+Dependency/editor continuation: the complete pinned-pnpm lockfile audit now reports zero known advisories after direct/transitive patches and removal of the unused webpack Storybook framework. Controlled rich-text updates and duplicate Link registration are regression-fixed. Local verification now passes 244 source suites / 1,174 tests plus six script tests, TypeScript, Cloudflare build, isolated component preview and migration/Drizzle checks. CI now blocks on full dependency audit and component preview. New exact-head remote results remain tracked in PR #223; controlled live/customer release gates above are unchanged.

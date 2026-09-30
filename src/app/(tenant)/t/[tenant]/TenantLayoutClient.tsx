@@ -15,8 +15,8 @@ import type { ReactNode } from 'react';
 
 import { TopHeader, UnifiedSidebar } from '@/shared/components/layout';
 import { AuthProvider } from '@/shared/components/providers';
-import type { MketySession } from '@/shared/lib/auth';
 import { CommandPalette, GlobalSearchProvider } from '@/shared/components/search';
+import type { MketySession } from '@/shared/lib/auth';
 import { SidebarProvider, useSidebar, ViewProvider } from '@/shared/providers';
 
 interface TenantLayoutClientProps {

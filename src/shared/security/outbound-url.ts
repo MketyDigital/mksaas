@@ -38,6 +38,9 @@ function isBlockedIpv6(hostname: string) {
   return (
     normalized === '::1' ||
     normalized === '::' ||
+    // URL canonicalizes mapped IPv4 literals into hexadecimal IPv6. Reject
+    // this alternate address form so private IPv4 cannot bypass the checks.
+    normalized.startsWith('::ffff:') ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd') ||
     normalized.startsWith('fe8') ||

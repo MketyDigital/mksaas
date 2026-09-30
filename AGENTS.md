@@ -4062,3 +4062,24 @@ This section is newer than all earlier Public AI, Platform AI, Enterprise AI, pr
 - Domain registration is a system-wide Mkety service. DomainNameAPI is the concrete reseller adapter behind the shared domain abstraction. Enterprise AI and other products consume the Domains service; they do not own registrar credentials.
 - Managed-model benchmark gate is complete: run `36425084523` recorded Gemma 4 at 8/10, GLM-5.3 Flash at 9/10 and Qwen 3.8 27B at 9/10 with zero provider errors. Gemma + GLM-5.3 Flash are the selected managed pair.
 - Production Enterprise customer inference remains OFF. Tiny managed commercial/accounting acceptance, DomainNameAPI live/fixed-egress reseller acceptance, and guarded Enterprise AI infrastructure promotion are already recorded as complete. The remaining enablement gate is the controlled first real-customer acceptance: verified recurring commercial access, real customer hostname/white-label/login isolation, real channel/runtime/accounting behavior, and then an explicit intentional inference-enable decision.
+
+# 2026-09-30 Repository Audit and Mail Request Lifecycle Override
+
+- Current repository audit/acceptance authority: `docs/handoffs/2026-09-30-repository-audit-results.md`; current operational sequence remains the final-platform-completion handoff.
+- Mail gateway HTTP requests must enter `withRequestDatabase` only after the isolated internal-secret check. Cloudflare/Postgres clients must not be shared across Worker invocations. Existing AsyncLocalStorage propagation keeps nested Mail commercial/entitlement queries in the same request scope.
+- Gateway protocol commands execute serially per connection. Successful authentication is not perpetual authorization: revoke/suspend/entitlement changes must block later reads/writes/submission on established connections.
+- Local passing tests/build are not accepted production/customer evidence. External-client and Enterprise inference gates remain closed until their recorded acceptance sequence passes.
+
+# 2026-09-30 Enterprise Commercial and Dispatch Hardening Override
+
+- Global Enterprise contract and Media tenant-link writes require the Platform Control identity/tenant guard before permission checks; customer admin wildcards never authorize them.
+- Partial prepaid funding settlements are bound to the original checkout/tenant/subscription/period and cannot revive cancelled subscriptions or replace a newer billing period. Ordinary period allowances exclude prepaid-partial policies.
+- Managed provider-cost admission must serialize per tenant and reserve conservative in-flight cost durably. Unknown outcomes retain their estimate for reconciliation; missing Enterprise policy/period fails closed. PostgreSQL int8 aggregates must be decoded before BigInt arithmetic.
+- Scheduled provider dispatch requires atomic current claim ownership and a durable reconciliation marker before external work. Only explicit no-dispatch capacity rejection permits automatic retry; stale claimants cannot release or dispatch a newer claim.
+- Updated audit evidence is in `docs/handoffs/2026-09-30-repository-audit-results.md`. Local regression/security success does not replace exact-head remote checks or the controlled live/customer acceptance gates.
+
+# 2026-09-30 Dependency Security and Component Preview Override
+
+- Complete pnpm dependency audit (including build/test packages) is a blocking CI gate. Do not rely on nonblocking historical MegaLinter vulnerability scanners to certify a new lockfile. Version-scoped patch overrides preserve compatible majors; the current Sharp/esbuild boundaries require native image/build-loader checks.
+- Storybook uses the Vite framework and its dedicated browser config; application Vinext/RSC plugins must not enter that preview build. The unused webpack framework is removed.
+- Rich editor controlled value changes compare against actual editor content; retain one custom Link extension, with StarterKit Link disabled. No customer/provider/production acceptance gate is satisfied merely by these dependency or component checks.

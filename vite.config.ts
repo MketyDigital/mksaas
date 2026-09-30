@@ -1,10 +1,10 @@
-import { fileURLToPath } from 'node:url';
 
 import { cloudflare } from '@cloudflare/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { imagesOptimizer } from '@vinext/cloudflare/images/images-optimizer';
 import vinext from 'vinext';
 import { defineConfig, type Plugin } from 'vite';
+import { fileURLToPath } from 'node:url';
 
 const runtimeConnectionNodePath = fileURLToPath(
   new URL('./src/shared/db/runtime-connection.ts', import.meta.url)

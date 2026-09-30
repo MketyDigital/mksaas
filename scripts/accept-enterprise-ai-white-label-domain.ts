@@ -1,5 +1,5 @@
-import { resolve4, resolve6, resolveCname } from 'node:dns/promises';
 import postgres from 'postgres';
+import { resolve4, resolve6, resolveCname } from 'node:dns/promises';
 
 function required(name: string) {
   const value = process.env[name]?.trim();

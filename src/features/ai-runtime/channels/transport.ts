@@ -1,6 +1,6 @@
-import type { EnterpriseAiChannelKey } from './registry';
-import type { EnterpriseAiChannelCredentials } from './credentials';
 import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
+import type { EnterpriseAiChannelCredentials } from './credentials';
+import type { EnterpriseAiChannelKey } from './registry';
 
 export type EnterpriseAiChannelConnection = {
   channel: EnterpriseAiChannelKey;

@@ -1,5 +1,5 @@
-import { CloudflareCandidateApiTransport } from './cloudflare-candidate-api';
 import { createCloudflareCandidateAdapter } from './cloudflare-candidate';
+import { CloudflareCandidateApiTransport } from './cloudflare-candidate-api';
 import { customerCandidateProofArtifactSource } from './customer-candidate-artifact';
 
 export interface CustomerCandidateRuntimeEnvironment {

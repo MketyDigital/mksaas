@@ -2,9 +2,11 @@ import { addMonths } from 'date-fns';
 import { and, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
-import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
+
 import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
+import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
+import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
 import {
   aiEnterpriseCommercialPolicies,
@@ -82,6 +84,7 @@ export async function createEnterpriseAiContractVersion(
   formData: FormData,
 ) {
   'use server';
+  await requirePlatformControlAccess(opsTenantSlug);
   await requirePermission(opsTenantSlug, 'platform:plans');
   const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
   const target = await getTenantBySlug(targetTenantSlug);
@@ -337,7 +340,7 @@ export async function getEnterpriseAiContractBillingState(tenantId: string) {
     contract,
     subscription: subscription ?? null,
     period: period ?? null,
-    fundedMinor: funding[0]?.fundedMinor ?? 0n,
+    fundedMinor: BigInt(funding[0]?.fundedMinor ?? 0),
   };
 }
 
@@ -477,7 +480,7 @@ export async function createEnterpriseAiContractCheckout(input: {
         ),
       ));
 
-    const funded = fundedMinor ?? 0n;
+    const funded = BigInt(fundedMinor ?? 0);
     const remaining = contract.amountMinor - funded;
     if (remaining <= 0n) {
       throw new Error(`Enterprise AI is already funded through ${period.periodEnd.toISOString()}.`);

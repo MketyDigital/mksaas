@@ -3,10 +3,10 @@ import { Inbox, Users } from 'lucide-react';
 
 import { createMailbox } from '@/features/mail/server/mailbox-actions';
 import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
-import { db } from '@/shared/db/cloudflare';
-import { mailDomains, mailMailboxes, mailWorkspaces } from '@/shared/db/schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
+import { db } from '@/shared/db/cloudflare';
+import { mailDomains, mailMailboxes, mailWorkspaces } from '@/shared/db/schema';
 
 export const dynamic='force-dynamic';
 
