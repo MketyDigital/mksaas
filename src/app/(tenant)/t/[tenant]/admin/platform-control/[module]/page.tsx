@@ -24,6 +24,7 @@ import { requirePlatformControlAccess } from '@/features/platform-content/server
 import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
 import { ConfirmSubmitButton } from '@/shared/components/ConfirmSubmitButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { withRequestDatabase } from '@/shared/db/request';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
@@ -80,7 +81,7 @@ async function withAdminTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000):
   ]);
 }
 
-export default async function PlatformControlModulePage({ params }: PlatformControlModulePageProps) {
+async function renderPlatformControlModulePage({ params }: PlatformControlModulePageProps) {
   const { tenant, module: routeModuleKey } = await params;
   await requirePlatformControlAccess(tenant);
 
@@ -593,4 +594,8 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
       </div> : null}
     </div>
   );
+}
+
+export default async function PlatformControlModulePage(props: PlatformControlModulePageProps) {
+  return withRequestDatabase(() => renderPlatformControlModulePage(props));
 }
