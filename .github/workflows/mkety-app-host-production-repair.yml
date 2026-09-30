@@ -1,6 +1,12 @@
 name: Mkety App Host Production Repair
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-app-host-production-repair.yml'
+      - 'docs/MKETY_APP_HOST_*.md'
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -13,6 +19,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 env:
@@ -26,8 +33,9 @@ env:
 
 jobs:
   repair:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[app-host-production]')
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -43,6 +51,9 @@ jobs:
     steps:
       - name: Authorize exact production SHA
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSH_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -55,11 +66,47 @@ jobs:
               echo "One-time app-host promotion is restricted to main." >&2
               exit 1
             }
+            printf '%s' "$PUSH_MESSAGE" | grep -Fq '[app-host-production]' || {
+              echo "Push is not an authorized app-host production release." >&2
+              exit 1
+            }
           fi
           case "$TARGET_SHA" in
             [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
             *) echo "verified_sha must be a full 40-character commit SHA." >&2; exit 1 ;;
           esac
+
+          main="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$RELEASE_BRANCH")"
+          head="$(MAIN="$main" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
+          [ "$head" = "$TARGET_SHA" ] || { echo "main head is $head, not $TARGET_SHA" >&2; exit 1; }
+
+          verify_success() {
+            workflow="$1"
+            label="$2"
+            for attempt in $(seq 1 60); do
+              response="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'                 "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$TARGET_SHA&status=success&per_page=20")"
+              if RESPONSE="$response" node -e "const x=JSON.parse(process.env.RESPONSE||'{}');process.exit(Array.isArray(x.workflow_runs)&&x.workflow_runs.length?0:1)"; then
+                echo "Verified successful $label for exact SHA."
+                return 0
+              fi
+              echo "Waiting for $label on exact SHA ($attempt/60)..."
+              sleep 15
+            done
+            echo "Missing successful $label for exact SHA after bounded wait." >&2
+            return 1
+          }
+
+          verify_success type-check.yml Typecheck
+          verify_success lint.yml Lint
+          verify_success tests.yml Tests
+          verify_success build.yml Build
+
+          main_after="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$RELEASE_BRANCH")"
+          head_after="$(MAIN="$main_after" node -e "process.stdout.write(JSON.parse(process.env.MAIN).commit.sha)")"
+          [ "$head_after" = "$TARGET_SHA" ] || {
+            echo "main advanced to $head_after while release certification was running." >&2
+            exit 1
+          }
 
       - name: Checkout exact certified main release
         uses: actions/checkout@v4
@@ -199,10 +246,10 @@ jobs:
           put_secret MKETY_PLATFORM_CONTROL_TENANT_SLUG "$MKETY_PLATFORM_CONTROL_TENANT_SLUG"
           put_secret MKETY_PLATFORM_ADMIN_EMAILS "$MKETY_PLATFORM_ADMIN_EMAILS"
           if [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
-            [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] && [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ] || {
+            if [ -z "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -z "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
               echo "MKETY_DOMAIN_RELAY_URL and MKETY_DOMAIN_RELAY_SECRET must be configured together." >&2
               exit 1
-            }
+            fi
             put_secret MKETY_DOMAIN_RELAY_URL "$MKETY_DOMAIN_RELAY_URL"
             put_secret MKETY_DOMAIN_RELAY_SECRET "$MKETY_DOMAIN_RELAY_SECRET"
           fi
@@ -220,9 +267,9 @@ jobs:
           headers=/tmp/app-preview.headers
           code="$(curl -sS --connect-timeout 10 --max-time 30 -D "$headers" -o /dev/null -w '%{http_code}' "$PREVIEW_URL/app" || true)"
           location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
-          [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ] || {
+          if ! { [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ]; }; then
             echo "Preview /app did not redirect to login." >&2; exit 1;
-          }
+          fi
 
       - name: Back up app.mkety.com DNS and Custom Domain state
         id: snapshot
@@ -322,13 +369,17 @@ jobs:
           app_headers=/tmp/app-live-entry.headers
           app_code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$app_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app')"
           app_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_headers")"
-          [ "$app_code" -ge 300 ] && [ "$app_code" -lt 400 ] && [ -n "$app_location" ] || { echo "Unauthenticated /app did not redirect." >&2; exit 1; }
+          if ! { [ "$app_code" -ge 300 ] && [ "$app_code" -lt 400 ] && [ -n "$app_location" ]; }; then
+            echo "Unauthenticated /app did not redirect." >&2; exit 1;
+          fi
           APP_LOCATION="$app_location" node -e "const u=new URL(process.env.APP_LOCATION,'https://app.mkety.com/app');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login')process.exit(1)"
 
           auth_headers=/tmp/app-live-auth.headers
           auth_code="$(curl -sS --connect-timeout 10 --max-time 30 -D "$auth_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin')"
           auth_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$auth_headers")"
-          [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ] || { echo "Auth first hop did not redirect." >&2; exit 1; }
+          if ! { [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ]; }; then
+            echo "Auth first hop did not redirect." >&2; exit 1;
+          fi
           AUTH_LOCATION="$auth_location" node -e "const u=new URL(process.env.AUTH_LOCATION);if(u.origin!=='https://auth.mkety.com'||!u.pathname.startsWith('/ui/v2/login/'))process.exit(1)"
 
       - name: Disable dedicated Worker preview exposure
@@ -388,7 +439,9 @@ jobs:
           {
             echo '## app.mkety.com production repair'
             echo
-            echo '- Exact production SHA: `${{ env.TARGET_SHA }}`'
+            printf '%s%s%s\n' '- Exact production SHA: `' "$TARGET_SHA" '`'
+            # Markdown code ticks are literal.
+            # shellcheck disable=SC2016
             echo '- Dedicated Worker: `mkety-app-host`'
             echo '- Public mkety.com/www Worker: unchanged'
             echo '- Production DB: existing MKETY_DB Hyperdrive'
