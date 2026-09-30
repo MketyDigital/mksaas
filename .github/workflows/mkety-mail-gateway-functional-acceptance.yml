@@ -205,6 +205,35 @@ jobs:
           }
           deploy_and_wait 'MKETY_MAIL_FUNCTIONAL_FIXTURE_READY=true' || {
             echo 'Synthetic Mail fixture setup failed.'
+            echo 'Sanitized deployment state:'
+            if [ -f /tmp/dep.json ]; then
+              node - <<'NODE'
+          const fs=require('node:fs');
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/dep.json','utf8'));
+            console.log(JSON.stringify({status:x.status||null,message:x.message||null},null,2));
+          } catch {
+            console.log('Deployment state unavailable.');
+          }
+          NODE
+            fi
+            echo 'Sanitized acceptance container logs:'
+            curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/applications/$app_uuid/logs?lines=300&show_timestamps=false" -o /tmp/acceptance-failure-logs.json || true
+            node - <<'NODE'
+          const fs=require('node:fs');
+          let raw='';
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/acceptance-failure-logs.json','utf8'));
+            raw=String(x.logs||'');
+          } catch {}
+          raw=raw
+            .replace(/postgres(?:ql)?:\/\/[^\s"'\]+]+/gi,'postgresql://***')
+            .replace(/mkmail-[0-9a-f]+/gi,'mkmail-***')
+            .replace(/password\s*[=:]\s*[^\s]+/gi,'password=***')
+            .replace(/authorization\s*[=:]\s*[^\s]+/gi,'authorization=***');
+          console.log(raw.slice(-12000) || 'No application logs returned.');
+          NODE
             exit 1
           }
 
