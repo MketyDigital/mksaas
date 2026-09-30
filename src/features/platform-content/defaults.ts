@@ -23,9 +23,9 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
   accentColor: '#22D3EE',
-  defaultSeoTitle: 'Mkety | AI, Automation, Deployments, Domains, Mail, Media & Enterprise',
+  defaultSeoTitle: 'Mkety | Simple, connected digital solutions for your business',
   defaultSeoDescription:
-    'Build AI agents, automate workflows, deploy applications, register and manage domains, run business email, manage media, and deliver custom business systems with Mkety.',
+    'Bring your website, business email, AI assistance, workflows and digital operations together with Mkety. Start with a ready-made solution or build a tailored system with our team.',
   contactEmail: 'support@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
@@ -54,12 +54,12 @@ export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
 ];
 
 export const defaultHeroSection: PlatformHeroSectionInput = {
-  badge: 'Mkety Platform',
-  headline: 'Build, automate, deploy, and operate with Mkety.',
+  badge: 'One connected Mkety ecosystem',
+  headline: 'Make digital work simpler for your business.',
   subheadline:
-    'Create AI agents, workflows, applications, websites, integrations, business systems, and learning experiences from one connected platform.',
-  primaryCta: { label: 'Get Started', href: '/signup' },
-  secondaryCta: { label: 'Explore Docs', href: '/docs' },
+    'Launch a website, connect business email, put AI to work and streamline daily operations. Choose what you need now and grow with one connected Mkety experience.',
+  primaryCta: { label: 'See plans', href: '/pricing' },
+  secondaryCta: { label: 'Ask Mkety AI', href: '/contact#mkety-ai' },
   previewItems: [
     { label: 'AI', description: 'Agents, knowledge, tools, models, runs, versions, and publishing.' },
     { label: 'Automation', description: 'Triggers, workflows, actions, conditions, webhooks, and run history.' },

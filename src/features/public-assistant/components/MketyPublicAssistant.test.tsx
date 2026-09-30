@@ -22,7 +22,7 @@ describe('MketyPublicAssistant', () => {
     expect(launcher).toHaveClass('bg-transparent');
     expect(launcher).toHaveClass('top-[4.5rem]');
     expect(launcher.querySelector('img')).toHaveAttribute('src', '/mkety-logo.png');
-    expect(launcher).toHaveClass('max-w-[560px]');
+    expect(launcher).toHaveClass('w-[calc(50%-0.75rem)]', 'max-w-[280px]');
     expect(screen.queryByText(/openai|gemini|bedrock|vertex|model selector/i)).not.toBeInTheDocument();
   });
 

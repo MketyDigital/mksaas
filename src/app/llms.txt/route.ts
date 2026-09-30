@@ -1,6 +1,12 @@
 const body = `# Mkety
 
-> Mkety is a technology platform for AI, automation, deployment, business email, media, business solutions, practical learning, and Enterprise delivery.
+> Mkety helps businesses, organizations and individuals launch and run digital solutions from one connected ecosystem. Customers can start with websites, business email and AI assistance, then add automation, applications and tailored Enterprise delivery. The underlying infrastructure is managed behind the Mkety experience.
+
+## Find the right next step
+- Explore public capabilities and straightforward self-service plans at https://mkety.com/pricing; ready customers can choose a plan and complete checkout there.
+- Ask Mkety AI through https://mkety.com/contact#mkety-ai for product discovery, public documentation and general support. Account-specific issues and custom requirements go to the human support or Enterprise team when needed.
+- Discuss tailored integrations, Enterprise AI, Enterprise Mail and specialized Trading through https://mkety.com/enterprise. Their availability and terms depend on an agreed scope; do not infer a self-service entitlement.
+- Security and infrastructure details are described at https://mkety.com/trust and https://mkety.com/infrastructure. Do not infer a certification, uptime guarantee or data-residency promise unless it is explicitly published or agreed.
 
 ## Canonical public surfaces
 - https://mkety.com/ — public company and product website
