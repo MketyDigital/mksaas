@@ -22,6 +22,7 @@ import { getPublishedAppExperience , getPublishedControlCenterModule } from '@/f
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
+import { grantManualTenantCredits } from '@/features/usage-credits/server/admin-actions';
 import { ConfirmSubmitButton } from '@/shared/components/ConfirmSubmitButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { withRequestDatabase } from '@/shared/db/request';
@@ -104,6 +105,7 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
   const isDeployments = controlModule.key === 'deployments-domains';
   const isPayments = controlModule.key === 'payments';
   const isMailOperations = controlModule.key === 'mail-operations';
+  const isBillingLedger = controlModule.key === 'billing-ledger';
   const isAiOperations = controlModule.key === 'ai-operations';
   const isMediaConnector = controlModule.key === 'media-connector';
   const isDomainsRouting = controlModule.key === 'domains-routing';
@@ -195,6 +197,41 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
         />
       ) : null}
 
+
+      {isBillingLedger ? (
+        <Card className="rounded-2xl border-primary/20">
+          <CardHeader>
+            <CardTitle>Manual bonus / goodwill credits</CardTitle>
+            <CardDescription>
+              Grant non-cash product credits without recording a payment or changing the customer's contract. Every grant is tenant-scoped, reasoned, actor-attributed and idempotent in the immutable credit ledger.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={grantManualTenantCredits.bind(null, tenant)} className="grid gap-4 lg:grid-cols-2">
+              <input name="idempotencyKey" type="hidden" value={crypto.randomUUID()} />
+              <label className="text-sm font-medium">
+                Customer workspace slug
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+              </label>
+              <label className="text-sm font-medium">
+                Credits to grant
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" min={1} name="credits" type="number" required />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">These are product credits only. This does not create a settlement, invoice payment, subscription renewal or cash balance.</span>
+              </label>
+              <label className="text-sm font-medium lg:col-span-2">
+                Reason
+                <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={500} minLength={5} name="reason" placeholder="Goodwill extension while customer completes current billing period" rows={3} required />
+              </label>
+              <ConfirmSubmitButton
+                className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2"
+                confirmMessage="Grant these zero-dollar product credits to the specified customer? This will create an immutable manual_grant ledger entry and cannot be disguised as a payment."
+              >
+                Grant bonus credits
+              </ConfirmSubmitButton>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isAiOperations && aiCommercialOverview ? (
         <div className="space-y-6">
