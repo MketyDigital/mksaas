@@ -120,6 +120,7 @@ export async function upsertManagedAiModel(tenantSlug: string, formData: FormDat
   const cachedCost = parseOptionalPositiveBigInt(formData.get('cachedInputUsdMicrosPerMillion'), 'Cached input provider cost');
   const outputCost = parseOptionalPositiveBigInt(formData.get('outputUsdMicrosPerMillion'), 'Output provider cost');
   const verifiedAt = String(formData.get('providerCostVerifiedAt') ?? '').trim();
+  const providerCostSourceUrl = String(formData.get('providerCostSourceUrl') ?? '').trim().slice(0, 1000);
   const enabled = formData.get('enabled') === 'on';
 
   if (enabled && providerKey !== 'workers-ai' && (!inputCost || !outputCost || !verifiedAt)) {
@@ -149,6 +150,7 @@ export async function upsertManagedAiModel(tenantSlug: string, formData: FormDat
         ...(cachedCost ? { cachedInputUsdMicrosPerMillion: cachedCost.toString() } : {}),
         outputUsdMicrosPerMillion: outputCost.toString(),
         providerCostVerifiedAt: verifiedAt,
+        ...(providerCostSourceUrl ? { providerCostSourceUrl } : {}),
       } : {},
       updatedAt: new Date(),
     };
