@@ -4062,3 +4062,10 @@ This section is newer than all earlier Public AI, Platform AI, Enterprise AI, pr
 - Domain registration is a system-wide Mkety service. DomainNameAPI is the concrete reseller adapter behind the shared domain abstraction. Enterprise AI and other products consume the Domains service; they do not own registrar credentials.
 - Managed-model benchmark gate is complete: run `36425084523` recorded Gemma 4 at 8/10, GLM-5.3 Flash at 9/10 and Qwen 3.8 27B at 9/10 with zero provider errors. Gemma + GLM-5.3 Flash are the selected managed pair.
 - Production Enterprise customer inference remains OFF. Tiny managed commercial/accounting acceptance, DomainNameAPI live/fixed-egress reseller acceptance, and guarded Enterprise AI infrastructure promotion are already recorded as complete. The remaining enablement gate is the controlled first real-customer acceptance: verified recurring commercial access, real customer hostname/white-label/login isolation, real channel/runtime/accounting behavior, and then an explicit intentional inference-enable decision.
+
+# 2026-09-30 Repository Audit and Mail Request Lifecycle Override
+
+- Current repository audit/acceptance authority: `docs/handoffs/2026-09-30-repository-audit-results.md`; current operational sequence remains the final-platform-completion handoff.
+- Mail gateway HTTP requests must enter `withRequestDatabase` only after the isolated internal-secret check. Cloudflare/Postgres clients must not be shared across Worker invocations. Existing AsyncLocalStorage propagation keeps nested Mail commercial/entitlement queries in the same request scope.
+- Gateway protocol commands execute serially per connection. Successful authentication is not perpetual authorization: revoke/suspend/entitlement changes must block later reads/writes/submission on established connections.
+- Local passing tests/build are not accepted production/customer evidence. External-client and Enterprise inference gates remain closed until their recorded acceptance sequence passes.

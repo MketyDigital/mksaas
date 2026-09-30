@@ -47,6 +47,13 @@ function quote(value){
   return '"'+String(value??'').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]+/g,' ')+'"';
 }
 
+function imapDate(value){
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) throw new Error('invalid_message_date');
+  const utc=date.toUTCString().split(' ');
+  return `${utc[1]}-${utc[2]}-${utc[3]} ${utc[4]} +0000`;
+}
+
 function flags(message){
   const result=[];
   if(message.isRead) result.push('\\Seen');
@@ -127,23 +134,32 @@ function parseLoginArgs(args){
 async function authenticate(username,password){
   const {response,payload}=await jsonApi('/api/internal/mail/gateway/auth',{username,password});
   if(!response.ok||payload.ok!==true) return null;
-  return payload;
+  return {...payload,credentials:{username,password}};
+}
+
+async function sessionAuthorized(session){
+  return session?.credentials&&Boolean(await authenticate(session.credentials.username,session.credentials.password));
 }
 
 function startImap(){
   const server=tls.createServer(tlsOptions,(socket)=>{
     socket.setTimeout(10*60*1000);
-    socket.write('* OK [CAPABILITY IMAP4rev1 UIDPLUS NAMESPACE IDLE AUTH=PLAIN] Mkety Mail ready\r\n');
+    socket.write('* OK [CAPABILITY IMAP4rev1 NAMESPACE IDLE AUTH=PLAIN] Mkety Mail ready\r\n');
     let buffer='';
     let session=null;
-    let selected='inbox';
+    let selected=null;
+    let readOnly=false;
+    let idleTag=null;
     let authPlainPending=null;
 
     const send=(line)=>socket.write(line+'\r\n');
     const tagged=(tag,status,text)=>send(`${tag} ${status} ${text}`);
 
-    socket.on('data',async(chunk)=>{
-      buffer+=chunk.toString('utf8');
+    let processing=false;
+    const processBuffer=async()=>{
+      if(processing) return;
+      processing=true;
+      try{
       while(buffer.includes('\n')){
         const idx=buffer.indexOf('\n');
         const line=buffer.slice(0,idx).replace(/\r$/,'');
@@ -158,11 +174,17 @@ function startImap(){
             continue;
           }
 
+          if(idleTag){
+            if(line.trim().toUpperCase()==='DONE'){
+              tagged(idleTag,'OK','IDLE terminated');idleTag=null;
+            }else tagged(idleTag,'BAD','Expected DONE');
+            continue;
+          }
           const {tag,command,args}=parseCommand(line);
           if(!tag||!command) continue;
 
           if(command==='CAPABILITY'){
-            send('* CAPABILITY IMAP4rev1 UIDPLUS NAMESPACE IDLE AUTH=PLAIN');
+            send('* CAPABILITY IMAP4rev1 NAMESPACE IDLE AUTH=PLAIN');
             tagged(tag,'OK','CAPABILITY completed');
           }else if(command==='NOOP'){
             tagged(tag,'OK','NOOP completed');
@@ -189,14 +211,18 @@ function startImap(){
             send('* BYE Mkety Mail logging out');tagged(tag,'OK','LOGOUT completed');socket.end();
           }else if(!session){
             tagged(tag,'NO','Authenticate first');
+          }else if(!(await sessionAuthorized(session))){
+            session=null;selected=null;tagged(tag,'NO','Authorization expired');
           }else if(command==='LIST'||command==='LSUB'){
             send('* LIST (\\HasNoChildren) "/" "INBOX"');
             send('* LIST (\\HasNoChildren \\Sent) "/" "Sent"');
             tagged(tag,'OK',`${command} completed`);
           }else if(command==='SELECT'||command==='EXAMINE'){
             const name=args.replace(/^"|"$/g,'').toLowerCase();
-            selected=name==='sent'?'sent':'inbox';
-            const messages=await listAll(session,selected);
+            if(name!=='sent'&&name!=='inbox'){tagged(tag,'NO','Mailbox does not exist');continue;}
+            selected=null;readOnly=false;
+            const messages=await listAll(session,name);
+            selected=name;readOnly=command==='EXAMINE';
             const unseen=messages.filter(m=>!m.isRead).length;
             const next=(messages.at(-1)?.uid||0)+1;
             send('* FLAGS (\\Seen \\Flagged)');
@@ -214,12 +240,14 @@ function startImap(){
             tagged(tag,'OK','STATUS completed');
           }else if(command==='SEARCH'||(command==='UID'&&args.toUpperCase().startsWith('SEARCH'))){
             const useUid=command==='UID';
+            if(!selected){tagged(tag,'NO','Select a mailbox first');continue;}
             const messages=await listAll(session,selected);
             const criteria=useUid?args.slice(6).trim().toUpperCase():args.toUpperCase();
             const filtered=criteria.includes('UNSEEN')?messages.filter(m=>!m.isRead):messages;
-            send('* SEARCH '+filtered.map((m,i)=>useUid?m.uid:messages.indexOf(m)+1).join(' '));
+            send('* SEARCH '+filtered.map((m)=>useUid?m.uid:messages.indexOf(m)+1).join(' '));
             tagged(tag,'OK','SEARCH completed');
           }else if(command==='FETCH'||(command==='UID'&&args.toUpperCase().startsWith('FETCH'))){
+            if(!selected){tagged(tag,'NO','Select a mailbox first');continue;}
             const useUid=command==='UID';
             const fetchArgs=useUid?args.slice(5).trim():args;
             const space=fetchArgs.indexOf(' ');
@@ -231,56 +259,64 @@ function startImap(){
               const message=messages[i];
               const keyValue=useUid?Number(message.uid):i+1;
               if(!wanted.has(keyValue)) continue;
-              const base=[`UID ${message.uid}`,`FLAGS (${flags(message).join(' ')})`,`INTERNALDATE ${quote(new Date(message.internalDate).toUTCString())}`];
+              const base=[`UID ${message.uid}`,`FLAGS (${flags(message).join(' ')})`,`INTERNALDATE ${quote(imapDate(message.internalDate))}`];
               if(items.includes('ENVELOPE')) base.push(`ENVELOPE ${envelope(message)}`);
-              const needsBody=/BODY|RFC822/i.test(items);
-              if(needsBody){
+              const needsBody=/BODY\[|BODY\.PEEK\[|\bRFC822(?:\.HEADER|\.TEXT)?(?=[ )]|$)/i.test(items);
+              const needsSize=items.includes('RFC822.SIZE');
+              if(needsBody||needsSize){
                 const {response,bytes}=await rawApi('/api/internal/mail/gateway/message',{
                   tenantId:session.tenantId,mailboxId:session.mailboxId,uid:message.uid,
                 });
-                if(!response.ok||!bytes) continue;
+                if(!response.ok||!bytes) throw new Error('message_content_failed');
                 let payload=bytes;
                 let label='BODY[]';
                 if(items.includes('HEADER')){
                   const marker=bytes.indexOf(Buffer.from('\r\n\r\n'));
                   payload=marker>=0?bytes.subarray(0,marker+4):bytes;
-                  label='BODY[HEADER]';
-                }else if(items.includes('RFC822')) label='RFC822';
+                  label=items.includes('RFC822.HEADER')?'RFC822.HEADER':'BODY[HEADER]';
+                }else if(items.includes('RFC822.TEXT')){
+                  const marker=bytes.indexOf(Buffer.from('\r\n\r\n'));
+                  payload=marker>=0?bytes.subarray(marker+4):Buffer.alloc(0);label='RFC822.TEXT';
+                }else if(/\bRFC822(?=[ )]|$)/.test(items)) label='RFC822';
                 base.push(`RFC822.SIZE ${bytes.length}`);
-                socket.write(`* ${i+1} FETCH (${base.join(' ')} ${label} {${payload.length}}\r\n`);
-                socket.write(payload);socket.write('\r\n)\r\n');
+                if(needsBody){
+                  socket.write(`* ${i+1} FETCH (${base.join(' ')} ${label} {${payload.length}}\r\n`);
+                  socket.write(payload);socket.write('\r\n)\r\n');
+                }else send(`* ${i+1} FETCH (${base.join(' ')})`);
               }else{
                 send(`* ${i+1} FETCH (${base.join(' ')})`);
               }
             }
             tagged(tag,'OK','FETCH completed');
           }else if(command==='STORE'||(command==='UID'&&args.toUpperCase().startsWith('STORE'))){
+            if(!selected||readOnly){tagged(tag,'NO','Mailbox is not writable');continue;}
             const useUid=command==='UID';
             const storeArgs=useUid?args.slice(5).trim():args;
             const parts=storeArgs.split(/\s+/,3);
             const messages=await listAll(session,selected);
             const wanted=parseSet(parts[0],messages,useUid);
             const flagText=storeArgs.slice(storeArgs.indexOf(parts[1])+parts[1].length).toUpperCase();
+            if(!/^[+-]?FLAGS(?:\.SILENT)?$/i.test(parts[1]||'')){tagged(tag,'BAD','Invalid STORE operation');continue;}
             const add=parts[1].startsWith('+'),remove=parts[1].startsWith('-');
             for(let i=0;i<messages.length;i+=1){
               const message=messages[i],keyValue=useUid?Number(message.uid):i+1;
               if(!wanted.has(keyValue)) continue;
-              const nextRead=flagText.includes('\\SEEN')?(remove?false:true):message.isRead;
-              const nextStar=flagText.includes('\\FLAGGED')?(remove?false:true):message.isStarred;
-              await jsonApi('/api/internal/mail/gateway/flags',{
+              const nextRead=flagText.includes('\\SEEN')?!remove:(add||remove?message.isRead:false);
+              const nextStar=flagText.includes('\\FLAGGED')?!remove:(add||remove?message.isStarred:false);
+              const {response,payload}=await jsonApi('/api/internal/mail/gateway/flags',{
                 tenantId:session.tenantId,mailboxId:session.mailboxId,uid:message.uid,isRead:nextRead,isStarred:nextStar,
               });
+              if(!response.ok||payload.ok!==true) throw new Error('message_flags_failed');
               if(!parts[1].toUpperCase().includes('.SILENT')){
                 send(`* ${i+1} FETCH (UID ${message.uid} FLAGS (${flags({...message,isRead:nextRead,isStarred:nextStar}).join(' ')}))`);
               }
             }
             tagged(tag,'OK','STORE completed');
           }else if(command==='CLOSE'||command==='CHECK'){
+            if(command==='CLOSE'){selected=null;readOnly=false;}
             tagged(tag,'OK',`${command} completed`);
           }else if(command==='IDLE'){
-            send('+ idling');
-          }else if(command==='DONE'){
-            tagged(tag,'OK','IDLE terminated');
+            idleTag=tag;send('+ idling');
           }else{
             tagged(tag,'BAD','Unsupported command');
           }
@@ -290,6 +326,11 @@ function startImap(){
           tagged(tag,'NO','Temporary server error');
         }
       }
+      }finally{processing=false;}
+    };
+    socket.on('data',(chunk)=>{
+      buffer+=chunk.toString('utf8');
+      void processBuffer();
     });
     socket.on('timeout',()=>socket.end());
     socket.on('error',()=>{});
@@ -307,8 +348,11 @@ function startSmtp(){
     const send=(line)=>socket.write(line+'\r\n');
     const reset=()=>{mailFrom='';recipients=[];dataMode=false;dataLines=[];};
 
-    socket.on('data',async(chunk)=>{
-      buffer+=chunk.toString('utf8');
+    let processing=false;
+    const processBuffer=async()=>{
+      if(processing) return;
+      processing=true;
+      try{
       while(buffer.includes('\n')){
         const idx=buffer.indexOf('\n');
         let line=buffer.slice(0,idx).replace(/\r$/,'');
@@ -317,6 +361,7 @@ function startSmtp(){
           if(dataMode){
             if(line==='.'){
               dataMode=false;
+              if(!(await sessionAuthorized(session))){session=null;send('535 5.7.8 Authorization expired');reset();continue;}
               const raw=Buffer.from(dataLines.map(v=>v.startsWith('..')?v.slice(1):v).join('\r\n')+'\r\n','utf8');
               if(raw.length>25_000_000){send('552 5.3.4 Message too large');reset();continue;}
               const {response,payload}=await jsonApi('/api/internal/mail/gateway/submit',{
@@ -370,6 +415,7 @@ function startSmtp(){
             session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'');
             send(session?'235 2.7.0 Authentication successful':'535 5.7.8 Authentication credentials invalid');
           }else if(!session){send('530 5.7.0 Authentication required');
+          }else if(!(await sessionAuthorized(session))){session=null;send('535 5.7.8 Authorization expired');reset();
           }else if(verb==='MAIL'){
             const match=rest.match(/^FROM:\s*<([^>]+)>/i);
             const from=String(match?.[1]||'').toLowerCase();
@@ -391,6 +437,11 @@ function startSmtp(){
           reset();
         }
       }
+      }finally{processing=false;}
+    };
+    socket.on('data',(chunk)=>{
+      buffer+=chunk.toString('utf8');
+      void processBuffer();
     });
     socket.on('timeout',()=>socket.end());
     socket.on('error',()=>{});

@@ -4,16 +4,14 @@ import { NextResponse } from 'next/server';
 import { fetchMailContent, fetchMailText } from '@/features/mail/server/content';
 import { requireMailGatewaySecret } from '@/features/mail/server/gateway-auth';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { mailMessages } from '@/shared/db/schema';
 
 function header(value: string) {
   return value.replace(/[\r\n]+/g, ' ').trim();
 }
 
-export async function POST(request: Request) {
-  if (!requireMailGatewaySecret(request)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+async function handlePost(request: Request) {
   const body = await request.json().catch(() => null) as {
     tenantId?: string;
     mailboxId?: string;
@@ -73,4 +71,11 @@ export async function POST(request: Request) {
       'x-mkety-imap-uid': String(message.imapUid),
     },
   });
+}
+
+export async function POST(request: Request) {
+  if (!requireMailGatewaySecret(request)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  return withRequestDatabase(() => handlePost(request));
 }

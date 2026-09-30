@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { requireMailGatewaySecret } from '@/features/mail/server/gateway-auth';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { mailMailboxes, mailMessages } from '@/shared/db/schema';
 
 function toGatewayIso(value: unknown) {
@@ -25,10 +26,7 @@ function gatewayErrorMarker(error: unknown) {
   return 'unknown';
 }
 
-export async function POST(request: Request) {
-  if (!requireMailGatewaySecret(request)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+async function handlePost(request: Request) {
   const body = await request.json().catch(() => null) as {
     tenantId?: string;
     mailboxId?: string;
@@ -107,4 +105,11 @@ export async function POST(request: Request) {
       { status: 500, headers: { 'cache-control': 'no-store' } },
     );
   }
+}
+
+export async function POST(request: Request) {
+  if (!requireMailGatewaySecret(request)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  return withRequestDatabase(() => handlePost(request));
 }

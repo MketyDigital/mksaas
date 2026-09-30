@@ -4,11 +4,10 @@ import {
   authenticateExternalMailClient,
   requireMailGatewaySecret,
 } from '@/features/mail/server/gateway-auth';
+import { withRequestDatabase } from '@/shared/db/request';
 
-export async function POST(request: Request) {
-  if (!requireMailGatewaySecret(request)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+
+async function handlePost(request: Request) {
   const body = await request.json().catch(() => null) as {
     username?: string;
     password?: string;
@@ -21,4 +20,11 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, ...session }, {
     headers: { 'cache-control': 'no-store' },
   });
+}
+
+export async function POST(request: Request) {
+  if (!requireMailGatewaySecret(request)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  return withRequestDatabase(() => handlePost(request));
 }
