@@ -100,9 +100,10 @@ export async function POST(request: Request) {
       })),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
-    console.error(`MKETY_MAIL_GATEWAY_MESSAGES_ERROR=${gatewayErrorMarker(error)}`);
+    const detail = gatewayErrorMarker(error);
+    console.error(`MKETY_MAIL_GATEWAY_MESSAGES_ERROR=${detail}`);
     return NextResponse.json(
-      { ok: false, error: 'message_index_failed' },
+      { ok: false, error: 'message_index_failed', detail },
       { status: 500, headers: { 'cache-control': 'no-store' } },
     );
   }
