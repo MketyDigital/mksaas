@@ -62,7 +62,7 @@ async function listAll(session,folder){
       tenantId:session.tenantId,mailboxId:session.mailboxId,folder,afterUid,limit:500,
     });
     if(!response.ok||payload.ok!==true){
-      const detail=String(payload?.error||`http_${response.status}`).replace(/[^A-Za-z0-9_.-]/g,'').slice(0,80)||'unknown';
+      const detail=String(payload?.detail||payload?.error||`http_${response.status}`).replace(/[^A-Za-z0-9_.-]/g,'').slice(0,80)||'unknown';
       throw new Error(`message_index_failed:${detail}`);
     }
     const rows=Array.isArray(payload.messages)?payload.messages:[];
