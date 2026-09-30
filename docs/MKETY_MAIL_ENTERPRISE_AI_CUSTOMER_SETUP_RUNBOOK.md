@@ -301,3 +301,20 @@ Until every required line above is implemented and verified, documentation must 
 - production-accepted.
 
 Never use “complete” for a capability that exists only in code but is not reachable, configured and verified for its intended customer/admin surface.
+
+
+## 2026-09-30 Enterprise AI pricing/admin completion update
+
+PR #227 builds from certified production SHA `647fe6323f60a05766213f5869210b81034d7012` and adds the post-promotion usability/commercial controls required before first-customer provisioning:
+
+- request-scoped database lifecycle for Billing and generic Platform Control module pages;
+- confirmation prompts for high-impact Public AI routing, provider credential rotation, managed model changes and rate-card activation/retirement;
+- database-backed internal Enterprise AI pricing policy via migration `0037_enterprise_ai_pricing_policy`;
+- server-authoritative automatic included-credit calculation from monthly price, managed provider-cost envelope, operations reserve, internal rate multiplier and credit unit;
+- generated draft Mkety model rates from verified provider-cost snapshots, with explicit activation/versioning;
+- zero-dollar manual goodwill/bonus credit grants through the immutable Usage/Credits ledger;
+- clarified Azure OpenAI / Microsoft Foundry resource-host + deployment configuration;
+- customer-visible boundary: customers see monthly/top-up payments, credit balance/usage, features, simple model labels/rates, assistants/channels/API/branding; provider cost, envelope, reserve, multiplier and credit conversion stay confidential;
+- dedicated detailed guide: `docs/MKETY_ENTERPRISE_AI_PRICING_PROVISIONING.md`.
+
+No production customer inference, customer entitlement, provider secret, DNS, settlement or Mail external-client switch is enabled merely by these changes. The first controlled customer acceptance remains required.

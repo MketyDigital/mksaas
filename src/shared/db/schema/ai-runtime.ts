@@ -157,6 +157,9 @@ export const aiEnterpriseCommercialPolicies = appSchema.table('ai_enterprise_com
   planVersionId: uuid('plan_version_id').primaryKey().references(() => billingPlanVersions.id, { onDelete: 'cascade' }),
   minimumFundingMinor: bigint('minimum_funding_minor', { mode: 'bigint' }).notNull(),
   managedCostShareBps: integer('managed_cost_share_bps').notNull().default(1500),
+  operationsReserveBps: integer('operations_reserve_bps').notNull().default(1000),
+  customerRateMultiplierBps: integer('customer_rate_multiplier_bps').notNull().default(20000),
+  creditUsdMicros: bigint('credit_usd_micros', { mode: 'bigint' }).notNull().default(1000n),
   setupFeeMinor: bigint('setup_fee_minor', { mode: 'bigint' }).notNull().default(0n),
   fundingMode: varchar('funding_mode', { length: 32 }).notNull().default('full_period'),
   creditRollover: boolean('credit_rollover').notNull().default(true),
@@ -166,6 +169,9 @@ export const aiEnterpriseCommercialPolicies = appSchema.table('ai_enterprise_com
 }, (table) => [
   check('ai_enterprise_commercial_policy_funding_check', sql`${table.minimumFundingMinor} > 0 AND ${table.setupFeeMinor} >= 0`),
   check('ai_enterprise_commercial_policy_share_check', sql`${table.managedCostShareBps} BETWEEN 1 AND 10000`),
+  check('ai_enterprise_commercial_policy_reserve_check', sql`${table.operationsReserveBps} BETWEEN 0 AND 9999`),
+  check('ai_enterprise_commercial_policy_multiplier_check', sql`${table.customerRateMultiplierBps} BETWEEN 10000 AND 100000`),
+  check('ai_enterprise_commercial_policy_credit_unit_check', sql`${table.creditUsdMicros} > 0`),
   check('ai_enterprise_commercial_policy_mode_check', sql`${table.fundingMode} IN ('full_period','prepaid_partial')`),
 ]);
 

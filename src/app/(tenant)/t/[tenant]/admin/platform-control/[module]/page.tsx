@@ -22,7 +22,10 @@ import { getPublishedAppExperience , getPublishedControlCenterModule } from '@/f
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
+import { grantManualTenantCredits } from '@/features/usage-credits/server/admin-actions';
+import { ConfirmSubmitButton } from '@/shared/components/ConfirmSubmitButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { withRequestDatabase } from '@/shared/db/request';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
@@ -51,6 +54,27 @@ const protectedActionsByModule: Record<string, string[]> = {
   'security-audit': ['View audit events', 'Review role changes', 'Inspect session/security activity', 'Monitor sensitive operations'],
 };
 
+const enterpriseAiEntitlementHelp: Record<string, string> = {
+  'workspace.ai.enterprise': 'Required base Enterprise AI product access.',
+  'ai.api': 'Developer/API access for this customer.',
+  'ai.byok': 'Allow the customer to connect and pay for an approved external AI provider with their own credentials.',
+  'ai.private_model': 'Allow a dedicated/private model route agreed for this customer.',
+  'ai.channel.website': 'Website chat/assistant channel.',
+  'ai.channel.telegram': 'Telegram bot/channel integration.',
+  'ai.channel.whatsapp': 'WhatsApp Business integration.',
+  'ai.channel.instagram': 'Instagram Direct integration.',
+  'ai.channel.facebook_messenger': 'Facebook Messenger integration.',
+  'ai.channel.slack': 'Slack integration.',
+  'ai.channel.discord': 'Discord integration.',
+  'ai.channel.linkedin_page': 'LinkedIn Page/community integration.',
+  'ai.channel.microsoft_teams': 'Microsoft Teams workflow/outbound integration.',
+  'ai.channel.custom_webhook': 'Custom webhook/API channel.',
+  'ai.whitelabel': 'Customer branding/login presentation and eligible custom hostname.',
+  'ai.domain.purchase': 'Allow domain purchase/managed domain workflow when commercially agreed.',
+  'ai.provider.gemini': 'Explicit Gemini provider entitlement where needed.',
+  'ai.provider.anthropic': 'Reserved provider entitlement; select only when the corresponding provider path is actually configured and approved.',
+};
+
 async function withAdminTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000): Promise<T> {
   return Promise.race([
     promise,
@@ -58,7 +82,7 @@ async function withAdminTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000):
   ]);
 }
 
-export default async function PlatformControlModulePage({ params }: PlatformControlModulePageProps) {
+async function renderPlatformControlModulePage({ params }: PlatformControlModulePageProps) {
   const { tenant, module: routeModuleKey } = await params;
   await requirePlatformControlAccess(tenant);
 
@@ -81,6 +105,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
   const isDeployments = controlModule.key === 'deployments-domains';
   const isPayments = controlModule.key === 'payments';
   const isMailOperations = controlModule.key === 'mail-operations';
+  const isBillingLedger = controlModule.key === 'billing-ledger';
   const isAiOperations = controlModule.key === 'ai-operations';
   const isMediaConnector = controlModule.key === 'media-connector';
   const isDomainsRouting = controlModule.key === 'domains-routing';
@@ -173,6 +198,41 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
       ) : null}
 
 
+      {isBillingLedger ? (
+        <Card className="rounded-2xl border-primary/20">
+          <CardHeader>
+            <CardTitle>Manual bonus / goodwill credits</CardTitle>
+            <CardDescription>
+              Grant non-cash product credits without recording a payment or changing the customer's contract. Every grant is tenant-scoped, reasoned, actor-attributed and idempotent in the immutable credit ledger.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={grantManualTenantCredits.bind(null, tenant)} className="grid gap-4 lg:grid-cols-2">
+              <input name="idempotencyKey" type="hidden" value={crypto.randomUUID()} />
+              <label className="text-sm font-medium">
+                Customer workspace slug
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+              </label>
+              <label className="text-sm font-medium">
+                Credits to grant
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" min={1} name="credits" type="number" required />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">These are product credits only. This does not create a settlement, invoice payment, subscription renewal or cash balance.</span>
+              </label>
+              <label className="text-sm font-medium lg:col-span-2">
+                Reason
+                <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={500} minLength={5} name="reason" placeholder="Goodwill extension while customer completes current billing period" rows={3} required />
+              </label>
+              <ConfirmSubmitButton
+                className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2"
+                confirmMessage="Grant these zero-dollar product credits to the specified customer? This will create an immutable manual_grant ledger entry and cannot be disguised as a payment."
+              >
+                Grant bonus credits
+              </ConfirmSubmitButton>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {isAiOperations && aiCommercialOverview ? (
         <div className="space-y-6">
           <AiCommercialControlPanel tenant={tenant} overview={aiCommercialOverview} />
@@ -184,10 +244,16 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="rounded-xl border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                <p className="font-semibold text-foreground">How this contract works</p>
+                <p className="mt-1">Monthly price is the customer's recurring commercial commitment. Included credits are usage credits granted each billing period after valid settlement. Funding mode controls how the customer funds that monthly commitment; it does not change the credit price or model rate card. The managed AI cost envelope is an internal ceiling for Mkety-paid provider cost, calculated as a percentage of verified customer funding. It does not reserve or remove that percentage from the customer's credit balance.</p>
+                <p className="mt-2">Do not combine duplicate controls: use the contract for recurring price/capabilities, rate cards for how many credits model usage consumes, and the wallet/credit ledger for actual spendable credit balance.</p>
+              </div>
               <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
                 <label className="text-sm font-medium">
                   Customer workspace slug
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Use the exact existing Mkety workspace slug. This contract is attached to that tenant; it does not create a second account.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Contract name
@@ -196,10 +262,20 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                 <label className="text-sm font-medium">
                   Monthly price (USD)
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="monthlyPriceUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="100.00" required />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">What the customer owes for one Enterprise AI billing period before any separately quoted setup fee.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Included credits per billing period
-                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="Manual override only" />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Normally calculated automatically from the internal commercial policy. Enter a value only when you intentionally disable automatic allocation.</span>
+                </label>
+                <label className="text-sm font-medium">
+                  Credit allocation mode
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="yes" name="autoIncludedCredits">
+                    <option value="yes">Automatic — recommended</option>
+                    <option value="no">Manual override</option>
+                  </select>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Automatic mode calculates the allowance on the server from the versioned internal commercial policy.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Funding mode
@@ -207,10 +283,12 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                     <option value="full_period">Full monthly payment</option>
                     <option value="prepaid_partial">Prepaid partial funding / top-ups</option>
                   </select>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Choose full monthly payment for the simplest first customer. Partial funding is for contracts where the customer may fund the agreed monthly commitment in several verified payments.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Minimum funding / top-up (USD)
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="minimumFundingUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="25.00" />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Only meaningful for partial funding. It is the smallest verified top-up allowed until the remaining commitment is smaller.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Setup fee (USD, optional)
@@ -219,13 +297,27 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                 <label className="text-sm font-medium">
                   Managed AI cost envelope % <span className="text-xs text-muted-foreground">(internal only)</span>
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="15" inputMode="decimal" name="managedCostSharePercent" pattern="\d{1,3}(?:\.\d{1,2})?" required />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Internal Mkety-paid provider-cost ceiling. Example: 15% on $100 verified funding permits about $15 of managed provider cost for that billing period. It does not remove 15% of the customer's credits.</span>
                 </label>
                 <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
                   Unused funded credits remain available in the prepaid Mkety credit balance. This is fixed policy for the current pooled-credit ledger.
                 </div>
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
-                  The managed AI cost envelope is confidential Mkety profitability policy. It must never be shown in customer-facing APIs, billing pages, usage screens, exports, or white-label surfaces. Setup fees, when used, are collected separately through Enterprise Payments.
-                </div>
+                <details className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
+                  <summary className="cursor-pointer font-semibold text-foreground">Internal pricing policy — never customer-visible</summary>
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Operations / safety reserve %
+                      <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="10" min={0} max={99.99} name="operationsReservePercent" step="0.01" type="number" />
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">Keeps part of the managed provider-cost envelope unallocated for retries, tools, rounding and operating variance.</span>
+                    </label>
+                    <label className="text-sm font-medium text-foreground">
+                      Customer rate multiplier %
+                      <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="200" min={100} max={1000} name="customerRateMultiplierPercent" step="0.01" type="number" />
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">200% means a 2× Mkety usage-rate multiplier over the verified provider-cost basis. This is internal only.</span>
+                    </label>
+                  </div>
+                  <p className="mt-3">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion are confidential Mkety commercial controls. Customers see only their price/top-ups, credit balance, usage, available features and resulting Mkety model rates.</p>
+                </details>
                 <label className="text-sm font-medium lg:col-span-2">
                   Description
                   <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={2000} name="description" rows={3} />
@@ -237,14 +329,17 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                     {ENTERPRISE_AI_CONTRACT_ENTITLEMENTS.map((entitlement) => (
                       <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs" key={entitlement}>
                         <input defaultChecked={entitlement === 'workspace.ai.enterprise'} disabled={entitlement === 'workspace.ai.enterprise'} name={entitlement === 'workspace.ai.enterprise' ? undefined : 'entitlements'} type="checkbox" value={entitlement} />
-                        <span className="font-mono">{entitlement}</span>
+                        <span><span className="font-mono">{entitlement}</span><span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{enterpriseAiEntitlementHelp[entitlement] ?? 'Optional contracted capability.'}</span></span>
                       </label>
                     ))}
                   </div>
                 </div>
-                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                <ConfirmSubmitButton
+                  className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2"
+                  confirmMessage="Create this Enterprise AI contract version for the specified customer workspace? This creates a new immutable commercial version; verified payment is still required before access activates."
+                >
                   Create contract version
-                </button>
+                </ConfirmSubmitButton>
               </form>
 
               <div className="grid gap-3 lg:grid-cols-2">
@@ -557,4 +652,8 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
       </div> : null}
     </div>
   );
+}
+
+export default async function PlatformControlModulePage(props: PlatformControlModulePageProps) {
+  return withRequestDatabase(() => renderPlatformControlModulePage(props));
 }

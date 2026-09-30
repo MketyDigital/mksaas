@@ -260,6 +260,13 @@
       "when": 1790614800000,
       "tag": "0036_platform_editorial_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790618400000,
+      "tag": "0037_enterprise_ai_pricing_policy",
+      "breakpoints": true
     }
   ]
 }

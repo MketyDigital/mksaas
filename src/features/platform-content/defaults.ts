@@ -55,9 +55,9 @@ export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
 
 export const defaultHeroSection: PlatformHeroSectionInput = {
   badge: 'AI and digital solutions, working together',
-  headline: 'Put AI to work across your business.',
+  headline: 'Everything your business needs to work, grow, and move faster.',
   subheadline:
-    'Build a stronger digital presence, give your team useful AI, and bring email, workflows and everyday tools together. Start with one need; Mkety helps the pieces work as a whole.',
+    'Bring AI, websites, business email, automation, applications, domains and everyday operations into one connected system, with specialist Media, Trading and Enterprise solutions when you need them.',
   primaryCta: { label: 'See plans', href: '/pricing' },
   secondaryCta: { label: 'Ask Mkety AI', href: '/contact#mkety-ai' },
   previewItems: [

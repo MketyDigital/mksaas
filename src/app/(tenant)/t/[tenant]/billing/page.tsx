@@ -9,6 +9,7 @@ import {
 } from '@/features/billing/server/drizzle-queries';
 import { getTenantBillingSummary } from '@/features/billing/server/queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { withRequestDatabase } from '@/shared/db/request';
 import { requireTenantMembership } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
@@ -22,7 +23,7 @@ function money(amountMinor: bigint, currency: string) {
   }).format(Number(amountMinor) / 100);
 }
 
-export default async function BillingHome({
+async function renderBillingHome({
   params,
 }: {
   params: Promise<{ tenant: string }>;
@@ -137,4 +138,8 @@ export default async function BillingHome({
       </Card>
     </div>
   );
+}
+
+export default async function BillingHome(props: { params: Promise<{ tenant: string }> }) {
+  return withRequestDatabase(() => renderBillingHome(props));
 }

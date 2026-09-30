@@ -6,6 +6,7 @@ import {
   updatePublicAiRouting,
 } from '@/features/public-assistant/server/admin-actions';
 import type { getPublicAiControlOverview } from '@/features/public-assistant/server/dynamic-config';
+import { ConfirmSubmitButton } from '@/shared/components/ConfirmSubmitButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 type Overview = Awaited<ReturnType<typeof getPublicAiControlOverview>>;
@@ -95,9 +96,12 @@ export function PublicAiControlPanel({
               </label>
             ))}
             <div className="md:col-span-2">
-              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+              <ConfirmSubmitButton
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+                confirmMessage="Apply this Public AI routing change now? This can immediately change which provider/model serves public visitors."
+              >
                 Save Public AI routing
-              </button>
+              </ConfirmSubmitButton>
             </div>
           </form>
         </CardContent>
@@ -144,10 +148,12 @@ export function PublicAiControlPanel({
                 <input autoComplete="new-password" className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="accessToken" type="password" />
               </label>
               <label className="text-sm font-medium">Endpoint
-                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="endpoint" />
+                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="endpoint" placeholder="https://resource.services.ai.azure.com" />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">For Azure OpenAI / Foundry, use the resource host root only. Do not include /api/projects/...; Mkety appends the Responses API path.</span>
               </label>
               <label className="text-sm font-medium">Azure deployment
-                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="deployment" />
+                <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="deployment" placeholder="gpt-5.6-sol-1" />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">This is the Azure deployment name, which may differ from the underlying model family name.</span>
               </label>
               <label className="text-sm font-medium">Google project ID
                 <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="vertexProjectId" />
@@ -171,7 +177,12 @@ export function PublicAiControlPanel({
                 <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" defaultValue="us-east-1" name="region" />
               </label>
               <div className="md:col-span-2">
-                <button className="rounded-xl border px-4 py-2 text-sm font-semibold">Save encrypted provider credential</button>
+                <ConfirmSubmitButton
+                  className="rounded-xl border px-4 py-2 text-sm font-semibold"
+                  confirmMessage="Save or rotate this provider credential? The previous secret will no longer be used for this Public AI provider connection."
+                >
+                  Save encrypted provider credential
+                </ConfirmSubmitButton>
               </div>
             </form>
           </details>
