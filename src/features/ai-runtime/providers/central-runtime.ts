@@ -100,7 +100,7 @@ export async function runCentralAi(input: {
 
   const decision = routeManagedAiTask(input.taskClass ?? 'smart');
   const requestedAlias: string =
-    input.model === MANAGED_AI_MODEL_ALIASES.economy || input.model === MANAGED_AI_MODEL_ALIASES.smart
+    typeof input.model === 'string' && /^mkety-[a-z0-9][a-z0-9-]{1,80}$/.test(input.model)
       ? input.model
       : decision.alias;
   const resolved = await resolveAiModelRoute({
