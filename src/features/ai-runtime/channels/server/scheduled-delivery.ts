@@ -10,6 +10,7 @@ import {
   markEnterpriseAiConversationOutbound,
   markEnterpriseAiScheduledActionReconciliationRequired,
   recordEnterpriseAiMessage,
+  scheduleEnterpriseAiAction,
 } from '@/features/ai-runtime/channels/server/conversations';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
