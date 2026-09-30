@@ -12,6 +12,10 @@ describe('Mkety Mail gateway production contract', () => {
     path.join(root, 'src/features/mail/server/gateway-auth.ts'),
     'utf8',
   );
+  const gatewayMessagesRoute = fs.readFileSync(
+    path.join(root, 'src/app/api/internal/mail/gateway/messages/route.ts'),
+    'utf8',
+  );
 
   it('keeps the gateway runtime syntax-valid and stateless', () => {
     const check = spawnSync(process.execPath, ['--check', gatewayPath], { encoding: 'utf8' });
@@ -95,6 +99,16 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain('Gateway internal API expected fail-closed 401');
   });
 
+
+  it('keeps the IMAP message index on an explicit fail-closed projection', () => {
+    expect(gatewayMessagesRoute).toContain("db");
+    expect(gatewayMessagesRoute).toContain(".select({");
+    expect(gatewayMessagesRoute).toContain("uid: mailMessages.imapUid");
+    expect(gatewayMessagesRoute).toContain("internalDate: toGatewayIso");
+    expect(gatewayMessagesRoute).toContain("MKETY_MAIL_GATEWAY_MESSAGES_ERROR=");
+    expect(gatewayMessagesRoute).toContain("error: 'message_index_failed'");
+    expect(gatewayMessagesRoute).not.toContain('db.query.mailMessages.findMany');
+  });
 
   it('rechecks active Mail commercial access for every external-client login', () => {
     expect(gatewayAuth).toContain("entitlement: 'workspace.mail'");
