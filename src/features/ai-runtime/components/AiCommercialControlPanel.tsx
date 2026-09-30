@@ -87,7 +87,7 @@ export function AiCommercialControlPanel({
             <p className="text-sm text-muted-foreground">No settled Enterprise AI provider usage has been recorded in the last 30 days.</p>
           )}
           <p className="text-xs text-muted-foreground">
-            The floor uses the current internal 65% gross-margin target plus 15% overhead reserve. The 15% reserve is an internal cost-planning buffer, not 15% of a customer's credits and not a customer spending limit. Customer spend is controlled separately by funded credits, contract limits, active rate cards and hard budgets.
+            The floor uses the current internal 65% gross-margin target plus 15% overhead reserve. The 15% reserve is an internal Mkety-paid provider-cost ceiling calculated from verified funding. It does not remove 15% of the customer's credits. Customer charges remain controlled separately by funded credits, active rate cards and hard budgets.
           </p>
         </CardContent>
       </Card>
