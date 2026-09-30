@@ -1,10 +1,8 @@
 FROM node:22-bookworm-slim
 
-WORKDIR /acceptance
+WORKDIR /app
 COPY ops/coolify-migration/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund
-
-WORKDIR /app
 COPY ops/mail-gateway-acceptance/run.mjs ./run.mjs
 
 USER node
