@@ -269,11 +269,13 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="Manual override only" />
                   <span className="mt-1 block text-xs font-normal text-muted-foreground">Normally calculated automatically from the internal commercial policy. Enter a value only when you intentionally disable automatic allocation.</span>
                 </label>
-                <label className="flex items-start gap-2 rounded-xl border bg-muted/20 p-3 text-sm font-medium">
-                  <input defaultChecked name="autoIncludedCredits" type="checkbox" />
-                  <span>Automatically calculate monthly credits
-                    <span className="mt-1 block text-xs font-normal text-muted-foreground">Recommended. The server calculates the allowance; the browser cannot override the internal math.</span>
-                  </span>
+                <label className="text-sm font-medium">
+                  Credit allocation mode
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="yes" name="autoIncludedCredits">
+                    <option value="yes">Automatic — recommended</option>
+                    <option value="no">Manual override</option>
+                  </select>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Automatic mode calculates the allowance on the server from the versioned internal commercial policy.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Funding mode
