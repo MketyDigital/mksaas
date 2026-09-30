@@ -241,6 +241,11 @@ export function AiCommercialControlPanel({
                 Cost verified date
                 <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="providerCostVerifiedAt" type="date" />
               </label>
+              <label className="text-sm font-medium md:col-span-2">
+                Provider pricing source
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="providerCostSourceUrl" placeholder="https://provider.example/pricing" type="url" />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">Internal audit reference for the verified provider-cost snapshot. Never shown to customers.</span>
+              </label>
               <div className="grid gap-2 text-sm md:col-span-2 xl:col-span-2 sm:grid-cols-5">
                 <label className="flex items-center gap-2"><input name="vision" type="checkbox" /> Vision</label>
                 <label className="flex items-center gap-2"><input name="tools" type="checkbox" /> Tools</label>
