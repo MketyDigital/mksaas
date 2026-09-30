@@ -23,6 +23,7 @@ import {
   getPublishedWorkspaceCardsForTenant,
 } from '@/features/platform-app-experience/server/queries';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { withRequestDatabase } from '@/shared/db/request';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface TenantDashboardProps {
@@ -45,7 +46,7 @@ function workspaceHref(tenantSlug: string, key: string, configuredHref: string) 
   return configuredHref;
 }
 
-export default async function TenantDashboard({ params }: TenantDashboardProps) {
+async function renderTenantDashboard({ params }: TenantDashboardProps) {
   const { tenant: tenantSlug } = await params;
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) return null;
@@ -206,4 +207,8 @@ export default async function TenantDashboard({ params }: TenantDashboardProps) 
       ) : null}
     </div>
   );
+}
+
+export default async function TenantDashboard(props: TenantDashboardProps) {
+  return withRequestDatabase(() => renderTenantDashboard(props));
 }

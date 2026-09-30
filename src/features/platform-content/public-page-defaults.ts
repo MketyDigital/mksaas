@@ -256,7 +256,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Trading Workspace',
             description:
               'Specialized Enterprise/Custom solution for trading automation, signal workflows, integrations, execution infrastructure, monitoring, and deployments.',
-            href: '/enterprise',
+            href: 'https://trade.mkety.com',
             badge: 'Custom / Enterprise',
           },
         ],
@@ -520,7 +520,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Enterprise AI',
             description:
               'Separately entitled branded AI for production channels, custom domains, API/PaaS use, human handoff, contracted limits, advanced security, private or dedicated model routing and custom integrations.',
-            href: 'https://ai.mkety.com',
+            href: '/contact#enterprise',
             badge: 'Enterprise AI',
           },
           {
@@ -536,7 +536,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             title: 'Trading infrastructure',
             description:
               'Specialized trading systems are sold and scoped through Enterprise before approved Trading access is provided.',
-            href: '/enterprise',
+            href: 'https://trade.mkety.com',
             badge: 'Custom / Enterprise',
           },
           {
@@ -557,7 +557,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
               'Implementation, operational support, response expectations, retention controls and service-level commitments can be written into the applicable Enterprise order or agreement.',
           },
         ],
-        cta: { label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' },
+        cta: { label: 'Talk with our team', href: '/contact#enterprise' },
       },
     ],
   },
@@ -773,13 +773,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
       'Contact Mkety about Platform access, Academy, partnerships, enterprise implementations or support.',
     eyebrow: 'Contact',
     headline: 'Talk to the right part of Mkety.',
-    intro: 'Start with Mkety AI for product, support, sales and general enquiries. It checks public Mkety documentation first, answers directly when it can, and points you to human support when needed.',
+    intro: 'Ask Mkety AI for a quick answer, or go straight to our team on Telegram or email. Tell us what you are trying to do and we will help you find the right next step.',
     sections: [
       {
         eyebrow: 'Enquiries',
-        title: 'Start with Mkety AI, then escalate only when needed.',
+        title: 'Choose the way you would like to talk.',
         description:
-          'Choose the area that best matches your enquiry. Never send passwords, API keys, payment secrets or other sensitive credentials through a general enquiry.',
+          'Mkety AI can answer common questions. Our team handles access, Enterprise projects and anything that needs a person. Never send passwords or payment secrets through a general enquiry.',
         items: [
           {
             key: 'ai-support',
@@ -790,14 +790,14 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           {
             key: 'support',
             title: 'Product & Support',
-            description: 'Ask Mkety AI first for account, product, access and general support; it will provide the configured human channel when needed.',
-            href: '#mkety-ai',
+            description: 'For account, product and access issues, message our team directly or ask Mkety AI for guidance.',
+            href: '#enterprise',
           },
           {
             key: 'enterprise',
             title: 'Enterprise & Partnerships',
-            description: 'Start Enterprise, Trading, partnership and managed implementation enquiries with Mkety AI; it will escalate to sales when needed.',
-            href: '#mkety-ai',
+            description: 'Tell our team about Enterprise AI, Trading, Media, a partnership or a tailored implementation. Telegram is the quickest human route; email is available too.',
+            href: '#enterprise',
           },
           {
             key: 'academy',

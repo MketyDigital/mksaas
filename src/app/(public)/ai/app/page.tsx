@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { withRequestDatabase } from '@/shared/db/request';
 import { auth } from '@/shared/lib/auth';
 import { getAllRoles } from '@/shared/lib/rbac';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -16,7 +17,7 @@ export const metadata = {
 
 export const dynamic = 'force-dynamic';
 
-export default async function EnterpriseAiProductAppPage() {
+async function renderEnterpriseAiProductAppPage() {
   const session = await auth();
   if (!session?.user) redirect('/login?returnTo=%2Fai%2Fapp');
 
@@ -96,8 +97,8 @@ export default async function EnterpriseAiProductAppPage() {
                   Open Mkety AI
                 </Link>
               ) : (
-                <a className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href="https://mkety.com/enterprise">
-                  Explore Enterprise AI <ExternalLink className="h-4 w-4" />
+                <a className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href="https://mkety.com/contact#enterprise">
+                  Request Enterprise AI access <ExternalLink className="h-4 w-4" />
                 </a>
               )}
             </CardContent>
@@ -106,4 +107,8 @@ export default async function EnterpriseAiProductAppPage() {
       </div>
     </main>
   );
+}
+
+export default async function EnterpriseAiProductAppPage() {
+  return withRequestDatabase(() => renderEnterpriseAiProductAppPage());
 }

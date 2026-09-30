@@ -134,9 +134,9 @@ function renderPublicAssistantContent(content: string): ReactNode {
 const suggestedPrompts = [
   'What can I build with Mkety?',
   'Which Mkety product is right for me?',
-  'How does Automation work?',
-  'Explain SolutionHub.',
-  'How do I get started?',
+  'I need Enterprise AI for my business.',
+  'How do I get started with Mail?',
+  'Can a person help me?',
 ] as const;
 
 export function MketyPublicAssistant() {
@@ -391,6 +391,9 @@ export function MketyPublicAssistant() {
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                   I can help you understand Mkety, find the right product or workspace, explain plans, and guide you
                   through our public documentation.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  For an Enterprise enquiry, tell me what your organization needs. You can share an email address or phone number if you want our team to follow up, or choose Telegram or email on the contact page.
                 </p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {suggestedPrompts.map((prompt) => (

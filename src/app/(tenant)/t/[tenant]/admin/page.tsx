@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getAdminStats } from '@/features/admin/services/admin-stats-service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db';
+import { withRequestDatabase } from '@/shared/db/request';
 import { auditEvents } from '@/shared/db/schema';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
@@ -13,7 +14,7 @@ interface AdminDashboardProps {
   params: Promise<{ tenant: string }>;
 }
 
-export default async function AdminDashboard({ params }: AdminDashboardProps) {
+async function renderAdminDashboard({ params }: AdminDashboardProps) {
   const { tenant } = await params;
 
   const tenantRecord = await getTenantBySlug(tenant);
@@ -124,4 +125,8 @@ export default async function AdminDashboard({ params }: AdminDashboardProps) {
       </div>
     </div>
   );
+}
+
+export default async function AdminDashboard(props: AdminDashboardProps) {
+  return withRequestDatabase(() => renderAdminDashboard(props));
 }

@@ -15,12 +15,13 @@ import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/serve
 import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
 import { getCreditBalance } from '@/features/usage-credits/server/service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
+import { withRequestDatabase } from '@/shared/db/request';
 import { requireTenantMembership } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 
 export const dynamic = 'force-dynamic';
 
-export default async function EnterpriseAiConsolePage({
+async function renderEnterpriseAiConsolePage({
   params,
 }: {
   params: Promise<{ tenant: string }>;
@@ -101,7 +102,7 @@ export default async function EnterpriseAiConsolePage({
               </>
             ) : (
               <div className="flex flex-wrap gap-3">
-                <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/enterprise">Explore Enterprise AI</a>
+                <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/contact#enterprise">Request Enterprise AI access</a>
                 <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}`}>Back to workspace</Link>
               </div>
             )}
@@ -345,4 +346,8 @@ export default async function EnterpriseAiConsolePage({
       </section>
     </div>
   );
+}
+
+export default async function EnterpriseAiConsolePage(props: { params: Promise<{ tenant: string }> }) {
+  return withRequestDatabase(() => renderEnterpriseAiConsolePage(props));
 }

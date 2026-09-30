@@ -1,4 +1,5 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/shared/db/cloudflare';
 import {
@@ -75,7 +76,7 @@ function getSectionPayload(sectionByKey: Map<string, unknown>, ...keys: string[]
   return undefined;
 }
 
-export async function getPublishedPlatformSiteSettings() {
+export const getPublishedPlatformSiteSettings = cache(async () => {
   return withFallback(
     async () => {
       const row = await db.query.platformSiteSettings.findFirst({
@@ -108,9 +109,9 @@ export async function getPublishedPlatformSiteSettings() {
     defaultPlatformSiteSettings,
     'site-settings',
   );
-}
+});
 
-export async function getPublishedNavigation(area?: 'header' | 'footer') {
+export const getPublishedNavigation = cache(async (area?: 'header' | 'footer') => {
   const fallback = !area
     ? defaultPlatformNavigation
     : defaultPlatformNavigation.filter((item) => item.area === area && item.enabled !== false);
@@ -144,7 +145,7 @@ export async function getPublishedNavigation(area?: 'header' | 'footer') {
     fallback,
     `navigation:${area ?? 'all'}`,
   );
-}
+});
 
 export async function getPublishedPricingPlans() {
   return withFallback(
