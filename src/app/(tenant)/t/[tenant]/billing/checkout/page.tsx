@@ -15,7 +15,8 @@ import {
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
-import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';\nimport { getMketyPaymentSettings } from '@/features/payments/settings';
+import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -81,7 +82,8 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
     ? String(query.currency)
     : 'USD';
 
-  let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;\n  const flutterwaveMethodLabels = getMketyFlutterwaveMethodLabelsForCurrency(selectedCurrency);
+  let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
+  const flutterwaveMethodLabels = getMketyFlutterwaveMethodLabelsForCurrency(selectedCurrency);
   if (flutterwaveEnabled && isMketyFlutterwaveCollectionCurrency(selectedCurrency)) {
     try {
       flutterwaveQuote = await quoteFlutterwaveCollection({
