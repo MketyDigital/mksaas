@@ -35,7 +35,7 @@ export default async function EnterpriseAiConsolePage({
     const contract = contractState.contract;
     const paymentPending = contractState.subscription?.status === 'pending_payment';
     const partialFunding = contract?.commercialPolicy.fundingMode === 'prepaid_partial';
-    const fundedMinor = contractState.fundedMinor ?? 0n;
+    const fundedMinor = fundedMinor ?? 0n;
     const remainingMinor = contract ? (contract.amountMinor > fundedMinor ? contract.amountMinor - fundedMinor : 0n) : 0n;
     const minimumFundingMinor = contract
       ? (remainingMinor < contract.commercialPolicy.minimumFundingMinor ? remainingMinor : contract.commercialPolicy.minimumFundingMinor)
@@ -121,6 +121,7 @@ export default async function EnterpriseAiConsolePage({
     hasEnterpriseAiWhiteLabelAccess(tenant.id),
     getEnterpriseAiContractBillingState(tenant.id),
   ]);
+  const fundedMinor = fundedMinor ?? 0n;
   const brand = resolveEnterpriseAiBrand(tenantSettings, tenant.name);
   const displayBrand = canWhiteLabel && brand.enabled ? brand : { ...brand, brandName: tenant.name, productName: 'Mkety AI', hideMketyBranding: false };
 
@@ -172,16 +173,16 @@ export default async function EnterpriseAiConsolePage({
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Enterprise AI funding</p>
               <h2 className="mt-1 text-xl font-bold">
-                ${(Number(contractState.fundedMinor) / 100).toFixed(2)} funded of ${(Number(contractState.contract.amountMinor) / 100).toFixed(2)} this period
+                ${(Number(fundedMinor) / 100).toFixed(2)} funded of ${(Number(contractState.contract.amountMinor) / 100).toFixed(2)} this period
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Add prepaid capacity at any time. Your Mkety usage rates already include the platform and AI service; upstream provider economics are not itemized.
               </p>
             </div>
-            {contractState.fundedMinor < contractState.contract.amountMinor ? (
+            {fundedMinor < contractState.contract.amountMinor ? (
               <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid min-w-[260px] gap-2" method="post">
                 {(() => {
-                  const remaining = contractState.contract.amountMinor - contractState.fundedMinor;
+                  const remaining = contractState.contract.amountMinor - fundedMinor;
                   const minimum = remaining < contractState.contract.commercialPolicy.minimumFundingMinor
                     ? remaining
                     : contractState.contract.commercialPolicy.minimumFundingMinor;
