@@ -19,6 +19,7 @@ import {
 } from '@/features/ai-runtime/server/commercial-rates';
 import {
   calculateProviderCostUsdMicros,
+  getManagedAiCostRate,
   getManagedAiCostRateForModel,
   minimumCustomerRevenueUsdMicros,
 } from '@/features/ai-runtime/server/provider-cost';
@@ -451,10 +452,11 @@ async function handlePost(request: Request) {
     return errorResponse(402, 'commercial_admission_denied', 'Prepaid credits or budget do not authorize this request.', requestId);
   }
 
-  const providerRate = getManagedAiCostRateForModel({
-    nativeModel: resolved.model.nativeModel,
-    providerCostMetadata: resolved.model.providerCostMetadata,
-  });
+  const providerRate = getManagedAiCostRate(resolved.model.nativeModel)
+    ?? getManagedAiCostRateForModel({
+      nativeModel: resolved.model.nativeModel,
+      providerCostMetadata: resolved.model.providerCostMetadata,
+    });
   if (!providerRate) {
     try {
       await releaseAiCommercialRequest({ admission, reason: 'provider_cost_unavailable' });
