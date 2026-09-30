@@ -62,6 +62,15 @@ export async function markBillingCheckoutCompleted(
     .where(eq(billingCheckouts.id, checkoutId));
 }
 
+export async function markBillingCheckoutFailedOnly(
+  checkoutId: string,
+  updatedAt: Date,
+): Promise<void> {
+  await db.update(billingCheckouts)
+    .set({ status: 'failed', updatedAt })
+    .where(eq(billingCheckouts.id, checkoutId));
+}
+
 export async function markBillingCheckoutTerminalFailure(
   checkoutId: string,
   subscriptionId: string,
