@@ -338,7 +338,54 @@ export async function POST(
       runtime_disabled: turn.kind === 'disabled',
       human_handoff: turn.kind === 'handoff',
     });
-  } catch {
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+    const conversationId = error && typeof error === 'object' && 'conversationId' in error
+      ? String((error as { conversationId?: unknown }).conversationId ?? '')
+      : '';
+
+    if (code === 'ENTERPRISE_AI_PROVIDER_CAPACITY_RETRYABLE') {
+      const action = await scheduleEnterpriseAiAction({
+        tenantId: connection.tenantId,
+        conversationId: conversationId || null,
+        solutionInstanceId:
+          typeof connection.metadata.solutionInstanceId === 'string'
+            ? connection.metadata.solutionInstanceId
+            : null,
+        connectionId: connection.id,
+        kind: 'inbound_retry',
+        idempotencyKey: `inbound-retry:${connection.id}:${inbound.providerMessageId}`,
+        dueAt: new Date(Date.now() + 30_000),
+        payload: {
+          recipientId: inbound.replyRecipientId,
+          contextId: inbound.conversationId,
+          replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
+          text: inbound.text,
+          sourceProviderMessageId: inbound.providerMessageId,
+          inboundRetry: {
+            originalProviderMessageId: inbound.providerMessageId,
+            senderId: inbound.senderId,
+            externalConversationId: inbound.conversationId,
+            replyRecipientId: inbound.replyRecipientId,
+            replyToId: channel.key === 'telegram' ? inbound.providerMessageId : undefined,
+            contextId: inbound.conversationId,
+            requestedModel:
+              typeof connection.metadata.modelAlias === 'string'
+                ? connection.metadata.modelAlias
+                : undefined,
+          },
+        },
+      });
+      await enqueueEnterpriseAiScheduledAction({
+        actionId: action.id,
+        tenantId: connection.tenantId,
+        delaySeconds: 30,
+      }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
+      return Response.json({ ok: true, queued_retry: true }, { status: 202 });
+    }
+
     // Do not reveal tenant/provider/accounting detail to external webhook callers.
     return Response.json({ ok: false, retryable: true }, { status: 503 });
   }
