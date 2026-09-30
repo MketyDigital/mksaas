@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   accept:
-    if: ${{ github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
+    if: ${{ github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event) && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -52,7 +52,7 @@ jobs:
             curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$runs_url" -o /tmp/gateway-runs.json
             read -r gateway_sha gateway_run_id < <(node <<'NODE'
           const x=require('/tmp/gateway-runs.json');
-          const run=(x.workflow_runs||[]).find(r=>r.event==='push'&&r.status==='completed'&&r.conclusion==='success'&&r.head_sha);
+          const run=(x.workflow_runs||[]).find(r=>['push','workflow_dispatch'].includes(r.event)&&r.status==='completed'&&r.conclusion==='success'&&r.head_sha);
           if(!run) process.exit(1);
           console.log(run.head_sha+' '+run.id);
           NODE
@@ -66,7 +66,7 @@ jobs:
             echo 'Accepted gateway SHA is not an ancestor of the acceptance runtime on main.'
             exit 1
           }
-          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(.github/workflows/mkety-mail-gateway-functional-acceptance.yml|ops/mail-gateway-acceptance/)' || true)"
+          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$)' || true)"
           [ -z "$unexpected" ] || {
             echo 'Unaccepted production changes exist after the latest successful gateway SHA:'
             printf '%s\n' "$unexpected"
@@ -87,14 +87,14 @@ jobs:
           echo "ACCEPTANCE_RECIPIENT=$recipient" >> "$GITHUB_ENV"
           echo "ACCEPTANCE_APP_PASSWORD=$secret" >> "$GITHUB_ENV"
 
-          # Confirm the triggering successful run is the production gateway workflow
-          # for the same repository and an exact push SHA.
+          # Confirm the successful run is the production gateway workflow
+          # for the same repository and an exact authorized main SHA.
           api="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$gateway_run_id"
           curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$api" -o /tmp/gateway-run.json
           GATEWAY_SHA="$gateway_sha" node <<'NODE'
           const x=require('/tmp/gateway-run.json');
           if(x.name!=='Mkety Mail Gateway Production') throw new Error('Unexpected triggering workflow.');
-          if(x.event!=='push'||x.status!=='completed'||x.conclusion!=='success') throw new Error('Gateway run is not accepted.');
+          if(!['push','workflow_dispatch'].includes(x.event)||x.status!=='completed'||x.conclusion!=='success') throw new Error('Gateway run is not accepted.');
           if(x.head_sha!==process.env.GATEWAY_SHA) throw new Error('Gateway SHA mismatch.');
           NODE
         env:

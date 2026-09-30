@@ -126,6 +126,13 @@ describe('Mkety Mail gateway production contract', () => {
     expect(acceptanceWorkflow).toContain("(?:OK|NO|BAD)");
   });
 
+  it('runs synthetic acceptance after an authorized manual gateway release', () => {
+    expect(acceptanceWorkflow).toContain("contains(fromJSON('[\"push\",\"workflow_dispatch\"]'), github.event.workflow_run.event)");
+    expect(acceptanceWorkflow).toContain("['push','workflow_dispatch'].includes(r.event)");
+    expect(acceptanceWorkflow).toContain("['push','workflow_dispatch'].includes(x.event)");
+    expect(acceptanceWorkflow).toContain('src/features/mail/server/mail-gateway-production-contract\\.test\\.ts$');
+  });
+
   it('rechecks active Mail commercial access for every external-client login', () => {
     expect(gatewayAuth).toContain("entitlement: 'workspace.mail'");
     expect(gatewayAuth).toContain("eq(mailWorkspaces.status, 'active')");
