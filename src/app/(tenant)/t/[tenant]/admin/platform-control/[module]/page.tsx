@@ -18,7 +18,7 @@ import { PaymentSettingsForm } from '@/features/payments/components/PaymentSetti
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
-import { getPublishedControlCenterModule } from '@/features/platform-app-experience/server/queries';
+import { getPublishedAppExperience , getPublishedControlCenterModule } from '@/features/platform-app-experience/server/queries';
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
@@ -125,6 +125,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     await requirePermission(tenant, 'platform:deployments');
     domainResellerConnections = await withAdminTimeout(getDomainResellerConnections(), []);
   }
+  const currentAppExperience = isAppExperience ? await getPublishedAppExperience() : null;
 
   return (
     <div className="space-y-8">
@@ -146,7 +147,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
           entityKey="production"
           title="App experience draft"
           description="Validate dashboard, workspace, and Platform Control Center configuration through the server-side Mkety app-experience boundary."
-          defaultPayload={defaultAppExperience}
+          defaultPayload={currentAppExperience ?? defaultAppExperience}
         />
       )}
 

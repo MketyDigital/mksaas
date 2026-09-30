@@ -11,7 +11,8 @@ import {
 } from '@/features/platform-content/defaults';
 import { MKETY_PUBLIC_PAGE_DEFAULTS } from '@/features/platform-content/public-page-defaults';
 import { requirePlatformContentAccess } from '@/features/platform-content/server/authorization';
-import { getRecentPublicAILeads } from '@/features/platform-content/server/queries';
+import { getPublishedPublicPageContent } from '@/features/platform-content/server/public-page';
+import { getPublishedDocsTree, getPublishedNavigation, getPublishedPlatformSiteSettings, getPublishedPricingPlans, getRecentPublicAILeads } from '@/features/platform-content/server/queries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 interface PublicSiteSectionPageProps {
@@ -106,6 +107,17 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
   if (!sectionModule) notFound();
 
   const publicAILeads = section === 'settings' ? await getRecentPublicAILeads(50) : [];
+  const currentPayload: Record<string, unknown> = section === 'pages'
+    ? { pages: await Promise.all(MKETY_PUBLIC_PAGE_DEFAULTS.map(async (page) => await getPublishedPublicPageContent(page.slug) ?? page)) }
+    : section === 'navigation'
+      ? { items: await getPublishedNavigation() }
+      : section === 'pricing'
+        ? { plans: await getPublishedPricingPlans() }
+        : section === 'docs'
+          ? await getPublishedDocsTree()
+          : section === 'settings'
+            ? await getPublishedPlatformSiteSettings()
+            : sectionModule.defaultPayload;
 
   return (
     <div className="space-y-8">
@@ -128,7 +140,7 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
           entityKey={sectionModule.entityKey}
           title={`${sectionModule.title} draft`}
           description="Edit the CMS payload, save it as a draft, then publish when it is ready for the public site and Public Mkety AI grounding."
-          defaultPayload={sectionModule.defaultPayload}
+          defaultPayload={currentPayload}
         />
 
         <Card className="rounded-2xl border-border/70 shadow-sm">

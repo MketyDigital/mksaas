@@ -34,7 +34,7 @@ export const platformControlModules: PlatformControlModule[] = [
     domain: 'mkety.com',
     editableScope: ['public pages', 'sections', 'navigation', 'docs', 'public pricing display', 'metadata', 'footer links'],
     protectedScope: ['application source code', 'backend business logic', 'security policy', 'billing ledger behavior'],
-    implementationNotes: 'Fallback content and route shell are implemented. Database-backed draft/publish writes come after migration verification.',
+    implementationNotes: 'Database-backed editing and publishing are implemented. Current draft writes update the canonical row before publishing; operators should publish promptly because the public reader may serve safe defaults while a row is in draft. A separate immutable published snapshot is still required for uninterrupted editorial staging.',
   },
   {
     key: 'app-experience',
@@ -50,7 +50,7 @@ export const platformControlModules: PlatformControlModule[] = [
     domain: 'app.mkety.com',
     editableScope: ['dashboard headline', 'workspace cards', 'empty states', 'onboarding copy', 'support links'],
     protectedScope: ['workspace backend logic', 'tenant isolation', 'entitlement enforcement', 'routing middleware'],
-    implementationNotes: 'App experience defaults and admin validation boundary are implemented. Runtime DB reads will replace fallback-only reads after migration verification.',
+    implementationNotes: 'Published app experience is read from the database with safe defaults; admin draft and publish actions are implemented. Separate published snapshots are still required for uninterrupted editorial staging.',
   },
   {
     key: 'plans-entitlements',
