@@ -577,6 +577,8 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       providerRequestId: result.providerRequestId ?? null,
       providerCostUsdMicros: providerCostUsdMicros.toString(),
       providerCostVerifiedAt: providerRate.verifiedAt,
+      mediaProviderCostUsdMicros: resolvedMedia.providerCostUsdMicros.toString(),
+      mediaProcessed: resolvedMedia.processed,
       minimumRevenueUsdMicros: minimumCustomerRevenueUsdMicros(providerCostUsdMicros).toString(),
       actualCredits: actualCredits.toString(),
       creditReservationId: admission.creditReservation.id,
