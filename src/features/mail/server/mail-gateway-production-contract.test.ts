@@ -8,6 +8,10 @@ describe('Mkety Mail gateway production contract', () => {
   const workflowPath = path.join(root, '.github/workflows/mkety-mail-gateway-production.yml');
   const gateway = fs.readFileSync(gatewayPath, 'utf8');
   const workflow = fs.readFileSync(workflowPath, 'utf8');
+  const acceptanceWorkflow = fs.readFileSync(
+    path.join(root, '.github/workflows/mkety-mail-gateway-functional-acceptance.yml'),
+    'utf8',
+  );
   const gatewayAuth = fs.readFileSync(
     path.join(root, 'src/features/mail/server/gateway-auth.ts'),
     'utf8',
@@ -109,6 +113,14 @@ describe('Mkety Mail gateway production contract', () => {
     expect(gatewayMessagesRoute).toContain("const detail = gatewayErrorMarker(error)");
     expect(gatewayMessagesRoute).toContain("error: 'message_index_failed', detail");
     expect(gatewayMessagesRoute).not.toContain('db.query.mailMessages.findMany');
+  });
+
+  it('requires direct message-index and actual body acceptance before external clients', () => {
+    expect(acceptanceWorkflow).toContain('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_OK=true');
+    expect(acceptanceWorkflow).toContain('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_ERROR=');
+    expect(acceptanceWorkflow).toContain('FETCH 1 (BODY.PEEK[])');
+    expect(acceptanceWorkflow).toContain('IMAP message body was not returned by the real gateway.');
+    expect(acceptanceWorkflow).toContain("(?:OK|NO|BAD)");
   });
 
   it('rechecks active Mail commercial access for every external-client login', () => {
