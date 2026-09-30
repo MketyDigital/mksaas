@@ -172,8 +172,8 @@ jobs:
               }
               let sql;
               try {
-                // Keep this aligned with withPublicAIRequestDatabase(): postgres(connectionString, { max: 1 }).
-                sql = postgres(env.MKETY_DB.connectionString, { max: 1 });
+                // Keep this aligned with withPublicAIRequestDatabase(): Hyperdrive-safe postgres options.
+                sql = postgres(env.MKETY_DB.connectionString, { max: 1, prepare: false });
                 const rows = await sql`select 1::int as ok`;
                 const ok = rows?.[0]?.ok === 1;
                 return Response.json({ok,stage:'query'},{status:ok?200:500});
