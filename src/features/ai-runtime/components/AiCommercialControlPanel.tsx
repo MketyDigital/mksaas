@@ -10,6 +10,7 @@ import {
 } from '@/features/ai-runtime/server/commercial-admin-actions';
 import type { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
 import { PublicAiControlPanel } from '@/features/public-assistant/components/PublicAiControlPanel';
+import { ConfirmSubmitButton } from '@/shared/components/ConfirmSubmitButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 type Overview = Awaited<ReturnType<typeof getAiCommercialControlOverview>>;
@@ -86,7 +87,7 @@ export function AiCommercialControlPanel({
             <p className="text-sm text-muted-foreground">No settled Enterprise AI provider usage has been recorded in the last 30 days.</p>
           )}
           <p className="text-xs text-muted-foreground">
-            The floor uses the current internal 65% gross-margin target plus 15% overhead reserve. It is a planning guardrail, not a customer invoice and not a substitute for plan-level economics.
+            The floor uses the current internal 65% gross-margin target plus 15% overhead reserve. The 15% reserve is an internal cost-planning buffer, not 15% of a customer's credits and not a customer spending limit. Customer spend is controlled separately by funded credits, contract limits, active rate cards and hard budgets.
           </p>
         </CardContent>
       </Card>
@@ -161,9 +162,12 @@ export function AiCommercialControlPanel({
               />
             </label>
             <div className="md:col-span-2 xl:col-span-5">
-              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+              <ConfirmSubmitButton
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+                confirmMessage="Apply these Enterprise AI request limits now? They affect all customer inference admitted after the change."
+              >
                 Save safe limits
-              </button>
+              </ConfirmSubmitButton>
             </div>
           </form>
         </CardContent>
@@ -246,9 +250,12 @@ export function AiCommercialControlPanel({
               <p className="text-xs leading-5 text-muted-foreground md:col-span-2 xl:col-span-3">
                 External managed models cannot be enabled until verified input/output provider costs and a verification date are saved. A rate card must also be active before customer use.
               </p>
-              <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground md:col-span-2 xl:col-span-3">
+              <ConfirmSubmitButton
+                className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground md:col-span-2 xl:col-span-3"
+                confirmMessage="Save this managed model route? If Enable route is checked and commercial prerequisites are satisfied, this alias can become eligible for live routing."
+              >
                 Save managed model
-              </button>
+              </ConfirmSubmitButton>
             </form>
           </details>
         </CardContent>
@@ -291,12 +298,22 @@ export function AiCommercialControlPanel({
                         <div className="flex gap-2">
                           {card.status === 'draft' ? (
                             <form action={activateAiRateCard.bind(null, tenant, card.id)}>
-                              <button className="rounded-lg border px-3 py-1.5 text-xs font-semibold">Activate</button>
+                              <ConfirmSubmitButton
+                                className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                                confirmMessage="Activate this rate-card version? It will retire the currently active version for this model and become the price used for new billable usage."
+                              >
+                                Activate
+                              </ConfirmSubmitButton>
                             </form>
                           ) : null}
                           {card.status === 'active' ? (
                             <form action={retireAiRateCard.bind(null, tenant, card.id)}>
-                              <button className="rounded-lg border px-3 py-1.5 text-xs font-semibold">Retire</button>
+                              <ConfirmSubmitButton
+                                className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                                confirmMessage="Retire this active rate-card version? New usage must have another active rate before the model can be commercially admitted."
+                              >
+                                Retire
+                              </ConfirmSubmitButton>
                             </form>
                           ) : null}
                         </div>
@@ -348,9 +365,12 @@ export function AiCommercialControlPanel({
             <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="effectiveFrom" type="datetime-local" />
           </label>
           <div className="md:col-span-2 xl:col-span-3">
-            <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <ConfirmSubmitButton
+              className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+              confirmMessage="Create this new rate-card version? Historical rates will remain unchanged; this new version starts as a draft until you explicitly activate it."
+            >
               Create draft rate version
-            </button>
+            </ConfirmSubmitButton>
           </div>
         </form>
       </details>
