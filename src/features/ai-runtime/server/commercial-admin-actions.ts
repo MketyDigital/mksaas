@@ -10,6 +10,7 @@ import { aiModelAliases, aiModels, aiRateCards, aiRoutes, aiRuntimePolicies, aiS
 import { requirePermission } from '@/shared/lib/permissions';
 
 import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
+import { DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS, providerCostToCreditsPerMillion } from './commercial-pricing';
 
 function parsePositiveBigInt(value: FormDataEntryValue | null, label: string) {
   const raw = String(value ?? '').trim();
@@ -200,6 +201,59 @@ export async function upsertManagedAiModel(tenantSlug: string, formData: FormDat
     }
   });
 
+  revalidateAiOps(tenantSlug);
+}
+
+export async function createAiRateCardFromProviderCost(tenantSlug: string, formData: FormData) {
+  const actor = await requireAiCommercialOps(tenantSlug);
+  const modelId = String(formData.get('modelId') ?? '').trim();
+  if (!modelId) throw new Error('Model is required.');
+  const multiplierText = String(formData.get('rateMultiplierPercent') ?? '200').trim();
+  const match = /^(\d{2,4})(?:\.(\d{1,2}))?$/.exec(multiplierText);
+  if (!match) throw new Error('Rate multiplier must be a valid percentage.');
+  const rateMultiplierBps = Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
+  if (rateMultiplierBps < 10000 || rateMultiplierBps > 100000) throw new Error('Rate multiplier must be between 100% and 1000%.');
+
+  const model = await db.query.aiModels.findFirst({ where: eq(aiModels.id, modelId) });
+  if (!model) throw new Error('AI model was not found.');
+  const metadata = model.providerCostMetadata && typeof model.providerCostMetadata === 'object'
+    ? model.providerCostMetadata as Record<string, unknown>
+    : {};
+  const inputCost = BigInt(String(metadata.inputUsdMicrosPerMillion ?? '0'));
+  const cachedCost = BigInt(String(metadata.cachedInputUsdMicrosPerMillion ?? '0'));
+  const outputCost = BigInt(String(metadata.outputUsdMicrosPerMillion ?? '0'));
+  if (inputCost <= 0n || outputCost <= 0n || !metadata.providerCostVerifiedAt) {
+    throw new Error('Verified provider input/output costs are required before generating a rate card.');
+  }
+
+  const latest = await db.query.aiRateCards.findFirst({
+    where: eq(aiRateCards.modelId, modelId),
+    orderBy: [desc(aiRateCards.version)],
+    columns: { version: true },
+  });
+  await db.insert(aiRateCards).values({
+    modelId,
+    version: (latest?.version ?? 0) + 1,
+    status: 'draft',
+    inputCreditsPerMillion: providerCostToCreditsPerMillion({
+      providerUsdMicrosPerMillion: inputCost,
+      rateMultiplierBps,
+      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
+    }),
+    cachedInputCreditsPerMillion: cachedCost > 0n ? providerCostToCreditsPerMillion({
+      providerUsdMicrosPerMillion: cachedCost,
+      rateMultiplierBps,
+      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
+    }) : null,
+    outputCreditsPerMillion: providerCostToCreditsPerMillion({
+      providerUsdMicrosPerMillion: outputCost,
+      rateMultiplierBps,
+      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
+    }),
+    minimumCreditsPerRequest: 1n,
+    effectiveFrom: new Date(),
+    createdByUserId: actor.userId,
+  });
   revalidateAiOps(tenantSlug);
 }
 
