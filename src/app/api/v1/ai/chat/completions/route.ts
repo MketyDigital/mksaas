@@ -19,10 +19,11 @@ import {
 } from '@/features/ai-runtime/server/commercial-rates';
 import {
   calculateProviderCostUsdMicros,
-  getManagedAiCostRate,
+  getManagedAiCostRateForModel,
   minimumCustomerRevenueUsdMicros,
 } from '@/features/ai-runtime/server/provider-cost';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
+import { assertEnterpriseAiManagedCostEnvelope } from '@/features/ai-runtime/server/enterprise-cost-envelope';
 import { db } from '@/shared/db/cloudflare';
 import { withRequestDatabase } from '@/shared/db/request';
 import { aiRequests, projects } from '@/shared/db/schema';
@@ -450,7 +451,10 @@ async function handlePost(request: Request) {
     return errorResponse(402, 'commercial_admission_denied', 'Prepaid credits or budget do not authorize this request.', requestId);
   }
 
-  const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
+  const providerRate = getManagedAiCostRateForModel({
+    nativeModel: resolved.model.nativeModel,
+    providerCostMetadata: resolved.model.providerCostMetadata,
+  });
   if (!providerRate) {
     try {
       await releaseAiCommercialRequest({ admission, reason: 'provider_cost_unavailable' });
@@ -477,23 +481,42 @@ async function handlePost(request: Request) {
     return errorResponse(503, 'provider_cost_unavailable', 'Provider cost is not verified for this model.', requestId);
   }
 
-  if (resolved.model.providerKey !== 'workers-ai') {
+  const estimatedProviderCostUsdMicros = calculateProviderCostUsdMicros({
+    rate: providerRate,
+    inputTokens: inputTokenUpperBound,
+    cachedInputTokens: 0n,
+    outputTokens: BigInt(effectiveMaxOutput),
+  });
+  try {
+    await assertEnterpriseAiManagedCostEnvelope({
+      tenantId: key.tenantId,
+      estimatedAdditionalCostUsdMicros: estimatedProviderCostUsdMicros,
+      now: startedAt,
+    });
+  } catch {
     try {
-      await releaseAiCommercialRequest({ admission, reason: 'provider_not_supported' });
+      await releaseAiCommercialRequest({ admission, reason: 'managed_cost_envelope_exhausted' });
     } catch {
-      await db
-        .update(aiRequests)
-        .set({ status: 'reconciliation_required', errorCode: 'commercial_reconciliation_required', completedAt: new Date() })
-        .where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+      await db.update(aiRequests).set({
+        status: 'reconciliation_required',
+        errorCode: 'commercial_reconciliation_required',
+        completedAt: new Date(),
+      }).where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
       return errorResponse(503, 'commercial_reconciliation_required', 'Commercial holds require reconciliation.', requestId);
     }
-    return errorResponse(503, 'provider_unavailable', 'The selected managed provider is not enabled.', requestId);
+    await db.update(aiRequests).set({
+      status: 'admission_denied',
+      errorCode: 'managed_cost_envelope_exhausted',
+      completedAt: new Date(),
+    }).where(and(eq(aiRequests.id, requestId), eq(aiRequests.tenantId, key.tenantId)));
+    return errorResponse(402, 'prepaid_capacity_exhausted', 'Prepaid Enterprise AI capacity is exhausted. Add funds to continue.', requestId);
   }
 
   let result;
   try {
-    const provider = getManagedWorkersAiProvider();
-    result = await provider.complete({
+    if (resolved.model.providerKey === 'workers-ai') {
+      const provider = getManagedWorkersAiProvider();
+      result = await provider.complete({
       tenantId: key.tenantId,
       projectId,
       apiKeyId: key.id,
@@ -521,6 +544,33 @@ async function handlePost(request: Request) {
       idempotencyKey,
       metadata: { requestId },
     }, resolved.model.nativeModel);
+    } else {
+      const external = await runCentralAi({
+        tenantId: key.tenantId,
+        projectId,
+        apiKeyId: key.id,
+        model: resolved.alias.alias,
+        messages: parsed.data.messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        maxOutputTokens: effectiveMaxOutput,
+        idempotencyKey,
+      });
+      result = {
+        requestId,
+        provider: external.provider,
+        nativeModel: external.nativeModel,
+        text: external.text,
+        finishReason: 'stop' as const,
+        usage: {
+          inputTokens: BigInt(Math.max(0, Math.trunc(external.usage?.inputTokens ?? 0))),
+          cachedInputTokens: 0n,
+          outputTokens: BigInt(Math.max(0, Math.trunc(external.usage?.outputTokens ?? 0))),
+        },
+        providerRequestId: external.providerRequestId,
+      };
+    }
   } catch {
     // Once provider invocation begins, an exception can be ambiguous: the upstream
     // provider may have accepted or completed work even if the Worker lost the
