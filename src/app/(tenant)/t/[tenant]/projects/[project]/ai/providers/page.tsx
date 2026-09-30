@@ -20,6 +20,7 @@ const PROVIDERS = [
   ['vertex', 'Google Vertex AI'],
   ['cloudflare-ai', 'Cloudflare AI'],
   ['bedrock', 'AWS Bedrock'],
+  ['openai-compatible', 'OpenAI-compatible / self-hosted'],
 ] as const;
 
 export default async function AiWorkspaceProvidersPage({

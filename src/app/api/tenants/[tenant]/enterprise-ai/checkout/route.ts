@@ -28,10 +28,18 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? await request.json().catch(() => ({})) as { provider?: string; collectionCurrency?: string }
-    : Object.fromEntries(await request.formData()) as { provider?: string; collectionCurrency?: string };
+    ? await request.json().catch(() => ({})) as { provider?: string; collectionCurrency?: string; fundingAmountUsd?: string }
+    : Object.fromEntries(await request.formData()) as { provider?: string; collectionCurrency?: string; fundingAmountUsd?: string };
 
   const provider = String(body.provider ?? 'nowpayments');
+  const fundingText = String(body.fundingAmountUsd ?? '').trim();
+  let fundingAmountMinor: bigint | undefined;
+  if (fundingText) {
+    const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(fundingText);
+    if (!match) return Response.json({ success: false, message: 'Enter a valid funding amount.' }, { status: 400 });
+    fundingAmountMinor = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
+    if (fundingAmountMinor <= 0n) return Response.json({ success: false, message: 'Funding amount must be greater than zero.' }, { status: 400 });
+  }
   const adapter =
     provider === 'nowpayments'
       ? process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
@@ -74,6 +82,7 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
         ? { email: session.user.email, name: session.user.name ?? undefined }
         : undefined,
       collectionCurrency: provider === 'flutterwave' ? String(body.collectionCurrency ?? 'USD') : undefined,
+      fundingAmountMinor,
     });
 
     if (!contentType.includes('application/json')) {
@@ -85,6 +94,7 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
       checkoutId: checkout.checkoutId,
       checkoutUrl: checkout.checkoutUrl,
       provider: checkout.provider,
+      amountExpectedMinor: checkout.amountExpectedMinor.toString(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Enterprise AI checkout could not be created.';

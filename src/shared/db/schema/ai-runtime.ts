@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { users } from './auth';
+import { billingPlanVersions } from './billing-plan-versions';
 import { creditLedgerEntries } from './credit-ledger-entries';
 import { projects } from './projects';
 import { appSchema } from './schema';
@@ -150,6 +151,22 @@ export const aiRateCards = appSchema.table('ai_rate_cards', {
     'ai_rate_cards_cached_rate_check',
     sql`${table.cachedInputCreditsPerMillion} IS NULL OR ${table.cachedInputCreditsPerMillion} > 0`,
   ),
+]);
+
+export const aiEnterpriseCommercialPolicies = appSchema.table('ai_enterprise_commercial_policies', {
+  planVersionId: uuid('plan_version_id').primaryKey().references(() => billingPlanVersions.id, { onDelete: 'cascade' }),
+  minimumFundingMinor: bigint('minimum_funding_minor', { mode: 'bigint' }).notNull(),
+  managedCostShareBps: integer('managed_cost_share_bps').notNull().default(1500),
+  setupFeeMinor: bigint('setup_fee_minor', { mode: 'bigint' }).notNull().default(0n),
+  fundingMode: varchar('funding_mode', { length: 32 }).notNull().default('full_period'),
+  creditRollover: boolean('credit_rollover').notNull().default(true),
+  hardStop: boolean('hard_stop').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check('ai_enterprise_commercial_policy_funding_check', sql`${table.minimumFundingMinor} > 0 AND ${table.setupFeeMinor} >= 0`),
+  check('ai_enterprise_commercial_policy_share_check', sql`${table.managedCostShareBps} BETWEEN 1 AND 10000`),
+  check('ai_enterprise_commercial_policy_mode_check', sql`${table.fundingMode} IN ('full_period','prepaid_partial')`),
 ]);
 
 export const aiRuntimePolicies = appSchema.table('ai_runtime_policies', {

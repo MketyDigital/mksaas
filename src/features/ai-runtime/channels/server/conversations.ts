@@ -1,4 +1,4 @@
-import { and, eq, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, lte, or, sql } from 'drizzle-orm';
 
 import type { EnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { db } from '@/shared/db/cloudflare';
@@ -17,6 +17,15 @@ export type EnterpriseAiScheduledPayload = {
   sourceProviderMessageId?: string;
   commitment?: string;
   sourceQuote?: string;
+  inboundRetry?: {
+    originalProviderMessageId: string;
+    senderId: string;
+    externalConversationId: string;
+    replyRecipientId: string;
+    replyToId?: string;
+    contextId?: string;
+    requestedModel?: string;
+  };
 };
 
 export async function ensureEnterpriseAiConversation(input: {
@@ -115,6 +124,37 @@ export async function recordEnterpriseAiMessage(input: {
   }
 }
 
+
+export async function getBoundedEnterpriseAiConversationContext(input: {
+  tenantId: string;
+  conversationId: string;
+  maxMessages?: number;
+  maxCharacters?: number;
+}) {
+  const maxMessages = Math.max(1, Math.min(24, input.maxMessages ?? 12));
+  const maxCharacters = Math.max(1_000, Math.min(48_000, input.maxCharacters ?? 24_000));
+  const rows = await db.query.aiMessages.findMany({
+    where: and(
+      eq(aiMessages.tenantId, input.tenantId),
+      eq(aiMessages.conversationId, input.conversationId),
+    ),
+    orderBy: [desc(aiMessages.createdAt)],
+    limit: maxMessages,
+  });
+
+  let used = 0;
+  const selected: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }> = [];
+  for (const row of rows) {
+    if (!['user', 'assistant'].includes(row.role)) continue;
+    const available = maxCharacters - used;
+    if (available <= 0) break;
+    const content = row.content.slice(-available);
+    selected.push({ role: row.role as 'user' | 'assistant', content });
+    used += content.length;
+  }
+  return selected.reverse();
+}
+
 export async function markEnterpriseAiConversationOutbound(conversationId: string, tenantId: string) {
   const now = new Date();
   await db.update(aiConversations).set({
@@ -128,7 +168,7 @@ export async function scheduleEnterpriseAiAction(input: {
   conversationId?: string | null;
   solutionInstanceId?: string | null;
   connectionId: string;
-  kind: 'delayed_reply' | 'commitment_reminder';
+  kind: 'delayed_reply' | 'commitment_reminder' | 'inbound_retry';
   idempotencyKey: string;
   dueAt: Date;
   payload: EnterpriseAiScheduledPayload;

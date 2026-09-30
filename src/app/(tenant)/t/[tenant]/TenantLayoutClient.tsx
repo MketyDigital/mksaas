@@ -14,6 +14,8 @@
 import type { ReactNode } from 'react';
 
 import { TopHeader, UnifiedSidebar } from '@/shared/components/layout';
+import { AuthProvider } from '@/shared/components/providers';
+import type { MketySession } from '@/shared/lib/auth';
 import { CommandPalette, GlobalSearchProvider } from '@/shared/components/search';
 import { SidebarProvider, useSidebar, ViewProvider } from '@/shared/providers';
 
@@ -24,6 +26,8 @@ interface TenantLayoutClientProps {
   permissions?: string[];
   hasMailAccess?: boolean;
   hasEnterpriseAiAccess?: boolean;
+  hasPlatformControlAccess?: boolean;
+  session: MketySession;
 }
 
 /**
@@ -35,12 +39,14 @@ function TenantLayoutContent({
   permissions,
   hasMailAccess,
   hasEnterpriseAiAccess,
+  hasPlatformControlAccess,
 }: {
   children: ReactNode;
   tenantSlug: string;
   permissions: string[];
   hasMailAccess: boolean;
   hasEnterpriseAiAccess: boolean;
+  hasPlatformControlAccess: boolean;
 }) {
   const { isCollapsed } = useSidebar();
 
@@ -49,7 +55,7 @@ function TenantLayoutContent({
       <div className="min-h-screen bg-background">
         <CommandPalette />
         <TopHeader tenantSlug={tenantSlug} />
-        <UnifiedSidebar tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess} hasEnterpriseAiAccess={hasEnterpriseAiAccess} />
+        <UnifiedSidebar tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess} hasEnterpriseAiAccess={hasEnterpriseAiAccess} hasPlatformControlAccess={hasPlatformControlAccess} />
         <main className={isCollapsed ? 'lg:pl-16 pt-0 lg:pt-16' : 'lg:pl-64 pt-0 lg:pt-16'}>
           <div className="container mx-auto py-6 px-4">{children}</div>
         </main>
@@ -58,16 +64,18 @@ function TenantLayoutContent({
   );
 }
 
-export function TenantLayoutClient({ children, tenantSlug, permissions = [], hasMailAccess = false, hasEnterpriseAiAccess = false }: TenantLayoutClientProps) {
+export function TenantLayoutClient({ children, tenantSlug, permissions = [], hasMailAccess = false, hasEnterpriseAiAccess = false, hasPlatformControlAccess = false, session }: TenantLayoutClientProps) {
   // Unified layout with sidebar for all routes
   // View-specific rendering is handled by UnifiedSidebar based on current view from ViewProvider
   return (
-    <GlobalSearchProvider>
-      <SidebarProvider>
-        <TenantLayoutContent tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess} hasEnterpriseAiAccess={hasEnterpriseAiAccess}>
+    <AuthProvider initialSession={session} revalidateOnMount={false}>
+      <GlobalSearchProvider>
+        <SidebarProvider>
+        <TenantLayoutContent tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess} hasEnterpriseAiAccess={hasEnterpriseAiAccess} hasPlatformControlAccess={hasPlatformControlAccess}>
           {children}
         </TenantLayoutContent>
-      </SidebarProvider>
-    </GlobalSearchProvider>
+        </SidebarProvider>
+      </GlobalSearchProvider>
+    </AuthProvider>
   );
 }

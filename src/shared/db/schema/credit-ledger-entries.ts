@@ -8,6 +8,7 @@ import { usageEvents } from './usage-events';
 
 export const creditLedgerEntryTypeEnum = appSchema.enum('credit_ledger_entry_type', [
   'period_grant',
+  'purchased_grant',
   'usage',
   'manual_grant',
   'manual_debit',

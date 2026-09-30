@@ -21,7 +21,8 @@ export type ByokProviderInput =
   | { provider: 'gemini'; apiKey: string }
   | { provider: 'vertex'; accessToken: string; projectId: string; location?: string }
   | { provider: 'cloudflare-ai'; accountId: string; apiToken: string }
-  | { provider: 'bedrock'; accessKeyId: string; secretAccessKey: string; sessionToken?: string; region?: string };
+  | { provider: 'bedrock'; accessKeyId: string; secretAccessKey: string; sessionToken?: string; region?: string }
+  | { provider: 'openai-compatible'; apiKey: string; endpoint: string };
 
 function encryptionKey() {
   return getConnectionEncryptionKey();
@@ -83,6 +84,16 @@ function normalizeInput(input: ByokProviderInput): {
         secret: { apiToken: nonEmpty(input.apiToken, 'Cloudflare AI API token') },
         metadata: { accountId: nonEmpty(input.accountId, 'Cloudflare account ID') },
         endpointUrl: null,
+      };
+    case 'openai-compatible':
+      return {
+        providerKey: input.provider,
+        secret: { apiKey: nonEmpty(input.apiKey, 'OpenAI-compatible API key') },
+        metadata: {},
+        endpointUrl: assertPublicHttpsUrl(
+          nonEmpty(input.endpoint, 'OpenAI-compatible endpoint'),
+          { label: 'OpenAI-compatible endpoint' },
+        ).toString().replace(/\/+$/, ''),
       };
     case 'bedrock':
       return {
@@ -227,6 +238,13 @@ function adapterFromConnection(row: {
           provider: 'cloudflare-ai',
           accountId: nonEmpty(String(metadata.accountId ?? ''), 'Cloudflare account ID'),
           apiToken: nonEmpty(secret.apiToken ?? '', 'Cloudflare AI API token'),
+        };
+        break;
+      case 'openai-compatible':
+        credentials = {
+          provider: 'openai-compatible',
+          apiKey: nonEmpty(secret.apiKey ?? '', 'OpenAI-compatible API key'),
+          endpoint: nonEmpty(row.endpointUrl ?? '', 'OpenAI-compatible endpoint'),
         };
         break;
       case 'bedrock':

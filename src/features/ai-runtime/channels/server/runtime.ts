@@ -2,10 +2,12 @@ import { and, eq } from 'drizzle-orm';
 
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
+import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import {
   deterministicReplyDelaySeconds,
   ensureEnterpriseAiConversation,
+  getBoundedEnterpriseAiConversationContext,
   recordEnterpriseAiMessage,
   scheduleEnterpriseAiAction,
 } from '@/features/ai-runtime/channels/server/conversations';
@@ -23,9 +25,10 @@ import {
 } from '@/features/ai-runtime/server/commercial-rates';
 import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
+import { assertEnterpriseAiManagedCostEnvelope } from '@/features/ai-runtime/server/enterprise-cost-envelope';
 import {
   calculateProviderCostUsdMicros,
-  getManagedAiCostRate,
+  getManagedAiCostRateForModel,
   minimumCustomerRevenueUsdMicros,
 } from '@/features/ai-runtime/server/provider-cost';
 import { db } from '@/shared/db/cloudflare';
@@ -53,6 +56,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   solutionInstanceId?: string | null;
   requestedModel?: string;
   testMode?: boolean;
+  skipInboundRecord?: boolean;
 }): Promise<EnterpriseAiManagedChannelTurnResult> {
   const policy = await getEnterpriseAiRuntimePolicy();
   if (!policy.customerInferenceEnabled) return { kind: 'disabled' };
@@ -84,20 +88,31 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     replyRecipientId: input.replyRecipientId,
     replyContextId: input.contextId ?? input.externalConversationId,
   });
-  await recordEnterpriseAiMessage({
-    tenantId: input.tenantId,
-    conversationId: conversation.id,
-    direction: 'inbound',
-    role: 'user',
-    providerMessageId: input.providerMessageId,
-    content: input.text,
-  });
+  if (!input.skipInboundRecord) {
+    await recordEnterpriseAiMessage({
+      tenantId: input.tenantId,
+      conversationId: conversation.id,
+      direction: 'inbound',
+      role: 'user',
+      providerMessageId: input.providerMessageId,
+      content: input.text,
+    });
+  }
   if (conversation.status === 'human') {
     return { kind: 'handoff', conversationId: conversation.id };
   }
 
+  const recentMessages = await getBoundedEnterpriseAiConversationContext({
+    tenantId: input.tenantId,
+    conversationId: conversation.id,
+    maxMessages: 12,
+    maxCharacters: 24_000,
+  });
+  const boundedSystemPrompt = configuration.systemPrompt.slice(0, 12_000);
+  const boundedKnowledge = configuration.knowledgeText.slice(0, 24_000);
+
   const channel = input.channelKey ? getEnterpriseAiChannel(input.channelKey) : null;
-  const remindersEnabled =
+  const remindersRequested =
     configuration.commitmentRemindersEnabled &&
     !input.testMode &&
     channel?.supportsCommitmentReminders === true;
@@ -112,16 +127,21 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     requestedModel,
   });
   if (!resolved) throw new Error('Managed channel model route is unavailable.');
-  if (resolved.model.providerKey !== 'workers-ai') throw new Error('Managed channel provider is unavailable.');
-
   const rate = await resolveActiveAiRateCard(resolved.model.id);
   if (!rate) throw new Error('Managed channel commercial rate is unavailable.');
-  const providerRate = getManagedAiCostRate(resolved.model.nativeModel);
+  const providerRate = getManagedAiCostRateForModel({
+    nativeModel: resolved.model.nativeModel,
+    providerCostMetadata: resolved.model.providerCostMetadata,
+  });
   if (!providerRate) throw new Error('Managed channel provider cost is not verified.');
 
-  const contextText = [configuration.systemPrompt, configuration.knowledgeText, input.text]
-    .filter(Boolean)
-    .join('\n\n');
+  const remindersEnabled = remindersRequested && resolved.model.providerKey === 'workers-ai';
+
+  const contextText = [
+    boundedSystemPrompt,
+    boundedKnowledge,
+    ...recentMessages.map((message) => message.content),
+  ].filter(Boolean).join('\n\n');
   const messageBytes = new TextEncoder().encode(contextText).byteLength;
   const inputTokenUpperBound = conservativeInputTokenUpperBound(Math.max(1, messageBytes));
   const modelMaxOutput = typeof resolved.model.limits.maxOutputTokens === 'number'
@@ -203,23 +223,55 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     throw new Error('Managed channel request was not commercially admitted.');
   }
 
+  const estimatedProviderCostUsdMicros = calculateProviderCostUsdMicros({
+    rate: providerRate,
+    inputTokens: inputTokenUpperBound,
+    cachedInputTokens: 0n,
+    outputTokens: BigInt(effectiveMaxOutput),
+  });
+  try {
+    await assertEnterpriseAiManagedCostEnvelope({
+      tenantId: input.tenantId,
+      estimatedAdditionalCostUsdMicros: estimatedProviderCostUsdMicros,
+      now: startedAt,
+    });
+  } catch {
+    try {
+      await releaseAiCommercialRequest({ admission, reason: 'managed_cost_envelope_exhausted' });
+    } catch {
+      await db.update(aiRequests).set({
+        status: 'reconciliation_required',
+        errorCode: 'commercial_reconciliation_required',
+        completedAt: new Date(),
+      }).where(eq(aiRequests.id, requestId));
+      throw new Error('Managed channel commercial holds require reconciliation.');
+    }
+    await db.update(aiRequests).set({
+      status: 'admission_denied',
+      errorCode: 'managed_cost_envelope_exhausted',
+      completedAt: new Date(),
+    }).where(eq(aiRequests.id, requestId));
+    throw new Error('Prepaid Enterprise AI capacity is exhausted. Add funds to continue.');
+  }
+
   let result;
   try {
-    const provider = getManagedWorkersAiProvider();
-    result = await provider.complete({
+    if (resolved.model.providerKey === 'workers-ai') {
+      const provider = getManagedWorkersAiProvider();
+      result = await provider.complete({
       tenantId: input.tenantId,
       projectId: input.projectId ?? null,
       apiKeyId: null,
       actorUserId: null,
       requestedModel: resolved.alias.alias,
       messages: [
-        ...(configuration.systemPrompt
-          ? [{ role: 'system' as const, content: configuration.systemPrompt }]
+        ...(boundedSystemPrompt
+          ? [{ role: 'system' as const, content: boundedSystemPrompt }]
           : []),
-        ...(configuration.knowledgeText
+        ...(boundedKnowledge
           ? [{
               role: 'system' as const,
-              content: `Approved business knowledge:\n${configuration.knowledgeText}`,
+              content: `Approved business knowledge:\n${boundedKnowledge}`,
             }]
           : []),
         ...(remindersEnabled
@@ -234,7 +286,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
               ].join(' '),
             }]
           : []),
-        { role: 'user' as const, content: input.text },
+        ...recentMessages,
       ],
       ...(remindersEnabled
         ? {
@@ -264,7 +316,61 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
       },
       idempotencyKey,
     }, resolved.model.nativeModel);
-  } catch {
+    } else {
+      const external = await runCentralAi({
+        tenantId: input.tenantId,
+        projectId: input.projectId ?? null,
+        model: resolved.alias.alias,
+        system: [
+          boundedSystemPrompt,
+          boundedKnowledge ? `Approved business knowledge:\n${boundedKnowledge}` : '',
+        ].filter(Boolean).join('\n\n'),
+        messages: recentMessages
+          .filter((message): message is typeof message & { role: 'system' | 'user' | 'assistant' } => message.role !== 'tool'),
+        maxOutputTokens: effectiveMaxOutput,
+        idempotencyKey,
+      });
+      result = {
+        requestId,
+        provider: external.provider,
+        nativeModel: external.nativeModel,
+        text: external.text,
+        finishReason: 'stop' as const,
+        usage: {
+          inputTokens: BigInt(Math.max(0, Math.trunc(external.usage?.inputTokens ?? 0))),
+          cachedInputTokens: 0n,
+          outputTokens: BigInt(Math.max(0, Math.trunc(external.usage?.outputTokens ?? 0))),
+        },
+        providerRequestId: external.providerRequestId,
+      };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const explicitCapacityRejection = /(?:\b429\b|rate.?limit|too many requests|busy|capacity|overloaded)/i.test(message);
+    if (explicitCapacityRejection) {
+      try {
+        await releaseAiCommercialRequest({ admission, reason: 'provider_capacity_rejected' });
+      } catch {
+        await db.update(aiRequests).set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        }).where(eq(aiRequests.id, requestId));
+        throw new Error('Managed channel commercial holds require reconciliation.');
+      }
+      await db.update(aiRequests).set({
+        status: 'provider_unavailable',
+        errorCode: 'provider_capacity_retryable',
+        completedAt: new Date(),
+      }).where(eq(aiRequests.id, requestId));
+      const retryable = new Error('Enterprise AI provider capacity is temporarily unavailable.');
+      Object.assign(retryable, {
+        code: 'ENTERPRISE_AI_PROVIDER_CAPACITY_RETRYABLE',
+        conversationId: conversation.id,
+      });
+      throw retryable;
+    }
+
     await db.update(aiRequests).set({
       status: 'reconciliation_required',
       errorCode: 'provider_outcome_unknown',

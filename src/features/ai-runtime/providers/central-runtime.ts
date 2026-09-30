@@ -1,10 +1,33 @@
-import type { CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderId } from './external-types';
+import type { CentralAiGenerateRequest, CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderAdapter, CentralAiProviderId } from './external-types';
 import { getManagedWorkersAiProvider } from './runtime.cloudflare';
-import { MANAGED_AI_MODEL_ALIASES, type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
+import { type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
 import { resolveAiModelRoute } from '../server/model-routing';
-import { resolveByokProviderConnection } from '../server/provider-connections';
+import { resolveByokProviderConnection, resolveSystemAiProviderConnection } from '../server/provider-connections';
 
 export type CentralAiExecutionSource = 'managed' | 'byok';
+
+function safeRetryableProviderError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const status = (error as { status?: unknown }).status;
+  return status === 429;
+}
+
+async function generateWithSafeCapacityRetries(
+  adapter: CentralAiProviderAdapter,
+  request: CentralAiGenerateRequest,
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await adapter.generate(request);
+    } catch (error) {
+      lastError = error;
+      if (!safeRetryableProviderError(error) || attempt === 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * 2 ** attempt));
+    }
+  }
+  throw lastError;
+}
 
 export type CentralAiExecutionResult = CentralAiGenerateResponse & {
   provider: CentralAiProviderId | 'workers-ai';
@@ -27,6 +50,8 @@ function defaultByokModel(provider: CentralAiProviderId) {
       return '@cf/zai-org/glm-5.3-flash';
     case 'bedrock':
       return 'global.anthropic.claude-sonnet-5';
+    case 'openai-compatible':
+      return 'default';
   }
 }
 
@@ -58,7 +83,7 @@ export async function runCentralAi(input: {
       connectionId: input.providerConnectionId,
     });
     const model = input.model?.trim() || defaultByokModel(adapter.id);
-    const response = await adapter.generate({
+    const response = await generateWithSafeCapacityRetries(adapter, {
       model,
       system: input.system,
       messages: input.messages,
@@ -75,7 +100,7 @@ export async function runCentralAi(input: {
 
   const decision = routeManagedAiTask(input.taskClass ?? 'smart');
   const requestedAlias: string =
-    input.model === MANAGED_AI_MODEL_ALIASES.economy || input.model === MANAGED_AI_MODEL_ALIASES.smart
+    typeof input.model === 'string' && /^mkety-[a-z0-9][a-z0-9-]{1,80}$/.test(input.model)
       ? input.model
       : decision.alias;
   const resolved = await resolveAiModelRoute({
@@ -86,10 +111,33 @@ export async function runCentralAi(input: {
   if (!resolved) {
     throw new Error(`Managed AI route is unavailable for alias: ${requestedAlias}`);
   }
-  if (resolved.model.providerKey !== 'workers-ai') {
-    throw new Error('Managed Mkety AI alias must resolve to the Workers AI provider.');
-  }
   const nativeModel = resolved.model.nativeModel;
+  if (resolved.model.providerKey !== 'workers-ai') {
+    if (!['openai', 'azure-openai', 'gemini', 'vertex', 'cloudflare-ai', 'bedrock', 'openai-compatible'].includes(resolved.model.providerKey)) {
+      throw new Error(`Managed Mkety AI provider is unsupported: ${resolved.model.providerKey}`);
+    }
+    if (input.tools?.length) {
+      throw new Error('Tool calling is not yet enabled for external managed adapters.');
+    }
+    const { adapter } = await resolveSystemAiProviderConnection({
+      mode: 'platform',
+      providerKey: resolved.model.providerKey as CentralAiProviderId,
+    });
+    const response = await generateWithSafeCapacityRetries(adapter, {
+      model: nativeModel,
+      system: input.system,
+      messages: input.messages,
+      maxOutputTokens: input.maxOutputTokens,
+      temperature: input.temperature,
+    });
+    return {
+      ...response,
+      provider: adapter.id,
+      nativeModel,
+      source: 'managed',
+    };
+  }
+
   const result = await getManagedWorkersAiProvider().complete({
     tenantId: input.tenantId,
     projectId,

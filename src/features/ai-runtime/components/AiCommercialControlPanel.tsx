@@ -2,9 +2,11 @@ import {
   activateAiRateCard,
   createAiRateCard,
   disableEnterpriseAiInference,
+  reconcilePublishedManagedAiCatalog,
   retireAiRateCard,
   updateAiRuntimePolicy,
   updateAiSolutionTemplate,
+  upsertManagedAiModel,
 } from '@/features/ai-runtime/server/commercial-admin-actions';
 import type { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
 import { PublicAiControlPanel } from '@/features/public-assistant/components/PublicAiControlPanel';
@@ -164,6 +166,91 @@ export function AiCommercialControlPanel({
               </button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Managed model catalog</CardTitle>
+              <CardDescription>
+                Mkety aliases can point to Workers AI, direct frontier APIs, or approved self-hosted OpenAI-compatible endpoints. Customers see the Mkety alias, not the infrastructure source.
+              </CardDescription>
+            </div>
+            <form action={reconcilePublishedManagedAiCatalog.bind(null, tenant)}>
+              <button className="rounded-xl border px-4 py-2 text-sm font-semibold">Reconcile published model catalog</button>
+            </form>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <details className="rounded-xl border p-4">
+            <summary className="cursor-pointer font-semibold">Add or update a managed model route</summary>
+            <form action={upsertManagedAiModel.bind(null, tenant)} className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <label className="text-sm font-medium">
+                Provider
+                <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="openai" name="providerKey">
+                  <option value="workers-ai">Workers AI</option>
+                  <option value="openai">OpenAI direct</option>
+                  <option value="azure-openai">Azure OpenAI</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="vertex">Vertex AI</option>
+                  <option value="cloudflare-ai">Cloudflare AI REST</option>
+                  <option value="bedrock">AWS Bedrock</option>
+                  <option value="openai-compatible">OpenAI-compatible / self-hosted</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Native model ID
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={200} name="nativeModel" placeholder="gpt-5.6-sol or my-vm-model" required />
+              </label>
+              <label className="text-sm font-medium">
+                Customer-facing Mkety alias
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={128} name="alias" placeholder="mkety-smart" required />
+              </label>
+              <label className="text-sm font-medium">
+                Display name
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={160} name="displayName" placeholder="Mkety Smart" />
+              </label>
+              <label className="text-sm font-medium">
+                Context tokens
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={128000} min={1024} max={10000000} name="contextTokens" required type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Max output tokens
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={32768} min={1} max={1000000} name="maxOutputTokens" required type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Provider input cost · micro-USD / 1M tokens
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" min={1} name="inputUsdMicrosPerMillion" type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Provider cached-input cost · micro-USD / 1M
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" min={1} name="cachedInputUsdMicrosPerMillion" type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Provider output cost · micro-USD / 1M tokens
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" min={1} name="outputUsdMicrosPerMillion" type="number" />
+              </label>
+              <label className="text-sm font-medium">
+                Cost verified date
+                <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="providerCostVerifiedAt" type="date" />
+              </label>
+              <div className="grid gap-2 text-sm md:col-span-2 xl:col-span-2 sm:grid-cols-5">
+                <label className="flex items-center gap-2"><input name="vision" type="checkbox" /> Vision</label>
+                <label className="flex items-center gap-2"><input name="tools" type="checkbox" /> Tools</label>
+                <label className="flex items-center gap-2"><input name="reasoning" type="checkbox" /> Reasoning</label>
+                <label className="flex items-center gap-2"><input name="structuredOutput" type="checkbox" /> Structured output</label>
+                <label className="flex items-center gap-2 font-semibold"><input name="enabled" type="checkbox" /> Enable route</label>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground md:col-span-2 xl:col-span-3">
+                External managed models cannot be enabled until verified input/output provider costs and a verification date are saved. A rate card must also be active before customer use.
+              </p>
+              <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground md:col-span-2 xl:col-span-3">
+                Save managed model
+              </button>
+            </form>
+          </details>
         </CardContent>
       </Card>
 

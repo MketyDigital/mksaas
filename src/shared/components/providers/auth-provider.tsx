@@ -6,6 +6,8 @@ import type { MketySession } from '@/shared/lib/auth';
 
 interface AuthProviderProps {
   children: React.ReactNode;
+  initialSession?: MketySession | null;
+  revalidateOnMount?: boolean;
 }
 
 interface AuthContextValue {
@@ -16,9 +18,13 @@ interface AuthContextValue {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: AuthProviderProps) {
-  const [session, setSession] = useState<MketySession | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+export function AuthProvider({
+  children,
+  initialSession,
+  revalidateOnMount = initialSession === undefined,
+}: AuthProviderProps) {
+  const [session, setSession] = useState<MketySession | null>(initialSession ?? null);
+  const [isLoading, setIsLoading] = useState(initialSession === undefined);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -37,8 +43,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (revalidateOnMount) void refresh();
+  }, [refresh, revalidateOnMount]);
 
   const value = useMemo(() => ({ session, isLoading, refresh }), [session, isLoading, refresh]);
 

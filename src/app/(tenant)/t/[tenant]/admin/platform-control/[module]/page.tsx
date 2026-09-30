@@ -199,6 +199,31 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                   Included credits per billing period
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
                 </label>
+                <label className="text-sm font-medium">
+                  Funding mode
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="full_period" name="fundingMode">
+                    <option value="full_period">Full monthly payment</option>
+                    <option value="prepaid_partial">Prepaid partial funding / top-ups</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Minimum funding / top-up (USD)
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="minimumFundingUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="25.00" />
+                </label>
+                <label className="text-sm font-medium">
+                  Setup fee (USD, optional)
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="0" inputMode="decimal" name="setupFeeUsd" pattern="\d{1,7}(?:\.\d{1,2})?" />
+                </label>
+                <label className="text-sm font-medium">
+                  Managed AI cost envelope % <span className="text-xs text-muted-foreground">(internal only)</span>
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="15" inputMode="decimal" name="managedCostSharePercent" pattern="\d{1,3}(?:\.\d{1,2})?" required />
+                </label>
+                <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
+                  Unused funded credits remain available in the prepaid Mkety credit balance. This is fixed policy for the current pooled-credit ledger.
+                </div>
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
+                  The managed AI cost envelope is confidential Mkety profitability policy. It must never be shown in customer-facing APIs, billing pages, usage screens, exports, or white-label surfaces. Setup fees, when used, are collected separately through Enterprise Payments.
+                </div>
                 <label className="text-sm font-medium lg:col-span-2">
                   Description
                   <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={2000} name="description" rows={3} />
@@ -233,6 +258,12 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                       </span>
                     </div>
                     {contract.description ? <p className="mt-3 text-sm text-muted-foreground">{contract.description}</p> : null}
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                      <p>Funding: {contract.commercialPolicy.fundingMode === 'prepaid_partial' ? `partial · minimum ${(Number(contract.commercialPolicy.minimumFundingMinor) / 100).toFixed(2)}` : 'full monthly amount'}</p>
+                      <p>Internal cost envelope: {(contract.commercialPolicy.managedCostShareBps / 100).toFixed(2)}%</p>
+                      <p>Setup fee: USD {(Number(contract.commercialPolicy.setupFeeMinor) / 100).toFixed(2)}</p>
+                      <p>Unused credits: {contract.commercialPolicy.creditRollover ? 'roll over' : 'period-bound'}</p>
+                    </div>
                   </div>
                 )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
               </div>

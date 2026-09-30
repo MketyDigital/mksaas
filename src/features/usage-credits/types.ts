@@ -32,7 +32,7 @@ export interface GrantCreditsInput {
   tenantId: string;
   credits: bigint;
   idempotencyKey: string;
-  entryType: 'period_grant' | 'manual_grant' | 'adjustment';
+  entryType: 'period_grant' | 'purchased_grant' | 'manual_grant' | 'adjustment';
   source: string;
   billingPeriodId?: string | null;
   reason?: string | null;

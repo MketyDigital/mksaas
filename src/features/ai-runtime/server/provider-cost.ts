@@ -70,3 +70,35 @@ export function minimumCustomerRevenueUsdMicros(
 export function getManagedAiCostRate(model: string) {
   return MANAGED_AI_COST_RATES.find((rate) => rate.model === model) ?? null;
 }
+
+function positiveBigIntMetadata(value: unknown): bigint | null {
+  if (typeof value === 'bigint') return value > 0n ? value : null;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return BigInt(value);
+  if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) return BigInt(value);
+  return null;
+}
+
+export function getManagedAiCostRateForModel(input: {
+  nativeModel: string;
+  providerCostMetadata?: Record<string, unknown> | null;
+}): ManagedAiCostRate | null {
+  const builtIn = getManagedAiCostRate(input.nativeModel);
+  if (builtIn) return builtIn;
+
+  const metadata = input.providerCostMetadata ?? {};
+  const inputRate = positiveBigIntMetadata(metadata.inputUsdMicrosPerMillion);
+  const outputRate = positiveBigIntMetadata(metadata.outputUsdMicrosPerMillion);
+  const cachedRate = positiveBigIntMetadata(metadata.cachedInputUsdMicrosPerMillion);
+  const verifiedAt = typeof metadata.providerCostVerifiedAt === 'string'
+    ? metadata.providerCostVerifiedAt.trim()
+    : '';
+  if (!inputRate || !outputRate || !verifiedAt) return null;
+
+  return {
+    model: input.nativeModel,
+    verifiedAt,
+    inputUsdMicrosPerMillion: inputRate,
+    ...(cachedRate ? { cachedInputUsdMicrosPerMillion: cachedRate } : {}),
+    outputUsdMicrosPerMillion: outputRate,
+  };
+}

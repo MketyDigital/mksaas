@@ -50,6 +50,7 @@ describe('usage credits persistence schema', () => {
     expect(indexNames(creditLedgerEntries)).toContain('credit_ledger_entries_tenant_idempotency_idx');
     expect(creditLedgerEntryTypeEnum.enumValues).toEqual([
       'period_grant',
+      'purchased_grant',
       'usage',
       'manual_grant',
       'manual_debit',

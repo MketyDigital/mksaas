@@ -1,6 +1,7 @@
 import {
   calculateProviderCostUsdMicros,
   getManagedAiCostRate,
+  getManagedAiCostRateForModel,
   minimumCustomerRevenueUsdMicros,
 } from './provider-cost';
 
@@ -23,5 +24,28 @@ describe('Enterprise AI provider cost and pricing floor', () => {
   it('keeps model costs server-owned and explicitly verification dated', () => {
     expect(getManagedAiCostRate('@cf/google/gemma-4-26b-a4b-it')?.verifiedAt).toBe('2026-09-28');
     expect(getManagedAiCostRate('@cf/qwen/qwen3.8-27b')?.outputUsdMicrosPerMillion).toBe(3_200_000n);
+  });
+
+  it('requires verified metadata before an external managed model has a commercial cost rate', () => {
+    expect(getManagedAiCostRateForModel({
+      nativeModel: 'gpt-5.6-sol',
+      providerCostMetadata: {},
+    })).toBeNull();
+
+    expect(getManagedAiCostRateForModel({
+      nativeModel: 'gpt-5.6-sol',
+      providerCostMetadata: {
+        inputUsdMicrosPerMillion: '2500000',
+        cachedInputUsdMicrosPerMillion: '250000',
+        outputUsdMicrosPerMillion: '10000000',
+        providerCostVerifiedAt: '2026-09-30',
+      },
+    })).toEqual({
+      model: 'gpt-5.6-sol',
+      verifiedAt: '2026-09-30',
+      inputUsdMicrosPerMillion: 2_500_000n,
+      cachedInputUsdMicrosPerMillion: 250_000n,
+      outputUsdMicrosPerMillion: 10_000_000n,
+    });
   });
 });

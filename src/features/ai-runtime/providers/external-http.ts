@@ -38,6 +38,16 @@ export function extractOpenAIResponseText(payload: Record<string, unknown>): str
   return parts.join('\n').trim();
 }
 
+export function extractOpenAIChatText(payload: Record<string, unknown>): string {
+  const choices = Array.isArray(payload.choices) ? payload.choices : [];
+  const first = choices[0];
+  if (!first || typeof first !== 'object') return '';
+  const message = (first as { message?: unknown }).message;
+  if (!message || typeof message !== 'object') return '';
+  const content = (message as { content?: unknown }).content;
+  return typeof content === 'string' ? content.trim() : '';
+}
+
 export function extractGeminiText(payload: Record<string, unknown>): string {
   const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
   const first = candidates[0];

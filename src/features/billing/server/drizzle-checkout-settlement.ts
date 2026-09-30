@@ -16,6 +16,7 @@ export interface BillingCheckoutSettlementContext {
   providerAmountExpectedMinor: bigint | null;
   providerCurrency: string | null;
   provider: string;
+  purpose: string;
 }
 
 export async function findBillingCheckoutSettlementContext(
@@ -32,6 +33,7 @@ export async function findBillingCheckoutSettlementContext(
       providerAmountExpectedMinor: billingCheckouts.providerAmountExpectedMinor,
       providerCurrency: billingCheckouts.providerCurrency,
       provider: billingCheckouts.provider,
+      purpose: billingCheckouts.purpose,
     })
     .from(billingCheckouts)
     .where(eq(billingCheckouts.id, checkoutId))
@@ -57,6 +59,15 @@ export async function markBillingCheckoutCompleted(
   await db
     .update(billingCheckouts)
     .set({ status: 'completed', updatedAt })
+    .where(eq(billingCheckouts.id, checkoutId));
+}
+
+export async function markBillingCheckoutFailedOnly(
+  checkoutId: string,
+  updatedAt: Date,
+): Promise<void> {
+  await db.update(billingCheckouts)
+    .set({ status: 'failed', updatedAt })
     .where(eq(billingCheckouts.id, checkoutId));
 }
 

@@ -10,9 +10,12 @@ import {
   markEnterpriseAiConversationOutbound,
   markEnterpriseAiScheduledActionReconciliationRequired,
   recordEnterpriseAiMessage,
+  scheduleEnterpriseAiAction,
 } from '@/features/ai-runtime/channels/server/conversations';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
+import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
+import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import { getEnterpriseAiRuntimePolicy } from '@/features/ai-runtime/server/commercial-policy';
 import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
@@ -149,7 +152,68 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
       }
     }
 
-    const payload = payloadOf(action.payload);
+    const rawPayload = action.payload as Record<string, unknown>;
+    if (action.kind === 'inbound_retry') {
+      const retry = rawPayload.inboundRetry;
+      if (!retry || typeof retry !== 'object' || Array.isArray(retry)) {
+        throw new Error('scheduled_inbound_retry_payload_invalid');
+      }
+      const value = retry as Record<string, unknown>;
+      const originalProviderMessageId = typeof value.originalProviderMessageId === 'string' ? value.originalProviderMessageId : '';
+      const senderId = typeof value.senderId === 'string' ? value.senderId : '';
+      const externalConversationId = typeof value.externalConversationId === 'string' ? value.externalConversationId : '';
+      const replyRecipientId = typeof value.replyRecipientId === 'string' ? value.replyRecipientId : '';
+      const inboundText = typeof rawPayload.text === 'string' ? rawPayload.text : '';
+      if (!originalProviderMessageId || !senderId || !externalConversationId || !replyRecipientId || !inboundText) {
+        throw new Error('scheduled_inbound_retry_payload_invalid');
+      }
+
+      const turn = await runEnterpriseAiManagedChannelTurn({
+        tenantId: action.tenantId,
+        projectId: connection.projectId,
+        connectionId: connection.id,
+        channelKey: channel.key,
+        providerMessageId: `${originalProviderMessageId}:retry:${claimed.attempts}`,
+        senderId,
+        externalConversationId,
+        replyRecipientId,
+        replyToId: typeof value.replyToId === 'string' ? value.replyToId : undefined,
+        contextId: typeof value.contextId === 'string' ? value.contextId : externalConversationId,
+        text: inboundText,
+        solutionInstanceId: action.solutionInstanceId,
+        requestedModel: typeof value.requestedModel === 'string' ? value.requestedModel : undefined,
+        skipInboundRecord: true,
+      });
+
+      if (turn.kind === 'completed' && turn.text) {
+        const reply = await scheduleEnterpriseAiAction({
+          tenantId: action.tenantId,
+          conversationId: turn.conversationId,
+          solutionInstanceId: action.solutionInstanceId,
+          connectionId: connection.id,
+          kind: 'delayed_reply',
+          idempotencyKey: `reply:${connection.id}:${originalProviderMessageId}`,
+          dueAt: new Date(Date.now() + turn.deliveryDelaySeconds * 1_000),
+          payload: {
+            recipientId: replyRecipientId,
+            replyToId: typeof value.replyToId === 'string' ? value.replyToId : undefined,
+            contextId: typeof value.contextId === 'string' ? value.contextId : externalConversationId,
+            text: turn.text,
+            sourceProviderMessageId: originalProviderMessageId,
+          },
+        });
+        await enqueueEnterpriseAiScheduledAction({
+          actionId: reply.id,
+          tenantId: action.tenantId,
+          delaySeconds: turn.deliveryDelaySeconds,
+        }).catch(() => ({ queued: false as const, reason: 'queue_failed' as const }));
+      }
+
+      await completeEnterpriseAiScheduledAction(action.id, action.tenantId);
+      return { ok: true as const, retried: true as const, result: turn.kind };
+    }
+
+    const payload = payloadOf(rawPayload);
     if (!payload) throw new Error('scheduled_payload_invalid');
 
     const credentials = revealChannelCredentials(connection.secretRef);

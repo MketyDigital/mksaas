@@ -29,6 +29,8 @@ function parseProvider(formData: FormData): ByokProviderInput {
   switch (provider) {
     case 'openai':
       return { provider, apiKey: text(formData, 'apiKey') };
+    case 'openai-compatible':
+      return { provider, apiKey: text(formData, 'apiKey'), endpoint: text(formData, 'endpoint') };
     case 'azure-openai':
       return { provider, apiKey: text(formData, 'apiKey'), endpoint: text(formData, 'endpoint'), deployment: text(formData, 'deployment') };
     case 'gemini':

@@ -13,6 +13,7 @@ export const billingCheckouts = appSchema.table(
     subscriptionId: uuid('subscription_id').notNull().references(() => billingSubscriptions.id, { onDelete: 'cascade' }),
     billingPeriodId: uuid('billing_period_id').notNull().references(() => billingPeriods.id, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 48 }).notNull(),
+    purpose: varchar('purpose', { length: 48 }).notNull().default('subscription'),
     providerCheckoutId: text('provider_checkout_id'),
     amountExpectedMinor: bigint('amount_expected_minor', { mode: 'bigint' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { auth } from '@/shared/lib/auth';
+import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,10 @@ export default async function AdminEntryPage() {
   if (!session?.user) redirect('/login');
 
   const roles = (session.user.roles ?? {}) as Record<string, TenantRole>;
-  const adminTenant = Object.entries(roles).find(([, role]) => role === 'admin')?.[0];
+  const platformTenant = session.user.email && isPlatformOperatorEmail(session.user.email)
+    ? Object.keys(roles).find((slug) => isPlatformControlTenant(slug) && roles[slug] === 'admin')
+    : undefined;
+  const adminTenant = platformTenant ?? Object.entries(roles).find(([, role]) => role === 'admin')?.[0];
 
   if (adminTenant) redirect(`/t/${adminTenant}/admin`);
   if (Object.keys(roles).length === 1) redirect(`/t/${Object.keys(roles)[0]}`);

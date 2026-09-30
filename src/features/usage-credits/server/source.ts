@@ -3,6 +3,7 @@ import type { CreditBalance } from '../types';
 
 export type CreditLedgerEntryType =
   | 'period_grant'
+  | 'purchased_grant'
   | 'usage'
   | 'manual_grant'
   | 'manual_debit'
