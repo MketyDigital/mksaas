@@ -89,7 +89,7 @@ jobs:
 
           # Confirm the triggering successful run is the production gateway workflow
           # for the same repository and an exact push SHA.
-          api="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$GATEWAY_RUN_ID"
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$gateway_run_id"
           curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$api" -o /tmp/gateway-run.json
           GATEWAY_SHA="$gateway_sha" node <<'NODE'
           const x=require('/tmp/gateway-run.json');
