@@ -218,13 +218,9 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                   Managed AI cost envelope % <span className="text-xs text-muted-foreground">(internal only)</span>
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="15" inputMode="decimal" name="managedCostSharePercent" pattern="\d{1,3}(?:\.\d{1,2})?" required />
                 </label>
-                <label className="text-sm font-medium">
-                  Unused funded credits
-                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="yes" name="creditRollover">
-                    <option value="yes">Remain available / roll over</option>
-                    <option value="no">Do not roll over</option>
-                  </select>
-                </label>
+                <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
+                  Unused funded credits remain available in the prepaid Mkety credit balance. This is fixed policy for the current pooled-credit ledger.
+                </div>
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
                   The managed AI cost envelope is confidential Mkety profitability policy. It must never be shown in customer-facing APIs, billing pages, usage screens, exports, or white-label surfaces. Setup fees, when used, are collected separately through Enterprise Payments.
                 </div>
