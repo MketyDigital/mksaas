@@ -212,6 +212,17 @@ jobs:
           try {
             const x=JSON.parse(fs.readFileSync('/tmp/dep.json','utf8'));
             console.log(JSON.stringify({status:x.status||null,message:x.message||null},null,2));
+            const safe=String(x.logs||'')
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .slice(-160)
+              .join('\n')
+              .replace(/postgres(?:ql)?:\/\/[^\s]+/gi,'postgresql://***')
+              .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi,'Bearer ***')
+              .replace(/mkmail-[0-9a-f]+/gi,'mkmail-***')
+              .replace(/password\s*[=:]\s*[^\s]+/gi,'password=***');
+            console.log('Sanitized Coolify deployment logs:');
+            console.log(safe || '(no deployment logs returned)');
           } catch {
             console.log('Deployment state unavailable.');
           }
