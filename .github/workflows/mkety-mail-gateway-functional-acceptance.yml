@@ -1,0 +1,390 @@
+name: Mkety Mail Gateway Functional Acceptance
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-mail-gateway-functional-acceptance.yml'
+      - 'ops/mail-gateway-acceptance/**'
+  workflow_run:
+    workflows:
+      - Mkety Mail Gateway Production
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    if: ${{ github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
+      GATEWAY_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+
+    steps:
+      - name: Check out current main acceptance runtime
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate successful production gateway and prepare masked fixture
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          source_sha="$(git rev-parse HEAD)"
+          gateway_sha="${GATEWAY_SHA:-}"
+          gateway_run_id='${{ github.event.workflow_run.id || '' }}'
+
+          if [ -z "$gateway_sha" ]; then
+            runs_url="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/mkety-mail-gateway-production.yml/runs?branch=main&status=success&per_page=20"
+            curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$runs_url" -o /tmp/gateway-runs.json
+            read -r gateway_sha gateway_run_id < <(node <<'NODE'
+          const x=require('/tmp/gateway-runs.json');
+          const run=(x.workflow_runs||[]).find(r=>r.event==='push'&&r.status==='completed'&&r.conclusion==='success'&&r.head_sha);
+          if(!run) process.exit(1);
+          process.stdout.write(run.head_sha+' '+run.id);
+          NODE
+            )
+          fi
+
+          [[ "$gateway_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'No accepted exact gateway SHA was available.'; exit 1; }
+          [ -n "$gateway_run_id" ] || { echo 'No accepted gateway run id was available.'; exit 1; }
+          git cat-file -e "$gateway_sha^{commit}"
+          git merge-base --is-ancestor "$gateway_sha" "$source_sha" || {
+            echo 'Accepted gateway SHA is not an ancestor of the acceptance runtime on main.'
+            exit 1
+          }
+          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(.github/workflows/mkety-mail-gateway-functional-acceptance.yml|ops/mail-gateway-acceptance/)' || true)"
+          [ -z "$unexpected" ] || {
+            echo 'Unaccepted production changes exist after the latest successful gateway SHA:'
+            printf '%s\n' "$unexpected"
+            exit 1
+          }
+          echo "GATEWAY_SHA=$gateway_sha" >> "$GITHUB_ENV"
+          echo "GATEWAY_RUN_ID=$gateway_run_id" >> "$GITHUB_ENV"
+
+          run_id="${GITHUB_RUN_ID}"
+          slug="mail-gateway-acceptance-${run_id}"
+          username="client@${slug}.mkety.invalid"
+          recipient="sink-${run_id}@example.invalid"
+          secret="mkmail-$(openssl rand -hex 12)"
+          echo "::add-mask::$secret"
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "ACCEPTANCE_RUN_ID=$run_id" >> "$GITHUB_ENV"
+          echo "ACCEPTANCE_USERNAME=$username" >> "$GITHUB_ENV"
+          echo "ACCEPTANCE_RECIPIENT=$recipient" >> "$GITHUB_ENV"
+          echo "ACCEPTANCE_APP_PASSWORD=$secret" >> "$GITHUB_ENV"
+
+          # Confirm the triggering successful run is the production gateway workflow
+          # for the same repository and an exact push SHA.
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$GATEWAY_RUN_ID"
+          curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$api" -o /tmp/gateway-run.json
+          GATEWAY_SHA="$gateway_sha" node <<'NODE'
+          const x=require('/tmp/gateway-run.json');
+          if(x.name!=='Mkety Mail Gateway Production') throw new Error('Unexpected triggering workflow.');
+          if(x.event!=='push'||x.status!=='completed'||x.conclusion!=='success') throw new Error('Gateway run is not accepted.');
+          if(x.head_sha!==process.env.GATEWAY_SHA) throw new Error('Gateway SHA mismatch.');
+          NODE
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Resolve private production database
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS "$base/health" >/dev/null
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/databases/$POSTGRES_UUID" -o /tmp/production-db.json
+          DATABASE_URL="$(node <<'NODE'
+          const db=require('/tmp/production-db.json');
+          const healthy=String(db.status||'').toLowerCase().includes('healthy');
+          if(db.is_public!==false||db.enable_ssl!==true||!healthy||!db.internal_db_url) throw new Error('Private PostgreSQL preflight failed.');
+          process.stdout.write(String(db.internal_db_url));
+          NODE
+          )"
+          [ -n "$DATABASE_URL" ] || exit 1
+          echo "::add-mask::$DATABASE_URL"
+          echo "DATABASE_URL=$DATABASE_URL" >> "$GITHUB_ENV"
+
+      - name: Create ephemeral acceptance host and fixture
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          APP_NAME="mkety-mail-acceptance-${ACCEPTANCE_RUN_ID}"
+          APP_NAME="$APP_NAME" node <<'NODE' >/tmp/create-app.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.SOURCE_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/mail-gateway-acceptance/Dockerfile',
+            ports_exposes:'3000',
+            name:process.env.APP_NAME,
+            description:'Ephemeral synthetic Mkety Mail gateway functional acceptance',
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false,
+            health_check_enabled:true,
+            health_check_path:'/',
+            health_check_port:'3000',
+            limits_cpus:'0.25',
+            limits_memory:'128m',
+            docker_images_to_keep:1,
+            max_restart_count:2
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST             -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/create-app.json "$base/applications/public")"
+          [ "$code" = 201 ] || { echo "Acceptance host create failed HTTP $code"; exit 1; }
+          app_uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "::add-mask::$app_uuid"
+          echo "app_uuid=$app_uuid" >> "$GITHUB_OUTPUT"
+
+          endpoint="$base/applications/$app_uuid/envs"
+          upsert() {
+            key="$1"; value="$2"
+            KEY="$key" VALUE="$value" node <<'NODE' >/tmp/env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,value:process.env.VALUE,is_preview:false,
+            is_literal:true,is_multiline:false,is_shown_once:true
+          }));
+          NODE
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" -o /tmp/env-list.json
+            exists="$(KEY="$key" node -e "const x=require('/tmp/env-list.json');process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key===process.env.KEY)?'true':'false')")"
+            method=POST; [ "$exists" = true ] && method=PATCH
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/env-response.json -w '%{http_code}' -X "$method"               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/env.json "$endpoint")"
+            [ "$code" = 201 ] || { echo "Acceptance environment upsert failed for $key HTTP $code"; exit 1; }
+          }
+          upsert DATABASE_URL "$DATABASE_URL"
+          upsert MKETY_MAIL_ACCEPTANCE_MODE setup
+          upsert MKETY_MAIL_ACCEPTANCE_RUN_ID "$ACCEPTANCE_RUN_ID"
+          upsert MKETY_MAIL_ACCEPTANCE_APP_PASSWORD "$ACCEPTANCE_APP_PASSWORD"
+
+          deploy_and_wait() {
+            marker="$1"
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST               -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$app_uuid&force=true")"
+            [ "$code" = 200 ] || return 1
+            dep="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+            for i in $(seq 1 120); do
+              curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+              status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+              case "${status,,}" in
+                finished|success|successful|succeeded|completed) break ;;
+                failed|failure|error|cancelled|canceled) return 1 ;;
+              esac
+              [ "$i" -lt 120 ] || return 1
+              sleep 3
+            done
+            for i in $(seq 1 60); do
+              curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"                 "$base/applications/$app_uuid/logs?lines=300&show_timestamps=false" -o /tmp/acceptance-logs.json || true
+              if MARKER="$marker" node <<'NODE'
+          const fs=require('node:fs');let raw='';
+          try{raw=String(JSON.parse(fs.readFileSync('/tmp/acceptance-logs.json','utf8')).logs||'')}catch{}
+          process.exit(raw.includes(process.env.MARKER)?0:1);
+          NODE
+              then return 0; fi
+              sleep 2
+            done
+            return 1
+          }
+          deploy_and_wait 'MKETY_MAIL_FUNCTIONAL_FIXTURE_READY=true' || {
+            echo 'Synthetic Mail fixture setup failed.'
+            exit 1
+          }
+
+      - name: Prove real IMAP and SMTP app-password behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, socket, ssl, os, re
+
+          username=os.environ['ACCEPTANCE_USERNAME']
+          password=os.environ['ACCEPTANCE_APP_PASSWORD']
+          recipient=os.environ['ACCEPTANCE_RECIPIENT']
+
+          def read_until(sock, predicate, limit=200):
+              data=b''
+              for _ in range(limit):
+                  chunk=sock.recv(8192)
+                  if not chunk:
+                      break
+                  data+=chunk
+                  text=data.decode('utf-8','replace')
+                  if predicate(text):
+                      return text
+              return data.decode('utf-8','replace')
+
+          ctx=ssl.create_default_context()
+
+          with socket.create_connection(('imap.mkety.com',993),timeout=15) as raw:
+              with ctx.wrap_socket(raw,server_hostname='imap.mkety.com') as s:
+                  read_until(s,lambda t:'\n' in t)
+                  commands=[
+                    ('a1',f'a1 LOGIN "{username}" "{password}"\r\n','a1 OK LOGIN completed'),
+                    ('a2','a2 SELECT INBOX\r\n','a2 OK'),
+                    ('a3','a3 SEARCH ALL\r\n','a3 OK SEARCH completed'),
+                    ('a4','a4 FETCH 1 (ENVELOPE)\r\n','a4 OK FETCH completed'),
+                  ]
+                  transcript=''
+                  for tag,cmd,expected in commands:
+                      s.sendall(cmd.encode())
+                      out=read_until(s,lambda t,e=expected:e in t)
+                      transcript+=out
+                      if expected not in out:
+                          raise SystemExit(f'IMAP functional acceptance failed at {tag}')
+                  if 'Mkety gateway acceptance fixture' not in transcript:
+                      raise SystemExit('IMAP fixture message was not visible through the real gateway.')
+                  s.sendall(b'a5 LOGOUT\r\n')
+
+          auth=base64.b64encode(("\0"+username+"\0"+password).encode()).decode()
+          with socket.create_connection(('smtp.mkety.com',465),timeout=15) as raw:
+              with ctx.wrap_socket(raw,server_hostname='smtp.mkety.com') as s:
+                  banner=read_until(s,lambda t:'\n' in t)
+                  if '220 smtp.mkety.com ESMTP Mkety Mail' not in banner:
+                      raise SystemExit('SMTP banner mismatch.')
+                  s.sendall(b'EHLO acceptance.mkety.com\r\n')
+                  ehlo=read_until(s,lambda t:'250 PIPELINING' in t)
+                  if '250-AUTH PLAIN LOGIN' not in ehlo:
+                      raise SystemExit('SMTP AUTH capability missing.')
+                  s.sendall(f'AUTH PLAIN {auth}\r\n'.encode())
+                  if '235 2.7.0 Authentication successful' not in read_until(s,lambda t:'\n' in t):
+                      raise SystemExit('SMTP app-password authentication failed.')
+                  s.sendall(f'MAIL FROM:<{username}>\r\n'.encode())
+                  if not read_until(s,lambda t:'\n' in t).startswith('250'):
+                      raise SystemExit('SMTP MAIL FROM failed.')
+                  s.sendall(f'RCPT TO:<{recipient}>\r\n'.encode())
+                  if not read_until(s,lambda t:'\n' in t).startswith('250'):
+                      raise SystemExit('SMTP RCPT TO failed.')
+                  s.sendall(b'DATA\r\n')
+                  if not read_until(s,lambda t:'\n' in t).startswith('354'):
+                      raise SystemExit('SMTP DATA was not accepted.')
+                  message=(
+                    f'From: {username}\r\n'
+                    f'To: {recipient}\r\n'
+                    'Subject: Mkety gateway synthetic acceptance\r\n'
+                    '\r\n'
+                    'Synthetic acceptance message; recipient is intentionally suppressed.\r\n'
+                    '.\r\n'
+                  )
+                  s.sendall(message.encode())
+                  policy=read_until(s,lambda t:'\n' in t)
+                  if '550 5.7.1 Sender or recipient policy rejected' not in policy:
+                      raise SystemExit('SMTP DATA did not reach Mkety suppression policy as expected.')
+                  s.sendall(b'QUIT\r\n')
+          print('MKETY_MAIL_FUNCTIONAL_PROTOCOLS_OK=true')
+          PY
+
+      - name: Revoke synthetic app password
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          endpoint="$base/applications/$APP_UUID/envs"
+          KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='revoke' node <<'NODE' >/tmp/mode-env.json
+          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/mode-response -w '%{http_code}' -X PATCH             -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/mode-env.json "$endpoint")"
+          [ "$code" = 201 ] || exit 1
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' -X POST             -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || exit 1
+          dep="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
+            status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
+            case "${status,,}" in finished|success|successful|succeeded|completed) break ;; failed|failure|error|cancelled|canceled) exit 1 ;; esac
+            [ "$i" -lt 120 ] || exit 1
+            sleep 3
+          done
+          for i in $(seq 1 60); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN"               "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/revoke-logs.json || true
+            if grep -Fq 'MKETY_MAIL_FUNCTIONAL_CREDENTIAL_REVOKED=true' /tmp/revoke-logs.json; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Prove revoked app password fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, socket, ssl, os
+          username=os.environ['ACCEPTANCE_USERNAME']; password=os.environ['ACCEPTANCE_APP_PASSWORD']
+          ctx=ssl.create_default_context()
+
+          def recvline(s):
+              data=b''
+              while b'\n' not in data:
+                  chunk=s.recv(4096)
+                  if not chunk: break
+                  data+=chunk
+              return data.decode('utf-8','replace')
+
+          with socket.create_connection(('imap.mkety.com',993),timeout=15) as raw:
+              with ctx.wrap_socket(raw,server_hostname='imap.mkety.com') as s:
+                  recvline(s)
+                  s.sendall(f'a1 LOGIN "{username}" "{password}"\r\n'.encode())
+                  out=recvline(s)
+                  if 'a1 NO Authentication failed' not in out:
+                      raise SystemExit('Revoked IMAP app password was still accepted.')
+
+          auth=base64.b64encode(("\0"+username+"\0"+password).encode()).decode()
+          with socket.create_connection(('smtp.mkety.com',465),timeout=15) as raw:
+              with ctx.wrap_socket(raw,server_hostname='smtp.mkety.com') as s:
+                  recvline(s)
+                  s.sendall(b'EHLO acceptance.mkety.com\r\n')
+                  data=''
+                  while '250 PIPELINING' not in data:
+                      data+=recvline(s)
+                  s.sendall(f'AUTH PLAIN {auth}\r\n'.encode())
+                  out=recvline(s)
+                  if '535 5.7.8 Authentication credentials invalid' not in out:
+                      raise SystemExit('Revoked SMTP app password was still accepted.')
+          print('MKETY_MAIL_FUNCTIONAL_REVOCATION_OK=true')
+          PY
+
+      - name: Clean synthetic fixture and ephemeral host
+        if: always()
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+        run: |
+          set +e
+          base="${COOLIFY_URL%/}/api/v1"
+          if [ -n "${APP_UUID:-}" ]; then
+            endpoint="$base/applications/$APP_UUID/envs"
+            KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='cleanup' node <<'NODE' >/tmp/cleanup-env.json
+          process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+            curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-env-response -w '%{http_code}' -X PATCH               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/cleanup-env.json "$endpoint" >/tmp/cleanup-code
+            code="$(cat /tmp/cleanup-code)"
+            if [ "$code" = 201 ]; then
+              curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-deploy.json -X POST                 -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true" >/dev/null
+              sleep 20
+              for i in $(seq 1 30); do
+                curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN"                   "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/cleanup-logs.json || true
+                grep -Fq 'MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true' /tmp/cleanup-logs.json && break
+                sleep 2
+              done
+            fi
+            curl --proto '=https' --tlsv1.2 -sS -o /tmp/delete-response -w '%{http_code}' -X DELETE               -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" >/tmp/delete-code
+          fi
+          echo 'Synthetic acceptance cleanup attempted.'
