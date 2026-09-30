@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { isSelfServiceBillingPlanKey, isSelfServiceBillingTermKey } from '@/features/billing/catalog/self-service-plans';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { auth } from '@/shared/lib/auth';
+import { getAllRoles } from '@/shared/lib/rbac';
 
 export const metadata = {
   title: 'Select Organization | Mkety',
@@ -28,7 +29,7 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
 
   if (!session?.user) redirect(planKey ? `/login?${planQuery}` : '/login');
 
-  const userRoles = session.user.roles ?? {};
+  const userRoles = await getAllRoles();
   const tenantSlugs = Object.keys(userRoles);
 
   if (tenantSlugs.length === 0) {
