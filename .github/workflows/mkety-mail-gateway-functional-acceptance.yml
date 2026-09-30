@@ -329,22 +329,29 @@ jobs:
                     ('a2','a2 SELECT INBOX\r\n','a2 OK'),
                     ('a3','a3 SEARCH ALL\r\n','a3 OK SEARCH completed'),
                     ('a4','a4 FETCH 1 (ENVELOPE)\r\n','a4 OK FETCH completed'),
+                    ('a5','a5 FETCH 1 (BODY.PEEK[])\r\n','a5 OK FETCH completed'),
                   ]
                   transcript=''
                   for tag,cmd,expected in commands:
                       print(f'MKETY_MAIL_FUNCTIONAL_STAGE=imap:{tag}:start', flush=True)
                       s.sendall(cmd.encode())
                       try:
-                          out=read_until(s,lambda t,e=expected:e in t)
+                          out=read_until(s,lambda t,current_tag=tag:re.search(r'(?:^|\r\n)'+re.escape(current_tag)+r' (?:OK|NO|BAD)\b',t) is not None)
                       except TimeoutError:
                           raise SystemExit(f'IMAP functional acceptance timed out at {tag}')
                       transcript+=out
                       if expected not in out:
                           raise SystemExit(f'IMAP functional acceptance failed at {tag}')
+                      if tag == 'a5' and not all(value in out for value in [
+                          'BODY[] {',
+                          'Subject: Mkety gateway acceptance fixture',
+                          'Synthetic acceptance message',
+                      ]):
+                          raise SystemExit('IMAP message body was not returned by the real gateway.')
                       print(f'MKETY_MAIL_FUNCTIONAL_STAGE=imap:{tag}:ok', flush=True)
                   if 'Mkety gateway acceptance fixture' not in transcript:
                       raise SystemExit('IMAP fixture message was not visible through the real gateway.')
-                  s.sendall(b'a5 LOGOUT\r\n')
+                  s.sendall(b'a6 LOGOUT\r\n')
 
           auth=base64.b64encode(("\0"+username+"\0"+password).encode()).decode()
           with socket.create_connection(('smtp.mkety.com',465),timeout=35) as raw:
