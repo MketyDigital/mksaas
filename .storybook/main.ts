@@ -12,7 +12,8 @@ const config: StorybookConfig = {
   addons: [],
   framework: {
     name: '@storybook/nextjs-vite',
-    options: {},
+    // Keep app-only Vinext/RSC plugins out of the component preview build.
+    options: { builder: { viteConfigPath: path.join(stubDir, 'vite.config.ts') } },
   },
   staticDirs: ['../public'],
   viteFinal: async (config) => {
@@ -20,6 +21,7 @@ const config: StorybookConfig = {
     config.resolve = config.resolve ?? {};
     config.resolve.alias = {
       ...config.resolve.alias,
+      '@': path.resolve(process.cwd(), 'src'),
       perf_hooks: path.join(stubDir, 'perf_hooks-stub.js'),
       fs: emptyModule,
       net: emptyModule,

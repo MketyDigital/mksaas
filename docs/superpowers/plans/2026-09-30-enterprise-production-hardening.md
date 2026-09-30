@@ -25,3 +25,10 @@
 - [x] Reproduce managed-cost policy bypass and period boundaries. Join the applicable Enterprise policy, use inclusive start/exclusive end, deny missing period, reserve conservative cost under a tenant transaction lock, preserve unknown-outcome estimates. Test overlapping admissions and exhausted capacity.
 - [x] Inspect historical secret-scanner findings without exposing values; ignore only proved synthetic exact fingerprints. Add meaningful container health checks; document any required root bootstrap exception precisely.
 - [ ] Run full tests/typecheck/lint/build/migration consistency, independent review, exact-head CI and connected candidate acceptance. Reconcile the current handoff with evidence and unresolved live gates.
+
+## Dependency security continuation
+
+The production-only lockfile audit found 96 advisory entries (3 critical, 42 high, 41 moderate, 10 low). Green existing release gates are insufficient while those findings remain. Update affected direct dependencies to their patched compatible release lines; apply version-range-scoped transitive overrides, preserving each major except the necessary patched Sharp 0.35 line. Keep the stable Vinext/Cloudflare/React route architecture. Verify the resolved production audit, complete source/script tests, editor and sanitizer behavior, real commercial queries, TypeScript and Cloudflare build. Add a blocking production dependency audit to CI so future lockfiles cannot silently reintroduce this debt.
+
+- [x] Apply and review affected direct/transitive patches; prove the complete production/build/test advisory audit is clean.
+- [ ] Rerun local and exact-head remote checks and reconcile any package compatibility failures.

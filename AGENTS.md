@@ -4077,3 +4077,9 @@ This section is newer than all earlier Public AI, Platform AI, Enterprise AI, pr
 - Managed provider-cost admission must serialize per tenant and reserve conservative in-flight cost durably. Unknown outcomes retain their estimate for reconciliation; missing Enterprise policy/period fails closed. PostgreSQL int8 aggregates must be decoded before BigInt arithmetic.
 - Scheduled provider dispatch requires atomic current claim ownership and a durable reconciliation marker before external work. Only explicit no-dispatch capacity rejection permits automatic retry; stale claimants cannot release or dispatch a newer claim.
 - Updated audit evidence is in `docs/handoffs/2026-09-30-repository-audit-results.md`. Local regression/security success does not replace exact-head remote checks or the controlled live/customer acceptance gates.
+
+# 2026-09-30 Dependency Security and Component Preview Override
+
+- Complete pnpm dependency audit (including build/test packages) is a blocking CI gate. Do not rely on nonblocking historical MegaLinter vulnerability scanners to certify a new lockfile. Version-scoped patch overrides preserve compatible majors; the current Sharp/esbuild boundaries require native image/build-loader checks.
+- Storybook uses the Vite framework and its dedicated browser config; application Vinext/RSC plugins must not enter that preview build. The unused webpack framework is removed.
+- Rich editor controlled value changes compare against actual editor content; retain one custom Link extension, with StarterKit Link disabled. No customer/provider/production acceptance gate is satisfied merely by these dependency or component checks.

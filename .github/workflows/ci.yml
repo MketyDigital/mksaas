@@ -154,3 +154,35 @@ jobs:
           docker build -f ops/pgbouncer-v2/Dockerfile.final -t mkety-pgbouncer-final-test .
           docker build -f ops/network-resolver-diagnostic/Dockerfile -t mkety-resolver-test .
           docker build -f ops/mail-gateway/Dockerfile -t mkety-mail-gateway-test .
+
+  dependency-security-audit:
+    name: Dependency security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Reject known dependency advisories
+        run: pnpm audit --audit-level low
+
+  component-preview:
+    name: Component preview build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify isolated component preview
+        run: pnpm build-storybook --test
