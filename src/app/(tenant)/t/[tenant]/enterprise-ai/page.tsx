@@ -35,7 +35,7 @@ export default async function EnterpriseAiConsolePage({
     const contract = contractState.contract;
     const paymentPending = contractState.subscription?.status === 'pending_payment';
     const partialFunding = contract?.commercialPolicy.fundingMode === 'prepaid_partial';
-    const fundedMinor = fundedMinor ?? 0n;
+    const fundedMinor = contractState.fundedMinor ?? 0n;
     const remainingMinor = contract ? (contract.amountMinor > fundedMinor ? contract.amountMinor - fundedMinor : 0n) : 0n;
     const minimumFundingMinor = contract
       ? (remainingMinor < contract.commercialPolicy.minimumFundingMinor ? remainingMinor : contract.commercialPolicy.minimumFundingMinor)
