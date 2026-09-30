@@ -560,16 +560,6 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
     </div>
   );
 }
-}{(Number(contract.commercialPolicy.setupFeeMinor) / 100).toFixed(2)}</p>
-                      <p>Unused credits: {contract.commercialPolicy.creditRollover ? 'roll over' : 'period-bound'}</p>
-                    </div>
-                  </div>
-                )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : null}
 
       {isMediaConnector && mediaLinks ? (
         <div className="space-y-6">
