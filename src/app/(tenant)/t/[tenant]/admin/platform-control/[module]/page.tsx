@@ -209,7 +209,7 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
             <CardContent className="space-y-6">
               <div className="rounded-xl border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                 <p className="font-semibold text-foreground">How this contract works</p>
-                <p className="mt-1">Monthly price is the customer's recurring commercial commitment. Included credits are usage credits granted each billing period after valid settlement. Funding mode controls how the customer funds that monthly commitment; it does not change the credit price or model rate card. The managed AI cost envelope is internal Mkety profitability policy only and does not reserve or remove a percentage of the customer's credits.</p>
+                <p className="mt-1">Monthly price is the customer's recurring commercial commitment. Included credits are usage credits granted each billing period after valid settlement. Funding mode controls how the customer funds that monthly commitment; it does not change the credit price or model rate card. The managed AI cost envelope is an internal ceiling for Mkety-paid provider cost, calculated as a percentage of verified customer funding. It does not reserve or remove that percentage from the customer's credit balance.</p>
                 <p className="mt-2">Do not combine duplicate controls: use the contract for recurring price/capabilities, rate cards for how many credits model usage consumes, and the wallet/credit ledger for actual spendable credit balance.</p>
               </div>
               <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
@@ -252,7 +252,7 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
                 <label className="text-sm font-medium">
                   Managed AI cost envelope % <span className="text-xs text-muted-foreground">(internal only)</span>
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="15" inputMode="decimal" name="managedCostSharePercent" pattern="\d{1,3}(?:\.\d{1,2})?" required />
-                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Internal cost envelope used to protect Mkety economics. It is not a credit allocation and does not mean the customer may spend only this percentage.</span>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Internal Mkety-paid provider-cost ceiling. Example: 15% on $100 verified funding permits about $15 of managed provider cost for that billing period. It does not remove 15% of the customer's credits.</span>
                 </label>
                 <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
                   Unused funded credits remain available in the prepaid Mkety credit balance. This is fixed policy for the current pooled-credit ledger.
