@@ -6,6 +6,29 @@ import { resolveByokProviderConnection, resolveSystemAiProviderConnection } from
 
 export type CentralAiExecutionSource = 'managed' | 'byok';
 
+function safeRetryableProviderError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const status = (error as { status?: unknown }).status;
+  return status === 429;
+}
+
+async function generateWithSafeCapacityRetries(
+  adapter: { generate(request: Parameters<import('./external-types').CentralAiProviderAdapter['generate']>[0]): ReturnType<import('./external-types').CentralAiProviderAdapter['generate']> },
+  request: Parameters<import('./external-types').CentralAiProviderAdapter['generate']>[0],
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await adapter.generate(request);
+    } catch (error) {
+      lastError = error;
+      if (!safeRetryableProviderError(error) || attempt === 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * 2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
 export type CentralAiExecutionResult = CentralAiGenerateResponse & {
   provider: CentralAiProviderId | 'workers-ai';
   nativeModel: string;
@@ -60,7 +83,7 @@ export async function runCentralAi(input: {
       connectionId: input.providerConnectionId,
     });
     const model = input.model?.trim() || defaultByokModel(adapter.id);
-    const response = await adapter.generate({
+    const response = await generateWithSafeCapacityRetries(adapter, {
       model,
       system: input.system,
       messages: input.messages,
@@ -100,7 +123,7 @@ export async function runCentralAi(input: {
       mode: 'platform',
       providerKey: resolved.model.providerKey as CentralAiProviderId,
     });
-    const response = await adapter.generate({
+    const response = await generateWithSafeCapacityRetries(adapter, {
       model: nativeModel,
       system: input.system,
       messages: input.messages,
