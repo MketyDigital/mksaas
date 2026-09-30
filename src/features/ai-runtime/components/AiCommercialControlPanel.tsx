@@ -1,6 +1,7 @@
 import {
   activateAiRateCard,
   createAiRateCard,
+  createAiRateCardFromProviderCost,
   disableEnterpriseAiInference,
   reconcilePublishedManagedAiCatalog,
   retireAiRateCard,
@@ -287,6 +288,21 @@ export function AiCommercialControlPanel({
                     </span>
                   </div>
                 </div>
+
+                <form action={createAiRateCardFromProviderCost.bind(null, tenant)} className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-3">
+                  <input name="modelId" type="hidden" value={model.id} />
+                  <label className="text-xs font-medium">
+                    Internal rate multiplier
+                    <input className="mt-1 w-32 rounded-lg border bg-background px-3 py-2 text-sm" defaultValue="200" min={100} max={1000} name="rateMultiplierPercent" step="0.01" type="number" />
+                  </label>
+                  <ConfirmSubmitButton
+                    className="rounded-lg border px-3 py-2 text-xs font-semibold"
+                    confirmMessage="Generate a new draft Mkety rate-card version from this model's verified provider-cost snapshot? Existing active/historical rates will not be changed until you explicitly activate the draft."
+                  >
+                    Generate draft from provider cost
+                  </ConfirmSubmitButton>
+                  <p className="basis-full text-[11px] leading-4 text-muted-foreground">Internal only. The customer sees only the resulting Mkety credit rates, not provider cost or multiplier.</p>
+                </form>
 
                 {cards.length ? (
                   <div className="mt-4 grid gap-2">
