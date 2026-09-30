@@ -7,6 +7,7 @@ import {
   quoteFlutterwaveCollection,
   verifyFlutterwaveStandardTransaction,
 } from './flutterwave-standard';
+import { getMketyFlutterwaveMethodLabelsForCurrency } from './flutterwave-payment-methods';
 
 describe('Flutterwave v3 shared payments', () => {
   it('uses the canonical amount unchanged for USD collection', async () => {
@@ -103,6 +104,7 @@ describe('Flutterwave v3 shared payments', () => {
     });
     expect(payload.payloadHash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(payload)).not.toContain('FLWSECK_TEST-private');
+    expect(payload).not.toHaveProperty('payment_options');
   });
 
   it('hashes whole-unit Inline amounts exactly as they are sent to Flutterwave', async () => {
@@ -154,7 +156,30 @@ describe('Flutterwave v3 shared payments', () => {
       meta: { source: 'media' },
     });
     expect(body.payload_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(body).not.toHaveProperty('payment_options');
     expect(JSON.stringify(body)).not.toContain('FLWSECK_TEST-private');
+  });
+
+  it('keeps the dashboard-controlled method catalogue currency aware without restricting checkout', () => {
+    expect(getMketyFlutterwaveMethodLabelsForCurrency('NGN')).toEqual(expect.arrayContaining([
+      'Local Cards',
+      'International Cards',
+      'Bank Transfer - Nigeria',
+      'Pay With Bank - Nigeria',
+      'Apple Pay',
+      'Google Pay',
+      'eNaira',
+      'USSD',
+      'NQR',
+    ]));
+    expect(getMketyFlutterwaveMethodLabelsForCurrency('RWF')).toEqual(expect.arrayContaining([
+      'Local Cards',
+      'International Cards',
+      'Momo Rwanda',
+      'Apple Pay',
+      'Google Pay',
+    ]));
+    expect(getMketyFlutterwaveMethodLabelsForCurrency('RWF')).not.toContain('USSD');
   });
 
   it('re-queries v3 transactions before settlement', async () => {
