@@ -36,6 +36,16 @@ describe('app.mkety.com production repair workflow contract', () => {
     expect(source).toContain('ZITADEL_APPLICATION_NAME: Mkety Platform Production');
   });
 
+  it('preserves Platform Control authorization bindings on the dedicated app host', async () => {
+    const source = await readFile(WORKFLOW, 'utf8');
+
+    expect(source).toContain('MKETY_PLATFORM_CONTROL_TENANT_SLUG:');
+    expect(source).toContain('MKETY_PLATFORM_ADMIN_EMAILS:');
+    expect(source).toContain('MKETY_PLATFORM_CONTROL_TENANT_SLUG MKETY_PLATFORM_ADMIN_EMAILS');
+    expect(source).toContain('put_secret MKETY_PLATFORM_CONTROL_TENANT_SLUG "$MKETY_PLATFORM_CONTROL_TENANT_SLUG"');
+    expect(source).toContain('put_secret MKETY_PLATFORM_ADMIN_EMAILS "$MKETY_PLATFORM_ADMIN_EMAILS"');
+  });
+
   it('backs up and restores only app.mkety.com DNS/custom-domain state on failure', async () => {
     const source = await readFile(WORKFLOW, 'utf8');
 
