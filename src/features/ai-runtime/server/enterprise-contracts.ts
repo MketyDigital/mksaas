@@ -265,11 +265,27 @@ export async function listEnterpriseAiContracts() {
     ))
     .orderBy(desc(billingPlanVersions.effectiveFrom));
 
-  const tenantRows = await db.select({ id: tenants.id, slug: tenants.slug, name: tenants.name }).from(tenants);
+  const [tenantRows, policies] = await Promise.all([
+    db.select({ id: tenants.id, slug: tenants.slug, name: tenants.name }).from(tenants),
+    db.select().from(aiEnterpriseCommercialPolicies),
+  ]);
   const tenantById = new Map(tenantRows.map((item) => [item.id, item]));
+  const policyByVersionId = new Map(policies.map((item) => [item.planVersionId, item]));
   return rows.map((row) => {
     const tenantId = row.planKey.slice(CONTRACT_PREFIX.length);
-    return { ...row, tenant: tenantById.get(tenantId) ?? null };
+    return {
+      ...row,
+      tenant: tenantById.get(tenantId) ?? null,
+      commercialPolicy: policyByVersionId.get(row.versionId) ?? {
+        planVersionId: row.versionId,
+        minimumFundingMinor: row.amountMinor,
+        managedCostShareBps: 1500,
+        setupFeeMinor: 0n,
+        fundingMode: 'full_period',
+        creditRollover: true,
+        hardStop: true,
+      },
+    };
   });
 }
 
