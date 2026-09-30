@@ -253,6 +253,49 @@ jobs:
             exit 1
           }
 
+      - name: Prove direct authorized Mail gateway API auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="$(node - <<'NODE'
+          const {hkdfSync}=require('node:crypto');
+          const seed=process.env.COOLIFY_API_TOKEN;
+          const out=hkdfSync('sha256',Buffer.from(seed),Buffer.from('mkety-mail-gateway-v1'),Buffer.from('internal-api-auth'),32);
+          process.stdout.write(Buffer.from(out).toString('hex'));
+          NODE
+          )"
+          echo "::add-mask::$derived"
+          USERNAME="$ACCEPTANCE_USERNAME" PASSWORD="$ACCEPTANCE_APP_PASSWORD" node <<'NODE' >/tmp/mail-auth-request.json
+          process.stdout.write(JSON.stringify({username:process.env.USERNAME,password:process.env.PASSWORD}));
+          NODE
+          started="$(date +%s%3N)"
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 35 -sS \
+            -o /tmp/mail-auth-response.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $derived" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/mail-auth-request.json \
+            'https://api.mkety.com/api/internal/mail/gateway/auth' || true)"
+          finished="$(date +%s%3N)"
+          elapsed="$((finished-started))"
+          echo "Direct authorized Mail API auth: HTTP $code in ${elapsed}ms."
+          if [ "$code" != 200 ]; then
+            node - <<'NODE'
+          const fs=require('node:fs');
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/mail-auth-response.json','utf8'));
+            console.log('Direct auth error: '+String(x.error||'unknown'));
+          } catch {
+            console.log('Direct auth error response was not JSON.');
+          }
+          NODE
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/mail-auth-response.json','utf8'));
+          if(x.ok!==true) throw new Error('Direct authorized Mail API auth did not return ok=true.');
+          console.log('MKETY_MAIL_FUNCTIONAL_DIRECT_AUTH_OK=true');
+          NODE
+
       - name: Prove real IMAP and SMTP app-password behavior
         shell: bash
         run: |
@@ -289,11 +332,16 @@ jobs:
                   ]
                   transcript=''
                   for tag,cmd,expected in commands:
+                      print(f'MKETY_MAIL_FUNCTIONAL_STAGE=imap:{tag}:start', flush=True)
                       s.sendall(cmd.encode())
-                      out=read_until(s,lambda t,e=expected:e in t)
+                      try:
+                          out=read_until(s,lambda t,e=expected:e in t)
+                      except TimeoutError:
+                          raise SystemExit(f'IMAP functional acceptance timed out at {tag}')
                       transcript+=out
                       if expected not in out:
                           raise SystemExit(f'IMAP functional acceptance failed at {tag}')
+                      print(f'MKETY_MAIL_FUNCTIONAL_STAGE=imap:{tag}:ok', flush=True)
                   if 'Mkety gateway acceptance fixture' not in transcript:
                       raise SystemExit('IMAP fixture message was not visible through the real gateway.')
                   s.sendall(b'a5 LOGOUT\r\n')
@@ -301,16 +349,22 @@ jobs:
           auth=base64.b64encode(("\0"+username+"\0"+password).encode()).decode()
           with socket.create_connection(('smtp.mkety.com',465),timeout=35) as raw:
               with ctx.wrap_socket(raw,server_hostname='smtp.mkety.com') as s:
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:banner:start', flush=True)
                   banner=read_until(s,lambda t:'\n' in t)
                   if '220 smtp.mkety.com ESMTP Mkety Mail' not in banner:
                       raise SystemExit('SMTP banner mismatch.')
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:banner:ok', flush=True)
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:ehlo:start', flush=True)
                   s.sendall(b'EHLO acceptance.mkety.com\r\n')
                   ehlo=read_until(s,lambda t:'250 PIPELINING' in t)
                   if '250-AUTH PLAIN LOGIN' not in ehlo:
                       raise SystemExit('SMTP AUTH capability missing.')
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:ehlo:ok', flush=True)
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:auth:start', flush=True)
                   s.sendall(f'AUTH PLAIN {auth}\r\n'.encode())
                   if '235 2.7.0 Authentication successful' not in read_until(s,lambda t:'\n' in t):
                       raise SystemExit('SMTP app-password authentication failed.')
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:auth:ok', flush=True)
                   s.sendall(f'MAIL FROM:<{username}>\r\n'.encode())
                   if not read_until(s,lambda t:'\n' in t).startswith('250'):
                       raise SystemExit('SMTP MAIL FROM failed.')
@@ -332,9 +386,48 @@ jobs:
                   policy=read_until(s,lambda t:'\n' in t)
                   if '550 5.7.1 Sender or recipient policy rejected' not in policy:
                       raise SystemExit('SMTP DATA did not reach Mkety suppression policy as expected.')
+                  print('MKETY_MAIL_FUNCTIONAL_STAGE=smtp:policy:ok', flush=True)
                   s.sendall(b'QUIT\r\n')
           print('MKETY_MAIL_FUNCTIONAL_PROTOCOLS_OK=true')
           PY
+
+      - name: Diagnose managed gateway after protocol failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications" -o /tmp/gateway-apps.json || exit 0
+          app_uuid="$(APP_NAME='mkety-mail-gateway' node - <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/gateway-apps.json','utf8'));
+          const list=Array.isArray(x)?x:(x.data||[]);
+          const matches=list.filter(v=>v?.name===process.env.APP_NAME);
+          if(matches.length===1) process.stdout.write(matches[0].uuid||'');
+          NODE
+          )"
+          [ -n "$app_uuid" ] || { echo 'Managed gateway app was not uniquely discoverable for diagnostics.'; exit 0; }
+          curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications/$app_uuid/logs?lines=400&show_timestamps=false" -o /tmp/gateway-runtime-logs.json || exit 0
+          node - <<'NODE'
+          const fs=require('node:fs');
+          let raw='';
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/gateway-runtime-logs.json','utf8'));
+            raw=String(x.logs||'');
+          } catch {}
+          const lines=raw.split(/\r?\n/).filter((line)=>
+            /MKETY_MAIL_GATEWAY_(?:IMAP|SMTP)_ERROR=|MKETY_MAIL_GATEWAY_(?:CONFIG|IMAP|SMTP|HEALTH)_READY=true/.test(line)
+          );
+          const safe=lines.join('\n')
+            .replace(/postgres(?:ql)?:\/\/[^\s]+/gi,'postgresql://***')
+            .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi,'***')
+            .replace(/mkmail-[0-9a-f]+/gi,'mkmail-***')
+            .replace(/password\s*[=:]\s*[^\s]+/gi,'password=***');
+          console.log('Sanitized managed gateway diagnostics:');
+          console.log(safe.slice(-12000)||'(no gateway error markers found)');
+          NODE
 
       - name: Revoke synthetic app password
         shell: bash
