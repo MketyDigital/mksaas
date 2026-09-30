@@ -71,7 +71,7 @@ export function AdminViewNav({ basePath, permissions, hasPlatformControlAccess =
         </>
       )}
 
-      {canShowNavAny(permissions, ['platform:plans', 'platform:billing', 'platform:deployments']) && (
+      {hasPlatformControlAccess && canShowNavAny(permissions, ['platform:plans', 'platform:billing', 'platform:deployments']) && (
         <>
           <SidebarSeparator />
           <SidebarSection title="Product Operations" icon={<Sparkles className="h-4 w-4" />} variant="admin">
