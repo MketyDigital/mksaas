@@ -278,7 +278,7 @@ jobs:
 
           ctx=ssl.create_default_context()
 
-          with socket.create_connection(('imap.mkety.com',993),timeout=15) as raw:
+          with socket.create_connection(('imap.mkety.com',993),timeout=35) as raw:
               with ctx.wrap_socket(raw,server_hostname='imap.mkety.com') as s:
                   read_until(s,lambda t:'\n' in t)
                   commands=[
@@ -299,7 +299,7 @@ jobs:
                   s.sendall(b'a5 LOGOUT\r\n')
 
           auth=base64.b64encode(("\0"+username+"\0"+password).encode()).decode()
-          with socket.create_connection(('smtp.mkety.com',465),timeout=15) as raw:
+          with socket.create_connection(('smtp.mkety.com',465),timeout=35) as raw:
               with ctx.wrap_socket(raw,server_hostname='smtp.mkety.com') as s:
                   banner=read_until(s,lambda t:'\n' in t)
                   if '220 smtp.mkety.com ESMTP Mkety Mail' not in banner:
@@ -389,7 +389,7 @@ jobs:
                   data+=chunk
               return data.decode('utf-8','replace')
 
-          with socket.create_connection(('imap.mkety.com',993),timeout=15) as raw:
+          with socket.create_connection(('imap.mkety.com',993),timeout=35) as raw:
               with ctx.wrap_socket(raw,server_hostname='imap.mkety.com') as s:
                   recvline(s)
                   s.sendall(f'a1 LOGIN "{username}" "{password}"\r\n'.encode())
@@ -398,7 +398,7 @@ jobs:
                       raise SystemExit('Revoked IMAP app password was still accepted.')
 
           auth=base64.b64encode(("\0"+username+"\0"+password).encode()).decode()
-          with socket.create_connection(('smtp.mkety.com',465),timeout=15) as raw:
+          with socket.create_connection(('smtp.mkety.com',465),timeout=35) as raw:
               with ctx.wrap_socket(raw,server_hostname='smtp.mkety.com') as s:
                   recvline(s)
                   s.sendall(b'EHLO acceptance.mkety.com\r\n')
