@@ -2,7 +2,11 @@ import {
   MKETY_FLUTTERWAVE_COLLECTION_CURRENCIES,
   type MketyPaymentSettings,
 } from '@/features/payments/config';
-import {\n  MKETY_FLUTTERWAVE_PAYMENT_METHOD_GROUPS,\n  MKETY_FLUTTERWAVE_PAYMENT_METHODS,\n} from '@/features/payments/flutterwave-payment-methods';\nimport { updateMketyPaymentSettings } from '@/features/payments/server/admin-actions';
+import {
+  MKETY_FLUTTERWAVE_PAYMENT_METHOD_GROUPS,
+  MKETY_FLUTTERWAVE_PAYMENT_METHODS,
+} from '@/features/payments/flutterwave-payment-methods';
+import { updateMketyPaymentSettings } from '@/features/payments/server/admin-actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 
 interface PaymentSettingsFormProps {
