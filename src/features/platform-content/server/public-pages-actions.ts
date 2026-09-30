@@ -206,10 +206,10 @@ async function applyPublicPagesDraft(tenantSlug: string, parsed: PublicPagesAdmi
 export async function publishPublicPages(tenantSlug: string) {
   const actor = await requirePlatformContentAccess(tenantSlug);
   const draftKey = { area: 'public-site' as const, entityType: 'page' as const, entityKey: ENTITY_KEY };
-  const staged = await readEditorialDraft(draftKey);
   const now = new Date();
 
   const mutatedRecords = await db.transaction(async (tx) => {
+    const staged = await readEditorialDraft(draftKey, tx);
     if (staged) await applyPublicPagesDraft(tenantSlug, publicPagesAdminPayloadSchema.parse(staged), tx);
     const pages = await tx
       .update(schema.platformPages)

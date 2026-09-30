@@ -146,7 +146,7 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/mkety_enterprise_test
           PGPASSWORD: postgres
-        run: pnpm test --runTestsByPath src/features/ai-runtime/server/enterprise-commercial-postgres.test.ts
+        run: pnpm test --runTestsByPath src/features/ai-runtime/server/enterprise-commercial-postgres.test.ts src/features/platform-content/server/editorial-drafts-concurrency.test.ts
       - name: Build audited operations images
         run: |
           docker build -f ops/pgbouncer-v2/Dockerfile -t mkety-pgbouncer-test .

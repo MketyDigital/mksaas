@@ -8,6 +8,7 @@ import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from
 
 type EditorialKey = { area: PlatformContentArea; entityType: PlatformContentEntityType; entityKey: string };
 type EditorialTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type EditorialReader = Pick<typeof db, 'select'>;
 
 function matches(key: EditorialKey) {
   return and(
@@ -24,8 +25,13 @@ export async function getEditorialDraft(tenantSlug: string, key: EditorialKey): 
   return (row?.payloadJson as Record<string, unknown>) ?? null;
 }
 
-export async function stageEditorialDraft(key: EditorialKey, payload: Record<string, unknown>, actorId: string) {
-  await db.insert(platformEditorialDrafts).values({
+export async function stageEditorialDraft(
+  key: EditorialKey,
+  payload: Record<string, unknown>,
+  actorId: string,
+  connection: Pick<typeof db, 'insert'> = db,
+) {
+  await connection.insert(platformEditorialDrafts).values({
     ...key,
     payloadJson: JSON.parse(JSON.stringify(payload)) as PlatformJson,
     updatedBy: actorId,
@@ -35,7 +41,17 @@ export async function stageEditorialDraft(key: EditorialKey, payload: Record<str
   });
 }
 
-export async function readEditorialDraft(key: EditorialKey): Promise<Record<string, unknown> | null> {
+export async function readEditorialDraft(key: EditorialKey, connection?: EditorialReader): Promise<Record<string, unknown> | null> {
+  if (connection) {
+    const [row] = await connection
+      .select({ payloadJson: platformEditorialDrafts.payloadJson })
+      .from(platformEditorialDrafts)
+      .where(matches(key))
+      .for('update')
+      .limit(1);
+    return (row?.payloadJson as Record<string, unknown>) ?? null;
+  }
+
   const row = await db.query.platformEditorialDrafts.findFirst({ where: matches(key) });
   return (row?.payloadJson as Record<string, unknown>) ?? null;
 }

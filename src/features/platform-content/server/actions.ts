@@ -444,15 +444,13 @@ export async function savePlatformContentDraft(tenantSlug: string, input: Platfo
 export async function publishPlatformContent(tenantSlug: string, input: PlatformPublishActionInput): Promise<ActionResult> {
   const parsed = platformPublishActionSchema.parse(input);
   const actor = await requireAreaAccess(tenantSlug, parsed.area);
-  const staged = await readEditorialDraft(parsed);
-  const mutatedRecords = staged
-      ? await db.transaction(async (tx) => {
-        await saveDraftRecord({ ...parsed, payload: staged }, actor.userId, tx);
-        const count = await publishDraftRecord(parsed, actor.userId, tx);
-        await removeEditorialDraft(parsed, tx);
-        return count;
-      })
-      : await publishDraftRecord(parsed, actor.userId);
+  const mutatedRecords = await db.transaction(async (tx) => {
+    const staged = await readEditorialDraft(parsed, tx);
+    if (staged) await saveDraftRecord({ ...parsed, payload: staged }, actor.userId, tx);
+    const count = await publishDraftRecord(parsed, actor.userId, tx);
+    if (staged) await removeEditorialDraft(parsed, tx);
+    return count;
+  });
   const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.published', contentInput: parsed, mutatedRecords });
   revalidatePlatformContentPaths(tenantSlug);
   return { ok: true, status: 'published', actorEmail: actor.email, area: parsed.area, entityType: parsed.entityType, entityKey: parsed.entityKey, mutatedRecords, auditRecorded };
