@@ -18187,6 +18187,7 @@
       "schema": "saas_template",
       "values": [
         "period_grant",
+        "purchased_grant",
         "usage",
         "manual_grant",
         "manual_debit",
