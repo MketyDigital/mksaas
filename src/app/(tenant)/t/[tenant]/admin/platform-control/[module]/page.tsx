@@ -199,6 +199,35 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                   Included credits per billing period
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
                 </label>
+                <label className="text-sm font-medium">
+                  Funding mode
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="full_period" name="fundingMode">
+                    <option value="full_period">Full monthly payment</option>
+                    <option value="prepaid_partial">Prepaid partial funding / top-ups</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Minimum funding / top-up (USD)
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="minimumFundingUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="25.00" />
+                </label>
+                <label className="text-sm font-medium">
+                  Setup fee (USD, optional)
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="0" inputMode="decimal" name="setupFeeUsd" pattern="\d{1,7}(?:\.\d{1,2})?" />
+                </label>
+                <label className="text-sm font-medium">
+                  Managed AI cost envelope % <span className="text-xs text-muted-foreground">(internal only)</span>
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="15" inputMode="decimal" name="managedCostSharePercent" pattern="\d{1,3}(?:\.\d{1,2})?" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Unused funded credits
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="yes" name="creditRollover">
+                    <option value="yes">Remain available / roll over</option>
+                    <option value="no">Do not roll over</option>
+                  </select>
+                </label>
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
+                  The managed AI cost envelope is confidential Mkety profitability policy. It must never be shown in customer-facing APIs, billing pages, usage screens, exports, or white-label surfaces. Setup fees, when used, are collected separately through Enterprise Payments.
+                </div>
                 <label className="text-sm font-medium lg:col-span-2">
                   Description
                   <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={2000} name="description" rows={3} />
@@ -233,6 +262,305 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                       </span>
                     </div>
                     {contract.description ? <p className="mt-3 text-sm text-muted-foreground">{contract.description}</p> : null}
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                      <p>Funding: {contract.commercialPolicy.fundingMode === 'prepaid_partial' ? `partial · minimum ${(Number(contract.commercialPolicy.minimumFundingMinor) / 100).toFixed(2)}` : 'full monthly amount'}</p>
+                      <p>Internal cost envelope: {(contract.commercialPolicy.managedCostShareBps / 100).toFixed(2)}%</p>
+                      <p>Setup fee: {'
+                  </div>
+                )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {isMediaConnector && mediaLinks ? (
+        <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Mkety Media tenant links</CardTitle>
+              <CardDescription>
+                Link an Mkety workspace to an existing standalone Media workspace. This stores only a non-secret reference; Media billing, invoices, credentials and runtime remain authoritative in Media.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <form action={saveMediaTenantLink.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Mkety workspace slug
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Existing Media workspace reference
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={255} name="externalWorkspaceRef" placeholder="Media workspace ID or canonical reference" required />
+                </label>
+                <label className="text-sm font-medium">
+                  Link status
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="linked" name="status">
+                    <option value="linked">Linked</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="disconnected">Disconnected</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Verification note
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={1000} name="note" placeholder="How the Media workspace ownership/link was verified" />
+                </label>
+                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                  Save Media link
+                </button>
+              </form>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {mediaLinks.length ? mediaLinks.map((link) => (
+                  <div className="rounded-xl border p-4" key={link.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{link.tenantName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{link.tenantSlug}</p>
+                      </div>
+                      <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">{link.status}</span>
+                    </div>
+                    <p className="mt-3 font-mono text-xs">{link.externalWorkspaceRef}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Updated {link.updatedAt.toLocaleString()}</p>
+                  </div>
+                )) : (
+                  <p className="text-sm text-muted-foreground">No Mkety tenant is linked to Media yet.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {isDomainsRouting && domainResellerConnections ? (
+        <DomainResellerControlPanel tenant={tenant} connections={domainResellerConnections} />
+      ) : null}
+
+      {isMailOperations && mailOperations ? (
+        <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Mail commercial catalog</CardTitle>
+                  <CardDescription>
+                    Canonical prices stay versioned in Billing. Reconcile creates missing plan/version/entitlement records but never rewrites billing history.
+                  </CardDescription>
+                </div>
+                <form action={reconcileMailCatalog.bind(null, tenant)}>
+                  <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                    Reconcile catalog
+                  </button>
+                </form>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-4 lg:grid-cols-3">
+              {mailOperations.catalog.map((plan) => (
+                <form
+                  action={createMailPlanVersion.bind(null, tenant)}
+                  key={plan.key}
+                  className="rounded-xl border bg-muted/20 p-4"
+                >
+                  <input type="hidden" name="planKey" value={plan.key} />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{plan.name}</p>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">{plan.key} · v{plan.version}</p>
+                    </div>
+                    <span className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                      Active
+                    </span>
+                  </div>
+                  <label className="mt-4 block text-xs font-medium">
+                    Plan name
+                    <input
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={plan.name}
+                      maxLength={255}
+                      name="name"
+                      required
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs font-medium">
+                    Description
+                    <textarea
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={plan.description ?? ''}
+                      maxLength={2000}
+                      name="description"
+                      required
+                      rows={3}
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs font-medium">
+                    Monthly price (USD)
+                    <input
+                      className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      defaultValue={(Number(plan.amountMinor) / 100).toFixed(2)}
+                      inputMode="decimal"
+                      name="monthlyPriceUsd"
+                      pattern="\\d{1,6}(?:\\.\\d{1,2})?"
+                      required
+                    />
+                  </label>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Saving creates a new billing version. Existing subscriptions and historical settlements keep their original version and price.
+                  </p>
+                  <button className="mt-4 rounded-lg border px-3 py-2 text-sm font-semibold">
+                    Create new price version
+                  </button>
+                </form>
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            {mailOperations.workspaces.length ? mailOperations.workspaces.map((workspace) => (
+              <Card className="rounded-2xl" key={workspace.workspaceId}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>{workspace.tenantName}</CardTitle>
+                      <CardDescription>
+                        {workspace.tenantSlug} · paid plan {workspace.paidPlanKey} · {workspace.domains.length} domain{workspace.domains.length === 1 ? '' : 's'}
+                      </CardDescription>
+                    </div>
+                    <a className="text-sm font-semibold text-primary" href={'/t/' + workspace.tenantSlug + '/mail'}>
+                      Open tenant Mail →
+                    </a>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <form action={updateMailWorkspaceOperations.bind(null, tenant)} className="grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                    <input type="hidden" name="workspaceId" value={workspace.workspaceId} />
+                    <input type="hidden" name="targetTenantId" value={workspace.tenantId} />
+                    <label className="text-sm font-medium">
+                      Workspace status
+                      <select name="status" defaultValue={workspace.status} className="mt-2 w-full rounded-lg border bg-background px-3 py-2">
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Onboarding
+                      <select name="onboardingStep" defaultValue={workspace.onboardingStep} className="mt-2 w-full rounded-lg border bg-background px-3 py-2">
+                        <option value="domain">Domain setup</option>
+                        <option value="ready">Ready</option>
+                      </select>
+                    </label>
+                    <button className="rounded-lg border px-4 py-2 text-sm font-semibold">Save workspace</button>
+                  </form>
+
+                  <div className="space-y-3">
+                    {workspace.domains.length ? workspace.domains.map((domain) => (
+                      <form action={updateMailDomainOperations.bind(null, tenant)} key={domain.id} className="rounded-xl border bg-muted/15 p-4">
+                        <input type="hidden" name="domainId" value={domain.id} />
+                        <input type="hidden" name="targetTenantId" value={workspace.tenantId} />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">{domain.domain}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Routing {domain.routingEnabled ? 'on' : 'off'} · Sending {domain.sendingEnabled ? 'on' : 'off'}
+                            </p>
+                          </div>
+                          <button className="rounded-lg border px-3 py-2 text-sm font-semibold">Save domain</button>
+                        </div>
+                        <div className="mt-4 grid gap-3 md:grid-cols-5">
+                          {[
+                            ['status', 'Domain', domain.status],
+                            ['spfStatus', 'SPF', domain.spfStatus],
+                            ['dkimStatus', 'DKIM', domain.dkimStatus],
+                            ['dmarcStatus', 'DMARC', domain.dmarcStatus],
+                            ['mxStatus', 'MX', domain.mxStatus],
+                          ].map(([name, label, value]) => (
+                            <label className="text-xs font-medium" key={String(name)}>
+                              {label}
+                              <select name={String(name)} defaultValue={String(value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-sm">
+                                <option value="pending">Pending</option>
+                                <option value="verified">Verified</option>
+                                <option value="failed">Failed</option>
+                                <option value="disabled">Disabled</option>
+                              </select>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-5 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="routingEnabled" defaultChecked={domain.routingEnabled} />
+                            Routing enabled
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" name="sendingEnabled" defaultChecked={domain.sendingEnabled} />
+                            Sending enabled
+                          </label>
+                        </div>
+                      </form>
+                    )) : (
+                      <p className="text-sm text-muted-foreground">No Mail domains connected yet.</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <Card className="rounded-2xl">
+                <CardContent className="p-6 text-sm text-muted-foreground">No Mail workspaces have been provisioned yet.</CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {!isPayments && !isMailOperations && !isAiOperations && !isMediaConnector && !isDomainsRouting ? <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle>Controlled module surface</CardTitle>
+            <CardDescription>{controlModule.implementationNotes}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {actions.map((action) => (
+                <div key={action} className="rounded-xl border bg-muted/30 p-4 text-sm font-medium">
+                  {action}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl border-primary/20">
+          <CardHeader>
+            <CardTitle>Safety boundary</CardTitle>
+            <CardDescription>
+              Required permission: <span className="font-mono">{controlModule.requiredPermission}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5 text-sm text-muted-foreground">
+            <div>
+              <p className="mb-2 font-medium text-foreground">Editable here</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {controlModule.editableScope.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-2 font-medium text-foreground">Protected from admin editing</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {controlModule.protectedScope.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <p>Domain routing must follow the approved Mkety map: mkety.com, app.mkety.com, api.mkety.com, origin.mkety.com, and *.mkety.app.</p>
+          </CardContent>
+        </Card>
+      </div> : null}
+    </div>
+  );
+}
+}{(Number(contract.commercialPolicy.setupFeeMinor) / 100).toFixed(2)}</p>
+                      <p>Unused credits: {contract.commercialPolicy.creditRollover ? 'roll over' : 'period-bound'}</p>
+                    </div>
                   </div>
                 )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
               </div>
