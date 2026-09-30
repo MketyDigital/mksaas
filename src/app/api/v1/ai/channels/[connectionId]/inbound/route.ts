@@ -161,8 +161,6 @@ export async function POST(
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
               : undefined,
-          media: inbound.media,
-          channelCredentials: credentials,
         });
         if (turn.kind !== 'completed' || !turn.text) return;
         const delivery = await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${interactionToken}`, {
@@ -238,8 +236,6 @@ export async function POST(
             typeof connection.metadata.modelAlias === 'string'
               ? connection.metadata.modelAlias
               : undefined,
-          media: inbound.media,
-          channelCredentials: credentials,
         });
         if (turn.kind === 'completed' && turn.text) {
           const action = await scheduleEnterpriseAiAction({
