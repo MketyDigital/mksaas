@@ -34,6 +34,12 @@ export default async function EnterpriseAiConsolePage({
     const contractState = await getEnterpriseAiContractBillingState(tenant.id);
     const contract = contractState.contract;
     const paymentPending = contractState.subscription?.status === 'pending_payment';
+    const partialFunding = contract?.commercialPolicy.fundingMode === 'prepaid_partial';
+    const fundedMinor = contractState.fundedMinor ?? 0n;
+    const remainingMinor = contract ? (contract.amountMinor > fundedMinor ? contract.amountMinor - fundedMinor : 0n) : 0n;
+    const minimumFundingMinor = contract
+      ? (remainingMinor < contract.commercialPolicy.minimumFundingMinor ? remainingMinor : contract.commercialPolicy.minimumFundingMinor)
+      : 0n;
     return (
       <div className="mx-auto max-w-3xl space-y-4 py-8">
         <Card className="rounded-3xl">
@@ -42,7 +48,9 @@ export default async function EnterpriseAiConsolePage({
             <CardTitle className="mt-3 text-2xl">{contract ? 'Your Enterprise AI agreement is ready' : 'Enterprise AI is not active for this workspace'}</CardTitle>
             <CardDescription>
               {contract
-                ? 'Complete the verified subscription payment below. Access activates from Mkety Billing after settlement; no browser action can grant the entitlement by itself.'
+                ? (partialFunding
+                  ? 'Fund your Enterprise AI account with the negotiated minimum or more. Access activates only after verified Mkety Billing settlement.'
+                  : 'Complete the verified subscription payment below. Access activates from Mkety Billing after settlement; no browser action can grant the entitlement by itself.')
                 : 'Enterprise Mkety AI is a separate business solution from the normal AI Workspace. Access only becomes active from Mkety-owned billing and entitlements.'}
             </CardDescription>
           </CardHeader>
@@ -60,13 +68,33 @@ export default async function EnterpriseAiConsolePage({
                     A payment is already awaiting confirmation. Complete that checkout or allow it to reach a terminal state before starting another.
                   </p>
                 ) : (
-                  <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-[1fr_auto]" method="post">
+                  <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-2" method="post">
+                    {partialFunding ? (
+                      <label className="text-sm font-medium sm:col-span-2">
+                        Funding amount (USD)
+                        <input
+                          className="mt-1 w-full rounded-xl border bg-background px-3 py-3"
+                          defaultValue={(Number(minimumFundingMinor) / 100).toFixed(2)}
+                          inputMode="decimal"
+                          min={(Number(minimumFundingMinor) / 100).toFixed(2)}
+                          max={(Number(remainingMinor) / 100).toFixed(2)}
+                          name="fundingAmountUsd"
+                          required
+                          step="0.01"
+                        />
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Minimum ${ (Number(minimumFundingMinor) / 100).toFixed(2) } · remaining monthly commitment ${ (Number(remainingMinor) / 100).toFixed(2) }
+                        </span>
+                      </label>
+                    ) : null}
                     <select className="rounded-xl border bg-background px-3 py-3 text-sm" defaultValue="nowpayments" name="provider">
                       <option value="nowpayments">Crypto / NOWPayments</option>
                       <option value="flutterwave">Card / bank · Flutterwave</option>
                       <option value="kora">Card / bank · Kora</option>
                     </select>
-                    <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Pay & activate Enterprise AI</button>
+                    <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">
+                      {partialFunding ? 'Fund & activate Enterprise AI' : 'Pay & activate Enterprise AI'}
+                    </button>
                   </form>
                 )}
                 <p className="text-xs text-muted-foreground">If payment is later overdue, Enterprise AI follows the contract period and configured grace window, then stops inference while preserving your setup.</p>
@@ -83,7 +111,7 @@ export default async function EnterpriseAiConsolePage({
     );
   }
 
-  const [templates, instances, projects, balance, commercial, tenantSettings, canWhiteLabel] = await Promise.all([
+  const [templates, instances, projects, balance, commercial, tenantSettings, canWhiteLabel, contractState] = await Promise.all([
     listEnterpriseAiSolutionTemplates(),
     listEnterpriseAiSolutionInstances(tenant.id),
     listTenantProjectChoices(tenant.id),
@@ -91,6 +119,7 @@ export default async function EnterpriseAiConsolePage({
     getEnterpriseAiCustomerSummary(tenant.id),
     getTenantSettings(tenantSlug),
     hasEnterpriseAiWhiteLabelAccess(tenant.id),
+    getEnterpriseAiContractBillingState(tenant.id),
   ]);
   const brand = resolveEnterpriseAiBrand(tenantSettings, tenant.name);
   const displayBrand = canWhiteLabel && brand.enabled ? brand : { ...brand, brandName: tenant.name, productName: 'Mkety AI', hideMketyBranding: false };
@@ -136,6 +165,54 @@ export default async function EnterpriseAiConsolePage({
           <span className="rounded-full border bg-background px-4 py-2">{balance ? `${balance.availableCredits.toString()} credits available` : 'Credits not provisioned'}</span>
         </div>
       </section>
+
+      {contractState.contract?.commercialPolicy.fundingMode === 'prepaid_partial' ? (
+        <section className="rounded-2xl border bg-card p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Enterprise AI funding</p>
+              <h2 className="mt-1 text-xl font-bold">
+                ${(Number(contractState.fundedMinor) / 100).toFixed(2)} funded of ${(Number(contractState.contract.amountMinor) / 100).toFixed(2)} this period
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Add prepaid capacity at any time. Your Mkety usage rates already include the platform and AI service; upstream provider economics are not itemized.
+              </p>
+            </div>
+            {contractState.fundedMinor < contractState.contract.amountMinor ? (
+              <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid min-w-[260px] gap-2" method="post">
+                {(() => {
+                  const remaining = contractState.contract.amountMinor - contractState.fundedMinor;
+                  const minimum = remaining < contractState.contract.commercialPolicy.minimumFundingMinor
+                    ? remaining
+                    : contractState.contract.commercialPolicy.minimumFundingMinor;
+                  return (
+                    <>
+                      <input
+                        className="rounded-xl border bg-background px-3 py-2 text-sm"
+                        defaultValue={(Number(minimum) / 100).toFixed(2)}
+                        inputMode="decimal"
+                        max={(Number(remaining) / 100).toFixed(2)}
+                        min={(Number(minimum) / 100).toFixed(2)}
+                        name="fundingAmountUsd"
+                        required
+                        step="0.01"
+                      />
+                      <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
+                        <option value="nowpayments">Crypto / NOWPayments</option>
+                        <option value="flutterwave">Card / bank · Flutterwave</option>
+                        <option value="kora">Card / bank · Kora</option>
+                      </select>
+                      <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Add funds</button>
+                    </>
+                  );
+                })()}
+              </form>
+            ) : (
+              <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700">Monthly commitment funded</span>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       {instances.length ? (
         <section>
