@@ -323,7 +323,22 @@ export async function getEnterpriseAiContractBillingState(tenantId: string) {
       })
     : null;
 
-  return { contract, subscription: subscription ?? null, period: period ?? null };
+  const funding = period
+    ? await db.select({
+        fundedMinor: sql<bigint>`coalesce(sum(${billingSettlements.amountPaidMinor}), 0)::bigint`,
+      }).from(billingSettlements).where(and(
+        eq(billingSettlements.billingPeriodId, period.id),
+        eq(billingSettlements.status, 'applied'),
+        inArray(billingSettlements.settlementType, ['payment', 'enterprise_ai_funding']),
+      ))
+    : [];
+
+  return {
+    contract,
+    subscription: subscription ?? null,
+    period: period ?? null,
+    fundedMinor: funding[0]?.fundedMinor ?? 0n,
+  };
 }
 
 export async function createEnterpriseAiContractCheckout(input: {
