@@ -1444,3 +1444,11 @@ Dependency/editor continuation: the complete pinned-pnpm lockfile audit now repo
 A follow-up branch from certified SHA `647fe6323f60a05766213f5869210b81034d7012` addresses the remaining signed-in usability and first-customer Enterprise AI provisioning gaps. It scopes Billing and Platform Control module DB reads to the request lifecycle; adds confirmed/versioned admin changes; adds migration `0037_enterprise_ai_pricing_policy`; introduces server-authoritative automatic Enterprise AI credit allocation, provider-cost-derived draft rate cards, and immutable zero-dollar manual credit grants; clarifies Azure Foundry configuration; and documents the strict customer/internal commercial boundary in `docs/MKETY_ENTERPRISE_AI_PRICING_PROVISIONING.md`.
 
 Customer-facing surfaces must not expose provider costs, internal envelope/reserve/multiplier values or credit-conversion policy. Customers see their commercial price/top-ups, credits, usage, capabilities and simple Mkety model rates. Production inference remains fail-closed until controlled first-customer acceptance.
+
+
+## 2026-09-30 payment-method and Enterprise AI media hardening
+
+- The exact production actions for main `461e89b2b6b2d40b6497d435787d40b6ace3195d` completed successfully: Mkety App Host Production Repair and Mkety Enterprise AI Production.
+- Flutterwave checkout intentionally remains dashboard-driven for payment-method availability. Mkety does not send a restrictive `payment_options` list; selected collection currency plus Flutterwave merchant activation/approval determines the methods displayed. Pending provider-review methods are not represented as live until Flutterwave approves them.
+- Telegram Enterprise AI ingress now recognizes images, supported documents and voice/audio attachments. Media processing is bounded, server-side and occurs only after Enterprise commercial admission. Image/document content is converted to text and voice notes are transcribed before the configured assistant model receives the context.
+- Customer-facing AI remains credit/capability based; media conversion/transcription provider economics remain internal.
