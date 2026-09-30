@@ -15,7 +15,9 @@ describe('app.mkety.com production repair workflow contract', () => {
       expect(source).toContain('branches:');
       expect(source).toContain('- main');
       expect(source).toContain("'.github/workflows/mkety-app-host-production-repair.yml'");
+      expect(source).toContain("'docs/MKETY_APP_HOST_*.md'");
       expect(source).toContain('One-time app-host promotion is restricted to main.');
+      expect(source).toContain('[app-host-production]');
     }
     expect(source).toContain('REPAIR APP.MKETY.COM');
     expect(source).toContain('APP_WORKER_NAME: mkety-app-host');
@@ -23,6 +25,11 @@ describe('app.mkety.com production repair workflow contract', () => {
     expect(source).toContain('verified_sha');
     expect(source).toContain('git ls-remote origin "refs/heads/$RELEASE_BRANCH"');
     expect(source).toContain('Verify SHA matches current main');
+    expect(source).toContain('actions: read');
+    expect(source).toContain('verify_success type-check.yml Typecheck');
+    expect(source).toContain('verify_success lint.yml Lint');
+    expect(source).toContain('verify_success tests.yml Tests');
+    expect(source).toContain('verify_success build.yml Build');
   });
 
   it('uses the existing production Hyperdrive and app-specific auth origin', async () => {
