@@ -32,10 +32,11 @@ import { SidebarSeparator } from '../SidebarSeparator';
 interface AdminViewNavProps {
   basePath: string;
   permissions?: string[];
+  hasPlatformControlAccess?: boolean;
   onItemClick?: () => void;
 }
 
-export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNavProps) {
+export function AdminViewNav({ basePath, permissions, hasPlatformControlAccess = false, onItemClick }: AdminViewNavProps) {
   const tAdmin = useTranslations('admin');
   const adminBase = `${basePath}/admin`;
 
@@ -51,13 +52,15 @@ export function AdminViewNav({ basePath, permissions, onItemClick }: AdminViewNa
             exact
             onClick={onItemClick}
           />
-          <SidebarNavItem
-            href={`${adminBase}/platform-control`}
-            label="Mkety Control Center"
-            icon={Command}
-            iconTint="primary"
-            onClick={onItemClick}
-          />
+          {hasPlatformControlAccess ? (
+            <SidebarNavItem
+              href={`${adminBase}/platform-control`}
+              label="Mkety Control Center"
+              icon={Command}
+              iconTint="primary"
+              onClick={onItemClick}
+            />
+          ) : null}
           <SidebarNavItem
             href={`${adminBase}/analytics`}
             label={tAdmin('analytics')}
