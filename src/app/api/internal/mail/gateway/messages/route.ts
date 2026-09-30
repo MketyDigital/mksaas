@@ -15,9 +15,17 @@ function toGatewayIso(value: unknown) {
 }
 
 function gatewayErrorMarker(error: unknown) {
-  if (error && typeof error === 'object' && 'code' in error) {
-    const code = String((error as { code?: unknown }).code ?? '').replace(/[^A-Za-z0-9_.-]/g, '');
-    if (code) return code.slice(0, 80);
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+    if ('code' in current) {
+      const code = String((current as { code?: unknown }).code ?? '').replace(/[^A-Za-z0-9_.-]/g, '');
+      if (code) return code.slice(0, 80);
+    }
+    if ('cause' in current) {
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+    break;
   }
   if (error instanceof Error) {
     return error.name.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80) || 'Error';
