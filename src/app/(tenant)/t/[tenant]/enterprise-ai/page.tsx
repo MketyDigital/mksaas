@@ -121,7 +121,7 @@ export default async function EnterpriseAiConsolePage({
     hasEnterpriseAiWhiteLabelAccess(tenant.id),
     getEnterpriseAiContractBillingState(tenant.id),
   ]);
-  const fundedMinor = fundedMinor ?? 0n;
+  const fundedMinor = contractState.fundedMinor ?? 0n;
   const brand = resolveEnterpriseAiBrand(tenantSettings, tenant.name);
   const displayBrand = canWhiteLabel && brand.enabled ? brand : { ...brand, brandName: tenant.name, productName: 'Mkety AI', hideMketyBranding: false };
 
