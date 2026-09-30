@@ -27,6 +27,7 @@ describe('Mkety Mail gateway production contract', () => {
     expect(check.stderr).toBe('');
     expect(gateway).toContain("MKETY_MAIL_GATEWAY_API_BASE_URL");
     expect(gateway).toContain("MKETY_MAIL_GATEWAY_INTERNAL_SECRET");
+    expect(gateway).toContain("payload?.detail||payload?.error");
     expect(gateway).not.toContain('DATABASE_URL');
     expect(gateway).not.toContain('postgres');
   });
@@ -118,6 +119,7 @@ describe('Mkety Mail gateway production contract', () => {
   it('requires direct message-index and actual body acceptance before external clients', () => {
     expect(acceptanceWorkflow).toContain('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_OK=true');
     expect(acceptanceWorkflow).toContain('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_ERROR=');
+    expect(acceptanceWorkflow).toContain('limit:500');
     expect(acceptanceWorkflow).toContain('FETCH 1 (BODY.PEEK[])');
     expect(acceptanceWorkflow).toContain('IMAP message body was not returned by the real gateway.');
     expect(acceptanceWorkflow).toContain("(?:OK|NO|BAD)");
