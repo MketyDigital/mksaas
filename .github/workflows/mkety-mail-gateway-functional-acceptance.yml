@@ -293,7 +293,39 @@ jobs:
           const fs=require('node:fs');
           const x=JSON.parse(fs.readFileSync('/tmp/mail-auth-response.json','utf8'));
           if(x.ok!==true) throw new Error('Direct authorized Mail API auth did not return ok=true.');
+          if(!x.tenantId||!x.mailboxId) throw new Error('Direct authorized Mail API auth did not return a gateway session.');
+          fs.writeFileSync('/tmp/mail-messages-request.json',JSON.stringify({
+            tenantId:x.tenantId,
+            mailboxId:x.mailboxId,
+            folder:'inbox',
+            afterUid:0,
+            limit:10,
+          }));
           console.log('MKETY_MAIL_FUNCTIONAL_DIRECT_AUTH_OK=true');
+          NODE
+
+          started="$(date +%s%3N)"
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 35 -sS \
+            -o /tmp/mail-messages-response.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $derived" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/mail-messages-request.json \
+            'https://api.mkety.com/api/internal/mail/gateway/messages' || true)"
+          finished="$(date +%s%3N)"
+          elapsed="$((finished-started))"
+          echo "Direct authorized Mail messages API: HTTP $code in ${elapsed}ms."
+          CODE="$code" node - <<'NODE'
+          const fs=require('node:fs');
+          let x={};
+          try { x=JSON.parse(fs.readFileSync('/tmp/mail-messages-response.json','utf8')); } catch {}
+          if(process.env.CODE!=='200'||x.ok!==true){
+            const detail=String(x.detail||x.error||'unknown').replace(/[^A-Za-z0-9_.-]/g,'').slice(0,80)||'unknown';
+            console.error('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_ERROR='+detail);
+            process.exit(1);
+          }
+          if(!Array.isArray(x.messages)||!x.messages.some(m=>m?.subject==='Mkety gateway acceptance fixture')){
+            throw new Error('Direct authorized Mail messages API did not return the synthetic fixture.');
+          }
+          console.log('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_OK=true');
           NODE
 
       - name: Prove real IMAP and SMTP app-password behavior
