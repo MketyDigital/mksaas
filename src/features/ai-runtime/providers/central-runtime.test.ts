@@ -1,5 +1,5 @@
 import { resolveAiModelRoute } from '../server/model-routing';
-import { resolveByokProviderConnection } from '../server/provider-connections';
+import { resolveByokProviderConnection, resolveSystemAiProviderConnection } from '../server/provider-connections';
 import { getManagedWorkersAiProvider } from './runtime.cloudflare';
 
 import { runCentralAi } from './central-runtime';
@@ -9,6 +9,7 @@ jest.mock('../server/model-routing', () => ({
 }));
 jest.mock('../server/provider-connections', () => ({
   resolveByokProviderConnection: jest.fn(),
+  resolveSystemAiProviderConnection: jest.fn(),
 }));
 jest.mock('./runtime.cloudflare', () => ({
   getManagedWorkersAiProvider: jest.fn(),
@@ -16,6 +17,7 @@ jest.mock('./runtime.cloudflare', () => ({
 
 const routeMock = jest.mocked(resolveAiModelRoute);
 const byokMock = jest.mocked(resolveByokProviderConnection);
+const systemMock = jest.mocked(resolveSystemAiProviderConnection);
 const managedMock = jest.mocked(getManagedWorkersAiProvider);
 
 describe('central Mkety AI runtime', () => {
@@ -130,6 +132,49 @@ describe('central Mkety AI runtime', () => {
       }),
       '@cf/google/gemma-4-26b-a4b-it',
     );
+  });
+
+
+  it('routes a managed alias through an approved Mkety-owned external provider connection', async () => {
+    routeMock.mockResolvedValue({
+      alias: { alias: 'mkety-smart' },
+      model: {
+        providerKey: 'openai-compatible',
+        nativeModel: 'mkety-self-hosted-70b',
+      },
+      route: { id: 'route-external' },
+    } as never);
+    const generate = jest.fn().mockResolvedValue({
+      text: 'external-managed',
+      usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16 },
+      providerRequestId: 'external-1',
+    });
+    systemMock.mockResolvedValue({
+      connection: { id: 'system-connection' },
+      adapter: { id: 'openai-compatible', generate },
+    } as never);
+
+    const result = await runCentralAi({
+      tenantId: 'tenant-1',
+      model: 'mkety-smart',
+      system: 'system',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    expect(systemMock).toHaveBeenCalledWith({
+      mode: 'platform',
+      providerKey: 'openai-compatible',
+    });
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'mkety-self-hosted-70b',
+    }));
+    expect(managedMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      provider: 'openai-compatible',
+      source: 'managed',
+      nativeModel: 'mkety-self-hosted-70b',
+      text: 'external-managed',
+    });
   });
 
   it('fails closed when the requested managed alias has no active route', async () => {
