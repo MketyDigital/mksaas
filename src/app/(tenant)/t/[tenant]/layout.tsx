@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { getTenantEntitlementsForRequest } from '@/features/entitlements/server/resolver';
+import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 import { ThemeCSSInjector } from '@/shared/components/providers/theme-css-injector';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -41,6 +42,12 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
   const permissions = session.user.permissions?.[tenant.slug] ?? [];
   const hasMailAccess = allowedEntitlements.has('workspace.mail');
   const hasEnterpriseAiAccess = allowedEntitlements.has('workspace.ai.enterprise');
+  const hasPlatformControlAccess = Boolean(
+    session.user.email
+    && isPlatformControlTenant(tenant.slug)
+    && isPlatformOperatorEmail(session.user.email)
+    && (permissions.includes('*') || permissions.includes('admin:dashboard'))
+  );
 
   return (
     <TenantProvider
@@ -57,6 +64,7 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
         permissions={permissions}
         hasMailAccess={hasMailAccess}
         hasEnterpriseAiAccess={hasEnterpriseAiAccess}
+        hasPlatformControlAccess={hasPlatformControlAccess}
         session={session}
       >
         {children}
