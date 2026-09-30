@@ -1,4 +1,4 @@
-import type { CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderId } from './external-types';
+import type { CentralAiGenerateRequest, CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderAdapter, CentralAiProviderId } from './external-types';
 import { getManagedWorkersAiProvider } from './runtime.cloudflare';
 import { MANAGED_AI_MODEL_ALIASES, type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
 import { resolveAiModelRoute } from '../server/model-routing';
@@ -13,8 +13,8 @@ function safeRetryableProviderError(error: unknown) {
 }
 
 async function generateWithSafeCapacityRetries(
-  adapter: { generate(request: Parameters<import('./external-types').CentralAiProviderAdapter['generate']>[0]): ReturnType<import('./external-types').CentralAiProviderAdapter['generate']> },
-  request: Parameters<import('./external-types').CentralAiProviderAdapter['generate']>[0],
+  adapter: CentralAiProviderAdapter,
+  request: CentralAiGenerateRequest,
 ) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
