@@ -112,12 +112,14 @@ describe('Mkety Mail gateway production contract', () => {
     expect(gatewayMessagesRoute).toContain("MKETY_MAIL_GATEWAY_MESSAGES_ERROR=");
     expect(gatewayMessagesRoute).toContain("const detail = gatewayErrorMarker(error)");
     expect(gatewayMessagesRoute).toContain("error: 'message_index_failed', detail");
+    expect(gateway).toContain("payload?.detail||payload?.error");
     expect(gatewayMessagesRoute).not.toContain('db.query.mailMessages.findMany');
   });
 
   it('requires direct message-index and actual body acceptance before external clients', () => {
     expect(acceptanceWorkflow).toContain('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_OK=true');
     expect(acceptanceWorkflow).toContain('MKETY_MAIL_FUNCTIONAL_DIRECT_MESSAGES_ERROR=');
+    expect(acceptanceWorkflow).toContain('limit:500');
     expect(acceptanceWorkflow).toContain('FETCH 1 (BODY.PEEK[])');
     expect(acceptanceWorkflow).toContain('IMAP message body was not returned by the real gateway.');
     expect(acceptanceWorkflow).toContain("(?:OK|NO|BAD)");
