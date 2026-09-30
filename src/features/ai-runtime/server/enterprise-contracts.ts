@@ -97,7 +97,7 @@ export async function createEnterpriseAiContractVersion(
   if (minimumFundingMinor > amountMinor) throw new Error('Minimum funding cannot exceed the monthly commitment.');
   const managedCostShareBps = parseCostShareBps(formData.get('managedCostSharePercent'));
   const setupFeeMinor = parseUsdMinorField(formData.get('setupFeeUsd') ?? '0', 'setup fee', { allowZero: true });
-  const creditRollover = true;
+  const creditRollover = String(formData.get('creditRollover') ?? 'yes') !== 'no';
   const includedCredits = parseCredits(formData.get('includedCredits'));
   const entitlements = parseIncludedEntitlements(formData);
   const name = String(formData.get('name') ?? '').trim().slice(0, 255)
