@@ -16,6 +16,7 @@ export interface BillingCheckoutSettlementContext {
   providerAmountExpectedMinor: bigint | null;
   providerCurrency: string | null;
   provider: string;
+  purpose: string;
 }
 
 export async function findBillingCheckoutSettlementContext(
@@ -32,6 +33,7 @@ export async function findBillingCheckoutSettlementContext(
       providerAmountExpectedMinor: billingCheckouts.providerAmountExpectedMinor,
       providerCurrency: billingCheckouts.providerCurrency,
       provider: billingCheckouts.provider,
+      purpose: billingCheckouts.purpose,
     })
     .from(billingCheckouts)
     .where(eq(billingCheckouts.id, checkoutId))
