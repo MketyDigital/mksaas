@@ -14,6 +14,8 @@
 import type { ReactNode } from 'react';
 
 import { TopHeader, UnifiedSidebar } from '@/shared/components/layout';
+import { AuthProvider } from '@/shared/components/providers';
+import type { MketySession } from '@/shared/lib/auth';
 import { CommandPalette, GlobalSearchProvider } from '@/shared/components/search';
 import { SidebarProvider, useSidebar, ViewProvider } from '@/shared/providers';
 
@@ -24,6 +26,7 @@ interface TenantLayoutClientProps {
   permissions?: string[];
   hasMailAccess?: boolean;
   hasEnterpriseAiAccess?: boolean;
+  session: MketySession;
 }
 
 /**
@@ -58,16 +61,18 @@ function TenantLayoutContent({
   );
 }
 
-export function TenantLayoutClient({ children, tenantSlug, permissions = [], hasMailAccess = false, hasEnterpriseAiAccess = false }: TenantLayoutClientProps) {
+export function TenantLayoutClient({ children, tenantSlug, permissions = [], hasMailAccess = false, hasEnterpriseAiAccess = false, session }: TenantLayoutClientProps) {
   // Unified layout with sidebar for all routes
   // View-specific rendering is handled by UnifiedSidebar based on current view from ViewProvider
   return (
-    <GlobalSearchProvider>
-      <SidebarProvider>
+    <AuthProvider initialSession={session} revalidateOnMount={false}>
+      <GlobalSearchProvider>
+        <SidebarProvider>
         <TenantLayoutContent tenantSlug={tenantSlug} permissions={permissions} hasMailAccess={hasMailAccess} hasEnterpriseAiAccess={hasEnterpriseAiAccess}>
           {children}
         </TenantLayoutContent>
-      </SidebarProvider>
-    </GlobalSearchProvider>
+        </SidebarProvider>
+      </GlobalSearchProvider>
+    </AuthProvider>
   );
 }
