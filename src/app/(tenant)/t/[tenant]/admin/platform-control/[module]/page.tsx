@@ -22,6 +22,7 @@ import { getPublishedAppExperience , getPublishedControlCenterModule } from '@/f
 import { PlatformContentDraftForm } from '@/features/platform-content/components/admin/PlatformContentDraftForm';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { getEditorialDraft } from '@/features/platform-content/server/editorial-drafts';
+import { ConfirmSubmitButton } from '@/shared/components/ConfirmSubmitButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -49,6 +50,27 @@ const protectedActionsByModule: Record<string, string[]> = {
   ],
   'auth-gateway': ['View JWKS status', 'Review product audiences', 'Inspect access issuance outcomes', 'Prepare key rotation actions'],
   'security-audit': ['View audit events', 'Review role changes', 'Inspect session/security activity', 'Monitor sensitive operations'],
+};
+
+const enterpriseAiEntitlementHelp: Record<string, string> = {
+  'workspace.ai.enterprise': 'Required base Enterprise AI product access.',
+  'ai.api': 'Developer/API access for this customer.',
+  'ai.byok': 'Allow the customer to connect and pay for an approved external AI provider with their own credentials.',
+  'ai.private_model': 'Allow a dedicated/private model route agreed for this customer.',
+  'ai.channel.website': 'Website chat/assistant channel.',
+  'ai.channel.telegram': 'Telegram bot/channel integration.',
+  'ai.channel.whatsapp': 'WhatsApp Business integration.',
+  'ai.channel.instagram': 'Instagram Direct integration.',
+  'ai.channel.facebook_messenger': 'Facebook Messenger integration.',
+  'ai.channel.slack': 'Slack integration.',
+  'ai.channel.discord': 'Discord integration.',
+  'ai.channel.linkedin_page': 'LinkedIn Page/community integration.',
+  'ai.channel.microsoft_teams': 'Microsoft Teams workflow/outbound integration.',
+  'ai.channel.custom_webhook': 'Custom webhook/API channel.',
+  'ai.whitelabel': 'Customer branding/login presentation and eligible custom hostname.',
+  'ai.domain.purchase': 'Allow domain purchase/managed domain workflow when commercially agreed.',
+  'ai.provider.gemini': 'Explicit Gemini provider entitlement where needed.',
+  'ai.provider.anthropic': 'Reserved provider entitlement; select only when the corresponding provider path is actually configured and approved.',
 };
 
 async function withAdminTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000): Promise<T> {
@@ -184,10 +206,16 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="rounded-xl border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                <p className="font-semibold text-foreground">How this contract works</p>
+                <p className="mt-1">Monthly price is the customer's recurring commercial commitment. Included credits are usage credits granted each billing period after valid settlement. Funding mode controls how the customer funds that monthly commitment; it does not change the credit price or model rate card. The managed AI cost envelope is internal Mkety profitability policy only and does not reserve or remove a percentage of the customer's credits.</p>
+                <p className="mt-2">Do not combine duplicate controls: use the contract for recurring price/capabilities, rate cards for how many credits model usage consumes, and the wallet/credit ledger for actual spendable credit balance.</p>
+              </div>
               <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
                 <label className="text-sm font-medium">
                   Customer workspace slug
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Use the exact existing Mkety workspace slug. This contract is attached to that tenant; it does not create a second account.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Contract name
@@ -196,10 +224,12 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                 <label className="text-sm font-medium">
                   Monthly price (USD)
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="monthlyPriceUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="100.00" required />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">What the customer owes for one Enterprise AI billing period before any separately quoted setup fee.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Included credits per billing period
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Credits granted into the customer's Mkety credit balance per paid billing period. Model rate cards determine how quickly those credits are consumed.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Funding mode
@@ -207,10 +237,12 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                     <option value="full_period">Full monthly payment</option>
                     <option value="prepaid_partial">Prepaid partial funding / top-ups</option>
                   </select>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Choose full monthly payment for the simplest first customer. Partial funding is for contracts where the customer may fund the agreed monthly commitment in several verified payments.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Minimum funding / top-up (USD)
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="decimal" name="minimumFundingUsd" pattern="\d{1,7}(?:\.\d{1,2})?" placeholder="25.00" />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Only meaningful for partial funding. It is the smallest verified top-up allowed until the remaining commitment is smaller.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Setup fee (USD, optional)
@@ -219,6 +251,7 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                 <label className="text-sm font-medium">
                   Managed AI cost envelope % <span className="text-xs text-muted-foreground">(internal only)</span>
                   <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="15" inputMode="decimal" name="managedCostSharePercent" pattern="\d{1,3}(?:\.\d{1,2})?" required />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Internal cost envelope used to protect Mkety economics. It is not a credit allocation and does not mean the customer may spend only this percentage.</span>
                 </label>
                 <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
                   Unused funded credits remain available in the prepaid Mkety credit balance. This is fixed policy for the current pooled-credit ledger.
@@ -237,14 +270,17 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                     {ENTERPRISE_AI_CONTRACT_ENTITLEMENTS.map((entitlement) => (
                       <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs" key={entitlement}>
                         <input defaultChecked={entitlement === 'workspace.ai.enterprise'} disabled={entitlement === 'workspace.ai.enterprise'} name={entitlement === 'workspace.ai.enterprise' ? undefined : 'entitlements'} type="checkbox" value={entitlement} />
-                        <span className="font-mono">{entitlement}</span>
+                        <span><span className="font-mono">{entitlement}</span><span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{enterpriseAiEntitlementHelp[entitlement] ?? 'Optional contracted capability.'}</span></span>
                       </label>
                     ))}
                   </div>
                 </div>
-                <button className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2">
+                <ConfirmSubmitButton
+                  className="w-fit rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground lg:col-span-2"
+                  confirmMessage="Create this Enterprise AI contract version for the specified customer workspace? This creates a new immutable commercial version; verified payment is still required before access activates."
+                >
                   Create contract version
-                </button>
+                </ConfirmSubmitButton>
               </form>
 
               <div className="grid gap-3 lg:grid-cols-2">
