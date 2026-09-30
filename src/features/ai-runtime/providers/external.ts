@@ -1,4 +1,4 @@
-import { extractGeminiText, extractOpenAIResponseText, readCentralProviderJson } from './external-http';
+import { extractGeminiText, extractOpenAIChatText, extractOpenAIResponseText, readCentralProviderJson } from './external-http';
 import type { CentralAiProviderAdapter, CentralAiProviderId } from './external-types';
 import { assertPublicHttpsUrl } from '@/shared/security/outbound-url';
 
@@ -8,7 +8,8 @@ export type CentralAiProviderCredentials =
   | { provider: 'gemini'; apiKey: string }
   | { provider: 'vertex'; accessToken: string; location: string; projectId: string }
   | { provider: 'cloudflare-ai'; accountId: string; apiToken: string }
-  | { provider: 'bedrock'; accessKeyId: string; secretAccessKey: string; sessionToken?: string; region: string };
+  | { provider: 'bedrock'; accessKeyId: string; secretAccessKey: string; sessionToken?: string; region: string }
+  | { provider: 'openai-compatible'; apiKey: string; endpoint: string };
 
 function bytes(value: string | Uint8Array): Uint8Array<ArrayBuffer> {
   return typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
@@ -227,6 +228,41 @@ export function createCentralExternalProvider(credentials: CentralAiProviderCred
           return { text };
         },
       };
+    case 'openai-compatible': {
+      const base = assertPublicHttpsUrl(credentials.endpoint, {
+        label: 'OpenAI-compatible endpoint',
+      }).toString().replace(/\/+$/, '');
+      return {
+        id: 'openai-compatible',
+        async generate(request) {
+          const response = await fetch(`${base}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${credentials.apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: request.model,
+              messages: [
+                ...(request.system.trim() ? [{ role: 'system', content: request.system }] : []),
+                ...request.messages,
+              ],
+              max_tokens: request.maxOutputTokens ?? 900,
+              ...(typeof request.temperature === 'number' ? { temperature: request.temperature } : {}),
+            }),
+            signal: request.signal,
+          });
+          const payload = await readCentralProviderJson(response);
+          const usage = payload.usage as { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } | undefined;
+          return {
+            text: extractOpenAIChatText(payload),
+            providerRequestId: response.headers.get('x-request-id') ?? undefined,
+            usage: usage ? {
+              inputTokens: Number(usage.prompt_tokens) || undefined,
+              outputTokens: Number(usage.completion_tokens) || undefined,
+              totalTokens: Number(usage.total_tokens) || undefined,
+            } : undefined,
+          };
+        },
+      };
+    }
     case 'bedrock':
       return {
         id: 'bedrock',
@@ -266,5 +302,5 @@ export function createCentralExternalProvider(credentials: CentralAiProviderCred
 }
 
 export function isCentralAiProviderId(value: string): value is CentralAiProviderId {
-  return ['openai', 'azure-openai', 'gemini', 'vertex', 'cloudflare-ai', 'bedrock'].includes(value);
+  return ['openai', 'azure-openai', 'gemini', 'vertex', 'cloudflare-ai', 'bedrock', 'openai-compatible'].includes(value);
 }
