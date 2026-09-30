@@ -1,6 +1,6 @@
 import type { CentralAiGenerateRequest, CentralAiGenerateResponse, CentralAiMessage, CentralAiProviderAdapter, CentralAiProviderId } from './external-types';
 import { getManagedWorkersAiProvider } from './runtime.cloudflare';
-import { MANAGED_AI_MODEL_ALIASES, type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
+import { type ManagedAiTaskClass, routeManagedAiTask } from '../managed-model-policy';
 import { resolveAiModelRoute } from '../server/model-routing';
 import { resolveByokProviderConnection, resolveSystemAiProviderConnection } from '../server/provider-connections';
 
