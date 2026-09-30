@@ -22,6 +22,7 @@ const PROVIDERS = [
   ['vertex', 'Google Vertex AI'],
   ['cloudflare-ai', 'Cloudflare AI'],
   ['bedrock', 'AWS Bedrock'],
+  ['openai-compatible', 'OpenAI-compatible / self-hosted'],
 ] as const;
 
 export default async function EnterpriseAiProvidersPage({
@@ -127,7 +128,7 @@ export default async function EnterpriseAiProvidersPage({
                 </label>
                 <label className="text-sm font-medium">
                   Endpoint
-                  <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="endpoint" placeholder="Azure OpenAI endpoint" />
+                  <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="endpoint" placeholder="Azure or OpenAI-compatible HTTPS endpoint" />
                 </label>
                 <label className="text-sm font-medium">
                   Deployment
