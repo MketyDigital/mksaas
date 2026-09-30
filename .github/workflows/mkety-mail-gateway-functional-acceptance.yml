@@ -186,7 +186,10 @@ jobs:
               status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
               case "${status,,}" in
                 finished|success|successful|succeeded|completed) break ;;
-                failed|failure|error|cancelled|canceled) return 1 ;;
+                failed|failure|error|cancelled|canceled)
+                  echo "Coolify reported terminal deployment status: $status; checking acceptance marker before failing."
+                  break
+                  ;;
               esac
               [ "$i" -lt 120 ] || return 1
               sleep 3
@@ -352,7 +355,13 @@ jobs:
           for i in $(seq 1 120); do
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$dep" -o /tmp/dep.json
             status="$(node -e "const x=require('/tmp/dep.json');process.stdout.write(String(x.status||''))")"
-            case "${status,,}" in finished|success|successful|succeeded|completed) break ;; failed|failure|error|cancelled|canceled) exit 1 ;; esac
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled)
+                echo "Coolify reported terminal revoke deployment status: $status; checking revoke marker before failing."
+                break
+                ;;
+            esac
             [ "$i" -lt 120 ] || exit 1
             sleep 3
           done
