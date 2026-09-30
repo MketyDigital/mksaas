@@ -265,7 +265,9 @@ export default async function PlatformControlModulePage({ params }: PlatformCont
                     <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                       <p>Funding: {contract.commercialPolicy.fundingMode === 'prepaid_partial' ? `partial · minimum ${(Number(contract.commercialPolicy.minimumFundingMinor) / 100).toFixed(2)}` : 'full monthly amount'}</p>
                       <p>Internal cost envelope: {(contract.commercialPolicy.managedCostShareBps / 100).toFixed(2)}%</p>
-                      <p>Setup fee: {'
+                      <p>Setup fee: USD {(Number(contract.commercialPolicy.setupFeeMinor) / 100).toFixed(2)}</p>
+                      <p>Unused credits: {contract.commercialPolicy.creditRollover ? 'roll over' : 'period-bound'}</p>
+                    </div>
                   </div>
                 )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
               </div>
