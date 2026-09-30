@@ -103,6 +103,7 @@ describe('Flutterwave v3 shared payments', () => {
     });
     expect(payload.payloadHash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(payload)).not.toContain('FLWSECK_TEST-private');
+    expect(payload).not.toHaveProperty('payment_options');
   });
 
   it('hashes whole-unit Inline amounts exactly as they are sent to Flutterwave', async () => {
@@ -155,6 +156,7 @@ describe('Flutterwave v3 shared payments', () => {
     });
     expect(body.payload_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(body)).not.toContain('FLWSECK_TEST-private');
+    expect(body).not.toHaveProperty('payment_options');
   });
 
   it('re-queries v3 transactions before settlement', async () => {
