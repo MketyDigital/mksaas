@@ -246,6 +246,13 @@
       "when": 1790607600000,
       "tag": "0034_mail_imap_uid",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790611200000,
+      "tag": "0035_enterprise_ai_commercial_policy",
+      "breakpoints": true
     }
   ]
 }
