@@ -3,6 +3,14 @@
 Date: 2026-09-29
 Status: pre-Starpips stabilization; production customer inference remains disabled until explicit promotion.
 
+## 2026-09-30 Mail functional acceptance diagnostic update
+
+- Exact production SHA `681fea258057d484d35924c2a1346710e2302eea` passed Mkety Mail Production and Mkety Mail Gateway Production.
+- Functional acceptance run `36680790338` proved the synthetic production fixture, direct gateway authentication, and direct `/api/internal/mail/gateway/messages` lookup succeed.
+- Real IMAP app-password login succeeds, but `SELECT INBOX` returns a tagged temporary-server failure from the gateway message-index path.
+- External clients remain disabled.
+- The next diagnostic matches the direct message-index request to the gateway's `limit:500` pagination request and preserves only the route's allow-listed error detail in gateway diagnostics.
+
 ## 2026-09-29 production audit update
 
 Current audited release truth:
