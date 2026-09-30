@@ -49,6 +49,16 @@ type WorkersAiChatResponse = {
   response?: string | Array<{ type?: string; text?: string; content?: string }>;
 };
 
+
+function isExplicitCapacityRejection(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return /(?:\b429\b|rate.?limit|too many requests|busy|capacity|overloaded)/i.test(message);
+}
+
+async function sleep(milliseconds: number) {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function nonNegativeBigInt(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? BigInt(Math.trunc(value))
@@ -172,7 +182,11 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
   ) {}
 
   async complete(request: AiRuntimeRequest, nativeModel: string): Promise<AiRuntimeResult> {
-    const response = await this.binding.run(
+    let response: unknown;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await this.binding.run(
       nativeModel,
       {
         messages: request.messages.map((message) => ({
@@ -205,6 +219,15 @@ export class WorkersAiProviderAdapter implements AiRuntimeProviderAdapter {
         },
       },
     );
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!isExplicitCapacityRejection(error) || attempt === 2) throw error;
+        await sleep(150 * 2 ** attempt);
+      }
+    }
+    if (lastError) throw lastError;
 
     const normalized = normalizeWorkersAiResponse(response, nativeModel);
     if (!normalized.text && !normalized.toolCalls?.length) {
