@@ -390,11 +390,11 @@ jobs:
 
           fetch_candidate_page '/mail' /tmp/mkety-mail-page.html
           grep -Fq 'Mail Starter' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter.'; exit 1; }
-          grep -Fq '$4.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter price.'; exit 1; }
+          grep -Fq "\$4.99" /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Starter price.'; exit 1; }
           grep -Fq 'Mail Growth' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Growth.'; exit 1; }
-          grep -Fq '$9.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Growth price.'; exit 1; }
+          grep -Fq "\$9.99" /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Growth price.'; exit 1; }
           grep -Fq 'Mail Business' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Business.'; exit 1; }
-          grep -Fq '$24.99' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Business price.'; exit 1; }
+          grep -Fq "\$24.99" /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Mail Business price.'; exit 1; }
           grep -Fq 'Enterprise Mail' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Enterprise Mail.'; exit 1; }
           grep -Fq 'Marketing' /tmp/mkety-mail-page.html || { echo 'Candidate Mail page missing Marketing Coming Soon boundary.'; exit 1; }
 
