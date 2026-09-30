@@ -1,4 +1,4 @@
-import { and, eq, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, lte, or, sql } from 'drizzle-orm';
 
 import type { EnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { db } from '@/shared/db/cloudflare';
@@ -113,6 +113,37 @@ export async function recordEnterpriseAiMessage(input: {
     }
     throw new Error('Enterprise AI message could not be recorded.');
   }
+}
+
+
+export async function getBoundedEnterpriseAiConversationContext(input: {
+  tenantId: string;
+  conversationId: string;
+  maxMessages?: number;
+  maxCharacters?: number;
+}) {
+  const maxMessages = Math.max(1, Math.min(24, input.maxMessages ?? 12));
+  const maxCharacters = Math.max(1_000, Math.min(48_000, input.maxCharacters ?? 24_000));
+  const rows = await db.query.aiMessages.findMany({
+    where: and(
+      eq(aiMessages.tenantId, input.tenantId),
+      eq(aiMessages.conversationId, input.conversationId),
+    ),
+    orderBy: [desc(aiMessages.createdAt)],
+    limit: maxMessages,
+  });
+
+  let used = 0;
+  const selected: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }> = [];
+  for (const row of rows) {
+    if (!['user', 'assistant'].includes(row.role)) continue;
+    const available = maxCharacters - used;
+    if (available <= 0) break;
+    const content = row.content.slice(-available);
+    selected.push({ role: row.role as 'user' | 'assistant', content });
+    used += content.length;
+  }
+  return selected.reverse();
 }
 
 export async function markEnterpriseAiConversationOutbound(conversationId: string, tenantId: string) {
