@@ -1,3 +1,5 @@
+ALTER TYPE "saas_template"."credit_ledger_entry_type" ADD VALUE IF NOT EXISTS 'purchased_grant';
+
 ALTER TABLE "saas_template"."billing_checkouts"
   ADD COLUMN IF NOT EXISTS "purpose" varchar(48) DEFAULT 'subscription' NOT NULL;
 
