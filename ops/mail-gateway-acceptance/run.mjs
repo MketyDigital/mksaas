@@ -78,9 +78,9 @@ async function revoke() {
 
 function sanitizeDiagnostic(value) {
   return String(value || '')
-    .replace(/postgres(?:ql)?:\\/\\/[^\\s]+/gi, 'postgresql://***')
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, 'postgresql://***')
     .replace(/mkmail-[0-9a-f]+/gi, 'mkmail-***')
-    .replace(/password\\s*[=:]\\s*[^\\s]+/gi, 'password=***')
+    .replace(/password\s*[=:]\s*[^\s]+/gi, 'password=***')
     .slice(0, 2000);
 }
 
