@@ -25,9 +25,16 @@ type ResolvedTelegramFile = {
 };
 
 function aiBinding(): WorkersAiBinding {
-  const binding = env.AI as WorkersAiBinding | undefined;
+  const binding = env.AI as unknown as WorkersAiBinding | undefined;
   if (!binding?.run) throw new Error('Workers AI binding is unavailable for media processing.');
   return binding;
+}
+
+function workersAiOptions() {
+  const gatewayId = typeof env.MKETY_AI_GATEWAY_ID === 'string' ? env.MKETY_AI_GATEWAY_ID.trim() : '';
+  return gatewayId
+    ? { rejectIfBusy: true, gateway: { id: gatewayId, skipCache: true } }
+    : { rejectIfBusy: true };
 }
 
 function safeMediaCount(media: readonly EnterpriseAiInboundMedia[]) {
@@ -131,7 +138,7 @@ async function describeImage(file: ResolvedTelegramFile) {
       image: `data:${file.contentType};base64,${base64}`,
       max_tokens: 600,
     },
-    { rejectIfBusy: true },
+    workersAiOptions(),
   );
   const text = resultText(result);
   if (!text) throw new Error('Image understanding returned no usable description.');
@@ -143,7 +150,7 @@ async function transcribeAudio(file: ResolvedTelegramFile) {
   const result = await aiBinding().run(
     TRANSCRIPTION_MODEL,
     { audio: base64, task: 'transcribe', vad_filter: true },
-    { rejectIfBusy: true },
+    workersAiOptions(),
   );
   const text = resultText(result);
   if (!text) throw new Error('Voice/audio transcription returned no usable text.');
