@@ -552,6 +552,7 @@ async function handlePost(request: Request) {
         projectId,
         apiKeyId: key.id,
         model: resolved.alias.alias,
+        system: '',
         messages: parsed.data.messages
           .filter((message): message is typeof message & { role: 'system' | 'user' | 'assistant' } => message.role !== 'tool')
           .map((message) => ({
