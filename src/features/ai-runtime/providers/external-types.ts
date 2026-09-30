@@ -5,6 +5,7 @@ export const CENTRAL_AI_PROVIDER_IDS = [
   'vertex',
   'cloudflare-ai',
   'bedrock',
+  'openai-compatible',
 ] as const;
 
 export type CentralAiProviderId = (typeof CENTRAL_AI_PROVIDER_IDS)[number];
