@@ -116,7 +116,10 @@ export async function resolveDynamicPublicAiTargets(
         providerKey: provider,
       });
       targets.push({
-        adapter,
+        adapter: {
+          id: provider,
+          generate: (request) => adapter.generate(request),
+        },
         model: config.models[provider] ?? getDefaultPublicAIModel(provider),
       });
     } catch {
