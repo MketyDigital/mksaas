@@ -3,10 +3,10 @@ import { CheckCircle2, CircleDashed, Globe2, ShieldCheck } from 'lucide-react';
 
 import { addMailDomain } from '@/features/mail/server/domain-actions';
 import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
-import { db } from '@/shared/db/cloudflare';
-import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
+import { db } from '@/shared/db/cloudflare';
+import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
 
 export const dynamic='force-dynamic';
 

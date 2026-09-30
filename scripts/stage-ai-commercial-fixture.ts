@@ -1,6 +1,6 @@
+import postgres from 'postgres';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import postgres from 'postgres';
 
 function required(name: string) {
   const value = process.env[name]?.trim();

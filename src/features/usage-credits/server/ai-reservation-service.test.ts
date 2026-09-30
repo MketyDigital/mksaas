@@ -1,4 +1,3 @@
-import type { CreditBalance } from '../types';
 import {
   AI_CREDIT_RESERVATION_ERROR_CODES,
 } from './ai-reservation-engine';
@@ -18,6 +17,7 @@ import type {
   NewStoredUsageRecord,
   StoredUsageRecord,
 } from './source';
+import type { CreditBalance } from '../types';
 
 class FakeAiReservationSource implements AiCreditReservationSource {
   accounts = new Map<string, CreditBalance>();

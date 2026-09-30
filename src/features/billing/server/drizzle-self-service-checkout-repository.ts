@@ -10,9 +10,9 @@ import {
   billingSubscriptions,
 } from '@/shared/db/schema';
 
-import { getSelfServiceBillingPlanFamily, isSelfServiceBillingPlanKey } from '../catalog/self-service-plans';
 import { calculateSelfServiceTermQuote } from './active-catalog';
 import type { SelfServiceCheckoutRepository } from './self-service-checkout';
+import { getSelfServiceBillingPlanFamily, isSelfServiceBillingPlanKey } from '../catalog/self-service-plans';
 
 export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository = {
   async prepareCheckout(input) {

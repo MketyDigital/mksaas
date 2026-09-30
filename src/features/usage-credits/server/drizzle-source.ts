@@ -1,6 +1,7 @@
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, notExists, sql } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
+import { aiEnterpriseCommercialPolicies } from '@/shared/db/schema/ai-runtime';
 import { billingPeriods } from '@/shared/db/schema/billing-periods';
 import { billingPlanVersionCreditAllowances } from '@/shared/db/schema/billing-plan-version-credit-allowances';
 import { billingSubscriptions } from '@/shared/db/schema/billing-subscriptions';
@@ -92,6 +93,11 @@ export const drizzleBillingCreditAllowanceSource: BillingCreditAllowanceSource =
           eq(billingSubscriptions.tenantId, tenantId),
           inArray(billingSubscriptions.status, [...CREDIT_GRANT_SUBSCRIPTION_STATUSES]),
           gt(billingSubscriptions.currentPeriodEnd, new Date()),
+          notExists(db.select({ id: aiEnterpriseCommercialPolicies.planVersionId })
+            .from(aiEnterpriseCommercialPolicies).where(and(
+              eq(aiEnterpriseCommercialPolicies.planVersionId, billingSubscriptions.planVersionId),
+              eq(aiEnterpriseCommercialPolicies.fundingMode, 'prepaid_partial'),
+            ))),
         ),
       )
       .orderBy(desc(billingSubscriptions.updatedAt))

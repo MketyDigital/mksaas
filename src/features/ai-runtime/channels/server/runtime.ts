@@ -1,9 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
-import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
-import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
-import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
 import {
   deterministicReplyDelaySeconds,
   ensureEnterpriseAiConversation,
@@ -11,6 +8,10 @@ import {
   recordEnterpriseAiMessage,
   scheduleEnterpriseAiAction,
 } from '@/features/ai-runtime/channels/server/conversations';
+import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
+import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
+import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
+import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import {
   admitAiCommercialRequest,
   releaseAiCommercialRequest,
@@ -23,9 +24,8 @@ import {
   estimateAiReservationCredits,
   resolveActiveAiRateCard,
 } from '@/features/ai-runtime/server/commercial-rates';
-import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
-import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { assertEnterpriseAiManagedCostEnvelope } from '@/features/ai-runtime/server/enterprise-cost-envelope';
+import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import {
   calculateProviderCostUsdMicros,
   getManagedAiCostRateForModel,
@@ -231,6 +231,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   });
   try {
     await assertEnterpriseAiManagedCostEnvelope({
+      requestId,
       tenantId: input.tenantId,
       estimatedAdditionalCostUsdMicros: estimatedProviderCostUsdMicros,
       now: startedAt,
@@ -380,6 +381,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         creditReservationId: admission.creditReservation.id,
         budgetReservationIds: admission.budgetReservations.map((item) => item.id),
         providerOutcome: 'unknown_after_dispatch',
+        reservedProviderCostUsdMicros: estimatedProviderCostUsdMicros.toString(),
       },
       completedAt: new Date(),
     }).where(eq(aiRequests.id, requestId));

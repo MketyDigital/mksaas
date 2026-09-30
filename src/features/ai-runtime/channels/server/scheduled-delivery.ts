@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { revealChannelCredentials } from '@/features/ai-runtime/channels/credentials';
 import { type EnterpriseAiChannelKey, getEnterpriseAiChannel } from '@/features/ai-runtime/channels/registry';
 import {
+  beginEnterpriseAiScheduledActionDispatch,
   claimEnterpriseAiScheduledAction,
   completeEnterpriseAiScheduledAction,
   type EnterpriseAiScheduledPayload,
@@ -12,12 +13,12 @@ import {
   recordEnterpriseAiMessage,
   scheduleEnterpriseAiAction,
 } from '@/features/ai-runtime/channels/server/conversations';
+import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
+import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
 import { deliverEnterpriseAiChannelMessage } from '@/features/ai-runtime/channels/transport';
 import { hasEnterpriseAiAccess } from '@/features/ai-runtime/server/access';
-import { runEnterpriseAiManagedChannelTurn } from '@/features/ai-runtime/channels/server/runtime';
-import { enqueueEnterpriseAiScheduledAction } from '@/features/ai-runtime/channels/server/delivery-queue';
-import { getEnterpriseAiRuntimePolicy } from '@/features/ai-runtime/server/commercial-policy';
 import { parseEnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
+import { getEnterpriseAiRuntimePolicy } from '@/features/ai-runtime/server/commercial-policy';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
@@ -168,7 +169,14 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
         throw new Error('scheduled_inbound_retry_payload_invalid');
       }
 
-      const turn = await runEnterpriseAiManagedChannelTurn({
+      // Persist before dispatch: a terminated Worker must never replay chargeable
+      // work merely because its queue claim expired.
+      const ownsDispatch = await beginEnterpriseAiScheduledActionDispatch(action.id, action.tenantId, claimed.attempts);
+      if (!ownsDispatch) return { ok: true as const, duplicate: true as const, status: 'claim_lost' };
+      providerDispatchStarted = true;
+      let turn;
+      try {
+        turn = await runEnterpriseAiManagedChannelTurn({
         tenantId: action.tenantId,
         projectId: connection.projectId,
         connectionId: connection.id,
@@ -183,7 +191,14 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
         solutionInstanceId: action.solutionInstanceId,
         requestedModel: typeof value.requestedModel === 'string' ? value.requestedModel : undefined,
         skipInboundRecord: true,
-      });
+        });
+      } catch (error) {
+        if (error && typeof error === 'object'
+          && (error as { code?: unknown }).code === 'ENTERPRISE_AI_PROVIDER_CAPACITY_RETRYABLE') {
+          providerDispatchStarted = false;
+        }
+        throw error;
+      }
 
       if (turn.kind === 'completed' && turn.text) {
         const reply = await scheduleEnterpriseAiAction({
@@ -217,6 +232,8 @@ export async function deliverEnterpriseAiScheduledActionById(input: {
     if (!payload) throw new Error('scheduled_payload_invalid');
 
     const credentials = revealChannelCredentials(connection.secretRef);
+    const ownsDispatch = await beginEnterpriseAiScheduledActionDispatch(action.id, action.tenantId, claimed.attempts);
+    if (!ownsDispatch) return { ok: true as const, duplicate: true as const, status: 'claim_lost' };
     providerDispatchStarted = true;
     const delivery = await deliverEnterpriseAiChannelMessage(
       {

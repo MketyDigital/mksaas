@@ -3,17 +3,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { getTenantSettings } from '@/features/admin/services/settings-service';
+import { hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import {
   connectEnterpriseAiHostname,
   provisionEnterpriseAiManagedHostname,
   refreshEnterpriseAiHostname,
   saveEnterpriseAiWhiteLabel,
 } from '@/features/ai-runtime/server/enterprise-admin-actions';
-import { hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@/shared/components/ui';
 import { db } from '@/shared/db/cloudflare';
 import { customDomains } from '@/shared/db/schema';
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@/shared/components/ui';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 

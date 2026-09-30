@@ -1,7 +1,7 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
 import { grantCredits } from '@/features/usage-credits/server/service';
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import {
   aiEnterpriseCommercialPolicies,
   billingCheckouts,
@@ -35,6 +35,10 @@ export async function applyEnterpriseAiFundingSettlement(input: {
     if (input.providerCurrencyPaid !== expectedProviderCurrency || input.providerAmountPaidMinor < expectedProviderAmount) {
       throw new Error('Provider settlement does not match the Enterprise AI funding quote.');
     }
+
+    // Serialize period collection totals and subscription state against parallel
+    // verified top-ups. The lock is transaction-scoped and contains no secrets.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`enterprise-funding:${checkout.billingPeriodId}`}, 0))`);
 
     const period = await tx.query.billingPeriods.findFirst({
       where: and(
@@ -80,9 +84,19 @@ export async function applyEnterpriseAiFundingSettlement(input: {
           and(eq(billingSettlements.provider, input.provider), eq(billingSettlements.providerEventId, input.providerEventId)),
           and(eq(billingSettlements.provider, input.provider), eq(billingSettlements.providerPaymentId, input.providerPaymentId), eq(billingSettlements.settlementType, 'enterprise_ai_funding')),
         ),
-        columns: { id: true },
       });
       if (!replay) throw new Error('Enterprise AI funding settlement conflicted without a replay identity.');
+      if (replay.tenantId !== checkout.tenantId
+        || replay.subscriptionId !== checkout.subscriptionId
+        || replay.billingPeriodId !== checkout.billingPeriodId
+        || replay.settlementType !== 'enterprise_ai_funding'
+        || replay.status !== 'applied'
+        || replay.amountExpectedMinor !== checkout.amountExpectedMinor
+        || replay.currencyExpected !== checkout.currency
+        || replay.providerCurrencyPaid !== expectedProviderCurrency
+        || (replay.providerAmountPaidMinor ?? 0n) < expectedProviderAmount) {
+        throw new Error('Enterprise AI funding settlement replay mismatch.');
+      }
       const allowance = await tx.query.billingPlanVersionCreditAllowances.findFirst({
         where: and(
           eq(billingPlanVersionCreditAllowances.planVersionId, subscription.planVersionId),
@@ -132,12 +146,21 @@ export async function applyEnterpriseAiFundingSettlement(input: {
       updatedAt: input.occurredAt,
     }).where(eq(billingPeriods.id, period.id));
 
-    await tx.update(billingSubscriptions).set({
-      status: 'active',
-      currentPeriodEnd: period.periodEnd,
-      gracePeriodEnd: null,
-      updatedAt: input.occurredAt,
-    }).where(eq(billingSubscriptions.id, subscription.id));
+    if (['pending_payment', 'active', 'trialing', 'past_due', 'cancel_at_period_end'].includes(subscription.status)
+      && subscription.currentPeriodStart?.getTime() === period.periodStart.getTime()
+      && subscription.currentPeriodEnd?.getTime() === period.periodEnd.getTime()
+      && input.occurredAt.getTime() < period.periodEnd.getTime()) {
+      await tx.update(billingSubscriptions).set({
+        status: subscription.status === 'cancel_at_period_end' ? 'cancel_at_period_end' : 'active',
+        gracePeriodEnd: null,
+        updatedAt: input.occurredAt,
+      }).where(and(
+        eq(billingSubscriptions.id, subscription.id),
+        eq(billingSubscriptions.status, subscription.status),
+        eq(billingSubscriptions.currentPeriodStart, period.periodStart),
+        eq(billingSubscriptions.currentPeriodEnd, period.periodEnd),
+      ));
+    }
 
     await tx.update(billingCheckouts).set({
       status: 'completed',

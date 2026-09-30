@@ -9,13 +9,13 @@ import {
   SELF_SERVICE_BILLING_TERMS,
 } from '@/features/billing/catalog/self-service-plans';
 import { getActiveSelfServiceBillingQuote } from '@/features/billing/server/active-catalog';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import {
   getEnabledMketyFlutterwaveCurrencies,
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
-import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';

@@ -1,8 +1,8 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { getRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';
 import { getRequestDatabaseContext } from './request-context';
+import { getRuntimeDatabaseConnectionString } from './runtime-connection.cloudflare';
 import * as schema from './schema';
 
 function createCloudflareDatabase() {

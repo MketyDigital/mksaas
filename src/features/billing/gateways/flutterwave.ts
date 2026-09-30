@@ -6,14 +6,14 @@ import {
 } from '@/features/payments/flutterwave-standard';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 
-import type { NormalizedSettlement } from '../domain/settlement';
-import type { GatewayCapabilities } from '../domain/types';
 import type {
   BillingGatewayAdapter,
   CreateCheckoutInput,
   CreateCheckoutResult,
   VerifiedGatewayEvent,
 } from './types';
+import type { NormalizedSettlement } from '../domain/settlement';
+import type { GatewayCapabilities } from '../domain/types';
 
 const FLUTTERWAVE_CAPABILITIES: GatewayCapabilities = {
   supportsRecurring: false,

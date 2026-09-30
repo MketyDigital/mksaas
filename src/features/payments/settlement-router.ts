@@ -1,3 +1,4 @@
+import { applyEnterpriseAiFundingSettlement } from '@/features/ai-runtime/server/enterprise-funding-settlement';
 import type { NormalizedSettlement } from '@/features/billing/domain/settlement';
 import {
   findBillingCheckoutSettlementContext,
@@ -9,7 +10,6 @@ import {
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
 import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server/repository';
-import { applyEnterpriseAiFundingSettlement } from '@/features/ai-runtime/server/enterprise-funding-settlement';
 import { grantCurrentPeriodAllowance } from '@/features/usage-credits/server/period-grants';
 import { db } from '@/shared/db';
 

@@ -1,6 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 describe('Mkety Mail gateway production contract', () => {
   const root = process.cwd();

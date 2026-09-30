@@ -1,9 +1,14 @@
 FROM pgbouncer/pgbouncer:1.25.2-20260911
 
+# checkov:skip=CKV_DOCKER_8:Root bootstrap writes mounted certificate/config files; entrypoint drops the database daemon to an unprivileged user via su-exec.
 USER root
 RUN apk add --no-cache openssl postgresql-client su-exec
 COPY ops/pgbouncer-v2/entrypoint.sh /mkety-entrypoint.sh
 RUN chmod 755 /mkety-entrypoint.sh
+
+COPY ops/pgbouncer-v2/healthcheck.sh /mkety-healthcheck.sh
+RUN chmod 755 /mkety-healthcheck.sh
+HEALTHCHECK --interval=30s --timeout=15s --start-period=45s --retries=3 CMD ["/mkety-healthcheck.sh"]
 
 EXPOSE 6432
 ENTRYPOINT ["/mkety-entrypoint.sh"]

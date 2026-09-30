@@ -2,15 +2,14 @@ import { and, eq, sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/shared/db/cloudflare';
-import { tenants } from '@/shared/db/schema';
-import { emitWebhookEvent } from '@/shared/services/webhook-service';
-import {
-  mailCustomerUpdateRecipients,
+import { mailCustomerUpdateRecipients ,
   mailCustomerUpdates,
   mailDeliveryEvents,
   mailMessages,
   mailSuppressions,
+  tenants,
 } from '@/shared/db/schema';
+import { emitWebhookEvent } from '@/shared/services/webhook-service';
 
 type MailEventBody={
   type?:string;

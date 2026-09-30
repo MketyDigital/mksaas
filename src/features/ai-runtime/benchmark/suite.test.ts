@@ -1,9 +1,9 @@
-import { getManagedAiModelCandidate } from '../model-candidates';
 import {
   calculateRawProviderCostUsd,
   ENTERPRISE_AI_BENCHMARK_SUITE,
   validateBenchmarkCandidate,
 } from './suite';
+import { getManagedAiModelCandidate } from '../model-candidates';
 
 describe('Enterprise AI benchmark suite', () => {
   it('covers every approved comparison dimension', () => {

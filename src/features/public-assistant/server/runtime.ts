@@ -3,7 +3,9 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@/shared/db';
 import { platformSiteSettings } from '@/shared/db/schema';
 
+import { getDynamicPublicAiConfig, resolveDynamicPublicAiTargets } from './dynamic-config';
 import { type PublicAIProviderTarget, runPublicAIGateway } from './gateway';
+import { getPublicPricingKnowledge } from './knowledge';
 import {
   appendPublicAIMessage,
   createPublicAIConversation,
@@ -11,9 +13,7 @@ import {
   recordPublicAIToolRun,
 } from './memory';
 import { createPublicAIProviderAdapters } from './providers';
-import { getDynamicPublicAiConfig, resolveDynamicPublicAiTargets } from './dynamic-config';
 import { buildPublicSystemPrompt, planPublicSupportTools, sanitizePublicAssistantAnswer } from './support';
-import { getPublicPricingKnowledge } from './knowledge';
 import { executePublicSupportTool, type PublicSupportToolName } from './tools';
 import { parsePublicAIProviderConfig, type PublicAssistantEnvironment } from '../config';
 import { getDefaultPublicAIModel } from '../models';

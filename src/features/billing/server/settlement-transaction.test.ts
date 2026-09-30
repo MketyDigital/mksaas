@@ -1,9 +1,9 @@
-import type { NormalizedSettlement } from '../domain/settlement';
 import {
   applySettlementInsideTransaction,
   type BillingSettlementTransaction,
   type BillingSettlementTransactionContext,
 } from './settlement-transaction';
+import type { NormalizedSettlement } from '../domain/settlement';
 
 const input: NormalizedSettlement = {
   provider: 'nowpayments',

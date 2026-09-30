@@ -1,5 +1,5 @@
-import type { NormalizedSettlement, SettlementSource } from '../domain/settlement';
 import type { VerifiedGatewayEvent } from './types';
+import type { NormalizedSettlement, SettlementSource } from '../domain/settlement';
 
 interface SettlementPayloadFields {
   eventId: string;

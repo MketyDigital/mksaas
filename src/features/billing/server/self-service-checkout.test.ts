@@ -1,6 +1,6 @@
-import type { BillingGatewayAdapter } from '../gateways/types';
-import { NOWPAYMENTS_CAPABILITIES } from '../gateways/nowpayments-capabilities';
 import { createSelfServiceCheckout, type SelfServiceCheckoutRepository } from './self-service-checkout';
+import { NOWPAYMENTS_CAPABILITIES } from '../gateways/nowpayments-capabilities';
+import type { BillingGatewayAdapter } from '../gateways/types';
 
 function repository(): SelfServiceCheckoutRepository & {
   ready: jest.Mock;

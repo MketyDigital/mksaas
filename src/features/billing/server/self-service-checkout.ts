@@ -1,5 +1,5 @@
-import type { BillingGatewayAdapter } from '../gateways/types';
 import type { SelfServiceBillingPlanKey, SelfServiceBillingTermKey } from '../catalog/self-service-plans';
+import type { BillingGatewayAdapter } from '../gateways/types';
 
 export interface PreparedSelfServiceCheckout {
   checkoutId: string;

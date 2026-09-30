@@ -1,7 +1,7 @@
 import type { UIMessage } from 'ai';
 
-import { getConversation, getInitialData } from '@/features/assistant';
 import { listByokProviderConnections } from '@/features/ai-runtime/server/provider-connections';
+import { getConversation, getInitialData } from '@/features/assistant';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 

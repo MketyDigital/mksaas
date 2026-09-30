@@ -1,10 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
+import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 import { hasEnterpriseAiApiAccess } from '@/features/ai-runtime/server/access';
 import { authenticateAiApiKey } from '@/features/ai-runtime/server/api-auth';
-import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
-import { runCentralAi } from '@/features/ai-runtime/providers/central-runtime';
 import {
   admitAiCommercialRequest,
   releaseAiCommercialRequest,
@@ -17,14 +17,14 @@ import {
   estimateAiReservationCredits,
   resolveActiveAiRateCard,
 } from '@/features/ai-runtime/server/commercial-rates';
+import { assertEnterpriseAiManagedCostEnvelope } from '@/features/ai-runtime/server/enterprise-cost-envelope';
+import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
 import {
   calculateProviderCostUsdMicros,
   getManagedAiCostRate,
   getManagedAiCostRateForModel,
   minimumCustomerRevenueUsdMicros,
 } from '@/features/ai-runtime/server/provider-cost';
-import { resolveAiModelRoute } from '@/features/ai-runtime/server/model-routing';
-import { assertEnterpriseAiManagedCostEnvelope } from '@/features/ai-runtime/server/enterprise-cost-envelope';
 import { db } from '@/shared/db/cloudflare';
 import { withRequestDatabase } from '@/shared/db/request';
 import { aiRequests, projects } from '@/shared/db/schema';
@@ -491,6 +491,7 @@ async function handlePost(request: Request) {
   });
   try {
     await assertEnterpriseAiManagedCostEnvelope({
+      requestId,
       tenantId: key.tenantId,
       estimatedAdditionalCostUsdMicros: estimatedProviderCostUsdMicros,
       now: startedAt,
@@ -593,6 +594,7 @@ async function handlePost(request: Request) {
           creditReservationId: admission.creditReservation.id,
           budgetReservationIds: admission.budgetReservations.map((item) => item.id),
           providerOutcome: 'unknown_after_dispatch',
+        reservedProviderCostUsdMicros: estimatedProviderCostUsdMicros.toString(),
         },
         completedAt: new Date(),
       })

@@ -1,6 +1,6 @@
-import { EntitlementDeniedError } from '../types';
 import { requireEntitlement } from './authorization';
 import type { EntitlementSource } from './resolver';
+import { EntitlementDeniedError } from '../types';
 
 function source(allowed: boolean): EntitlementSource {
   return {

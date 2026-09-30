@@ -4069,3 +4069,11 @@ This section is newer than all earlier Public AI, Platform AI, Enterprise AI, pr
 - Mail gateway HTTP requests must enter `withRequestDatabase` only after the isolated internal-secret check. Cloudflare/Postgres clients must not be shared across Worker invocations. Existing AsyncLocalStorage propagation keeps nested Mail commercial/entitlement queries in the same request scope.
 - Gateway protocol commands execute serially per connection. Successful authentication is not perpetual authorization: revoke/suspend/entitlement changes must block later reads/writes/submission on established connections.
 - Local passing tests/build are not accepted production/customer evidence. External-client and Enterprise inference gates remain closed until their recorded acceptance sequence passes.
+
+# 2026-09-30 Enterprise Commercial and Dispatch Hardening Override
+
+- Global Enterprise contract and Media tenant-link writes require the Platform Control identity/tenant guard before permission checks; customer admin wildcards never authorize them.
+- Partial prepaid funding settlements are bound to the original checkout/tenant/subscription/period and cannot revive cancelled subscriptions or replace a newer billing period. Ordinary period allowances exclude prepaid-partial policies.
+- Managed provider-cost admission must serialize per tenant and reserve conservative in-flight cost durably. Unknown outcomes retain their estimate for reconciliation; missing Enterprise policy/period fails closed. PostgreSQL int8 aggregates must be decoded before BigInt arithmetic.
+- Scheduled provider dispatch requires atomic current claim ownership and a durable reconciliation marker before external work. Only explicit no-dispatch capacity rejection permits automatic retry; stale claimants cannot release or dispatch a newer claim.
+- Updated audit evidence is in `docs/handoffs/2026-09-30-repository-audit-results.md`. Local regression/security success does not replace exact-head remote checks or the controlled live/customer acceptance gates.

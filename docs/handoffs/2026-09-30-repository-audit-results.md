@@ -77,3 +77,29 @@ Teams inbound/Bot Framework and true standalone Media SSO are explicitly outside
 - [Baseline CI](https://github.com/MketyDigital/mksaas/actions/runs/36681536540)
 - [Cloudflare request-scoped connection guidance](https://developers.cloudflare.com/hyperdrive/observability/troubleshooting/)
 - `docs/handoffs/2026-09-30-final-platform-completion.md`
+
+## Enterprise AI continuation and production hardening
+
+This section supersedes the earlier local verification/security status for the continuation changes. The b47d581 candidate evidence above belongs to that earlier head; the expanded PR must pass fresh exact-head checks before promotion.
+
+| Reproduced risk | Implemented correction | Coverage |
+|---|---|---|
+| Customer admin wildcard could authorize global contract/media writes | Require the Platform Control identity/tenant guard before PBAC and target lookup | Wrong tenant, unapproved identity, missing permission and approved operator |
+| Funding replay could cross checkout/customer boundaries or revive cancelled/historical access | Bind immutable settlement to its original tenant/subscription/period/quote; serialize period funding and preserve cancellation/current period | Real database settlement, replay, concurrent top-up and failed later top-up tests |
+| Prepaid allowance could be granted twice | Exclude prepaid-partial policy from ordinary period allowance grants | Real database credit ledger assertions |
+| PostgreSQL aggregate strings broke customer dashboard/top-up arithmetic | Decode aggregate int8 values to BigInt before calculations | Funded billing-state rendering data and remaining top-up checkout |
+| Other product subscriptions, missing periods and parallel requests bypassed managed cost limits | Scope Enterprise contract/policy explicitly, enforce half-open period boundaries and fail closed; serialize admission and persist in-flight conservative cost | Real database policy/boundary/concurrent reservation/ambiguous outcome tests |
+| Lost queue leases or ambiguous provider outcomes could dispatch twice | Atomically check current ownership and persist reconciliation before chargeable dispatch; only explicit capacity rejection may retry | Stale claimant, cancellation, ownership races, unknown outcomes and reply persistence failure |
+| IPv4-mapped IPv6 bypassed private endpoint checks | Deny mapped IPv6 outbound URLs | Canonicalized public/private address regressions |
+
+The regression harness executes production Drizzle queries and transactions against PGlite locally and PostgreSQL in CI. Its dedicated disposable schema includes only the necessary commercial/runtime tables; it is not a full-schema migration certification. The PostgreSQL CI URL guard permits only the local disposable test database. Existing migration consistency remains a separate check. Node's VM module flag is required for PGlite; CommonJS Jest fixtures now use explicit `.cjs` extensions.
+
+Container hardening adds real health probes to PgBouncer, Mail gateway and resolver images and an unprivileged resolver user. PgBouncer retains **three explicit root-bootstrap Checkov exceptions** because initialization writes mounted TLS/config files before `su-exec` drops the database daemon privilege. The scanner exceptions do not prove deployed privilege behavior; image builds and production runtime acceptance remain required. Local Docker Checkov: 486 passed, 0 failed, 3 skipped. GitHub Actions Checkov: 3,552 passed, 0 failed (repository-configured CKV_GHA_7 exclusion retained).
+
+Five historical Gitleaks findings were reviewed as repeated-character test encryption/relay fixtures or public browser storage keys and excluded by exact commit/path/rule/line fingerprint only. No secret values are printed and no blanket source/history allowance was added. Local full-history scan: 4,943 commits, no leaks found after the reviewed exclusions.
+
+Repository import-order cleanup is mechanical. Enterprise settings labels now have explicit accessible names and associated checkbox IDs. Final lint: 0 errors, 11 existing browser-image optimization warnings; zero-warning lint is not claimed.
+
+Final local verification for the expanded changes: 241 source suites / 1,166 tests, six separate script tests, TypeScript, Vinext build and migration consistency must all remain green after final cleanup. Independent read-only review found no remaining critical/important defect and independently ran 41 targeted regressions. New CI also builds all five audited operations images and exercises the commercial tests against actual PostgreSQL. Exact-head remote evidence will be recorded in PR #223.
+
+No production flag enablement, migration, deployment, customer payment, registrar transaction or real-customer domain/channel acceptance is implied by this branch. The required completion sequence above remains binding, including explicit intentional customer-inference enablement after controlled acceptance.

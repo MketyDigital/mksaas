@@ -1,5 +1,5 @@
-import { generateWebhookCredentials } from './webhook-security';
 import { encryptWebhookSecret, fingerprintWebhookSecret } from './webhook-secret-crypto';
+import { generateWebhookCredentials } from './webhook-security';
 
 type Scope = { tenantId: string; projectId: string; workflowId: string };
 type EndpointScope = Scope & { endpointId: string };

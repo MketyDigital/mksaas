@@ -1,8 +1,8 @@
 import { Code2, Globe2, Inbox, Mail, Megaphone, Send, Smartphone, Users } from 'lucide-react';
 
 import { enableMketyMail } from '@/features/mail/server/actions';
-import { getCustomerMailUsageSummary } from '@/features/mail/server/usage';
 import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
+import { getCustomerMailUsageSummary } from '@/features/mail/server/usage';
 import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';

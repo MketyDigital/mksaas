@@ -1,4 +1,4 @@
-import { and, desc, eq, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, lte, or, sql } from 'drizzle-orm';
 
 import type { EnterpriseAiSolutionConfiguration } from '@/features/ai-runtime/server/business-solutions';
 import { db } from '@/shared/db/cloudflare';
@@ -242,6 +242,22 @@ export async function claimEnterpriseAiScheduledAction(id: string, tenantId: str
   return claimed ?? null;
 }
 
+export async function beginEnterpriseAiScheduledActionDispatch(id: string, tenantId: string, attempts: number, now = new Date()) {
+  const [owned] = await db.update(aiScheduledActions).set({
+    status: 'reconciliation_required',
+    claimUntil: null,
+    lastError: 'provider_dispatch_started',
+    updatedAt: now,
+  }).where(and(
+    eq(aiScheduledActions.id, id),
+    eq(aiScheduledActions.tenantId, tenantId),
+    eq(aiScheduledActions.status, 'claimed'),
+    eq(aiScheduledActions.attempts, attempts),
+    gt(aiScheduledActions.claimUntil, now),
+  )).returning({ id: aiScheduledActions.id });
+  return Boolean(owned);
+}
+
 export async function completeEnterpriseAiScheduledAction(id: string, tenantId: string) {
   const now = new Date();
   await db.update(aiScheduledActions).set({
@@ -268,7 +284,12 @@ export async function failEnterpriseAiScheduledAction(
     lastError: error.slice(0, 1000),
     dueAt: terminal ? new Date() : new Date(Date.now() + Math.min(3_600_000, 30_000 * 2 ** Math.min(6, attempts))),
     updatedAt: new Date(),
-  }).where(and(eq(aiScheduledActions.id, id), eq(aiScheduledActions.tenantId, tenantId)));
+  }).where(and(
+    eq(aiScheduledActions.id, id),
+    eq(aiScheduledActions.tenantId, tenantId),
+    eq(aiScheduledActions.attempts, attempts),
+    inArray(aiScheduledActions.status, ['claimed', 'reconciliation_required']),
+  ));
 }
 
 export async function markEnterpriseAiScheduledActionReconciliationRequired(

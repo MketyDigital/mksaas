@@ -1,5 +1,5 @@
-import type { NormalizedSettlement } from '../domain/settlement';
 import { createDrizzleBillingRepository } from './drizzle-repository';
+import type { NormalizedSettlement } from '../domain/settlement';
 
 const settlement: NormalizedSettlement = {
   provider: 'nowpayments',

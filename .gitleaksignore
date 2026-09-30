@@ -1,3 +1,12 @@
 # Historical test-fixture false positives. These are synthetic values in payment reference tests, not credentials.
 65adf9b1dad4fd0e480a33b2eeb0f727b3923a1c:src/features/payments/reference.test.ts:generic-api-key:17
 39e56babfb3b9ce6494fd415fa682bb58538d3d2:src/features/payments/reference.test.ts:generic-api-key:16
+
+# Exact historical false positives: fixed relay/encryption test fixtures and public
+# AI browser acceptance storage keys. Reviewed source contexts; no provider or
+# infrastructure credentials. Other files/commits/rules remain scanned.
+0c58de7a083772628552a7c140d7375707c0a335:src/features/domains/server/domainnameapi.test.ts:generic-api-key:141
+4a0877677e6a826035a7514b33efdc52965e01bc:src/features/domains/server/domainnameapi.test.ts:generic-api-key:186
+db314b4034ea9084d5f0bc4161eb9e2fe1647998:src/features/ai-runtime/server/byok-secrets.test.ts:generic-api-key:5
+a862630b9fd1469259d0f8798c9d15b84a7e1220:.github/workflows/mkety-public-production-cutover.yml:generic-api-key:975
+da40832c4983b75851d02c65ad2b1b6d16102ee4:.github/workflows/mkety-public-production-cutover.yml:generic-api-key:965

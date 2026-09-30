@@ -133,8 +133,8 @@ export default async function EnterpriseAiSolutionPage({
               </div>
             </div>
             <div className="grid gap-4 rounded-xl border p-4 md:grid-cols-2">
-              <label className="flex items-start gap-3 text-sm md:col-span-2">
-                <input className="mt-1" defaultChecked={configuration.commitmentRemindersEnabled} name="commitmentRemindersEnabled" type="checkbox" />
+              <label aria-label="Commitment reminders" htmlFor="commitment-reminders" className="flex items-start gap-3 text-sm md:col-span-2">
+                <input id="commitment-reminders" className="mt-1" defaultChecked={configuration.commitmentRemindersEnabled} name="commitmentRemindersEnabled" type="checkbox" />
                 <span>
                   <strong>Commitment reminders</strong>
                   <span className="mt-1 block text-muted-foreground">
@@ -152,8 +152,8 @@ export default async function EnterpriseAiSolutionPage({
                 <span className="text-xs font-normal text-muted-foreground">0 sends at the promised time; 60 sends one hour before.</span>
               </label>
             </div>
-            <label className="flex items-start gap-3 rounded-xl border p-4 text-sm">
-              <input className="mt-1" defaultChecked={configuration.paused} name="paused" type="checkbox" />
+            <label aria-label="Pause AI replies" htmlFor="pause-ai-replies" className="flex items-start gap-3 rounded-xl border p-4 text-sm">
+              <input id="pause-ai-replies" className="mt-1" defaultChecked={configuration.paused} name="paused" type="checkbox" />
               <span>
                 <strong>Pause AI replies</strong>
                 <span className="mt-1 block text-muted-foreground">

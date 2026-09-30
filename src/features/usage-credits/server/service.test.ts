@@ -1,5 +1,3 @@
-import type { ConsumeCreditsInput, CreditBalance, GrantCreditsInput } from '../types';
-import { USAGE_CREDIT_ERROR_CODES } from '../types';
 import { createUsageCreditService } from './service';
 import type {
   CreditLedgerRecord,
@@ -7,6 +5,8 @@ import type {
   UsageCreditSource,
   UsageCreditTransaction,
 } from './source';
+import type { ConsumeCreditsInput, CreditBalance, GrantCreditsInput } from '../types';
+import { USAGE_CREDIT_ERROR_CODES } from '../types';
 
 class FakeUsageCreditSource implements UsageCreditSource {
   private accounts = new Map<string, CreditBalance>();

@@ -7,13 +7,13 @@ import {
 import { db } from '@/shared/db/cloudflare';
 import { platformAppControlCenterModules } from '@/shared/db/schema/platform-app-experience';
 
+import type { PublicAIProviderTarget } from './gateway';
+import { createPublicAIProviderAdapters } from './providers';
 import {
   assertCurrentPublicAIModel,
   getDefaultPublicAIModel,
   type PublicAIProviderId,
 } from '../models';
-import type { PublicAIProviderTarget } from './gateway';
-import { createPublicAIProviderAdapters } from './providers';
 
 const PROVIDERS: readonly PublicAIProviderId[] = [
   'workers-ai',

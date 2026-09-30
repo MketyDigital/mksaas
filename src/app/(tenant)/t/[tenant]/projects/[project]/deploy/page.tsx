@@ -1,6 +1,6 @@
 import { DeployFoundationPanel } from '@/features/deploy/components/DeployFoundationPanel';
-import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { getDeployFoundationState } from '@/features/deploy/server/queries';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { requireProjectAccess } from '@/features/projects/server/access';
 import { DeployWorkspaceOverview } from '@/features/projects/workspaces/DeployWorkspaceOverview';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';

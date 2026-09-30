@@ -1,3 +1,4 @@
+import { applyEnterpriseAiFundingSettlement } from '@/features/ai-runtime/server/enterprise-funding-settlement';
 import {
   buildNowPaymentsSettlementForCheckout,
   createNowPaymentsBillingAdapter,
@@ -13,7 +14,6 @@ import {
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
 import { grantCurrentPeriodAllowance } from '@/features/usage-credits/server/period-grants';
-import { applyEnterpriseAiFundingSettlement } from '@/features/ai-runtime/server/enterprise-funding-settlement';
 import { db } from '@/shared/db';
 import { createLogger } from '@/shared/lib/logger';
 
