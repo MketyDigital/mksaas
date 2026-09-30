@@ -208,7 +208,7 @@ export async function getActiveEnterpriseAiContract(tenantId: string) {
 
   if (!row) return null;
 
-  const [entitlements, allowance] = await Promise.all([
+  const [entitlements, allowance, commercialPolicy] = await Promise.all([
     db.select({ key: billingPlanVersionEntitlements.entitlementKey })
       .from(billingPlanVersionEntitlements)
       .where(and(
@@ -221,12 +221,26 @@ export async function getActiveEnterpriseAiContract(tenantId: string) {
         eq(billingPlanVersionCreditAllowances.grantInterval, 'billing_period'),
       ),
     }),
+    db.query.aiEnterpriseCommercialPolicies.findFirst({
+      where: eq(aiEnterpriseCommercialPolicies.planVersionId, row.planVersionId),
+    }),
   ]);
 
   return {
     ...row,
     entitlements: entitlements.map((item) => item.key),
     includedCredits: allowance?.creditAmount ?? 0n,
+    commercialPolicy: commercialPolicy ?? {
+      planVersionId: row.planVersionId,
+      minimumFundingMinor: row.amountMinor,
+      managedCostShareBps: 1500,
+      setupFeeMinor: 0n,
+      fundingMode: 'full_period',
+      creditRollover: true,
+      hardStop: true,
+      createdAt: row.effectiveFrom,
+      updatedAt: row.effectiveFrom,
+    },
   };
 }
 
