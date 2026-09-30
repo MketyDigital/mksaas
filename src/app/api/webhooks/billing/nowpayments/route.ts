@@ -7,11 +7,13 @@ import {
   findBillingCheckoutSettlementContext,
   markBillingCheckoutAwaitingConfirmation,
   markBillingCheckoutCompleted,
+  markBillingCheckoutFailedOnly,
   markBillingCheckoutTerminalFailure,
 } from '@/features/billing/server/drizzle-checkout-settlement';
 import { createDrizzleBillingRepository } from '@/features/billing/server/drizzle-repository';
 import { applyVerifiedSettlement } from '@/features/billing/server/settlement-service';
 import { grantCurrentPeriodAllowance } from '@/features/usage-credits/server/period-grants';
+import { applyEnterpriseAiFundingSettlement } from '@/features/ai-runtime/server/enterprise-funding-settlement';
 import { db } from '@/shared/db';
 import { createLogger } from '@/shared/lib/logger';
 
@@ -58,6 +60,20 @@ export async function POST(request: Request) {
 
     if (paymentStatus === 'finished') {
       const settlement = buildNowPaymentsSettlementForCheckout(event, context, now);
+      if (context.purpose === 'enterprise_ai_funding') {
+        const result = await applyEnterpriseAiFundingSettlement({
+          checkoutId,
+          provider: 'nowpayments',
+          providerPaymentId: settlement.providerPaymentId ?? '',
+          providerEventId: settlement.providerEventId ?? '',
+          providerAmountPaidMinor: settlement.providerAmountPaidMinor ?? settlement.amountPaidMinor,
+          providerCurrencyPaid: settlement.providerCurrencyPaid ?? settlement.currencyPaid,
+          rawReference: settlement.rawReference ?? '',
+          occurredAt: now,
+        });
+        return json({ success: true, settlement: result.applied ? 'applied' : 'duplicate' });
+      }
+
       const repository = createDrizzleBillingRepository(db);
       const result = await applyVerifiedSettlement(repository, settlement, now);
       await markBillingCheckoutCompleted(checkoutId, now);
@@ -70,12 +86,16 @@ export async function POST(request: Request) {
     }
 
     if (['failed', 'expired', 'refunded'].includes(paymentStatus)) {
-      await markBillingCheckoutTerminalFailure(
-        checkoutId,
-        context.subscriptionId,
-        `nowpayments_${paymentStatus}`,
-        now,
-      );
+      if (context.purpose === 'enterprise_ai_funding') {
+        await markBillingCheckoutFailedOnly(checkoutId, now);
+      } else {
+        await markBillingCheckoutTerminalFailure(
+          checkoutId,
+          context.subscriptionId,
+          `nowpayments_${paymentStatus}`,
+          now,
+        );
+      }
       return json({ success: true, settled: false, status: paymentStatus });
     }
 
