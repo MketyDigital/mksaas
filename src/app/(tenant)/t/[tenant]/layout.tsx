@@ -57,6 +57,7 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
         permissions={permissions}
         hasMailAccess={hasMailAccess}
         hasEnterpriseAiAccess={hasEnterpriseAiAccess}
+        session={session}
       >
         {children}
       </TenantLayoutClient>
