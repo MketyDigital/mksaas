@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - '.github/workflows/mkety-mail-production.yml'
       - '.github/workflows/mkety-mail-gateway-production.yml'
       - 'ops/mail-gateway/**'
       - 'src/app/api/internal/mail/gateway/**'
