@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 import { getRuntimeDatabaseConnectionString } from '@/shared/db/runtime-connection';
+import { getRequestDatabaseContext } from './request-context';
 import * as schema from './schema';
 
 /**
@@ -44,7 +45,17 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Export the Drizzle instance with schema
-export const db = drizzle(conn, { schema });
+const defaultDatabase = drizzle(conn, { schema });
+
+// A request-scoped client takes precedence when an entry point uses
+// withRequestDatabase. The fallback keeps scripts and local callers working.
+export const db = new Proxy({} as typeof defaultDatabase, {
+  get(_target, property) {
+    const database = getRequestDatabaseContext<typeof defaultDatabase>() ?? defaultDatabase;
+    const value = Reflect.get(database as object, property, database);
+    return typeof value === 'function' ? value.bind(database) : value;
+  },
+});
 
 // Export types for use in other files
 export type Database = typeof db;

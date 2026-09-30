@@ -41,9 +41,27 @@ describe('database singleton runtime connection', () => {
 
     const dbModule = await import('./index');
 
-    expect(dbModule.db).toBe(mockDatabase);
+    expect((dbModule.db as unknown as { singleton: boolean }).singleton).toBe(true);
     expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(1);
     expect(mockPostgres).toHaveBeenCalledWith('postgresql://runtime.example/mkety', { max: undefined });
+  });
+
+  it('keeps concurrent request clients isolated from the singleton and each other', async () => {
+    mockRuntimeConnectionString.mockReturnValue('postgresql://runtime.example/mkety');
+    const { db } = await import('./index');
+    const { runWithRequestDatabaseContext } = await import('./request-context');
+    const seen = await Promise.all([
+      runWithRequestDatabaseContext({ request: 'first' }, async () => {
+        await Promise.resolve();
+        return (db as unknown as { request: string }).request;
+      }),
+      runWithRequestDatabaseContext({ request: 'second' }, async () => {
+        await Promise.resolve();
+        return (db as unknown as { request: string }).request;
+      }),
+    ]);
+    expect(seen).toEqual(['first', 'second']);
+    expect((db as unknown as { singleton: boolean }).singleton).toBe(true);
   });
 
   it('keeps a zero-connection build placeholder only when env validation is skipped', async () => {

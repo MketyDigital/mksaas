@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db/cloudflare';
+import { withRequestDatabase } from '@/shared/db/request';
 import { auth } from '@/shared/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function MailWorkspaceChooser() {
+async function renderMailWorkspaceChooser() {
   const session = await auth();
   if (!session?.user?.id) redirect('/login?returnTo=%2Fmail%2Fapp');
 
@@ -61,7 +62,7 @@ export default async function MailWorkspaceChooser() {
               <Link href="https://mkety.com/mail" className="rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground">
                 View Mail plans
               </Link>
-              <Link href="/select-tenant?plan=mail-starter" className="rounded-xl border px-4 py-2 font-semibold">
+              <Link href="https://app.mkety.com/select-tenant?plan=mail-starter" className="rounded-xl border px-4 py-2 font-semibold">
                 Add Mail to a workspace
               </Link>
             </CardContent>
@@ -98,4 +99,8 @@ export default async function MailWorkspaceChooser() {
       </div>
     </main>
   );
+}
+
+export default async function MailWorkspaceChooser() {
+  return withRequestDatabase(() => renderMailWorkspaceChooser());
 }

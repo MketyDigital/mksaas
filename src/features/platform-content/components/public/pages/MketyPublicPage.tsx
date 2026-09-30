@@ -54,6 +54,35 @@ export function MketyPublicPage({ page, settings, navigation, footerGroups, feat
         </div>
       </section>
 
+      {(page.slug === 'enterprise' || page.slug === 'contact') && (
+        <section id="enterprise" className="px-4 pt-10">
+          <div className="container mx-auto grid gap-5 rounded-[2rem] border border-primary/20 bg-card/70 p-6 md:grid-cols-2 md:p-10">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">Talk to Mkety</p>
+              <h2 className="mt-3 text-2xl font-bold tracking-tight">Tell us what you want to make easier.</h2>
+              <p className="mt-3 leading-7 text-muted-foreground">
+                For Enterprise AI, Trading, Media or a tailored project, share your organization, what you need and how to reach you.
+                We can discuss access and next steps directly. Never include passwords or payment details.
+              </p>
+            </div>
+            <div className="flex flex-col justify-center gap-3">
+              {settings.telegramHref && (
+                <a className="rounded-xl bg-primary px-5 py-3 text-center font-semibold text-primary-foreground" href={settings.telegramHref}>
+                  Message our team on Telegram
+                </a>
+              )}
+              <a className="rounded-xl border px-5 py-3 text-center font-semibold" href={`mailto:${settings.salesEmail}?subject=Mkety%20Enterprise%20enquiry`}>
+                Email our team
+              </a>
+              <a className="rounded-xl border px-5 py-3 text-center font-semibold" href="#mkety-ai">
+                Ask Mkety AI first
+              </a>
+              <p className="text-center text-xs text-muted-foreground">Telegram is our fastest human support channel. Choose email if you prefer a written introduction.</p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {featuredContent}
 
       <div className="px-4 py-10 md:py-14">

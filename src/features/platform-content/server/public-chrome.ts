@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/shared/db/cloudflare';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
@@ -32,7 +33,7 @@ async function getPublishedFooterGroups() {
   }
 }
 
-export async function getPublishedPublicChrome() {
+export const getPublishedPublicChrome = cache(async () => {
   const [settings, navigation, footerGroups] = await Promise.all([
     getPublishedPlatformSiteSettings(),
     getPublishedNavigation('header'),
@@ -40,4 +41,4 @@ export async function getPublishedPublicChrome() {
   ]);
 
   return { settings, navigation, footerGroups };
-}
+});

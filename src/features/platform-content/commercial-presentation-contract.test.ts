@@ -136,7 +136,7 @@ describe('Mkety documented public commercial presentation', () => {
     const enterprisePage = getDefaultPublicPage('enterprise');
     expect(enterprisePage?.sections[0]?.items.find((item) => item.key === 'enterprise-ai-product')).toMatchObject({
       title: 'Enterprise AI',
-      href: 'https://ai.mkety.com',
+      href: '/contact#enterprise',
       badge: 'Enterprise AI',
     });
     expect(enterprisePage?.sections[0]?.items.find((item) => item.key === 'enterprise-mail-product')).toMatchObject({
@@ -146,7 +146,7 @@ describe('Mkety documented public commercial presentation', () => {
     });
   });
 
-  it('keeps Trading visible but sends new buyers through Enterprise first', () => {
+  it('keeps Trading distinct while giving visitors a direct product and sales path', () => {
     expect(workspaceByKey.get('ai')).toMatchObject({
       title: 'AI Workspace',
       description:
@@ -172,15 +172,15 @@ describe('Mkety documented public commercial presentation', () => {
     const workspacesPage = getDefaultPublicPage('workspaces');
     expect(workspacesPage?.sections[0]?.items.find((item) => item.key === 'trading')).toMatchObject({
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: 'https://trade.mkety.com',
     });
 
     const enterprisePage = getDefaultPublicPage('enterprise');
     expect(enterprisePage?.sections[0]?.items.find((item) => item.key === 'trading')).toMatchObject({
       badge: 'Custom / Enterprise',
-      href: '/enterprise',
+      href: 'https://trade.mkety.com',
     });
-    expect(enterprisePage?.sections[0]?.cta).toMatchObject({ label: 'Discuss Enterprise Project', href: '/contact#mkety-ai' });
+    expect(enterprisePage?.sections[0]?.cta).toMatchObject({ label: 'Talk with our team', href: '/contact#enterprise' });
   });
 
   it('keeps the production CMS repair seed aligned with the canonical feature lists', async () => {

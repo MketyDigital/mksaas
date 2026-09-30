@@ -18,7 +18,9 @@ describe('Mkety dedicated public page defaults', () => {
     const hrefs = contact?.sections.flatMap((section) => section.items.map((item) => item.href).filter(Boolean)) ?? [];
 
     expect(hrefs.length).toBeGreaterThanOrEqual(4);
-    expect(hrefs.every((href) => href === '#mkety-ai')).toBe(true);
+    expect(hrefs).toContain('#mkety-ai');
+    expect(hrefs).toContain('#enterprise');
+    expect(hrefs.every((href) => href === '#mkety-ai' || href === '#enterprise')).toBe(true);
     expect(hrefs.some((href) => href?.includes('example.com'))).toBe(false);
   });
 

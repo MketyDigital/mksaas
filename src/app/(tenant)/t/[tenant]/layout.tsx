@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { getTenantEntitlementsForRequest } from '@/features/entitlements/server/resolver';
 import { isPlatformControlTenant, isPlatformOperatorEmail } from '@/features/platform-content/server/authorization';
 import { ThemeCSSInjector } from '@/shared/components/providers/theme-css-injector';
+import { withRequestDatabase } from '@/shared/db/request';
 import { auth } from '@/shared/lib/auth';
 import { getTenantBySlug } from '@/shared/lib/tenant';
 import { parseTenantSettings } from '@/shared/lib/tenant-settings';
@@ -18,7 +19,7 @@ interface TenantLayoutProps {
   params: Promise<{ tenant: string }>;
 }
 
-export default async function TenantLayout({ children, params }: TenantLayoutProps) {
+async function renderTenantLayout({ children, params }: TenantLayoutProps) {
   const { tenant: tenantSlug } = await params;
   const [tenant, session] = await Promise.all([
     getTenantBySlug(tenantSlug),
@@ -71,4 +72,8 @@ export default async function TenantLayout({ children, params }: TenantLayoutPro
       </TenantLayoutClient>
     </TenantProvider>
   );
+}
+
+export default async function TenantLayout(props: TenantLayoutProps) {
+  return withRequestDatabase(() => renderTenantLayout(props));
 }

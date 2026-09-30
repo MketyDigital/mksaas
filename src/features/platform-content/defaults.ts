@@ -23,9 +23,9 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
   accentColor: '#22D3EE',
-  defaultSeoTitle: 'Mkety | Simple, connected digital solutions for your business',
+  defaultSeoTitle: 'Mkety | AI-powered digital solutions for your business',
   defaultSeoDescription:
-    'Bring your website, business email, AI assistance, workflows and digital operations together with Mkety. Start with a ready-made solution or build a tailored system with our team.',
+    'Put AI to work across your website, business email, workflows and daily operations. Mkety brings practical digital solutions together, with specialist Media and Trading products when you need them.',
   contactEmail: 'support@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
@@ -54,10 +54,10 @@ export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
 ];
 
 export const defaultHeroSection: PlatformHeroSectionInput = {
-  badge: 'One connected Mkety ecosystem',
-  headline: 'Make digital work simpler for your business.',
+  badge: 'AI and digital solutions, working together',
+  headline: 'Put AI to work across your business.',
   subheadline:
-    'Launch a website, connect business email, put AI to work and streamline daily operations. Choose what you need now and grow with one connected Mkety experience.',
+    'Build a stronger digital presence, give your team useful AI, and bring email, workflows and everyday tools together. Start with one need; Mkety helps the pieces work as a whole.',
   primaryCta: { label: 'See plans', href: '/pricing' },
   secondaryCta: { label: 'Ask Mkety AI', href: '/contact#mkety-ai' },
   previewItems: [
@@ -189,14 +189,15 @@ export const defaultAcademySection: PlatformAcademySectionInput = {
 
 export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
   eyebrow: 'Enterprise',
-  title: 'Custom systems when standard self-service is not enough.',
+  title: 'Practical solutions for work that needs a closer fit.',
   description:
-    'Mkety delivers specialized implementations, integrations, managed deployment, trading infrastructure, customer projects, and enterprise support under custom commercial terms.',
+    'Mkety works with organizations on tailored AI, integrations, Mail, Media, Trading and digital systems, with the delivery and support agreed around the work.',
   items: [
     {
       key: 'trading',
       title: 'Trading infrastructure',
-      description: 'Specialized trading systems are delivered under Custom / Enterprise terms.',
+      description: 'Mkety Trading is a standalone specialist product. Explore the product at trade.mkety.com; new implementations and commercial terms are scoped with our team.',
+      href: 'https://trade.mkety.com',
       badge: 'Custom / Enterprise',
     },
     {

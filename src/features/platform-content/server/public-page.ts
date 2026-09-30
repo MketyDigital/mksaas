@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/shared/db/cloudflare';
 import { platformPages, platformPageSections } from '@/shared/db/schema/platform-content';
@@ -16,7 +17,7 @@ function normalizePage(page: MketyPublishedPublicPage): MketyPublishedPublicPage
   return { ...page, sections: normalizePublicPageSalesLinks(page.sections) };
 }
 
-export async function getPublishedPublicPageContent(slug: string): Promise<MketyPublishedPublicPage | null> {
+export const getPublishedPublicPageContent = cache(async (slug: string): Promise<MketyPublishedPublicPage | null> => {
   const fallback = getDefaultPublicPage(slug) ?? getDefaultLegalPage(slug);
   if (!fallback) return null;
   const normalizedFallback = normalizePage(fallback);
@@ -59,4 +60,4 @@ export async function getPublishedPublicPageContent(slug: string): Promise<Mkety
   } catch {
     return normalizedFallback;
   }
-}
+});

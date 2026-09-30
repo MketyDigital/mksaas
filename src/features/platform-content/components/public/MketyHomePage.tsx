@@ -281,6 +281,29 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
       </section>
 
       <section className="px-4 py-10 md:py-12">
+        <div className="container mx-auto grid gap-6 rounded-[2rem] border border-primary/15 bg-card/55 p-6 md:p-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety Trading</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Specialist trading technology, built for the way you work.</h2>
+            <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
+              Mkety Trading is a standalone enterprise product for approved trading workflows and specialist implementations.
+              Explore the product, then speak with our team about access and the requirements of your organization.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button asChild className="rounded-xl"><Link href="https://trade.mkety.com">Explore Mkety Trading <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+              <Button asChild variant="outline" className="rounded-xl"><Link href="/contact#enterprise">Discuss Trading access</Link></Button>
+            </div>
+          </div>
+          <div className="rounded-3xl border bg-background/80 p-6">
+            <p className="font-semibold">A separate product, connected where it matters</p>
+            <p className="mt-2 leading-7 text-muted-foreground">
+              Trading has its own application and commercial terms. Mkety can connect approved identity, billing and support paths without presenting it as a standard Platform subscription.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-10 md:py-12">
         <div className="container mx-auto">
           <div className="grid gap-6 overflow-hidden rounded-[2rem] border border-primary/15 bg-gradient-to-br from-card via-background to-primary/[0.06] p-6 shadow-sm md:p-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
