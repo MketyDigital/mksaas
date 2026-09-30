@@ -29,7 +29,12 @@ import {
 } from '../schemas';
 
 type ContentEntityType = Exclude<PlatformContentEntityType, 'app_experience'>;
+type EditorialTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type MutationDb = Pick<typeof db, 'insert'>;
+
+function inEditorialTransaction<T>(connection: EditorialTransaction | undefined, work: (tx: EditorialTransaction) => Promise<T>): Promise<T> {
+  return connection ? work(connection) : db.transaction(work);
+}
 
 type ActionResult = {
   ok: true;
@@ -110,10 +115,10 @@ async function insertAppExperienceRevision(
   });
 }
 
-async function saveSiteSettingsDraft(payload: unknown, actorId: string) {
+async function saveSiteSettingsDraft(payload: unknown, actorId: string, connection?: EditorialTransaction) {
   const settings = siteSettingsSchema.parse(payload);
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     const existing = await tx.query.platformSiteSettings.findFirst({ where: eq(schema.platformSiteSettings.environment, 'production') });
     const values = {
       environment: 'production',
@@ -148,12 +153,12 @@ async function saveSiteSettingsDraft(payload: unknown, actorId: string) {
   });
 }
 
-async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId: string) {
+async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId: string, connection?: EditorialTransaction) {
   const sectionKey = normalizeHomeSectionKey(entityKey);
   const sectionType = legacyHomeSectionKey(sectionKey);
   const sectionPayload = sectionKey === 'home.hero' ? heroSectionSchema.parse(payload) : payload;
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     const existingPage = await tx.query.platformPages.findFirst({ where: eq(schema.platformPages.slug, 'home') });
     const [page] = existingPage
       ? await tx.update(schema.platformPages).set({ status: 'draft', enabled: true, updatedBy: actorId, updatedAt: new Date() }).where(eq(schema.platformPages.id, existingPage.id)).returning()
@@ -182,10 +187,10 @@ async function saveHomeSectionDraft(entityKey: string, payload: unknown, actorId
   });
 }
 
-async function saveNavigationDraft(payload: unknown, actorId: string) {
+async function saveNavigationDraft(payload: unknown, actorId: string, connection?: EditorialTransaction) {
   const parsed = navigationPayloadSchema.parse(payload);
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     let mutatedRecords = 0;
     const areas = [...new Set(parsed.items.map((item) => item.area))];
     for (const area of areas) {
@@ -204,10 +209,10 @@ async function saveNavigationDraft(payload: unknown, actorId: string) {
   });
 }
 
-async function savePricingDraft(payload: unknown, actorId: string) {
+async function savePricingDraft(payload: unknown, actorId: string, connection?: EditorialTransaction) {
   const parsed = pricingPayloadSchema.parse(payload);
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     let mutatedRecords = 0;
     for (const plan of parsed.plans) {
       const existing = await tx.query.platformPricingPlans.findFirst({ where: eq(schema.platformPricingPlans.key, plan.key) });
@@ -240,10 +245,10 @@ async function savePricingDraft(payload: unknown, actorId: string) {
   });
 }
 
-async function saveDocsDraft(payload: unknown, actorId: string) {
+async function saveDocsDraft(payload: unknown, actorId: string, connection?: EditorialTransaction) {
   const parsed = docsPayloadSchema.parse(payload);
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     let mutatedRecords = 0;
     const categoryIdByKey = new Map<string, string>();
     for (const category of parsed.categories) {
@@ -272,10 +277,10 @@ async function saveDocsDraft(payload: unknown, actorId: string) {
   });
 }
 
-async function saveAppExperienceDraft(payload: unknown, actorId: string) {
+async function saveAppExperienceDraft(payload: unknown, actorId: string, connection?: EditorialTransaction) {
   const parsed = appExperienceDefaultsSchema.parse(payload);
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     let mutatedRecords = 0;
     const existingDashboard = await tx.query.platformAppDashboardSettings.findFirst({ where: and(eq(schema.platformAppDashboardSettings.environment, 'production'), isNull(schema.platformAppDashboardSettings.tenantId)) });
     const dashboardValues = {
@@ -336,29 +341,29 @@ async function saveAppExperienceDraft(payload: unknown, actorId: string) {
   });
 }
 
-async function saveDraftRecord(parsed: PlatformContentDraftActionInput, actorId: string) {
+async function saveDraftRecord(parsed: PlatformContentDraftActionInput, actorId: string, connection?: EditorialTransaction) {
   switch (parsed.entityType) {
     case 'site_settings':
-      return saveSiteSettingsDraft(parsed.payload, actorId);
+      return saveSiteSettingsDraft(parsed.payload, actorId, connection);
     case 'page_section':
-      return saveHomeSectionDraft(parsed.entityKey, parsed.payload, actorId);
+      return saveHomeSectionDraft(parsed.entityKey, parsed.payload, actorId, connection);
     case 'navigation_item':
-      return saveNavigationDraft(parsed.payload, actorId);
+      return saveNavigationDraft(parsed.payload, actorId, connection);
     case 'pricing_plan':
-      return savePricingDraft(parsed.payload, actorId);
+      return savePricingDraft(parsed.payload, actorId, connection);
     case 'docs_article':
-      return saveDocsDraft(parsed.payload, actorId);
+      return saveDocsDraft(parsed.payload, actorId, connection);
     case 'app_experience':
-      return saveAppExperienceDraft(parsed.payload, actorId);
+      return saveAppExperienceDraft(parsed.payload, actorId, connection);
     default:
       throw new Error(`Unsupported Mkety content draft entity: ${parsed.entityType}`);
   }
 }
 
-async function publishDraftRecord(parsed: PlatformPublishActionInput, actorId: string) {
+async function publishDraftRecord(parsed: PlatformPublishActionInput, actorId: string, connection?: EditorialTransaction) {
   const now = new Date();
 
-  return db.transaction(async (tx) => {
+  return inEditorialTransaction(connection, async (tx) => {
     switch (parsed.entityType) {
       case 'site_settings': {
         const rows = await tx.update(schema.platformSiteSettings).set({ status: 'published', publishedAt: now, updatedBy: actorId, updatedAt: now }).where(and(eq(schema.platformSiteSettings.environment, parsed.entityKey), eq(schema.platformSiteSettings.status, 'draft'))).returning();
@@ -440,9 +445,14 @@ export async function publishPlatformContent(tenantSlug: string, input: Platform
   const parsed = platformPublishActionSchema.parse(input);
   const actor = await requireAreaAccess(tenantSlug, parsed.area);
   const staged = await readEditorialDraft(parsed);
-  if (staged) await saveDraftRecord({ ...parsed, payload: staged }, actor.userId);
-  const mutatedRecords = await publishDraftRecord(parsed, actor.userId);
-  if (staged) await removeEditorialDraft(parsed);
+  const mutatedRecords = staged
+      ? await db.transaction(async (tx) => {
+        await saveDraftRecord({ ...parsed, payload: staged }, actor.userId, tx);
+        const count = await publishDraftRecord(parsed, actor.userId, tx);
+        await removeEditorialDraft(parsed, tx);
+        return count;
+      })
+      : await publishDraftRecord(parsed, actor.userId);
   const auditRecorded = await recordAuditSafely({ tenantSlug, actorUserId: actor.userId, actorEmail: actor.email, action: 'platform_content.published', contentInput: parsed, mutatedRecords });
   revalidatePlatformContentPaths(tenantSlug);
   return { ok: true, status: 'published', actorEmail: actor.email, area: parsed.area, entityType: parsed.entityType, entityKey: parsed.entityKey, mutatedRecords, auditRecorded };

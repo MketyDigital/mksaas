@@ -7,6 +7,7 @@ import type { PlatformContentArea, PlatformContentEntityType } from './action-sc
 import { requirePlatformAppExperienceAccess, requirePlatformContentAccess } from './authorization';
 
 type EditorialKey = { area: PlatformContentArea; entityType: PlatformContentEntityType; entityKey: string };
+type EditorialTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function matches(key: EditorialKey) {
   return and(
@@ -39,6 +40,6 @@ export async function readEditorialDraft(key: EditorialKey): Promise<Record<stri
   return (row?.payloadJson as Record<string, unknown>) ?? null;
 }
 
-export async function removeEditorialDraft(key: EditorialKey) {
-  await db.delete(platformEditorialDrafts).where(matches(key));
+export async function removeEditorialDraft(key: EditorialKey, connection?: EditorialTransaction) {
+  await (connection ?? db).delete(platformEditorialDrafts).where(matches(key));
 }
