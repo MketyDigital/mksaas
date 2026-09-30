@@ -56,6 +56,7 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
   solutionInstanceId?: string | null;
   requestedModel?: string;
   testMode?: boolean;
+  skipInboundRecord?: boolean;
 }): Promise<EnterpriseAiManagedChannelTurnResult> {
   const policy = await getEnterpriseAiRuntimePolicy();
   if (!policy.customerInferenceEnabled) return { kind: 'disabled' };
@@ -87,14 +88,16 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
     replyRecipientId: input.replyRecipientId,
     replyContextId: input.contextId ?? input.externalConversationId,
   });
-  await recordEnterpriseAiMessage({
-    tenantId: input.tenantId,
-    conversationId: conversation.id,
-    direction: 'inbound',
-    role: 'user',
-    providerMessageId: input.providerMessageId,
-    content: input.text,
-  });
+  if (!input.skipInboundRecord) {
+    await recordEnterpriseAiMessage({
+      tenantId: input.tenantId,
+      conversationId: conversation.id,
+      direction: 'inbound',
+      role: 'user',
+      providerMessageId: input.providerMessageId,
+      content: input.text,
+    });
+  }
   if (conversation.status === 'human') {
     return { kind: 'handoff', conversationId: conversation.id };
   }
@@ -340,7 +343,33 @@ export async function runEnterpriseAiManagedChannelTurn(input: {
         providerRequestId: external.providerRequestId,
       };
     }
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const explicitCapacityRejection = /(?:\b429\b|rate.?limit|too many requests|busy|capacity|overloaded)/i.test(message);
+    if (explicitCapacityRejection) {
+      try {
+        await releaseAiCommercialRequest({ admission, reason: 'provider_capacity_rejected' });
+      } catch {
+        await db.update(aiRequests).set({
+          status: 'reconciliation_required',
+          errorCode: 'commercial_reconciliation_required',
+          completedAt: new Date(),
+        }).where(eq(aiRequests.id, requestId));
+        throw new Error('Managed channel commercial holds require reconciliation.');
+      }
+      await db.update(aiRequests).set({
+        status: 'provider_unavailable',
+        errorCode: 'provider_capacity_retryable',
+        completedAt: new Date(),
+      }).where(eq(aiRequests.id, requestId));
+      const retryable = new Error('Enterprise AI provider capacity is temporarily unavailable.');
+      Object.assign(retryable, {
+        code: 'ENTERPRISE_AI_PROVIDER_CAPACITY_RETRYABLE',
+        conversationId: conversation.id,
+      });
+      throw retryable;
+    }
+
     await db.update(aiRequests).set({
       status: 'reconciliation_required',
       errorCode: 'provider_outcome_unknown',
