@@ -4,7 +4,8 @@ import { count, eq } from 'drizzle-orm';
 
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
-import { requireTenantAdmin } from '@/shared/lib/rbac';
+import { requirePermission } from '@/shared/lib/permissions';
+import { getTenantBySlug } from '@/shared/lib/tenant';
 
 export interface AdminStats {
   persons: number;
@@ -13,11 +14,9 @@ export interface AdminStats {
 }
 
 export async function getAdminStats(tenantSlug: string): Promise<AdminStats> {
-  await requireTenantAdmin(tenantSlug);
+  await requirePermission(tenantSlug, 'admin:dashboard');
 
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(schema.tenants.slug, tenantSlug),
-  });
+  const tenant = await getTenantBySlug(tenantSlug);
 
   if (!tenant) throw new Error('Tenant not found');
 
