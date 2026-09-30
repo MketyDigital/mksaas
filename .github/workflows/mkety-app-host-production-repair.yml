@@ -246,10 +246,10 @@ jobs:
           put_secret MKETY_PLATFORM_CONTROL_TENANT_SLUG "$MKETY_PLATFORM_CONTROL_TENANT_SLUG"
           put_secret MKETY_PLATFORM_ADMIN_EMAILS "$MKETY_PLATFORM_ADMIN_EMAILS"
           if [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
-            [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] && [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ] || {
+            if [ -z "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -z "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
               echo "MKETY_DOMAIN_RELAY_URL and MKETY_DOMAIN_RELAY_SECRET must be configured together." >&2
               exit 1
-            }
+            fi
             put_secret MKETY_DOMAIN_RELAY_URL "$MKETY_DOMAIN_RELAY_URL"
             put_secret MKETY_DOMAIN_RELAY_SECRET "$MKETY_DOMAIN_RELAY_SECRET"
           fi
@@ -267,9 +267,9 @@ jobs:
           headers=/tmp/app-preview.headers
           code="$(curl -sS --connect-timeout 10 --max-time 30 -D "$headers" -o /dev/null -w '%{http_code}' "$PREVIEW_URL/app" || true)"
           location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
-          [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ] || {
+          if ! { [ "$code" -ge 300 ] && [ "$code" -lt 400 ] && [ -n "$location" ]; }; then
             echo "Preview /app did not redirect to login." >&2; exit 1;
-          }
+          fi
 
       - name: Back up app.mkety.com DNS and Custom Domain state
         id: snapshot
@@ -369,13 +369,17 @@ jobs:
           app_headers=/tmp/app-live-entry.headers
           app_code="$(curl -sS --connect-timeout 10 --max-time 25 -D "$app_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app')"
           app_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_headers")"
-          [ "$app_code" -ge 300 ] && [ "$app_code" -lt 400 ] && [ -n "$app_location" ] || { echo "Unauthenticated /app did not redirect." >&2; exit 1; }
+          if ! { [ "$app_code" -ge 300 ] && [ "$app_code" -lt 400 ] && [ -n "$app_location" ]; }; then
+            echo "Unauthenticated /app did not redirect." >&2; exit 1;
+          fi
           APP_LOCATION="$app_location" node -e "const u=new URL(process.env.APP_LOCATION,'https://app.mkety.com/app');if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login')process.exit(1)"
 
           auth_headers=/tmp/app-live-auth.headers
           auth_code="$(curl -sS --connect-timeout 10 --max-time 30 -D "$auth_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/api/auth/login?returnTo=/app&intent=signin')"
           auth_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$auth_headers")"
-          [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ] || { echo "Auth first hop did not redirect." >&2; exit 1; }
+          if ! { [ "$auth_code" -ge 300 ] && [ "$auth_code" -lt 400 ] && [ -n "$auth_location" ]; }; then
+            echo "Auth first hop did not redirect." >&2; exit 1;
+          fi
           AUTH_LOCATION="$auth_location" node -e "const u=new URL(process.env.AUTH_LOCATION);if(u.origin!=='https://auth.mkety.com'||!u.pathname.startsWith('/ui/v2/login/'))process.exit(1)"
 
       - name: Disable dedicated Worker preview exposure
@@ -435,7 +439,9 @@ jobs:
           {
             echo '## app.mkety.com production repair'
             echo
-            echo '- Exact production SHA: `${{ env.TARGET_SHA }}`'
+            printf '%s%s%s\n' '- Exact production SHA: `' "$TARGET_SHA" '`'
+            # Markdown code ticks are literal.
+            # shellcheck disable=SC2016
             echo '- Dedicated Worker: `mkety-app-host`'
             echo '- Public mkety.com/www Worker: unchanged'
             echo '- Production DB: existing MKETY_DB Hyperdrive'
