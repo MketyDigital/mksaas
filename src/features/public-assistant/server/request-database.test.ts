@@ -39,7 +39,7 @@ describe('Public Mkety AI request database lifecycle', () => {
     expect(seen).toEqual([firstDb, secondDb]);
     expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(2);
     expect(mockPostgres).toHaveBeenNthCalledWith(1, 'postgresql://runtime.example/mkety', { max: 1, prepare: false });
-    expect(mockPostgres).toHaveBeenNthCalledWith(2, 'postgresql://runtime.example/mkety', { max: 1 });
+    expect(mockPostgres).toHaveBeenNthCalledWith(2, 'postgresql://runtime.example/mkety', { max: 1, prepare: false });
     expect(firstEnd).toHaveBeenCalledTimes(1);
     expect(secondEnd).toHaveBeenCalledTimes(1);
   });
