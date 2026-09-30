@@ -266,8 +266,14 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
                 </label>
                 <label className="text-sm font-medium">
                   Included credits per billing period
-                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="0" />
-                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Credits granted into the customer's Mkety credit balance per paid billing period. Model rate cards determine how quickly those credits are consumed.</span>
+                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" inputMode="numeric" name="includedCredits" pattern="\d+" placeholder="Manual override only" />
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Normally calculated automatically from the internal commercial policy. Enter a value only when you intentionally disable automatic allocation.</span>
+                </label>
+                <label className="flex items-start gap-2 rounded-xl border bg-muted/20 p-3 text-sm font-medium">
+                  <input defaultChecked name="autoIncludedCredits" type="checkbox" />
+                  <span>Automatically calculate monthly credits
+                    <span className="mt-1 block text-xs font-normal text-muted-foreground">Recommended. The server calculates the allowance; the browser cannot override the internal math.</span>
+                  </span>
                 </label>
                 <label className="text-sm font-medium">
                   Funding mode
@@ -294,9 +300,22 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
                 <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
                   Unused funded credits remain available in the prepaid Mkety credit balance. This is fixed policy for the current pooled-credit ledger.
                 </div>
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
-                  The managed AI cost envelope is confidential Mkety profitability policy. It must never be shown in customer-facing APIs, billing pages, usage screens, exports, or white-label surfaces. Setup fees, when used, are collected separately through Enterprise Payments.
-                </div>
+                <details className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">
+                  <summary className="cursor-pointer font-semibold text-foreground">Internal pricing policy — never customer-visible</summary>
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Operations / safety reserve %
+                      <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="10" min={0} max={99.99} name="operationsReservePercent" step="0.01" type="number" />
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">Keeps part of the managed provider-cost envelope unallocated for retries, tools, rounding and operating variance.</span>
+                    </label>
+                    <label className="text-sm font-medium text-foreground">
+                      Customer rate multiplier %
+                      <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="200" min={100} max={1000} name="customerRateMultiplierPercent" step="0.01" type="number" />
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">200% means a 2× Mkety usage-rate multiplier over the verified provider-cost basis. This is internal only.</span>
+                    </label>
+                  </div>
+                  <p className="mt-3">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion are confidential Mkety commercial controls. Customers see only their price/top-ups, credit balance, usage, available features and resulting Mkety model rates.</p>
+                </details>
                 <label className="text-sm font-medium lg:col-span-2">
                   Description
                   <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" maxLength={2000} name="description" rows={3} />
