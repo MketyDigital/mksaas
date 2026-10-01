@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MKETY_ASSIST_CF_SAAS_TOKEN)
+          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: $name"
@@ -57,40 +57,53 @@ jobs:
         working-directory: customer-apps/assist
         run: npm run type-check
 
-      - name: Resolve D1 and Cloudflare zone
+      - name: Resolve Cloudflare zone, account and D1
         id: cloudflare
         shell: bash
         run: |
           set -euo pipefail
 
-          d1_json="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?name=mkety-assist-prod"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          # Resolve the authoritative account from the product zone instead of
+          # trusting a potentially stale repository account-id value.
+          zones="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/zones?name=mkety.app&status=active"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+
+          read -r zone_id resolved_account_id < <(ZONES="$zones" node - <<'NODE'
+          const v = JSON.parse(process.env.ZONES);
+          if (!v.success || !v.result?.[0]?.id || !v.result?.[0]?.account?.id) {
+            throw new Error('Active mkety.app Cloudflare zone/account not found');
+          }
+          process.stdout.write(v.result[0].id + ' ' + v.result[0].account.id);
+          NODE
+          )
+
+          if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ "$CLOUDFLARE_ACCOUNT_ID" != "$resolved_account_id" ]; then
+            echo "::warning::Configured CLOUDFLARE_ACCOUNT_ID differs from mkety.app zone account; using the zone account."
+          fi
+          export CLOUDFLARE_ACCOUNT_ID="$resolved_account_id"
+          echo "CLOUDFLARE_ACCOUNT_ID=$resolved_account_id" >> "$GITHUB_ENV"
+
+          d1_json="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/$resolved_account_id/d1/database?name=mkety-assist-prod"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
 
           d1_id="$(D1_JSON="$d1_json" node - <<'NODE'
           const v = JSON.parse(process.env.D1_JSON);
+          if (!v.success) throw new Error(JSON.stringify(v.errors || v));
           process.stdout.write(v.result?.[0]?.uuid || '');
           NODE
           )"
 
           if [ -z "$d1_id" ]; then
-            created="$(curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-prod"}')"
+            created="$(curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$resolved_account_id/d1/database"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-prod"}')"
             d1_id="$(CREATED="$created" node - <<'NODE'
-            const v = JSON.parse(process.env.CREATED);
-            if (!v.success || !v.result?.uuid) throw new Error(JSON.stringify(v.errors || v));
-            process.stdout.write(v.result.uuid);
-            NODE
+          const v = JSON.parse(process.env.CREATED);
+          if (!v.success || !v.result?.uuid) throw new Error(JSON.stringify(v.errors || v));
+          process.stdout.write(v.result.uuid);
+          NODE
             )"
           fi
 
-          zones="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/zones?name=mkety.app&status=active"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
-          zone_id="$(ZONES="$zones" node - <<'NODE'
-          const v = JSON.parse(process.env.ZONES);
-          if (!v.success || !v.result?.[0]?.id) throw new Error('mkety.app Cloudflare zone not found');
-          process.stdout.write(v.result[0].id);
-          NODE
-          )"
-
           echo "d1_id=$d1_id" >> "$GITHUB_OUTPUT"
           echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+          echo "account_id=$resolved_account_id" >> "$GITHUB_OUTPUT"
 
       - name: Ensure Mkety Assist SaaS DNS topology exists
         env:
