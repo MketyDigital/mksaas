@@ -188,10 +188,38 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     return json({ customer, commercial, features, credits, domains: domains.results ?? [] });
   }
 
+  if (url.pathname === "/api/ops/pricing/calculate" && request.method === "POST") {
+    const body = await readJson(request);
+    const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
+    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+    const result = calculateCommercialPlan({
+      monthlyAmountMinor: positiveInt(body.monthlyAmountMinor, 0),
+      providerEnvelopeBps: positiveInt(body.providerEnvelopeBps, 2500),
+      operationsReserveBps: positiveInt(body.operationsReserveBps, 300),
+      rateMultiplierBps: positiveInt(body.rateMultiplierBps, 10000),
+      creditUsdMicros,
+    });
+    return json({ ...result, creditUsdMicros });
+  }
+
   if (url.pathname === "/api/ops/policy" && request.method === "PATCH") {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
     const now = unix();
+    let includedCreditsValue = nullableInt(body.includedCredits);
+    if (body.autoCalculateCredits === true) {
+      const current = await env.DB.prepare("SELECT * FROM commercial_policy WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
+      if (!current) return json({ error: "commercial_policy_not_found" }, 404);
+      const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
+      const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+      includedCreditsValue = calculateCommercialPlan({
+        monthlyAmountMinor: body.subscriptionAmountMinor === undefined ? Number(current.subscription_amount_minor) : positiveInt(body.subscriptionAmountMinor, 0),
+        providerEnvelopeBps: body.providerEnvelopeBps === undefined ? Number(current.provider_envelope_bps) : positiveInt(body.providerEnvelopeBps, 0),
+        operationsReserveBps: body.operationsReserveBps === undefined ? Number(current.operations_reserve_bps) : positiveInt(body.operationsReserveBps, 0),
+        rateMultiplierBps: body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000),
+        creditUsdMicros,
+      }).includedCredits;
+    }
     await env.DB.batch([
       env.DB.prepare(`UPDATE commercial_policy SET
         subscription_amount_minor=COALESCE(?,subscription_amount_minor),
@@ -203,7 +231,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         topup_enabled=COALESCE(?,topup_enabled),
         updated_at=? WHERE customer_id=?`)
         .bind(
-          nullableInt(body.subscriptionAmountMinor), nullableInt(body.includedCredits),
+          nullableInt(body.subscriptionAmountMinor), includedCreditsValue,
           nullableInt(body.providerEnvelopeBps), nullableInt(body.operationsReserveBps),
           nullableInt(body.rateMultiplierBps), nullableBoolInt(body.hardStopEnabled),
           nullableBoolInt(body.topupEnabled), now, customerId,
@@ -229,7 +257,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(id("aud"), "operator", customerId, "policy.updated", "customer", customerId, now),
     ]);
-    return json({ ok: true });
+    return json({ ok: true, includedCredits: includedCreditsValue });
   }
 
   if (url.pathname === "/api/ops/models" && request.method === "GET") {
@@ -1057,6 +1085,25 @@ function normalizeHostname(value: string) {
 
 function optionalHostname(value: unknown) {
   return typeof value === "string" && value.trim() ? normalizeHostname(value) : null;
+}
+
+function calculateCommercialPlan(input: {
+  monthlyAmountMinor: number;
+  providerEnvelopeBps: number;
+  operationsReserveBps: number;
+  rateMultiplierBps: number;
+  creditUsdMicros: number;
+}) {
+  if (input.monthlyAmountMinor <= 0) throw new HttpError(400, "monthly_amount_must_be_positive");
+  if (input.providerEnvelopeBps < 1 || input.providerEnvelopeBps > 10000) throw new HttpError(400, "provider_envelope_invalid");
+  if (input.operationsReserveBps < 0 || input.operationsReserveBps >= 10000) throw new HttpError(400, "operations_reserve_invalid");
+  if (input.rateMultiplierBps < 10000 || input.rateMultiplierBps > 100000) throw new HttpError(400, "rate_multiplier_invalid");
+  const monthlyUsdMicros = input.monthlyAmountMinor * 10000;
+  const providerEnvelopeUsdMicros = Math.floor(monthlyUsdMicros * input.providerEnvelopeBps / 10000);
+  const usableProviderUsdMicros = Math.floor(providerEnvelopeUsdMicros * (10000 - input.operationsReserveBps) / 10000);
+  const customerUsageValueUsdMicros = Math.floor(usableProviderUsdMicros * input.rateMultiplierBps / 10000);
+  const includedCredits = Math.floor(customerUsageValueUsdMicros / Math.max(1, input.creditUsdMicros));
+  return { providerEnvelopeUsdMicros, usableProviderUsdMicros, customerUsageValueUsdMicros, includedCredits };
 }
 
 function costToBaseCredits(providerCostMicros: number, creditUsdMicros: number) {
