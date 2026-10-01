@@ -1,5 +1,6 @@
 import { verifyNowPaymentsWebhook } from '@/features/enterprise-checkout/providers/nowpayments-webhook';
 import { enterpriseOrderRepository } from '@/features/enterprise-checkout/server/repository';
+import { parseMketyPaymentReference } from '@/features/payments/reference';
 import { createLogger } from '@/shared/lib/logger';
 
 const logger = createLogger({ module: 'enterprise-nowpayments-webhook' });
@@ -15,14 +16,18 @@ export async function POST(request: Request) {
   try {
     const rawBody = await request.text();
     const event = await verifyNowPaymentsWebhook(rawBody, request.headers.get('x-nowpayments-sig'), secret);
-    const order = await enterpriseOrderRepository.findById(event.orderId);
+    const canonical = parseMketyPaymentReference(event.orderId);
+    const resolvedOrderId = canonical?.source === 'enterprise' && canonical.targetUuid
+      ? `MKETY-ENT-${canonical.targetUuid}`
+      : event.orderId;
+    const order = await enterpriseOrderRepository.findById(resolvedOrderId);
     if (!order || order.paymentProvider !== 'nowpayments') {
       return json({ success: false, message: 'Order not found.' }, 404);
     }
 
     if (event.paymentStatus === 'finished') {
       await enterpriseOrderRepository.applyPaymentState({
-        orderId: event.orderId,
+        orderId: resolvedOrderId,
         paymentStatus: 'confirmed',
         checkoutStatus: 'completed',
         providerPaymentReference: event.paymentId,
@@ -30,7 +35,7 @@ export async function POST(request: Request) {
       });
     } else if (['failed', 'expired', 'refunded'].includes(event.paymentStatus)) {
       await enterpriseOrderRepository.applyPaymentState({
-        orderId: event.orderId,
+        orderId: resolvedOrderId,
         paymentStatus: 'failed',
         checkoutStatus: 'failed',
         providerPaymentReference: event.paymentId,
@@ -38,7 +43,7 @@ export async function POST(request: Request) {
       });
     } else {
       await enterpriseOrderRepository.applyPaymentState({
-        orderId: event.orderId,
+        orderId: resolvedOrderId,
         paymentStatus: 'pending',
         checkoutStatus: 'awaiting_confirmation',
         providerPaymentReference: event.paymentId,

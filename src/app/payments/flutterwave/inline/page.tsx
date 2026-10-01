@@ -2,10 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { FlutterwaveInlineLauncher } from '@/features/payments/components/FlutterwaveInlineLauncher';
-import {
-  createFlutterwaveInlinePayload,
-  createSaasFlutterwaveMetadata,
-} from '@/features/payments/flutterwave-standard';
+import { createCentralFlutterwaveCheckout } from '@/features/payments/central-flutterwave-broker';
 import { db } from '@/shared/db';
 import { billingCheckouts, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -61,36 +58,34 @@ export default async function FlutterwaveInlinePage({ searchParams }: PageProps)
   const returnPath = validReturnPath(String(query.returnPath ?? ''), tenant.slug);
   if (!returnPath) notFound();
 
-  const publicKey = process.env.FLUTTERWAVE_PUBLIC_KEY;
-  const secretKey = process.env.FLUTTERWAVE_STANDARD_SECRET_KEY;
-  const webhookHash = process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH;
-  if (!publicKey || !secretKey || !webhookHash) {
-    throw new Error('Flutterwave Inline is not fully configured.');
-  }
+  const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
+  if (!brokerSecret) throw new Error('Mkety Flutterwave payment broker is not configured.');
 
-  const amountMinor = checkout.providerAmountExpectedMinor ?? checkout.amountExpectedMinor;
-  const currency = checkout.providerCurrency ?? checkout.currency;
-  const payload = await createFlutterwaveInlinePayload({
-    reference: checkout.providerCheckoutId,
-    amountMinor,
-    currency,
-    email: session.user.email ?? '',
-    customerName: session.user.name ?? undefined,
-    redirectPath: returnPath,
-    metadata: {
-      ...createSaasFlutterwaveMetadata(checkout.id, checkout.tenantId),
-      canonical_amount_minor: checkout.amountExpectedMinor.toString(),
-      canonical_currency: checkout.currency,
-      provider_amount_minor: amountMinor.toString(),
-      provider_currency: currency,
+  const appOrigin = process.env.NEXT_PUBLIC_APP_URL || 'https://app.mkety.com';
+  const broker = await createCentralFlutterwaveCheckout(
+    {
+      source: 'saas',
+      reference: checkout.providerCheckoutId,
+      canonicalAmountMinor: checkout.amountExpectedMinor,
+      requestedPaymentCurrency: checkout.providerCurrency ?? checkout.currency,
+      email: session.user.email ?? '',
+      customerName: session.user.name ?? undefined,
+      tenantId: checkout.tenantId,
+      checkoutId: checkout.id,
+      redirectUrl: new URL(returnPath, appOrigin).toString(),
     },
-    publicKey,
-    secretKey,
-  });
+    {
+      brokerSecret,
+      experience: 'inline',
+    },
+  );
+
+  if (broker.experience === 'hosted' && broker.checkoutUrl) redirect(broker.checkoutUrl);
+  if (!broker.inline) throw new Error('Flutterwave Inline payload was not returned by the Mkety payment broker.');
 
   return (
     <main className="min-h-screen bg-background px-6 py-14">
-      <FlutterwaveInlineLauncher payload={payload} />
+      <FlutterwaveInlineLauncher payload={broker.inline} />
     </main>
   );
 }

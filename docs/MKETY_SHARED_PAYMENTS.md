@@ -9,7 +9,7 @@ This document is the operational source of truth for the shared Mkety payment bo
 The active provider set is:
 
 - **NOWPayments** — primary/default crypto path.
-- **Flutterwave v3** — Inline for Mkety-owned checkout pages; v3 Standard API only for the central cross-product broker where a hosted link is required.
+- **Flutterwave v3** — centralized behind the Mkety checkout broker. Mkety-owned products and external Mkety products use the same broker contract; the broker may return Inline or hosted checkout as requested.
 - **Kora Checkout Standard** — provider-controlled checkout embedded inside Mkety-owned payment pages.
 
 Selar is not an active Mkety payment provider.
@@ -27,7 +27,7 @@ Flutterwave v4 is not part of the active runtime. Flutterwave's current platform
 7. Provider secrets are server-only.
 8. Mkety never collects or stores raw card details.
 9. Products must use the shared payment boundary rather than owning independent provider credentials and settlement logic.
-10. NOWPayments behavior remains unchanged unless a separate payment migration explicitly changes it.
+10. NOWPayments invoices use canonical short Mkety references (`SAAS-MKS-*`, `ENT-MKE-*`, etc.); legacy billing references remain accepted only for settlement compatibility.
 
 ## High-level topology
 
@@ -39,8 +39,8 @@ Shared Mkety payment boundary
         |
         +-- NOWPayments ------> hosted invoice / crypto flow
         |
-        +-- Flutterwave v3 ---> Inline on Mkety-owned pages
-        |                       or Standard hosted link for broker clients
+        +-- Flutterwave v3 ---> central broker
+        |                       -> Inline or Standard hosted checkout
         |
         +-- Kora -------------> Checkout Standard iframe/modal on Mkety pages
         |
@@ -65,25 +65,20 @@ NOWPAYMENTS_API_KEY
 NOWPAYMENTS_IPN_SECRET
 ```
 
-Self-service SaaS checkout uses the existing NOWPayments invoice flow. Enterprise uses the existing admin-issued exact-amount NOWPayments flow. Existing IPN verification and final-`finished` settlement semantics remain authoritative.
+Self-service SaaS checkout and Enterprise exact-amount checkout use the same NOWPayments invoice contract proven by Mkety Media: a short Mkety-owned order reference, provider invoice ID, hosted invoice URL, and Mkety embedded widget page. Existing IPN verification and final-`finished` settlement semantics remain authoritative.
 
 ### Flutterwave v3
 
-Mkety-owned Inline checkout is available only when all of the following exist:
+Flutterwave checkout is available only through the shared Mkety broker boundary. The central broker runtime requires:
 
 ```text
 FLUTTERWAVE_PUBLIC_KEY
 FLUTTERWAVE_STANDARD_SECRET_KEY
 FLUTTERWAVE_STANDARD_WEBHOOK_HASH
-```
-
-The optional cross-product hosted-checkout broker additionally requires:
-
-```text
 FLUTTERWAVE_CHECKOUT_BROKER_SECRET
 ```
 
-The public key is safe to pass to Flutterwave Inline. The secret key and webhook hash stay server-side.
+Product runtimes such as `app.mkety.com` only need the shared broker secret to request a checkout from the central `mkety.com` payment service. The provider secret key and webhook hash stay on the central payment authority.
 
 ### Kora
 
@@ -98,27 +93,19 @@ The public key is passed to Kora's provider-controlled Checkout Standard UI. The
 
 ## Mkety-owned checkout UX
 
-### Flutterwave Inline
+### Flutterwave shared broker
 
-Mkety self-service and Enterprise Flutterwave payments start on Mkety-owned pages.
+Mkety self-service, Enterprise AI, public Enterprise, and Mkety Media use the same central Flutterwave payment authority.
 
-The server:
+The product server:
 
 1. creates/persists the Mkety checkout or Enterprise order;
 2. creates the canonical Mkety payment reference;
-3. resolves the exact provider amount/currency;
-4. generates Flutterwave's `payload_hash` using the server-only secret key;
-5. renders only the public checkout payload to the browser.
+3. calls `POST https://mkety.com/api/payments/flutterwave/start` with `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`;
+4. sends canonical USD value, requested collection currency, customer identity, owning checkout/order IDs, and an allow-listed Mkety redirect;
+5. receives the exact provider quote and either an Inline payload or hosted checkout URL.
 
-The browser then loads:
-
-```text
-https://checkout.flutterwave.com/v3.js
-```
-
-and opens `FlutterwaveCheckout(...)` over the Mkety payment page.
-
-The user therefore remains visually inside Mkety while sensitive card/bank/payment UI is controlled by Flutterwave.
+Mkety Media requests Inline and loads Flutterwave's official browser SDK. Main Mkety billing, Enterprise AI, public Enterprise, and Media request the broker-issued Inline experience and launch Flutterwave's official SDK from a Mkety page. If the broker returns a hosted fallback instead, the Mkety page redirects to that provider URL. All paths use the same central quote, reference, secret ownership, webhook verification, and settlement router.
 
 The success/redirect path is informational only. It never activates subscription access or confirms an Enterprise order.
 
@@ -130,11 +117,11 @@ The browser loads Kora Checkout Standard with the public key and an Mkety-genera
 
 The Kora success/pending/failed/close callbacks update only the customer-facing state. They do not settle payment.
 
-## Flutterwave v3 Standard broker
+## Flutterwave v3 central broker
 
-Some independently deployed Mkety products cannot render the central Mkety Inline page and instead require a hosted provider link. Mkety Assist uses this boundary for customer credit top-ups.
+The central broker is the payment boundary for Mkety Platform, Enterprise AI, public Enterprise, Media, Host, and Assist. Products do not create Flutterwave provider checkouts directly.
 
-For that compatibility boundary only, the central broker remains:
+The canonical broker remains:
 
 ```text
 POST https://mkety.com/api/payments/flutterwave/start
@@ -291,8 +278,8 @@ The customer cannot edit the commercial amount.
 
 Provider behavior:
 
-- NOWPayments -> secure invoice/link;
-- Flutterwave -> Mkety Enterprise payment page + Flutterwave Inline;
+- NOWPayments -> canonical short Mkety reference -> provider invoice -> embedded Mkety widget page with hosted-link fallback;
+- Flutterwave -> central Mkety broker -> provider-hosted checkout (or broker-issued Inline payload where that product deliberately uses Inline);
 - Kora -> Mkety Enterprise payment page + embedded Kora Checkout Standard.
 
 Enterprise payment remains pending until verified settlement. Creating or paying a link does not automatically grant a subscription, credits, wallet funds, infrastructure, or workspace entitlements.

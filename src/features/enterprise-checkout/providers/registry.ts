@@ -10,6 +10,7 @@ interface EnterpriseProviderEnvironment {
   FLUTTERWAVE_PUBLIC_KEY?: string;
   FLUTTERWAVE_STANDARD_SECRET_KEY?: string;
   FLUTTERWAVE_STANDARD_WEBHOOK_HASH?: string;
+  FLUTTERWAVE_CHECKOUT_BROKER_SECRET?: string;
   KORA_PUBLIC_KEY?: string;
   KORA_SECRET_KEY?: string;
 }
@@ -25,13 +26,13 @@ export function getEnterprisePaymentProvider(
       if (
         !environment.FLUTTERWAVE_PUBLIC_KEY ||
         !environment.FLUTTERWAVE_STANDARD_SECRET_KEY ||
-        !environment.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
+        !environment.FLUTTERWAVE_STANDARD_WEBHOOK_HASH ||
+        !environment.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
       ) {
-        throw new Error('Flutterwave Inline is not fully configured.');
+        throw new Error('Mkety Flutterwave payment broker is not fully configured.');
       }
       return createFlutterwaveEnterpriseAdapter({
-        publicKey: environment.FLUTTERWAVE_PUBLIC_KEY,
-        standardSecretKey: environment.FLUTTERWAVE_STANDARD_SECRET_KEY,
+        brokerSecret: environment.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
       });
     case 'kora':
       if (!environment.KORA_PUBLIC_KEY || !environment.KORA_SECRET_KEY) {

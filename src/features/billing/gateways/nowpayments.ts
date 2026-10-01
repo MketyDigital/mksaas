@@ -1,4 +1,5 @@
 import { verifyNowPaymentsWebhook } from '@/features/enterprise-checkout/providers/nowpayments-webhook';
+import { createMketyPaymentReference, parseMketyPaymentReference } from '@/features/payments/reference';
 
 import { parseVerifiedSettlementFields, toNormalizedSettlement } from './normalization';
 import { NOWPAYMENTS_CAPABILITIES } from './nowpayments-capabilities';
@@ -34,8 +35,11 @@ function usdValueToMinorUnits(value: unknown): bigint {
 }
 
 export function parseMketyBillingOrderId(orderId: string): string | null {
-  const match = /^MKBILL-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(orderId);
-  return match?.[1] ?? null;
+  const legacy = /^MKBILL-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(orderId);
+  if (legacy?.[1]) return legacy[1];
+
+  const canonical = parseMketyPaymentReference(orderId);
+  return canonical?.source === 'saas' ? canonical.targetUuid ?? null : null;
 }
 
 export interface CreateNowPaymentsBillingAdapterOptions {
@@ -58,6 +62,7 @@ export function createNowPaymentsBillingAdapter(
       if (!options.apiKey) throw new Error('NOWPayments is not configured.');
       if (input.currency !== 'USD') throw new Error('NOWPayments self-service checkout currently requires USD.');
 
+      const orderReference = createMketyPaymentReference('saas', input.checkoutId);
       const response = await fetchImpl(NOWPAYMENTS_INVOICE_ENDPOINT, {
         method: 'POST',
         headers: {
@@ -67,8 +72,8 @@ export function createNowPaymentsBillingAdapter(
         body: JSON.stringify({
           price_amount: minorUnitsToUsd(input.amountExpectedMinor),
           price_currency: 'usd',
-          order_id: `MKBILL-${input.checkoutId}`,
-          order_description: 'Mkety self-service subscription',
+          order_id: orderReference,
+          order_description: 'Mkety billing',
           ipn_callback_url: options.webhookUrl ?? MKETY_BILLING_WEBHOOK_URL,
           success_url: input.returnUrl,
           cancel_url: input.cancelUrl,

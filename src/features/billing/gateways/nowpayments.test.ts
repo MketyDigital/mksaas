@@ -61,14 +61,17 @@ describe('NOWPayments Billing adapter', () => {
     expect(body).toMatchObject({
       price_amount: 16.99,
       price_currency: 'usd',
-      order_id: 'MKBILL-6fdd16e0-b8a3-4f8d-9f74-3d9157320189',
+      order_id: 'SAAS-MKS-6fdd16e0b8a34f8d9f743d9157320189',
       ipn_callback_url: 'https://mkety.example/api/webhooks/billing/nowpayments',
       success_url: 'https://mkety.example/return',
       cancel_url: 'https://mkety.example/cancel',
     });
   });
 
-  it('parses only Mkety Billing checkout order identifiers', () => {
+  it('parses canonical and legacy Mkety Billing checkout order identifiers', () => {
+    expect(parseMketyBillingOrderId('SAAS-MKS-6fdd16e0b8a34f8d9f743d9157320189')).toBe(
+      '6fdd16e0-b8a3-4f8d-9f74-3d9157320189',
+    );
     expect(parseMketyBillingOrderId('MKBILL-6fdd16e0-b8a3-4f8d-9f74-3d9157320189')).toBe(
       '6fdd16e0-b8a3-4f8d-9f74-3d9157320189',
     );
