@@ -41,7 +41,7 @@ export default async function MailLayout({
   params: Promise<{ tenant: string }>;
 }) {
   const { tenant } = await params;
-  const base = `/t/${tenant}/mail`;
+  const base = `/app/${tenant}/mail`;
 
   return (
     <div className="space-y-6">
