@@ -1,0 +1,104 @@
+name: Assist Setup Production Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/assist-setup-500-20261001
+    paths:
+      - '.github/workflows/mkety-assist-setup-prod-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Assist tooling
+        working-directory: customer-apps/assist
+        run: npm install --no-audit --no-fund
+
+      - name: Run production setup regression
+        working-directory: customer-apps/assist
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          zones="$(curl -fsS "https://api.cloudflare.com/client/v4/zones?name=mkety.app&status=active" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          account_id="$(ZONES="$zones" node -e "const v=JSON.parse(process.env.ZONES);if(!v.success||!v.result?.[0]?.account?.id)process.exit(1);process.stdout.write(v.result[0].account.id)")"
+          db="$(curl -fsS "https://api.cloudflare.com/client/v4/accounts/$account_id/d1/database?name=mkety-assist-prod" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          d1_id="$(DB="$db" node -e "const v=JSON.parse(process.env.DB);if(!v.success||!v.result?.[0]?.uuid)process.exit(1);process.stdout.write(v.result[0].uuid)")"
+
+          node -e "const fs=require('fs');const raw=fs.readFileSync('wrangler.jsonc','utf8');fs.writeFileSync('wrangler.diag.jsonc',raw.replace('__MKETY_ASSIST_D1_DATABASE_ID__',process.argv[1]))" "$d1_id"
+
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          slug="diagsetup${suffix//-/}"
+          customer_id="cus_diag_${suffix//-/}"
+          user_id="usr_diag_${suffix//-/}"
+          setup_id="set_diag_${suffix//-/}"
+          token="assist-diag-token-${suffix}"
+          email="assist-diag-${suffix}@example.invalid"
+          now="$(date +%s)"
+          exp="$((now+3600))"
+          token_hash="$(TOKEN="$token" node -e "require('crypto').webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(process.env.TOKEN)).then(x=>process.stdout.write(Buffer.from(x).toString('hex')))")"
+
+          cleanup() {
+            npx wrangler d1 execute DB --remote --config wrangler.diag.jsonc --command "DELETE FROM customers WHERE id='$customer_id'; DELETE FROM users WHERE id='$user_id';" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          npx wrangler d1 execute DB --remote --config wrangler.diag.jsonc --command "
+            INSERT INTO customers (id,slug,name,status,created_at,updated_at) VALUES ('$customer_id','$slug','Assist setup diagnostic','active',$now,$now);
+            INSERT INTO users (id,email,status,created_at,updated_at) VALUES ('$user_id','$email','active',$now,$now);
+            INSERT INTO customer_users (customer_id,user_id,role,created_at) VALUES ('$customer_id','$user_id','owner',$now);
+            INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES ('$setup_id','$customer_id','$user_id','$token_hash',$exp,$now);
+          " >/tmp/assist-diag-seed.txt
+          cat /tmp/assist-diag-seed.txt
+
+          : >/tmp/assist-tail.log
+          timeout 45s npx wrangler tail mkety-assist --format json >/tmp/assist-tail.log 2>&1 &
+          tail_pid=$!
+          sleep 5
+
+          base="https://$slug.assist.mkety.app"
+          validate_code="$(curl -sS -o /tmp/validate.json -w '%{http_code}' "$base/api/auth/setup/validate?token=$token")"
+          echo "validate_http=$validate_code"
+          cat /tmp/validate.json
+
+          setup_code="$(curl -sS -o /tmp/setup.json -w '%{http_code}' -X POST "$base/api/auth/setup" -H "Origin: $base" -H 'Content-Type: application/json' --data-binary "$(TOKEN="$token" node -e "process.stdout.write(JSON.stringify({token:process.env.TOKEN,password:'Diagnostic-password-2026!'}))")")"
+          echo "setup_http=$setup_code"
+          cat /tmp/setup.json
+
+          sleep 5
+          kill "$tail_pid" 2>/dev/null || true
+          wait "$tail_pid" 2>/dev/null || true
+
+          echo "---- sanitized worker exceptions ----"
+          node - <<'NODE'
+          const fs=require('fs');
+          const raw=fs.readFileSync('/tmp/assist-tail.log','utf8');
+          for(const line of raw.split(/\r?\n/)){
+            let x; try{x=JSON.parse(line)}catch{continue}
+            const exceptions=Array.isArray(x.exceptions)?x.exceptions:[];
+            for(const e of exceptions){
+              console.log(JSON.stringify({name:String(e?.name||''),message:String(e?.message||'').slice(0,1000)}));
+            }
+            const logs=Array.isArray(x.logs)?x.logs:[];
+            for(const l of logs){
+              const message=Array.isArray(l?.message)?l.message.join(' '):String(l?.message||'');
+              if(/setup|error|exception|D1/i.test(message)) console.log(JSON.stringify({level:l?.level,message:message.slice(0,1000)}));
+            }
+          }
+          NODE
+
+          test "$validate_code" = "200"
+          test "$setup_code" = "200"
