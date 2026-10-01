@@ -38,7 +38,7 @@ export async function saveIntegrationFeatureFlags(
       }
     }
 
-    revalidatePath(`/t/${tenantSlug}/admin/integrations`);
+    revalidatePath(`/app/${tenantSlug}/admin/integrations`);
 
     return { success: true };
   } catch (error) {
