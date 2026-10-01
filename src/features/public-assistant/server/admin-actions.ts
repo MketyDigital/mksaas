@@ -16,7 +16,7 @@ import {
   type PublicAIProviderId,
 } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import {
   platformAppControlCenterModules,
   platformAppExperienceRevisions,
@@ -170,13 +170,28 @@ async function updatePublicAiRoutingImpl(tenantSlug: string, formData: FormData)
 }
 
 export async function savePublicAiProviderConnection(...args: Parameters<typeof savePublicAiProviderConnectionImpl>) {
-  return withServerActionDatabase(() => savePublicAiProviderConnectionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'savePublicAiProviderConnection',
+    work: () => savePublicAiProviderConnectionImpl(...args),
+  });
 }
 
 export async function disablePublicAiProviderConnection(...args: Parameters<typeof disablePublicAiProviderConnectionImpl>) {
-  return withServerActionDatabase(() => disablePublicAiProviderConnectionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'disablePublicAiProviderConnection',
+    work: () => disablePublicAiProviderConnectionImpl(...args),
+  });
 }
 
 export async function updatePublicAiRouting(...args: Parameters<typeof updatePublicAiRoutingImpl>) {
-  return withServerActionDatabase(() => updatePublicAiRoutingImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'updatePublicAiRouting',
+    work: () => updatePublicAiRoutingImpl(...args),
+  });
 }

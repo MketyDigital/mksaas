@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import { mediaTenantLinks, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -83,5 +83,10 @@ async function saveMediaTenantLinkImpl(
 }
 
 export async function saveMediaTenantLink(...args: Parameters<typeof saveMediaTenantLinkImpl>) {
-  return withServerActionDatabase(() => saveMediaTenantLinkImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/media-connector`,
+    action: 'save-media-tenant-link',
+    work: () => saveMediaTenantLinkImpl(...args),
+  });
 }

@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { grantCredits } from '@/features/usage-credits/server/service';
@@ -55,5 +55,10 @@ async function grantManualTenantCreditsImpl(opsTenantSlug: string, formData: For
 
 export async function grantManualTenantCredits(...args: Parameters<typeof grantManualTenantCreditsImpl>) {
   'use server';
-  return withServerActionDatabase(() => grantManualTenantCreditsImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/billing-ledger`,
+    action: 'manual-credit-grant',
+    work: () => grantManualTenantCreditsImpl(...args),
+  });
 }

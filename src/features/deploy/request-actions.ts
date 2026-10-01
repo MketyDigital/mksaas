@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import { deploymentRequests } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -58,5 +58,10 @@ async function reviewDeploymentRequestImpl(formData: FormData) {
 }
 
 export async function reviewDeploymentRequest(formData: FormData) {
-  return withServerActionDatabase(() => reviewDeploymentRequestImpl(formData));
+  const tenantSlug = String(formData.get('tenantSlug') || '');
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/deployments-domains`,
+    action: 'deployment-review',
+    work: () => reviewDeploymentRequestImpl(formData),
+  });
 }

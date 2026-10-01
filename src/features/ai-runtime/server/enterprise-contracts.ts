@@ -14,7 +14,7 @@ import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import {
   aiEnterpriseCommercialPolicies,
   billingCheckouts,
@@ -232,9 +232,11 @@ export async function createEnterpriseAiContractVersion(
   formData: FormData,
 ) {
   'use server';
-  return withServerActionDatabase(() =>
-    createEnterpriseAiContractVersionImpl(opsTenantSlug, formData),
-  );
+  return runPlatformControlMutation({
+    path: `/t/${opsTenantSlug}/admin/platform-control/ai-operations`,
+    action: 'enterprise-ai-contract',
+    work: () => createEnterpriseAiContractVersionImpl(opsTenantSlug, formData),
+  });
 }
 
 export async function getActiveEnterpriseAiContract(tenantId: string) {
