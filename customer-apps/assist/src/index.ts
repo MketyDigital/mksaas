@@ -225,10 +225,87 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/ops/models" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      `SELECT r.*, (SELECT version FROM model_rates mr WHERE mr.alias=r.alias ORDER BY version DESC LIMIT 1) AS rate_version
-       FROM model_routes r ORDER BY alias`,
+      `SELECT r.*,
+         mr.version AS rate_version,
+         mr.input_credits_per_million,
+         mr.output_credits_per_million,
+         mr.image_credits,
+         mr.audio_credits_per_minute,
+         mr.effective_at
+       FROM model_routes r
+       LEFT JOIN model_rates mr ON mr.id=(
+         SELECT id FROM model_rates x WHERE x.alias=r.alias ORDER BY x.version DESC LIMIT 1
+       )
+       ORDER BY r.alias`,
     ).all();
     return json({ models: rows.results ?? [] });
+  }
+
+  if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
+    const alias = decodeURIComponent(url.pathname.slice("/api/ops/models/".length));
+    const current = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? LIMIT 1").bind(alias).first<any>();
+    if (!current) return json({ error: "model_alias_not_found" }, 404);
+    const body = await readJson(request);
+    const now = unix();
+    await env.DB.prepare(
+      `UPDATE model_routes SET provider=COALESCE(?,provider),provider_model=COALESCE(?,provider_model),
+       fallback_provider=?,fallback_model=?,status=COALESCE(?,status),updated_at=? WHERE alias=?`,
+    ).bind(
+      body.provider ?? null,
+      body.providerModel ?? null,
+      body.fallbackProvider ?? current.fallback_provider ?? null,
+      body.fallbackModel ?? current.fallback_model ?? null,
+      body.status ?? null,
+      now,
+      alias,
+    ).run();
+
+    const rateFields = ["inputCreditsPerMillion","outputCreditsPerMillion","imageCredits","audioCreditsPerMinute"];
+    if (rateFields.some((key) => body[key] !== undefined)) {
+      const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?").bind(alias).first<any>();
+      await env.DB.prepare(
+        `INSERT INTO model_rates
+         (id,alias,version,input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,effective_at,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        id("rate"), alias, Number(latest?.v || 0) + 1,
+        positiveInt(body.inputCreditsPerMillion, 0),
+        positiveInt(body.outputCreditsPerMillion, 0),
+        positiveInt(body.imageCredits, 0),
+        positiveInt(body.audioCreditsPerMinute, 0),
+        now, now,
+      ).run();
+    }
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
+    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias }), now).run();
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/ops/health" && request.method === "GET") {
+    const [customers, assistants, overdue, webhookErrors, openHandoffs] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS n FROM customers WHERE status='active'").first<any>(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM assistants WHERE status='active'").first<any>(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM reminders WHERE status='scheduled' AND due_at<?").bind(unix()).first<any>(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM webhook_events WHERE status='error' AND received_at>?").bind(unix()-86400).first<any>(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM human_handoffs WHERE status='open'").first<any>(),
+    ]);
+    return json({
+      status: Number(overdue?.n || 0) || Number(webhookErrors?.n || 0) ? "attention" : "healthy",
+      activeCustomers: Number(customers?.n || 0),
+      activeAssistants: Number(assistants?.n || 0),
+      overdueReminders: Number(overdue?.n || 0),
+      webhookErrors24h: Number(webhookErrors?.n || 0),
+      openHandoffs: Number(openHandoffs?.n || 0),
+    });
+  }
+
+  if (url.pathname === "/api/ops/audit" && request.method === "GET") {
+    const customerId = url.searchParams.get("customerId");
+    const rows = customerId
+      ? await env.DB.prepare("SELECT * FROM audit_events WHERE customer_id=? ORDER BY created_at DESC LIMIT 200").bind(customerId).all()
+      : await env.DB.prepare("SELECT * FROM audit_events ORDER BY created_at DESC LIMIT 200").all();
+    return json({ events: rows.results ?? [] });
   }
 
   if (url.pathname === "/api/ops/domains/status" && request.method === "GET") {
