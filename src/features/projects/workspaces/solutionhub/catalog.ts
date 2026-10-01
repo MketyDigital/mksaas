@@ -128,7 +128,7 @@ export function getSolutionHubEntryDestination(
     throw new Error(`Shared-platform SolutionHub entry has no workspace target: ${entry.key}`);
   }
 
-  return `/t/${context.tenantSlug}/projects/${context.projectSlug}/${entry.workspaceTarget}`;
+  return `/app/${context.tenantSlug}/projects/${context.projectSlug}/${entry.workspaceTarget}`;
 }
 
 export function getSolutionHubEntryCtaLabel(entry: SolutionHubCatalogEntry) {
