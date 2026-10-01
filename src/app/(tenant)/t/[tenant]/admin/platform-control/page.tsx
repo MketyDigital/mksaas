@@ -72,31 +72,31 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <Link href={`/t/${tenant}/admin/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+          <Link href={`/ops/${tenant}/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">NOWPayments</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {readinessLabel(paymentReadiness.nowpayments, 'Ready · embedded crypto checkout', 'Needs API + IPN secrets')}
             </p>
           </Link>
-          <Link href={`/t/${tenant}/admin/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+          <Link href={`/ops/${tenant}/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">Flutterwave</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {readinessLabel(paymentReadiness.flutterwave, 'Ready · v3 Inline + shared broker', 'Needs Standard/Inline runtime configuration')}
             </p>
           </Link>
-          <Link href={`/t/${tenant}/admin/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+          <Link href={`/ops/${tenant}/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">Kora</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {readinessLabel(paymentReadiness.kora, 'Ready · embedded checkout', 'Deferred · hidden until configured')}
             </p>
           </Link>
-          <Link href={`/t/${tenant}/admin/platform-control/domains-routing`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+          <Link href={`/ops/${tenant}/platform-control/domains-routing`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">Mkety Domains</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {readinessLabel(domainRegistrarReady, 'Ready · registration and pricing connected', 'Needs registrar connection')}
             </p>
           </Link>
-          <Link href={`/t/${tenant}/admin/platform-control/domains-routing`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
+          <Link href={`/ops/${tenant}/platform-control/domains-routing`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">Mkety DNS</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {readinessLabel(domainDnsReady, 'Ready · DNS and custom hostnames connected', 'Needs DNS routing connection')}
@@ -106,7 +106,7 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Link href={`/t/${tenant}/admin/platform-control/enterprise-payments`}>
+        <Link href={`/ops/${tenant}/platform-control/enterprise-payments`}>
           <Card className="h-full rounded-2xl border-primary/25 bg-primary/[0.03] transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg">
             <CardHeader>
               <div className="mb-4 flex items-center justify-between">
@@ -128,7 +128,7 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
         {modules.map((module) => {
           const Icon = iconMap[module.iconKey as keyof typeof iconMap] ?? Shield;
           return (
-            <Link key={module.key} href={`/t/${tenant}${module.href}`}>
+            <Link key={module.key} href={`/ops/${tenant}${module.href.replace("/admin", "")}`}>
               <Card className="h-full rounded-2xl border-border/60 transition hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg">
                 <CardHeader>
                   <div className="mb-4 flex items-center justify-between">
