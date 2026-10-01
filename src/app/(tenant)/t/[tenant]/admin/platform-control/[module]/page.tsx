@@ -31,6 +31,7 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface PlatformControlModulePageProps {
   params: Promise<{ tenant: string; module: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 const protectedActionsByModule: Record<string, string[]> = {
@@ -76,14 +77,23 @@ const enterpriseAiEntitlementHelp: Record<string, string> = {
 };
 
 async function withAdminTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+  } catch (error) {
+    console.error('[platform-control:read-fallback]', error);
+    return fallback;
+  }
 }
 
-async function renderPlatformControlModulePage({ params }: PlatformControlModulePageProps) {
+async function renderPlatformControlModulePage({ params, searchParams }: PlatformControlModulePageProps) {
   const { tenant, module: routeModuleKey } = await params;
+  const query = searchParams ? await searchParams : {};
+  const adminStatus = typeof query.adminStatus === 'string' ? query.adminStatus : null;
+  const adminAction = typeof query.adminAction === 'string' ? query.adminAction : null;
+  const adminMessage = typeof query.adminMessage === 'string' ? query.adminMessage : null;
   await requirePlatformControlAccess(tenant);
 
   const moduleAliases: Record<string, string> = {
@@ -155,6 +165,18 @@ async function renderPlatformControlModulePage({ params }: PlatformControlModule
 
   return (
     <div className="space-y-8">
+      {adminStatus === 'saved' ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm">
+          Saved successfully{adminAction ? ` · ${adminAction}` : ''}.
+        </div>
+      ) : null}
+      {adminStatus === 'error' ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <p className="font-semibold">Admin action failed{adminAction ? ` · ${adminAction}` : ''}</p>
+          <p className="mt-1">{adminMessage ?? 'The operation failed. Retry once or use the action reference for diagnosis.'}</p>
+        </div>
+      ) : null}
+
       <div>
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Platform Control Center</p>
