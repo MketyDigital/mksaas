@@ -1,3 +1,4 @@
+ALTER TABLE conversations ADD COLUMN reminders_opt_out INTEGER NOT NULL DEFAULT 0 CHECK (reminders_opt_out IN (0,1));
 ALTER TABLE reminders ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE reminders ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3;
 ALTER TABLE reminders ADD COLUMN last_error TEXT;
