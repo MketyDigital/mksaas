@@ -1,9 +1,10 @@
-export type MketyPaymentSource = 'saas' | 'media' | 'host' | 'enterprise';
+export type MketyPaymentSource = 'saas' | 'media' | 'host' | 'assist' | 'enterprise';
 
 const SOURCE_PREFIX: Record<MketyPaymentSource, string> = {
   saas: 'SAAS-MKS',
   media: 'MEDIA-MKM',
   host: 'HOST-MKH',
+  assist: 'ASSIST-MKA',
   enterprise: 'ENT-MKE',
 };
 
@@ -79,7 +80,7 @@ export function resolveMketyPaymentRoute(
   const canonical = parseMketyPaymentReference(reference);
   const meta = metadataRecord(providerData?.meta ?? providerData?.metadata);
   const metadataSource =
-    meta.source === 'saas' || meta.source === 'media' || meta.source === 'host' || meta.source === 'enterprise'
+    meta.source === 'saas' || meta.source === 'media' || meta.source === 'host' || meta.source === 'assist' || meta.source === 'enterprise'
       ? (meta.source as MketyPaymentSource)
       : undefined;
 
