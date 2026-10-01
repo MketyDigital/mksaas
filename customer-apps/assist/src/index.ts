@@ -556,15 +556,40 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
   if (url.pathname === "/api/auth/telegram/link/start" && request.method === "POST") {
     const session = await requireSession(request, env, customer.customerId);
     if (!session) return json({ error: "unauthorized" }, 401);
-    if (!env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME) return json({ error: "telegram_linking_not_configured" }, 503);
+
+    // Prefer one of the customer's already-connected assistant bots so
+    // recovery needs no separate technical setup. Fall back to the optional
+    // central Mkety Assist auth bot when the customer has no bot yet.
+    const channel = await env.DB.prepare(
+      `SELECT ch.assistant_id,ch.config_json
+       FROM assistant_channels ch
+       WHERE ch.customer_id=? AND ch.channel='telegram' AND ch.status='active'
+       ORDER BY ch.created_at ASC LIMIT 1`,
+    ).bind(customer.customerId).first<any>();
+    let recoveryAssistantId: string | null = null;
+    let botUsername: string | null = null;
+    if (channel?.config_json) {
+      const cfg = JSON.parse(channel.config_json);
+      if (cfg?.username) {
+        recoveryAssistantId = String(channel.assistant_id);
+        botUsername = String(cfg.username);
+      }
+    }
+    if (!botUsername && env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME) {
+      botUsername = env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME;
+      recoveryAssistantId = null;
+    }
+    if (!botUsername) return json({ error: "connect_an_assistant_telegram_bot_first" }, 409);
+
     const token = randomToken(24);
     const now = unix();
     await env.DB.prepare(
-      "INSERT INTO telegram_link_challenges (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)",
-    ).bind(id("tlc"), customer.customerId, session.userId, await sha256(token), now + 600, now).run();
+      "INSERT INTO telegram_link_challenges (id,customer_id,user_id,token_hash,assistant_id,expires_at,created_at) VALUES (?,?,?,?,?,?,?)",
+    ).bind(id("tlc"), customer.customerId, session.userId, await sha256(token), recoveryAssistantId, now + 600, now).run();
     return json({
       ok: true,
-      url: `https://t.me/${env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME}?start=link_${token}`,
+      url: `https://t.me/${botUsername}?start=link_${token}`,
+      viaAssistant: Boolean(recoveryAssistantId),
       expiresInSeconds: 600,
     });
   }
@@ -573,7 +598,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     const body = await readJson(request);
     const email = normalizeEmail(requiredString(body.email, "email"));
     const user = await env.DB.prepare(
-      `SELECT u.id,u.telegram_user_id FROM users u
+      `SELECT u.id,u.telegram_user_id,u.telegram_recovery_assistant_id FROM users u
        JOIN customer_users cu ON cu.user_id=u.id
        WHERE cu.customer_id=? AND u.email=? AND u.status='active' LIMIT 1`,
     ).bind(customer.customerId, email).first<any>();
@@ -587,7 +612,14 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       await env.DB.prepare(
         "INSERT INTO recovery_challenges (id,customer_id,user_id,channel,code_hash,expires_at,created_at) VALUES (?,?,?,?,?,?,?)",
       ).bind(challengeId, customer.customerId, user.id, "telegram", codeHash, now + Number(env.RECOVERY_TTL_SECONDS), now).run();
-      const sent = await sendTelegramRecoveryCode(env, user.telegram_user_id, customer.customerName, code);
+      let recoveryBotToken = env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN || "";
+      if (user.telegram_recovery_assistant_id) {
+        const secret = await env.DB.prepare(
+          "SELECT ciphertext FROM assistant_secrets WHERE assistant_id=? AND name='telegram_bot_token' LIMIT 1",
+        ).bind(user.telegram_recovery_assistant_id).first<any>();
+        if (secret?.ciphertext) recoveryBotToken = await revealStoredSecret(secret.ciphertext, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+      }
+      const sent = await sendTelegramRecoveryCode(recoveryBotToken, user.telegram_user_id, customer.customerName, code);
       if (!sent) {
         console.error("telegram recovery delivery failed", { challengeId, customerId: customer.customerId, userId: user.id });
       }
@@ -644,7 +676,7 @@ async function handleTelegramAuthBotWebhook(request: Request, env: Env): Promise
   const now = unix();
   const challenge = await env.DB.prepare(
     `SELECT id,user_id FROM telegram_link_challenges
-     WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? LIMIT 1`,
+     WHERE token_hash=? AND assistant_id IS NULL AND consumed_at IS NULL AND expires_at>? LIMIT 1`,
   ).bind(await sha256(token), now).first<any>();
   if (!challenge) {
     await sendTelegramText(env, telegramUserId, "This Mkety Assist link has expired. Return to your portal and start Telegram linking again.");
@@ -652,7 +684,7 @@ async function handleTelegramAuthBotWebhook(request: Request, env: Env): Promise
   }
   try {
     await env.DB.batch([
-      env.DB.prepare("UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_linked_at=?,updated_at=? WHERE id=?")
+      env.DB.prepare("UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_recovery_assistant_id=NULL,telegram_linked_at=?,updated_at=? WHERE id=?")
         .bind(telegramUserId, username, now, now, challenge.user_id),
       env.DB.prepare("UPDATE telegram_link_challenges SET consumed_at=? WHERE id=?").bind(now, challenge.id),
     ]);
@@ -1014,17 +1046,21 @@ function clearSessionCookie(env: Env) {
   return `${env.SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-async function sendTelegramRecoveryCode(env: Env, telegramUserId: string, customerName: string, code: string): Promise<boolean> {
-  return sendTelegramText(
-    env,
+async function sendTelegramRecoveryCode(botToken: string, telegramUserId: string, customerName: string, code: string): Promise<boolean> {
+  return sendTelegramTextWithToken(
+    botToken,
     telegramUserId,
     `${customerName} access recovery code: ${code}\n\nThis code expires in 10 minutes. If you did not request it, ignore this message.`,
   );
 }
 
 async function sendTelegramText(env: Env, telegramUserId: string, text: string): Promise<boolean> {
-  if (!env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN) return false;
-  const response = await fetch(`https://api.telegram.org/bot${env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN}/sendMessage`, {
+  return sendTelegramTextWithToken(env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN || "", telegramUserId, text);
+}
+
+async function sendTelegramTextWithToken(botToken: string, telegramUserId: string, text: string): Promise<boolean> {
+  if (!botToken) return false;
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ chat_id: telegramUserId, text }),
@@ -1148,6 +1184,22 @@ async function protectStoredSecret(secret: string, configured: string) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoder.encode(secret)));
   return `mas1.${base64UrlBytes(iv)}.${base64UrlBytes(encrypted)}`;
+}
+
+async function revealStoredSecret(value: string, configured: string) {
+  const [version, ivPart, dataPart, extra] = value.split(".");
+  if (version !== "mas1" || !ivPart || !dataPart || extra) throw new HttpError(500, "invalid_encrypted_secret");
+  const key = await crypto.subtle.importKey("raw", decodeStoredSecretKey(configured), { name: "AES-GCM" }, false, ["decrypt"]);
+  const iv = decodeBase64UrlBytes(ivPart);
+  const encrypted = decodeBase64UrlBytes(dataPart);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
+  return new TextDecoder().decode(plain);
+}
+
+function decodeBase64UrlBytes(value: string) {
+  const raw = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = raw + "===".slice((raw.length + 3) % 4);
+  return Uint8Array.from(atob(padded), (ch) => ch.charCodeAt(0));
 }
 
 function decodeStoredSecretKey(value: string) {
