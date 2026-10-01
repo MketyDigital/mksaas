@@ -13,6 +13,25 @@
   "triggers": {
     "crons": ["* * * * *"]
   },
+  "queues": {
+    "producers": [
+      {
+        "binding": "REPLY_QUEUE",
+        "queue": "mkety-assist-replies"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "mkety-assist-replies",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_retries": 20,
+        "dead_letter_queue": "mkety-assist-replies-dlq",
+        "max_concurrency": 5,
+        "retry_delay": 5
+      }
+    ]
+  },
   "vars": {
     "HOSTED_SUFFIX": "assist.mkety.app",
     "PORTAL_CNAME_TARGET": "mkety-assist.mkety.app",
