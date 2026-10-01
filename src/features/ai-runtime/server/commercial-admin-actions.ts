@@ -11,7 +11,7 @@ import { aiModelAliases, aiModels, aiRateCards, aiRoutes, aiRuntimePolicies, aiS
 import { requirePermission } from '@/shared/lib/permissions';
 
 import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
-import { DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS, providerCostToCreditsPerMillion } from './commercial-pricing';
+import { DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS, deriveProviderRateCardCredits } from './commercial-pricing';
 
 function parsePositiveBigInt(value: FormDataEntryValue | null, label: string) {
   const raw = String(value ?? '').trim();
@@ -69,6 +69,36 @@ function parseOptionalPositiveBigInt(value: FormDataEntryValue | null, label: st
   const raw = String(value ?? '').trim();
   if (!raw) return null;
   return parsePositiveBigInt(raw, label);
+}
+
+function parseVerifiedProviderCostMetadata(metadata: Record<string, unknown>) {
+  const parse = (key: string, label: string, required: boolean) => {
+    const raw = String(metadata[key] ?? '').trim();
+    if (!raw) {
+      if (required) throw new Error(`Verified provider ${label} cost is missing. Save the model with provider cost and verification date first.`);
+      return 0n;
+    }
+    if (!/^\d+$/.test(raw)) {
+      throw new Error(`Verified provider ${label} cost is invalid. Re-save the model using whole micro-USD per 1M tokens.`);
+    }
+    const value = BigInt(raw);
+    if (required && value <= 0n) {
+      throw new Error(`Verified provider ${label} cost must be greater than zero.`);
+    }
+    return value;
+  };
+
+  const verifiedAt = String(metadata.providerCostVerifiedAt ?? '').trim();
+  if (!verifiedAt) {
+    throw new Error('Provider cost verification date is missing. Re-save the managed model with a verification date before generating a rate card.');
+  }
+
+  return {
+    inputCost: parse('inputUsdMicrosPerMillion', 'input', true),
+    cachedCost: parse('cachedInputUsdMicrosPerMillion', 'cached-input', false),
+    outputCost: parse('outputUsdMicrosPerMillion', 'output', true),
+    verifiedAt,
+  };
 }
 
 async function reconcilePublishedManagedAiCatalogImpl(tenantSlug: string) {
@@ -222,12 +252,14 @@ async function createAiRateCardFromProviderCostImpl(tenantSlug: string, formData
   const metadata = model.providerCostMetadata && typeof model.providerCostMetadata === 'object'
     ? model.providerCostMetadata as Record<string, unknown>
     : {};
-  const inputCost = BigInt(String(metadata.inputUsdMicrosPerMillion ?? '0'));
-  const cachedCost = BigInt(String(metadata.cachedInputUsdMicrosPerMillion ?? '0'));
-  const outputCost = BigInt(String(metadata.outputUsdMicrosPerMillion ?? '0'));
-  if (inputCost <= 0n || outputCost <= 0n || !metadata.providerCostVerifiedAt) {
-    throw new Error('Verified provider input/output costs are required before generating a rate card.');
-  }
+  const { inputCost, cachedCost, outputCost } = parseVerifiedProviderCostMetadata(metadata);
+  const derived = deriveProviderRateCardCredits({
+    inputUsdMicrosPerMillion: inputCost,
+    cachedInputUsdMicrosPerMillion: cachedCost,
+    outputUsdMicrosPerMillion: outputCost,
+    rateMultiplierBps,
+    creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
+  });
 
   const latest = await db.query.aiRateCards.findFirst({
     where: eq(aiRateCards.modelId, modelId),
@@ -238,21 +270,7 @@ async function createAiRateCardFromProviderCostImpl(tenantSlug: string, formData
     modelId,
     version: (latest?.version ?? 0) + 1,
     status: 'draft',
-    inputCreditsPerMillion: providerCostToCreditsPerMillion({
-      providerUsdMicrosPerMillion: inputCost,
-      rateMultiplierBps,
-      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
-    }),
-    cachedInputCreditsPerMillion: cachedCost > 0n ? providerCostToCreditsPerMillion({
-      providerUsdMicrosPerMillion: cachedCost,
-      rateMultiplierBps,
-      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
-    }) : null,
-    outputCreditsPerMillion: providerCostToCreditsPerMillion({
-      providerUsdMicrosPerMillion: outputCost,
-      rateMultiplierBps,
-      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
-    }),
+    ...derived,
     minimumCreditsPerRequest: 1n,
     effectiveFrom: new Date(),
     createdByUserId: actor.userId,
