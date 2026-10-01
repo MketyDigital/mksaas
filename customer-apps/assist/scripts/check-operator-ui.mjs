@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import vm from "node:vm";
+
 import ts from "typescript";
 
 const source = fs.readFileSync(new URL("../src/ui.ts", import.meta.url), "utf8");
@@ -10,9 +11,9 @@ const compiled = ts.transpileModule(source, {
   },
 }).outputText;
 
-const module = { exports: {} };
-vm.runInNewContext(compiled, { module, exports: module.exports, require: () => { throw new Error("Unexpected require"); } });
-const { renderOperatorPortal } = module.exports;
+const commonJsModule = { exports: {} };
+vm.runInNewContext(compiled, { module: commonJsModule, exports: commonJsModule.exports, require: () => { throw new Error("Unexpected require"); } });
+const { renderOperatorPortal } = commonJsModule.exports;
 if (typeof renderOperatorPortal !== "function") throw new Error("renderOperatorPortal export missing");
 
 const html = renderOperatorPortal([]);
