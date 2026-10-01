@@ -2,6 +2,12 @@ name: Mkety Assist Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Isolated Assist action
+        type: choice
+        options: [diagnose, deploy]
+        default: diagnose
   push:
     branches:
       - main
@@ -18,7 +24,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref != 'refs/heads/fix/assist-customer-setup-500'
+    if: github.ref != 'refs/heads/fix/assist-customer-setup-500' || inputs.mode == 'deploy'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -440,7 +446,7 @@ jobs:
           test "$status" -lt 300
 
   diagnose-setup:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fix/assist-customer-setup-500'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fix/assist-customer-setup-500' && inputs.mode == 'diagnose'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
