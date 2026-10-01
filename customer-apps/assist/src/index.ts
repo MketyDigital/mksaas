@@ -21,13 +21,13 @@ interface Env {
   SESSION_COOKIE_NAME: string;
   SESSION_TTL_SECONDS: string;
   RECOVERY_TTL_SECONDS: string;
-  MKETY_ASSIST_OPS_TOKEN: string;
+  OPS_SESSION_COOKIE_NAME: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME?: string;
   MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET: string;
   MKETY_ASSIST_CF_ZONE_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
-  MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET: string;
+  FLUTTERWAVE_CHECKOUT_BROKER_SECRET?: string;
 }
 
 type CustomerContext = {
@@ -106,14 +106,63 @@ export default {
 async function handleOps(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
-  if (url.pathname === "/" && request.method === "GET") {
-    // The HTML shell contains no customer data. Operator data is fetched only
-    // after the browser supplies the Operator bearer token (and Cloudflare
-    // Access should additionally guard this hostname in production).
-    return opsPage([]);
+  if (url.pathname === "/setup" && request.method === "GET") {
+    return operatorSetupPage(url.searchParams.get("token") || "");
+  }
+  if (url.pathname === "/api/ops/auth/setup" && request.method === "POST") {
+    const body = await readJson(request);
+    const token = requiredString(body.token, "token");
+    const email = normalizeEmail(requiredString(body.email, "email"));
+    const password = requiredString(body.password, "password");
+    validatePassword(password);
+    const now = unix();
+    const row = await env.DB.prepare(
+      "SELECT id FROM operator_setup_tokens WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",
+    ).bind(await sha256(token), now).first<any>();
+    if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
+    const existing = await env.DB.prepare("SELECT COUNT(*) AS n FROM operator_users").first<any>();
+    if (parseInt(String(existing?.n || 0), 10) > 0) return json({ error: "operator_already_configured" }, 409);
+    const pwd = await hashPassword(password);
+    const operatorId = id("ops");
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO operator_users (id,email,password_hash,password_salt,password_iterations,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+      ).bind(operatorId, email, pwd.hash, pwd.salt, pwd.iterations, "active", now, now),
+      env.DB.prepare("UPDATE operator_setup_tokens SET consumed_at=? WHERE id=?").bind(now, row.id),
+    ]);
+    return issueOperatorSession(env, operatorId, email);
+  }
+  if (url.pathname === "/api/ops/auth/login" && request.method === "POST") {
+    const body = await readJson(request);
+    const email = normalizeEmail(requiredString(body.email, "email"));
+    const password = requiredString(body.password, "password");
+    const row = await env.DB.prepare(
+      "SELECT id,email,password_hash,password_salt,password_iterations FROM operator_users WHERE email=? AND status='active' LIMIT 1",
+    ).bind(email).first<any>();
+    if (!row?.password_hash || !row?.password_salt) return json({ error: "invalid_credentials" }, 401);
+    if (!(await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash))) {
+      return json({ error: "invalid_credentials" }, 401);
+    }
+    return issueOperatorSession(env, row.id, row.email);
+  }
+  if (url.pathname === "/api/ops/auth/logout" && request.method === "POST") {
+    const token = getNamedCookie(request, env.OPS_SESSION_COOKIE_NAME);
+    if (token) await env.DB.prepare("DELETE FROM operator_sessions WHERE token_hash=?").bind(await sha256(token)).run();
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": clearNamedCookie(env.OPS_SESSION_COOKIE_NAME),
+      },
+    });
   }
 
-  if (!isOpsAuthorized(request, env)) return json({ error: "not_found" }, 404);
+  const operator = await requireOperatorSession(request, env);
+  if (!operator) {
+    if (url.pathname.startsWith("/api/ops/")) return json({ error: "unauthorized" }, 401);
+    return operatorLoginPage();
+  }
+
+  if (url.pathname === "/" && request.method === "GET") return opsPage([]);
 
   if (url.pathname === "/api/ops/customers" && request.method === "POST") {
     const body = await readJson(request);
@@ -1179,9 +1228,44 @@ function hexToBytes(hex: string) {
   return out;
 }
 
-function isOpsAuthorized(request: Request, env: Env) {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
-  return Boolean(env.MKETY_ASSIST_OPS_TOKEN) && constantTimeEqual(token, env.MKETY_ASSIST_OPS_TOKEN);
+async function requireOperatorSession(request: Request, env: Env) {
+  const token = getNamedCookie(request, env.OPS_SESSION_COOKIE_NAME);
+  if (!token) return null;
+  const now = unix();
+  const row = await env.DB.prepare(
+    `SELECT s.operator_user_id,u.email FROM operator_sessions s
+     JOIN operator_users u ON u.id=s.operator_user_id
+     WHERE s.token_hash=? AND s.expires_at>? AND u.status='active' LIMIT 1`,
+  ).bind(await sha256(token), now).first<any>();
+  return row ? { operatorUserId: row.operator_user_id, email: row.email } : null;
+}
+
+async function issueOperatorSession(env: Env, operatorUserId: string, email: string) {
+  const token = randomToken(32);
+  const now = unix();
+  const ttl = Number(env.SESSION_TTL_SECONDS || "2592000");
+  await env.DB.prepare(
+    "INSERT INTO operator_sessions (id,token_hash,operator_user_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?)",
+  ).bind(id("opses"), await sha256(token), operatorUserId, now + ttl, now, now).run();
+  return new Response(JSON.stringify({ ok: true, email }), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "set-cookie": `${env.OPS_SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ttl}`,
+    },
+  });
+}
+
+function getNamedCookie(request: Request, name: string) {
+  const cookie = request.headers.get("cookie") || "";
+  for (const part of cookie.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return rest.join("=") || null;
+  }
+  return null;
+}
+
+function clearNamedCookie(name: string) {
+  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
 async function readJson(request: Request): Promise<Record<string, any>> {
@@ -1321,6 +1405,20 @@ class HttpError extends Error {
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+function operatorSetupPage(token: string) {
+  return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Set up Mkety Assist Operator</title>
+<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(440px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}.muted{color:#a8adbd;font-size:14px}</style></head>
+<body><main class="card"><h1>Mkety Assist Operator</h1><p class="muted">One-time Operator setup.</p><form id="setup"><input id="email" type="email" placeholder="Operator email" required><input id="password" type="password" minlength="12" placeholder="Choose password (12+ characters)" required><button>Create Operator access</button></form><p id="msg" class="muted"></p>
+<script>const token=${JSON.stringify(token)};setup.onsubmit=async(e)=>{e.preventDefault();const r=await fetch('/api/ops/auth/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,email:email.value,password:password.value})});if(r.ok)location.href='/';else msg.textContent='This setup link is invalid, expired, or already used.';};</script></main></body></html>`);
+}
+
+function operatorLoginPage() {
+  return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Mkety Assist Operator</title>
+<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(420px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}.muted{color:#a8adbd;font-size:14px}</style></head>
+<body><main class="card"><h1>Mkety Assist Operator</h1><p class="muted">Internal administration</p><form id="login"><input id="email" type="email" placeholder="Email" required><input id="password" type="password" placeholder="Password" required><button>Sign in</button></form><p id="msg" class="muted"></p>
+<script>login.onsubmit=async(e)=>{e.preventDefault();const r=await fetch('/api/ops/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});if(r.ok)location.reload();else msg.textContent='Sign in failed';};</script></main></body></html>`);
 }
 
 function setupPage(customer: CustomerContext, token: string) {
