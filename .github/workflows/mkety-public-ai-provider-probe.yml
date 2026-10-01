@@ -1,0 +1,75 @@
+name: Mkety Public AI Provider Probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-public-ai-provider-probe.yml'
+      - '.github/workflows/mkety-public-candidate-deploy.yml'
+      - '.github/workflows/mkety-public-production-cutover.yml'
+      - 'src/features/public-assistant/**'
+      - 'src/features/ai-runtime/providers/**'
+      - 'src/shared/lib/env.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  azure-foundry:
+    name: Validate Azure Foundry Public AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AZURE_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_KEY || secrets.MKETY_PUBLIC_AZURE_API_KEY || secrets.MKETY_PUBLIC_AZURE_KEY || secrets.AZURE_OPENAI_API_KEY || secrets.AZURE_AI_API_KEY }}
+      AZURE_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      AZURE_MODEL: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPENAI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || vars.MKETY_PUBLIC_AZURE_OPENAI_MODEL || vars.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+    steps:
+      - name: Require Azure Foundry configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in AZURE_API_KEY AZURE_ENDPOINT AZURE_MODEL; do
+            if [ -z "${!variable:-}" ]; then
+              echo "${variable} is not configured through the supported Public AI Azure secret aliases."
+              exit 1
+            fi
+          done
+          node -e "const u=new URL(process.env.AZURE_ENDPOINT);if(u.protocol!=='https:'||!/(?:\.openai\.azure\.com|\.services\.ai\.azure\.com)$/.test(u.hostname))process.exit(1)"
+          echo 'Azure Foundry Public AI configuration is present.'
+
+      - name: Call Responses API
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="${AZURE_ENDPOINT%/}"
+          body="$(node -e "process.stdout.write(JSON.stringify({model:process.env.AZURE_MODEL,input:'Reply briefly with Mkety Azure ready.',max_output_tokens:64}))")"
+          status="$(curl --connect-timeout 10 --max-time 60 -sS             -o /tmp/azure-response.json             -w '%{http_code}'             -X POST             -H 'Content-Type: application/json'             -H "api-key: $AZURE_API_KEY"             --data "$body"             "$endpoint/openai/v1/responses" || true)"
+          if [ "$status" != '200' ]; then
+            echo "Azure Foundry Responses API returned HTTP $status."
+            RESPONSE=/tmp/azure-response.json node <<'NODE'
+          const fs=require('node:fs');
+          let payload={};
+          try { payload=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8')); } catch {}
+          const error=payload.error && typeof payload.error==='object' ? payload.error : payload;
+          const code=typeof error.code==='string' ? error.code : '';
+          const message=typeof error.message==='string' ? error.message : '';
+          if(code) console.error('Azure error code: '+code);
+          if(message) console.error('Azure error: '+message.slice(0,500));
+          NODE
+            exit 1
+          fi
+          RESPONSE=/tmp/azure-response.json node <<'NODE'
+          const fs=require('node:fs');
+          const payload=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8'));
+          const text=typeof payload.output_text==='string'
+            ? payload.output_text.trim()
+            : (Array.isArray(payload.output) ? payload.output : [])
+                .flatMap((item)=>Array.isArray(item?.content)?item.content:[])
+                .map((part)=>typeof part?.text==='string'?part.text:'')
+                .join('\n')
+                .trim();
+          if(!text) throw new Error('Azure Foundry returned HTTP 200 without usable response text.');
+          console.log('Azure Foundry Public AI is responding successfully.');
+          NODE

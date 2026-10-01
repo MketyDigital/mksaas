@@ -69,3 +69,32 @@ describe('Public Mkety AI launch boundary', () => {
     ).toThrow(/not an approved current public AI model/i);
   });
 });
+
+
+describe('Azure Foundry public AI aliases', () => {
+  it('accepts the Foundry project endpoint and OPEN_AI MODEL naming', async () => {
+    const { resolvePublicAzureOpenAIConfig } = await import('./config');
+    expect(resolvePublicAzureOpenAIConfig({
+      MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY: 'test-key',
+      MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT: 'https://hello-3399-resource.services.ai.azure.com/api/projects/hello-3399',
+      MKETY_PUBLIC_AZURE_OPEN_AI_MODEL: 'gpt-5.6-sol-1',
+    })).toEqual({
+      apiKey: 'test-key',
+      endpoint: 'https://hello-3399-resource.services.ai.azure.com/api/projects/hello-3399',
+      deployment: 'gpt-5.6-sol-1',
+    });
+  });
+
+  it('keeps the existing Azure OpenAI spelling backward compatible', async () => {
+    const { resolvePublicAzureOpenAIConfig } = await import('./config');
+    expect(resolvePublicAzureOpenAIConfig({
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: 'old-key',
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: 'https://example.openai.azure.com',
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: 'legacy-deployment',
+    })).toEqual({
+      apiKey: 'old-key',
+      endpoint: 'https://example.openai.azure.com',
+      deployment: 'legacy-deployment',
+    });
+  });
+});

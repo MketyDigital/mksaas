@@ -10,7 +10,7 @@ export async function readCentralProviderJson(response: Response): Promise<Recor
 
   if (!response.ok) {
     const retryable =
-      response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500;
+      [401, 402, 403, 404, 408, 409, 429].includes(response.status) || response.status >= 500;
     throw createCentralAiProviderError(`AI provider request failed (${response.status}).`, {
       retryable,
       status: response.status,

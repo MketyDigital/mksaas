@@ -17,6 +17,19 @@ export interface PublicAssistantEnvironment {
   MKETY_PUBLIC_AZURE_OPENAI_API_KEY?: string;
   MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT?: string;
   MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT?: string;
+  MKETY_PUBLIC_AZURE_OPENAI_MODEL?: string;
+  // Foundry-friendly aliases used by deployment environments. Keep both spellings
+  // so existing Azure OpenAI configuration remains backward compatible.
+  MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY?: string;
+  MKETY_PUBLIC_AZURE_OPEN_AI_KEY?: string;
+  MKETY_PUBLIC_AZURE_OPENAI_KEY?: string;
+  MKETY_PUBLIC_AZURE_API_KEY?: string;
+  MKETY_PUBLIC_AZURE_KEY?: string;
+  AZURE_OPENAI_API_KEY?: string;
+  AZURE_AI_API_KEY?: string;
+  MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT?: string;
+  MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT?: string;
+  MKETY_PUBLIC_AZURE_OPEN_AI_MODEL?: string;
   MKETY_PUBLIC_GEMINI_API_KEY?: string;
   MKETY_PUBLIC_VERTEX_PROJECT_ID?: string;
   MKETY_PUBLIC_VERTEX_LOCATION?: string;
@@ -82,6 +95,25 @@ export function parsePublicAIProviderConfig(environment: PublicAssistantEnvironm
   };
 }
 
+export function resolvePublicAzureOpenAIConfig(environment: PublicAssistantEnvironment) {
+  const apiKey =
+    environment.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY ??
+    environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY ??
+    environment.MKETY_PUBLIC_AZURE_OPEN_AI_KEY ??
+    environment.MKETY_PUBLIC_AZURE_OPENAI_KEY ??
+    environment.MKETY_PUBLIC_AZURE_API_KEY ??
+    environment.MKETY_PUBLIC_AZURE_KEY ??
+    environment.AZURE_OPENAI_API_KEY ??
+    environment.AZURE_AI_API_KEY;
+  const endpoint = environment.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT ?? environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT;
+  const deployment =
+    environment.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL ??
+    environment.MKETY_PUBLIC_AZURE_OPENAI_MODEL ??
+    environment.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT ??
+    environment.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT;
+  return apiKey && endpoint && deployment ? { apiKey, endpoint, deployment } : null;
+}
+
 function hasProviderCredential(provider: PublicAIProviderId, environment: PublicAssistantEnvironment): boolean {
   switch (provider) {
     case 'workers-ai':
@@ -89,11 +121,7 @@ function hasProviderCredential(provider: PublicAIProviderId, environment: Public
     case 'openai':
       return Boolean(environment.MKETY_PUBLIC_OPENAI_API_KEY ?? environment.OPENAI_API_KEY);
     case 'azure-openai':
-      return Boolean(
-        environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY &&
-        environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT &&
-        environment.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT,
-      );
+      return Boolean(resolvePublicAzureOpenAIConfig(environment));
     case 'gemini':
       return Boolean(environment.MKETY_PUBLIC_GEMINI_API_KEY);
     case 'vertex':
