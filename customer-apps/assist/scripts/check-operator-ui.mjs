@@ -13,10 +13,9 @@ const compiled = ts.transpileModule(source, {
 
 const commonJsModule = { exports: {} };
 vm.runInNewContext(compiled, { module: commonJsModule, exports: commonJsModule.exports, require: () => { throw new Error("Unexpected require"); } });
-const { renderCustomerPortal, renderOperatorPortal, setupPage } = commonJsModule.exports;
+const { renderCustomerPortal, renderOperatorPortal } = commonJsModule.exports;
 if (typeof renderOperatorPortal !== "function") throw new Error("renderOperatorPortal export missing");
 if (typeof renderCustomerPortal !== "function") throw new Error("renderCustomerPortal export missing");
-if (typeof setupPage !== "function") throw new Error("setupPage export missing");
 
 const html = renderOperatorPortal([]);
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -169,6 +168,37 @@ try {
 console.log("Customer browser script parses, initializes, and exposes API Access.");
 
 
+
+const indexSource = fs.readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+const indexCompiled = ts.transpileModule(indexSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText;
+const indexModule = { exports: {} };
+vm.runInNewContext(indexCompiled, {
+  module: indexModule,
+  exports: indexModule.exports,
+  require(specifier) {
+    if (String(specifier).endsWith("./ui")) return { renderCustomerPortal() { return ""; }, renderOperatorPortal() { return ""; } };
+    if (String(specifier).endsWith("./runtime")) return {};
+    if (String(specifier).endsWith("./operator-oidc")) return {};
+    return {};
+  },
+  crypto: globalThis.crypto,
+  TextEncoder,
+  TextDecoder,
+  URL,
+  Response,
+  Headers,
+  Blob,
+  atob,
+  btoa,
+  console,
+});
+const setupPage = indexModule.exports.setupPage;
+if (typeof setupPage !== "function") throw new Error("setupPage export missing from index module");
 const setupResponse = setupPage({
   customerId: "cus_test",
   customerSlug: "test",
