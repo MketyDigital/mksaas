@@ -263,14 +263,25 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     ]);
 
     let customDomain: unknown = null;
+    let customDomainError: string | null = null;
     if (customHostname) {
-      customDomain = await createCustomHostname(env, customerId, customHostname);
+      try {
+        customDomain = await createCustomHostname(env, customerId, customHostname);
+      } catch (error) {
+        customDomainError = error instanceof Error ? error.message : String(error);
+        console.error("Assist custom domain provisioning deferred", {
+          customerId,
+          hostname: customHostname,
+          error: customDomainError,
+        });
+      }
     }
 
     return json({
       customerId,
       hostedHostname,
       customDomain,
+      customDomainError,
       setupUrl: `https://${hostedHostname}/setup?token=${encodeURIComponent(setupToken)}`,
     }, 201);
   }
@@ -960,31 +971,49 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
        WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
+    let passwordData: Awaited<ReturnType<typeof hashPassword>>;
+    try {
+      passwordData = await hashPassword(password);
+    } catch (error) {
+      console.error("Assist customer password hashing failed", {
+        customerId: customer.customerId,
+        userId: row.user_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return json({ error: "password_hash_failed_retryable" }, 500);
+    }
+
     const claimed = await env.DB.prepare(
       "UPDATE setup_tokens SET consumed_at=? WHERE id=? AND customer_id=? AND consumed_at IS NULL AND expires_at>? RETURNING id",
     ).bind(now, row.id, customer.customerId, now).first<any>();
     if (!claimed) return json({ error: "invalid_or_expired_setup_token" }, 400);
-    const passwordData = await hashPassword(password);
+
     const sessionToken = randomToken(32);
     const sessionHash = await sha256(sessionToken);
     const sessionTtl = Number(env.SESSION_TTL_SECONDS || "2592000");
     const sessionId = id("ses");
     try {
-      await env.DB.batch([
-        env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
-          .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
-        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at,user_agent) VALUES (?,?,?,?,?,?,?,?)")
-          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now, request.headers.get("user-agent")?.slice(0, 255) || null),
-      ]);
+      await env.DB.prepare(
+        "UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE id=?",
+      ).bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, now, row.user_id).run();
+      await env.DB.prepare(
+        "INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)",
+      ).bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now).run();
     } catch (error) {
       console.error("Assist customer setup commit failed", {
         customerId: customer.customerId,
         userId: row.user_id,
         error: error instanceof Error ? error.message : String(error),
       });
-      await env.DB.prepare(
-        "UPDATE setup_tokens SET consumed_at=NULL WHERE id=? AND customer_id=? AND consumed_at=? AND expires_at>?",
-      ).bind(row.id, customer.customerId, now, unix()).run().catch(() => undefined);
+      await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE setup_tokens SET consumed_at=NULL WHERE id=? AND customer_id=? AND consumed_at=? AND expires_at>?",
+        ).bind(row.id, customer.customerId, now, unix()),
+        env.DB.prepare(
+          "UPDATE users SET password_hash=NULL,password_salt=NULL,password_iterations=NULL,password_changed_at=NULL,updated_at=? WHERE id=?",
+        ).bind(unix(), row.user_id),
+        env.DB.prepare("DELETE FROM sessions WHERE id=? AND customer_id=?").bind(sessionId, customer.customerId),
+      ]).catch(() => undefined);
       return json({ error: "setup_commit_failed_retryable" }, 500);
     }
     return new Response(JSON.stringify({ ok: true, role: row.role, email: row.email }), {
@@ -1996,30 +2025,6 @@ async function deleteCustomHostnameInfrastructure(env: Env, hostnameInput: strin
     "content-type": "application/json",
   };
 
-  const routesResponse = await fetch(
-    `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes`,
-    { headers },
-  );
-  const routesData: any = await routesResponse.json();
-  if (!routesResponse.ok || !routesData.success) {
-    throw new Error(`Cloudflare Worker route lookup failed during delete: ${JSON.stringify(routesData.errors || routesData)}`);
-  }
-  const routePattern = `${hostname}/*`;
-  const routes = (routesData.result || []).filter((route: any) => route.pattern === routePattern);
-  for (const route of routes) {
-    if (route.script && route.script !== env.APP_WORKER_NAME) {
-      throw new Error(`Refusing to delete route ${routePattern}; it belongs to ${route.script}`);
-    }
-    const del = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes/${route.id}`,
-      { method: "DELETE", headers },
-    );
-    const data: any = await del.json();
-    if (!del.ok || !data.success) {
-      throw new Error(`Cloudflare Worker route delete failed: ${JSON.stringify(data.errors || data)}`);
-    }
-  }
-
   let hostnameId = providerHostnameId;
   if (!hostnameId) {
     const lookup = await fetch(
@@ -2055,7 +2060,8 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
     "content-type": "application/json",
   };
 
-  // Match the MkLMS SaaS-domain pattern: Custom Hostname + exact Worker route.
+  // Cloudflare for SaaS routes the customer's hostname to the stable Assist origin.
+  // Do not create a Worker route for the customer's external hostname inside the mkety.app zone.
   const hostLookup = await fetch(
     `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames?hostname=${encodeURIComponent(hostname)}`,
     { headers },
@@ -2090,41 +2096,12 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
     result = data.result;
   }
 
-  const routePattern = `${hostname}/*`;
-  const routesResponse = await fetch(
-    `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes`,
-    { headers },
-  );
-  const routesData: any = await routesResponse.json();
-  if (!routesResponse.ok || !routesData.success) {
-    throw new Error(`Cloudflare Worker route lookup failed: ${JSON.stringify(routesData.errors || routesData)}`);
-  }
-  const matchingRoutes = (routesData.result || []).filter((route: any) => route.pattern === routePattern);
-  if (matchingRoutes.length > 1) throw new Error(`Multiple Worker routes exist for ${routePattern}`);
-  if (matchingRoutes[0]?.script && matchingRoutes[0].script !== env.APP_WORKER_NAME) {
-    throw new Error(`Worker route ${routePattern} belongs to ${matchingRoutes[0].script}, expected ${env.APP_WORKER_NAME}`);
-  }
-  if (!matchingRoutes.length) {
-    const createRoute = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ pattern: routePattern, script: env.APP_WORKER_NAME }),
-      },
-    );
-    const routeData: any = await createRoute.json();
-    if (!createRoute.ok || !routeData.success) {
-      throw new Error(`Cloudflare Worker route creation failed: ${JSON.stringify(routeData.errors || routeData)}`);
-    }
-  }
-
   const validation = {
     ownership_verification: result.ownership_verification ?? null,
     ssl_validation_records: result.ssl?.validation_records ?? null,
     cname_target: env.PORTAL_CNAME_TARGET,
     routing_origin: env.ROUTING_ORIGIN,
-    worker_route: routePattern,
+    worker_route: `${env.ROUTING_ORIGIN}/*`,
   };
 
   const existing = await env.DB.prepare("SELECT id FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
@@ -2145,7 +2122,7 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
     sslStatus: result.ssl?.status ?? null,
     cnameTarget: env.PORTAL_CNAME_TARGET,
     routingOrigin: env.ROUTING_ORIGIN,
-    workerRoute: routePattern,
+    workerRoute: `${env.ROUTING_ORIGIN}/*`,
     validation,
   };
 }
