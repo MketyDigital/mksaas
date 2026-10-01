@@ -1,7 +1,6 @@
 'use server';
 
 import { and, eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
@@ -53,8 +52,6 @@ async function reviewDeploymentRequestImpl(formData: FormData) {
   if (rows.length !== 1) {
     throw new Error('Deployment request is no longer pending or does not belong to this workspace.');
   }
-
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/deployments-domains`);
 }
 
 export async function reviewDeploymentRequest(formData: FormData) {

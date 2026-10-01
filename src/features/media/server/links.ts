@@ -1,5 +1,4 @@
 import { desc, eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
@@ -76,10 +75,6 @@ async function saveMediaTenantLinkImpl(
       updatedAt: now,
     },
   });
-
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/media`);
-  revalidatePath(`/t/${target.slug}/media`);
-  revalidatePath(`/t/${target.slug}`);
 }
 
 export async function saveMediaTenantLink(...args: Parameters<typeof saveMediaTenantLinkImpl>) {

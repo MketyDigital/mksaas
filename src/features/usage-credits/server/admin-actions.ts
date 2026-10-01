@@ -1,6 +1,5 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
 import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
@@ -46,11 +45,6 @@ async function grantManualTenantCreditsImpl(opsTenantSlug: string, formData: For
     reason,
     actorUserId: actor.userId,
   });
-
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/billing-ledger`);
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/billing`);
-  revalidatePath(`/t/${target.slug}/wallet`);
-  revalidatePath(`/t/${target.slug}/enterprise-ai`);
 }
 
 export async function grantManualTenantCredits(...args: Parameters<typeof grantManualTenantCreditsImpl>) {

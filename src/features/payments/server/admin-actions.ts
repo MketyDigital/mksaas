@@ -1,7 +1,6 @@
 'use server';
 
 import { eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
@@ -74,8 +73,6 @@ async function updateMketyPaymentSettingsImpl(tenantSlug: string, formData: Form
       actorId: actor.userId,
     });
   });
-
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/payments`);
 }
 
 export async function updateMketyPaymentSettings(...args: Parameters<typeof updateMketyPaymentSettingsImpl>) {

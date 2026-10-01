@@ -1,7 +1,6 @@
 'use server';
 
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { PUBLIC_AI_MODEL_REGISTRY, type PublicAIProviderId } from '@/features/public-assistant/models';
@@ -40,9 +39,8 @@ async function requireAiCommercialOps(tenantSlug: string) {
   return actor;
 }
 
-function revalidateAiOps(tenantSlug: string) {
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/ai-operations`);
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control`);
+function revalidateAiOps(_tenantSlug: string) {
+  // Admin mutations finish with a redirect, which starts a fresh Server Component request.
 }
 
 
@@ -452,7 +450,6 @@ async function updateAiSolutionTemplateImpl(
   }).where(eq(aiSolutionTemplates.key, templateKey));
 
   revalidateAiOps(tenantSlug);
-  revalidatePath('/ai/app');
 }
 
 export async function reconcilePublishedManagedAiCatalog(...args: Parameters<typeof reconcilePublishedManagedAiCatalogImpl>) {

@@ -1,7 +1,6 @@
 'use server';
 
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
@@ -129,10 +128,6 @@ async function createMailPlanVersionImpl(opsTenantSlug: string, formData: FormDa
       version: result.version,
     },
   });
-
-  revalidatePath('/mail');
-  revalidatePath('/pricing');
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
 async function reconcileMailCatalogImpl(opsTenantSlug: string) {
@@ -144,7 +139,6 @@ async function reconcileMailCatalogImpl(opsTenantSlug: string) {
     entityType: 'mail_catalog',
     metadata: { ...result },
   });
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
 async function updateMailWorkspaceOperationsImpl(opsTenantSlug: string, formData: FormData) {
@@ -171,7 +165,6 @@ async function updateMailWorkspaceOperationsImpl(opsTenantSlug: string, formData
     changes: { status, onboardingStep, planKey },
     metadata: { targetTenantId },
   });
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
 async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: FormData) {
@@ -223,7 +216,6 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
     changes: { status, spfStatus, dkimStatus, dmarcStatus, mxStatus, sendingEnabled, routingEnabled },
     metadata: { targetTenantId },
   });
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
 export async function createMailPlanVersion(...args: Parameters<typeof createMailPlanVersionImpl>) {
