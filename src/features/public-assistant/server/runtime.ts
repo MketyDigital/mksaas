@@ -184,20 +184,10 @@ async function getPublicSupportSettings(database: Database) {
   };
 }
 
-async function resolveProviderTargets(environment: PublicAssistantEnvironment): Promise<{
+function resolveEnvironmentProviderTargets(environment: PublicAssistantEnvironment): {
   enabled: boolean;
   targets: PublicAIProviderTarget[];
-}> {
-  const dynamic = await getDynamicPublicAiConfig();
-  if (dynamic) {
-    return {
-      enabled: dynamic.enabled,
-      targets: dynamic.enabled ? await resolveDynamicPublicAiTargets(dynamic) : [],
-    };
-  }
-
-  // Temporary migration fallback only. Once Platform Control has a Public AI
-  // database configuration, provider credentials and routing no longer depend on env.
+} {
   const config = parsePublicAIProviderConfig(environment);
   const requestedProviders = [config.primaryProvider, ...config.fallbackProviders];
   const adapters = createPublicAIProviderAdapters(requestedProviders, environment);
@@ -212,6 +202,30 @@ async function resolveProviderTargets(environment: PublicAssistantEnvironment): 
       return [{ adapter, model }];
     }),
   };
+}
+
+async function resolveProviderTargets(environment: PublicAssistantEnvironment): Promise<{
+  enabled: boolean;
+  targets: PublicAIProviderTarget[];
+}> {
+  const dynamic = await getDynamicPublicAiConfig();
+  const environmentTargets = resolveEnvironmentProviderTargets(environment);
+
+  if (dynamic) {
+    if (!dynamic.enabled) return { enabled: false, targets: [] };
+
+    const dynamicTargets = await resolveDynamicPublicAiTargets(dynamic);
+    // Platform Control remains authoritative and first in the chain. Dedicated
+    // public-runtime environment providers are appended as operational failover
+    // so an expired/quota-exhausted saved connection cannot make Public AI
+    // unavailable while a healthy release-managed provider is configured.
+    return {
+      enabled: true,
+      targets: [...dynamicTargets, ...(environmentTargets.enabled ? environmentTargets.targets : [])],
+    };
+  }
+
+  return environmentTargets;
 }
 
 function buildDeterministicSupportFallback(settings: {
