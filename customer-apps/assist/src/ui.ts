@@ -31,6 +31,10 @@ button,input,textarea,select{font:inherit}button{cursor:pointer}.shell{min-heigh
 <script>
 const bindIds=root=>root.querySelectorAll('[id]').forEach(el=>{try{globalThis[el.id]=el}catch{}});
 bindIds(document);
+const brand=document.getElementById('brand'),who=document.getElementById('who'),host=document.getElementById('host'),
+  nav=document.getElementById('nav'),logout=document.getElementById('logout'),modal=document.getElementById('modal'),
+  dialog=document.getElementById('dialog'),toast=document.getElementById('toast'),content=document.getElementById('content'),
+  topTitle=document.getElementById('topTitle');
 const APP=${initial};
 const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[]};
 const sections=['dashboard','assistants','knowledge','conversations','handoffs','reminders','usage','api','team','settings'];
@@ -57,7 +61,8 @@ async function refresh(){
 function go(s){state.section=s;topTitle.textContent=titles[s];render()}
 function render(){
  [...nav.querySelectorAll('button')].forEach(b=>b.classList.toggle('active',b.dataset.s===state.section));
- const fn=window['render_'+state.section];content.innerHTML=fn?fn():'';
+ const renderers={dashboard:render_dashboard,assistants:render_assistants,knowledge:render_knowledge,conversations:render_conversations,handoffs:render_handoffs,reminders:render_reminders,usage:render_usage,api:render_api,team:render_team,settings:render_settings};
+ const fn=renderers[state.section];content.innerHTML=fn?fn():'';
  bindSection();
 }
 function render_dashboard(){
