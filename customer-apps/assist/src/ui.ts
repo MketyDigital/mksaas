@@ -69,7 +69,7 @@ function render(){
 function render_dashboard(){
  const open=state.handoffs.filter(h=>h.status==='open').length,active=state.assistants.filter(a=>a.status==='active').length;
  return '<h1 class="title">Dashboard</h1><p class="sub">Your assistants, conversations and usage in one place.</p><div class="grid">'+
- metric('Assistants',active+'/'+state.assistants.length)+metric('Credits',state.usage?.credits?.balance??0)+metric('Open handoffs',open)+metric('Conversations',state.conversations.length)+
+ metric('Assistants',active+'/'+state.assistants.length)+metric('Credits',state.usage?.creditsAvailable??0)+metric('Open handoffs',open)+metric('Conversations',state.conversations.length)+
  '</div><div class="two" style="margin-top:16px"><div class="card"><div class="spread"><h3>Assistants</h3><button class="btn primary" data-action="new-assistant">New assistant</button></div>'+assistantRows(state.assistants.slice(0,5))+'</div>'+
  '<div class="card"><h3>Recent conversations</h3>'+conversationRows(state.conversations.slice(0,6))+'</div></div>';
 }
@@ -82,23 +82,22 @@ function conversationRows(rows){return rows.length?rows.map(c=>'<div class="conv
 function render_handoffs(){return '<h1 class="title">Human Handoff</h1><p class="sub">Take over conversations when a person asks for human help.</p><div class="card">'+(state.handoffs.length?'<table class="table"><thead><tr><th>Assistant</th><th>Status</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+state.handoffs.map(h=>'<tr><td>'+esc(h.assistant_name)+'</td><td><span class="pill '+(h.status==='open'?'warn':'ok')+'">'+esc(h.status)+'</span></td><td>'+esc((h.reason||'').slice(0,120))+'</td><td>'+(h.status==='open'?'<button class="btn" data-reply-handoff="'+h.id+'">Reply</button> <button class="btn" data-resolve-handoff="'+h.id+'">Resolve</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No handoffs.</div>')+'</div>'}
 function render_reminders(){return '<div class="spread"><div><h1 class="title">Reminders</h1><p class="sub">Scheduled messages are delivered by the connected Telegram assistant.</p></div><button class="btn primary" data-action="new-reminder">New reminder</button></div><div class="card">'+(state.reminders.length?'<table class="table"><thead><tr><th>Assistant</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>'+state.reminders.map(r=>'<tr><td>'+esc(r.assistant_name)+'</td><td>'+new Date(r.due_at*1000).toLocaleString()+'</td><td>'+esc(r.status)+'</td><td>'+(r.status==='scheduled'?'<button class="btn danger" data-cancel-reminder="'+r.id+'">Cancel</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No reminders.</div>')+'</div>'}
 function render_usage(){
- const c=state.usage?.credits||{},p=state.usage?.plan||{},b=state.usage?.billing||{};
- const pending=b.billing_status!=='current';
- const price=(Number(p.subscription_amount_minor||0)/100).toFixed(2);
- const min=(Number(p.minimum_funding_minor||0)/100).toFixed(2);
- return '<div class="spread"><div><h1 class="title">Usage & Credits</h1><p class="sub">Customer-facing usage only. Provider cost and internal commercial controls stay in Mkety Operator.</p></div><div class="row">'+
-   (pending?'<button class="btn primary" data-action="pay-plan">Pay / fund plan</button>':'')+
-   (p.topup_enabled?'<button class="btn" data-action="buy-credits">Buy credits</button>':'')+
- '</div></div>'+
- '<div class="three">'+metric('Credits remaining',c.balance??0)+metric('Lifetime granted',c.lifetime_granted??0)+metric('Lifetime used',c.lifetime_consumed??0)+'</div>'+
- '<div class="two" style="margin-top:16px"><div class="card"><h3>Plan</h3><p>Status: <strong>'+esc(b.billing_status||'pending')+'</strong></p><p>Monthly price: <strong>$'+esc(price)+'</strong></p><p>Included credits: <strong>'+esc(p.included_credits??0)+'</strong></p><p>Funding: <strong>'+(p.funding_mode==='prepaid_partial'?'Prepaid partial / top-ups':'Full monthly payment')+'</strong></p>'+(p.funding_mode==='prepaid_partial'?'<p>Minimum funding: <strong>$'+esc(min)+'</strong></p>':'')+'<p>Top-ups: <strong>'+(p.topup_enabled?'Enabled':'Disabled')+'</strong></p></div><div class="card"><h3>Payment history</h3><div id="checkoutBox" class="muted">Loading…</div></div></div>';
+ const u=state.usage||{};
+ const monthly=(Number(u.monthlyFeeMinor||0)/100).toFixed(2);
+ const setup=(Number(u.setupFeeMinor||0)/100).toFixed(2);
+ return '<div class="spread"><div><h1 class="title">Usage & Credits</h1><p class="sub">Your billing and credit summary.</p></div><div class="row"><button class="btn primary" data-action="pay-plan">Pay plan</button><button class="btn" data-action="buy-credits">Buy credits</button></div></div>'+
+ '<div class="grid">'+metric('Monthly fee','$'+monthly)+(Number(u.setupFeeMinor||0)>0?metric('Setup fee','$'+setup):'')+metric('Credits available',u.creditsAvailable??0)+metric('Credits used',u.creditsUsed??0)+'</div>'+
+ '<div class="card" style="margin-top:16px"><h3>Payment history</h3><div id="checkoutBox" class="muted">Loading…</div></div>';
 }
 function render_team(){return '<div class="spread"><div><h1 class="title">Team</h1><p class="sub">Simple portal access for owners, admins and members.</p></div><button class="btn primary" data-action="invite-member">Add member</button></div><div class="card" id="teamBox"><div class="empty">Loading team…</div></div>'}
 function render_api(){
  return '<div class="spread"><div><h1 class="title">API Access</h1><p class="sub">Use your assistants from your own apps. API calls consume the same credits and limits as other Assist usage.</p></div><button class="btn primary" data-action="new-api-key">Create API key</button></div>'+
  '<div class="card"><p><strong>OpenAI-compatible endpoint</strong></p><p><code>https://'+esc(APP.hostname)+'/v1/chat/completions</code></p><p class="muted">Send Authorization: Bearer &lt;your key&gt;. Keys are shown only once when created.</p><div id="apiKeysBox"><div class="empty">Loading API keys…</div></div></div>';
 }
-function render_settings(){return '<h1 class="title">Settings</h1><p class="sub">Branding, portal access, domains and recovery.</p><div class="two"><div class="card"><h3>Branding</h3><div class="field"><label>Brand color</label><input class="input" id="brandColor" placeholder="#7c5cff" value="'+esc(APP.brandColor||'')+'"></div><div class="field"><label>Logo URL (HTTPS)</label><input class="input" id="logoUrl" placeholder="https://..." value="'+esc(APP.logoUrl||'')+'"></div><button class="btn primary" data-action="save-branding">Save branding</button></div><div class="card"><h3>Telegram recovery</h3><p class="muted">Connect Telegram while signed in. It can then receive secure recovery codes if you lose portal access.</p><button class="btn primary" data-action="link-telegram">Connect Telegram</button></div></div><div class="card" style="margin-top:16px"><div class="spread"><div><h3 style="margin:0">Portal domains</h3><p class="muted">Your hosted domain always works. Custom domains are provisioned by Mkety Operator.</p></div><button class="btn" data-action="refresh-domains">Refresh</button></div><div id="customerDomainsBox"><div class="empty">Loading domains…</div></div></div>'}
+function render_settings(){return '<h1 class="title">Settings</h1><p class="sub">Branding, security, domains and recovery.</p>'+
+'<div class="two"><div class="card"><h3>Branding</h3><div class="field"><label>Brand color</label><input class="input" id="brandColor" placeholder="#7c5cff" value="'+esc(APP.brandColor||'')+'"></div><div class="field"><label>Logo URL (HTTPS)</label><input class="input" id="logoUrl" placeholder="https://..." value="'+esc(APP.logoUrl||'')+'"></div><button class="btn primary" data-action="save-branding">Save branding</button></div>'+
+'<div class="card"><h3>Security</h3><p class="muted">Change your password and revoke other signed-in sessions.</p><button class="btn primary" data-action="change-password">Change password</button> <button class="btn" data-action="manage-sessions">Manage sessions</button><h3 style="margin-top:20px">Telegram recovery</h3><p class="muted">Connect Telegram while signed in so it can receive recovery codes.</p><button class="btn" data-action="link-telegram">Connect Telegram</button></div></div>'+
+'<div class="card" style="margin-top:16px"><div class="spread"><div><h3 style="margin:0">Portal domains</h3><p class="muted">Public DNS, HTTPS and Assist ownership determine usability; provider provisioning status remains diagnostic.</p></div><button class="btn" data-action="refresh-domains">Refresh</button></div><div id="customerDomainsBox"><div class="empty">Loading domains…</div></div></div>'}
 function bindSection(){
  content.querySelectorAll('[data-action="new-assistant"]').forEach(b=>b.onclick=newAssistant);
  content.querySelectorAll('[data-edit-assistant]').forEach(b=>b.onclick=()=>editAssistant(b.dataset.editAssistant));
@@ -110,6 +109,8 @@ function bindSection(){
  content.querySelectorAll('[data-cancel-reminder]').forEach(b=>b.onclick=()=>cancelReminder(b.dataset.cancelReminder));
  content.querySelectorAll('[data-action="new-reminder"]').forEach(b=>b.onclick=newReminder);
  content.querySelectorAll('[data-action="link-telegram"]').forEach(b=>b.onclick=linkTelegram);
+ content.querySelectorAll('[data-action="change-password"]').forEach(b=>b.onclick=changePassword);
+ content.querySelectorAll('[data-action="manage-sessions"]').forEach(b=>b.onclick=manageSessions);
  content.querySelectorAll('[data-action="save-branding"]').forEach(b=>b.onclick=saveBranding);
  content.querySelectorAll('[data-action="refresh-domains"]').forEach(b=>b.onclick=loadCustomerDomains);
  content.querySelectorAll('[data-action="invite-member"]').forEach(b=>b.onclick=inviteMember);
@@ -204,19 +205,11 @@ function launchFlutterwave(data){
  throw new Error('Payment checkout unavailable');
 }
 function payPlan(){
- const p=state.usage?.plan||{};
- const partial=p.funding_mode==='prepaid_partial';
- const defaultAmount=(Number(partial?p.minimum_funding_minor:p.subscription_amount_minor||0)/100).toFixed(2);
- const setupFee=(Number(p.setup_fee_minor||0)/100).toFixed(2);
- const totalFull=((Number(p.subscription_amount_minor||0)+Number(p.setup_fee_minor||0))/100).toFixed(2);
- openModal('<h2>Pay / fund plan</h2><p class="muted">Mkety activates the plan only after verified payment.</p>'+
-  (partial?'<div class="field"><label>Plan funding amount (USD)</label><input class="input" id="planFunding" inputmode="decimal" value="'+esc(defaultAmount)+'"><p class="muted">Minimum plan funding: $'+esc(defaultAmount)+(Number(p.setup_fee_minor||0)>0?' · plus one-time setup fee $'+esc(setupFee):'')+'</p></div>':'<p>Amount due: <strong>$'+esc(totalFull)+'</strong>'+(Number(p.setup_fee_minor||0)>0?' <span class="muted">(includes one-time setup fee $'+esc(setupFee)+')</span>':'')+'</p>')+
-  '<div class="field"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div>'+
-  '<p id="planPayMsg" class="muted"></p><div class="row"><button class="btn primary" id="planPayStart">Continue to secure payment</button><button class="btn" id="planPayCancel">Cancel</button></div>');
+ openModal('<h2>Pay plan</h2><p class="muted">Mkety calculates the amount due server-side. Access changes only after verified settlement.</p><div class="field"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div><p id="planPayMsg" class="muted"></p><div class="row"><button class="btn primary" id="planPayStart">Continue to secure payment</button><button class="btn" id="planPayCancel">Cancel</button></div>');
  planPayCancel.onclick=closeModal;
  planPayStart.onclick=async()=>{try{
-   planPayStart.disabled=true;planPayMsg.textContent='Preparing secure Flutterwave checkout…';
-   const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentCurrency:planCurrency.value,...(partial?{fundingAmountUsd:planFunding.value}:{})})});
+   planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';
+   const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentCurrency:planCurrency.value})});
    planPayMsg.textContent='Opening secure checkout…';
    launchFlutterwave(d);
  }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
@@ -225,7 +218,7 @@ function buyCredits(){
  openModal('<h2>Buy credits</h2><p class="muted">Payment is verified by Mkety before credits are added.</p><div class="field"><label>Credits</label><input class="input" id="topupCredits" type="number" min="100" max="5000000" value="5000"></div><div class="field"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted"></p><div class="row"><button class="btn primary" id="topupStart">Continue to secure payment</button><button class="btn" id="topupCancel">Cancel</button></div>');
  topupCancel.onclick=closeModal;
  topupStart.onclick=async()=>{try{
-   topupStart.disabled=true;topupMsg.textContent='Preparing secure Flutterwave checkout…';
+   topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
    const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credits:Number(topupCredits.value),paymentCurrency:topupCurrency.value})});
    topupMsg.textContent='Opening secure checkout…';
    launchFlutterwave(d);
@@ -235,6 +228,20 @@ async function loadCheckouts(){try{
  const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
  checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Type</th><th>Credits</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type||'topup')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No payments yet.';
 }catch(e){checkoutBox.textContent=e.message}}
+async function changePassword(){
+ openModal('<h2>Change password</h2><div class="field"><label>Current password</label><input class="input" id="currentPassword" type="password" autocomplete="current-password"></div><div class="field"><label>New password</label><input class="input" id="newPassword" type="password" minlength="12" autocomplete="new-password"></div><p id="passwordMsg" class="muted"></p><div class="row"><button class="btn primary" id="passwordSave">Update password</button><button class="btn" id="passwordCancel">Cancel</button></div>');
+ passwordCancel.onclick=closeModal;
+ passwordSave.onclick=async()=>{try{passwordSave.disabled=true;await api('/api/auth/password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({currentPassword:currentPassword.value,newPassword:newPassword.value})});toastMsg('Password updated');closeModal()}catch(e){passwordSave.disabled=false;passwordMsg.textContent=e.message}};
+}
+async function manageSessions(){
+ try{
+  const d=await api('/api/auth/sessions');
+  const rows=(d.sessions||[]).map(s=>'<tr><td>'+new Date(s.created_at*1000).toLocaleString()+'</td><td>'+new Date(s.last_seen_at*1000).toLocaleString()+'</td><td>'+(s.revoked_at?'Revoked':'Active')+'</td><td>'+(!s.revoked_at?'<button class="btn danger" data-revoke-session="'+esc(s.id)+'">Revoke</button>':'')+'</td></tr>').join('');
+  openModal('<h2>Signed-in sessions</h2><div class="card">'+(rows?'<table class="table"><thead><tr><th>Created</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>':'<div class="empty">No sessions.</div>')+'</div><div class="row" style="margin-top:12px"><button class="btn" id="sessionsClose">Close</button></div>');
+  sessionsClose.onclick=closeModal;
+  dialog.querySelectorAll('[data-revoke-session]').forEach(b=>b.onclick=async()=>{try{await api('/api/auth/sessions/'+encodeURIComponent(b.dataset.revokeSession),{method:'DELETE'});toastMsg('Session revoked');await manageSessions()}catch(e){toastMsg(e.message)}});
+ }catch(e){toastMsg(e.message)}
+}
 async function linkTelegram(){try{const d=await api('/api/auth/telegram/link/start',{method:'POST'});location.href=d.url}catch(e){toastMsg(e.message)}}
 refresh().catch(e=>{content.innerHTML='<div class="card"><h2>Could not load console</h2><p class="muted">'+esc(e.message)+'</p></div>'});
 </script>
