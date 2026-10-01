@@ -35,7 +35,7 @@ export default async function WebhooksPage({ params }: WebhooksPageProps) {
       <AdminPageHeader
         title="Webhooks"
         description="Send event notifications to external services."
-        backHref={`/t/${tenant}/admin/integrations`}
+        backHref={`/app/${tenant}/admin/integrations`}
         backLabel="Integrations"
       />
 
