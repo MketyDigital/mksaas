@@ -430,6 +430,33 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true });
   }
 
+  const messageText = typeof message.text === "string" ? message.text.trim() : "";
+  if (messageText.startsWith("/start link_")) {
+    const linkToken = messageText.slice("/start link_".length).split(/\s+/)[0];
+    const challenge = await env.DB.prepare(
+      `SELECT id,user_id FROM telegram_link_challenges
+       WHERE token_hash=? AND assistant_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1`,
+    ).bind(await sha256Text(linkToken), assistantId, unix()).first<any>();
+    if (!challenge) {
+      await telegramSend(token, chatId, "This Mkety Assist recovery-link request has expired. Return to your portal and start again.");
+      await markWebhook(env.DB, assistantId, updateId, "processed");
+      return json({ ok: true });
+    }
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_recovery_assistant_id=?,telegram_linked_at=?,updated_at=? WHERE id=?",
+        ).bind(String(message.from?.id ?? message.chat.id), message.from?.username ? String(message.from.username) : null, assistantId, unix(), unix(), challenge.user_id),
+        env.DB.prepare("UPDATE telegram_link_challenges SET consumed_at=? WHERE id=?").bind(unix(), challenge.id),
+      ]);
+      await telegramSend(token, chatId, "Telegram is now connected to your Mkety Assist account for secure access recovery.");
+    } catch {
+      await telegramSend(token, chatId, "This Telegram account is already linked to another Mkety Assist user. Contact your administrator if this is unexpected.");
+    }
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, recoveryLinked: true });
+  }
+
   const conversation = await upsertConversation(env.DB, assistant.customer_id, assistantId, chatId);
   const inbound = await normalizeTelegramMessage(message, token, assistant, env, conversation.id);
 
@@ -1247,6 +1274,11 @@ function arrayBufferToBase64(bytes: ArrayBuffer) {
   for (let i = 0; i < arr.length; i += 0x8000) s += String.fromCharCode(...arr.subarray(i, i + 0x8000));
   return btoa(s);
 }
+async function sha256Text(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function constantTimeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   let n = 0;
