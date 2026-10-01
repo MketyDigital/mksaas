@@ -14,13 +14,13 @@ export default async function EnterpriseAiPlaygroundPage({params}:{params:Promis
   await requirePermission(tenantSlug,'ai:agents:manage');
   const tenant=await getTenantBySlug(tenantSlug);
   if(!tenant) redirect('/select-tenant');
-  if(!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if(!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/app/${tenantSlug}/enterprise-ai`);
   const solutions=await listEnterpriseAiSolutionInstances(tenant.id);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <div>
-        <Link className="text-sm text-muted-foreground" href={`/t/${tenantSlug}/enterprise-ai`}>← Enterprise AI</Link>
+        <Link className="text-sm text-muted-foreground" href={`/app/${tenantSlug}/enterprise-ai`}>← Enterprise AI</Link>
         <h1 className="mt-2 text-3xl font-bold">Playground</h1>
         <p className="mt-2 max-w-3xl text-muted-foreground">
           Test the exact solution configuration before connecting customers. Production inference must still pass the global release gate.
