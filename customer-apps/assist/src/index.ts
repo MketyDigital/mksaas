@@ -225,6 +225,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
 
+    await ensureHostedWorkerDomain(env, hostedHostname);
+
     await env.DB.batch([
       env.DB.prepare("INSERT INTO customers (id,slug,name,status,billing_status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
         .bind(customerId, slug, name, "active", "pending", now, now),
@@ -245,8 +247,6 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,action,target_type,target_id,customer_id,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(id("aud"), "operator", "customer.created", "customer", customerId, customerId, now),
     ]);
-
-    await ensureHostedWorkerDomain(env, hostedHostname);
 
     let customDomain: unknown = null;
     if (customHostname) {
