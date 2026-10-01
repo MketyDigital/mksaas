@@ -10,7 +10,7 @@ import {
 } from '@/features/platform-connections/server/service';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { requirePermission } from '@/shared/lib/permissions';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 
 async function requireDomainOps(tenantSlug: string) {
   const actor = await requirePlatformControlAccess(tenantSlug);
@@ -159,17 +159,37 @@ async function disableCloudflareDomainRoutingConnectionImpl(
 }
 
 export async function saveDomainNameApiConnection(...args: Parameters<typeof saveDomainNameApiConnectionImpl>) {
-  return withServerActionDatabase(() => saveDomainNameApiConnectionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    action: 'saveDomainNameApiConnection',
+    work: () => saveDomainNameApiConnectionImpl(...args),
+  });
 }
 
 export async function disableDomainResellerConnection(...args: Parameters<typeof disableDomainResellerConnectionImpl>) {
-  return withServerActionDatabase(() => disableDomainResellerConnectionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    action: 'disableDomainResellerConnection',
+    work: () => disableDomainResellerConnectionImpl(...args),
+  });
 }
 
 export async function saveCloudflareDomainRoutingConnection(...args: Parameters<typeof saveCloudflareDomainRoutingConnectionImpl>) {
-  return withServerActionDatabase(() => saveCloudflareDomainRoutingConnectionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    action: 'saveCloudflareDomainRoutingConnection',
+    work: () => saveCloudflareDomainRoutingConnectionImpl(...args),
+  });
 }
 
 export async function disableCloudflareDomainRoutingConnection(...args: Parameters<typeof disableCloudflareDomainRoutingConnectionImpl>) {
-  return withServerActionDatabase(() => disableCloudflareDomainRoutingConnectionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    action: 'disableCloudflareDomainRoutingConnection',
+    work: () => disableCloudflareDomainRoutingConnectionImpl(...args),
+  });
 }
