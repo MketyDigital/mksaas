@@ -19,6 +19,10 @@ jest.mock('@/shared/lib/tenant', () => ({
 }));
 jest.mock('@/shared/db', () => ({ db: {} }));
 jest.mock('@/shared/db/cloudflare', () => ({ db: {} }));
+jest.mock('@/shared/db/request', () => ({
+  withRequestDatabase: async (work: (database: object) => Promise<unknown>) => work({}),
+}));
+
 jest.mock('next/navigation', () => ({
   redirect: (path: string) => {
     throw new Error(`redirect:${path}`);
