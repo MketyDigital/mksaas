@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'src/app/(tenant)/t/[tenant]/projects/**'
+      - 'src/app/app/[tenant]/projects/**'
       - 'src/features/projects/workspaces/ai/**'
       - 'docs/superpowers/specs/2026-09-05-mkety-ai-workspace-foundation-design.md'
       - 'docs/superpowers/plans/2026-09-05-mkety-ai-workspace-foundation.md'
