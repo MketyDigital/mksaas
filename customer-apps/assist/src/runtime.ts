@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
 };
