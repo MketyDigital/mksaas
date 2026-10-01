@@ -31,6 +31,7 @@ interface Env {
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME?: string;
   MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET: string;
   MKETY_ASSIST_CF_ZONE_ID: string;
+  MKETY_ASSIST_CF_ACCOUNT_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
   FLUTTERWAVE_CHECKOUT_BROKER_SECRET?: string;
 }
@@ -196,6 +197,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const userId = id("usr");
     const setupToken = randomToken(32);
     const setupHash = await sha256(setupToken);
+    const setupCiphertext = await protectStoredSecret(setupToken, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
     const hostedHostname = `${slug}.${env.HOSTED_SUFFIX}`;
 
     const monthlyPrice = parseUsdMinorValue(body.monthlyPriceUsd, "monthly price");
@@ -232,8 +234,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         .bind(userId, adminEmail, "active", now, now),
       env.DB.prepare("INSERT INTO customer_users (customer_id,user_id,role,created_at) VALUES (?,?,?,?)")
         .bind(customerId, userId, "owner", now),
-      env.DB.prepare("INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)")
-        .bind(id("set"), customerId, userId, setupHash, now + 86400, now),
+      env.DB.prepare("INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at,token_ciphertext) VALUES (?,?,?,?,?,?,?)")
+        .bind(id("set"), customerId, userId, setupHash, now + 86400, now, setupCiphertext),
       env.DB.prepare("INSERT INTO credit_accounts (customer_id,balance,lifetime_granted,lifetime_consumed,updated_at) VALUES (?,?,?,?,?)")
         .bind(customerId, 0, 0, 0, now),
       env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,funding_mode,minimum_funding_minor,setup_fee_minor,credit_rollover,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
@@ -243,6 +245,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,action,target_type,target_id,customer_id,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(id("aud"), "operator", "customer.created", "customer", customerId, customerId, now),
     ]);
+
+    await ensureHostedWorkerDomain(env, hostedHostname);
 
     let customDomain: unknown = null;
     if (customHostname) {
@@ -271,13 +275,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     ).bind(customerId).first<any>();
     if (!row) return json({ error: "customer_owner_not_found" }, 404);
 
+    await ensureHostedWorkerDomain(env, row.hostname);
     const token = randomToken(32);
     const tokenHash = await sha256(token);
+    const tokenCiphertext = await protectStoredSecret(token, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
     await env.DB.batch([
       env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE customer_id=? AND consumed_at IS NULL")
         .bind(now, customerId),
-      env.DB.prepare("INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)")
-        .bind(id("set"), customerId, row.user_id, tokenHash, now + 86400, now),
+      env.DB.prepare("INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at,token_ciphertext) VALUES (?,?,?,?,?,?,?)")
+        .bind(id("set"), customerId, row.user_id, tokenHash, now + 86400, now, tokenCiphertext),
       env.DB.prepare(
         "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
       ).bind(
@@ -374,7 +380,29 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const features = await env.DB.prepare("SELECT * FROM feature_policy WHERE customer_id=?").bind(customerId).first();
     const credits = await env.DB.prepare("SELECT * FROM credit_accounts WHERE customer_id=?").bind(customerId).first();
     const domains = await env.DB.prepare("SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC").bind(customerId).all();
-    return json({ customer, commercial, features, credits, domains: domains.results ?? [] });
+    const ownerAccess = await env.DB.prepare(
+      `SELECT st.token_ciphertext,st.expires_at,u.email,d.hostname
+       FROM setup_tokens st
+       JOIN customer_users cu ON cu.customer_id=st.customer_id AND cu.user_id=st.user_id AND cu.role='owner'
+       JOIN users u ON u.id=st.user_id
+       JOIN customer_domains d ON d.customer_id=st.customer_id AND d.kind='hosted'
+       WHERE st.customer_id=? AND st.consumed_at IS NULL AND st.expires_at>? AND st.token_ciphertext IS NOT NULL
+       ORDER BY st.created_at DESC LIMIT 1`,
+    ).bind(customerId, unix()).first<any>();
+    let activeOwnerAccess: any = null;
+    if (ownerAccess?.token_ciphertext) {
+      try {
+        const raw = await revealStoredSecret(String(ownerAccess.token_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+        activeOwnerAccess = {
+          email: ownerAccess.email,
+          accessUrl: `https://${ownerAccess.hostname}/setup?token=${encodeURIComponent(raw)}`,
+          expiresAt: Number(ownerAccess.expires_at),
+        };
+      } catch (error) {
+        console.error("Could not reveal active owner access token", error);
+      }
+    }
+    return json({ customer, commercial, features, credits, domains: domains.results ?? [], ownerAccess: activeOwnerAccess });
   }
 
   if (url.pathname === "/api/ops/credits" && request.method === "POST") {
@@ -1276,6 +1304,43 @@ function parsePaymentAmountMinor(value: unknown) {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
   if (!match) throw new HttpError(400, "invalid_payment_amount");
   return parseInt(match[1], 10) * 100 + parseInt((match[2] || "").padEnd(2, "0") || "0", 10);
+}
+
+async function ensureHostedWorkerDomain(env: Env, hostnameInput: string) {
+  const hostname = normalizeHostname(hostnameInput);
+  if (!hostname.endsWith(`.${env.HOSTED_SUFFIX}`)) throw new HttpError(400, "invalid_hosted_hostname");
+  const headers = {
+    authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}`,
+    "content-type": "application/json",
+  };
+  const list = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.MKETY_ASSIST_CF_ACCOUNT_ID}/workers/domains`,
+    { headers },
+  );
+  const data: any = await list.json();
+  if (!list.ok || !data.success) {
+    throw new Error(`Cloudflare Worker Custom Domain lookup failed: ${JSON.stringify(data.errors || data)}`);
+  }
+  const existing = (data.result || []).find((item: any) => item.hostname === hostname);
+  if (existing?.service === env.APP_WORKER_NAME) return existing;
+  if (existing && existing.service && existing.service !== env.APP_WORKER_NAME) {
+    throw new Error(`Hosted domain ${hostname} is already attached to another Worker.`);
+  }
+  const payload = {
+    hostname,
+    service: env.APP_WORKER_NAME,
+    zone_id: env.MKETY_ASSIST_CF_ZONE_ID,
+    zone_name: "mkety.app",
+  };
+  const attach = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.MKETY_ASSIST_CF_ACCOUNT_ID}/workers/domains`,
+    { method: "PUT", headers, body: JSON.stringify(payload) },
+  );
+  const attached: any = await attach.json();
+  if (!attach.ok || !attached.success || !attached.result?.id) {
+    throw new Error(`Cloudflare Worker Custom Domain attach failed for ${hostname}: ${JSON.stringify(attached.errors || attached)}`);
+  }
+  return attached.result;
 }
 
 async function deleteCustomerR2Objects(bucket: R2Bucket, customerId: string) {
