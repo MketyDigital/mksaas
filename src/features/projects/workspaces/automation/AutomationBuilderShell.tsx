@@ -148,7 +148,7 @@ export function AutomationBuilderShell({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Link className="rounded-md border px-3 py-2 text-sm font-medium" href={`/t/${tenantSlug}/projects/${projectSlug}/automation`}>
+        <Link className="rounded-md border px-3 py-2 text-sm font-medium" href={`/app/${tenantSlug}/projects/${projectSlug}/automation`}>
           Back to Automation Workspace
         </Link>
       </div>
