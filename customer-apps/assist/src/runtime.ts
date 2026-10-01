@@ -9,6 +9,7 @@ type AssistEnv = {
   MEDIA: R2Bucket;
   MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
+  PORTAL_CNAME_TARGET: string;
 };
 
 type Customer = {
@@ -276,8 +277,7 @@ export async function handleRuntimeApi(
       const encryptedToken = await protectSecret(botToken, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
       const encryptedWebhookSecret = await protectSecret(webhookSecret, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
       const now = unix();
-      const origin = new URL(request.url).origin;
-      const webhookUrl = `${origin}/api/telegram/${assistantId}`;
+      const webhookUrl = `https://${env.PORTAL_CNAME_TARGET}/api/telegram/${assistantId}`;
       const webhook = await telegramSetWebhook(botToken, webhookUrl, webhookSecret);
       if (!webhook.ok) return json({ error: "telegram_webhook_registration_failed", details: webhook.description || null }, 502);
       await env.DB.batch([
