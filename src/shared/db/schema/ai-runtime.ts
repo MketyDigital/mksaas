@@ -158,7 +158,7 @@ export const aiEnterpriseCommercialPolicies = appSchema.table('ai_enterprise_com
   minimumFundingMinor: bigint('minimum_funding_minor', { mode: 'bigint' }).notNull(),
   managedCostShareBps: integer('managed_cost_share_bps').notNull().default(1500),
   operationsReserveBps: integer('operations_reserve_bps').notNull().default(1000),
-  customerRateMultiplierBps: integer('customer_rate_multiplier_bps').notNull().default(20000),
+  customerRateMultiplierBps: integer('customer_rate_multiplier_bps').notNull().default(10000),
   creditUsdMicros: bigint('credit_usd_micros', { mode: 'bigint' }).notNull().default(1000n),
   setupFeeMinor: bigint('setup_fee_minor', { mode: 'bigint' }).notNull().default(0n),
   fundingMode: varchar('funding_mode', { length: 32 }).notNull().default('full_period'),
