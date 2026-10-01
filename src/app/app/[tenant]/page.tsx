@@ -17,6 +17,7 @@ import {
 import Link from 'next/link';
 
 import { getDashboardStats } from '@/features/dashboard/actions';
+import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import { getTenantEntitlementsForRequest } from '@/features/entitlements/server/resolver';
 import {
   getPublishedDashboardSettings,
@@ -51,16 +52,18 @@ async function renderTenantDashboard({ params }: TenantDashboardProps) {
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) return null;
 
-  const [statsResult, dashboard, workspaces, entitlements] = await Promise.all([
+  const [statsResult, dashboard, workspaces, entitlements, enterpriseAiContractState] = await Promise.all([
     getDashboardStats(tenant.slug),
     getPublishedDashboardSettings(),
     getPublishedWorkspaceCardsForTenant(tenant.id),
     getTenantEntitlementsForRequest(tenant.id),
+    getEnterpriseAiContractBillingState(tenant.id),
   ]);
   const stats = statsResult.success ? statsResult.data : null;
   const allowed = new Set(entitlements.filter((item) => item.allowed).map((item) => item.entitlement));
   const hasMail = allowed.has('workspace.mail');
   const hasEnterpriseAi = allowed.has('workspace.ai.enterprise');
+  const hasEnterpriseAiContract = Boolean(enterpriseAiContractState.contract);
 
   return (
     <div className="space-y-8">
@@ -145,6 +148,12 @@ async function renderTenantDashboard({ params }: TenantDashboardProps) {
               <Bot className="h-5 w-5 text-primary" />
               <p className="mt-3 font-semibold">Enterprise AI</p>
               <p className="mt-1 text-sm text-muted-foreground">Customer AI, channels, domains, branding and usage.</p>
+            </Link>
+          ) : hasEnterpriseAiContract ? (
+            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/enterprise-ai`}>
+              <Bot className="h-5 w-5 text-primary" />
+              <p className="mt-3 font-semibold">Enterprise AI · Agreement ready</p>
+              <p className="mt-1 text-sm text-muted-foreground">Review your Enterprise AI agreement, choose a payment method and activate access.</p>
             </Link>
           ) : (
             <a className="rounded-2xl border bg-card p-5 hover:border-primary/50" href="https://mkety.com/enterprise">

@@ -18,7 +18,8 @@ function validReturnPath(value: string, tenantSlug: string): string | null {
   try {
     const parsed = new URL(value, 'https://mkety.invalid');
     if (parsed.origin !== 'https://mkety.invalid') return null;
-    if (parsed.pathname !== `/app/${tenantSlug}/billing/checkout`) return null;
+    const allowedPaths = new Set([`/app/${tenantSlug}/billing/checkout`, `/app/${tenantSlug}/enterprise-ai`]);
+    if (!allowedPaths.has(parsed.pathname)) return null;
     return `${parsed.pathname}${parsed.search}`;
   } catch {
     return null;
