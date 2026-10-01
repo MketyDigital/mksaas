@@ -180,7 +180,9 @@ export async function deleteKnowledgeChunks(db: D1Database, itemIds: string[]) {
       db.prepare("DELETE FROM knowledge_chunks_fts WHERE chunk_id=?").bind(String(row.id))
     );
     statements.push(db.prepare("DELETE FROM knowledge_chunks WHERE item_id=?").bind(itemId));
-    if (statements.length) await db.batch(statements);
+    for (let i = 0; i < statements.length; i += 80) {
+      await db.batch(statements.slice(i, i + 80));
+    }
   }
 }
 
