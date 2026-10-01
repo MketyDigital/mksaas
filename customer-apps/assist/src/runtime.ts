@@ -49,7 +49,7 @@ export async function handleRuntimeApi(
     requireAdmin(session);
     const rows = await env.DB.prepare(
       `SELECT k.id,k.name,k.token_prefix,k.status,k.assistant_id,k.created_at,k.last_used_at,k.expires_at,
-              a.name AS assistant_name
+              k.scopes_json,k.rate_limit_per_minute,a.name AS assistant_name
        FROM customer_api_keys k
        LEFT JOIN assistants a ON a.id=k.assistant_id
        WHERE k.customer_id=?
@@ -70,10 +70,13 @@ export async function handleRuntimeApi(
     const keyId = id("key");
     const expiresAt = body.expiresAt ? Math.floor(new Date(String(body.expiresAt)).getTime() / 1000) : null;
     if (expiresAt && (!Number.isFinite(expiresAt) || expiresAt <= now)) throw new ApiError(400, "invalid_expiry");
+    const scopes = Array.isArray(body.scopes) ? body.scopes.map(String).filter((x: string) => x === "inference") : ["inference"];
+    if (!scopes.length) return json({ error: "api_key_scope_required" }, 400);
+    const rateLimitPerMinute = Math.max(1, Math.min(10000, Number(body.rateLimitPerMinute || 60)));
     await env.DB.prepare(
-      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt).run();
-    return json({ id: keyId, name, key: raw, prefix, assistantId, expiresAt }, 201);
+      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at,scopes_json,rate_limit_per_minute) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt, JSON.stringify(scopes), rateLimitPerMinute).run();
+    return json({ id: keyId, name, key: raw, prefix, assistantId, expiresAt, scopes, rateLimitPerMinute }, 201);
   }
 
   if (parts[0] === "api" && parts[1] === "keys" && parts[2] && request.method === "DELETE") {
@@ -112,6 +115,92 @@ export async function handleRuntimeApi(
     return json({ id: collectionId, name }, 201);
   }
 
+  if (parts[0] === "api" && parts[1] === "knowledge" && parts[2] && parts.length === 3 && request.method === "GET") {
+    const collectionId = parts[2];
+    await assertCollection(env.DB, customer.customerId, collectionId);
+    const collection = await env.DB.prepare(
+      "SELECT id,name,created_at,updated_at FROM knowledge_collections WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(collectionId, customer.customerId).first<any>();
+    const items = await env.DB.prepare(
+      "SELECT id,title,mime_type,status,error_code,retry_count,created_at,updated_at FROM knowledge_items WHERE collection_id=? AND customer_id=? ORDER BY updated_at DESC",
+    ).bind(collectionId, customer.customerId).all<any>();
+    return json({ collection, items: items.results ?? [] });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge" && parts[2] && parts.length === 3 && request.method === "PATCH") {
+    requireAdmin(session);
+    const name = required((await readJson(request)).name, "name").slice(0, 120);
+    const result = await env.DB.prepare(
+      "UPDATE knowledge_collections SET name=?,updated_at=? WHERE id=? AND customer_id=?",
+    ).bind(name, unix(), parts[2], customer.customerId).run();
+    if (!result.meta.changes) return json({ error: "knowledge_collection_not_found" }, 404);
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge" && parts[2] && parts.length === 3 && request.method === "DELETE") {
+    requireAdmin(session);
+    const collectionId = parts[2];
+    await assertCollection(env.DB, customer.customerId, collectionId);
+    const assets = await env.DB.prepare(
+      "SELECT r2_key FROM knowledge_items WHERE collection_id=? AND customer_id=? AND r2_key IS NOT NULL",
+    ).bind(collectionId, customer.customerId).all<any>();
+    for (const row of assets.results ?? []) if (row.r2_key) await env.MEDIA.delete(String(row.r2_key));
+    await env.DB.prepare("DELETE FROM knowledge_collections WHERE id=? AND customer_id=?").bind(collectionId, customer.customerId).run();
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge-items" && parts[2] && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const title = required(body.title, "title").slice(0, 200);
+    const result = await env.DB.prepare(
+      "UPDATE knowledge_items SET title=?,updated_at=? WHERE id=? AND customer_id=?",
+    ).bind(title, unix(), parts[2], customer.customerId).run();
+    if (!result.meta.changes) return json({ error: "knowledge_item_not_found" }, 404);
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge-items" && parts[2] && request.method === "DELETE") {
+    requireAdmin(session);
+    const item = await env.DB.prepare(
+      "SELECT r2_key FROM knowledge_items WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!item) return json({ error: "knowledge_item_not_found" }, 404);
+    if (item.r2_key) await env.MEDIA.delete(String(item.r2_key));
+    await env.DB.prepare("DELETE FROM knowledge_items WHERE id=? AND customer_id=?").bind(parts[2], customer.customerId).run();
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge-items" && parts[2] && parts[3] === "retry" && request.method === "POST") {
+    requireAdmin(session);
+    const item = await env.DB.prepare(
+      "SELECT id,r2_key,title,mime_type FROM knowledge_items WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!item) return json({ error: "knowledge_item_not_found" }, 404);
+    if (!item.r2_key) return json({ error: "knowledge_retry_unavailable" }, 409);
+    const object = await env.MEDIA.get(String(item.r2_key));
+    if (!object) return json({ error: "knowledge_source_missing" }, 409);
+    const bytes = await object.arrayBuffer();
+    let textual: string | null = null;
+    let errorCode: string | null = null;
+    try {
+      const converted = await env.AI.toMarkdown(
+        { name: String(item.title), blob: new Blob([bytes], { type: String(item.mime_type || "application/octet-stream") }) },
+        { conversionOptions: { output: { format: "text" }, pdf: { metadata: false } } },
+      );
+      const result = Array.isArray(converted) ? converted[0] : converted;
+      if (result?.format === "error") errorCode = String(result.error || "conversion_failed");
+      else if (typeof result?.data === "string" && result.data.trim()) textual = result.data.trim();
+      else errorCode = "conversion_returned_no_text";
+    } catch (error) {
+      errorCode = error instanceof Error ? error.message.slice(0, 300) : "conversion_failed";
+    }
+    await env.DB.prepare(
+      "UPDATE knowledge_items SET status=?,content_text=?,error_code=?,retry_count=retry_count+1,updated_at=? WHERE id=? AND customer_id=?",
+    ).bind(textual ? "ready" : "error", textual, errorCode, unix(), item.id, customer.customerId).run();
+    return json({ ok: Boolean(textual), status: textual ? "ready" : "error", error: errorCode });
+  }
+
   if (url.pathname === "/api/knowledge/item" && request.method === "POST") {
     requireAdmin(session);
     if (!(await customerFeatureEnabled(env.DB, customer.customerId, "knowledge_enabled"))) {
@@ -148,16 +237,16 @@ export async function handleRuntimeApi(
       const now = unix();
       await env.DB.prepare(
         `INSERT INTO knowledge_items
-         (id,customer_id,collection_id,r2_key,title,mime_type,status,content_text,metadata_json,created_at,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         (id,customer_id,collection_id,r2_key,title,mime_type,status,content_text,metadata_json,error_code,retry_count,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         itemId, customer.customerId, collectionId, key, file.name, file.type || null,
-        textual ? "ready" : "stored", textual, JSON.stringify({ size: file.size, conversionError }), now, now,
+        textual ? "ready" : "error", textual, JSON.stringify({ size: file.size }), conversionError, 0, now, now,
       ).run();
       return json({
         id: itemId,
         title: file.name,
-        status: textual ? "ready" : "stored",
+        status: textual ? "ready" : "error",
         conversionError,
       }, 201);
     }
@@ -204,6 +293,20 @@ export async function handleRuntimeApi(
       "SELECT id,role,content,media_json,created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT 300",
     ).bind(conversationId).all();
     return json({ messages: rows.results ?? [] });
+  }
+
+  if (parts[0] === "api" && parts[1] === "conversations" && parts[2] && parts[3] === "memory" && request.method === "DELETE") {
+    requireAdmin(session);
+    const conversationId = parts[2];
+    await assertConversation(env.DB, customer.customerId, conversationId);
+    const now = unix();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE conversations SET memory_cleared_at=?,updated_at=? WHERE id=? AND customer_id=?")
+        .bind(now, now, conversationId, customer.customerId),
+      env.DB.prepare("DELETE FROM memories WHERE conversation_id=? AND customer_id=?")
+        .bind(conversationId, customer.customerId),
+    ]);
+    return json({ ok: true, memoryClearedAt: now });
   }
 
   if (url.pathname === "/api/automation" && request.method === "GET") {
@@ -865,8 +968,8 @@ async function runAssistant(input: {
   ).bind(assistant.id).first<any>();
   const recent = assistant.memory_enabled
     ? await env.DB.prepare(
-        "SELECT role,content FROM messages WHERE conversation_id=? ORDER BY created_at DESC LIMIT 14",
-      ).bind(conversationId).all<any>()
+        "SELECT role,content FROM messages WHERE conversation_id=? AND created_at>COALESCE((SELECT memory_cleared_at FROM conversations WHERE id=?),0) ORDER BY created_at DESC LIMIT 14",
+      ).bind(conversationId, conversationId).all<any>()
     : { results: [] as any[] };
   const history = (recent.results ?? []).reverse();
 
