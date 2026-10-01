@@ -509,7 +509,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/providers" && request.method === "POST") {
     const body = await readJson(request);
     const provider = requiredString(body.provider, "provider");
-    if (!["openai","anthropic","gemini","azure-openai","openai-compatible"].includes(provider)) {
+    if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
     const apiKey = requiredString(body.apiKey, "apiKey");
