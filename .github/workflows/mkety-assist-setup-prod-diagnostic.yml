@@ -59,6 +59,17 @@ jobs:
           body="$(HOST="$host" ZONE_ID="$zone_id" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:'mkety-assist',zone_id:process.env.ZONE_ID,zone_name:'mkety.app'}))")"
           curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$account_id/workers/domains" >/tmp/assist-domain.json
 
+          ready=0
+          for attempt in $(seq 1 30); do
+            code="$(curl -sS --connect-timeout 5 --max-time 10 -o /tmp/domain-health.json -w '%{http_code}' "https://$host/health" 2>/dev/null || true)"
+            if [ "$code" = "200" ]; then ready=1; break; fi
+            sleep 2
+          done
+          if [ "$ready" != "1" ]; then
+            echo "::error::Synthetic hosted domain did not become HTTPS-ready"
+            exit 1
+          fi
+
           cleanup() {
             npx wrangler d1 execute DB --remote --config wrangler.diag.jsonc --command "DELETE FROM customers WHERE id='$customer_id'; DELETE FROM users WHERE id='$user_id';" >/dev/null 2>&1 || true
             domains="$(curl -fsS "${auth[@]}" "$api/accounts/$account_id/workers/domains" 2>/dev/null || true)"
