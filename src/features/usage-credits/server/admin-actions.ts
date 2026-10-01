@@ -51,7 +51,7 @@ export async function grantManualTenantCredits(...args: Parameters<typeof grantM
   'use server';
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/billing-ledger`,
+    path: `/ops/${tenantSlug}/platform-control/billing-ledger`,
     action: 'manual-credit-grant',
     work: () => grantManualTenantCreditsImpl(...args),
   });
