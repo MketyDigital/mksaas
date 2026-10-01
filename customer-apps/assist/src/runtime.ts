@@ -1,6 +1,7 @@
 import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
 import { mayUseFallback } from "./providers/validation";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
+import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
@@ -384,7 +385,44 @@ export async function handleRuntimeApi(
           ).bind(id("prm"), customer.customerId, assistantId, parseInt(String(current?.v || 0), 10) + 1, body.instructions, "published", now, now),
         ]);
       }
+      await recordAssistantVersion(env.DB, customer.customerId, assistantId, session.userId);
       return json({ ok: true });
+    }
+
+    if (parts[3] === "versions" && request.method === "GET") {
+      return json({ versions: await listAssistantVersions(env.DB, customer.customerId, assistantId) });
+    }
+
+    if (parts[3] === "rollback" && request.method === "POST") {
+      requireAdmin(session);
+      const body = await readJson(request);
+      const version = Number(body.version);
+      if (!Number.isInteger(version) || version < 1) return json({ error: "invalid_version" }, 400);
+      const newVersion = await rollbackAssistantVersion(env.DB, customer.customerId, assistantId, version, session.userId);
+      return json({ ok: true, version: newVersion });
+    }
+
+    if (parts[3] === "archive" && request.method === "POST") {
+      requireAdmin(session);
+      await archiveAssistant(env.DB, customer.customerId, assistantId);
+      return json({ ok: true });
+    }
+
+    if (parts[3] === "restore" && request.method === "POST") {
+      requireAdmin(session);
+      await restoreAssistant(env.DB, customer.customerId, assistantId);
+      return json({ ok: true });
+    }
+
+    if (parts.length === 3 && request.method === "DELETE") {
+      requireAdmin(session);
+      try {
+        await deleteAssistant(env.DB, customer.customerId, assistantId);
+        return json({ ok: true });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "assistant_delete_failed";
+        return json({ error: code }, code === "assistant_not_found" ? 404 : 409);
+      }
     }
 
     if (parts[3] === "telegram" && request.method === "POST") {
@@ -452,8 +490,7 @@ export async function handleRuntimeApi(
       }
       const body = await readJson(request);
       const endpoint = required(body.endpointUrl, "endpointUrl");
-      const parsed = new URL(endpoint);
-      if (parsed.protocol !== "https:" || isPrivateHost(parsed.hostname)) return json({ error: "unsafe_tool_endpoint" }, 400);
+      try { validateToolEndpoint(endpoint); } catch { return json({ error: "unsafe_tool_endpoint" }, 400); }
       const now = unix();
       const toolId = id("tool");
       const authCipher = body.authHeader ? await protectSecret(String(body.authHeader), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) : null;
