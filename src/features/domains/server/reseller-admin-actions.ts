@@ -159,7 +159,7 @@ async function disableCloudflareDomainRoutingConnectionImpl(
 export async function saveDomainNameApiConnection(...args: Parameters<typeof saveDomainNameApiConnectionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    path: `/ops/${tenantSlug}/platform-control/domains-routing`,
     action: 'saveDomainNameApiConnection',
     work: () => saveDomainNameApiConnectionImpl(...args),
   });
@@ -168,7 +168,7 @@ export async function saveDomainNameApiConnection(...args: Parameters<typeof sav
 export async function disableDomainResellerConnection(...args: Parameters<typeof disableDomainResellerConnectionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    path: `/ops/${tenantSlug}/platform-control/domains-routing`,
     action: 'disableDomainResellerConnection',
     work: () => disableDomainResellerConnectionImpl(...args),
   });
@@ -177,7 +177,7 @@ export async function disableDomainResellerConnection(...args: Parameters<typeof
 export async function saveCloudflareDomainRoutingConnection(...args: Parameters<typeof saveCloudflareDomainRoutingConnectionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    path: `/ops/${tenantSlug}/platform-control/domains-routing`,
     action: 'saveCloudflareDomainRoutingConnection',
     work: () => saveCloudflareDomainRoutingConnectionImpl(...args),
   });
@@ -186,7 +186,7 @@ export async function saveCloudflareDomainRoutingConnection(...args: Parameters<
 export async function disableCloudflareDomainRoutingConnection(...args: Parameters<typeof disableCloudflareDomainRoutingConnectionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/domains-routing`,
+    path: `/ops/${tenantSlug}/platform-control/domains-routing`,
     action: 'disableCloudflareDomainRoutingConnection',
     work: () => disableCloudflareDomainRoutingConnectionImpl(...args),
   });
