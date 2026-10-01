@@ -24,7 +24,7 @@
   ],
   "routes": [
     { "pattern": "*.assist.mkety.app/*", "zone_name": "mkety.app" },
-    { "pattern": "portal.assist.mkety.app/*", "zone_name": "mkety.app" },
-    { "pattern": "assist-ops.mkety.com/*", "zone_name": "mkety.com" }
+    { "pattern": "portal.assist.mkety.app", "custom_domain": true },
+    { "pattern": "assist-ops.mkety.com", "custom_domain": true }
   ]
 }
