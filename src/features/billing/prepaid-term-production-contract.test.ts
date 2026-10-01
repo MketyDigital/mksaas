@@ -29,7 +29,7 @@ describe('self-service prepaid billing production contract', () => {
   it('preserves the selected term on the customer-facing pricing and checkout surfaces', async () => {
     const [pricing, checkout] = await Promise.all([
       read('src/features/platform-content/components/public/pages/MketyPricingPlans.tsx'),
-      read('src/app/(tenant)/t/[tenant]/billing/checkout/page.tsx'),
+      read('src/app/app/[tenant]/billing/checkout/page.tsx'),
     ]);
 
     expect(pricing).toContain('SELF_SERVICE_BILLING_TERMS');
