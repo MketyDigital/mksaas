@@ -47,12 +47,12 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
   }
 
   const items=[
-    {title:'Professional Email',description:'Connect your business domain, verify mail DNS and then create mailboxes.',icon:Globe2,status:workspace.onboardingStep==='domain'?'Start here':'Ready',href:workspace.onboardingStep==='domain'?`/t/${tenant}/mail/domains`:`/t/${tenant}/mail/mailboxes`},
-    {title:'Inbox',description:'Receive, read, reply, forward, archive and search.',icon:Inbox,status:'Included',href:`/t/${tenant}/mail/inbox`},
-    {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included',href:`/t/${tenant}/mail/shared`},
-    {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included',href:`/t/${tenant}/mail/customer-updates`},
-    {title:'Transactional Email',description:externalClientsEnabled?'API, SMTP, templates, webhooks and delivery logs.':'API, templates, webhooks and delivery logs. SMTP is pending gateway acceptance.',icon:Code2,status:'Included',href:`/t/${tenant}/mail/developer`},
-    {title:'Mail Apps',description:externalClientsEnabled?'Apple Mail, Outlook, Gmail mobile and Thunderbird setup with secure app passwords.':'IMAP/SMTP external-client access is pending gateway acceptance.',icon:Smartphone,status:externalClientsEnabled?'Setup ready':'Coming Soon',href:`/t/${tenant}/mail/apps`},
+    {title:'Professional Email',description:'Connect your business domain, verify mail DNS and then create mailboxes.',icon:Globe2,status:workspace.onboardingStep==='domain'?'Start here':'Ready',href:workspace.onboardingStep==='domain'?`/app/${tenant}/mail/domains`:`/app/${tenant}/mail/mailboxes`},
+    {title:'Inbox',description:'Receive, read, reply, forward, archive and search.',icon:Inbox,status:'Included',href:`/app/${tenant}/mail/inbox`},
+    {title:'Shared Business Inbox',description:'Support, sales and order inboxes with team assignment.',icon:Users,status:'Included',href:`/app/${tenant}/mail/shared`},
+    {title:'Customer Updates',description:'Send service and business updates to your existing customers.',icon:Send,status:'Included',href:`/app/${tenant}/mail/customer-updates`},
+    {title:'Transactional Email',description:externalClientsEnabled?'API, SMTP, templates, webhooks and delivery logs.':'API, templates, webhooks and delivery logs. SMTP is pending gateway acceptance.',icon:Code2,status:'Included',href:`/app/${tenant}/mail/developer`},
+    {title:'Mail Apps',description:externalClientsEnabled?'Apple Mail, Outlook, Gmail mobile and Thunderbird setup with secure app passwords.':'IMAP/SMTP external-client access is pending gateway acceptance.',icon:Smartphone,status:externalClientsEnabled?'Setup ready':'Coming Soon',href:`/app/${tenant}/mail/apps`},
     {title:'Marketing',description:'Newsletters, promotions and campaign automation.',icon:Megaphone,status:'Coming Soon',href:''},
   ];
 
@@ -66,7 +66,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
 
     {workspace.onboardingStep==='domain'&&<Card className="rounded-2xl border-primary/30">
       <CardHeader><CardTitle>Connect your business domain</CardTitle><CardDescription>Start with the domain you want to use for addresses such as hello@company.com. Mkety will guide the mail records and verification for you.</CardDescription></CardHeader>
-      <CardContent><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/t/${tenant}/mail/domains`}>Connect domain</a></CardContent>
+      <CardContent><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/domains`}>Connect domain</a></CardContent>
     </Card>}
 
     {usage&&<Card className="rounded-2xl">
@@ -76,7 +76,7 @@ export default async function MailHome({params}:{params:Promise<{tenant:string}>
             <CardTitle>Usage & Billing</CardTitle>
             <CardDescription>{usage.planName} · ${(Number(usage.priceMinor)/100).toFixed(2)} / month before prepaid-term discounts</CardDescription>
           </div>
-          <a className="text-sm font-semibold text-primary" href={`/t/${tenant}/billing/checkout?plan=${usage.planKey}`}>Manage plan →</a>
+          <a className="text-sm font-semibold text-primary" href={`/app/${tenant}/billing/checkout?plan=${usage.planKey}`}>Manage plan →</a>
         </div>
       </CardHeader>
       <CardContent>
