@@ -21,7 +21,7 @@ export function WorkspaceShell({
     <main className="mx-auto max-w-6xl space-y-8 p-6 md:p-8">
       <header className="rounded-2xl border bg-card p-6 md:p-8">
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <Link href={`/t/${tenantSlug}/projects/${projectSlug}`} className="font-medium hover:text-foreground">
+          <Link href={`/app/${tenantSlug}/projects/${projectSlug}`} className="font-medium hover:text-foreground">
             {projectName}
           </Link>
           <span>/</span>
@@ -45,7 +45,7 @@ export function WorkspaceShell({
             return (
               <Link
                 key={item.key}
-                href={`/t/${tenantSlug}/projects/${projectSlug}/${item.hrefSegment}`}
+                href={`/app/${tenantSlug}/projects/${projectSlug}/${item.hrefSegment}`}
                 aria-current={isActive ? 'page' : undefined}
                 className={[
                   'rounded-full border px-3 py-2 text-sm font-medium transition',

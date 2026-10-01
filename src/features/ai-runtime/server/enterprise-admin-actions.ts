@@ -60,8 +60,8 @@ export async function saveEnterpriseAiWhiteLabel(tenantSlug: string, formData: F
       whiteLabel,
     },
   });
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai`);
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/branding`);
 }
 
 export async function connectEnterpriseAiHostname(tenantSlug: string, formData: FormData) {
@@ -147,7 +147,7 @@ export async function connectEnterpriseAiHostname(tenantSlug: string, formData: 
     },
   });
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/branding`);
 }
 
 
@@ -214,7 +214,7 @@ export async function refreshEnterpriseAiHostname(tenantSlug: string, formData: 
     updatedAt: new Date(),
   }).where(eq(customDomains.id, domain.id));
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/branding`);
 }
 
 
@@ -275,5 +275,5 @@ export async function provisionEnterpriseAiManagedHostname(tenantSlug: string, f
     });
   }
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/branding`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/branding`);
 }

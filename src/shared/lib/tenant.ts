@@ -25,7 +25,7 @@ export const getCurrentTenantSlug = cache(async (): Promise<string | null> => {
   const pathname = headersList.get('x-pathname') || headersList.get('x-invoke-path') || '';
 
   // Match /t/{slug} pattern
-  const match = pathname.match(/^\/t\/([^/]+)/);
+  const match = pathname.match(/^\/app\/([^/]+)/);
   return match ? match[1] : null;
 });
 
@@ -88,7 +88,7 @@ export async function validateTenantSlug(slug: string): Promise<boolean> {
  */
 export function buildTenantPath(tenantSlug: string, path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `/t/${tenantSlug}${cleanPath}`;
+  return `/app/${tenantSlug}${cleanPath}`;
 }
 
 /**
@@ -99,6 +99,6 @@ export function buildTenantPath(tenantSlug: string, path: string): string {
  * extractTenantSlug('/about')            // null
  */
 export function extractTenantSlug(path: string): string | null {
-  const match = path.match(/^\/t\/([^/]+)/);
+  const match = path.match(/^\/app\/([^/]+)/);
   return match ? match[1] : null;
 }

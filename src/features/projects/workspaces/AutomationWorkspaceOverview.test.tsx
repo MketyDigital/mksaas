@@ -71,7 +71,7 @@ describe('AutomationWorkspaceOverview', () => {
     expect(screen.getByText(/manual trigger/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open builder' })).toHaveAttribute(
       'href',
-      '/t/acme/projects/demo/automation/lead-follow-up',
+      '/app/acme/projects/demo/automation/lead-follow-up',
     );
     expect(screen.queryByRole('button', { name: /Run workflow/i })).not.toBeInTheDocument();
   });

@@ -36,7 +36,7 @@ export function Navbar({ tenantSlug }: NavbarProps) {
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations();
   const featureFlags = useFeatureFlags(['knowledgeBase']);
-  const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
+  const basePath = tenantSlug ? `/app/${tenantSlug}` : '';
 
   const isManager = useMemo(() => {
     if (!user?.roles || !tenantSlug) return false;

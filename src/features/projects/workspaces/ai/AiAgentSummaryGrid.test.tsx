@@ -23,7 +23,7 @@ describe('AiAgentSummaryGrid', () => {
       />,
     );
 
-    expect(screen.getByRole('link', { name: /Support Bot/i })).toHaveAttribute('href', '/t/acme/projects/demo/agents/support-bot');
+    expect(screen.getByRole('link', { name: /Support Bot/i })).toHaveAttribute('href', '/app/acme/projects/demo/agents/support-bot');
     expect(screen.getByText(/Open Agent Builder/i)).toBeInTheDocument();
   });
 

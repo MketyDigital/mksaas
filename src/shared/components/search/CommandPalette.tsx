@@ -96,7 +96,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
               title: doc.title,
               subtitle: doc.snippet || doc.tags?.slice(0, 3).join(', '),
               similarity: doc.similarity,
-              url: `/t/${tenant.slug}/knowledge/${doc.slug}`,
+              url: `/app/${tenant.slug}/knowledge/${doc.slug}`,
             });
           }
 

@@ -107,9 +107,9 @@ export async function requireRole(tenantSlug: string, minRole: TenantRole): Prom
     redirect('/login');
   }
   const allowed = await hasPermission(tenantSlug, minRoleToPermission(minRole));
-  if (!allowed) redirect(`/t/${tenantSlug}?error=unauthorized`);
+  if (!allowed) redirect(`/app/${tenantSlug}?error=unauthorized`);
   const userRole = await getCurrentMembershipRole(tenantSlug, session.user.id);
-  if (!userRole) redirect(`/t/${tenantSlug}?error=unauthorized`);
+  if (!userRole) redirect(`/app/${tenantSlug}?error=unauthorized`);
   return {
     userId: session.user.id,
     email: session.user.email,

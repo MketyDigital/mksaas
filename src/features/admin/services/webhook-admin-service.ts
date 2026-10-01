@@ -228,7 +228,7 @@ export async function createWebhookEndpoint(
     })
     .returning({ id: schema.webhookEndpoints.id });
 
-  revalidatePath(`/t/${tenantSlug}/admin/integrations/webhooks`);
+  revalidatePath(`/app/${tenantSlug}/admin/integrations/webhooks`);
 
   return { success: true, data: { id: endpoint.id } };
 }
@@ -317,7 +317,7 @@ export async function updateWebhookEndpoint(
   if (input.description !== undefined) {
   }
 
-  revalidatePath(`/t/${tenantSlug}/admin/integrations/webhooks`);
+  revalidatePath(`/app/${tenantSlug}/admin/integrations/webhooks`);
 
   return { success: true };
 }
@@ -357,7 +357,7 @@ export async function deleteWebhookEndpoint(
   // Delete will cascade to deliveries
   await db.delete(schema.webhookEndpoints).where(eq(schema.webhookEndpoints.id, endpointId));
 
-  revalidatePath(`/t/${tenantSlug}/admin/integrations/webhooks`);
+  revalidatePath(`/app/${tenantSlug}/admin/integrations/webhooks`);
 
   return { success: true };
 }
@@ -412,7 +412,7 @@ export async function regenerateWebhookSecret(
     .set({ secret: newSecret, updatedAt: new Date() })
     .where(eq(schema.webhookEndpoints.id, endpointId));
 
-  revalidatePath(`/t/${tenantSlug}/admin/integrations/webhooks`);
+  revalidatePath(`/app/${tenantSlug}/admin/integrations/webhooks`);
 
   return { success: true, data: { secret: newSecret } };
 }

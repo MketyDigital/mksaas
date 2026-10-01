@@ -102,7 +102,7 @@ export async function takeOverEnterpriseAiConversation(
     eq(aiConversations.tenantId, tenant.id),
   ));
   await cancelEnterpriseAiScheduledActionsForConversation(conversation.id, tenant.id);
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/conversations`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/conversations`);
 }
 
 export async function resumeEnterpriseAiConversation(
@@ -120,7 +120,7 @@ export async function resumeEnterpriseAiConversation(
     eq(aiConversations.id, conversation.id),
     eq(aiConversations.tenantId, tenant.id),
   ));
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/conversations`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/conversations`);
 }
 
 export async function sendEnterpriseAiHumanReply(
@@ -173,5 +173,5 @@ export async function sendEnterpriseAiHumanReply(
     metadata: { humanOperator: true },
   });
   await markEnterpriseAiConversationOutbound(conversation.id, tenant.id);
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/conversations`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/conversations`);
 }

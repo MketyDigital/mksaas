@@ -31,7 +31,7 @@ describe('WorkspaceHub', () => {
   it('links workspace cards to their project routes', () => {
     render(<WorkspaceHub projectName="Demo Project" projectSlug="demo" tenantSlug="acme" workspaces={projectWorkspaces} />);
 
-    expect(screen.getByRole('link', { name: /Open AI Workspace/i })).toHaveAttribute('href', '/t/acme/projects/demo/ai');
-    expect(screen.getByRole('link', { name: /Request Trading System/i })).toHaveAttribute('href', '/t/acme/projects/demo/trading');
+    expect(screen.getByRole('link', { name: /Open AI Workspace/i })).toHaveAttribute('href', '/app/acme/projects/demo/ai');
+    expect(screen.getByRole('link', { name: /Request Trading System/i })).toHaveAttribute('href', '/app/acme/projects/demo/trading');
   });
 });

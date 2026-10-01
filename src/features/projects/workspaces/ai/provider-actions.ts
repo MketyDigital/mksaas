@@ -63,8 +63,8 @@ export async function saveWorkspaceByokProvider(
     projectId: access.project.id,
     provider: parseProvider(formData),
   });
-  revalidatePath(`/t/${tenantSlug}/projects/${projectSlug}/ai/providers`);
-  revalidatePath(`/t/${tenantSlug}/projects/${projectSlug}/ai`);
+  revalidatePath(`/app/${tenantSlug}/projects/${projectSlug}/ai/providers`);
+  revalidatePath(`/app/${tenantSlug}/projects/${projectSlug}/ai`);
 }
 
 export async function disableWorkspaceByokProvider(
@@ -78,5 +78,5 @@ export async function disableWorkspaceByokProvider(
     projectId: access.project.id,
     connectionId,
   });
-  revalidatePath(`/t/${tenantSlug}/projects/${projectSlug}/ai/providers`);
+  revalidatePath(`/app/${tenantSlug}/projects/${projectSlug}/ai/providers`);
 }

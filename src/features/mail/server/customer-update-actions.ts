@@ -33,22 +33,22 @@ export async function createCustomerUpdate(tenantSlug:string,formData:FormData){
   const text=String(formData.get('message')||'').trim().slice(0,100_000);
   const confirmation=String(formData.get('relationship')||'')==='yes';
   if(!name||!subject||!text||!confirmation){
-    redirect(`/t/${tenantSlug}/mail/customer-updates?error=details`);
+    redirect(`/app/${tenantSlug}/mail/customer-updates?error=details`);
   }
 
   const mailbox=await db.query.mailMailboxes.findFirst({
     where:and(eq(mailMailboxes.id,mailboxId),eq(mailMailboxes.tenantId,tenant.id)),
   });
-  if(!mailbox) redirect(`/t/${tenantSlug}/mail/customer-updates?error=mailbox`);
+  if(!mailbox) redirect(`/app/${tenantSlug}/mail/customer-updates?error=mailbox`);
   const domain=await db.query.mailDomains.findFirst({
     where:and(eq(mailDomains.id,mailbox.domainId),eq(mailDomains.tenantId,tenant.id)),
   });
   if(!domain?.sendingEnabled){
-    redirect(`/t/${tenantSlug}/mail/customer-updates?error=domain`);
+    redirect(`/app/${tenantSlug}/mail/customer-updates?error=domain`);
   }
 
   const workspace=await getMailWorkspace(tenantSlug);
-  if(!workspace) redirect(`/t/${tenantSlug}/mail?error=workspace`);
+  if(!workspace) redirect(`/app/${tenantSlug}/mail?error=workspace`);
   const plan=getMailCommercialPlan(normalizeMailPlanKey(workspace.planKey));
   const recipientLimit=Math.min(3000,plan.limits.maxRecipientsPerCustomerUpdate);
 
@@ -58,11 +58,11 @@ export async function createCustomerUpdate(tenantSlug:string,formData:FormData){
   ]);
   const suppressed=new Set(suppressions.map((row)=>row.email.toLowerCase()));
   const recipients=contacts.filter((contact)=>!suppressed.has(contact.email.toLowerCase())).slice(0,recipientLimit);
-  if(!recipients.length) redirect(`/t/${tenantSlug}/mail/customer-updates?error=recipients`);
+  if(!recipients.length) redirect(`/app/${tenantSlug}/mail/customer-updates?error=recipients`);
   const capacity=await getMailSendCapacity(tenant.id,domain.id,recipients.length,'customer_update');
   if(!capacity.allowed){
     const reason=capacity.reason==='warmup'?'warmup':'limit';
-    redirect(`/t/${tenantSlug}/mail/customer-updates?error=${reason}&remaining=${capacity.remaining}`);
+    redirect(`/app/${tenantSlug}/mail/customer-updates?error=${reason}&remaining=${capacity.remaining}`);
   }
 
   const [update]=await db.insert(mailCustomerUpdates).values({
@@ -106,9 +106,9 @@ export async function createCustomerUpdate(tenantSlug:string,formData:FormData){
     }).where(eq(mailCustomerUpdates.id,update.id));
   }catch{
     await db.update(mailCustomerUpdates).set({status:'queue_failed',updatedAt:new Date()}).where(eq(mailCustomerUpdates.id,update.id));
-    redirect(`/t/${tenantSlug}/mail/customer-updates?error=queue`);
+    redirect(`/app/${tenantSlug}/mail/customer-updates?error=queue`);
   }
 
-  revalidatePath(`/t/${tenantSlug}/mail/customer-updates`);
-  redirect(`/t/${tenantSlug}/mail/customer-updates?queued=${rows.length}`);
+  revalidatePath(`/app/${tenantSlug}/mail/customer-updates`);
+  redirect(`/app/${tenantSlug}/mail/customer-updates?queued=${rows.length}`);
 }

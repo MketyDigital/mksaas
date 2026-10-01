@@ -84,8 +84,8 @@ export async function POST(request: Request) {
   if (!tenant) return NextResponse.json({ success: false, error: 'That workspace slug is already in use.' }, { status: 409 });
 
   const redirectTo = planKey
-    ? `/t/${tenant.slug}/billing/checkout?plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}`
-    : `/t/${tenant.slug}`;
+    ? `/app/${tenant.slug}/billing/checkout?plan=${encodeURIComponent(planKey)}${termKey ? `&term=${encodeURIComponent(termKey)}` : ''}`
+    : `/app/${tenant.slug}`;
 
   if (!contentType.includes('application/json')) return NextResponse.redirect(new URL(redirectTo, request.url), 303);
   return NextResponse.json({ success: true, data: tenant, redirectTo });

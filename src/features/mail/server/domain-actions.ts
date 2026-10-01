@@ -23,16 +23,16 @@ function normalizeDomain(value:string){
 export async function addMailDomain(tenantSlug:string,formData:FormData){
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
-  if(!workspace) redirect(`/t/${tenantSlug}/mail`);
+  if(!workspace) redirect(`/app/${tenantSlug}/mail`);
 
   const domain=normalizeDomain(String(formData.get('domain')||''));
   if(!/^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)){
-    redirect(`/t/${tenantSlug}/mail/domains?error=domain`);
+    redirect(`/app/${tenantSlug}/mail/domains?error=domain`);
   }
 
   const duplicate=await db.query.mailDomains.findFirst({where:eq(mailDomains.domain,domain)});
-  if(duplicate&&duplicate.tenantId!==tenant.id) redirect(`/t/${tenantSlug}/mail/domains?error=claimed`);
-  if(duplicate) redirect(`/t/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
+  if(duplicate&&duplicate.tenantId!==tenant.id) redirect(`/app/${tenantSlug}/mail/domains?error=claimed`);
+  if(duplicate) redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
 
   let zoneId:string|null=null;
   let routingEnabled=false;
@@ -69,6 +69,6 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
   if(routingEnabled&&created){
     await db.update(mailWorkspaces).set({defaultDomainId:created.id,onboardingStep:'mailbox',updatedAt:new Date()}).where(eq(mailWorkspaces.id,workspace.id));
   }
-  revalidatePath(`/t/${tenantSlug}/mail`);
-  redirect(`/t/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
+  revalidatePath(`/app/${tenantSlug}/mail`);
+  redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
 }

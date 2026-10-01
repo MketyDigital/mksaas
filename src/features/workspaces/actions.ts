@@ -60,5 +60,5 @@ export async function createWorkspace(formData: FormData) {
     });
   });
 
-  redirect(`/t/${tenant.slug}`);
+  redirect(`/app/${tenant.slug}`);
 }

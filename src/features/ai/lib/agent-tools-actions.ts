@@ -38,5 +38,5 @@ export async function saveAgentKnowledge(formData: FormData) {
     }
   });
 
-  redirect(`/t/${tenantSlug}/projects/${projectSlug}/agents/${agent.slug}`);
+  redirect(`/app/${tenantSlug}/projects/${projectSlug}/agents/${agent.slug}`);
 }

@@ -170,7 +170,7 @@ async function updatePublicAiRoutingImpl(tenantSlug: string, formData: FormData)
 export async function savePublicAiProviderConnection(...args: Parameters<typeof savePublicAiProviderConnectionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    path: `/ops/${tenantSlug}/platform-control/ai-operations`,
     action: 'savePublicAiProviderConnection',
     work: () => savePublicAiProviderConnectionImpl(...args),
   });
@@ -179,7 +179,7 @@ export async function savePublicAiProviderConnection(...args: Parameters<typeof 
 export async function disablePublicAiProviderConnection(...args: Parameters<typeof disablePublicAiProviderConnectionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    path: `/ops/${tenantSlug}/platform-control/ai-operations`,
     action: 'disablePublicAiProviderConnection',
     work: () => disablePublicAiProviderConnectionImpl(...args),
   });
@@ -188,7 +188,7 @@ export async function disablePublicAiProviderConnection(...args: Parameters<type
 export async function updatePublicAiRouting(...args: Parameters<typeof updatePublicAiRoutingImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    path: `/ops/${tenantSlug}/platform-control/ai-operations`,
     action: 'updatePublicAiRouting',
     work: () => updatePublicAiRoutingImpl(...args),
   });

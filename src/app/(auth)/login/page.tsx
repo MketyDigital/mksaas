@@ -32,7 +32,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     const userRoles = (session.user.roles ?? {}) as Record<string, TenantRole>;
     const tenantSlugs = Object.keys(userRoles);
     if (tenantSlugs.length === 1) {
-      redirect(planKey ? `/t/${tenantSlugs[0]}/billing/checkout?${planQuery}` : `/t/${tenantSlugs[0]}`);
+      redirect(planKey ? `/app/${tenantSlugs[0]}/billing/checkout?${planQuery}` : `/app/${tenantSlugs[0]}`);
     }
     if (tenantSlugs.length > 1) redirect(selectTenantUrl);
   }

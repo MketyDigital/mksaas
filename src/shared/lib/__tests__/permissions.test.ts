@@ -167,7 +167,7 @@ describe('permissions', () => {
       (mockDb.query.tenantMemberships.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(requirePermission('test-tenant', 'admin:settings')).rejects.toThrow(
-        'REDIRECT:/t/test-tenant?error=unauthorized',
+        'REDIRECT:/app/test-tenant?error=unauthorized',
       );
     });
 

@@ -13,5 +13,5 @@ export default async function TeamEntryPage() {
   const tenantSlugs = Object.keys(roles);
   if (tenantSlugs.length === 0) redirect('/create-workspace');
   if (tenantSlugs.length > 1) redirect('/select-tenant');
-  redirect(`/t/${tenantSlugs[0]}/admin/members`);
+  redirect(`/app/${tenantSlugs[0]}/admin/members`);
 }

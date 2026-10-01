@@ -216,7 +216,7 @@ export async function inviteMember(
       })
       .returning();
 
-    revalidatePath(`/t/${tenantSlug}/admin/settings`);
+    revalidatePath(`/app/${tenantSlug}/admin/settings`);
 
     return {
       success: true,
@@ -293,7 +293,7 @@ export async function updateMember(
       .where(eq(schema.tenantMemberships.id, membershipId))
       .limit(1);
 
-    revalidatePath(`/t/${tenantSlug}/admin/settings`);
+    revalidatePath(`/app/${tenantSlug}/admin/settings`);
 
     if (!updated) return { success: false, error: 'Failed to update member' };
 
@@ -341,7 +341,7 @@ export async function removeMember(tenantSlug: string, membershipId: string): Pr
 
     await db.delete(schema.tenantMemberships).where(eq(schema.tenantMemberships.id, membershipId));
 
-    revalidatePath(`/t/${tenantSlug}/admin/settings`);
+    revalidatePath(`/app/${tenantSlug}/admin/settings`);
 
     return { success: true };
   } catch (error) {

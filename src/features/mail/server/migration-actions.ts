@@ -66,20 +66,20 @@ export async function importMailEmlFiles(tenantSlug: string, formData: FormData)
       eq(mailMailboxes.status, 'active'),
     ),
   });
-  if (!mailbox) redirect(`/t/${tenantSlug}/mail/migration?error=mailbox`);
+  if (!mailbox) redirect(`/app/${tenantSlug}/mail/migration?error=mailbox`);
 
   const files = formData
     .getAll('files')
     .filter((value): value is File => value instanceof File && value.size > 0);
   if (!files.length || files.length > 20) {
-    redirect(`/t/${tenantSlug}/mail/migration?error=files`);
+    redirect(`/app/${tenantSlug}/mail/migration?error=files`);
   }
   if (files.some((file) => !file.name.toLowerCase().endsWith('.eml') && file.type !== 'message/rfc822')) {
-    redirect(`/t/${tenantSlug}/mail/migration?error=type`);
+    redirect(`/app/${tenantSlug}/mail/migration?error=type`);
   }
   const total = files.reduce((sum, file) => sum + file.size, 0);
   if (total > 25_000_000 || files.some((file) => file.size > 10_000_000)) {
-    redirect(`/t/${tenantSlug}/mail/migration?error=size`);
+    redirect(`/app/${tenantSlug}/mail/migration?error=size`);
   }
 
   let imported = 0;
@@ -195,6 +195,6 @@ export async function importMailEmlFiles(tenantSlug: string, formData: FormData)
     imported += 1;
   }
 
-  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
-  redirect(`/t/${tenantSlug}/mail/migration?imported=${imported}`);
+  revalidatePath(`/app/${tenantSlug}/mail/inbox`);
+  redirect(`/app/${tenantSlug}/mail/migration?imported=${imported}`);
 }

@@ -17,7 +17,7 @@ function cleanLocalPart(value:string){
 export async function createMailbox(tenantSlug:string,formData:FormData){
   const {actor,tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
-  if(!workspace) redirect(`/t/${tenantSlug}/mail`);
+  if(!workspace) redirect(`/app/${tenantSlug}/mail`);
 
   const domainId=String(formData.get('domainId')||'');
   const localPart=cleanLocalPart(String(formData.get('localPart')||''));
@@ -28,19 +28,19 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
   const catchAll=String(formData.get('catchAll')||'')==='yes';
 
   if(!localPart||!/^[a-z0-9](?:[a-z0-9._+-]{0,126}[a-z0-9])?$/.test(localPart)){
-    redirect(`/t/${tenantSlug}/mail/mailboxes?error=address`);
+    redirect(`/app/${tenantSlug}/mail/mailboxes?error=address`);
   }
   if(forwardingAddress&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forwardingAddress)){
-    redirect(`/t/${tenantSlug}/mail/mailboxes?error=forward`);
+    redirect(`/app/${tenantSlug}/mail/mailboxes?error=forward`);
   }
   if(type==='alias'&&!forwardingAddress){
-    redirect(`/t/${tenantSlug}/mail/mailboxes?error=forward`);
+    redirect(`/app/${tenantSlug}/mail/mailboxes?error=forward`);
   }
 
   const domain=await db.query.mailDomains.findFirst({
     where:and(eq(mailDomains.id,domainId),eq(mailDomains.tenantId,tenant.id)),
   });
-  if(!domain) redirect(`/t/${tenantSlug}/mail/mailboxes?error=domain`);
+  if(!domain) redirect(`/app/${tenantSlug}/mail/mailboxes?error=domain`);
 
   if(catchAll){
     await db.update(mailMailboxes).set({catchAll:false,updatedAt:new Date()}).where(and(eq(mailMailboxes.tenantId,tenant.id),eq(mailMailboxes.domainId,domain.id),eq(mailMailboxes.catchAll,true)));
@@ -76,7 +76,7 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     await db.update(mailWorkspaces).set({onboardingStep:'ready',updatedAt:new Date()}).where(eq(mailWorkspaces.id,workspace.id));
   }
 
-  revalidatePath(`/t/${tenantSlug}/mail`);
-  revalidatePath(`/t/${tenantSlug}/mail/mailboxes`);
-  redirect(`/t/${tenantSlug}/mail/mailboxes`);
+  revalidatePath(`/app/${tenantSlug}/mail`);
+  revalidatePath(`/app/${tenantSlug}/mail/mailboxes`);
+  redirect(`/app/${tenantSlug}/mail/mailboxes`);
 }

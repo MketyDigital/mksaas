@@ -74,7 +74,7 @@ export async function saveEnterpriseAiByokProvider(tenantSlug: string, formData:
     tenantId: tenant.id,
     provider: parseProvider(formData),
   });
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/providers`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/providers`);
 }
 
 export async function disableEnterpriseAiByokProvider(
@@ -83,7 +83,7 @@ export async function disableEnterpriseAiByokProvider(
 ) {
   const tenant = await requireByokAccess(tenantSlug);
   await disableByokProviderConnection({ tenantId: tenant.id, connectionId });
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/providers`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/providers`);
 }
 
 export async function testEnterpriseAiByokProvider(

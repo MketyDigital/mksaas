@@ -39,7 +39,7 @@ export function ViewProvider({ children, permissions, tenantSlug }: ViewProvider
   }, [hasAdminAccess]);
 
   const currentView = useMemo((): ViewType => {
-    if (pathname.startsWith(`/t/${tenantSlug}/admin`)) return 'admin';
+    if (pathname.startsWith(`/app/${tenantSlug}/admin`)) return 'admin';
     return 'my';
   }, [pathname, tenantSlug]);
 

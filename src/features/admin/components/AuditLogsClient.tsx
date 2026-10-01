@@ -182,7 +182,7 @@ export function AuditLogsClient({
       <AdminPageHeader
         title={t('title')}
         description={t('description')}
-        backHref={`/t/${tenantSlug}/admin`}
+        backHref={`/app/${tenantSlug}/admin`}
         backLabel="Admin"
         actionLabel={isExporting ? 'Exporting...' : t('export')}
         onAction={handleExport}

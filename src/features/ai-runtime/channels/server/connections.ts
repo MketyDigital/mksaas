@@ -166,7 +166,7 @@ export async function saveEnterpriseAiChannelConnection(tenantSlug: string, form
     });
   }
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/channels`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/channels`);
 }
 
 export async function disableEnterpriseAiChannelConnection(tenantSlug: string, formData: FormData) {
@@ -185,5 +185,5 @@ export async function disableEnterpriseAiChannelConnection(tenantSlug: string, f
     eq(aiProviderConnections.mode, 'channel'),
   ));
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/channels`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/channels`);
 }

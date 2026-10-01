@@ -31,15 +31,15 @@ describe('SolutionHubWorkspaceOverview', () => {
 
     expect(screen.getAllByRole('link', { name: 'Open AI Workspace' })[0]).toHaveAttribute(
       'href',
-      '/t/acme/projects/demo/ai',
+      '/app/acme/projects/demo/ai',
     );
     expect(screen.getAllByRole('link', { name: 'Open Automation' })[0]).toHaveAttribute(
       'href',
-      '/t/acme/projects/demo/automation',
+      '/app/acme/projects/demo/automation',
     );
     expect(screen.getByRole('link', { name: 'Open Deploy' })).toHaveAttribute(
       'href',
-      '/t/acme/projects/demo/deploy',
+      '/app/acme/projects/demo/deploy',
     );
   });
 

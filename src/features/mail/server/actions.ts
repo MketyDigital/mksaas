@@ -6,5 +6,5 @@ import { enableMailWorkspace } from './workspace';
 
 export async function enableMketyMail(tenantSlug:string){
   await enableMailWorkspace(tenantSlug);
-  redirect(`/t/${tenantSlug}/mail`);
+  redirect(`/app/${tenantSlug}/mail`);
 }

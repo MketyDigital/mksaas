@@ -40,7 +40,7 @@ export function TopHeader({ tenantSlug }: TopHeaderProps) {
     () => false,
   );
 
-  const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
+  const basePath = tenantSlug ? `/app/${tenantSlug}` : '';
 
   return (
     <header

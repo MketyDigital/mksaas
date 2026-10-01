@@ -79,7 +79,7 @@ export async function updateMketyPaymentSettings(...args: Parameters<typeof upda
   'use server';
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/payments`,
+    path: `/ops/${tenantSlug}/platform-control/payments`,
     action: 'payment-settings',
     work: () => updateMketyPaymentSettingsImpl(...args),
   });

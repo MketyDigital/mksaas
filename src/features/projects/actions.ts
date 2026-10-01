@@ -37,7 +37,7 @@ export async function createProject(formData: FormData) {
   if (existing) throw new Error('That project slug is already in use in this workspace.');
 
   const [project] = await db.insert(projects).values({ tenantId: tenant.id, name, slug, description: description || null, type }).returning();
-  redirect(`/t/${tenant.slug}/projects/${project.slug}`);
+  redirect(`/app/${tenant.slug}/projects/${project.slug}`);
 }
 
 export async function createAgent(formData: FormData) {
@@ -56,7 +56,7 @@ export async function createAgent(formData: FormData) {
   if (existing) throw new Error('That agent slug is already in use in this project.');
 
   await db.insert(agents).values({ tenantId: tenant.id, projectId: project.id, name, slug, instructions: instructions || null });
-  redirect(`/t/${tenant.slug}/projects/${project.slug}/ai`);
+  redirect(`/app/${tenant.slug}/projects/${project.slug}/ai`);
 }
 
 export async function getProjectsForTenant(tenantSlug: string) {

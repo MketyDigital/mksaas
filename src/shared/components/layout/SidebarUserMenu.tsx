@@ -38,7 +38,7 @@ export function SidebarUserMenu({
   const t = useTranslations('nav');
   const tAuth = useTranslations('auth');
   const tSettings = useTranslations('settings');
-  const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
+  const basePath = tenantSlug ? `/app/${tenantSlug}` : '';
   const resolvedBackLabel = backLinkLabel ?? tSettings('backToUserView');
 
   if (!user) {

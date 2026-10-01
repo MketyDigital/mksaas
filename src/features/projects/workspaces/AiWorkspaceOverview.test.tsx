@@ -24,8 +24,8 @@ describe('AiWorkspaceOverview', () => {
   it('links only currently available AI surfaces', () => {
     render(<AiWorkspaceOverview agentCount={1} canManage projectSlug="demo" tenantSlug="acme" />);
 
-    expectCapabilityHeadingLink('Agents', '/t/acme/projects/demo/ai');
-    expectCapabilityHeadingLink('Knowledge', '/t/acme/projects/demo/knowledge');
+    expectCapabilityHeadingLink('Agents', '/app/acme/projects/demo/ai');
+    expectCapabilityHeadingLink('Knowledge', '/app/acme/projects/demo/knowledge');
     expect(screen.getByRole('heading', { name: 'Tools' }).closest('a')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Publish' }).closest('a')).toBeNull();
   });

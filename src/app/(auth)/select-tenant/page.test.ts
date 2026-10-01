@@ -30,7 +30,7 @@ describe('SelectTenantPage', () => {
     });
     mockedGetAllRoles.mockResolvedValue({ current_workspace: 'member' });
 
-    await expect(SelectTenantPage()).rejects.toThrow('REDIRECT:/t/current_workspace');
+    await expect(SelectTenantPage()).rejects.toThrow('REDIRECT:/app/current_workspace');
     expect(mockedGetAllRoles).toHaveBeenCalledTimes(1);
   });
 });

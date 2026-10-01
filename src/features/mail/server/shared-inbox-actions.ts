@@ -25,7 +25,7 @@ export async function updateSharedThread(tenantSlug:string,formData:FormData){
     assignedUserId:assignee,
     updatedAt:new Date(),
   }).where(and(eq(mailThreads.id,threadId),eq(mailThreads.tenantId,tenant.id)));
-  revalidatePath(`/t/${tenantSlug}/mail/shared`);
+  revalidatePath(`/app/${tenantSlug}/mail/shared`);
 }
 
 export async function addSharedThreadNote(tenantSlug:string,formData:FormData){
@@ -36,5 +36,5 @@ export async function addSharedThreadNote(tenantSlug:string,formData:FormData){
   const thread=await db.query.mailThreads.findFirst({where:and(eq(mailThreads.id,threadId),eq(mailThreads.tenantId,tenant.id))});
   if(!thread) return;
   await db.insert(mailThreadNotes).values({tenantId:tenant.id,threadId,authorUserId:actor.userId,body});
-  revalidatePath(`/t/${tenantSlug}/mail/shared`);
+  revalidatePath(`/app/${tenantSlug}/mail/shared`);
 }

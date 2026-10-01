@@ -103,7 +103,7 @@ export async function requireTenantMembership(tenantSlug: string): Promise<{ use
     columns: { id: true },
   });
 
-  if (!membership) redirect(`/t/${tenantSlug}?error=unauthorized`);
+  if (!membership) redirect(`/app/${tenantSlug}?error=unauthorized`);
   return { userId: session.user.id, email: session.user.email };
 }
 
@@ -117,7 +117,7 @@ export async function hasPermission(tenantSlug: string, permissionKey: string): 
 export async function requirePermission(tenantSlug: string, permissionKey: string): Promise<{ userId: string; email: string }> {
   const session = await auth();
   if (!session?.user?.id || !session?.user?.email) redirect('/login');
-  if (!(await hasPermission(tenantSlug, permissionKey))) redirect(`/t/${tenantSlug}?error=unauthorized`);
+  if (!(await hasPermission(tenantSlug, permissionKey))) redirect(`/app/${tenantSlug}?error=unauthorized`);
   return { userId: session.user.id, email: session.user.email };
 }
 

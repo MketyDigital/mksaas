@@ -13,7 +13,7 @@ export function buildAiWorkspaceReadiness({
   agentCount: number;
   canManage: boolean;
 }): AiWorkspaceReadinessItem[] {
-  const projectBasePath = `/t/${tenantSlug}/projects/${projectSlug}`;
+  const projectBasePath = `/app/${tenantSlug}/projects/${projectSlug}`;
 
   return [
     {

@@ -37,7 +37,7 @@ export function UnifiedSidebar({ tenantSlug, permissions: permissionsProp, hasMa
   const toggleCollapsed = sidebarContext?.toggleCollapsed;
   const viewContext = useViewOptional();
   const currentView = viewContext?.currentView ?? 'my';
-  const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
+  const basePath = tenantSlug ? `/app/${tenantSlug}` : '';
 
   const permissions = useMemo(() => {
     if (tenantSlug && user?.permissions?.[tenantSlug]?.length) return user.permissions[tenantSlug];
