@@ -1049,7 +1049,7 @@ async function runAssistant(input: {
       max_tokens: maxOutputTokens,
       temperature: 0.4,
     };
-    let result = await invokeRoutedModel(env, route, aiInput);
+    let result = await invokeRoutedModel(env, route, aiInput, assistant.customer_id);
     let text = extractAiText(result);
 
     const toolCall = parseToolCall(text, tools.results ?? []);
@@ -1065,7 +1065,7 @@ async function runAssistant(input: {
           ],
           max_tokens: maxOutputTokens,
           temperature: 0.3,
-        });
+        }, assistant.customer_id);
         text = extractAiText(result);
       }
     }
@@ -1205,7 +1205,7 @@ export async function handleApiKeyInference(
       messages: mergedMessages,
       max_tokens: maxOutputTokens,
       temperature: typeof body.temperature === "number" ? body.temperature : 0.4,
-    });
+    }, customer.customerId);
     const text = extractAiText(result);
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
@@ -1456,23 +1456,25 @@ async function providerBudgetAllows(
   return parseFloat(String(spent?.spent || 0)) + estimatedCostMicros <= usableProviderMicros;
 }
 
-async function invokeRoutedModel(env: AssistEnv, route: any, input: any): Promise<any> {
+async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   try {
     const result = await invokeProviderModel(env, {
       provider: route.provider,
       provider_model: route.provider_model,
       provider_connection_id: route.provider_connection_id,
-    }, input);
+    }, input, customerId);
     return annotateProviderResult(result, String(route.provider), String(route.provider_model));
   } catch (primaryError) {
     if (!route.fallback_provider || !route.fallback_model) throw primaryError;
 
     const primaryOwnership = route.provider_connection_id
-      ? await env.DB.prepare("SELECT ownership FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
+      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
       : null;
     const fallbackOwnership = route.fallback_provider_connection_id
-      ? await env.DB.prepare("SELECT ownership FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
+      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
       : null;
+    if (primaryOwnership?.ownership === "customer" && primaryOwnership.customer_id !== customerId) throw primaryError;
+    if (fallbackOwnership?.ownership === "customer" && fallbackOwnership.customer_id !== customerId) throw primaryError;
     const primaryIsByok = primaryOwnership?.ownership === "customer";
     const fallbackIsManaged = route.fallback_provider === "workers-ai"
       || route.fallback_provider === "mkety-managed"
@@ -1493,7 +1495,7 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any): Promis
       provider: route.fallback_provider,
       provider_model: route.fallback_model,
       provider_connection_id: route.fallback_provider_connection_id,
-    }, input);
+    }, input, customerId);
     return annotateProviderResult(result, String(route.fallback_provider), String(route.fallback_model));
   }
 }
@@ -1564,7 +1566,7 @@ async function buildBedrockHeaders(input: {
   };
 }
 
-async function invokeProviderModel(env: AssistEnv, route: any, input: any): Promise<any> {
+async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
     return env.AI.run(String(route.provider_model), input);
@@ -1572,10 +1574,11 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
 
   if (!route.provider_connection_id) throw new Error("Provider connection is not configured for this model route.");
   const connection = await env.DB.prepare(
-    "SELECT provider,endpoint_url,api_key_ciphertext,extra_json,status FROM provider_connections WHERE id=? AND status='active' LIMIT 1",
+    "SELECT provider,endpoint_url,api_key_ciphertext,extra_json,status,ownership,customer_id,validated_at FROM provider_connections WHERE id=? AND status='active' LIMIT 1",
   ).bind(route.provider_connection_id).first<any>();
-  if (!connection?.api_key_ciphertext) throw new Error("Provider connection is unavailable.");
+  if (!connection?.api_key_ciphertext || !connection.validated_at) throw new Error("Provider connection is unavailable or unvalidated.");
   if (connection.provider !== provider) throw new Error("Provider connection type does not match model route.");
+  if (connection.ownership === "customer" && connection.customer_id !== customerId) throw new Error("Customer BYOK provider scope mismatch.");
   const apiKey = await revealSecret(connection.api_key_ciphertext, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
   const extra = connection.extra_json ? JSON.parse(connection.extra_json) : {};
   const model = String(route.provider_model);
