@@ -8,7 +8,7 @@ interface Env {
   RECOVERY_TTL_SECONDS: string;
   MKETY_ASSIST_OPS_TOKEN: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
-  MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME: string;
+  MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME?: string;
   MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET: string;
   MKETY_ASSIST_CF_ZONE_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
@@ -45,12 +45,16 @@ export default {
         return handleOps(request, env);
       }
 
-      const customer = await resolveCustomerByHost(env.DB, host, env.HOSTED_SUFFIX);
-      if (!customer) return brandedNotFound(host);
-
-      if (url.pathname === "/api/telegram/auth-webhook" && request.method === "POST") {
+      if (host === env.PORTAL_CNAME_TARGET && url.pathname === "/api/telegram/auth-webhook" && request.method === "POST") {
         return handleTelegramAuthBotWebhook(request, env);
       }
+
+      if (host === env.PORTAL_CNAME_TARGET && url.pathname === "/api/payment/webhook" && request.method === "POST") {
+        return handlePaymentWebhook(request, env);
+      }
+
+      const customer = await resolveCustomerByHost(env.DB, host, env.HOSTED_SUFFIX);
+      if (!customer) return brandedNotFound(host);
 
       if (url.pathname.startsWith("/api/auth/")) {
         return handleAuth(request, env, customer);
@@ -58,10 +62,6 @@ export default {
 
       if (url.pathname === "/setup" && request.method === "GET") {
         return setupPage(customer, url.searchParams.get("token") || "");
-      }
-
-      if (url.pathname === "/api/payment/webhook" && request.method === "POST") {
-        return handlePaymentWebhook(request, env, customer);
       }
 
       const session = await requireSession(request, env, customer.customerId);
@@ -247,7 +247,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     if (!row?.password_hash || !row?.password_salt) return json({ error: "invalid_credentials" }, 401);
     const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash);
     if (!ok) return json({ error: "invalid_credentials" }, 401);
-    return issueSession(env, customer.customerId, row.id, row.role, row.email);
+    return issueSession(env, customerId, row.id, row.role, row.email);
   }
 
   if (url.pathname === "/api/auth/setup" && request.method === "POST") {
@@ -270,7 +270,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
         .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
       env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=?").bind(now, row.id),
     ]);
-    return issueSession(env, customer.customerId, row.user_id, row.role, row.email);
+    return issueSession(env, customerId, row.user_id, row.role, row.email);
   }
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
@@ -346,7 +346,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       env.DB.prepare("UPDATE recovery_challenges SET consumed_at=? WHERE id=?").bind(now, challenge.id),
       env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
         .bind(p.hash, p.salt, p.iterations, now, user.id),
-      env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND customer_id=?").bind(user.id, customer.customerId),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND customer_id=?").bind(user.id, customerId),
     ]);
     return issueSession(env, customer.customerId, user.id, user.role, user.email);
   }
@@ -422,12 +422,12 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     await env.DB.batch([
       env.DB.prepare(
         "INSERT INTO assistants (id,customer_id,name,slug,status,model_alias,timezone,memory_enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      ).bind(assistantId, customer.customerId, name, slug, "active", modelAlias, body.timezone || "UTC", body.memoryEnabled === false ? 0 : 1, now, now),
+      ).bind(assistantId, customerId, name, slug, "active", modelAlias, body.timezone || "UTC", body.memoryEnabled === false ? 0 : 1, now, now),
       env.DB.prepare(
         "INSERT INTO assistant_prompt_versions (id,customer_id,assistant_id,version,instructions,status,created_at,published_at) VALUES (?,?,?,?,?,?,?,?)",
       ).bind(id("prm"), customer.customerId, assistantId, 1, String(body.instructions || ""), "published", now, now),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id("aud"), "customer_user", session.userId, customer.customerId, "assistant.created", "assistant", assistantId, now),
+        .bind(id("aud"), "customer_user", session.userId, customerId, "assistant.created", "assistant", assistantId, now),
     ]);
     return json({ id: assistantId, name, slug, modelAlias }, 201);
   }
@@ -445,7 +445,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   return json({ error: "not_found" }, 404);
 }
 
-async function handlePaymentWebhook(request: Request, env: Env, customer: CustomerContext): Promise<Response> {
+async function handlePaymentWebhook(request: Request, env: Env): Promise<Response> {
   const raw = await request.text();
   const supplied = request.headers.get("x-mkety-signature") || "";
   const expected = await hmacHex(env.MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET, raw);
@@ -453,12 +453,15 @@ async function handlePaymentWebhook(request: Request, env: Env, customer: Custom
   const payload = JSON.parse(raw);
   const eventId = requiredString(payload.id, "id");
   const eventType = requiredString(payload.type, "type");
+  const customerId = requiredString(payload.customerId, "customerId");
+  const customer = await env.DB.prepare("SELECT id,status FROM customers WHERE id=? LIMIT 1").bind(customerId).first<any>();
+  if (!customer) return json({ error: "unknown_customer" }, 404);
   const now = unix();
 
   try {
     await env.DB.prepare(
       "INSERT INTO payment_events (id,provider_event_id,customer_id,event_type,amount_minor,currency,payload_hash,created_at) VALUES (?,?,?,?,?,?,?,?)",
-    ).bind(id("pay"), eventId, customer.customerId, eventType, Number(payload.amountMinor || 0), payload.currency || "USD", await sha256(raw), now).run();
+    ).bind(id("pay"), eventId, customerId, eventType, Number(payload.amountMinor || 0), payload.currency || "USD", await sha256(raw), now).run();
   } catch {
     return json({ ok: true, duplicate: true });
   }
@@ -467,13 +470,13 @@ async function handlePaymentWebhook(request: Request, env: Env, customer: Custom
     const credits = positiveInt(payload.credits, 0);
     if (credits > 0) {
       const account = await env.DB.prepare("SELECT balance,lifetime_granted FROM credit_accounts WHERE customer_id=?")
-        .bind(customer.customerId).first<any>();
+        .bind(customerId).first<any>();
       const next = Number(account?.balance || 0) + credits;
       await env.DB.batch([
         env.DB.prepare("UPDATE credit_accounts SET balance=?,lifetime_granted=lifetime_granted+?,updated_at=? WHERE customer_id=?")
-          .bind(next, credits, now, customer.customerId),
+          .bind(next, credits, now, customerId),
         env.DB.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(id("led"), customer.customerId, credits, "payment_grant", eventId, next, now),
+          .bind(id("led"), customerId, credits, "payment_grant", eventId, next, now),
         env.DB.prepare("UPDATE payment_events SET processed_at=? WHERE provider_event_id=?").bind(now, eventId),
       ]);
     }
