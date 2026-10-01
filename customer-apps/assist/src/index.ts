@@ -489,37 +489,92 @@ async function handlePaymentWebhook(request: Request, env: Env): Promise<Respons
 async function createCustomHostname(env: Env, customerId: string, hostnameInput: string) {
   const hostname = normalizeHostname(hostnameInput);
   const now = unix();
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        hostname,
-        ssl: { method: "http", type: "dv" },
-        custom_metadata: { customer_id: customerId, product: "mkety-assist" },
-      }),
-    },
+  const headers = {
+    authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}`,
+    "content-type": "application/json",
+  };
+
+  // Match the MkLMS SaaS-domain pattern: Custom Hostname + exact Worker route.
+  const hostLookup = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames?hostname=${encodeURIComponent(hostname)}`,
+    { headers },
   );
-  const data: any = await response.json();
-  if (!response.ok || !data.success) {
-    throw new Error(`Cloudflare custom hostname creation failed: ${JSON.stringify(data.errors || data)}`);
+  const hostLookupData: any = await hostLookup.json();
+  if (!hostLookup.ok || !hostLookupData.success) {
+    throw new Error(`Cloudflare custom hostname lookup failed: ${JSON.stringify(hostLookupData.errors || hostLookupData)}`);
   }
-  const result = data.result;
+  if ((hostLookupData.result || []).length > 1) {
+    throw new Error(`Multiple Cloudflare Custom Hostname records exist for ${hostname}`);
+  }
+
+  let result = hostLookupData.result?.[0] ?? null;
+  if (!result) {
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          hostname,
+          ssl: { method: "http", type: "dv" },
+          custom_metadata: { customer_id: customerId, product: "mkety-assist" },
+        }),
+      },
+    );
+    const data: any = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(`Cloudflare custom hostname creation failed: ${JSON.stringify(data.errors || data)}`);
+    }
+    result = data.result;
+  }
+
+  const routePattern = `${hostname}/*`;
+  const routesResponse = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes`,
+    { headers },
+  );
+  const routesData: any = await routesResponse.json();
+  if (!routesResponse.ok || !routesData.success) {
+    throw new Error(`Cloudflare Worker route lookup failed: ${JSON.stringify(routesData.errors || routesData)}`);
+  }
+  const matchingRoutes = (routesData.result || []).filter((route: any) => route.pattern === routePattern);
+  if (matchingRoutes.length > 1) throw new Error(`Multiple Worker routes exist for ${routePattern}`);
+  if (matchingRoutes[0]?.script && matchingRoutes[0].script !== env.APP_WORKER_NAME) {
+    throw new Error(`Worker route ${routePattern} belongs to ${matchingRoutes[0].script}, expected ${env.APP_WORKER_NAME}`);
+  }
+  if (!matchingRoutes.length) {
+    const createRoute = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ pattern: routePattern, script: env.APP_WORKER_NAME }),
+      },
+    );
+    const routeData: any = await createRoute.json();
+    if (!createRoute.ok || !routeData.success) {
+      throw new Error(`Cloudflare Worker route creation failed: ${JSON.stringify(routeData.errors || routeData)}`);
+    }
+  }
+
   const validation = {
     ownership_verification: result.ownership_verification ?? null,
     ssl_validation_records: result.ssl?.validation_records ?? null,
     cname_target: env.PORTAL_CNAME_TARGET,
+    routing_origin: env.ROUTING_ORIGIN,
+    worker_route: routePattern,
   };
 
+  const existing = await env.DB.prepare("SELECT id FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
   await env.DB.batch([
     env.DB.prepare("UPDATE customer_domains SET is_primary=0 WHERE customer_id=?").bind(customerId),
-    env.DB.prepare(
-      "INSERT INTO customer_domains (id,customer_id,hostname,kind,is_primary,status,ssl_status,provider_hostname_id,validation_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    ).bind(id("dom"), customerId, hostname, "custom", 1, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), now),
+    existing
+      ? env.DB.prepare(
+          "UPDATE customer_domains SET customer_id=?,kind='custom',is_primary=1,status=?,ssl_status=?,provider_hostname_id=?,validation_json=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE id=?",
+        ).bind(customerId, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), result.status, now, existing.id)
+      : env.DB.prepare(
+          "INSERT INTO customer_domains (id,customer_id,hostname,kind,is_primary,status,ssl_status,provider_hostname_id,validation_json,created_at,verified_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ).bind(id("dom"), customerId, hostname, "custom", 1, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), now, result.status === "active" ? now : null),
   ]);
 
   return {
@@ -527,6 +582,8 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
     status: result.status,
     sslStatus: result.ssl?.status ?? null,
     cnameTarget: env.PORTAL_CNAME_TARGET,
+    routingOrigin: env.ROUTING_ORIGIN,
+    workerRoute: routePattern,
     validation,
   };
 }
