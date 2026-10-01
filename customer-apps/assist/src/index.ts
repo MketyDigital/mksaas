@@ -2,6 +2,8 @@ interface Env {
   DB: D1Database;
   HOSTED_SUFFIX: string;
   PORTAL_CNAME_TARGET: string;
+  ROUTING_ORIGIN: string;
+  APP_WORKER_NAME: string;
   OPS_HOST: string;
   SESSION_COOKIE_NAME: string;
   SESSION_TTL_SECONDS: string;
@@ -45,11 +47,11 @@ export default {
         return handleOps(request, env);
       }
 
-      if (host === env.PORTAL_CNAME_TARGET && url.pathname === "/api/telegram/auth-webhook" && request.method === "POST") {
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/telegram/auth-webhook" && request.method === "POST") {
         return handleTelegramAuthBotWebhook(request, env);
       }
 
-      if (host === env.PORTAL_CNAME_TARGET && url.pathname === "/api/payment/webhook" && request.method === "POST") {
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/webhook" && request.method === "POST") {
         return handlePaymentWebhook(request, env);
       }
 
