@@ -794,6 +794,28 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     return issueSession(env, customer.customerId, row.id, row.role, row.email);
   }
 
+  if (url.pathname === "/api/auth/setup/validate" && request.method === "GET") {
+    const token = requiredString(url.searchParams.get("token"), "token");
+    const tokenHash = await sha256(token);
+    const now = unix();
+    const row = await env.DB.prepare(
+      `SELECT st.id,st.user_id,st.expires_at,u.email,cu.role
+       FROM setup_tokens st
+       JOIN users u ON u.id=st.user_id
+       JOIN customer_users cu ON cu.user_id=u.id AND cu.customer_id=st.customer_id
+       WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
+    ).bind(customer.customerId, tokenHash, now).first<any>();
+    if (!row) return json({ valid: false, error: "invalid_or_expired_setup_token" }, 400);
+    return json({
+      valid: true,
+      email: row.email,
+      role: row.role,
+      expiresAt: Number(row.expires_at),
+      customerId: customer.customerId,
+      customerName: customer.customerName,
+    });
+  }
+
   if (url.pathname === "/api/auth/setup" && request.method === "POST") {
     const body = await readJson(request);
     const token = requiredString(body.token, "token");
@@ -1909,9 +1931,72 @@ function operatorLoginPage() {
 
 function setupPage(customer: CustomerContext, token: string) {
   return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Set up ${escapeHtml(customer.customerName)} AI</title>
-<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(440px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}.muted{color:#a8adbd;font-size:14px}</style></head>
-<body><main class="card"><h1>Set up your portal</h1><p class="muted">${escapeHtml(customer.customerName)} AI</p><form id="setup"><input id="password" type="password" minlength="12" placeholder="Choose password (12+ characters)" required><button>Create access</button></form><p id="msg" class="muted"></p>
-<script>const token=${JSON.stringify(token)};document.getElementById('setup').onsubmit=async(e)=>{e.preventDefault();const r=await fetch('/api/auth/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,password:password.value})});if(r.ok)location.href='/';else msg.textContent='This setup link is invalid or expired.';};</script></main></body></html>`);
+<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(440px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:not-allowed}.muted{color:#a8adbd;font-size:14px}.error{color:#ff9b9b}.ok{color:#6ee7b7}</style></head>
+<body><main class="card"><h1>Set up your portal</h1><p class="muted">${escapeHtml(customer.customerName)} AI</p>
+<p id="setupStatus" class="muted">Validating this access link…</p>
+<form id="setupForm" style="display:none"><p id="ownerInfo" class="muted"></p><input id="setupPassword" type="password" minlength="12" placeholder="Choose password (12+ characters)" required><button id="setupSubmit" type="submit">Create access</button></form>
+<p id="setupMsg" class="muted"></p>
+<script>
+const setupToken=${JSON.stringify(token)};
+const form=document.getElementById('setupForm');
+const passwordInput=document.getElementById('setupPassword');
+const submitButton=document.getElementById('setupSubmit');
+const statusEl=document.getElementById('setupStatus');
+const msgEl=document.getElementById('setupMsg');
+const ownerInfo=document.getElementById('ownerInfo');
+
+async function validateSetupLink(){
+  if(!setupToken){statusEl.className='error';statusEl.textContent='This access link is missing its token.';return}
+  try{
+    const r=await fetch('/api/auth/setup/validate?token='+encodeURIComponent(setupToken),{headers:{accept:'application/json'}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.valid){
+      statusEl.className='error';
+      statusEl.textContent='This setup link is invalid, expired, or already used.';
+      return;
+    }
+    statusEl.className='ok';
+    statusEl.textContent='Access link verified.';
+    ownerInfo.textContent='Account: '+d.email+' · Link expires '+new Date(d.expiresAt*1000).toLocaleString();
+    form.style.display='block';
+  }catch(e){
+    statusEl.className='error';
+    statusEl.textContent='Could not validate this setup link. Please try again.';
+  }
+}
+
+form.addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  submitButton.disabled=true;
+  msgEl.className='muted';
+  msgEl.textContent='Creating your access…';
+  try{
+    const r=await fetch('/api/auth/setup',{
+      method:'POST',
+      headers:{'content-type':'application/json','accept':'application/json'},
+      body:JSON.stringify({token:setupToken,password:passwordInput.value})
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      submitButton.disabled=false;
+      msgEl.className='error';
+      msgEl.textContent=d.error==='password_must_be_at_least_12_characters'
+        ? 'Password must be at least 12 characters.'
+        : d.error==='invalid_or_expired_setup_token'
+          ? 'This setup link is invalid, expired, or already used.'
+          : 'Could not create access: '+String(d.error||('HTTP '+r.status));
+      return;
+    }
+    location.href='/';
+  }catch(e){
+    submitButton.disabled=false;
+    msgEl.className='error';
+    msgEl.textContent='Could not create access. Please try again.';
+  }
+});
+
+validateSetupLink();
+</script></main></body></html>`);
 }
 
 function loginPage(customer: CustomerContext) {
