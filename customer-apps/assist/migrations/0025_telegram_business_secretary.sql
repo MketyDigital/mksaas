@@ -16,3 +16,11 @@ CREATE TABLE IF NOT EXISTS telegram_business_connections (
 );
 CREATE INDEX IF NOT EXISTS idx_telegram_business_connection_owner
   ON telegram_business_connections(assistant_id,business_user_id,is_enabled);
+
+CREATE TABLE IF NOT EXISTS telegram_webhook_capabilities (
+  assistant_id TEXT PRIMARY KEY REFERENCES assistants(id) ON DELETE CASCADE,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at INTEGER,
+  last_error TEXT
+);
