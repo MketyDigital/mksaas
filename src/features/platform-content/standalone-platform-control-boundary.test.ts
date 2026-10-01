@@ -38,6 +38,16 @@ describe('standalone Platform Control boundary', () => {
     expect(navigation).toContain('/platform-control/payments');
   });
 
+  it('revalidates the standalone CMS routes after public content changes', async () => {
+    const actions = await read('src/features/platform-content/server/actions.ts');
+    const publicPages = await read('src/features/platform-content/server/public-pages-actions.ts');
+
+    expect(actions).toContain('/ops/${tenantSlug}/platform-control');
+    expect(actions).toContain('/ops/${tenantSlug}/platform-control/public-site');
+    expect(publicPages).toContain('/ops/${tenantSlug}/platform-control/public-site/pages');
+    expect(actions).not.toContain('/t/${tenantSlug}/admin/platform-control');
+  });
+
   it('provides an ops-local error boundary', async () => {
     const errorBoundary = await read('src/app/ops/[tenant]/error.tsx');
 
