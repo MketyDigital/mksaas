@@ -246,7 +246,7 @@ export async function handleRuntimeApi(
         body.modelAlias ?? null,
         body.timezone ?? null,
         typeof body.memoryEnabled === "boolean" ? (body.memoryEnabled ? 1 : 0) : null,
-        body.monthlyCreditCap === undefined ? null : Number(body.monthlyCreditCap),
+        body.monthlyCreditCap === undefined ? null : parseFloat(String(body.monthlyCreditCap)),
         now, assistantId, customer.customerId,
       ).run();
       if (typeof body.instructions === "string") {
@@ -256,7 +256,7 @@ export async function handleRuntimeApi(
           env.DB.prepare("UPDATE assistant_prompt_versions SET status='archived' WHERE assistant_id=? AND status='published'").bind(assistantId),
           env.DB.prepare(
             "INSERT INTO assistant_prompt_versions (id,customer_id,assistant_id,version,instructions,status,created_at,published_at) VALUES (?,?,?,?,?,?,?,?)",
-          ).bind(id("prm"), customer.customerId, assistantId, Number(current?.v || 0) + 1, body.instructions, "published", now, now),
+          ).bind(id("prm"), customer.customerId, assistantId, parseInt(String(current?.v || 0), 10) + 1, body.instructions, "published", now, now),
         ]);
       }
       return json({ ok: true });
@@ -524,7 +524,7 @@ async function runAssistant(input: {
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
   const maxOutputTokens = 1024;
   const reserveCredits = Math.max(1,
-    Math.ceil((estimatedInputTokens * Number(rate.input_credits_per_million || 0) + maxOutputTokens * Number(rate.output_credits_per_million || 0)) / 1_000_000),
+    Math.ceil((estimatedInputTokens * parseFloat(String(rate.input_credits_per_million || 0)) + maxOutputTokens * parseFloat(String(rate.output_credits_per_million || 0))) / 1_000_000),
   );
 
   const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveCredits);
@@ -564,7 +564,7 @@ async function runAssistant(input: {
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
     const actualCredits = Math.max(1,
-      Math.ceil((usage.input * Number(rate.input_credits_per_million || 0) + usage.output * Number(rate.output_credits_per_million || 0)) / 1_000_000),
+      Math.ceil((usage.input * parseFloat(String(rate.input_credits_per_million || 0)) + usage.output * parseFloat(String(rate.output_credits_per_million || 0))) / 1_000_000),
     );
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveCredits, actualCredits, {
       modelAlias: assistant.model_alias,
@@ -694,7 +694,7 @@ async function reserveCredits(db: D1Database, customerId: string, assistantId: s
     const used = await db.prepare(
       "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE assistant_id=? AND created_at>=?",
     ).bind(assistantId, start).first<any>();
-    if (Number(used?.used || 0) + credits > Number(limit.monthly_credit_cap)) return null;
+    if (parseFloat(String(used?.used || 0)) + credits > parseFloat(String(limit.monthly_credit_cap))) return null;
   }
   const update = await db.prepare(
     "UPDATE credit_accounts SET balance=balance-?,updated_at=? WHERE customer_id=? AND balance>=?",
@@ -708,7 +708,7 @@ async function reserveCredits(db: D1Database, customerId: string, assistantId: s
     ).bind(reservationId, customerId, assistantId, credits, "open", unix()),
     db.prepare(
       "INSERT INTO credit_ledger (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?,?)",
-    ).bind(id("led"), customerId, assistantId, -credits, "inference_reserve", reservationId, Number(balance?.balance || 0), unix()),
+    ).bind(id("led"), customerId, assistantId, -credits, "inference_reserve", reservationId, parseFloat(String(balance?.balance || 0)), unix()),
   ]);
   return { id: reservationId };
 }
@@ -720,7 +720,7 @@ async function releaseReservation(db: D1Database, reservationId: string, custome
   await db.batch([
     db.prepare("UPDATE credit_reservations SET status='released',settled_at=? WHERE id=? AND status='open'").bind(now, reservationId),
     db.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
-      .bind(id("led"), customerId, reserved, "inference_release", reservationId, Number(account?.balance || 0), now),
+      .bind(id("led"), customerId, reserved, "inference_release", reservationId, parseFloat(String(account?.balance || 0)), now),
   ]);
 }
 
@@ -750,7 +750,7 @@ async function settleReservation(
   if (refund) {
     statements.push(
       db.prepare("INSERT INTO credit_ledger (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", usageId, Number(balance?.balance || 0), now),
+        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", usageId, parseFloat(String(balance?.balance || 0)), now),
     );
   }
   await db.batch(statements);
@@ -945,8 +945,8 @@ function extractAiText(result: any) {
 function extractUsage(result: any, estimatedInput: number, text: string) {
   const usage = result?.usage || result?.result?.usage || {};
   return {
-    input: Number(usage.prompt_tokens || usage.input_tokens || estimatedInput),
-    output: Number(usage.completion_tokens || usage.output_tokens || Math.max(1, Math.ceil(text.length / 4))),
+    input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || estimatedInput)),
+    output: parseFloat(String(usage.completion_tokens || usage.output_tokens || Math.max(1, Math.ceil(text.length / 4)))),
   };
 }
 
