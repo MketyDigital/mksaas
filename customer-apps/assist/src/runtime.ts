@@ -2,6 +2,20 @@ import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, take
 import { mayUseFallback } from "./providers/validation";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
+import {
+  RetryableInferenceError,
+  claimModelCapacity,
+  classifyRetryableError,
+  compactInstructions,
+  computeHumanDelaySeconds,
+  deleteKnowledgeChunks,
+  getPromptCache,
+  mergeMemoryDigest,
+  providerHttpError,
+  putPromptCache,
+  replaceKnowledgeChunks,
+  sha256Text as resilienceSha256Text,
+} from "./resilience";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
@@ -18,6 +32,9 @@ type AssistEnv = {
   MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
   PORTAL_CNAME_TARGET: string;
+  REPLY_QUEUE: {
+    send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
+  };
 };
 
 type Customer = {
