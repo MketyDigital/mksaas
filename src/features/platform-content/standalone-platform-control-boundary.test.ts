@@ -13,7 +13,7 @@ describe('standalone Platform Control boundary', () => {
   it('routes Mkety Ops outside the tenant admin render tree', async () => {
     const opsEntry = await read('src/app/ops/page.tsx');
     const opsLayout = await read('src/app/ops/[tenant]/layout.tsx');
-    const tenantLayout = await read('src/app/(tenant)/t/[tenant]/layout.tsx');
+    const tenantLayout = await read('src/app/app/[tenant]/layout.tsx');
 
     expect(opsEntry).toContain('redirect(`/ops/${tenant}/platform-control`)');
     expect(opsLayout).toContain('requirePlatformControlAccess(tenant)');
