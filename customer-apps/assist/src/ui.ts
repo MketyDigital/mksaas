@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export function renderCustomerPortal(input: {
   customerName: string;
   hostname: string;
