@@ -11,7 +11,8 @@ describe('Enterprise AI customer workspace selection', () => {
 
     expect(page).toContain('listEnterpriseAiCustomerWorkspaces(tenant)');
     expect(page).toContain('Select an existing customer workspace');
-    expect(page).toContain('value={workspace.slug}');
+    expect(page).toContain('value={workspace.id}');
+    expect(page).toContain('name="targetTenantId"');
     expect(contracts).toContain('export async function listEnterpriseAiCustomerWorkspaces');
     expect(contracts).toContain('where(ne(tenants.slug, opsTenantSlug))');
     expect(contracts).toContain('orderBy(asc(tenants.name), asc(tenants.slug))');

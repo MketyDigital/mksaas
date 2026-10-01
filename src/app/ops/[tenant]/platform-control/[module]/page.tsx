@@ -277,10 +277,10 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
               <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
                 <label className="text-sm font-medium">
                   Customer workspace
-                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" required>
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantId" required>
                     <option value="">Select an existing customer workspace</option>
                     {(enterpriseAiCustomerWorkspaces ?? []).map((workspace) => (
-                      <option key={workspace.id} value={workspace.slug}>
+                      <option key={workspace.id} value={workspace.id}>
                         {workspace.name} · {workspace.slug}
                       </option>
                     ))}
