@@ -28,7 +28,7 @@ export default async function EnterpriseAiConversationsPage({
   await requirePermission(tenantSlug, 'ai:channels:manage');
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
-  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/app/${tenantSlug}/enterprise-ai`);
 
   const conversations = await listEnterpriseAiConversations(tenant.id);
   const selected = conversations.find((item) => item.id === selectedId) ?? conversations[0] ?? null;
@@ -39,7 +39,7 @@ export default async function EnterpriseAiConversationsPage({
   return (
     <div className="mx-auto max-w-7xl space-y-6 py-4">
       <div>
-        <Link className="text-sm text-muted-foreground" href={`/t/${tenantSlug}/enterprise-ai`}>← Enterprise AI</Link>
+        <Link className="text-sm text-muted-foreground" href={`/app/${tenantSlug}/enterprise-ai`}>← Enterprise AI</Link>
         <div className="mt-2 flex items-center gap-3">
           <Headphones className="h-7 w-7 text-primary" />
           <h1 className="text-3xl font-bold">Conversations & human handoff</h1>
@@ -59,7 +59,7 @@ export default async function EnterpriseAiConversationsPage({
             {conversations.length ? conversations.map((item) => (
               <Link
                 className={`rounded-xl border p-3 text-sm transition hover:border-primary/40 ${selected?.id === item.id ? 'border-primary bg-primary/5' : ''}`}
-                href={`/t/${tenantSlug}/enterprise-ai/conversations?conversation=${item.id}`}
+                href={`/app/${tenantSlug}/enterprise-ai/conversations?conversation=${item.id}`}
                 key={item.id}
               >
                 <div className="flex items-center justify-between gap-2">
