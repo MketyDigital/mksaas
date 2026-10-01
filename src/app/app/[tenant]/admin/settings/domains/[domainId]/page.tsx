@@ -27,7 +27,7 @@ export default async function ManagedDomainDnsPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <Link
-        href={`/t/${tenant}/admin/settings/domains`}
+        href={`/app/${tenant}/admin/settings/domains`}
         className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
