@@ -961,7 +961,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/domains/status" && request.method === "GET") {
     const hostname = normalizeHostname(requiredString(url.searchParams.get("hostname"), "hostname"));
     const local = await env.DB.prepare(
-      `SELECT d.provider_hostname_id,d.customer_id,c.slug
+      `SELECT d.provider_hostname_id,d.customer_id,d.status,d.verified_at,c.slug
        FROM customer_domains d JOIN customers c ON c.id=d.customer_id
        WHERE d.hostname=? AND d.kind='custom' LIMIT 1`,
     ).bind(hostname).first<any>();
@@ -990,20 +990,22 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       providerStatus,
     });
     const projected = projectDomainStatus(evidence);
+    const stickyActive = String(local.status) === "active" && Boolean(local.verified_at);
+    const finalStatus = stickyActive ? "active" : projected.status;
     await env.DB.prepare(
       `UPDATE customer_domains
        SET status=?,ssl_status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,provider_status=?,
            verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
        WHERE hostname=? AND customer_id=?`,
     ).bind(
-      projected.status,
+      finalStatus,
       sslStatus,
       evidence.dnsOk ? 1 : 0,
       evidence.tlsOk ? 1 : 0,
       evidence.ownershipOk ? 1 : 0,
       evidence.checkedAt,
       providerStatus,
-      projected.status,
+      finalStatus,
       evidence.checkedAt,
       hostname,
       local.customer_id,
@@ -1015,6 +1017,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     return json({
       hostname,
       ...projected,
+      status: finalStatus,
+      publicVerified: finalStatus === "active",
       sslStatus,
       cnameTarget: env.PORTAL_CNAME_TARGET,
       routingOrigin: env.ROUTING_ORIGIN,
@@ -1415,7 +1419,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const body = await readJson(request);
     const hostname = normalizeHostname(requiredString(body.hostname, "hostname"));
     const domain = await env.DB.prepare(
-      "SELECT hostname,kind,provider_status FROM customer_domains WHERE hostname=? AND customer_id=? LIMIT 1",
+      "SELECT hostname,kind,status,verified_at,provider_status FROM customer_domains WHERE hostname=? AND customer_id=? LIMIT 1",
     ).bind(hostname, customer.customerId).first<any>();
     if (!domain) return json({ error: "domain_not_found" }, 404);
     if (domain.kind !== "custom") return json({ error: "custom_domain_required" }, 400);
@@ -1426,15 +1430,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       providerStatus: String(domain.provider_status || "pending"),
     });
     const projected = projectDomainStatus(evidence);
+    const stickyActive = String(domain.status) === "active" && Boolean(domain.verified_at);
+    const finalStatus = stickyActive ? "active" : projected.status;
     await env.DB.prepare(
       `UPDATE customer_domains SET status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,
        verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
        WHERE hostname=? AND customer_id=?`,
     ).bind(
-      projected.status,evidence.dnsOk?1:0,evidence.tlsOk?1:0,evidence.ownershipOk?1:0,evidence.checkedAt,
-      projected.status,evidence.checkedAt,hostname,customer.customerId,
+      finalStatus,evidence.dnsOk?1:0,evidence.tlsOk?1:0,evidence.ownershipOk?1:0,evidence.checkedAt,
+      finalStatus,evidence.checkedAt,hostname,customer.customerId,
     ).run();
-    return json({ hostname, ...projected });
+    return json({ hostname, ...projected, status: finalStatus, publicVerified: finalStatus === "active" });
   }
 
   if (url.pathname === "/api/settings" && request.method === "GET") {
@@ -2265,21 +2271,23 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
     worker_route: `${env.ROUTING_ORIGIN}/*`,
   };
 
-  const existing = await env.DB.prepare("SELECT id FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
+  const existing = await env.DB.prepare("SELECT id,status,verified_at FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
+  const providerProjectedStatus = result.status === "active" ? "active" : "pending";
+  const persistedStatus = existing?.status === "active" && existing?.verified_at ? "active" : providerProjectedStatus;
   await env.DB.batch([
     env.DB.prepare("UPDATE customer_domains SET is_primary=0 WHERE customer_id=?").bind(customerId),
     existing
       ? env.DB.prepare(
-          "UPDATE customer_domains SET customer_id=?,kind='custom',is_primary=1,status=?,ssl_status=?,provider_hostname_id=?,validation_json=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE id=?",
-        ).bind(customerId, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), result.status, now, existing.id)
+          "UPDATE customer_domains SET customer_id=?,kind='custom',is_primary=1,status=?,ssl_status=?,provider_hostname_id=?,validation_json=?,verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END WHERE id=?",
+        ).bind(customerId, persistedStatus, result.ssl?.status || null, result.id, JSON.stringify(validation), persistedStatus, now, existing.id)
       : env.DB.prepare(
           "INSERT INTO customer_domains (id,customer_id,hostname,kind,is_primary,status,ssl_status,provider_hostname_id,validation_json,created_at,verified_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        ).bind(id("dom"), customerId, hostname, "custom", 1, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), now, result.status === "active" ? now : null),
+        ).bind(id("dom"), customerId, hostname, "custom", 1, providerProjectedStatus, result.ssl?.status || null, result.id, JSON.stringify(validation), now, result.status === "active" ? now : null),
   ]);
 
   return {
     hostname,
-    status: result.status,
+    status: persistedStatus,
     sslStatus: result.ssl?.status ?? null,
     cnameTarget: env.PORTAL_CNAME_TARGET,
     routingOrigin: env.ROUTING_ORIGIN,
