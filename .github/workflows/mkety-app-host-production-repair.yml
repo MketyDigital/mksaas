@@ -1,4 +1,5 @@
 name: Mkety App Host Production Repair
+# Preview smoke checks reachability; live auth assertions run after app.mkety.com binding.
 
 on:
   push:
