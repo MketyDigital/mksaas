@@ -1643,7 +1643,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
-      const vision = await describeImage(env, asset.bytes, text);
+      const vision = await describeImage(env, assistant, asset.bytes, text);
       if (vision) {
         contexts.push(`Image context: ${vision}`);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision, asset.id).run();
@@ -1658,7 +1658,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
-      const transcript = await transcribeAudio(env, asset.bytes);
+      const transcript = await transcribeAudio(env, assistant, asset.bytes);
       if (transcript) {
         contexts.push(`Voice transcript: ${transcript}`);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript, asset.id).run();
@@ -1685,8 +1685,14 @@ async function downloadTelegramFile(token: string, fileId: string, env: AssistEn
   return { id: assetId, bytes, meta: { id: assetId, kind, mime, size: bytes.byteLength } };
 }
 
-async function describeImage(env: AssistEnv, bytes: ArrayBuffer, caption: string) {
+async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer, caption: string) {
   try {
+    const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
+    const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
+    const cacheKey = `vision:${assistant.id}:${sourceHash}`;
+    const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+    if (cached) return cached;
+
     const b64 = arrayBufferToBase64(bytes);
     const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
       messages: [
@@ -1698,17 +1704,48 @@ async function describeImage(env: AssistEnv, bytes: ArrayBuffer, caption: string
       ],
       max_tokens: 500,
     });
-    return extractAiText(result);
+    const text = extractAiText(result);
+    if (text) {
+      await putPromptCache({
+        db: env.DB,
+        cacheKey,
+        customerId: assistant.customer_id,
+        assistantId: assistant.id,
+        kind: "vision",
+        value: text,
+        sourceHash,
+        ttlSeconds: 2592000,
+      }).catch(() => undefined);
+    }
+    return text;
   } catch (error) {
     console.error("vision extraction failed", error);
     return "";
   }
 }
 
-async function transcribeAudio(env: AssistEnv, bytes: ArrayBuffer) {
+async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffer) {
   try {
+    const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
+    const cacheKey = `audio:${assistant.id}:${sourceHash}`;
+    const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+    if (cached) return cached;
+
     const result = await env.AI.run("@cf/openai/whisper", { audio: [...new Uint8Array(bytes)] });
-    return String(result?.text || "").trim();
+    const text = String(result?.text || "").trim();
+    if (text) {
+      await putPromptCache({
+        db: env.DB,
+        cacheKey,
+        customerId: assistant.customer_id,
+        assistantId: assistant.id,
+        kind: "audio",
+        value: text,
+        sourceHash,
+        ttlSeconds: 2592000,
+      }).catch(() => undefined);
+    }
+    return text;
   } catch (error) {
     console.error("audio transcription failed", error);
     return "";
