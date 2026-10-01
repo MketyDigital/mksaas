@@ -42,7 +42,7 @@ export function LandingNavbar({ user, tenantSlugs = [] }: LandingNavbarProps) {
 
   const getDashboardUrl = () => {
     if (tenantSlugs.length === 1) {
-      return `/t/${tenantSlugs[0]}`;
+      return `/app/${tenantSlugs[0]}`;
     }
     if (tenantSlugs.length > 1) {
       return '/select-tenant';
