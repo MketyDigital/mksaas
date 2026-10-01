@@ -789,10 +789,11 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true });
   }
 
+  const userMessageId = id("msg");
   await env.DB.prepare(
     "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,media_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
   ).bind(
-    id("msg"), assistant.customer_id, assistantId, conversation.id, "user",
+    userMessageId, assistant.customer_id, assistantId, conversation.id, "user",
     inbound.text || inbound.mediaContext || "", inbound.mediaJson ? JSON.stringify(inbound.mediaJson) : null, unix(),
   ).run();
 
@@ -840,34 +841,252 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true, automationPaused: true, pauseScope: automation.reason });
   }
 
-  const typing = telegramAction(token, chatId, "typing");
-  void typing;
-
-  const response = await runAssistant({
-    env,
-    assistant,
-    conversationId: conversation.id,
-    userText: inbound.text || "",
-    mediaContext: inbound.mediaContext || "",
-    imageCount: inbound.imageCount,
-    audioSeconds: inbound.audioSeconds,
-    senderId,
-    providerMessageId,
-  });
-
-  if (!response.ok) {
-    await telegramSend(token, chatId, response.userMessage);
-    await markWebhook(env.DB, assistantId, updateId, "error");
-    return json({ ok: true });
+  const delayContent = [inbound.text || "", inbound.mediaContext || ""].filter(Boolean).join("\n");
+  const delaySeconds = computeHumanDelaySeconds(assistant, delayContent);
+  const now = unix();
+  const jobId = id("rpl");
+  try {
+    await env.DB.prepare(
+      `INSERT INTO reply_jobs
+       (id,customer_id,assistant_id,conversation_id,channel,external_conversation_id,provider_message_id,sender_id,
+        user_message_id,user_text,media_context,image_count,audio_seconds,status,due_at,attempts,max_attempts,
+        last_enqueued_at,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,0,20,?,?,?)`,
+    ).bind(
+      jobId, assistant.customer_id, assistantId, conversation.id, "telegram", chatId, providerMessageId, senderId,
+      userMessageId, inbound.text || "", inbound.mediaContext || "", inbound.imageCount, inbound.audioSeconds,
+      now + delaySeconds, now, now, now,
+    ).run();
+  } catch (error) {
+    const existing = await env.DB.prepare(
+      "SELECT id,status FROM reply_jobs WHERE assistant_id=? AND channel='telegram' AND provider_message_id=? LIMIT 1",
+    ).bind(assistantId, providerMessageId).first<any>();
+    if (!existing) throw error;
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, queued: true, duplicate: true, jobId: existing.id });
   }
 
-  await env.DB.prepare(
-    "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
-  ).bind(id("msg"), assistant.customer_id, assistantId, conversation.id, "assistant", response.text, unix()).run();
-  await env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), conversation.id).run();
-  await telegramSend(token, chatId, response.text);
+  try {
+    await env.REPLY_QUEUE.send({ jobId }, { delaySeconds });
+  } catch (error) {
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET last_error=?,last_enqueued_at=NULL,updated_at=? WHERE id=? AND status='pending'",
+    ).bind(
+      `queue_enqueue_failed:${String(error instanceof Error ? error.message : error).slice(0, 300)}`,
+      unix(),
+      jobId,
+    ).run();
+  }
+
+  if (delaySeconds <= 4) void telegramAction(token, chatId, "typing");
   await markWebhook(env.DB, assistantId, updateId, "processed");
-  return json({ ok: true });
+  return json({ ok: true, queued: true, jobId, delaySeconds });
+}
+
+export async function processReplyQueue(batch: any, env: AssistEnv): Promise<void> {
+  for (const message of batch.messages ?? []) {
+    const jobId = String(message?.body?.jobId || "");
+    if (!jobId) {
+      message.ack?.();
+      continue;
+    }
+    try {
+      const outcome = await processReplyJob(env, jobId);
+      if (outcome.retry) message.retry?.({ delaySeconds: outcome.delaySeconds });
+      else message.ack?.();
+    } catch (error) {
+      const classified = classifyRetryableError(error);
+      const delaySeconds = classified.retryable ? classified.retryAfterSeconds : 30;
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status!='delivered'",
+      ).bind(classified.message.slice(0, 500), unix() + delaySeconds, unix(), jobId).run().catch(() => undefined);
+      message.retry?.({ delaySeconds });
+    }
+  }
+}
+
+export async function recoverReplyJobs(env: AssistEnv): Promise<void> {
+  const now = unix();
+  await env.DB.prepare(
+    "UPDATE reply_jobs SET status='retry',locked_at=NULL,due_at=?,updated_at=? WHERE status='processing' AND locked_at IS NOT NULL AND locked_at<?",
+  ).bind(now, now, now - 300).run();
+
+  const rows = await env.DB.prepare(
+    `SELECT id,due_at FROM reply_jobs
+     WHERE status IN ('pending','retry') AND due_at<=?
+       AND (last_enqueued_at IS NULL OR last_enqueued_at<?)
+     ORDER BY due_at ASC LIMIT 100`,
+  ).bind(now, now - 30).all<any>();
+
+  for (const row of rows.results ?? []) {
+    try {
+      await env.REPLY_QUEUE.send({ jobId: String(row.id) }, { delaySeconds: Math.max(0, Number(row.due_at || now) - now) });
+      await env.DB.prepare("UPDATE reply_jobs SET last_enqueued_at=?,updated_at=? WHERE id=?")
+        .bind(now, now, row.id).run();
+    } catch (error) {
+      await env.DB.prepare("UPDATE reply_jobs SET last_error=?,updated_at=? WHERE id=?")
+        .bind(`requeue_failed:${String(error instanceof Error ? error.message : error).slice(0, 300)}`, now, row.id).run();
+    }
+  }
+
+  await env.DB.prepare("DELETE FROM prompt_cache WHERE expires_at<?").bind(now).run();
+}
+
+async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: boolean; delaySeconds: number }> {
+  const now = unix();
+  let job = await env.DB.prepare(
+    `SELECT r.*,a.name,a.status AS assistant_status,a.model_alias,a.memory_enabled,a.human_delay_enabled,
+            a.human_delay_min_seconds,a.human_delay_max_seconds,a.human_delay_per_char_ms,
+            a.context_recent_message_limit,a.context_knowledge_char_budget,a.context_memory_char_budget,
+            fp.vision_enabled,fp.voice_enabled,fp.knowledge_enabled,fp.human_handoff_enabled,fp.tools_enabled
+     FROM reply_jobs r
+     JOIN assistants a ON a.id=r.assistant_id
+     JOIN feature_policy fp ON fp.customer_id=r.customer_id
+     WHERE r.id=? LIMIT 1`,
+  ).bind(jobId).first<any>();
+  if (!job) return { retry: false, delaySeconds: 0 };
+  if (["delivered","failed","superseded","cancelled"].includes(String(job.status))) return { retry: false, delaySeconds: 0 };
+
+  if (Number(job.due_at || 0) > now) return { retry: true, delaySeconds: Math.max(1, Number(job.due_at) - now) };
+
+  if (job.status === "processing" && Number(job.locked_at || 0) > now - 300) {
+    return { retry: true, delaySeconds: 15 };
+  }
+  if (job.status === "processing") {
+    await env.DB.prepare("UPDATE reply_jobs SET status='retry',locked_at=NULL,updated_at=? WHERE id=?")
+      .bind(now, jobId).run();
+    job.status = "retry";
+  }
+
+  if (!job.response_text) {
+    const newer = await env.DB.prepare(
+      `SELECT id FROM reply_jobs
+       WHERE conversation_id=? AND id<>? AND created_at>? AND status IN ('pending','retry','processing')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(job.conversation_id, job.id, job.created_at).first<any>();
+    if (newer) {
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='superseded',completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
+      ).bind(now, now, job.id).run();
+      return { retry: false, delaySeconds: 0 };
+    }
+  }
+
+  const claimed = await env.DB.prepare(
+    `UPDATE reply_jobs
+     SET status='processing',attempts=attempts+1,locked_at=?,updated_at=?
+     WHERE id=? AND status IN ('pending','retry')
+     RETURNING *`,
+  ).bind(now, now, job.id).first<any>();
+  if (!claimed && job.status !== "processing") {
+    return { retry: false, delaySeconds: 0 };
+  }
+  if (claimed) job = { ...job, ...claimed };
+
+  if (Number(job.attempts || 0) > Number(job.max_attempts || 20)) {
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='failed',last_error='max_attempts_exceeded',completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now, now, job.id).run();
+    return { retry: false, delaySeconds: 0 };
+  }
+
+  const handoff = await env.DB.prepare(
+    "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
+  ).bind(job.conversation_id).first();
+  if (handoff) {
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='cancelled',last_error='human_handoff_open',completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now, now, job.id).run();
+    return { retry: false, delaySeconds: 0 };
+  }
+
+  const automation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
+  if (automation.paused || job.assistant_status !== "active") {
+    const delaySeconds = 60;
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(`automation_paused:${String(automation.reason || job.assistant_status || "unknown")}`, now + delaySeconds, now, job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
+  const token = await getAssistantSecret(env, job.assistant_id, "telegram_bot_token");
+  if (!token) {
+    const delaySeconds = Math.min(600, 30 * Math.max(1, Number(job.attempts || 1)));
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error='assistant_telegram_token_unavailable',due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now + delaySeconds, now, job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
+  let responseText = String(job.response_text || "");
+  if (!responseText) {
+    void telegramAction(token, String(job.external_conversation_id), "typing");
+    const response = await runAssistant({
+      env,
+      assistant: {
+        ...job,
+        id: job.assistant_id,
+        customer_id: job.customer_id,
+      },
+      conversationId: String(job.conversation_id),
+      userText: String(job.user_text || ""),
+      mediaContext: String(job.media_context || ""),
+      imageCount: Number(job.image_count || 0),
+      audioSeconds: Number(job.audio_seconds || 0),
+      senderId: String(job.sender_id || ""),
+      providerMessageId: String(job.provider_message_id || ""),
+    });
+
+    if (!response.ok) {
+      if (response.retryable) {
+        const delaySeconds = Math.max(1, Math.min(86400, Number(response.retryAfterSeconds || 5)));
+        await env.DB.prepare(
+          "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+        ).bind(String(response.error || response.userMessage).slice(0, 500), unix() + delaySeconds, unix(), job.id).run();
+        return { retry: true, delaySeconds };
+      }
+      responseText = response.userMessage;
+    } else {
+      responseText = response.text;
+    }
+
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET response_text=?,delivery_started_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+    ).bind(responseText, unix(), job.id).run();
+  }
+
+  void telegramAction(token, String(job.external_conversation_id), "typing");
+  await env.DB.prepare("UPDATE reply_jobs SET delivery_started_at=?,updated_at=? WHERE id=?")
+    .bind(unix(), unix(), job.id).run();
+  const sent = await telegramSend(token, String(job.external_conversation_id), responseText);
+  if (!sent.ok) {
+    const description = String(sent.description || "telegram_send_failed");
+    const terminal = /blocked by the user|chat not found|bot was blocked/i.test(description);
+    if (terminal) {
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='failed',last_error=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+      ).bind(description.slice(0, 500), unix(), unix(), job.id).run();
+      return { retry: false, delaySeconds: 0 };
+    }
+    const delaySeconds = Math.min(600, 15 * Math.max(1, Number(job.attempts || 1)));
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(description.slice(0, 500), unix() + delaySeconds, unix(), job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
+  const deliveryId = sent?.result?.message_id ? String(sent.result.message_id) : null;
+  const assistantMessageId = `msg_reply_${String(job.id).replace(/[^a-zA-Z0-9_]/g, "")}`;
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
+    ).bind(assistantMessageId, job.customer_id, job.assistant_id, job.conversation_id, "assistant", responseText, unix()),
+    env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), job.conversation_id),
+    env.DB.prepare(
+      "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,completed_at=?,locked_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+    ).bind(deliveryId, unix(), unix(), job.id),
+  ]);
+  return { retry: false, delaySeconds: 0 };
 }
 
 export async function processDueReminders(env: AssistEnv): Promise<void> {
