@@ -293,6 +293,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const providerConnectionId = body.providerConnectionId === undefined
       ? current.provider_connection_id
       : (body.providerConnectionId || null);
+    const fallbackProvider = body.fallbackProvider ?? current.fallback_provider ?? null;
+    const fallbackProviderConnectionId = body.fallbackProviderConnectionId === undefined
+      ? current.fallback_provider_connection_id
+      : (body.fallbackProviderConnectionId || null);
     if (!["workers-ai","mkety-managed"].includes(String(provider)) && !providerConnectionId) {
       return json({ error: "provider_connection_required" }, 400);
     }
@@ -304,16 +308,29 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         return json({ error: "provider_connection_mismatch" }, 400);
       }
     }
+    if (fallbackProvider && !["workers-ai","mkety-managed"].includes(String(fallbackProvider)) && !fallbackProviderConnectionId) {
+      return json({ error: "fallback_provider_connection_required" }, 400);
+    }
+    if (fallbackProviderConnectionId) {
+      const connection = await env.DB.prepare(
+        "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
+      ).bind(fallbackProviderConnectionId).first<any>();
+      if (!connection || connection.status !== "active" || connection.provider !== fallbackProvider) {
+        return json({ error: "fallback_provider_connection_mismatch" }, 400);
+      }
+    }
 
     await env.DB.prepare(
       `UPDATE model_routes SET provider=COALESCE(?,provider),provider_model=COALESCE(?,provider_model),
-       provider_connection_id=?,fallback_provider=?,fallback_model=?,status=COALESCE(?,status),updated_at=? WHERE alias=?`,
+       provider_connection_id=?,fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,
+       status=COALESCE(?,status),updated_at=? WHERE alias=?`,
     ).bind(
       body.provider ?? null,
       body.providerModel ?? null,
       providerConnectionId,
-      body.fallbackProvider ?? current.fallback_provider ?? null,
+      fallbackProvider,
       body.fallbackModel ?? current.fallback_model ?? null,
+      fallbackProviderConnectionId,
       body.status ?? null,
       now,
       alias,
