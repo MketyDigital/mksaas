@@ -17,7 +17,7 @@ export async function addMailSuppression(tenantSlug:string,formData:FormData){
   await db.insert(mailSuppressions).values({tenantId:tenant.id,email,reason:'manual',source:'customer'}).onConflictDoNothing({
     target:[mailSuppressions.tenantId,mailSuppressions.email],
   });
-  revalidatePath(`/t/${tenantSlug}/mail/analytics`);
+  revalidatePath(`/app/${tenantSlug}/mail/analytics`);
 }
 
 export async function removeManualMailSuppression(tenantSlug:string,formData:FormData){
@@ -26,5 +26,5 @@ export async function removeManualMailSuppression(tenantSlug:string,formData:For
   const row=await db.query.mailSuppressions.findFirst({where:and(eq(mailSuppressions.id,id),eq(mailSuppressions.tenantId,tenant.id))});
   if(!row||!['manual','opt_out'].includes(row.reason)) return;
   await db.delete(mailSuppressions).where(and(eq(mailSuppressions.id,id),eq(mailSuppressions.tenantId,tenant.id)));
-  revalidatePath(`/t/${tenantSlug}/mail/analytics`);
+  revalidatePath(`/app/${tenantSlug}/mail/analytics`);
 }
