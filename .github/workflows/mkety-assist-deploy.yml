@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           node - <<'NODE'
-          const fs = require('fs');
+          const fs = await import('node:fs');
           const issuer=(process.env.MKETY_ASSIST_OPS_AUTH_ISSUER||'').replace(/\/+$/,'');
           const token=process.env.ZITADEL_MANAGEMENT_TOKEN;
           const projectId=process.env.ZITADEL_PROJECT_ID;
