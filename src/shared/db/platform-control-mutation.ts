@@ -18,6 +18,12 @@ function safeAdminMutationMessage(error: unknown): string {
   return message || 'The admin operation failed.';
 }
 
+function standalonePlatformControlPath(path: string) {
+  const match = path.match(/^\/t\/([^/]+)\/admin\/platform-control(\/.*)?$/);
+  if (!match) return path;
+  return `/ops/${match[1]}/platform-control${match[2] ?? ''}`;
+}
+
 function withQuery(path: string, params: Record<string, string>) {
   const query = new URLSearchParams(params);
   return `${path}?${query.toString()}`;
@@ -37,14 +43,14 @@ export async function runPlatformControlMutation(input: {
     await withServerActionDatabase(input.work);
   } catch (error) {
     console.error(`[platform-control:${input.action}]`, error);
-    redirect(withQuery(input.path, {
+    redirect(withQuery(standalonePlatformControlPath(input.path), {
       adminStatus: 'error',
       adminAction: input.action,
       adminMessage: safeAdminMutationMessage(error),
     }));
   }
 
-  redirect(withQuery(input.path, {
+  redirect(withQuery(standalonePlatformControlPath(input.path), {
     adminStatus: 'saved',
     adminAction: input.action,
   }));
