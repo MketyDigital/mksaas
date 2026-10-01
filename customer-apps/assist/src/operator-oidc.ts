@@ -21,6 +21,31 @@ type Claims = {
   email_verified?: boolean;
 };
 
+type OperatorAuthTransaction = {
+  id: string;
+  code_verifier: string;
+  nonce: string;
+};
+
+type OidcTokenResponse = {
+  id_token?: string;
+  access_token?: string;
+};
+
+type OidcUserInfo = {
+  email?: string;
+  email_verified?: boolean;
+};
+
+type JwksResponse = {
+  keys?: Array<JsonWebKey & { kid?: string }>;
+};
+
+type IdTokenHeader = {
+  alg?: string;
+  kid?: string;
+};
+
 const encoder = new TextEncoder();
 
 export async function startOperatorOidc(request: Request, env: OperatorOidcEnv): Promise<Response> {
@@ -66,7 +91,7 @@ export async function finishOperatorOidc(request: Request, env: OperatorOidcEnv)
   const now = Math.floor(Date.now() / 1000);
   const tx = await env.DB.prepare(
     "SELECT id,code_verifier,nonce FROM operator_auth_transactions WHERE state_hash=? AND expires_at>? LIMIT 1",
-  ).bind(await sha256(state), now).first<any>();
+  ).bind(await sha256(state), now).first<OperatorAuthTransaction>();
   if (!tx) throw new Error("invalid_or_expired_oidc_state");
   await env.DB.prepare("DELETE FROM operator_auth_transactions WHERE id=?").bind(tx.id).run();
 
@@ -85,7 +110,7 @@ export async function finishOperatorOidc(request: Request, env: OperatorOidcEnv)
     body,
   });
   if (!tokenResponse.ok) throw new Error("oidc_token_exchange_failed");
-  const tokens = await tokenResponse.json<any>();
+  const tokens = await tokenResponse.json<OidcTokenResponse>();
   if (!tokens.id_token) throw new Error("oidc_id_token_missing");
 
   const claims = await verifyIdToken(
@@ -103,7 +128,7 @@ export async function finishOperatorOidc(request: Request, env: OperatorOidcEnv)
       headers: { authorization: `Bearer ${tokens.access_token}`, accept: "application/json" },
     });
     if (userInfoResponse.ok) {
-      const user = await userInfoResponse.json<any>();
+      const user = await userInfoResponse.json<OidcUserInfo>();
       if (!email && typeof user.email === "string") email = user.email.trim().toLowerCase();
       verified = verified || user.email_verified === true;
     }
@@ -118,14 +143,14 @@ export async function finishOperatorOidc(request: Request, env: OperatorOidcEnv)
 async function verifyIdToken(token: string, jwksUri: string, issuer: string, clientId: string, nonce: string): Promise<Claims> {
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("invalid_id_token");
-  const header = JSON.parse(new TextDecoder().decode(decodeBase64Url(parts[0])));
+  const header = JSON.parse(new TextDecoder().decode(decodeBase64Url(parts[0]))) as IdTokenHeader;
   const claims = JSON.parse(new TextDecoder().decode(decodeBase64Url(parts[1]))) as Claims;
   if (header.alg !== "RS256" || !header.kid) throw new Error("unsupported_id_token_algorithm");
 
   const jwksResponse = await fetch(jwksUri, { headers: { accept: "application/json" } });
   if (!jwksResponse.ok) throw new Error("oidc_jwks_failed");
-  const jwks = await jwksResponse.json<any>();
-  const jwk = Array.isArray(jwks.keys) ? jwks.keys.find((key: any) => key.kid === header.kid) : null;
+  const jwks = await jwksResponse.json<JwksResponse>();
+  const jwk = jwks.keys?.find((key) => key.kid === header.kid) ?? null;
   if (!jwk) throw new Error("oidc_signing_key_not_found");
 
   const key = await crypto.subtle.importKey(
