@@ -667,7 +667,7 @@ jobs:
           console.log('Temporary workers.dev and preview URLs disabled before production routing.');
           NODE
 
-      - name: Attach public and app hosts as Worker Custom Domains
+      - name: Attach public hosts as Worker Custom Domains
         id: domain-bind
         shell: bash
         env:
