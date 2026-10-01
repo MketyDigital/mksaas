@@ -174,7 +174,7 @@ async function renderEnterpriseAiConsolePage({
               </p>
             </div>
             {fundedMinor < contractState.contract.amountMinor ? (
-              {(() => {
+              (() => {
                 const remaining = contractState.contract.amountMinor - fundedMinor;
                 const minimum = remaining < contractState.contract.commercialPolicy.minimumFundingMinor
                   ? remaining
@@ -192,7 +192,7 @@ async function renderEnterpriseAiConsolePage({
                     }}
                   />
                 );
-              })()}
+              })()
             ) : (
               <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700">Monthly commitment funded</span>
             )}
