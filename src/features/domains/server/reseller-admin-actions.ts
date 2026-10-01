@@ -1,6 +1,5 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
 
 import {
   disablePlatformServiceConnection,
@@ -18,9 +17,8 @@ async function requireDomainOps(tenantSlug: string) {
   return actor;
 }
 
-function revalidate(tenantSlug: string) {
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/domains-routing`);
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control`);
+function revalidate(_tenantSlug: string) {
+  // Admin mutations finish with a redirect, which starts a fresh Server Component request.
 }
 
 export async function getDomainResellerConnections() {
