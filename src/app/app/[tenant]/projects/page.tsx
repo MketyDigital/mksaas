@@ -31,7 +31,7 @@ export default async function ProjectsPage({ params }: { params: Promise<{ tenan
 
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {projects.map((project) => (
-          <Link key={project.id} href={`/t/${tenantSlug}/projects/${project.slug}`} className="rounded-xl border bg-card p-5 transition hover:border-primary">
+          <Link key={project.id} href={`/app/${tenantSlug}/projects/${project.slug}`} className="rounded-xl border bg-card p-5 transition hover:border-primary">
             <div className="font-medium">{project.name}</div>
             <div className="mt-1 text-xs text-muted-foreground">{project.type}</div>
             {project.description && <p className="mt-3 text-sm text-muted-foreground">{project.description}</p>}
