@@ -1,7 +1,6 @@
 'use server';
 
 import { eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 import type { CentralAiProviderId } from '@/features/ai-runtime/providers/external-types';
 import {
@@ -87,9 +86,8 @@ function providerInput(formData: FormData): ByokProviderInput {
   }
 }
 
-function revalidate(tenantSlug: string) {
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/ai-operations`);
-  revalidatePath('/api/public-ai');
+function revalidate(_tenantSlug: string) {
+  // Admin mutations finish with a redirect, which starts a fresh Server Component request.
 }
 
 async function savePublicAiProviderConnectionImpl(tenantSlug: string, formData: FormData) {
