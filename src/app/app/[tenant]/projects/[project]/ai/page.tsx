@@ -38,10 +38,10 @@ export default async function AiWorkspacePage({ params }: { params: Promise<{ te
       <AiWorkspaceStatusPanel agentCount={projectAgents.length} canManage={access.canManage} knowledgeStatus={knowledgeStatus} />
 
       <section className="flex flex-wrap gap-3 rounded-2xl border bg-card p-4">
-        <Link className="rounded-lg border px-4 py-2 text-sm font-semibold" href={`/t/${access.tenant.slug}/projects/${access.project.slug}/ai/providers`}>
+        <Link className="rounded-lg border px-4 py-2 text-sm font-semibold" href={`/app/${access.tenant.slug}/projects/${access.project.slug}/ai/providers`}>
           Providers / BYOK
         </Link>
-        <Link className="rounded-lg border px-4 py-2 text-sm font-semibold" href={`/t/${access.tenant.slug}/assistant`}>
+        <Link className="rounded-lg border px-4 py-2 text-sm font-semibold" href={`/app/${access.tenant.slug}/assistant`}>
           Workspace assistant
         </Link>
       </section>
