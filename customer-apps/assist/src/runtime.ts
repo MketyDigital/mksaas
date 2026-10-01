@@ -1880,6 +1880,16 @@ async function resolveModelRoute(db: D1Database, customerId: string, alias: stri
 }
 
 async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
+  const inputChars = Array.isArray(input?.messages)
+    ? input.messages.reduce((n: number, m: any) => n + String(m?.content || "").length, 0)
+    : JSON.stringify(input || {}).length;
+  const estimatedTokens = Math.max(1, Math.ceil(inputChars / 4) + Number(input?.max_tokens || 0));
+  const alias = String(route.alias || route.provider_model || route.provider || "unknown");
+  const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+  if (!capacity.allowed) {
+    throw new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
+  }
+
   try {
     const result = await invokeProviderModel(env, {
       provider: route.provider,
@@ -2018,7 +2028,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return payload;
   }
 
@@ -2039,7 +2049,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ model, system: String(systemMessage), messages: chatMessages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: Array.isArray(payload.content) ? payload.content.map((x: any) => x.text || "").join("") : "",
       usage: {
@@ -2067,7 +2077,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
       usage: {
@@ -2089,7 +2099,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return payload;
   }
 
@@ -2106,7 +2116,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return payload;
   }
 
@@ -2133,7 +2143,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       },
     );
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
       usage: {
@@ -2157,7 +2167,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     );
     const payload = await response.json<any>();
     if (!response.ok || payload?.success === false) {
-      throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+      throw providerHttpError(response, payload);
     }
     return payload?.result ?? payload;
   }
@@ -2189,7 +2199,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     });
     const response = await fetch(`https://${host}${requestPath}`, { method: "POST", headers, body });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: payload.output?.message?.content?.map((p: any) => p.text || "").join("") || "",
       usage: {
