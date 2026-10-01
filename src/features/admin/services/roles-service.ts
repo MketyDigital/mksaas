@@ -203,7 +203,7 @@ export async function createRole(
         .values(input.permissionIds.map((permissionId) => ({ roleId: role.id, permissionId })));
     }
 
-    revalidatePath(`/t/${tenantSlug}/admin/roles`);
+    revalidatePath(`/app/${tenantSlug}/admin/roles`);
     const result = await getRole(tenantSlug, role.id);
     return result;
   } catch (error) {
@@ -251,7 +251,7 @@ export async function updateRole(
       }
     }
 
-    revalidatePath(`/t/${tenantSlug}/admin/roles`);
+    revalidatePath(`/app/${tenantSlug}/admin/roles`);
     return getRole(tenantSlug, roleId);
   } catch (error) {
     logger.error({ error }, 'Failed to update role');
@@ -276,7 +276,7 @@ export async function deleteRole(tenantSlug: string, roleId: string): Promise<Ad
     await db.delete(schema.rolePermissions).where(eq(schema.rolePermissions.roleId, roleId));
     await db.delete(schema.roles).where(eq(schema.roles.id, roleId));
 
-    revalidatePath(`/t/${tenantSlug}/admin/roles`);
+    revalidatePath(`/app/${tenantSlug}/admin/roles`);
     return { success: true };
   } catch (error) {
     logger.error({ error }, 'Failed to delete role');
