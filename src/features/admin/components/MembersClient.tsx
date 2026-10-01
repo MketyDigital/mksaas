@@ -262,7 +262,7 @@ export function MembersClient({ tenantSlug, initialData, currentUserId }: Member
       <AdminPageHeader
         title={t('title')}
         description={t('description')}
-        backHref={`/t/${tenantSlug}/admin`}
+        backHref={`/app/${tenantSlug}/admin`}
         backLabel="Admin"
         actionLabel={t('inviteMember')}
         onAction={() => openDialog(null)}
