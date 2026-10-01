@@ -83,7 +83,7 @@ export async function updateAgent(formData: FormData) {
 
   const config = validateConfig(rawConfig);
   await db.update(agents).set({ name, instructions: instructions || null, provider, model: model || null, status, config, updatedAt: new Date() }).where(eq(agents.id, agent.id));
-  redirect(`/t/${tenant.slug}/projects/${project.slug}/agents/${agent.slug}`);
+  redirect(`/app/${tenant.slug}/projects/${project.slug}/agents/${agent.slug}`);
 }
 
 export async function createAgentVersion(formData: FormData) {
@@ -92,7 +92,7 @@ export async function createAgentVersion(formData: FormData) {
   const agentId = String(formData.get('agentId') || '');
   const { tenant, project, agent } = await getAgentContext(tenantSlug, projectSlug, agentId);
   await snapshotAgentVersion({ tenantId: tenant.id, projectId: project.id, agent });
-  redirect(`/t/${tenant.slug}/projects/${project.slug}/agents/${agent.slug}`);
+  redirect(`/app/${tenant.slug}/projects/${project.slug}/agents/${agent.slug}`);
 }
 
 export async function publishAgentVersionAction(formData: FormData) {
@@ -103,5 +103,5 @@ export async function publishAgentVersionAction(formData: FormData) {
   const { tenant, project, agent } = await getAgentContext(tenantSlug, projectSlug, agentId);
   if (!versionId) throw new Error('Version is required.');
   await publishAgentVersion(tenant.id, project.id, agent.id, versionId);
-  redirect(`/t/${tenant.slug}/projects/${project.slug}/agents/${agent.slug}`);
+  redirect(`/app/${tenant.slug}/projects/${project.slug}/agents/${agent.slug}`);
 }
