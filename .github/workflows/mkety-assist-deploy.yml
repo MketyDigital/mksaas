@@ -63,8 +63,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Resolve the authoritative account from the product zone instead of
-          # trusting a potentially stale repository account-id value.
           zones="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/zones?name=mkety.app&status=active"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
 
           read -r zone_id resolved_account_id < <(ZONES="$zones" node - <<'NODE'
@@ -82,7 +80,27 @@ jobs:
           export CLOUDFLARE_ACCOUNT_ID="$resolved_account_id"
           echo "CLOUDFLARE_ACCOUNT_ID=$resolved_account_id" >> "$GITHUB_ENV"
 
-          d1_json="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/$resolved_account_id/d1/database?name=mkety-assist-prod"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          d1_url="https://api.cloudflare.com/client/v4/accounts/$resolved_account_id/d1/database?name=mkety-assist-prod"
+          primary_code="$(curl --silent --show-error --output /tmp/assist-d1-primary.json --write-out '%{http_code}'             "$d1_url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" || true)"
+
+          d1_token_source=""
+          d1_json=""
+          if [ "$primary_code" = "200" ]; then
+            d1_token_source="primary"
+            d1_json="$(cat /tmp/assist-d1-primary.json)"
+          elif [ -n "${MKETY_ASSIST_CF_SAAS_TOKEN:-}" ]; then
+            saas_code="$(curl --silent --show-error --output /tmp/assist-d1-saas.json --write-out '%{http_code}'               "$d1_url" -H "Authorization: Bearer $MKETY_ASSIST_CF_SAAS_TOKEN" || true)"
+            if [ "$saas_code" = "200" ]; then
+              d1_token_source="saas"
+              d1_json="$(cat /tmp/assist-d1-saas.json)"
+            else
+              echo "::error::Neither existing Cloudflare token can access D1 (primary HTTP $primary_code, Assist SaaS HTTP $saas_code). The deploy credential needs Cloudflare Account > D1 > Edit for the mkety.app account."
+              exit 1
+            fi
+          else
+            echo "::error::The existing Cloudflare API token cannot access D1 (HTTP $primary_code). It needs Cloudflare Account > D1 > Edit for the mkety.app account."
+            exit 1
+          fi
 
           d1_id="$(D1_JSON="$d1_json" node - <<'NODE'
           const v = JSON.parse(process.env.D1_JSON);
@@ -92,7 +110,12 @@ jobs:
           )"
 
           if [ -z "$d1_id" ]; then
-            created="$(curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$resolved_account_id/d1/database"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-prod"}')"
+            if [ "$d1_token_source" = "saas" ]; then
+              d1_token="$MKETY_ASSIST_CF_SAAS_TOKEN"
+            else
+              d1_token="$CLOUDFLARE_API_TOKEN"
+            fi
+            created="$(curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$resolved_account_id/d1/database"               -H "Authorization: Bearer $d1_token"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-prod"}')"
             d1_id="$(CREATED="$created" node - <<'NODE'
           const v = JSON.parse(process.env.CREATED);
           if (!v.success || !v.result?.uuid) throw new Error(JSON.stringify(v.errors || v));
@@ -104,6 +127,7 @@ jobs:
           echo "d1_id=$d1_id" >> "$GITHUB_OUTPUT"
           echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
           echo "account_id=$resolved_account_id" >> "$GITHUB_OUTPUT"
+          echo "d1_token_source=$d1_token_source" >> "$GITHUB_OUTPUT"
 
       - name: Ensure Mkety Assist SaaS DNS topology exists
         env:
@@ -174,13 +198,25 @@ jobs:
 
       - name: Apply Assist D1 migrations
         working-directory: customer-apps/assist
-        run: npx wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
-
-      - name: Bootstrap Operator setup link when needed
-        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
         shell: bash
         run: |
           set -euo pipefail
+          token="$CLOUDFLARE_API_TOKEN"
+          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
+          CLOUDFLARE_API_TOKEN="$token" npx wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
+
+      - name: Bootstrap Operator setup link when needed
+        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$CLOUDFLARE_API_TOKEN"
+          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
+          export CLOUDFLARE_API_TOKEN="$token"
           now="$(date +%s)"
           users_json="$(npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc             --command "SELECT COUNT(*) AS n FROM operator_users;")"
           users="$(USERS_JSON="$users_json" node - <<'NODE'
