@@ -15,6 +15,7 @@ const eslintIgnore = [
   'build/',
   'coverage/',
   'tools/',
+  'customer-apps/assist/',
   '.sst/',
   'sst-cron/',
   'storybook-static/',
