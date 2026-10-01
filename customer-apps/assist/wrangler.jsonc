@@ -6,6 +6,13 @@
   "workers_dev": true,
   "preview_urls": true,
   "observability": { "enabled": true },
+  "ai": { "binding": "AI" },
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "mkety-assist-media" }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "vars": {
     "HOSTED_SUFFIX": "assist.mkety.app",
     "PORTAL_CNAME_TARGET": "mkety-assist.mkety.app",
