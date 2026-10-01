@@ -26,6 +26,9 @@ jobs:
       - name: Type-check
         working-directory: customer-apps/assist
         run: npm run type-check
+      - name: Check Operator browser runtime
+        working-directory: customer-apps/assist
+        run: npm run check:operator-ui
       - name: Wrangler dry-run
         working-directory: customer-apps/assist
         shell: bash
