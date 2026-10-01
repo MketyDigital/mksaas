@@ -545,7 +545,15 @@ export async function handleRuntimeApi(
       const now = unix();
       await env.DB.prepare(
         `UPDATE assistants SET name=COALESCE(?,name),status=COALESCE(?,status),model_alias=COALESCE(?,model_alias),
-         timezone=COALESCE(?,timezone),memory_enabled=COALESCE(?,memory_enabled),monthly_credit_cap=COALESCE(?,monthly_credit_cap),updated_at=?
+         timezone=COALESCE(?,timezone),memory_enabled=COALESCE(?,memory_enabled),monthly_credit_cap=COALESCE(?,monthly_credit_cap),
+         human_delay_enabled=COALESCE(?,human_delay_enabled),
+         human_delay_min_seconds=COALESCE(?,human_delay_min_seconds),
+         human_delay_max_seconds=COALESCE(?,human_delay_max_seconds),
+         human_delay_per_char_ms=COALESCE(?,human_delay_per_char_ms),
+         context_recent_message_limit=COALESCE(?,context_recent_message_limit),
+         context_knowledge_char_budget=COALESCE(?,context_knowledge_char_budget),
+         context_memory_char_budget=COALESCE(?,context_memory_char_budget),
+         updated_at=?
          WHERE id=? AND customer_id=?`,
       ).bind(
         body.name ?? null,
@@ -554,6 +562,13 @@ export async function handleRuntimeApi(
         body.timezone ?? null,
         typeof body.memoryEnabled === "boolean" ? (body.memoryEnabled ? 1 : 0) : null,
         body.monthlyCreditCap === undefined ? null : parseFloat(String(body.monthlyCreditCap)),
+        typeof body.humanDelayEnabled === "boolean" ? (body.humanDelayEnabled ? 1 : 0) : null,
+        body.humanDelayMinSeconds === undefined ? null : clampNumber(body.humanDelayMinSeconds, 0, 3600),
+        body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
+        body.humanDelayPerCharMs === undefined ? null : clampNumber(body.humanDelayPerCharMs, 0, 5000),
+        body.contextRecentMessageLimit === undefined ? null : clampNumber(body.contextRecentMessageLimit, 4, 40),
+        body.contextKnowledgeCharBudget === undefined ? null : clampNumber(body.contextKnowledgeCharBudget, 2000, 50000),
+        body.contextMemoryCharBudget === undefined ? null : clampNumber(body.contextMemoryCharBudget, 1000, 20000),
         now, assistantId, customer.customerId,
       ).run();
       if (typeof body.instructions === "string") {
@@ -2418,6 +2433,12 @@ function extractUsage(result: any, estimatedInput: number, text: string) {
     input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || estimatedInput)),
     output: parseFloat(String(usage.completion_tokens || usage.output_tokens || Math.max(1, Math.ceil(text.length / 4)))),
   };
+}
+
+function clampNumber(value: unknown, min: number, max: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new ApiError(400, "invalid_numeric_value");
+  return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
 function required(value: unknown, field: string) {
