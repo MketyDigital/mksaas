@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { PUBLIC_AI_MODEL_REGISTRY, type PublicAIProviderId } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import { aiModelAliases, aiModels, aiRateCards, aiRoutes, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 
@@ -456,37 +456,82 @@ async function updateAiSolutionTemplateImpl(
 }
 
 export async function reconcilePublishedManagedAiCatalog(...args: Parameters<typeof reconcilePublishedManagedAiCatalogImpl>) {
-  return withServerActionDatabase(() => reconcilePublishedManagedAiCatalogImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'reconcilePublishedManagedAiCatalog',
+    work: () => reconcilePublishedManagedAiCatalogImpl(...args),
+  });
 }
 
 export async function upsertManagedAiModel(...args: Parameters<typeof upsertManagedAiModelImpl>) {
-  return withServerActionDatabase(() => upsertManagedAiModelImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'upsertManagedAiModel',
+    work: () => upsertManagedAiModelImpl(...args),
+  });
 }
 
 export async function createAiRateCardFromProviderCost(...args: Parameters<typeof createAiRateCardFromProviderCostImpl>) {
-  return withServerActionDatabase(() => createAiRateCardFromProviderCostImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'createAiRateCardFromProviderCost',
+    work: () => createAiRateCardFromProviderCostImpl(...args),
+  });
 }
 
 export async function createAiRateCard(...args: Parameters<typeof createAiRateCardImpl>) {
-  return withServerActionDatabase(() => createAiRateCardImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'createAiRateCard',
+    work: () => createAiRateCardImpl(...args),
+  });
 }
 
 export async function activateAiRateCard(...args: Parameters<typeof activateAiRateCardImpl>) {
-  return withServerActionDatabase(() => activateAiRateCardImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'activateAiRateCard',
+    work: () => activateAiRateCardImpl(...args),
+  });
 }
 
 export async function retireAiRateCard(...args: Parameters<typeof retireAiRateCardImpl>) {
-  return withServerActionDatabase(() => retireAiRateCardImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'retireAiRateCard',
+    work: () => retireAiRateCardImpl(...args),
+  });
 }
 
 export async function updateAiRuntimePolicy(...args: Parameters<typeof updateAiRuntimePolicyImpl>) {
-  return withServerActionDatabase(() => updateAiRuntimePolicyImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'updateAiRuntimePolicy',
+    work: () => updateAiRuntimePolicyImpl(...args),
+  });
 }
 
 export async function disableEnterpriseAiInference(...args: Parameters<typeof disableEnterpriseAiInferenceImpl>) {
-  return withServerActionDatabase(() => disableEnterpriseAiInferenceImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'disableEnterpriseAiInference',
+    work: () => disableEnterpriseAiInferenceImpl(...args),
+  });
 }
 
 export async function updateAiSolutionTemplate(...args: Parameters<typeof updateAiSolutionTemplateImpl>) {
-  return withServerActionDatabase(() => updateAiSolutionTemplateImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/ai-operations`,
+    action: 'updateAiSolutionTemplate',
+    work: () => updateAiSolutionTemplateImpl(...args),
+  });
 }
