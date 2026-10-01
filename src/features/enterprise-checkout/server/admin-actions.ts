@@ -58,7 +58,7 @@ export async function createEnterprisePaymentLink(
     { idempotencyKey: `admin-${crypto.randomUUID()}` },
   );
 
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/enterprise-payments`);
+  revalidatePath(`/ops/${tenantSlug}/platform-control/enterprise-payments`);
 
   return { ok: true, ...result };
 }
