@@ -13,9 +13,10 @@ const compiled = ts.transpileModule(source, {
 
 const commonJsModule = { exports: {} };
 vm.runInNewContext(compiled, { module: commonJsModule, exports: commonJsModule.exports, require: () => { throw new Error("Unexpected require"); } });
-const { renderCustomerPortal, renderOperatorPortal } = commonJsModule.exports;
+const { renderCustomerPortal, renderOperatorPortal, setupPage } = commonJsModule.exports;
 if (typeof renderOperatorPortal !== "function") throw new Error("renderOperatorPortal export missing");
 if (typeof renderCustomerPortal !== "function") throw new Error("renderCustomerPortal export missing");
+if (typeof setupPage !== "function") throw new Error("setupPage export missing");
 
 const html = renderOperatorPortal([]);
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -166,3 +167,18 @@ try {
   globalThis.confirm = oldConfirm;
 }
 console.log("Customer browser script parses, initializes, and exposes API Access.");
+
+
+const setupResponse = setupPage({
+  customerId: "cus_test",
+  customerSlug: "test",
+  customerName: "Setup Test",
+  hostname: "test.assist.mkety.app",
+}, "token_test_123");
+const setupHtml = await setupResponse.text();
+const setupMatch = setupHtml.match(/<script>([\s\S]*?)<\/script>/);
+if (!setupMatch) throw new Error("Setup page script not found");
+new Function(setupMatch[1]);
+if (!setupHtml.includes("/api/auth/setup/validate?token=")) throw new Error("Setup page preflight validation missing");
+if (!setupHtml.includes("setupPassword")) throw new Error("Setup page explicit password input missing");
+console.log("Setup page browser script parses and includes token preflight validation.");
