@@ -104,7 +104,7 @@ export function GitHubSettingsPanel({
   };
 
   const handleConnect = () => {
-    const returnUrl = `/t/${tenantSlug}/admin/integrations/github`;
+    const returnUrl = `/app/${tenantSlug}/admin/integrations/github`;
     window.location.href = `/api/integrations/github/connect?returnUrl=${encodeURIComponent(returnUrl)}`;
   };
 
