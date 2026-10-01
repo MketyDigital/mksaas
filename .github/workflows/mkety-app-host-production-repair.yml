@@ -1,5 +1,6 @@
 name: Mkety App Host Production Repair
 # Preview smoke checks reachability; live auth assertions run after app.mkety.com binding.
+# A workflow-file change intentionally triggers a fresh dedicated app-host deployment on main.
 
 on:
   push:
