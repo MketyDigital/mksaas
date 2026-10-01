@@ -1190,25 +1190,25 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     if (customerRow?.billing_status === "current") return json({ error: "plan_already_current" }, 409);
 
     const body = await readJson(request);
-    const fullAmountMinor = Math.max(1, Number(policy.subscription_amount_minor || 0) + Number(policy.setup_fee_minor || 0));
-    let fundingAmountMinor = fullAmountMinor;
+    const recurringBase = Math.max(1, Number(policy.subscription_amount_minor || 0));
+    const setupFeeMinor = Math.max(0, Number(policy.setup_fee_minor || 0));
+    let recurringPaid = recurringBase;
     if (String(policy.funding_mode) === "prepaid_partial") {
       const requested = body.fundingAmountUsd == null
-        ? Number(policy.minimum_funding_minor || policy.subscription_amount_minor || 0)
+        ? Number(policy.minimum_funding_minor || recurringBase)
         : parsePaymentAmountMinor(body.fundingAmountUsd);
       const min = Math.max(1, Number(policy.minimum_funding_minor || 0));
-      if (requested < min || requested > fullAmountMinor) return json({ error: "invalid_funding_amount" }, 400);
-      fundingAmountMinor = requested;
+      if (requested < min || requested > recurringBase) return json({ error: "invalid_funding_amount" }, 400);
+      recurringPaid = requested;
     }
-    const recurringBase = Math.max(1, Number(policy.subscription_amount_minor || 0));
-    const recurringPaid = Math.min(recurringBase, fundingAmountMinor);
+    const canonicalAmountMinor = recurringPaid + setupFeeMinor;
     const credits = String(policy.funding_mode) === "prepaid_partial"
       ? Math.max(1, Math.floor(Number(policy.included_credits || 0) * recurringPaid / recurringBase))
       : Math.max(0, Number(policy.included_credits || 0));
 
     return startAssistFlutterwaveCheckout({
       env, customer, session, credits,
-      canonicalAmountMinor: fundingAmountMinor,
+      canonicalAmountMinor,
       paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
       purchaseType: "plan",
     });
