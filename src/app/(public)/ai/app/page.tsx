@@ -60,7 +60,7 @@ async function renderEnterpriseAiProductAppPage() {
 
   const entitled = organizations.filter((item) => item.entitled);
   if (entitled.length === 1 && organizations.length === 1) {
-    redirect(`/t/${entitled[0].slug}/enterprise-ai`);
+    redirect(`/app/${entitled[0].slug}/enterprise-ai`);
   }
 
   return (
@@ -93,7 +93,7 @@ async function renderEnterpriseAiProductAppPage() {
             </CardHeader>
             <CardContent>
               {item.entitled ? (
-                <Link className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={`/t/${item.slug}/enterprise-ai`}>
+                <Link className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={`/app/${item.slug}/enterprise-ai`}>
                   Open Mkety AI
                 </Link>
               ) : (
