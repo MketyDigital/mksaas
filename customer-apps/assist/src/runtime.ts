@@ -1106,6 +1106,63 @@ function annotateProviderResult(result: any, provider: string, model: string) {
   return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model };
 }
 
+function utf8(value: string | Uint8Array) {
+  return typeof value === "string" ? encoder.encode(value) : value;
+}
+
+async function digestSha256(value: string | Uint8Array) {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(value)));
+}
+
+function hex(bytes: Uint8Array) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256(key: string | Uint8Array, value: string) {
+  const imported = await crypto.subtle.importKey("raw", utf8(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", imported, encoder.encode(value)));
+}
+
+async function buildBedrockHeaders(input: {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  region: string;
+  host: string;
+  path: string;
+  body: string;
+}) {
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = hex(await digestSha256(input.body));
+  const pairs: Array<[string,string]> = [
+    ["content-type","application/json"],
+    ["host",input.host],
+    ["x-amz-content-sha256",payloadHash],
+    ["x-amz-date",amzDate],
+  ];
+  if (input.sessionToken) pairs.push(["x-amz-security-token",input.sessionToken]);
+  pairs.sort(([a],[b]) => a.localeCompare(b));
+  const canonicalHeaders = pairs.map(([k,v]) => `${k}:${v.trim()}\n`).join("");
+  const signedHeaders = pairs.map(([k]) => k).join(";");
+  const canonicalRequest = ["POST",input.path,"",canonicalHeaders,signedHeaders,payloadHash].join("\n");
+  const scope = `${dateStamp}/${input.region}/bedrock/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${hex(await digestSha256(canonicalRequest))}`;
+  const dateKey = await hmacSha256(`AWS4${input.secretAccessKey}`, dateStamp);
+  const regionKey = await hmacSha256(dateKey, input.region);
+  const serviceKey = await hmacSha256(regionKey, "bedrock");
+  const signingKey = await hmacSha256(serviceKey, "aws4_request");
+  const signature = hex(await hmacSha256(signingKey, stringToSign));
+  return {
+    authorization: `AWS4-HMAC-SHA256 Credential=${input.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    "content-type": "application/json",
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate,
+    ...(input.sessionToken ? { "x-amz-security-token": input.sessionToken } : {}),
+  };
+}
+
 async function invokeProviderModel(env: AssistEnv, route: any, input: any): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
@@ -1207,6 +1264,96 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
     const payload = await response.json<any>();
     if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
     return payload;
+  }
+
+  if (provider === "vertex") {
+    const projectId = String(extra.projectId || "").trim();
+    const location = String(extra.location || "global").trim();
+    if (!projectId) throw new Error("Vertex projectId is missing.");
+    const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const contents = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }],
+    }));
+    const response = await fetch(
+      `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
+          contents,
+          generationConfig: { maxOutputTokens: maxTokens, temperature },
+        }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return {
+      response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
+      usage: {
+        input_tokens: payload.usageMetadata?.promptTokenCount,
+        output_tokens: payload.usageMetadata?.candidatesTokenCount,
+      },
+      raw: payload,
+    };
+  }
+
+  if (provider === "cloudflare-ai") {
+    const accountId = String(extra.accountId || "").trim();
+    if (!accountId) throw new Error("Cloudflare accountId is missing.");
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok || payload?.success === false) {
+      throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    }
+    return payload?.result ?? payload;
+  }
+
+  if (provider === "bedrock") {
+    const accessKeyId = String(extra.accessKeyId || "").trim();
+    const region = String(extra.region || "us-east-1").trim();
+    const sessionToken = String(extra.sessionToken || "").trim();
+    if (!accessKeyId) throw new Error("Bedrock accessKeyId is missing.");
+    const host = `bedrock-runtime.${region}.amazonaws.com`;
+    const requestPath = `/model/${encodeURIComponent(model)}/converse`;
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const body = JSON.stringify({
+      system: systemText ? [{ text: systemText }] : undefined,
+      messages: messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: [{ text: String(m.content || "") }],
+      })),
+      inferenceConfig: { maxTokens, temperature },
+    });
+    const headers = await buildBedrockHeaders({
+      accessKeyId,
+      secretAccessKey: apiKey,
+      sessionToken: sessionToken || undefined,
+      region,
+      host,
+      path: requestPath,
+      body,
+    });
+    const response = await fetch(`https://${host}${requestPath}`, { method: "POST", headers, body });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return {
+      response: payload.output?.message?.content?.map((p: any) => p.text || "").join("") || "",
+      usage: {
+        input_tokens: payload.usage?.inputTokens,
+        output_tokens: payload.usage?.outputTokens,
+      },
+      raw: payload,
+    };
   }
 
   throw new Error(`Unsupported provider: ${provider}`);
