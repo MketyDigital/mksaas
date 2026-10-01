@@ -875,17 +875,25 @@ jobs:
           done
           [ "$app_ready" = '1' ] || { echo 'app.mkety.com did not become the authenticated Platform entry in the bounded window.'; false; }
 
-          app_entry_headers=/tmp/mkety-app-entry.headers
-          app_entry_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_entry_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app' || true)"
-          app_entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_entry_headers")"
-          if ! { [ "$app_entry_code" -ge 300 ] && [ "$app_entry_code" -lt 400 ] && [ -n "$app_entry_location" ]; }; then
-            echo "Unauthenticated app entry expected redirect, got HTTP $app_entry_code"
-            false
-          fi
-          APP_ENTRY_LOCATION="$app_entry_location" node <<'NODE'
+          app_entry_ready=0
+          for attempt in $(seq 1 24); do
+            app_entry_headers=/tmp/mkety-app-entry.headers
+            app_entry_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_entry_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app' || true)"
+            app_entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_entry_headers")"
+            echo "app.mkety.com /app readiness attempt $attempt/24: HTTP $app_entry_code location=$app_entry_location"
+            if [ "$app_entry_code" -ge 300 ] 2>/dev/null && [ "$app_entry_code" -lt 400 ] 2>/dev/null && [ -n "$app_entry_location" ]; then
+              if APP_ENTRY_LOCATION="$app_entry_location" node <<'NODE'
           const u=new URL(process.env.APP_ENTRY_LOCATION,'https://app.mkety.com/app');
-          if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login') throw new Error('Unauthenticated app entry did not remain on app.mkety.com/login');
+          if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login') process.exit(1);
           NODE
+              then
+                app_entry_ready=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          [ "$app_entry_ready" = '1' ] || { echo 'Unauthenticated app entry did not become ready in the bounded window.'; false; }
 
           html_routes=(/ /platform /workspaces /solutions /academy /pricing /enterprise /mail /trust /infrastructure /about /docs /privacy /terms /contact)
           for route in "${html_routes[@]}"; do
