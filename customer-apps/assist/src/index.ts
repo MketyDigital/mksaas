@@ -198,12 +198,19 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const setupHash = await sha256(setupToken);
     const hostedHostname = `${slug}.${env.HOSTED_SUFFIX}`;
 
-    const monthlyPrice = positiveInt(body.monthlyPriceMinor, 0);
-    const providerEnvelopeBps = positiveInt(body.providerEnvelopeBps, 2500);
-    const operationsReserveBps = positiveInt(body.operationsReserveBps, 300);
-    const rateMultiplierBps = positiveInt(body.rateMultiplierBps, 10000);
+    const monthlyPrice = parseUsdMinorValue(body.monthlyPriceUsd, "monthly price");
+    const fundingMode = String(body.fundingMode || "full_period") === "prepaid_partial" ? "prepaid_partial" : "full_period";
+    const minimumFundingMinor = fundingMode === "prepaid_partial"
+      ? parseUsdMinorValue(body.minimumFundingUsd || body.monthlyPriceUsd, "minimum funding")
+      : monthlyPrice;
+    if (minimumFundingMinor > monthlyPrice) return json({ error: "minimum_funding_exceeds_monthly_price" }, 400);
+    const setupFeeMinor = parseUsdMinorValue(body.setupFeeUsd ?? "0", "setup fee", true);
+    const providerEnvelopeBps = parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100);
+    const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
+    const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
+    const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
     let includedCredits = positiveInt(body.includedCredits, 0);
-    if (body.autoCalculateCredits === true && monthlyPrice > 0) {
+    if (autoIncludedCredits && monthlyPrice > 0) {
       const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
       const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
       includedCredits = calculateCommercialPlan({
@@ -229,8 +236,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         .bind(id("set"), customerId, userId, setupHash, now + 86400, now),
       env.DB.prepare("INSERT INTO credit_accounts (customer_id,balance,lifetime_granted,lifetime_consumed,updated_at) VALUES (?,?,?,?,?)")
         .bind(customerId, includedCredits, includedCredits, 0, now),
-      env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,updated_at) VALUES (?,?,?,?,?,?,?)")
-        .bind(customerId, monthlyPrice, includedCredits, providerEnvelopeBps, operationsReserveBps, rateMultiplierBps, now),
+      env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,funding_mode,minimum_funding_minor,setup_fee_minor,credit_rollover,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(customerId, monthlyPrice, includedCredits, providerEnvelopeBps, operationsReserveBps, rateMultiplierBps, fundingMode, minimumFundingMinor, setupFeeMinor, 1, now),
       env.DB.prepare("INSERT INTO feature_policy (customer_id,max_assistants,updated_at) VALUES (?,?,?)")
         .bind(customerId, maxAssistants, now),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,action,target_type,target_id,customer_id,created_at) VALUES (?,?,?,?,?,?,?)")
@@ -314,10 +321,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
     const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
     const result = calculateCommercialPlan({
-      monthlyAmountMinor: positiveInt(body.monthlyAmountMinor, 0),
-      providerEnvelopeBps: positiveInt(body.providerEnvelopeBps, 2500),
-      operationsReserveBps: positiveInt(body.operationsReserveBps, 300),
-      rateMultiplierBps: positiveInt(body.rateMultiplierBps, 10000),
+      monthlyAmountMinor: parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
+      providerEnvelopeBps: parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
+      operationsReserveBps: parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
+      rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
       creditUsdMicros,
     });
     return json({ ...result, creditUsdMicros });
@@ -334,10 +341,18 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
       const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
       includedCreditsValue = calculateCommercialPlan({
-        monthlyAmountMinor: body.subscriptionAmountMinor === undefined ? Number(current.subscription_amount_minor) : positiveInt(body.subscriptionAmountMinor, 0),
-        providerEnvelopeBps: body.providerEnvelopeBps === undefined ? Number(current.provider_envelope_bps) : positiveInt(body.providerEnvelopeBps, 0),
-        operationsReserveBps: body.operationsReserveBps === undefined ? Number(current.operations_reserve_bps) : positiveInt(body.operationsReserveBps, 0),
-        rateMultiplierBps: body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000),
+        monthlyAmountMinor: body.monthlyPriceUsd === undefined
+          ? (body.subscriptionAmountMinor === undefined ? Number(current.subscription_amount_minor) : positiveInt(body.subscriptionAmountMinor, 0))
+          : parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
+        providerEnvelopeBps: body.managedCostSharePercent === undefined
+          ? (body.providerEnvelopeBps === undefined ? Number(current.provider_envelope_bps) : positiveInt(body.providerEnvelopeBps, 0))
+          : parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
+        operationsReserveBps: body.operationsReservePercent === undefined
+          ? (body.operationsReserveBps === undefined ? Number(current.operations_reserve_bps) : positiveInt(body.operationsReserveBps, 0))
+          : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
+        rateMultiplierBps: body.customerRateMultiplierPercent === undefined
+          ? (body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000))
+          : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
         creditUsdMicros,
       }).includedCredits;
     }
@@ -348,13 +363,23 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         provider_envelope_bps=COALESCE(?,provider_envelope_bps),
         operations_reserve_bps=COALESCE(?,operations_reserve_bps),
         rate_multiplier_bps=COALESCE(?,rate_multiplier_bps),
+        funding_mode=COALESCE(?,funding_mode),
+        minimum_funding_minor=COALESCE(?,minimum_funding_minor),
+        setup_fee_minor=COALESCE(?,setup_fee_minor),
+        credit_rollover=COALESCE(?,credit_rollover),
         hard_stop_enabled=COALESCE(?,hard_stop_enabled),
         topup_enabled=COALESCE(?,topup_enabled),
         updated_at=? WHERE customer_id=?`)
         .bind(
-          nullableInt(body.subscriptionAmountMinor), includedCreditsValue,
-          nullableInt(body.providerEnvelopeBps), nullableInt(body.operationsReserveBps),
-          nullableInt(body.rateMultiplierBps), nullableBoolInt(body.hardStopEnabled),
+          body.monthlyPriceUsd === undefined ? nullableInt(body.subscriptionAmountMinor) : parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"), includedCreditsValue,
+          body.managedCostSharePercent === undefined ? nullableInt(body.providerEnvelopeBps) : parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
+          body.operationsReservePercent === undefined ? nullableInt(body.operationsReserveBps) : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
+          body.customerRateMultiplierPercent === undefined ? nullableInt(body.rateMultiplierBps) : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
+          body.fundingMode === undefined ? null : (String(body.fundingMode) === "prepaid_partial" ? "prepaid_partial" : "full_period"),
+          body.minimumFundingUsd === undefined ? null : parseUsdMinorValue(body.minimumFundingUsd, "minimum funding"),
+          body.setupFeeUsd === undefined ? null : parseUsdMinorValue(body.setupFeeUsd, "setup fee", true),
+          body.creditRollover === undefined ? null : (body.creditRollover ? 1 : 0),
+          nullableBoolInt(body.hardStopEnabled),
           nullableBoolInt(body.topupEnabled), now, customerId,
         ),
       env.DB.prepare(`UPDATE feature_policy SET
@@ -1509,6 +1534,23 @@ function decodeStoredSecretKey(value: string) {
 
 function base64UrlBytes(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function parseUsdMinorValue(value: unknown, label: string, allowZero = false) {
+  const text = String(value ?? "").trim();
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) throw new HttpError(400, `invalid_${label.replace(/\s+/g, "_")}`);
+  const amount = Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0") || "0");
+  if (allowZero ? amount < 0 : amount <= 0) throw new HttpError(400, `invalid_${label.replace(/\s+/g, "_")}`);
+  return amount;
+}
+
+function parsePercentBpsValue(value: unknown, fallbackPercent: number, minPercent: number, maxPercent: number) {
+  const text = String(value ?? "").trim();
+  if (!text) return Math.round(fallbackPercent * 100);
+  const number = Number(text);
+  if (!Number.isFinite(number) || number < minPercent || number > maxPercent) throw new HttpError(400, "invalid_percentage");
+  return Math.round(number * 100);
 }
 
 function positiveInt(value: unknown, fallback: number) {
