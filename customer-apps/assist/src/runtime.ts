@@ -1111,7 +1111,8 @@ function utf8(value: string | Uint8Array) {
 }
 
 async function digestSha256(value: string | Uint8Array) {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(value)));
+  const data = utf8(value);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer));
 }
 
 function hex(bytes: Uint8Array) {
@@ -1119,7 +1120,8 @@ function hex(bytes: Uint8Array) {
 }
 
 async function hmacSha256(key: string | Uint8Array, value: string) {
-  const imported = await crypto.subtle.importKey("raw", utf8(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const data = utf8(key);
+  const imported = await crypto.subtle.importKey("raw", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", imported, encoder.encode(value)));
 }
 
