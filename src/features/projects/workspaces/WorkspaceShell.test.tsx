@@ -15,10 +15,10 @@ describe('WorkspaceShell', () => {
     expect(screen.getByText(/Demo Project/i)).toBeInTheDocument();
     expect(screen.getByText('Workflow builder coming soon.')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Project workspaces' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'AI' })).toHaveAttribute('href', '/t/acme/projects/demo/ai');
+    expect(screen.getByRole('link', { name: 'AI' })).toHaveAttribute('href', '/app/acme/projects/demo/ai');
     expect(screen.getByRole('link', { name: 'Automate' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Deploy' })).toHaveAttribute('href', '/t/acme/projects/demo/deploy');
-    expect(screen.getByRole('link', { name: 'Trading' })).toHaveAttribute('href', '/t/acme/projects/demo/trading');
+    expect(screen.getByRole('link', { name: 'Deploy' })).toHaveAttribute('href', '/app/acme/projects/demo/deploy');
+    expect(screen.getByRole('link', { name: 'Trading' })).toHaveAttribute('href', '/app/acme/projects/demo/trading');
   });
 
   it('renders enterprise protection copy for Trading', () => {
