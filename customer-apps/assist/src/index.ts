@@ -833,14 +833,29 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     const body = await readJson(request);
     const email = normalizeEmail(requiredString(body.email, "email"));
     const password = requiredString(body.password, "password");
+    const rateKey = "login:" + await sha256(customer.customerId + ":" + email);
+    const rate = await env.DB.prepare(
+      "SELECT attempts,window_started_at,blocked_until FROM auth_rate_limits WHERE scope_key=? LIMIT 1",
+    ).bind(rateKey).first<any>();
+    const loginNow = unix();
+    if (Number(rate?.blocked_until || 0) > loginNow) {
+      return json({ error: "too_many_attempts", retryAfter: Number(rate.blocked_until) - loginNow }, 429);
+    }
     const row = await env.DB.prepare(
       `SELECT u.id,u.email,u.password_hash,u.password_salt,u.password_iterations,cu.role
        FROM users u JOIN customer_users cu ON cu.user_id=u.id
        WHERE cu.customer_id=? AND u.email=? AND u.status='active' LIMIT 1`,
     ).bind(customer.customerId, email).first<any>();
-    if (!row?.password_hash || !row?.password_salt) return json({ error: "invalid_credentials" }, 401);
+    if (!row?.password_hash || !row?.password_salt) {
+      await recordAuthFailure(env.DB, rateKey, loginNow);
+      return json({ error: "invalid_credentials" }, 401);
+    }
     const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash);
-    if (!ok) return json({ error: "invalid_credentials" }, 401);
+    if (!ok) {
+      await recordAuthFailure(env.DB, rateKey, loginNow);
+      return json({ error: "invalid_credentials" }, 401);
+    }
+    await env.DB.prepare("DELETE FROM auth_rate_limits WHERE scope_key=?").bind(rateKey).run();
     return issueSession(env, customer.customerId, row.id, row.role, row.email);
   }
 
@@ -880,6 +895,10 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
        WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
+    const claimed = await env.DB.prepare(
+      "UPDATE setup_tokens SET consumed_at=? WHERE id=? AND customer_id=? AND consumed_at IS NULL AND expires_at>? RETURNING id",
+    ).bind(now, row.id, customer.customerId, now).first<any>();
+    if (!claimed) return json({ error: "invalid_or_expired_setup_token" }, 400);
     const passwordData = await hashPassword(password);
     const sessionToken = randomToken(32);
     const sessionHash = await sha256(sessionToken);
@@ -891,8 +910,6 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
           .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
         env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at,user_agent) VALUES (?,?,?,?,?,?,?,?)")
           .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now, request.headers.get("user-agent")?.slice(0, 255) || null),
-        env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=? AND consumed_at IS NULL")
-          .bind(now, row.id),
       ]);
     } catch (error) {
       console.error("Assist customer setup commit failed", {
@@ -1640,6 +1657,21 @@ async function handlePaymentReturn(url: URL, env: Env): Promise<Response> {
     ? `https://${checkout.hostname}/?payment=${encodeURIComponent(reference)}&status=${encodeURIComponent(String(checkout.status || "pending"))}`
     : `https://${env.PORTAL_CNAME_TARGET}/`;
   return Response.redirect(destination, 302);
+}
+
+async function recordAuthFailure(db: D1Database, scopeKey: string, now: number) {
+  const current = await db.prepare(
+    "SELECT attempts,window_started_at FROM auth_rate_limits WHERE scope_key=? LIMIT 1",
+  ).bind(scopeKey).first<any>();
+  const withinWindow = current && now - Number(current.window_started_at || 0) < 900;
+  const attempts = (withinWindow ? Number(current.attempts || 0) : 0) + 1;
+  const windowStarted = withinWindow ? Number(current.window_started_at) : now;
+  const blockedUntil = attempts >= 5 ? now + 900 : null;
+  await db.prepare(
+    `INSERT INTO auth_rate_limits(scope_key,attempts,window_started_at,blocked_until)
+     VALUES (?,?,?,?)
+     ON CONFLICT(scope_key) DO UPDATE SET attempts=excluded.attempts,window_started_at=excluded.window_started_at,blocked_until=excluded.blocked_until`,
+  ).bind(scopeKey, attempts, windowStarted, blockedUntil).run();
 }
 
 async function verifyPaymentAttestation(raw: string, signature: string, secret: string) {
