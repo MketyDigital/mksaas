@@ -159,7 +159,7 @@ export function AutomationWorkspaceOverview({
                   <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{workflow.status}</span>
                   <Link
                     className="rounded-md border px-2 py-1 text-xs font-medium"
-                    href={`/t/${tenantSlug}/projects/${projectSlug}/automation/${workflow.slug}`}
+                    href={`/app/${tenantSlug}/projects/${projectSlug}/automation/${workflow.slug}`}
                   >
                     Open builder
                   </Link>
