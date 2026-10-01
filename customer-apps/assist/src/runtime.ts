@@ -1,3 +1,5 @@
+import { resolveAutomationState } from "./handoff/service";
+import { mayUseFallback } from "./providers/validation";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
@@ -527,6 +529,12 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true, awaitingHuman: true });
   }
 
+  const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistantId, conversation.id);
+  if (automation.paused) {
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, automationPaused: true, pauseScope: automation.reason });
+  }
+
   const typing = telegramAction(token, chatId, "typing");
   void typing;
 
@@ -594,6 +602,9 @@ async function runAssistant(input: {
   providerMessageId: string;
 }) {
   const { env, assistant, conversationId } = input;
+  const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistant.id, conversationId);
+  if (automation.paused) return { ok: false as const, paused: true as const, userMessage: "Automation is paused for this conversation." };
+
   const rate = await env.DB.prepare(
     `SELECT mr.* FROM model_rates mr
      WHERE mr.alias=? AND mr.effective_at<=?
@@ -1011,13 +1022,19 @@ async function reserveCredits(db: D1Database, customerId: string, assistantId: s
 
 async function releaseReservation(db: D1Database, reservationId: string, customerId: string, reserved: number) {
   const now = unix();
-  await db.prepare("UPDATE credit_accounts SET balance=balance+?,updated_at=? WHERE customer_id=?").bind(reserved, now, customerId).run();
+  const claimed = await db.prepare(
+    "UPDATE credit_reservations SET status='released',settled_at=? WHERE id=? AND customer_id=? AND status='open' RETURNING reserved_credits",
+  ).bind(now, reservationId, customerId).first<any>();
+  if (!claimed) return false;
+  const release = Math.max(0, parseInt(String(claimed.reserved_credits ?? reserved), 10));
+  await db.prepare(
+    "UPDATE credit_accounts SET balance=balance+?,updated_at=? WHERE customer_id=?",
+  ).bind(release, now, customerId).run();
   const account = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
-  await db.batch([
-    db.prepare("UPDATE credit_reservations SET status='released',settled_at=? WHERE id=? AND status='open'").bind(now, reservationId),
-    db.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
-      .bind(id("led"), customerId, reserved, "inference_release", reservationId, parseFloat(String(account?.balance || 0)), now),
-  ]);
+  await db.prepare(
+    "INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)",
+  ).bind(id("led"), customerId, release, "inference_release", reservationId, parseInt(String(account?.balance || 0), 10), now).run();
+  return true;
 }
 
 async function settleReservation(
@@ -1030,18 +1047,23 @@ async function settleReservation(
   usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number; providerCostMicros: number; apiKeyId?: string | null },
 ) {
   const now = unix();
-  const refund = Math.max(0, reserved - actual);
+  const safeActual = Math.max(0, Math.min(reserved, Math.trunc(actual)));
+  const claimed = await db.prepare(
+    "UPDATE credit_reservations SET status='settled',settled_credits=?,settled_at=? WHERE id=? AND customer_id=? AND assistant_id=? AND status='open' RETURNING reserved_credits",
+  ).bind(safeActual, now, reservationId, customerId, assistantId).first<any>();
+  if (!claimed) return false;
+
+  const originallyReserved = Math.max(0, parseInt(String(claimed.reserved_credits ?? reserved), 10));
+  const refund = Math.max(0, originallyReserved - safeActual);
   await db.prepare(
     "UPDATE credit_accounts SET balance=balance+?,lifetime_consumed=lifetime_consumed+?,updated_at=? WHERE customer_id=?",
-  ).bind(refund, actual, now, customerId).run();
+  ).bind(refund, safeActual, now, customerId).run();
   const balance = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
   const usageId = id("use");
   const statements: D1PreparedStatement[] = [
-    db.prepare("UPDATE credit_reservations SET status='settled',settled_credits=?,settled_at=? WHERE id=? AND status='open'")
-      .bind(actual, now, reservationId),
     db.prepare(
       "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, actual, usage.providerCostMicros, now, usage.apiKeyId ?? null),
+    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, safeActual, usage.providerCostMicros, now, usage.apiKeyId ?? null),
     db.prepare(
       "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
     ).bind(id("pce"), customerId, usageId, usage.provider, usage.providerModel, usage.providerCostMicros, "USD", now),
@@ -1049,10 +1071,11 @@ async function settleReservation(
   if (refund) {
     statements.push(
       db.prepare("INSERT INTO credit_ledger (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", usageId, parseFloat(String(balance?.balance || 0)), now),
+        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", reservationId, parseInt(String(balance?.balance || 0), 10), now),
     );
   }
   await db.batch(statements);
+  return true;
 }
 
 async function providerBudgetAllows(
@@ -1085,7 +1108,25 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any): Promis
     return annotateProviderResult(result, String(route.provider), String(route.provider_model));
   } catch (primaryError) {
     if (!route.fallback_provider || !route.fallback_model) throw primaryError;
-    console.warn("primary model route failed; using configured fallback", {
+
+    const primaryOwnership = route.provider_connection_id
+      ? await env.DB.prepare("SELECT ownership FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
+      : null;
+    const fallbackOwnership = route.fallback_provider_connection_id
+      ? await env.DB.prepare("SELECT ownership FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
+      : null;
+    const primaryIsByok = primaryOwnership?.ownership === "customer";
+    const fallbackIsManaged = route.fallback_provider === "workers-ai"
+      || route.fallback_provider === "mkety-managed"
+      || (!route.fallback_provider_connection_id)
+      || fallbackOwnership?.ownership === "mkety";
+
+    if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryIsByok, fallbackIsManaged)) {
+      console.warn("BYOK provider failed; funded fallback blocked by policy", { alias: route.alias, provider: route.provider });
+      throw primaryError;
+    }
+
+    console.warn("primary model route failed; using explicitly permitted fallback", {
       alias: route.alias,
       provider: route.provider,
       fallbackProvider: route.fallback_provider,
