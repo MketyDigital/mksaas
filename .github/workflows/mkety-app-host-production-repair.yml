@@ -1,6 +1,9 @@
 name: Mkety App Host Production Repair
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -26,6 +29,7 @@ env:
 
 jobs:
   repair:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[app-host-production]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: production
