@@ -33,10 +33,19 @@ Customer-owned domain:
 ai.starpipsforex.com
 ```
 
+Mkety-owned SaaS routing topology:
+
+```
+customer domain
+  CNAME -> mkety-assist.mkety.app
+             CNAME -> assist-origin.mkety.app
+                        -> exact Worker route to mkety-assist
+```
+
 The customer adds only:
 
 ```
-CNAME  ai  portal.assist.mkety.app
+CNAME  ai  mkety-assist.mkety.app
 ```
 
 If Mkety manages that customer's DNS, Operator can perform the DNS change for them.
@@ -49,7 +58,7 @@ assist-ops.mkety.com
 
 No Operator routes are intentionally exposed on customer hostnames.
 
-Cloudflare for SaaS is used for customer custom hostnames. The Worker stores Cloudflare's custom-hostname ID and validation state in `customer_domains`.
+Cloudflare for SaaS is used for customer custom hostnames. Assist follows the same operational topology as MkLMS: the provider-owned CNAME target is `mkety-assist.mkety.app`, its routing origin is `assist-origin.mkety.app`, and every external customer hostname receives an exact `<hostname>/* -> mkety-assist` Worker route. The Worker stores Cloudflare's custom-hostname ID and validation state in `customer_domains`.
 
 ## Authentication and Telegram recovery
 
@@ -104,7 +113,7 @@ The HTML shell is intentionally minimal; it proves the independent host/auth/con
 Mkety Payments posts to:
 
 ```
-https://portal.assist.mkety.app/api/payment/webhook
+https://mkety-assist.mkety.app/api/payment/webhook
 ```
 
 with a signed JSON body containing at least:
