@@ -29,6 +29,9 @@ jobs:
       - name: Check Operator browser runtime
         working-directory: customer-apps/assist
         run: npm run check:operator-ui
+      - name: Check one-time owner access
+        working-directory: customer-apps/assist
+        run: npm run check:owner-access
       - name: Wrangler dry-run
         working-directory: customer-apps/assist
         shell: bash
