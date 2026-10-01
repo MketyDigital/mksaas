@@ -138,8 +138,9 @@ Also verify:
 - no stale Academy/Trading pricing is shown;
 - public docs read as finished customer documentation, not development notes;
 - no GitHub/repository/private engineering wording is public;
-- Public Mkety AI returns a real grounded response;
-- Public AI knows the canonical six commercial entries and Academy/Trading destinations;
+- Public Mkety AI returns a real live provider response with conversation state;
+- the exact canonical six-entry commercial/pricing grounding remains a blocking requirement in the frozen integrated Public Candidate certification for the same SHA;
+- live production acceptance verifies Academy and Trading/Enterprise routing plus removed-plan and private-source boundaries without requiring one probabilistic answer to restate every price token;
 - Public AI does not reveal private source/repository information;
 - same-browser memory survives another request;
 - New Chat creates a distinct conversation;
