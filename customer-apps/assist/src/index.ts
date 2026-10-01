@@ -94,9 +94,12 @@ export default {
       return dashboardPage(customer, session);
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
-      console.error("mkety-assist request failed", error);
-      return json({ error: "internal_error" }, 500);
+      return runtimeErrorResponse(error);
     }
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await processDueReminders(env);
   },
 };
 
