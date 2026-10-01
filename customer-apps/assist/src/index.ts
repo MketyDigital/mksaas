@@ -1054,11 +1054,14 @@ async function handleFlutterwavePaymentWebhook(request: Request, env: Env): Prom
   }
 
   const now = unix();
-  if (status !== "successful") {
+  if (status === "failed") {
     await env.DB.prepare(
       "UPDATE payment_checkouts SET status='failed',provider_payment_id=?,provider_event_id=?,settled_at=? WHERE id=? AND status='pending'",
     ).bind(String(data.id || ""), String(data.id || ""), now, checkout.id).run();
     return json({ ok: true, settled: false, status });
+  }
+  if (status !== "successful") {
+    return json({ ok: true, settled: false, status: "pending" });
   }
 
   const updated = await env.DB.prepare(
