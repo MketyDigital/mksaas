@@ -4,7 +4,7 @@ import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
-import { defaultPaymentMethod, listPaymentMethods } from "./payments/service";
+import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
 import { validateProviderConnection } from "./providers/validation";
 
 interface Env {
@@ -38,6 +38,9 @@ interface Env {
   MKETY_ASSIST_CF_ACCOUNT_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
   FLUTTERWAVE_CHECKOUT_BROKER_SECRET?: string;
+  FLUTTERWAVE_CHECKOUT_BROKER_URL?: string;
+  NOWPAYMENTS_API_KEY?: string;
+  NOWPAYMENTS_IPN_SECRET?: string;
   REPLY_QUEUE: {
     send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   };
@@ -1620,51 +1623,16 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   }
 
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
-    const rows = await env.DB.prepare(
-      "SELECT method,enabled,healthy,updated_at FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
-    ).all<any>();
-    const status = { nowpayments: false, flutterwave: false, kora: false };
-    for (const row of rows.results ?? []) {
-      if (row.method in status) (status as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
-    }
-
-    let source = "last_known";
-    if (env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) {
-      try {
-        const response = await fetch("https://mkety.com/api/payments/assist/methods", {
-          headers: { authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}` },
-        });
-        const payload = await response.json<any>().catch(() => null);
-        if (response.ok && payload?.success && payload.methods) {
-          status.nowpayments = Boolean(payload.methods.nowpayments);
-          status.flutterwave = Boolean(payload.methods.flutterwave);
-          status.kora = Boolean(payload.methods.kora);
-          source = "central";
-          const now = unix();
-          await env.DB.batch([
-            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
-            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
-            env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
-          ]);
-        } else {
-          const routeHealth = await probeCentralAssistPaymentRoutes(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET);
-          status.nowpayments = routeHealth.nowpayments;
-          status.flutterwave = routeHealth.flutterwave;
-          status.kora = routeHealth.kora;
-          source = "route_probe";
-          const now = unix();
-          await env.DB.batch([
-            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
-            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
-            env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
-          ]);
-        }
-      } catch (error) {
-        console.warn("Central payment capability discovery unavailable; using last-known provider health", error);
-      }
-    }
+    const koraRow = await env.DB.prepare(
+      "SELECT enabled,healthy FROM payment_method_health WHERE method='kora' LIMIT 1",
+    ).first<any>();
+    const status = {
+      nowpayments: Boolean(env.NOWPAYMENTS_API_KEY && env.NOWPAYMENTS_IPN_SECRET),
+      flutterwave: Boolean(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET),
+      kora: Boolean(koraRow?.enabled) && Boolean(koraRow?.healthy),
+    };
     const methods = listPaymentMethods(status);
-    return json({ methods, defaultMethod: defaultPaymentMethod(status), source });
+    return json({ methods, defaultMethod: defaultPaymentMethod(status), source: "direct_config" });
   }
 
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
@@ -1703,7 +1671,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       ? Math.max(1, Math.floor(Number(policy.included_credits || 0) * recurringPaid / recurringBase))
       : Math.max(0, Number(policy.included_credits || 0));
 
-    const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
+    const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
       return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan" });
@@ -1743,7 +1711,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
       canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
     }
-    const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
+    const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
       return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup" });
@@ -1767,31 +1735,15 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   return json({ error: "not_found" }, 404);
 }
 
-async function probeCentralAssistPaymentRoutes(secret: string) {
-  const names = ["nowpayments","flutterwave","kora"] as const;
-  const result = { nowpayments: false, flutterwave: false, kora: false };
-  await Promise.all(names.map(async (name) => {
-    try {
-      const response = await fetch(`https://mkety.com/api/payments/${name}/start`, {
-        method: "GET",
-        headers: { authorization: `Bearer ${secret}` },
-        redirect: "manual",
-      });
-      // A method-not-allowed or validation response proves the route is deployed.
-      result[name] = response.status !== 404 && response.status !== 410 && response.status < 500;
-    } catch {
-      result[name] = false;
-    }
-  }));
-  return result;
-}
-
-async function resolveRequestedPaymentMethod(db: D1Database, requested: unknown) {
-  const rows = await db.prepare(
-    "SELECT method,enabled,healthy FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
-  ).all<any>();
-  const health = { nowpayments: false, flutterwave: false, kora: false };
-  for (const row of rows.results ?? []) if (row.method in health) (health as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
+async function resolveRequestedPaymentMethod(env: Env, requested: unknown) {
+  const koraRow = await env.DB.prepare(
+    "SELECT enabled,healthy FROM payment_method_health WHERE method='kora' LIMIT 1",
+  ).first<any>();
+  const health = {
+    nowpayments: Boolean(env.NOWPAYMENTS_API_KEY && env.NOWPAYMENTS_IPN_SECRET),
+    flutterwave: Boolean(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET),
+    kora: Boolean(koraRow?.enabled) && Boolean(koraRow?.healthy),
+  };
   const available = listPaymentMethods(health);
   const selected = String(requested || "").toLowerCase();
   return selected ? (available.includes(selected as any) ? selected : null) : (available[0] ?? null);
@@ -1806,7 +1758,10 @@ async function startAssistNowPaymentsCheckout(input: {
   purchaseType: "plan" | "topup";
 }) {
   const { env, customer, session, credits, canonicalAmountMinor, purchaseType } = input;
-  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_provider_not_configured" }, 503);
+  const apiKey = String(env.NOWPAYMENTS_API_KEY || "");
+  const ipnSecret = String(env.NOWPAYMENTS_IPN_SECRET || "");
+  if (!apiKey || !ipnSecret) return json({ error: "payment_provider_not_configured" }, 503);
+
   const checkoutId = id("chk");
   const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
   const now = unix();
@@ -1816,38 +1771,40 @@ async function startAssistNowPaymentsCheckout(input: {
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
   ).bind(checkoutId, customer.customerId, session.userId, reference, "nowpayments", credits, canonicalAmountMinor, "USD", "pending", now, purchaseType).run();
 
-  const response = await fetch("https://mkety.com/api/payments/nowpayments/start", {
+  const response = await fetch("https://api.nowpayments.io/v1/invoice", {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
-      "content-type": "application/json",
-    },
+    headers: { "content-type": "application/json", "x-api-key": apiKey },
     body: JSON.stringify({
-      source: "assist",
-      reference,
-      canonical_amount_usd: (canonicalAmountMinor / 100).toFixed(2),
-      email: session.email,
-      customer_name: customer.customerName,
-      checkout_id: checkoutId,
+      price_amount: canonicalAmountMinor / 100,
+      price_currency: "usd",
+      order_id: reference,
+      order_description: `Mkety Assist ${reference}`,
+      ipn_callback_url: `https://${env.PORTAL_CNAME_TARGET}/api/payment/nowpayments/webhook`,
+      success_url: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
+      cancel_url: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
     }),
   });
   const payload = await response.json<any>().catch(() => null);
-  const checkoutUrl = String(payload?.checkout_url || "");
-  if (!response.ok || !payload?.success || !checkoutUrl.startsWith("https://")) {
+  const providerInvoiceId = String(payload?.id || payload?.invoice_id || "").trim();
+  const hostedUrl = String(payload?.invoice_url || "");
+  if (!response.ok || !providerInvoiceId || !hostedUrl.startsWith("https://")) {
     await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'").bind(checkoutId).run();
-    return json({ error: "nowpayments_checkout_failed", message: String(payload?.message || "NOWPayments checkout could not be prepared.") }, 502);
+    return json({ error: "nowpayments_checkout_failed", message: "NOWPayments checkout could not be prepared." }, 502);
   }
+
   await env.DB.prepare(
     "UPDATE payment_checkouts SET provider_payment_id=?,provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
-  ).bind(String(payload.provider_checkout_id || ""), canonicalAmountMinor, "USD", checkoutId).run();
+  ).bind(providerInvoiceId, canonicalAmountMinor, "USD", checkoutId).run();
+
   return json({
     ok: true,
     provider: "nowpayments",
     purchaseType,
     checkoutId,
     reference,
-    checkoutExperience: "hosted",
-    checkoutUrl,
+    checkoutExperience: "embedded",
+    widgetUrl: `https://nowpayments.io/embeds/payment-widget?iid=${encodeURIComponent(providerInvoiceId)}`,
+    hostedUrl,
     credits,
     canonicalAmountMinor,
     canonicalCurrency: "USD",
@@ -1929,7 +1886,8 @@ async function startAssistFlutterwaveCheckout(input: {
   ).bind(checkoutId, customer.customerId, session.userId, reference, "flutterwave", credits, canonicalAmountMinor, "USD", "pending", now, purchaseType).run();
 
   const requestBroker = async (experience: "inline" | "hosted") => {
-    const response = await fetch("https://mkety.com/api/payments/flutterwave/start", {
+    const brokerUrl = String(env.FLUTTERWAVE_CHECKOUT_BROKER_URL || "https://mkety.com/api/payments/flutterwave/start");
+    const response = await fetch(brokerUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
@@ -2053,47 +2011,37 @@ async function handleFlutterwavePaymentWebhook(request: Request, env: Env): Prom
 }
 
 async function handleNowPaymentsPaymentWebhook(request: Request, env: Env): Promise<Response> {
-  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_attestation_not_configured" }, 503);
-  const raw = await request.text();
-  const supplied = request.headers.get("x-mkety-payment-attestation") || "";
-  if (!(await verifyPaymentAttestation(raw, supplied, env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET))) {
-    return json({ error: "invalid_payment_attestation" }, 401);
-  }
-  let payload: Record<string, any>;
-  try { payload = JSON.parse(raw) as Record<string, any>; }
-  catch { return json({ error: "invalid_json" }, 400); }
-  if (String(payload.provider || "") !== "nowpayments") return json({ error: "invalid_payment_provider" }, 400);
+  const secret = String(env.NOWPAYMENTS_IPN_SECRET || "");
+  const signature = request.headers.get("x-nowpayments-sig") || "";
+  if (!secret || !signature) return json({ error: "payment_signature_missing" }, 401);
 
-  const reference = String(payload.reference || "");
+  const payload = await request.json().catch(() => null) as any;
+  if (!payload || !(await verifyNowPaymentsSignature(payload, signature, secret))) {
+    return json({ error: "invalid_payment_signature" }, 401);
+  }
+
+  const status = String(payload.payment_status || "").toLowerCase();
+  if (status !== "finished") return json({ ok: true, settled: false, status });
+
+  const paymentId = String(payload.payment_id || "");
+  const reference = String(payload.order_id || "");
+  if (!paymentId || !reference) return json({ error: "invalid_payment_payload" }, 400);
+
   const checkout = await env.DB.prepare(
     "SELECT * FROM payment_checkouts WHERE reference=? AND provider='nowpayments' LIMIT 1",
   ).bind(reference).first<any>();
   if (!checkout) return json({ error: "unknown_payment_reference" }, 404);
-  if (checkout.status === "paid") return json({ ok: true, duplicate: true });
+  if (checkout.status === "paid") return json({ ok: true, settled: true, duplicate: true });
 
-  const status = String(payload.status || "").toLowerCase();
-  const amountMinor = parsePaymentAmountMinor(payload.amount);
-  const currency = String(payload.currency || "").toUpperCase();
-  if (currency !== String(checkout.canonical_currency || "USD").toUpperCase() || amountMinor < Number(checkout.canonical_amount_minor || 0)) {
-    return json({ error: "payment_quote_mismatch" }, 400);
-  }
-  if (["failed","expired","refunded"].includes(status)) {
-    await env.DB.prepare(
-      "UPDATE payment_checkouts SET status='failed',provider_payment_id=?,provider_event_id=?,settled_at=? WHERE id=? AND status='pending'",
-    ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), checkout.id).run();
-    return json({ ok: true, settled: false, status });
-  }
-  if (status !== "finished") return json({ ok: true, settled: false, status: "pending" });
+  const actualAmountMinor = parsePaymentAmountMinor(payload.price_amount);
+  const expectedAmountMinor = Number(checkout.canonical_amount_minor || 0);
+  if (actualAmountMinor + 1 < expectedAmountMinor) return json({ error: "payment_quote_mismatch" }, 400);
 
+  const settlementKey = `nowpayments:${paymentId}`;
   const updated = await env.DB.prepare(
     "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status='pending'",
-  ).bind(
-    String(payload.provider_payment_id || ""),
-    String(payload.provider_event_id || ""),
-    unix(),
-    `nowpayments:${String(payload.provider_event_id || payload.provider_payment_id || reference)}`,
-    checkout.id,
-  ).run();
+  ).bind(paymentId, paymentId, unix(), settlementKey, checkout.id).run();
+
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
 }
 
