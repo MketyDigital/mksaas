@@ -29,6 +29,10 @@ jobs:
       MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME: ${{ vars.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME }}
       MKETY_ASSIST_SECRET_ENCRYPTION_KEY: ${{ secrets.MKETY_ASSIST_SECRET_ENCRYPTION_KEY }}
       FLUTTERWAVE_CHECKOUT_BROKER_SECRET: ${{ secrets.FLUTTERWAVE_CHECKOUT_BROKER_SECRET }}
+      ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
+      MKETY_ASSIST_OPS_AUTH_ISSUER: ${{ secrets.ZITADEL_URL || vars.ZITADEL_URL }}
+      MKETY_ASSIST_OPS_ALLOWED_EMAIL: hello@mkety.com
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN)
+          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: $name"
@@ -56,6 +60,78 @@ jobs:
       - name: Type-check Assist
         working-directory: customer-apps/assist
         run: npm run type-check
+
+      - name: Ensure Assist Operator OIDC application
+        id: zitadel_ops
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const issuer=(process.env.MKETY_ASSIST_OPS_AUTH_ISSUER||'').replace(/\/+$/,'');
+          const token=process.env.ZITADEL_MANAGEMENT_TOKEN;
+          const projectId=process.env.ZITADEL_PROJECT_ID;
+          const appName='Mkety Assist Operator Production';
+          const redirectUri='https://assist-ops.mkety.com/api/ops/auth/callback';
+          const postLogoutRedirectUri='https://assist-ops.mkety.com/';
+
+          async function call(method, body) {
+            const r=await fetch(issuer+'/zitadel.application.v2.ApplicationService/'+method,{
+              method:'POST',
+              headers:{
+                authorization:'Bearer '+token,
+                'connect-protocol-version':'1',
+                'content-type':'application/json'
+              },
+              body:JSON.stringify(body)
+            });
+            const text=await r.text();
+            if(!r.ok) throw new Error('ZITADEL '+method+' failed HTTP '+r.status+': '+text);
+            return text?JSON.parse(text):{};
+          }
+
+          const listed=await call('ListApplications',{});
+          const matches=(listed.applications||[]).filter(a=>a.projectId===projectId && a.name===appName);
+          if(matches.length>1) throw new Error('Multiple Assist Operator OIDC applications exist');
+          let app=matches[0]||null;
+          let clientId='';
+
+          if(!app){
+            const created=await call('CreateApplication',{
+              projectId,
+              name:appName,
+              oidcConfiguration:{
+                redirectUris:[redirectUri],
+                responseTypes:['OIDC_RESPONSE_TYPE_CODE'],
+                grantTypes:['OIDC_GRANT_TYPE_AUTHORIZATION_CODE'],
+                applicationType:'OIDC_APP_TYPE_USER_AGENT',
+                authMethodType:'OIDC_AUTH_METHOD_TYPE_NONE',
+                postLogoutRedirectUris:[postLogoutRedirectUri],
+                version:'OIDC_VERSION_1_0',
+                developmentMode:false,
+                accessTokenType:'OIDC_TOKEN_TYPE_BEARER'
+              }
+            });
+            clientId=created.oidcConfiguration?.clientId||'';
+            if(!clientId) throw new Error('Created Assist Operator OIDC app did not return clientId');
+          } else {
+            if(!app.oidcConfiguration) throw new Error('Existing Assist Operator app is not OIDC');
+            clientId=app.oidcConfiguration.clientId||'';
+            const redirects=[...new Set([...(app.oidcConfiguration.redirectUris||[]),redirectUri])];
+            const logouts=[...new Set([...(app.oidcConfiguration.postLogoutRedirectUris||[]),postLogoutRedirectUri])];
+            const changed=redirects.length!==(app.oidcConfiguration.redirectUris||[]).length || logouts.length!==(app.oidcConfiguration.postLogoutRedirectUris||[]).length;
+            if(changed){
+              await call('UpdateApplication',{
+                applicationId:app.applicationId,
+                projectId,
+                oidcConfiguration:{redirectUris:redirects,postLogoutRedirectUris:logouts}
+              });
+            }
+            if(!clientId) throw new Error('Existing Assist Operator OIDC app has no clientId');
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'client_id='+clientId+'\n');
+          NODE
 
       - name: Resolve Cloudflare zone, account and D1
         id: cloudflare
@@ -207,59 +283,6 @@ jobs:
           if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
           CLOUDFLARE_API_TOKEN="$token" npx wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
 
-      - name: Bootstrap Operator setup link when needed
-        working-directory: customer-apps/assist
-        env:
-          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          token="$CLOUDFLARE_API_TOKEN"
-          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
-          export CLOUDFLARE_API_TOKEN="$token"
-          now="$(date +%s)"
-          users_json="$(npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc             --command "SELECT COUNT(*) AS n FROM operator_users;")"
-          users="$(USERS_JSON="$users_json" node - <<'NODE'
-          const v=JSON.parse(process.env.USERS_JSON);
-          const row=v?.[0]?.results?.[0] || v?.result?.[0] || {};
-          process.stdout.write(String(row.n || 0));
-          NODE
-          )"
-          if [ "$users" = "0" ]; then
-            # No Operator exists, so any previous bootstrap token is stale for
-            # practical onboarding purposes. Invalidate old unused tokens and
-            # issue exactly one fresh token for this deployment.
-            npx wrangler d1 execute DB --remote --config wrangler.deploy.jsonc               --command "UPDATE operator_setup_tokens SET consumed_at=$now WHERE consumed_at IS NULL;"
-
-            read -r raw hash token_id expires < <(node - <<'NODE'
-          const crypto=require('crypto');
-          const raw=crypto.randomBytes(32).toString('base64url');
-          const hash=crypto.createHash('sha256').update(raw).digest('hex');
-          const tokenId='opset_'+crypto.randomUUID().replace(/-/g,'');
-          const expires=Math.floor(Date.now()/1000)+86400;
-          console.log([raw,hash,tokenId,expires].join(' '));
-          NODE
-            )
-
-            npx wrangler d1 execute DB --remote --config wrangler.deploy.jsonc               --command "INSERT INTO operator_setup_tokens (id,token_hash,expires_at,created_at) VALUES ('$token_id','$hash',$expires,$now);"
-
-            {
-              echo "### Mkety Assist Operator setup"
-              echo ""
-              echo "No Operator account exists. A fresh one-time setup link was generated."
-              echo "This link expires in 24 hours and replaces any previous unused setup link:"
-              echo ""
-              echo "https://assist-ops.mkety.com/setup?token=$raw"
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "### Mkety Assist Operator"
-              echo ""
-              echo "An Operator account already exists. No bootstrap token was created."
-              echo "Use https://assist-ops.mkety.com to sign in."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: Resolve Telegram recovery bot identity
         if: env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN != ''
         shell: bash
@@ -282,6 +305,7 @@ jobs:
         working-directory: customer-apps/assist
         env:
           MKETY_ASSIST_CF_ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+          MKETY_ASSIST_OPS_AUTH_CLIENT_ID: ${{ steps.zitadel_ops.outputs.client_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -292,6 +316,9 @@ jobs:
           const values = {
             MKETY_ASSIST_CF_ZONE_ID: process.env.MKETY_ASSIST_CF_ZONE_ID,
             MKETY_ASSIST_CF_SAAS_TOKEN: process.env.MKETY_ASSIST_CF_SAAS_TOKEN,
+            MKETY_ASSIST_OPS_AUTH_ISSUER: process.env.MKETY_ASSIST_OPS_AUTH_ISSUER,
+            MKETY_ASSIST_OPS_AUTH_CLIENT_ID: process.env.MKETY_ASSIST_OPS_AUTH_CLIENT_ID,
+            MKETY_ASSIST_OPS_ALLOWED_EMAIL: process.env.MKETY_ASSIST_OPS_ALLOWED_EMAIL,
           };
           if (process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) values.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
           if (process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) values.MKETY_ASSIST_SECRET_ENCRYPTION_KEY = process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
