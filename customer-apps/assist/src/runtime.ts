@@ -598,9 +598,15 @@ async function runAssistant(input: {
   const maxOutputTokens = 1024;
 
   const commercial = await env.DB.prepare(
-    "SELECT subscription_amount_minor,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,hard_stop_enabled FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
+            cp.hard_stop_enabled,c.billing_status,c.grace_until
+     FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id
+     WHERE cp.customer_id=? LIMIT 1`,
   ).bind(assistant.customer_id).first<any>();
   if (!commercial) return { ok: false as const, userMessage: "This assistant’s commercial policy is unavailable." };
+  if (commercial.billing_status === "past_due" && commercial.grace_until && unix() > parseInt(String(commercial.grace_until), 10)) {
+    return { ok: false as const, userMessage: "This account’s subscription needs attention before the assistant can continue." };
+  }
 
   const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
   const baseInputCredits = parseFloat(String(rate.input_credits_per_million || 0));
