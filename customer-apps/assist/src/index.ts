@@ -1750,7 +1750,7 @@ async function issueSession(env: Env, customerId: string, userId: string, role: 
   const now = unix();
   const ttl = Number(env.SESSION_TTL_SECONDS || "2592000");
   await env.DB.prepare(
-    "INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)",
+    "INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at,user_agent) VALUES (?,?,?,?,?,?,?,?)",
   ).bind(id("ses"), await sha256(token), userId, customerId, now + ttl, now, now, null).run();
   return new Response(JSON.stringify({ ok: true, role, email }), {
     status: 200,
