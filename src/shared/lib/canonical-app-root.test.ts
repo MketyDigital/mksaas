@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { readFile, access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
