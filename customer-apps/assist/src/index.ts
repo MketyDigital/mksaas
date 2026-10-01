@@ -1,4 +1,5 @@
 import { handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 
 interface Env {
   DB: D1Database;
@@ -91,7 +92,6 @@ export default {
 };
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
-  if (!isOpsAuthorized(request, env)) return json({ error: "not_found" }, 404);
   const url = new URL(request.url);
 
   if (url.pathname === "/" && request.method === "GET") {
@@ -103,6 +103,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     ).all();
     return opsPage(rows.results ?? []);
   }
+
+  if (!isOpsAuthorized(request, env)) return json({ error: "not_found" }, 404);
 
   if (url.pathname === "/api/ops/customers" && request.method === "POST") {
     const body = await readJson(request);
@@ -167,6 +169,17 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       "SELECT c.*,ca.balance FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id ORDER BY c.created_at DESC",
     ).all();
     return json({ customers: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/ops/customer" && request.method === "GET") {
+    const customerId = requiredString(url.searchParams.get("id"), "id");
+    const customer = await env.DB.prepare("SELECT * FROM customers WHERE id=? LIMIT 1").bind(customerId).first();
+    if (!customer) return json({ error: "customer_not_found" }, 404);
+    const commercial = await env.DB.prepare("SELECT * FROM commercial_policy WHERE customer_id=?").bind(customerId).first();
+    const features = await env.DB.prepare("SELECT * FROM feature_policy WHERE customer_id=?").bind(customerId).first();
+    const credits = await env.DB.prepare("SELECT * FROM credit_accounts WHERE customer_id=?").bind(customerId).first();
+    const domains = await env.DB.prepare("SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC").bind(customerId).all();
+    return json({ customer, commercial, features, credits, domains: domains.results ?? [] });
   }
 
   if (url.pathname === "/api/ops/policy" && request.method === "PATCH") {
@@ -826,16 +839,16 @@ document.getElementById('recover').onclick=async()=>{const e=prompt('Account ema
 }
 
 function dashboardPage(customer: CustomerContext, session: Session) {
-  return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(customer.customerName)} AI</title>
-<style>body{font:15px system-ui;margin:0;background:#0d0e14;color:#f5f5f7}header{padding:18px 28px;border-bottom:1px solid #252838;display:flex;justify-content:space-between}.wrap{max-width:1100px;margin:auto;padding:28px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.card{background:#171924;border:1px solid #252838;padding:20px;border-radius:16px}a{color:#a996ff}button{padding:9px 13px;border:0;border-radius:9px;background:#6d4aff;color:#fff}</style></head>
-<body><header><strong>${escapeHtml(customer.customerName)} AI</strong><span>${escapeHtml(session.email)} · ${escapeHtml(session.role)}</span></header>
-<main class="wrap"><h1>Dashboard</h1><div class="grid"><section class="card"><h3>Assistants</h3><p id="assistants">Loading…</p></section><section class="card"><h3>Credits</h3><p id="credits">Loading…</p></section><section class="card"><h3>Telegram recovery</h3><p>Connect your Telegram once, then it can receive secure access-recovery codes.</p><button id="linkTelegram">Connect Telegram</button></section><section class="card"><h3>Portal</h3><p>${escapeHtml(customer.hostname)}</p></section></div></main>
-<script>Promise.all([fetch('/api/assistants').then(r=>r.json()),fetch('/api/usage').then(r=>r.json())]).then(([a,u])=>{assistants.textContent=(a.assistants||[]).length+' active/configured';credits.textContent=(u.credits?.balance??0)+' remaining';});document.getElementById('linkTelegram').onclick=async()=>{const r=await fetch('/api/auth/telegram/link/start',{method:'POST'});const j=await r.json();if(j.url)location.href=j.url;else alert('Telegram linking is not configured yet.');};</script></body></html>`);
+  return html(renderCustomerPortal({
+    customerName: customer.customerName,
+    hostname: customer.hostname,
+    email: session.email,
+    role: session.role,
+  }));
 }
 
 function opsPage(customers: any[]) {
-  const rows = customers.map((c) => `<tr><td>${escapeHtml(String(c.name))}</td><td>${escapeHtml(String(c.slug))}</td><td>${escapeHtml(String(c.primary_hostname || ""))}</td><td>${escapeHtml(String(c.balance ?? 0))}</td><td>${escapeHtml(String(c.status))}</td></tr>`).join("");
-  return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Mkety Assist Operator</title><style>body{font:14px system-ui;background:#0c0d12;color:white;margin:0;padding:28px}main{max-width:1200px;margin:auto}table{width:100%;border-collapse:collapse;background:#171924}th,td{text-align:left;padding:12px;border-bottom:1px solid #2a2d3d}code{color:#b9a8ff}</style></head><body><main><h1>Mkety Assist Operator</h1><p>Internal only. Customer domains, commercial policy and provisioning remain hidden from customer portals.</p><table><thead><tr><th>Customer</th><th>Slug</th><th>Primary portal</th><th>Credits</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></main></body></html>`);
+  return html(renderOperatorPortal(customers));
 }
 
 function brandedNotFound(host: string) {
