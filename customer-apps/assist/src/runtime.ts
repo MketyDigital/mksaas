@@ -469,6 +469,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     conversationId: conversation.id,
     userText: inbound.text || "",
     mediaContext: inbound.mediaContext || "",
+    imageCount: inbound.imageCount,
+    audioSeconds: inbound.audioSeconds,
     senderId,
     providerMessageId,
   });
@@ -519,6 +521,8 @@ async function runAssistant(input: {
   conversationId: string;
   userText: string;
   mediaContext: string;
+  imageCount: number;
+  audioSeconds: number;
   senderId: string;
   providerMessageId: string;
 }) {
@@ -576,13 +580,20 @@ async function runAssistant(input: {
   const baseOutputCredits = parseFloat(String(rate.output_credits_per_million || 0));
   const effectiveInputCredits = Math.ceil(baseInputCredits * multiplierBps / 10000);
   const effectiveOutputCredits = Math.ceil(baseOutputCredits * multiplierBps / 10000);
+  const effectiveImageCredits = Math.ceil(parseFloat(String(rate.image_credits || 0)) * multiplierBps / 10000);
+  const effectiveAudioCreditsPerMinute = Math.ceil(parseFloat(String(rate.audio_credits_per_minute || 0)) * multiplierBps / 10000);
+  const mediaCredits = input.imageCount * effectiveImageCredits
+    + Math.ceil((input.audioSeconds / 60) * effectiveAudioCreditsPerMinute);
   const reserveAmount = Math.max(1,
-    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000),
+    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000) + mediaCredits,
   );
 
+  const mediaProviderCostMicros = input.imageCount * parseFloat(String(rate.provider_image_cost_micros || 0))
+    + Math.ceil((input.audioSeconds / 60) * parseFloat(String(rate.provider_audio_cost_micros_per_minute || 0)));
   const estimatedProviderCostMicros = Math.max(0, Math.ceil(
     (estimatedInputTokens * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-      + maxOutputTokens * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000,
+      + maxOutputTokens * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
+      + mediaProviderCostMicros,
   ));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,
@@ -630,11 +641,12 @@ async function runAssistant(input: {
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
     const actualCredits = Math.max(1,
-      Math.ceil((usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000),
+      Math.ceil((usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000) + mediaCredits,
     );
     const providerCostMicros = Math.max(0, Math.ceil(
       (usage.input * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-        + usage.output * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000,
+        + usage.output * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
+        + mediaProviderCostMicros,
     ));
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
       modelAlias: assistant.model_alias,
@@ -657,12 +669,15 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
   const text = String(message.text || message.caption || "").trim();
   const mediaJson: any[] = [];
   const contexts: string[] = [];
+  let imageCount = 0;
+  let audioSeconds = 0;
 
   const photos = Array.isArray(message.photo) ? message.photo : [];
   const largest = photos.at(-1);
   if (largest?.file_id) {
     if (!assistant.vision_enabled) contexts.push("[An image was attached, but image understanding is disabled for this assistant.]");
     else {
+      imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
       const vision = await describeImage(env, asset.bytes, text);
@@ -677,6 +692,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
   if (voice?.file_id) {
     if (!assistant.voice_enabled) contexts.push("[A voice message was attached, but voice understanding is disabled for this assistant.]");
     else {
+      audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
       const transcript = await transcribeAudio(env, asset.bytes);
@@ -687,7 +703,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
     }
   }
 
-  return { text, mediaContext: contexts.join("\n"), mediaJson };
+  return { text, mediaContext: contexts.join("\n"), mediaJson, imageCount, audioSeconds };
 }
 
 async function downloadTelegramFile(token: string, fileId: string, env: AssistEnv, assistant: any, conversationId: string, kind: string, mime: string) {
