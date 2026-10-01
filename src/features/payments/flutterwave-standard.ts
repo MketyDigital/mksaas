@@ -147,7 +147,7 @@ export async function createFlutterwaveInlinePayload(input: {
 }
 
 export async function createFlutterwaveHostedCheckout(input: {
-  source: 'saas' | 'media' | 'enterprise' | 'host';
+  source: 'saas' | 'media' | 'assist' | 'enterprise' | 'host';
   reference: string;
   amountMinor: bigint;
   currency: string;
@@ -178,7 +178,7 @@ export async function createFlutterwaveHostedCheckout(input: {
       redirect_url: input.redirectUrl,
       customer: { email: input.email, ...(input.customerName ? { name: input.customerName } : {}) },
       customizations: {
-        title: input.source === 'media' ? 'Mkety Media' : 'Mkety',
+        title: input.source === 'media' ? 'Mkety Media' : input.source === 'assist' ? 'Mkety Assist' : 'Mkety',
         description: 'Secure Mkety payment',
         logo: 'https://mkety.com/icon.png',
       },
