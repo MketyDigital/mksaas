@@ -763,6 +763,26 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const chatId = String(message.chat.id);
   const senderId = String(message.from?.id ?? message.chat.id);
   const providerMessageId = String(message.message_id);
+
+  if (message.from?.is_bot) {
+    await markWebhook(env.DB, assistantId, updateId, "ignored");
+    return json({ ok: true, ignoredBotSender: true });
+  }
+
+  const ownerSender = await env.DB.prepare(
+    `SELECT 1
+     FROM customer_users cu
+     JOIN users u ON u.id=cu.user_id
+     WHERE cu.customer_id=? AND cu.role IN ('owner','admin')
+       AND u.telegram_user_id=?
+       AND u.telegram_recovery_assistant_id=?
+     LIMIT 1`,
+  ).bind(assistant.customer_id, senderId, assistantId).first();
+  if (ownerSender) {
+    await markWebhook(env.DB, assistantId, updateId, "ignored");
+    return json({ ok: true, ignoredOwnerSender: true });
+  }
+
   const token = await getAssistantSecret(env, assistantId, "telegram_bot_token");
   if (!token) {
     await markWebhook(env.DB, assistantId, updateId, "error");
