@@ -28,10 +28,10 @@ interface ProfileCompletionProps {
 }
 
 const getDefaultSteps = (t: (key: string) => string, tenantSlug: string): ProfileCompletionStep[] => [
-  { label: t('addBio'), completed: false, href: `/t/${tenantSlug}/profile`, action: 'profile' },
-  { label: t('uploadAvatar'), completed: false, href: `/t/${tenantSlug}/profile`, action: 'avatar' },
-  { label: t('connectGitHub'), completed: false, href: `/t/${tenantSlug}/profile`, action: 'github' },
-  { label: t('inviteTeamMember'), completed: false, href: `/t/${tenantSlug}/admin/invites`, action: 'invite' },
+  { label: t('addBio'), completed: false, href: `/app/${tenantSlug}/profile`, action: 'profile' },
+  { label: t('uploadAvatar'), completed: false, href: `/app/${tenantSlug}/profile`, action: 'avatar' },
+  { label: t('connectGitHub'), completed: false, href: `/app/${tenantSlug}/profile`, action: 'github' },
+  { label: t('inviteTeamMember'), completed: false, href: `/app/${tenantSlug}/admin/invites`, action: 'invite' },
 ];
 
 export function ProfileCompletion({ tenantSlug, percentage, steps }: ProfileCompletionProps) {
