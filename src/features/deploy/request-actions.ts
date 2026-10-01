@@ -57,7 +57,7 @@ async function reviewDeploymentRequestImpl(formData: FormData) {
 export async function reviewDeploymentRequest(formData: FormData) {
   const tenantSlug = String(formData.get('tenantSlug') || '');
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/deployments-domains`,
+    path: `/ops/${tenantSlug}/platform-control/deployments-domains`,
     action: 'deployment-review',
     work: () => reviewDeploymentRequestImpl(formData),
   });
