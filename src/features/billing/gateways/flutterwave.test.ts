@@ -24,12 +24,13 @@ describe('Flutterwave billing adapter', () => {
   });
 
   it('creates a hosted Flutterwave checkout and persists the provider quote', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
         status: 'success',
         data: { link: 'https://checkout.flutterwave.com/v3/hosted/pay/test-link' },
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-    );
+      }),
+    } as unknown as Response);
 
     const adapter = createFlutterwaveBillingAdapter({
       publicKey: 'FLWPUBK_TEST-public',
