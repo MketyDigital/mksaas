@@ -28,8 +28,8 @@ function revalidatePublicPages(tenantSlug: string, slugs: readonly string[]) {
   for (const slug of slugs) revalidatePath(`/${slug}`);
   revalidatePath('/');
   revalidatePath('/docs');
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/public-site`);
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/public-site/pages`);
+  revalidatePath(`/ops/${tenantSlug}/platform-control/public-site`);
+  revalidatePath(`/ops/${tenantSlug}/platform-control/public-site/pages`);
 }
 
 async function recordAuditSafely(input: {

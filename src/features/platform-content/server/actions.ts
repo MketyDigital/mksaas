@@ -58,8 +58,8 @@ async function requireAreaAccess(tenantSlug: string, area: PlatformContentArea) 
 function revalidatePlatformContentPaths(tenantSlug: string) {
   revalidatePath('/');
   revalidatePath('/docs');
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control`);
-  revalidatePath(`/t/${tenantSlug}/admin/platform-control/public-site`);
+  revalidatePath(`/ops/${tenantSlug}/platform-control`);
+  revalidatePath(`/ops/${tenantSlug}/platform-control/public-site`);
 }
 
 function toPlatformJson(value: unknown): PlatformJson | null {

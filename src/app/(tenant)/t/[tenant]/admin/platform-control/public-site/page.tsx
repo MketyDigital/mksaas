@@ -53,7 +53,7 @@ export default async function PublicSiteControlPage({ params }: PublicSiteContro
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {sections.map((section) => (
-          <Link key={section.href} href={`/t/${tenant}/admin/platform-control/${section.href}`}>
+          <Link key={section.href} href={`/ops/${tenant}/platform-control/${section.href}`}>
             <Card className="h-full rounded-2xl border-border/70 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
               <CardHeader>
                 <CardTitle>{section.title}</CardTitle>

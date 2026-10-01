@@ -23,7 +23,7 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
   return (
     <div className="space-y-8">
       <div>
-        <Link href={`/t/${tenant}/admin/platform-control`} className="text-sm font-medium text-primary hover:underline">
+        <Link href={`/ops/${tenant}/platform-control`} className="text-sm font-medium text-primary hover:underline">
           ← Platform Control Center
         </Link>
         <p className="mt-4 text-sm font-semibold uppercase tracking-[0.25em] text-primary">Enterprise operations</p>
