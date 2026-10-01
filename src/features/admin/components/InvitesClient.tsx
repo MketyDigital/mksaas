@@ -236,7 +236,7 @@ export function InvitesClient({ tenantSlug }: InvitesClientProps) {
       <AdminPageHeader
         title="Invitations"
         description="Invite new members to your organization with personalized onboarding URLs"
-        backHref={`/t/${tenantSlug}/admin`}
+        backHref={`/app/${tenantSlug}/admin`}
         backLabel="Admin"
         actionLabel="Create Invitation"
         onAction={openInviteDialog}
