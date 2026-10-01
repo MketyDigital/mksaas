@@ -346,6 +346,7 @@ async function manageCustomer(id){
     const d=await api('/api/ops/customer?id='+encodeURIComponent(id));const c=d.customer,p=d.commercial||{},f=d.features||{},domains=d.domains||[],credits=d.credits||{};
     openModal('<div class="top" style="margin:0 0 10px"><div><h2 style="margin:0">'+esc(c.name)+'</h2><div class="muted">Balance: '+esc(credits.balance??0)+' · Billing: '+esc(c.billing_status||'current')+'</div></div></div>'+
       '<p class="muted">'+domains.map(x=>esc(x.hostname)+' · '+esc(x.status)+' / '+esc(x.ssl_status||'')).join('<br>')+'</p>'+
+      '<h3>Customer access</h3><div class="card"><p class="muted">The hosted portal remains the recovery-safe entry point even when a custom domain is pending.</p><p><strong>'+(domains.find(x=>x.kind==='hosted')?esc(domains.find(x=>x.kind==='hosted').hostname):'Hosted portal unavailable')+'</strong></p><div class="row"><button class="btn primary" id="regenerateAccess">Generate fresh owner access link</button><button class="btn danger" id="deleteUnpaid">Delete unpaid customer</button></div><p class="muted">Delete is blocked automatically after any verified payment or AI usage.</p></div>'+
       '<h3>Commercial agreement</h3><div class="two">'+
         '<div class="field"><label>Monthly price (USD)</label><input class="input" id="pPrice" inputmode="decimal" value="'+(Number(p.subscription_amount_minor||0)/100).toFixed(2)+'"></div>'+
         '<div class="field"><label>Included credits per billing period</label><input class="input" id="pCredits" type="number" value="'+esc(p.included_credits||0)+'"></div>'+
@@ -372,11 +373,23 @@ async function manageCustomer(id){
       fTelegram=byId('fTelegram'),fVision=byId('fVision'),fVoice=byId('fVoice'),fKnowledge=byId('fKnowledge'),
       fReminders=byId('fReminders'),fHandoff=byId('fHandoff'),fTools=byId('fTools'),
       creditDelta=byId('creditDelta'),creditReason=byId('creditReason'),adjustCredits=byId('adjustCredits'),
-      showLedger=byId('showLedger'),newDomain=byId('newDomain'),addDomain=byId('addDomain'),savePolicy=byId('savePolicy');
+      showLedger=byId('showLedger'),newDomain=byId('newDomain'),addDomain=byId('addDomain'),savePolicy=byId('savePolicy'),
+      regenerateAccess=byId('regenerateAccess'),deleteUnpaid=byId('deleteUnpaid');
     pFundingMode.value=p.funding_mode||'full_period';
     pFundingMode.onchange=()=>{pMinimumFunding.disabled=pFundingMode.value!=='prepaid_partial'};pFundingMode.onchange();
     pAutoCredits.value='yes';pAutoCredits.onchange=()=>{pCredits.disabled=pAutoCredits.value==='yes'};pAutoCredits.onchange();
     closeCustomer.onclick=closeModal;
+    regenerateAccess.onclick=async()=>{try{
+      const x=await api('/api/ops/customer/access-link',{method:'POST',body:JSON.stringify({customerId:id})});
+      alert('Fresh owner access link for '+x.email+'\\n\\n'+x.accessUrl+'\\n\\nExpires: '+new Date(x.expiresAt*1000).toLocaleString());
+    }catch(e){alert(e.message)}};
+    deleteUnpaid.onclick=async()=>{try{
+      const phrase=prompt('This permanently deletes the unpaid/unused customer and any custom-domain Cloudflare routing. Type DELETE '+c.slug+' to continue.');
+      if(phrase!=='DELETE '+c.slug)return;
+      const x=await api('/api/ops/customer?id='+encodeURIComponent(id),{method:'DELETE'});
+      alert('Deleted unpaid customer '+x.slug+'. You can recreate the contract cleanly now.');
+      closeModal();await loadCustomers();
+    }catch(e){alert(e.message)}};
     calcCredits.onclick=async()=>{try{
       const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({
         monthlyPriceUsd:pPrice.value,managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value,customerRateMultiplierPercent:pMultiplier.value

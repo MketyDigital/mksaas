@@ -224,8 +224,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
 
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO customers (id,slug,name,status,created_at,updated_at) VALUES (?,?,?,?,?,?)")
-        .bind(customerId, slug, name, "active", now, now),
+      env.DB.prepare("INSERT INTO customers (id,slug,name,status,billing_status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
+        .bind(customerId, slug, name, "active", "pending", now, now),
       env.DB.prepare("INSERT INTO customer_domains (id,customer_id,hostname,kind,is_primary,status,ssl_status,created_at,verified_at) VALUES (?,?,?,?,?,?,?,?,?)")
         .bind(id("dom"), customerId, hostedHostname, "hosted", customHostname ? 0 : 1, "active", "active", now, now),
       env.DB.prepare("INSERT INTO users (id,email,status,created_at,updated_at) VALUES (?,?,?,?,?)")
@@ -235,7 +235,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       env.DB.prepare("INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)")
         .bind(id("set"), customerId, userId, setupHash, now + 86400, now),
       env.DB.prepare("INSERT INTO credit_accounts (customer_id,balance,lifetime_granted,lifetime_consumed,updated_at) VALUES (?,?,?,?,?)")
-        .bind(customerId, includedCredits, includedCredits, 0, now),
+        .bind(customerId, 0, 0, 0, now),
       env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,funding_mode,minimum_funding_minor,setup_fee_minor,credit_rollover,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
         .bind(customerId, monthlyPrice, includedCredits, providerEnvelopeBps, operationsReserveBps, rateMultiplierBps, fundingMode, minimumFundingMinor, setupFeeMinor, 1, now),
       env.DB.prepare("INSERT INTO feature_policy (customer_id,max_assistants,updated_at) VALUES (?,?,?)")
@@ -255,6 +255,101 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       customDomain,
       setupUrl: `https://${hostedHostname}/setup?token=${encodeURIComponent(setupToken)}`,
     }, 201);
+  }
+
+  if (url.pathname === "/api/ops/customer/access-link" && request.method === "POST") {
+    const body = await readJson(request);
+    const customerId = requiredString(body.customerId, "customerId");
+    const now = unix();
+    const row = await env.DB.prepare(
+      `SELECT c.id,c.name,c.slug,u.id AS user_id,u.email,d.hostname
+       FROM customers c
+       JOIN customer_users cu ON cu.customer_id=c.id AND cu.role='owner'
+       JOIN users u ON u.id=cu.user_id
+       JOIN customer_domains d ON d.customer_id=c.id AND d.kind='hosted'
+       WHERE c.id=? ORDER BY cu.created_at ASC LIMIT 1`,
+    ).bind(customerId).first<any>();
+    if (!row) return json({ error: "customer_owner_not_found" }, 404);
+
+    const token = randomToken(32);
+    const tokenHash = await sha256(token);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE customer_id=? AND consumed_at IS NULL")
+        .bind(now, customerId),
+      env.DB.prepare("INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)")
+        .bind(id("set"), customerId, row.user_id, tokenHash, now + 86400, now),
+      env.DB.prepare(
+        "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      ).bind(
+        id("aud"), "operator", operator.operatorUserId, customerId,
+        "customer.owner_access_regenerated", "user", row.user_id,
+        JSON.stringify({ email: row.email }), now,
+      ),
+    ]);
+    return json({
+      ok: true,
+      email: row.email,
+      hostedHostname: row.hostname,
+      accessUrl: `https://${row.hostname}/setup?token=${encodeURIComponent(token)}`,
+      expiresAt: now + 86400,
+    });
+  }
+
+  if (url.pathname === "/api/ops/customer" && request.method === "DELETE") {
+    const customerId = requiredString(url.searchParams.get("id"), "id");
+    const customer = await env.DB.prepare(
+      "SELECT id,slug,name,billing_status FROM customers WHERE id=? LIMIT 1",
+    ).bind(customerId).first<any>();
+    if (!customer) return json({ error: "customer_not_found" }, 404);
+
+    const eligibility = await env.DB.prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM payment_checkouts WHERE customer_id=? AND status='paid') AS paid_checkouts,
+         (SELECT COUNT(*) FROM usage_events WHERE customer_id=?) AS usage_events,
+         COALESCE((SELECT lifetime_consumed FROM credit_accounts WHERE customer_id=?),0) AS lifetime_consumed`,
+    ).bind(customerId, customerId, customerId).first<any>();
+    const paid = Number(eligibility?.paid_checkouts || 0);
+    const usage = Number(eligibility?.usage_events || 0);
+    const consumed = Number(eligibility?.lifetime_consumed || 0);
+    if (paid > 0 || usage > 0 || consumed > 0) {
+      return json({
+        error: "customer_delete_blocked",
+        reason: "Paid or used customers cannot be deleted. Disable/pause them instead.",
+        paidCheckouts: paid,
+        usageEvents: usage,
+        lifetimeConsumed: consumed,
+      }, 409);
+    }
+
+    const domains = await env.DB.prepare(
+      "SELECT hostname,provider_hostname_id FROM customer_domains WHERE customer_id=? AND kind='custom'",
+    ).bind(customerId).all<any>();
+    for (const domain of domains.results ?? []) {
+      await deleteCustomHostnameInfrastructure(env, String(domain.hostname), domain.provider_hostname_id ? String(domain.provider_hostname_id) : null);
+    }
+    await deleteCustomerR2Objects(env.MEDIA, customerId);
+
+    const members = await env.DB.prepare(
+      "SELECT user_id FROM customer_users WHERE customer_id=?",
+    ).bind(customerId).all<any>();
+    const now = unix();
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    ).bind(
+      id("aud"), "operator", operator.operatorUserId, customerId,
+      "customer.deleted_unpaid", "customer", customerId,
+      JSON.stringify({ slug: customer.slug, name: customer.name }), now,
+    ).run();
+
+    await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId).run();
+
+    for (const member of members.results ?? []) {
+      await env.DB.prepare(
+        "DELETE FROM users WHERE id=? AND NOT EXISTS (SELECT 1 FROM customer_users WHERE user_id=?)",
+      ).bind(member.user_id, member.user_id).run();
+    }
+
+    return json({ ok: true, deletedCustomerId: customerId, slug: customer.slug });
   }
 
   if (url.pathname === "/api/ops/domains" && request.method === "POST") {
@@ -1181,6 +1276,76 @@ function parsePaymentAmountMinor(value: unknown) {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
   if (!match) throw new HttpError(400, "invalid_payment_amount");
   return parseInt(match[1], 10) * 100 + parseInt((match[2] || "").padEnd(2, "0") || "0", 10);
+}
+
+async function deleteCustomerR2Objects(bucket: R2Bucket, customerId: string) {
+  for (const prefix of [`knowledge/${customerId}/`, `media/${customerId}/`]) {
+    let cursor: string | undefined;
+    do {
+      const listed = await bucket.list({ prefix, cursor, limit: 1000 });
+      const keys = listed.objects.map((object) => object.key);
+      if (keys.length) await bucket.delete(keys);
+      cursor = listed.truncated ? listed.cursor : undefined;
+    } while (cursor);
+  }
+}
+
+async function deleteCustomHostnameInfrastructure(env: Env, hostnameInput: string, providerHostnameId: string | null) {
+  const hostname = normalizeHostname(hostnameInput);
+  const headers = {
+    authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}`,
+    "content-type": "application/json",
+  };
+
+  const routesResponse = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes`,
+    { headers },
+  );
+  const routesData: any = await routesResponse.json();
+  if (!routesResponse.ok || !routesData.success) {
+    throw new Error(`Cloudflare Worker route lookup failed during delete: ${JSON.stringify(routesData.errors || routesData)}`);
+  }
+  const routePattern = `${hostname}/*`;
+  const routes = (routesData.result || []).filter((route: any) => route.pattern === routePattern);
+  for (const route of routes) {
+    if (route.script && route.script !== env.APP_WORKER_NAME) {
+      throw new Error(`Refusing to delete route ${routePattern}; it belongs to ${route.script}`);
+    }
+    const del = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/workers/routes/${route.id}`,
+      { method: "DELETE", headers },
+    );
+    const data: any = await del.json();
+    if (!del.ok || !data.success) {
+      throw new Error(`Cloudflare Worker route delete failed: ${JSON.stringify(data.errors || data)}`);
+    }
+  }
+
+  let hostnameId = providerHostnameId;
+  if (!hostnameId) {
+    const lookup = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames?hostname=${encodeURIComponent(hostname)}`,
+      { headers },
+    );
+    const data: any = await lookup.json();
+    if (!lookup.ok || !data.success) {
+      throw new Error(`Cloudflare Custom Hostname lookup failed during delete: ${JSON.stringify(data.errors || data)}`);
+    }
+    const matches = data.result || [];
+    if (matches.length > 1) throw new Error(`Multiple Cloudflare Custom Hostnames exist for ${hostname}`);
+    hostnameId = matches[0]?.id || null;
+  }
+
+  if (hostnameId) {
+    const del = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames/${hostnameId}`,
+      { method: "DELETE", headers },
+    );
+    const data: any = await del.json();
+    if (!del.ok || !data.success) {
+      throw new Error(`Cloudflare Custom Hostname delete failed: ${JSON.stringify(data.errors || data)}`);
+    }
+  }
 }
 
 async function createCustomHostname(env: Env, customerId: string, hostnameInput: string) {
