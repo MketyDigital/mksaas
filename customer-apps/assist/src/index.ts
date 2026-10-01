@@ -1929,7 +1929,7 @@ function operatorLoginPage() {
 <body><main class="card"><h1>Mkety Assist Operator</h1><p class="muted">Internal administration · authorized Mkety identity only</p><a class="button" href="/api/ops/auth/login">Sign in with Mkety</a><p class="muted">Access is restricted to the approved Mkety Operator account.</p></main></body></html>`);
 }
 
-function setupPage(customer: CustomerContext, token: string) {
+export function setupPage(customer: CustomerContext, token: string) {
   return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Set up ${escapeHtml(customer.customerName)} AI</title>
 <style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(440px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:not-allowed}.muted{color:#a8adbd;font-size:14px}.error{color:#ff9b9b}.ok{color:#6ee7b7}</style></head>
 <body><main class="card"><h1>Set up your portal</h1><p class="muted">${escapeHtml(customer.customerName)} AI</p>
