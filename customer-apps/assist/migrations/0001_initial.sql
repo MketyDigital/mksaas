@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS telegram_link_challenges (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS recovery_challenges (
   id TEXT PRIMARY KEY,
   customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
