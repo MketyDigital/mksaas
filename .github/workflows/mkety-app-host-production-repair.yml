@@ -1,6 +1,22 @@
 name: Mkety App Host Production Repair
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-app-host-production-repair.yml'
+      - 'src/app/app/**'
+      - 'src/app/ops/**'
+      - 'src/app/(auth)/**'
+      - 'src/app/api/auth/**'
+      - 'src/features/platform-content/server/authorization.ts'
+      - 'src/shared/lib/auth/**'
+      - 'src/shared/lib/auth.ts'
+      - 'src/shared/db/request.ts'
+      - 'src/shared/db/cloudflare.ts'
+      - 'src/proxy.ts'
+      - 'wrangler.jsonc'
   workflow_dispatch:
     inputs:
       verified_sha:
@@ -11,6 +27,10 @@ on:
         description: Type REPAIR APP.MKETY.COM
         required: true
         type: string
+
+concurrency:
+  group: mkety-app-host-production-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
