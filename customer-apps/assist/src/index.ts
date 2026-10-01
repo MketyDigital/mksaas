@@ -4,7 +4,13 @@ import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 
 interface Env {
   DB: D1Database;
-  AI: { run(model: string, input: unknown): Promise<any> };
+  AI: {
+    run(model: string, input: unknown): Promise<any>;
+    toMarkdown(
+      files: { name: string; blob: Blob } | Array<{ name: string; blob: Blob }>,
+      options?: unknown,
+    ): Promise<any>;
+  };
   MEDIA: R2Bucket;
   MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;
   HOSTED_SUFFIX: string;
