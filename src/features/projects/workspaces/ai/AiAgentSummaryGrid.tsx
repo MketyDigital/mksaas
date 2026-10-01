@@ -23,14 +23,14 @@ export function AiAgentSummaryGrid({
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">Agents belong to this project and remain scoped to this tenant.</p>
         </div>
-        <Link href={`/t/${tenantSlug}/projects/${projectSlug}/knowledge`} className="rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted/70">
+        <Link href={`/app/${tenantSlug}/projects/${projectSlug}/knowledge`} className="rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted/70">
           Manage knowledge
         </Link>
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         {agents.map((agent) => (
-          <Link key={agent.id} href={`/t/${tenantSlug}/projects/${projectSlug}/agents/${agent.slug}`} className="rounded-xl border bg-card p-5 transition hover:bg-muted/40">
+          <Link key={agent.id} href={`/app/${tenantSlug}/projects/${projectSlug}/agents/${agent.slug}`} className="rounded-xl border bg-card p-5 transition hover:bg-muted/40">
             <div className="flex items-center justify-between gap-4">
               <div className="font-medium">{agent.name}</div>
               <span className="rounded-full border px-2 py-1 text-xs">{agent.status}</span>
