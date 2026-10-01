@@ -5,6 +5,7 @@ import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods } from "./payments/service";
+import { validateProviderConnection } from "./providers/validation";
 
 interface Env {
   DB: D1Database;
@@ -588,10 +589,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     if (providerConnectionId) {
       const connection = await env.DB.prepare(
-        "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
+        "SELECT id,provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
       ).bind(providerConnectionId).first<any>();
-      if (!connection || connection.status !== "active" || connection.provider !== provider) {
-        return json({ error: "provider_connection_mismatch" }, 400);
+      if (!connection || connection.status !== "active" || !connection.validated_at || connection.provider !== provider) {
+        return json({ error: "provider_connection_unvalidated_or_mismatch" }, 400);
       }
     }
     if (fallbackProvider && !["workers-ai","mkety-managed"].includes(String(fallbackProvider)) && !fallbackProviderConnectionId) {
@@ -601,15 +602,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const connection = await env.DB.prepare(
         "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
       ).bind(fallbackProviderConnectionId).first<any>();
-      if (!connection || connection.status !== "active" || connection.provider !== fallbackProvider) {
-        return json({ error: "fallback_provider_connection_mismatch" }, 400);
+      if (!connection || connection.status !== "active" || !connection.validated_at || connection.provider !== fallbackProvider) {
+        return json({ error: "fallback_provider_connection_unvalidated_or_mismatch" }, 400);
       }
     }
 
     await env.DB.prepare(
       `UPDATE model_routes SET provider=COALESCE(?,provider),provider_model=COALESCE(?,provider_model),
        provider_connection_id=?,fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,
-       status=COALESCE(?,status),updated_at=? WHERE alias=?`,
+       byok_policy=COALESCE(?,byok_policy),status=COALESCE(?,status),updated_at=? WHERE alias=?`,
     ).bind(
       body.provider ?? null,
       body.providerModel ?? null,
@@ -617,6 +618,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       fallbackProvider,
       body.fallbackModel ?? current.fallback_model ?? null,
       fallbackProviderConnectionId,
+      body.byokPolicy ?? null,
       body.status ?? null,
       now,
       alias,
@@ -674,7 +676,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/providers" && request.method === "POST") {
     const body = await readJson(request);
     const provider = requiredString(body.provider, "provider");
-    if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","openai-compatible"].includes(provider)) {
+    if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","azure-foundry","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
     const apiKey = requiredString(body.apiKey, "apiKey");
@@ -683,25 +685,51 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const parsed = new URL(endpointUrl);
       if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
     }
+    const ownership = body.ownership === "customer" ? "customer" : "mkety";
+    const ownerCustomerId = ownership === "customer" ? requiredString(body.customerId, "customerId") : null;
+    if (ownerCustomerId) {
+      const owner = await env.DB.prepare("SELECT id FROM customers WHERE id=? LIMIT 1").bind(ownerCustomerId).first();
+      if (!owner) return json({ error: "customer_not_found" }, 404);
+    }
     const providerId = id("prv");
     const now = unix();
     await env.DB.prepare(
-      "INSERT INTO provider_connections (id,name,provider,endpoint_url,api_key_ciphertext,extra_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
     ).bind(
       providerId,
       requiredString(body.name, "name"),
+      ownerCustomerId,
       provider,
       endpointUrl,
       await protectStoredSecret(apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
       JSON.stringify(body.extra || {}),
-      "active",
+      ownership,
+      "disabled",
       now,
       now,
     ).run();
     await env.DB.prepare(
       "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
     ).bind(id("aud"), "operator", "provider.created", "provider_connection", providerId, JSON.stringify({ provider }), now).run();
-    return json({ id: providerId, provider }, 201);
+    return json({ id: providerId, provider, ownership, customerId: ownerCustomerId, status: "disabled", validationRequired: true }, 201);
+  }
+
+  if (url.pathname.startsWith("/api/ops/providers/") && url.pathname.endsWith("/test") && request.method === "POST") {
+    const providerId = decodeURIComponent(url.pathname.slice("/api/ops/providers/".length, -"/test".length));
+    const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
+    if (!current) return json({ error: "provider_not_found" }, 404);
+    const apiKey = await revealStoredSecret(String(current.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+    const result = await validateProviderConnection({
+      provider: String(current.provider),
+      endpointUrl: current.endpoint_url ? String(current.endpoint_url) : null,
+      apiKey,
+      extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
+    });
+    const now = unix();
+    await env.DB.prepare(
+      "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
+    ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
+    return json({ ok: result.ok, status: result.status, error: result.error ?? null, providerId }, result.ok ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
@@ -718,13 +746,12 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ? await protectStoredSecret(String(body.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
       : current.api_key_ciphertext;
     await env.DB.prepare(
-      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status=COALESCE(?,status),updated_at=? WHERE id=?",
+      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status='disabled',validated_at=NULL,validation_error='revalidation_required',updated_at=? WHERE id=?",
     ).bind(
       body.name ?? null,
       endpointUrl,
       cipher,
       body.extra === undefined ? null : JSON.stringify(body.extra),
-      body.status ?? null,
       unix(),
       providerId,
     ).run();
