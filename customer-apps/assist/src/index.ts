@@ -926,7 +926,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       await recordAuthFailure(env.DB, rateKey, loginNow);
       return json({ error: "invalid_credentials" }, 401);
     }
-    const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash);
+    const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash, env);
     if (!ok) {
       await recordAuthFailure(env.DB, rateKey, loginNow);
       return json({ error: "invalid_credentials" }, 401);
@@ -973,7 +973,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
     let passwordData: Awaited<ReturnType<typeof hashPassword>>;
     try {
-      passwordData = await hashPassword(password);
+      passwordData = await hashPassword(password, env);
     } catch (error) {
       console.error("Assist customer password hashing failed", {
         customerId: customer.customerId,
@@ -1035,10 +1035,10 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     const row = await env.DB.prepare(
       "SELECT password_hash,password_salt,password_iterations FROM users WHERE id=? AND status='active' LIMIT 1",
     ).bind(session.userId).first<any>();
-    if (!row?.password_hash || !row?.password_salt || !(await verifyPassword(currentPassword, row.password_salt, row.password_iterations, row.password_hash))) {
+    if (!row?.password_hash || !row?.password_salt || !(await verifyPassword(currentPassword, row.password_salt, row.password_iterations, row.password_hash, env))) {
       return json({ error: "invalid_current_password" }, 400);
     }
-    const next = await hashPassword(newPassword);
+    const next = await hashPassword(newPassword, env);
     const now = unix();
     await env.DB.prepare(
       "UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE id=?",
@@ -1165,7 +1165,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       if (challenge) await env.DB.prepare("UPDATE recovery_challenges SET attempts=attempts+1 WHERE id=?").bind(challenge.id).run();
       return json({ error: "invalid_or_expired_code" }, 400);
     }
-    const p = await hashPassword(newPassword);
+    const p = await hashPassword(newPassword, env);
     await env.DB.batch([
       env.DB.prepare("UPDATE recovery_challenges SET consumed_at=? WHERE id=?").bind(now, challenge.id),
       env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
@@ -2212,18 +2212,35 @@ async function sendTelegramTextWithToken(botToken: string, telegramUserId: strin
   return response.ok;
 }
 
-async function hashPassword(password: string) {
-  const iterations = 310000;
+async function hashPassword(password: string, env: Env) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
-  return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt), iterations };
+  const pepper = env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
+  if (!pepper) throw new Error("password_pepper_unavailable");
+  const key = await crypto.subtle.importKey("raw", encoder.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const passwordBytes = encoder.encode(password);
+  const material = new Uint8Array(salt.byteLength + passwordBytes.byteLength);
+  material.set(salt, 0);
+  material.set(passwordBytes, salt.byteLength);
+  const signature = await crypto.subtle.sign("HMAC", key, material);
+  return { hash: bytesToHex(new Uint8Array(signature)), salt: bytesToHex(salt), iterations: 0 };
 }
 
-async function verifyPassword(password: string, saltHex: string, iterations: number, expectedHash: string) {
+async function verifyPassword(password: string, saltHex: string, iterations: number, expectedHash: string, env: Env) {
   const salt = hexToBytes(saltHex);
+  const version = Number(iterations);
+  if (version === 0) {
+    const pepper = env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
+    if (!pepper) return false;
+    const key = await crypto.subtle.importKey("raw", encoder.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const passwordBytes = encoder.encode(password);
+    const material = new Uint8Array(salt.byteLength + passwordBytes.byteLength);
+    material.set(salt, 0);
+    material.set(passwordBytes, salt.byteLength);
+    const signature = await crypto.subtle.sign("HMAC", key, material);
+    return constantTimeEqual(bytesToHex(new Uint8Array(signature)), String(expectedHash));
+  }
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: Number(iterations) }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: version }, key, 256);
   return constantTimeEqual(bytesToHex(new Uint8Array(bits)), String(expectedHash));
 }
 
