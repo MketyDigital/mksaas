@@ -31,7 +31,7 @@ export default async function CustomerUpdatesPage({params,searchParams}:{params:
     <Card className="rounded-2xl">
       <CardHeader><CardTitle>New customer update</CardTitle><CardDescription>This is for service, account and operational communication. Marketing newsletters and promotions are Coming Soon.</CardDescription></CardHeader>
       <CardContent>
-        {!senders.length?<div className="space-y-3"><p className="text-sm text-muted-foreground">You need a verified sending mailbox first.</p><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/t/${tenant}/mail/domains`}>Connect domain</a></div>:
+        {!senders.length?<div className="space-y-3"><p className="text-sm text-muted-foreground">You need a verified sending mailbox first.</p><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/domains`}>Connect domain</a></div>:
         <form action={action} className="grid gap-4">
           <label className="text-sm font-medium">Send from<select className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="mailboxId">{senders.map((mailbox)=>{const domain=domains.find((item)=>item.id===mailbox.domainId);return <option value={mailbox.id} key={mailbox.id}>{mailbox.localPart}@{domain?.domain}</option>;})}</select></label>
           <label className="text-sm font-medium">Internal name<input className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="name" placeholder="September service update" required/></label>
