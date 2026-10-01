@@ -62,14 +62,14 @@ export function ViewSwitcher({ tenantSlug }: ViewSwitcherProps) {
       id: 'my',
       labelKey: 'viewMy',
       icon: <User className="h-4 w-4" />,
-      basePath: `/t/${tenantSlug}`,
+      basePath: `/app/${tenantSlug}`,
       color: 'text-blue-600 dark:text-blue-400',
     },
     {
       id: 'admin',
       labelKey: 'viewAdmin',
       icon: <Shield className="h-4 w-4" />,
-      basePath: `/t/${tenantSlug}/admin`,
+      basePath: `/app/${tenantSlug}/admin`,
       color: 'text-violet-600 dark:text-violet-400',
     },
   ];
