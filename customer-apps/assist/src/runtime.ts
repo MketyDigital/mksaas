@@ -1685,26 +1685,83 @@ async function transcribeAudio(env: AssistEnv, bytes: ArrayBuffer) {
   }
 }
 
-async function retrieveKnowledge(db: D1Database, assistantId: string, query: string) {
-  const terms = Array.from(new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 4))).slice(0, 8);
+async function retrieveKnowledge(
+  db: D1Database,
+  customerId: string,
+  assistantId: string,
+  query: string,
+  charBudget: number,
+) {
+  const terms = Array.from(new Set(String(query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3))).slice(0, 10);
   if (!terms.length) return [];
-  const rows = await db.prepare(
-    `SELECT ki.title,ki.content_text FROM assistant_knowledge ak
-     JOIN knowledge_items ki ON ki.collection_id=ak.collection_id
-     WHERE ak.assistant_id=? AND ki.status='ready' AND ki.content_text IS NOT NULL
-     ORDER BY ki.updated_at DESC LIMIT 80`,
-  ).bind(assistantId).all<any>();
-  return (rows.results ?? [])
-    .map((r: any) => {
+  const normalizedQuery = terms.join(" ");
+  const sourceHash = await resilienceSha256Text(normalizedQuery + ":" + charBudget);
+  const cacheKey = `knowledge:${assistantId}:${sourceHash}`;
+  const cached = await getPromptCache(db, cacheKey, sourceHash);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {}
+  }
+
+  const match = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(" OR ");
+  let values: string[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT kc.title,kc.content,bm25(knowledge_chunks_fts) AS rank
+       FROM knowledge_chunks_fts
+       JOIN knowledge_chunks kc ON kc.id=knowledge_chunks_fts.chunk_id
+       JOIN assistant_knowledge ak ON ak.collection_id=kc.collection_id
+       WHERE ak.assistant_id=? AND knowledge_chunks_fts MATCH ?
+       ORDER BY rank ASC LIMIT 12`,
+    ).bind(assistantId, match).all<any>();
+    let remaining = Math.max(1000, charBudget);
+    for (const row of rows.results ?? []) {
+      if (remaining <= 0) break;
+      const value = `${String(row.title || "Knowledge")}:\n${String(row.content || "")}`;
+      const clipped = value.slice(0, remaining);
+      if (clipped.trim()) values.push(clipped);
+      remaining -= clipped.length;
+    }
+  } catch (error) {
+    console.warn("FTS knowledge retrieval failed; using compatibility fallback", error);
+  }
+
+  if (!values.length) {
+    const rows = await db.prepare(
+      `SELECT ki.title,ki.content_text FROM assistant_knowledge ak
+       JOIN knowledge_items ki ON ki.collection_id=ak.collection_id
+       WHERE ak.assistant_id=? AND ki.status='ready' AND ki.content_text IS NOT NULL
+       ORDER BY ki.updated_at DESC LIMIT 50`,
+    ).bind(assistantId).all<any>();
+    const scored = (rows.results ?? []).map((r: any) => {
       const text = String(r.content_text || "");
       const lower = text.toLowerCase();
       const score = terms.reduce((n, term) => n + (lower.includes(term) ? 1 : 0), 0);
-      return { score, value: `${r.title}:\n${text.slice(0, 3500)}` };
-    })
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4)
-    .map((r) => r.value);
+      return { score, title: String(r.title || "Knowledge"), text };
+    }).filter((r) => r.score > 0).sort((a,b) => b.score-a.score);
+
+    let remaining = Math.max(1000, charBudget);
+    for (const row of scored.slice(0, 6)) {
+      if (remaining <= 0) break;
+      const value = `${row.title}:\n${row.text.slice(0, Math.min(3200, remaining))}`;
+      if (value.trim()) values.push(value);
+      remaining -= value.length;
+    }
+  }
+
+  await putPromptCache({
+    db,
+    cacheKey,
+    customerId,
+    assistantId,
+    kind: "knowledge_retrieval",
+    value: JSON.stringify(values),
+    sourceHash,
+    ttlSeconds: 600,
+  }).catch(() => undefined);
+  return values;
 }
 
 async function reserveCredits(db: D1Database, customerId: string, assistantId: string, credits: number) {
