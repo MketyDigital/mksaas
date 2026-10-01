@@ -1584,6 +1584,41 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     }));
   }
 
+  if (url.pathname === "/api/billing/credit-offer" && request.method === "GET") {
+    const policy = await env.DB.prepare(
+      "SELECT subscription_amount_minor,included_credits,funding_mode,minimum_funding_minor,setup_fee_minor,topup_enabled,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customer.customerId).first<any>();
+    if (!policy) return json({ error: "commercial_policy_unavailable" }, 404);
+    const recurringAmountMinor = Math.max(0, Number(policy.subscription_amount_minor || 0));
+    const includedCredits = Math.max(0, Number(policy.included_credits || 0));
+    const minimumFundingMinor = Math.max(0, Number(policy.minimum_funding_minor || recurringAmountMinor));
+    const minimumFundingCredits = recurringAmountMinor > 0
+      ? Math.max(1, Math.floor(includedCredits * minimumFundingMinor / recurringAmountMinor))
+      : includedCredits;
+    return json({
+      currency: String(policy.currency || "USD"),
+      recurringAmountMinor,
+      recurringCredits: includedCredits,
+      setupFeeMinor: Math.max(0, Number(policy.setup_fee_minor || 0)),
+      fundingMode: String(policy.funding_mode || "full_period"),
+      minimumFundingMinor,
+      minimumFundingCredits,
+      topupEnabled: Boolean(policy.topup_enabled),
+    });
+  }
+
+  if (url.pathname === "/api/billing/credit-quote" && request.method === "POST") {
+    const body = await readJson(request);
+    const amountMinor = parsePaymentAmountMinor(body.amountUsd);
+    if (amountMinor < 100 || amountMinor > 10_000_000) return json({ error: "invalid_credit_amount" }, 400);
+    const setting = await env.DB.prepare(
+      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
+    ).first<any>();
+    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+    const credits = Math.max(1, Math.floor((amountMinor * 10_000) / creditUsdMicros));
+    return json({ amountMinor, currency: "USD", credits });
+  }
+
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
     const rows = await env.DB.prepare(
       "SELECT method,enabled,healthy,updated_at FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
@@ -1693,13 +1728,21 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(customer.customerId).first<any>();
     if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
     const body = await readJson(request);
-    const credits = positiveInt(body.credits, 0);
-    if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
     const setting = await env.DB.prepare(
       "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
     ).first<any>();
     const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
-    const canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
+    let credits: number;
+    let canonicalAmountMinor: number;
+    if (body.amountUsd !== undefined && body.amountUsd !== null && String(body.amountUsd).trim() !== "") {
+      canonicalAmountMinor = parsePaymentAmountMinor(body.amountUsd);
+      if (canonicalAmountMinor < 100 || canonicalAmountMinor > 10_000_000) return json({ error: "invalid_topup_amount" }, 400);
+      credits = Math.max(1, Math.floor((canonicalAmountMinor * 10_000) / creditUsdMicros));
+    } else {
+      credits = positiveInt(body.credits, 0);
+      if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
+      canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
+    }
     const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
