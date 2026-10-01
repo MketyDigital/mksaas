@@ -328,10 +328,14 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
 
     const domains = await env.DB.prepare(
-      "SELECT hostname,provider_hostname_id FROM customer_domains WHERE customer_id=? AND kind='custom'",
+      "SELECT hostname,kind,provider_hostname_id FROM customer_domains WHERE customer_id=?",
     ).bind(customerId).all<any>();
     for (const domain of domains.results ?? []) {
-      await deleteCustomHostnameInfrastructure(env, String(domain.hostname), domain.provider_hostname_id ? String(domain.provider_hostname_id) : null);
+      if (domain.kind === "custom") {
+        await deleteCustomHostnameInfrastructure(env, String(domain.hostname), domain.provider_hostname_id ? String(domain.provider_hostname_id) : null);
+      } else if (domain.kind === "hosted") {
+        await deleteHostedWorkerDomain(env, String(domain.hostname));
+      }
     }
     await deleteCustomerR2Objects(env.MEDIA, customerId);
 
@@ -1304,6 +1308,35 @@ function parsePaymentAmountMinor(value: unknown) {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
   if (!match) throw new HttpError(400, "invalid_payment_amount");
   return parseInt(match[1], 10) * 100 + parseInt((match[2] || "").padEnd(2, "0") || "0", 10);
+}
+
+async function deleteHostedWorkerDomain(env: Env, hostnameInput: string) {
+  const hostname = normalizeHostname(hostnameInput);
+  const headers = {
+    authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}`,
+    "content-type": "application/json",
+  };
+  const list = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.MKETY_ASSIST_CF_ACCOUNT_ID}/workers/domains`,
+    { headers },
+  );
+  const data: any = await list.json();
+  if (!list.ok || !data.success) {
+    throw new Error(`Cloudflare Worker Custom Domain lookup failed during delete: ${JSON.stringify(data.errors || data)}`);
+  }
+  const existing = (data.result || []).find((item: any) => item.hostname === hostname);
+  if (!existing) return;
+  if (existing.service && existing.service !== env.APP_WORKER_NAME) {
+    throw new Error(`Refusing to delete hosted domain ${hostname}; it belongs to ${existing.service}`);
+  }
+  const del = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.MKETY_ASSIST_CF_ACCOUNT_ID}/workers/domains/${existing.id}`,
+    { method: "DELETE", headers },
+  );
+  const deleted: any = await del.json();
+  if (!del.ok || !deleted.success) {
+    throw new Error(`Cloudflare Worker Custom Domain delete failed for ${hostname}: ${JSON.stringify(deleted.errors || deleted)}`);
+  }
 }
 
 async function ensureHostedWorkerDomain(env: Env, hostnameInput: string) {
