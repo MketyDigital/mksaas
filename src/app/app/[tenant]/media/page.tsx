@@ -25,7 +25,7 @@ export default async function MediaConnectorPage({
   return (
     <div className="mx-auto max-w-4xl space-y-6 py-4">
       <div>
-        <Link className="text-sm text-muted-foreground" href={`/t/${tenantSlug}`}>← Workspace</Link>
+        <Link className="text-sm text-muted-foreground" href={`/app/${tenantSlug}`}>← Workspace</Link>
         <div className="mt-2 flex items-center gap-3">
           <ImageIcon className="h-7 w-7 text-primary" />
           <h1 className="text-3xl font-bold">Mkety Media</h1>
@@ -71,7 +71,7 @@ export default async function MediaConnectorPage({
             >
               Open Mkety Media <ExternalLink className="h-4 w-4" />
             </a>
-            <Link className="inline-flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}/billing`}>
+            <Link className="inline-flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold" href={`/app/${tenantSlug}/billing`}>
               Plan & billing
             </Link>
           </div>
