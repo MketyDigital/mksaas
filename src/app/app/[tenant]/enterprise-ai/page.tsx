@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { getTenantSettings } from '@/features/admin/services/settings-service';
+import { EnterpriseAiCheckoutForm } from '@/features/ai-runtime/components/EnterpriseAiCheckoutForm';
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
 import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import {
@@ -28,6 +29,19 @@ async function renderEnterpriseAiConsolePage({
 }) {
   const { tenant: tenantSlug } = await params;
   await requireTenantMembership(tenantSlug);
+  const paymentProviders = [
+    ...(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
+      ? [{ value: 'nowpayments' as const, label: 'Crypto / NOWPayments' }]
+      : []),
+    ...(process.env.FLUTTERWAVE_PUBLIC_KEY
+      && process.env.FLUTTERWAVE_STANDARD_SECRET_KEY
+      && process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
+      ? [{ value: 'flutterwave' as const, label: 'Card / bank · Flutterwave' }]
+      : []),
+    ...(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY
+      ? [{ value: 'kora' as const, label: 'Card / bank · Kora' }]
+      : []),
+  ];
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
 
@@ -69,34 +83,17 @@ async function renderEnterpriseAiConsolePage({
                     A payment is already awaiting confirmation. Complete that checkout or allow it to reach a terminal state before starting another.
                   </p>
                 ) : (
-                  <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid gap-3 sm:grid-cols-2" method="post">
-                    {partialFunding ? (
-                      <label className="text-sm font-medium sm:col-span-2">
-                        Funding amount (USD)
-                        <input
-                          className="mt-1 w-full rounded-xl border bg-background px-3 py-3"
-                          defaultValue={(Number(minimumFundingMinor) / 100).toFixed(2)}
-                          inputMode="decimal"
-                          min={(Number(minimumFundingMinor) / 100).toFixed(2)}
-                          max={(Number(remainingMinor) / 100).toFixed(2)}
-                          name="fundingAmountUsd"
-                          required
-                          step="0.01"
-                        />
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          Minimum ${ (Number(minimumFundingMinor) / 100).toFixed(2) } · remaining monthly commitment ${ (Number(remainingMinor) / 100).toFixed(2) }
-                        </span>
-                      </label>
-                    ) : null}
-                    <select className="rounded-xl border bg-background px-3 py-3 text-sm" defaultValue="nowpayments" name="provider">
-                      <option value="nowpayments">Crypto / NOWPayments</option>
-                      <option value="flutterwave">Card / bank · Flutterwave</option>
-                      <option value="kora">Card / bank · Kora</option>
-                    </select>
-                    <button className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">
-                      {partialFunding ? 'Fund & activate Enterprise AI' : 'Pay & activate Enterprise AI'}
-                    </button>
-                  </form>
+                  <EnterpriseAiCheckoutForm
+                    tenantSlug={tenantSlug}
+                    providers={paymentProviders}
+                    buttonLabel={partialFunding ? 'Fund & activate Enterprise AI' : 'Pay & activate Enterprise AI'}
+                    amount={partialFunding ? {
+                      defaultValue: (Number(minimumFundingMinor) / 100).toFixed(2),
+                      min: (Number(minimumFundingMinor) / 100).toFixed(2),
+                      max: (Number(remainingMinor) / 100).toFixed(2),
+                      helpText: `Minimum ${(Number(minimumFundingMinor) / 100).toFixed(2)} · remaining monthly commitment ${(Number(remainingMinor) / 100).toFixed(2)}`,
+                    } : undefined}
+                  />
                 )}
                 <p className="text-xs text-muted-foreground">If payment is later overdue, Enterprise AI follows the contract period and configured grace window, then stops inference while preserving your setup.</p>
               </>
@@ -137,16 +134,12 @@ async function renderEnterpriseAiConsolePage({
                 Your workspace is currently inside its billing grace window. Renew now to avoid customer AI stopping when that grace period ends. Pricing is resolved server-side from your current Enterprise agreement.
               </p>
             </div>
-            <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="flex flex-wrap gap-2" method="post">
-              <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
-                <option value="nowpayments">NOWPayments</option>
-                <option value="flutterwave">Flutterwave</option>
-                <option value="kora">Kora</option>
-              </select>
-              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" type="submit">
-                Renew Enterprise AI
-              </button>
-            </form>
+            <EnterpriseAiCheckoutForm
+              tenantSlug={tenantSlug}
+              providers={paymentProviders}
+              buttonLabel="Renew Enterprise AI"
+              compact
+            />
           </div>
         </section>
       ) : null}
@@ -181,34 +174,25 @@ async function renderEnterpriseAiConsolePage({
               </p>
             </div>
             {fundedMinor < contractState.contract.amountMinor ? (
-              <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid min-w-[260px] gap-2" method="post">
-                {(() => {
-                  const remaining = contractState.contract.amountMinor - fundedMinor;
-                  const minimum = remaining < contractState.contract.commercialPolicy.minimumFundingMinor
-                    ? remaining
-                    : contractState.contract.commercialPolicy.minimumFundingMinor;
-                  return (
-                    <>
-                      <input
-                        className="rounded-xl border bg-background px-3 py-2 text-sm"
-                        defaultValue={(Number(minimum) / 100).toFixed(2)}
-                        inputMode="decimal"
-                        max={(Number(remaining) / 100).toFixed(2)}
-                        min={(Number(minimum) / 100).toFixed(2)}
-                        name="fundingAmountUsd"
-                        required
-                        step="0.01"
-                      />
-                      <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
-                        <option value="nowpayments">Crypto / NOWPayments</option>
-                        <option value="flutterwave">Card / bank · Flutterwave</option>
-                        <option value="kora">Card / bank · Kora</option>
-                      </select>
-                      <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Add funds</button>
-                    </>
-                  );
-                })()}
-              </form>
+              (() => {
+                const remaining = contractState.contract.amountMinor - fundedMinor;
+                const minimum = remaining < contractState.contract.commercialPolicy.minimumFundingMinor
+                  ? remaining
+                  : contractState.contract.commercialPolicy.minimumFundingMinor;
+                return (
+                  <EnterpriseAiCheckoutForm
+                    tenantSlug={tenantSlug}
+                    providers={paymentProviders}
+                    buttonLabel="Add funds"
+                    compact
+                    amount={{
+                      defaultValue: (Number(minimum) / 100).toFixed(2),
+                      min: (Number(minimum) / 100).toFixed(2),
+                      max: (Number(remaining) / 100).toFixed(2),
+                    }}
+                  />
+                );
+              })()
             ) : (
               <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700">Monthly commitment funded</span>
             )}
@@ -227,25 +211,16 @@ async function renderEnterpriseAiConsolePage({
                 Your base monthly commitment is already active. Add verified prepaid usage capacity without changing the contract or the current paid period.
               </p>
             </div>
-            <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid min-w-[260px] gap-2" method="post">
-              <input
-                className="rounded-xl border bg-background px-3 py-2 text-sm"
-                defaultValue="10.00"
-                inputMode="decimal"
-                min="1.00"
-                name="fundingAmountUsd"
-                required
-                step="0.01"
-              />
-              <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
-                <option value="nowpayments">Crypto / NOWPayments</option>
-                <option value="flutterwave">Card / bank · Flutterwave</option>
-                <option value="kora">Card / bank · Kora</option>
-              </select>
-              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-                Buy extra credits
-              </button>
-            </form>
+            <EnterpriseAiCheckoutForm
+              tenantSlug={tenantSlug}
+              providers={paymentProviders}
+              buttonLabel="Buy extra credits"
+              compact
+              amount={{
+                defaultValue: '10.00',
+                min: '1.00',
+              }}
+            />
           </div>
         </section>
       ) : null}
