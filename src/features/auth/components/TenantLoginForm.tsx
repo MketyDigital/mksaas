@@ -32,7 +32,7 @@ export function TenantLoginForm({
         window.location.assign(handoffUrl);
         return;
       }
-      await login(`/t/${tenantSlug}`);
+      await login(`/app/${tenantSlug}`);
     } catch {
       setServerError('Failed to initiate sign in');
       setIsLoading(false);
