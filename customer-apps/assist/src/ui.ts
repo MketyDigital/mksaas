@@ -282,26 +282,110 @@ async function loadOps(){
   }catch(e){healthBox.textContent=e.message}
 }
 function newCustomerDialog(){
-  openModal('<h2>Create customer</h2><div class="two"><div class="field"><label>Company</label><input class="input" id="nName"></div><div class="field"><label>Slug</label><input class="input" id="nSlug"></div><div class="field"><label>Admin email</label><input class="input" id="nEmail" type="email"></div><div class="field"><label>Custom domain (optional)</label><input class="input" id="nDomain" placeholder="ai.customer.com"></div><div class="field"><label>Monthly price, minor units</label><input class="input" id="nPrice" type="number" value="8000"></div><div class="field"><label>Provider envelope bps</label><input class="input" id="nEnvelope" type="number" value="2500"></div><div class="field"><label>Operations reserve bps</label><input class="input" id="nReserve" type="number" value="300"></div><div class="field"><label>Rate multiplier bps</label><input class="input" id="nMultiplier" type="number" value="10000"></div><div class="field"><label>Included credits</label><input class="input" id="nCredits" type="number" value="0"><button class="btn" id="nCalc" type="button">Calculate</button></div><div class="field"><label>Max assistants</label><input class="input" id="nMax" type="number" value="5"></div></div><button class="btn primary" id="nCreate">Create customer</button>');
+  openModal('<h2>Create customer</h2>'+
+    '<p class="muted">Commercial setup mirrors Main Enterprise AI. Enter customer-facing USD amounts and percentages; Mkety stores the internal units automatically.</p>'+
+    '<div class="two">'+
+      '<div class="field"><label>Company</label><input class="input" id="nName"></div>'+
+      '<div class="field"><label>Slug</label><input class="input" id="nSlug"></div>'+
+      '<div class="field"><label>Admin email</label><input class="input" id="nEmail" type="email"></div>'+
+      '<div class="field"><label>Custom domain (optional)</label><input class="input" id="nDomain" placeholder="ai.customer.com"></div>'+
+      '<div class="field"><label>Monthly price (USD)</label><input class="input" id="nPrice" inputmode="decimal" placeholder="100.00"></div>'+
+      '<div class="field"><label>Included credits per billing period</label><input class="input" id="nCredits" type="number" min="0" placeholder="Manual override only"></div>'+
+      '<div class="field"><label>Credit allocation mode</label><select class="input" id="nAutoCredits"><option value="yes">Automatic — recommended</option><option value="no">Manual override</option></select></div>'+
+      '<div class="field"><label>Funding mode</label><select class="input" id="nFundingMode"><option value="full_period">Full monthly payment</option><option value="prepaid_partial">Prepaid partial funding / top-ups</option></select></div>'+
+      '<div class="field"><label>Minimum funding / top-up (USD)</label><input class="input" id="nMinimumFunding" inputmode="decimal" placeholder="25.00"></div>'+
+      '<div class="field"><label>Setup fee (USD, optional)</label><input class="input" id="nSetupFee" inputmode="decimal" value="0"></div>'+
+      '<div class="field"><label>Managed AI cost envelope % <span class="muted">(internal only)</span></label><input class="input" id="nEnvelope" inputmode="decimal" value="15"></div>'+
+      '<div class="field"><label>Max assistants</label><input class="input" id="nMax" type="number" value="5" min="1"></div>'+
+    '</div>'+
+    '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary>'+
+      '<div class="two" style="margin-top:10px">'+
+        '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="nReserve" type="number" min="0" max="99.99" step="0.01" value="10"></div>'+
+        '<div class="field"><label>Customer rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="100" max="1000" step="0.01" value="100"></div>'+
+      '</div>'+
+      '<p class="muted">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion stay internal. Customers see only price/top-ups, credits, usage and enabled features.</p>'+
+    '</details>'+
+    '<div class="row" style="margin-top:14px"><button class="btn" id="nCalc" type="button">Calculate included credits</button><button class="btn primary" id="nCreate">Create customer</button></div>');
   const nName=byId('nName'),nSlug=byId('nSlug'),nEmail=byId('nEmail'),nDomain=byId('nDomain'),
-    nPrice=byId('nPrice'),nEnvelope=byId('nEnvelope'),nReserve=byId('nReserve'),nMultiplier=byId('nMultiplier'),
-    nCredits=byId('nCredits'),nCalc=byId('nCalc'),nMax=byId('nMax'),nCreate=byId('nCreate');
-  nCalc.onclick=async()=>{try{const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({monthlyAmountMinor:Number(nPrice.value),providerEnvelopeBps:Number(nEnvelope.value),operationsReserveBps:Number(nReserve.value),rateMultiplierBps:Number(nMultiplier.value)})});nCredits.value=x.includedCredits;alert('Provider envelope: $'+(x.providerEnvelopeUsdMicros/1000000).toFixed(2)+'\\nUsable provider budget: $'+(x.usableProviderUsdMicros/1000000).toFixed(2)+'\\nCustomer usage value: $'+(x.customerUsageValueUsdMicros/1000000).toFixed(2)+'\\nIncluded credits: '+x.includedCredits)}catch(e){alert(e.message)}};
-  nCreate.onclick=async()=>{try{const x=await api('/api/ops/customers',{method:'POST',body:JSON.stringify({name:nName.value,slug:nSlug.value,adminEmail:nEmail.value,customHostname:nDomain.value||null,monthlyPriceMinor:Number(nPrice.value||0),includedCredits:Number(nCredits.value||0),providerEnvelopeBps:Number(nEnvelope.value||2500),operationsReserveBps:Number(nReserve.value||300),rateMultiplierBps:Number(nMultiplier.value||10000),maxAssistants:Number(nMax.value||5)})});alert('Created. One-time setup URL: '+x.setupUrl+'\\nHosted portal: '+x.hostedHostname+(x.customDomain?'\\nCustomer CNAME target: '+x.customDomain.cnameTarget:''));closeModal();await loadCustomers()}catch(e){alert(e.message)}};
+    nPrice=byId('nPrice'),nCredits=byId('nCredits'),nAutoCredits=byId('nAutoCredits'),nFundingMode=byId('nFundingMode'),
+    nMinimumFunding=byId('nMinimumFunding'),nSetupFee=byId('nSetupFee'),nEnvelope=byId('nEnvelope'),
+    nReserve=byId('nReserve'),nMultiplier=byId('nMultiplier'),nMax=byId('nMax'),nCalc=byId('nCalc'),nCreate=byId('nCreate');
+  nFundingMode.onchange=()=>{nMinimumFunding.disabled=nFundingMode.value!=='prepaid_partial'};
+  nFundingMode.onchange();
+  nAutoCredits.onchange=()=>{nCredits.disabled=nAutoCredits.value==='yes'};
+  nAutoCredits.onchange();
+  nCalc.onclick=async()=>{try{
+    const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({
+      monthlyPriceUsd:nPrice.value,managedCostSharePercent:nEnvelope.value,operationsReservePercent:nReserve.value,customerRateMultiplierPercent:nMultiplier.value
+    })});
+    nCredits.value=x.includedCredits;
+    alert('Managed provider-cost ceiling: $'+(x.providerEnvelopeUsdMicros/1000000).toFixed(2)+'\\nUsable provider capacity after reserve: $'+(x.usableProviderUsdMicros/1000000).toFixed(2)+'\\nIncluded credits: '+x.includedCredits);
+  }catch(e){alert(e.message)}};
+  nCreate.onclick=async()=>{try{
+    const x=await api('/api/ops/customers',{method:'POST',body:JSON.stringify({
+      name:nName.value,slug:nSlug.value,adminEmail:nEmail.value,customHostname:nDomain.value||null,
+      monthlyPriceUsd:nPrice.value,includedCredits:Number(nCredits.value||0),autoIncludedCredits:nAutoCredits.value,
+      fundingMode:nFundingMode.value,minimumFundingUsd:nMinimumFunding.value||nPrice.value,setupFeeUsd:nSetupFee.value||'0',
+      managedCostSharePercent:nEnvelope.value,operationsReservePercent:nReserve.value,customerRateMultiplierPercent:nMultiplier.value,
+      maxAssistants:Number(nMax.value||5)
+    })});
+    alert('Created. One-time setup URL: '+x.setupUrl+'\\nHosted portal: '+x.hostedHostname+(x.customDomain?'\\nCustomer CNAME target: '+x.customDomain.cnameTarget:''));
+    closeModal();await loadCustomers();
+  }catch(e){alert(e.message)}};
 }
 async function manageCustomer(id){
   try{
     const d=await api('/api/ops/customer?id='+encodeURIComponent(id));const c=d.customer,p=d.commercial||{},f=d.features||{},domains=d.domains||[],credits=d.credits||{};
-    openModal('<div class="top" style="margin:0 0 10px"><div><h2 style="margin:0">'+esc(c.name)+'</h2><div class="muted">Balance: '+esc(credits.balance??0)+' · Billing: '+esc(c.billing_status||'current')+'</div></div></div><p class="muted">'+domains.map(x=>esc(x.hostname)+' · '+esc(x.status)+' / '+esc(x.ssl_status||'')).join('<br>')+'</p><h3>Commercial</h3><div class="two"><div class="field"><label>Monthly price</label><input class="input" id="pPrice" type="number" value="'+esc(p.subscription_amount_minor||0)+'"></div><div class="field"><label>Included credits</label><input class="input" id="pCredits" type="number" value="'+esc(p.included_credits||0)+'"><button class="btn" id="calcCredits">Calculate</button></div><div class="field"><label>Provider envelope bps</label><input class="input" id="pEnvelope" type="number" value="'+esc(p.provider_envelope_bps||2500)+'"></div><div class="field"><label>Operations reserve bps</label><input class="input" id="pReserve" type="number" value="'+esc(p.operations_reserve_bps||300)+'"></div><div class="field"><label>Rate multiplier bps</label><input class="input" id="pMultiplier" type="number" value="'+esc(p.rate_multiplier_bps||10000)+'"></div><div class="field"><label>Max assistants</label><input class="input" id="pMax" type="number" value="'+esc(f.max_assistants||5)+'"></div></div><h3>Features</h3><div class="two"><label><input id="fTelegram" type="checkbox" '+(f.telegram_enabled?'checked':'')+'> Telegram</label><label><input id="fVision" type="checkbox" '+(f.vision_enabled?'checked':'')+'> Vision</label><label><input id="fVoice" type="checkbox" '+(f.voice_enabled?'checked':'')+'> Voice</label><label><input id="fKnowledge" type="checkbox" '+(f.knowledge_enabled?'checked':'')+'> Knowledge</label><label><input id="fReminders" type="checkbox" '+(f.reminders_enabled?'checked':'')+'> Reminders</label><label><input id="fHandoff" type="checkbox" '+(f.human_handoff_enabled?'checked':'')+'> Human handoff</label><label><input id="fTools" type="checkbox" '+(f.tools_enabled?'checked':'')+'> Tools</label></div><h3>Funding</h3><div class="two"><div class="field"><label>Credit adjustment (+/-)</label><input class="input" id="creditDelta" type="number" value="0"></div><div class="field"><label>Reason</label><input class="input" id="creditReason" placeholder="Payment received / support adjustment"></div></div><div class="row"><button class="btn" id="adjustCredits">Apply credits</button><button class="btn" id="showLedger">Funding history</button></div><h3>Domain</h3><div class="two"><input class="input" id="newDomain" placeholder="ai.customer.com"><button class="btn" id="addDomain">Configure domain</button></div><div class="row" style="margin-top:16px"><button class="btn primary" id="savePolicy">Save policy</button><button class="btn" id="closeCustomer">Close</button></div>');
+    openModal('<div class="top" style="margin:0 0 10px"><div><h2 style="margin:0">'+esc(c.name)+'</h2><div class="muted">Balance: '+esc(credits.balance??0)+' · Billing: '+esc(c.billing_status||'current')+'</div></div></div>'+
+      '<p class="muted">'+domains.map(x=>esc(x.hostname)+' · '+esc(x.status)+' / '+esc(x.ssl_status||'')).join('<br>')+'</p>'+
+      '<h3>Commercial agreement</h3><div class="two">'+
+        '<div class="field"><label>Monthly price (USD)</label><input class="input" id="pPrice" inputmode="decimal" value="'+(Number(p.subscription_amount_minor||0)/100).toFixed(2)+'"></div>'+
+        '<div class="field"><label>Included credits per billing period</label><input class="input" id="pCredits" type="number" value="'+esc(p.included_credits||0)+'"></div>'+
+        '<div class="field"><label>Credit allocation mode</label><select class="input" id="pAutoCredits"><option value="yes">Automatic — recommended</option><option value="no">Manual override</option></select></div>'+
+        '<div class="field"><label>Funding mode</label><select class="input" id="pFundingMode"><option value="full_period">Full monthly payment</option><option value="prepaid_partial">Prepaid partial funding / top-ups</option></select></div>'+
+        '<div class="field"><label>Minimum funding / top-up (USD)</label><input class="input" id="pMinimumFunding" inputmode="decimal" value="'+(Number(p.minimum_funding_minor||p.subscription_amount_minor||0)/100).toFixed(2)+'"></div>'+
+        '<div class="field"><label>Setup fee (USD)</label><input class="input" id="pSetupFee" inputmode="decimal" value="'+(Number(p.setup_fee_minor||0)/100).toFixed(2)+'"></div>'+
+        '<div class="field"><label>Managed AI cost envelope % <span class="muted">(internal only)</span></label><input class="input" id="pEnvelope" type="number" step="0.01" value="'+(Number(p.provider_envelope_bps||1500)/100).toFixed(2)+'"></div>'+
+        '<div class="field"><label>Max assistants</label><input class="input" id="pMax" type="number" value="'+esc(f.max_assistants||5)+'"></div>'+
+      '</div>'+
+      '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary><div class="two" style="margin-top:10px">'+
+        '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="pReserve" type="number" min="0" max="99.99" step="0.01" value="'+(Number(p.operations_reserve_bps||1000)/100).toFixed(2)+'"></div>'+
+        '<div class="field"><label>Customer rate multiplier %</label><input class="input" id="pMultiplier" type="number" min="100" max="1000" step="0.01" value="'+(Number(p.rate_multiplier_bps||10000)/100).toFixed(2)+'"></div>'+
+      '</div></details>'+
+      '<div class="row" style="margin-top:10px"><button class="btn" id="calcCredits">Recalculate included credits</button></div>'+
+      '<h3>Features</h3><div class="two"><label><input id="fTelegram" type="checkbox" '+(f.telegram_enabled?'checked':'')+'> Telegram</label><label><input id="fVision" type="checkbox" '+(f.vision_enabled?'checked':'')+'> Vision</label><label><input id="fVoice" type="checkbox" '+(f.voice_enabled?'checked':'')+'> Voice</label><label><input id="fKnowledge" type="checkbox" '+(f.knowledge_enabled?'checked':'')+'> Knowledge</label><label><input id="fReminders" type="checkbox" '+(f.reminders_enabled?'checked':'')+'> Reminders</label><label><input id="fHandoff" type="checkbox" '+(f.human_handoff_enabled?'checked':'')+'> Human handoff</label><label><input id="fTools" type="checkbox" '+(f.tools_enabled?'checked':'')+'> Tools</label></div>'+
+      '<h3>Funding / ledger</h3><div class="two"><div class="field"><label>Credit adjustment (+/-)</label><input class="input" id="creditDelta" type="number" value="0"></div><div class="field"><label>Reason</label><input class="input" id="creditReason" placeholder="Goodwill / support adjustment"></div></div>'+
+      '<div class="row"><button class="btn" id="adjustCredits">Apply credits</button><button class="btn" id="showLedger">Funding history</button></div>'+
+      '<h3>Domain</h3><div class="two"><input class="input" id="newDomain" placeholder="ai.customer.com"><button class="btn" id="addDomain">Configure domain</button></div>'+
+      '<div class="row" style="margin-top:16px"><button class="btn primary" id="savePolicy">Save amended commercial policy</button><button class="btn" id="closeCustomer">Close</button></div>');
     const closeCustomer=byId('closeCustomer'),calcCredits=byId('calcCredits'),pPrice=byId('pPrice'),pCredits=byId('pCredits'),
+      pAutoCredits=byId('pAutoCredits'),pFundingMode=byId('pFundingMode'),pMinimumFunding=byId('pMinimumFunding'),pSetupFee=byId('pSetupFee'),
       pEnvelope=byId('pEnvelope'),pReserve=byId('pReserve'),pMultiplier=byId('pMultiplier'),pMax=byId('pMax'),
       fTelegram=byId('fTelegram'),fVision=byId('fVision'),fVoice=byId('fVoice'),fKnowledge=byId('fKnowledge'),
       fReminders=byId('fReminders'),fHandoff=byId('fHandoff'),fTools=byId('fTools'),
       creditDelta=byId('creditDelta'),creditReason=byId('creditReason'),adjustCredits=byId('adjustCredits'),
       showLedger=byId('showLedger'),newDomain=byId('newDomain'),addDomain=byId('addDomain'),savePolicy=byId('savePolicy');
+    pFundingMode.value=p.funding_mode||'full_period';
+    pFundingMode.onchange=()=>{pMinimumFunding.disabled=pFundingMode.value!=='prepaid_partial'};pFundingMode.onchange();
+    pAutoCredits.value='yes';pAutoCredits.onchange=()=>{pCredits.disabled=pAutoCredits.value==='yes'};pAutoCredits.onchange();
     closeCustomer.onclick=closeModal;
-    calcCredits.onclick=async()=>{try{const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({monthlyAmountMinor:Number(pPrice.value),providerEnvelopeBps:Number(pEnvelope.value),operationsReserveBps:Number(pReserve.value),rateMultiplierBps:Number(pMultiplier.value)})});pCredits.value=x.includedCredits;alert('Provider envelope: $'+(x.providerEnvelopeUsdMicros/1000000).toFixed(2)+'\\nUsable provider budget: $'+(x.usableProviderUsdMicros/1000000).toFixed(2)+'\\nCustomer usage value: $'+(x.customerUsageValueUsdMicros/1000000).toFixed(2)+'\\nIncluded credits: '+x.includedCredits)}catch(e){alert(e.message)}};
-    savePolicy.onclick=async()=>{try{await api('/api/ops/policy',{method:'PATCH',body:JSON.stringify({customerId:id,subscriptionAmountMinor:Number(pPrice.value),includedCredits:Number(pCredits.value),providerEnvelopeBps:Number(pEnvelope.value),operationsReserveBps:Number(pReserve.value),rateMultiplierBps:Number(pMultiplier.value),maxAssistants:Number(pMax.value),telegramEnabled:fTelegram.checked,visionEnabled:fVision.checked,voiceEnabled:fVoice.checked,knowledgeEnabled:fKnowledge.checked,remindersEnabled:fReminders.checked,humanHandoffEnabled:fHandoff.checked,toolsEnabled:fTools.checked})});alert('Policy saved')}catch(e){alert(e.message)}};
+    calcCredits.onclick=async()=>{try{
+      const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({
+        monthlyPriceUsd:pPrice.value,managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value,customerRateMultiplierPercent:pMultiplier.value
+      })});
+      pCredits.value=x.includedCredits;
+      alert('Managed provider-cost ceiling: $'+(x.providerEnvelopeUsdMicros/1000000).toFixed(2)+'\\nUsable provider capacity after reserve: $'+(x.usableProviderUsdMicros/1000000).toFixed(2)+'\\nIncluded credits: '+x.includedCredits);
+    }catch(e){alert(e.message)}};
+    savePolicy.onclick=async()=>{try{
+      await api('/api/ops/policy',{method:'PATCH',body:JSON.stringify({
+        customerId:id,monthlyPriceUsd:pPrice.value,includedCredits:Number(pCredits.value),autoCalculateCredits:pAutoCredits.value==='yes',
+        fundingMode:pFundingMode.value,minimumFundingUsd:pMinimumFunding.value||pPrice.value,setupFeeUsd:pSetupFee.value||'0',
+        managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value,customerRateMultiplierPercent:pMultiplier.value,
+        creditRollover:true,maxAssistants:Number(pMax.value),telegramEnabled:fTelegram.checked,visionEnabled:fVision.checked,voiceEnabled:fVoice.checked,
+        knowledgeEnabled:fKnowledge.checked,remindersEnabled:fReminders.checked,humanHandoffEnabled:fHandoff.checked,toolsEnabled:fTools.checked
+      })});
+      alert('Commercial policy saved');
+    }catch(e){alert(e.message)}};
     adjustCredits.onclick=async()=>{try{const x=await api('/api/ops/credits',{method:'POST',body:JSON.stringify({customerId:id,delta:Number(creditDelta.value),reason:creditReason.value})});alert('New balance: '+x.balance);closeModal();await manageCustomer(id)}catch(e){alert(e.message)}};
     showLedger.onclick=async()=>{try{const x=await api('/api/ops/ledger?customerId='+encodeURIComponent(id));alert((x.entries||[]).slice(0,20).map(e=>new Date(e.created_at*1000).toLocaleString()+' | '+e.kind+' | '+e.delta+' | balance '+e.balance_after).join('\\n')||'No ledger entries.')}catch(e){alert(e.message)}};
     addDomain.onclick=async()=>{try{const x=await api('/api/ops/domains',{method:'POST',body:JSON.stringify({customerId:id,hostname:newDomain.value})});alert('Configured. Customer CNAME: '+newDomain.value+' -> '+x.cnameTarget+'\\nWorker route: '+x.workerRoute);closeModal();await manageCustomer(id)}catch(e){alert(e.message)}};
