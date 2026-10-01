@@ -62,7 +62,7 @@ describe('Enterprise AI true white-label and domain contract', () => {
 
   it('only hides Mkety branding when the tenant has true white-label access', async () => {
     const page = await readFile(
-      'src/app/(tenant)/t/[tenant]/enterprise-ai/customer/page.tsx',
+      'src/app/app/[tenant]/enterprise-ai/customer/page.tsx',
       'utf8',
     );
     expect(page).toContain('hasEnterpriseAiWhiteLabelAccess');
