@@ -18,6 +18,7 @@ interface Env {
   ROUTING_ORIGIN: string;
   APP_WORKER_NAME: string;
   OPS_HOST: string;
+  ENTRY_HOST: string;
   SESSION_COOKIE_NAME: string;
   SESSION_TTL_SECONDS: string;
   RECOVERY_TTL_SECONDS: string;
@@ -63,6 +64,11 @@ export default {
 
       if (host === env.OPS_HOST) {
         return handleOps(request, env);
+      }
+
+      if (host === env.ENTRY_HOST) {
+        if (url.pathname === "/" || url.pathname === "/login") return assistEntryPage(env.HOSTED_SUFFIX);
+        return brandedNotFound(host);
       }
 
       if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/telegram/auth-webhook" && request.method === "POST") {
@@ -1523,6 +1529,16 @@ class HttpError extends Error {
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+function assistEntryPage(hostedSuffix: string) {
+  return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mkety Assist</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0d13;color:#f7f7fb;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(460px,90vw);background:#151821;border:1px solid #292d3c;border-radius:18px;padding:28px;box-sizing:border-box}.brand{font-size:24px;font-weight:800;margin-bottom:6px}.muted{color:#9ca2b5}label{display:block;font-size:12px;color:#bac0cf;margin:18px 0 6px}input,button{box-sizing:border-box;width:100%;padding:12px;border-radius:10px;font:inherit}input{background:#0d0f16;border:1px solid #34394b;color:white}button{margin-top:10px;background:#7657ff;border:0;color:white;font-weight:700;cursor:pointer}.note{font-size:12px;color:#8e94a6;margin-top:18px}</style></head>
+<body><main class="card"><div class="brand">Mkety Assist</div><p class="muted">Open your private AI assistant workspace.</p><form id="workspace"><label for="slug">Workspace</label><input id="slug" autocomplete="organization" placeholder="your-company" pattern="[a-z0-9][a-z0-9-]*" required><button>Continue</button></form><p id="msg" class="note">If your company uses its own custom domain, open that domain directly.</p></main>
+<script>
+const suffix=${JSON.stringify(hostedSuffix)};
+workspace.onsubmit=(e)=>{e.preventDefault();const value=slug.value.trim().toLowerCase();if(!/^[a-z0-9][a-z0-9-]*$/.test(value)){msg.textContent='Enter the workspace name provided by your administrator.';return;}location.href='https://'+value+'.'+suffix+'/';};
+</script></body></html>`);
 }
 
 function operatorSetupPage(token: string) {
