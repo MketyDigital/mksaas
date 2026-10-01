@@ -632,7 +632,18 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const sslStatus = data.result.ssl?.status ?? null;
     await env.DB.prepare("UPDATE customer_domains SET status=?,ssl_status=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE hostname=?")
       .bind(status, sslStatus, status, unix(), hostname).run();
-    return json({ hostname, status, sslStatus, cnameTarget: env.PORTAL_CNAME_TARGET });
+    const stored = await env.DB.prepare(
+      "SELECT validation_json FROM customer_domains WHERE hostname=? AND kind='custom' LIMIT 1",
+    ).bind(hostname).first<any>();
+    return json({
+      hostname,
+      status,
+      sslStatus,
+      cnameTarget: env.PORTAL_CNAME_TARGET,
+      routingOrigin: env.ROUTING_ORIGIN,
+      workerRoute: `${hostname}/*`,
+      validation: stored?.validation_json ? JSON.parse(stored.validation_json) : null,
+    });
   }
 
   return json({ error: "not_found" }, 404);
@@ -836,6 +847,24 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(session.userId).first();
     const features = await env.DB.prepare("SELECT * FROM feature_policy WHERE customer_id=?").bind(customer.customerId).first();
     return json({ customer, session, user, features });
+  }
+
+  if (url.pathname === "/api/domains" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC",
+    ).bind(customer.customerId).all<any>();
+    return json({
+      domains: (rows.results ?? []).map((row: any) => ({
+        hostname: row.hostname,
+        kind: row.kind,
+        isPrimary: Boolean(row.is_primary),
+        status: row.status,
+        sslStatus: row.ssl_status,
+        validation: row.validation_json ? JSON.parse(row.validation_json) : null,
+        verifiedAt: row.verified_at,
+      })),
+      cnameTarget: env.PORTAL_CNAME_TARGET,
+    });
   }
 
   if (url.pathname === "/api/settings" && request.method === "GET") {
