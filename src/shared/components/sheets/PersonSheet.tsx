@@ -59,7 +59,7 @@ export function PersonSheet({ person, open, onOpenChange, tenantSlug }: PersonSh
         </SheetHeader>
 
         <div className="mt-6 pt-4 border-t">
-          <Link href={`/t/${tenantSlug}/people?q=${encodeURIComponent(person.name)}`}>
+          <Link href={`/app/${tenantSlug}/people?q=${encodeURIComponent(person.name)}`}>
             <Button variant="outline" className="w-full">
               View Full Profile
             </Button>
