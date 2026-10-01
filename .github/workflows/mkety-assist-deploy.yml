@@ -297,6 +297,14 @@ jobs:
           )"
           echo "EFFECTIVE_TELEGRAM_AUTH_BOT_USERNAME=$username" >> "$GITHUB_ENV"
 
+      - name: Normalize Telegram webhook secret
+        if: env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe_secret="$(printf '%s' "$MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET" | sha256sum | awk '{print $1}')"
+          echo "EFFECTIVE_TELEGRAM_AUTH_WEBHOOK_SECRET=$safe_secret" >> "$GITHUB_ENV"
+
       - name: Deploy isolated Assist Worker
         working-directory: customer-apps/assist
         run: npx wrangler deploy --config wrangler.deploy.jsonc
@@ -365,7 +373,8 @@ jobs:
           if (process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) values.FLUTTERWAVE_CHECKOUT_BROKER_SECRET = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
           if (process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) values.MKETY_ASSIST_SECRET_ENCRYPTION_KEY = process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
           if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN) values.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN = process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN;
-          if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET) values.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET = process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET;
+          const telegramWebhookSecret = process.env.EFFECTIVE_TELEGRAM_AUTH_WEBHOOK_SECRET || process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET;
+          if (telegramWebhookSecret) values.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET = telegramWebhookSecret;
           const telegramUsername = process.env.EFFECTIVE_TELEGRAM_AUTH_BOT_USERNAME || process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME;
           if (telegramUsername) values.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME = telegramUsername;
           fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify(values));
@@ -417,7 +426,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          payload="$(WEBHOOK_SECRET="$MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET" node - <<'NODE'
+          payload="$(WEBHOOK_SECRET="$EFFECTIVE_TELEGRAM_AUTH_WEBHOOK_SECRET" node - <<'NODE'
           process.stdout.write(JSON.stringify({
             url: 'https://mkety-assist.mkety.app/api/telegram/auth-webhook',
             secret_token: process.env.WEBHOOK_SECRET,
