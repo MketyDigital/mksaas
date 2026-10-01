@@ -55,8 +55,8 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
   if (tenantSlugs.length === 1) {
     redirect(
       planKey
-        ? `/t/${tenantSlugs[0]}/billing/checkout?${planQuery}`
-        : `/t/${tenantSlugs[0]}`,
+        ? `/app/${tenantSlugs[0]}/billing/checkout?${planQuery}`
+        : `/app/${tenantSlugs[0]}`,
     );
   }
 
@@ -78,7 +78,7 @@ export default async function SelectTenantPage(props?: SelectTenantPageProps) {
             {tenantSlugs.map((slug) => {
               const role = userRoles[slug];
               return (
-                <Link key={slug} href={planKey ? `/t/${slug}/billing/checkout?${planQuery}` : `/t/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
+                <Link key={slug} href={planKey ? `/app/${slug}/billing/checkout?${planQuery}` : `/app/${slug}`} className="flex items-center justify-between p-4 rounded-lg border bg-card hover:border-primary/50 hover:bg-accent/50 transition-all group">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Building2 className="h-5 w-5" /></div>
                     <div>
