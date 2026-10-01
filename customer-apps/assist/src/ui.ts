@@ -29,10 +29,16 @@ button,input,textarea,select{font:inherit}button{cursor:pointer}.shell{min-heigh
 </div>
 <div class="modal" id="modal"><div class="dialog" id="dialog"></div></div><div class="toast" id="toast"></div>
 <script>
+const bindIds=root=>root.querySelectorAll('[id]').forEach(el=>{try{globalThis[el.id]=el}catch{}});
+bindIds(document);
+const brand=document.getElementById('brand'),who=document.getElementById('who'),host=document.getElementById('host'),
+  nav=document.getElementById('nav'),logout=document.getElementById('logout'),modal=document.getElementById('modal'),
+  dialog=document.getElementById('dialog'),toast=document.getElementById('toast'),content=document.getElementById('content'),
+  topTitle=document.getElementById('topTitle');
 const APP=${initial};
 const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[]};
-const sections=['dashboard','assistants','knowledge','conversations','handoffs','reminders','usage','team','settings'];
-const titles={dashboard:'Dashboard',assistants:'Assistants',knowledge:'Knowledge',conversations:'Conversations',handoffs:'Human Handoff',reminders:'Reminders',usage:'Usage & Credits',team:'Team',settings:'Settings'};
+const sections=['dashboard','assistants','knowledge','conversations','handoffs','reminders','usage','api','team','settings'];
+const titles={dashboard:'Dashboard',assistants:'Assistants',knowledge:'Knowledge',conversations:'Conversations',handoffs:'Human Handoff',reminders:'Reminders',usage:'Usage & Credits',api:'API Access',team:'Team',settings:'Settings'};
 if(APP.brandColor&&/^#[0-9a-fA-F]{6}$/.test(APP.brandColor))document.documentElement.style.setProperty('--brand',APP.brandColor);
 brand.innerHTML=(APP.logoUrl?'<img src="'+esc(APP.logoUrl)+'" alt="" style="width:28px;height:28px;object-fit:contain;vertical-align:middle;margin-right:8px">':'')+esc(APP.customerName)+' AI<small>Assistant Console</small>';
 who.textContent=APP.email+' · '+APP.role;host.textContent=APP.hostname;
@@ -42,7 +48,7 @@ logout.onclick=async()=>{await fetch('/api/auth/logout',{method:'POST'});locatio
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function toastMsg(s){toast.textContent=s;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2400)}
 async function api(path,opt){const r=await fetch(path,opt);let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
-function openModal(html){dialog.innerHTML=html;modal.classList.add('open')}
+function openModal(html){dialog.innerHTML=html;bindIds(dialog);modal.classList.add('open')}
 function closeModal(){modal.classList.remove('open');dialog.innerHTML=''}
 modal.onclick=e=>{if(e.target===modal)closeModal()}
 async function refresh(){
@@ -55,7 +61,8 @@ async function refresh(){
 function go(s){state.section=s;topTitle.textContent=titles[s];render()}
 function render(){
  [...nav.querySelectorAll('button')].forEach(b=>b.classList.toggle('active',b.dataset.s===state.section));
- const fn=window['render_'+state.section];content.innerHTML=fn?fn():'';
+ const renderers={dashboard:render_dashboard,assistants:render_assistants,knowledge:render_knowledge,conversations:render_conversations,handoffs:render_handoffs,reminders:render_reminders,usage:render_usage,api:render_api,team:render_team,settings:render_settings};
+ const fn=renderers[state.section];content.innerHTML=fn?fn():'';
  bindSection();
 }
 function render_dashboard(){
@@ -75,6 +82,10 @@ function render_handoffs(){return '<h1 class="title">Human Handoff</h1><p class=
 function render_reminders(){return '<div class="spread"><div><h1 class="title">Reminders</h1><p class="sub">Scheduled messages are delivered by the connected Telegram assistant.</p></div><button class="btn primary" data-action="new-reminder">New reminder</button></div><div class="card">'+(state.reminders.length?'<table class="table"><thead><tr><th>Assistant</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>'+state.reminders.map(r=>'<tr><td>'+esc(r.assistant_name)+'</td><td>'+new Date(r.due_at*1000).toLocaleString()+'</td><td>'+esc(r.status)+'</td><td>'+(r.status==='scheduled'?'<button class="btn danger" data-cancel-reminder="'+r.id+'">Cancel</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No reminders.</div>')+'</div>'}
 function render_usage(){const c=state.usage?.credits||{},p=state.usage?.plan||{};return '<div class="spread"><div><h1 class="title">Usage & Credits</h1><p class="sub">Customer-facing usage only. Provider cost and internal commercial controls stay in Mkety Operator.</p></div>'+(p.topup_enabled?'<button class="btn primary" data-action="buy-credits">Buy credits</button>':'')+'</div><div class="three">'+metric('Credits remaining',c.balance??0)+metric('Lifetime granted',c.lifetime_granted??0)+metric('Lifetime used',c.lifetime_consumed??0)+'</div><div class="two" style="margin-top:16px"><div class="card"><h3>Plan</h3><p>Included credits: <strong>'+esc(p.included_credits??0)+'</strong></p><p>Top-ups: <strong>'+(p.topup_enabled?'Enabled':'Disabled')+'</strong></p></div><div class="card"><h3>Recent top-ups</h3><div id="checkoutBox" class="muted">Loading…</div></div></div>'}
 function render_team(){return '<div class="spread"><div><h1 class="title">Team</h1><p class="sub">Simple portal access for owners, admins and members.</p></div><button class="btn primary" data-action="invite-member">Add member</button></div><div class="card" id="teamBox"><div class="empty">Loading team…</div></div>'}
+function render_api(){
+ return '<div class="spread"><div><h1 class="title">API Access</h1><p class="sub">Use your assistants from your own apps. API calls consume the same credits and limits as other Assist usage.</p></div><button class="btn primary" data-action="new-api-key">Create API key</button></div>'+
+ '<div class="card"><p><strong>OpenAI-compatible endpoint</strong></p><p><code>https://'+esc(APP.hostname)+'/v1/chat/completions</code></p><p class="muted">Send Authorization: Bearer &lt;your key&gt;. Keys are shown only once when created.</p><div id="apiKeysBox"><div class="empty">Loading API keys…</div></div></div>';
+}
 function render_settings(){return '<h1 class="title">Settings</h1><p class="sub">Branding, portal security and recovery.</p><div class="two"><div class="card"><h3>Branding</h3><div class="field"><label>Brand color</label><input class="input" id="brandColor" placeholder="#7c5cff" value="'+esc(APP.brandColor||'')+'"></div><div class="field"><label>Logo URL (HTTPS)</label><input class="input" id="logoUrl" placeholder="https://..." value="'+esc(APP.logoUrl||'')+'"></div><button class="btn primary" data-action="save-branding">Save branding</button></div><div class="card"><h3>Telegram recovery</h3><p class="muted">Connect Telegram while signed in. It can then receive secure recovery codes if you lose portal access.</p><button class="btn primary" data-action="link-telegram">Connect Telegram</button><hr style="border:0;border-top:1px solid var(--line);margin:18px 0"><h3>Portal</h3><p><strong>'+esc(APP.hostname)+'</strong></p><p class="muted">Custom domains are managed by Mkety Operator.</p></div></div>'}
 function bindSection(){
  content.querySelectorAll('[data-action="new-assistant"]').forEach(b=>b.onclick=newAssistant);
@@ -90,8 +101,11 @@ function bindSection(){
  content.querySelectorAll('[data-action="save-branding"]').forEach(b=>b.onclick=saveBranding);
  content.querySelectorAll('[data-action="invite-member"]').forEach(b=>b.onclick=inviteMember);
  content.querySelectorAll('[data-action="buy-credits"]').forEach(b=>b.onclick=buyCredits);
+ content.querySelectorAll('[data-action="new-api-key"]').forEach(b=>b.onclick=newApiKey);
+ content.querySelectorAll('[data-revoke-api-key]').forEach(b=>b.onclick=()=>revokeApiKey(b.dataset.revokeApiKey));
  if(state.section==='team')loadTeam();
  if(state.section==='usage')loadCheckouts();
+ if(state.section==='api')loadApiKeys();
 }
 function newAssistant(){
  openModal('<h2>New assistant</h2><div class="field"><label>Name</label><input class="input" id="naName"></div><div class="field"><label>Instructions</label><textarea class="input textarea" id="naInstructions" placeholder="What should this assistant do?"></textarea></div><div class="field"><label>Model</label><select class="input" id="naModel"><option value="mkety-smart">Smart</option><option value="mkety-fast">Fast</option><option value="mkety-reasoning">Reasoning</option><option value="mkety-vision">Vision</option></select></div><div class="row"><button class="btn primary" id="naCreate">Create assistant</button><button class="btn" id="naCancel">Cancel</button></div>');
@@ -126,6 +140,23 @@ function newReminder(){const opts=state.assistants.map(a=>'<option value="'+a.id
 async function cancelReminder(id){try{await api('/api/reminders/'+id,{method:'DELETE'});await refresh()}catch(e){toastMsg(e.message)}}
 async function loadTeam(){try{const d=await api('/api/team');teamBox.innerHTML=(d.members||[]).length?'<table class="table"><thead><tr><th>Email</th><th>Role</th><th>Telegram</th></tr></thead><tbody>'+d.members.map(m=>'<tr><td>'+esc(m.email)+'</td><td>'+esc(m.role)+'</td><td>'+esc(m.telegram_username?'@'+m.telegram_username:'Not linked')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No team members.</div>'}catch(e){teamBox.textContent=e.message}}
 function inviteMember(){openModal('<h2>Add team member</h2><div class="field"><label>Email</label><input class="input" id="tmEmail" type="email"></div><div class="field"><label>Role</label><select class="input" id="tmRole"><option value="member">Member</option><option value="admin">Admin</option></select></div><div class="row"><button class="btn primary" id="tmAdd">Add member</button><button class="btn" id="tmCancel">Cancel</button></div>');tmCancel.onclick=closeModal;tmAdd.onclick=async()=>{try{const d=await api('/api/team',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:tmEmail.value,role:tmRole.value})});closeModal();if(d.setupUrl)prompt('Share this one-time setup link with the member:',d.setupUrl);await loadTeam();toastMsg('Team member added')}catch(e){toastMsg(e.message)}}}
+async function loadApiKeys(){
+ try{
+  const d=await api('/api/keys');const keys=d.keys||[];
+  apiKeysBox.innerHTML=keys.length?'<table class="table"><thead><tr><th>Name</th><th>Prefix</th><th>Assistant</th><th>Status</th><th>Last used</th><th></th></tr></thead><tbody>'+keys.map(k=>'<tr><td>'+esc(k.name)+'</td><td><code>'+esc(k.token_prefix)+'…</code></td><td>'+esc(k.assistant_name||'Any (assistant_id required)')+'</td><td>'+esc(k.status)+'</td><td>'+esc(k.last_used_at?new Date(k.last_used_at*1000).toLocaleString():'Never')+'</td><td>'+(k.status==='active'?'<button class="btn danger" data-revoke-api-key="'+k.id+'">Revoke</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No API keys yet.</div>';
+  apiKeysBox.querySelectorAll('[data-revoke-api-key]').forEach(b=>b.onclick=()=>revokeApiKey(b.dataset.revokeApiKey));
+ }catch(e){apiKeysBox.textContent=e.message}
+}
+function newApiKey(){
+ const opts='<option value="">Any assistant (request must send assistant_id)</option>'+state.assistants.map(a=>'<option value="'+a.id+'">'+esc(a.name)+'</option>').join('');
+ openModal('<h2>Create API key</h2><p class="muted">The secret is shown once. Calls spend from this customer credit balance.</p><div class="field"><label>Name</label><input class="input" id="akName" placeholder="Production app"></div><div class="field"><label>Assistant scope</label><select class="input" id="akAssistant">'+opts+'</select></div><div class="row"><button class="btn primary" id="akCreate">Create key</button><button class="btn" id="akCancel">Cancel</button></div>');
+ akCancel.onclick=closeModal;
+ akCreate.onclick=async()=>{try{const d=await api('/api/keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:akName.value,assistantId:akAssistant.value||null})});closeModal();prompt('Copy this API key now. It will not be shown again:',d.key);await loadApiKeys()}catch(e){toastMsg(e.message)}};
+}
+async function revokeApiKey(id){
+ if(!confirm('Revoke this API key? Existing integrations using it will stop working.'))return;
+ try{await api('/api/keys/'+encodeURIComponent(id),{method:'DELETE'});await loadApiKeys();toastMsg('API key revoked')}catch(e){toastMsg(e.message)}
+}
 async function saveBranding(){try{await api('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({brandColor:brandColor.value||null,logoUrl:logoUrl.value||null})});toastMsg('Branding saved');setTimeout(()=>location.reload(),500)}catch(e){toastMsg(e.message)}}
 function buyCredits(){openModal('<h2>Buy credits</h2><p class="muted">Payment is verified by Mkety before credits are added.</p><div class="field"><label>Credits</label><input class="input" id="topupCredits" type="number" min="100" max="5000000" value="5000"></div><div class="field"><label>Payment currency</label><select class="input" id="topupCurrency"><option>USD</option><option>NGN</option><option>GHS</option><option>KES</option><option>GBP</option><option>EUR</option><option>ZAR</option></select></div><div class="row"><button class="btn primary" id="topupStart">Continue to payment</button><button class="btn" id="topupCancel">Cancel</button></div>');topupCancel.onclick=closeModal;topupStart.onclick=async()=>{try{topupStart.disabled=true;const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credits:Number(topupCredits.value),paymentCurrency:topupCurrency.value})});if(!d.checkoutUrl)throw new Error('Payment checkout unavailable');location.href=d.checkoutUrl}catch(e){topupStart.disabled=false;toastMsg(e.message)}}}
 async function loadCheckouts(){try{const d=await api('/api/billing/checkouts');const list=d.checkouts||[];checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Credits</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,8).map(x=>'<tr><td>'+esc(x.credits)+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No top-ups yet.'}catch(e){checkoutBox.textContent=e.message}}
@@ -203,7 +234,8 @@ async function loadCustomers(){const x=await api('/api/ops/customers');data=x.cu
 async function loadProviders(){
   try{
     const x=await api('/api/ops/providers');providerData=x.providers||[];
-    providersBox.innerHTML=providerData.length?'<table class="table"><thead><tr><th>Name</th><th>Provider</th><th>Endpoint</th><th>Status</th><th></th></tr></thead><tbody>'+providerData.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+esc(p.provider)+'</td><td>'+esc(p.endpoint_url||'default')+'</td><td>'+esc(p.status)+'</td><td><button class="btn" data-provider-edit="'+p.id+'">Manage</button></td></tr>').join('')+'</tbody></table>':'No external credentials. Workers AI needs no provider key.';
+    const builtIns='<div class="two" style="margin-bottom:12px"><div class="card"><strong>Mkety Hosted / Workers AI</strong><div class="muted">Built-in · uses the Assist Worker AI binding · no provider key required</div></div><div class="card"><strong>Mkety Managed</strong><div class="muted">Built-in managed route · no customer-visible provider credentials</div></div></div>';
+    providersBox.innerHTML=builtIns+(providerData.length?'<table class="table"><thead><tr><th>Name</th><th>Provider</th><th>Endpoint</th><th>Status</th><th></th></tr></thead><tbody>'+providerData.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+esc(p.provider)+'</td><td>'+esc(p.endpoint_url||'default')+'</td><td>'+esc(p.status)+'</td><td><button class="btn" data-provider-edit="'+p.id+'">Manage</button></td></tr>').join('')+'</tbody></table>':'<p class="muted">No external provider credentials configured.</p>');
     document.querySelectorAll('[data-provider-edit]').forEach(b=>b.onclick=()=>editProvider(providerData.find(p=>p.id===b.dataset.providerEdit)));
   }catch(e){providersBox.textContent=e.message}
 }
@@ -215,10 +247,10 @@ function editProvider(p){
 }
 function providerOptions(selected,provider){
   const available=providerData.filter(p=>!provider||p.provider===provider);
-  return '<option value="">None / Workers AI</option>'+available.map(p=>'<option value="'+p.id+'" '+(p.id===selected?'selected':'')+'>'+esc(p.name)+'</option>').join('');
+  return '<option value="">Built-in / no connection</option>'+available.map(p=>'<option value="'+p.id+'" '+(p.id===selected?'selected':'')+'>'+esc(p.name)+'</option>').join('');
 }
 function addProvider(){
-  openModal('<h2>Add provider connection</h2><div class="two"><div class="field"><label>Name</label><input class="input" id="prName" placeholder="OpenAI primary"></div><div class="field"><label>Provider</label><select class="input" id="prType"><option>openai</option><option>anthropic</option><option>gemini</option><option>azure-openai</option><option>openai-compatible</option></select></div></div><div class="field"><label>Endpoint URL (optional for OpenAI / Anthropic / Gemini)</label><input class="input" id="prEndpoint" placeholder="https://..."></div><div class="field"><label>API key</label><input class="input" id="prKey" type="password" autocomplete="off"></div><div class="field"><label>Extra JSON (optional)</label><input class="input" id="prExtra" placeholder="{&quot;apiVersion&quot;:&quot;2024-10-21&quot;}"></div><button class="btn primary" id="prSave">Save encrypted connection</button>');
+  openModal('<h2>Add provider connection</h2><div class="two"><div class="field"><label>Name</label><input class="input" id="prName" placeholder="OpenAI primary"></div><div class="field"><label>Provider</label><select class="input" id="prType"><option>openai</option><option>anthropic</option><option>gemini</option><option>vertex</option><option>cloudflare-ai</option><option>bedrock</option><option>azure-openai</option><option>openai-compatible</option></select></div></div><div class="field"><label>Endpoint URL (optional for OpenAI / Anthropic / Gemini)</label><input class="input" id="prEndpoint" placeholder="https://..."></div><div class="field"><label>Primary secret / token</label><input class="input" id="prKey" type="password" autocomplete="off"></div><div class="field"><label>Extra JSON (Vertex: projectId/location · Cloudflare: accountId · Bedrock: accessKeyId/region/sessionToken)</label><input class="input" id="prExtra" placeholder="{&quot;apiVersion&quot;:&quot;2024-10-21&quot;}"></div><button class="btn primary" id="prSave">Save encrypted connection</button>');
   const prName=byId('prName'),prType=byId('prType'),prEndpoint=byId('prEndpoint'),prKey=byId('prKey'),prExtra=byId('prExtra'),prSave=byId('prSave');
   prSave.onclick=async()=>{try{let extra={};if(prExtra.value.trim())extra=JSON.parse(prExtra.value);await api('/api/ops/providers',{method:'POST',body:JSON.stringify({name:prName.value,provider:prType.value,endpointUrl:prEndpoint.value||null,apiKey:prKey.value,extra})});closeModal();await loadProviders();await loadModels()}catch(e){alert(e.message)}};
 }
@@ -230,7 +262,7 @@ async function loadModels(){
   }catch(e){modelsBox.textContent=e.message}
 }
 function editModel(alias,m){
-  const providers=['workers-ai','mkety-managed','openai','anthropic','gemini','azure-openai','openai-compatible'];
+  const providers=['workers-ai','mkety-managed','openai','anthropic','gemini','vertex','cloudflare-ai','bedrock','azure-openai','openai-compatible'];
   openModal('<h2>'+esc(alias)+'</h2><div class="two"><div class="field"><label>Provider</label><select class="input" id="mProvider">'+providers.map(p=>'<option '+(p===m.provider?'selected':'')+'>'+p+'</option>').join('')+'</select></div><div class="field"><label>Provider connection</label><select class="input" id="mConnection">'+providerOptions(m.provider_connection_id,m.provider)+'</select></div><div class="field"><label>Provider model</label><input class="input" id="mModel" value="'+esc(m.provider_model||'')+'"></div><div class="field"><label>Fallback provider</label><select class="input" id="mFallbackProvider"><option value="">None</option>'+providers.map(p=>'<option '+(p===m.fallback_provider?'selected':'')+'>'+p+'</option>').join('')+'</select></div><div class="field"><label>Fallback connection</label><select class="input" id="mFallbackConnection">'+providerOptions(m.fallback_provider_connection_id,m.fallback_provider)+'</select></div><div class="field"><label>Fallback model</label><input class="input" id="mFallbackModel" value="'+esc(m.fallback_model||'')+'"></div></div><h3>Provider cost snapshot (USD micros)</h3><div class="two"><div class="field"><label>Input / million</label><input class="input" id="mCostInput" type="number" value="'+esc(m.provider_input_cost_micros_per_million||0)+'"></div><div class="field"><label>Output / million</label><input class="input" id="mCostOutput" type="number" value="'+esc(m.provider_output_cost_micros_per_million||0)+'"></div><div class="field"><label>Image</label><input class="input" id="mCostImage" type="number" value="'+esc(m.provider_image_cost_micros||0)+'"></div><div class="field"><label>Audio / minute</label><input class="input" id="mCostAudio" type="number" value="'+esc(m.provider_audio_cost_micros_per_minute||0)+'"></div></div><h3>Base credits (100% multiplier)</h3><div class="two"><div class="field"><label>Input / million</label><input class="input" id="mInput" type="number" value="'+esc(m.input_credits_per_million||0)+'"></div><div class="field"><label>Output / million</label><input class="input" id="mOutput" type="number" value="'+esc(m.output_credits_per_million||0)+'"></div><div class="field"><label>Image</label><input class="input" id="mImage" type="number" value="'+esc(m.image_credits||0)+'"></div><div class="field"><label>Audio / minute</label><input class="input" id="mAudio" type="number" value="'+esc(m.audio_credits_per_minute||0)+'"></div></div><div class="row"><button class="btn" id="mGenerate">Generate from provider cost</button><button class="btn primary" id="mSave">Publish rate version</button></div>');
   const mProvider=byId('mProvider'),mConnection=byId('mConnection'),mModel=byId('mModel'),
     mFallbackProvider=byId('mFallbackProvider'),mFallbackConnection=byId('mFallbackConnection'),mFallbackModel=byId('mFallbackModel'),

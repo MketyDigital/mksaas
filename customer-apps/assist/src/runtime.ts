@@ -41,6 +41,46 @@ export async function handleRuntimeApi(
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
 
+  if (url.pathname === "/api/keys" && request.method === "GET") {
+    requireAdmin(session);
+    const rows = await env.DB.prepare(
+      `SELECT k.id,k.name,k.token_prefix,k.status,k.assistant_id,k.created_at,k.last_used_at,k.expires_at,
+              a.name AS assistant_name
+       FROM customer_api_keys k
+       LEFT JOIN assistants a ON a.id=k.assistant_id
+       WHERE k.customer_id=?
+       ORDER BY k.created_at DESC`,
+    ).bind(customer.customerId).all();
+    return json({ keys: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/keys" && request.method === "POST") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const name = required(body.name, "name").slice(0, 80);
+    const assistantId = body.assistantId ? required(body.assistantId, "assistantId") : null;
+    if (assistantId) await assertAssistant(env.DB, customer.customerId, assistantId);
+    const raw = `mka_${randomToken(32)}`;
+    const prefix = raw.slice(0, 12);
+    const now = unix();
+    const keyId = id("key");
+    const expiresAt = body.expiresAt ? Math.floor(new Date(String(body.expiresAt)).getTime() / 1000) : null;
+    if (expiresAt && (!Number.isFinite(expiresAt) || expiresAt <= now)) throw new ApiError(400, "invalid_expiry");
+    await env.DB.prepare(
+      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt).run();
+    return json({ id: keyId, name, key: raw, prefix, assistantId, expiresAt }, 201);
+  }
+
+  if (parts[0] === "api" && parts[1] === "keys" && parts[2] && request.method === "DELETE") {
+    requireAdmin(session);
+    const keyId = parts[2];
+    await env.DB.prepare(
+      "UPDATE customer_api_keys SET status='revoked',revoked_at=? WHERE id=? AND customer_id=? AND status='active'",
+    ).bind(unix(), keyId, customer.customerId).run();
+    return json({ ok: true });
+  }
+
   if (url.pathname === "/api/knowledge" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT kc.id,kc.name,COUNT(ki.id) AS items
@@ -698,6 +738,142 @@ async function runAssistant(input: {
   }
 }
 
+export async function handleApiKeyInference(
+  request: Request,
+  env: AssistEnv,
+  customer: Customer,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/v1/chat/completions") return null;
+  if (request.method !== "POST") return json({ error: { message: "method_not_allowed" } }, 405);
+
+  const auth = request.headers.get("authorization") || "";
+  const raw = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!raw.startsWith("mka_")) return json({ error: { message: "invalid_api_key" } }, 401);
+
+  const now = unix();
+  const key = await env.DB.prepare(
+    `SELECT * FROM customer_api_keys
+     WHERE token_hash=? AND customer_id=? AND status='active'
+       AND (expires_at IS NULL OR expires_at>?)
+     LIMIT 1`,
+  ).bind(await sha256Text(raw), customer.customerId, now).first<any>();
+  if (!key) return json({ error: { message: "invalid_api_key" } }, 401);
+
+  const body = await readJson(request);
+  const assistantId = String(key.assistant_id || body.assistant_id || "").trim();
+  if (!assistantId) return json({ error: { message: "assistant_id_required" } }, 400);
+  const assistant = await env.DB.prepare(
+    `SELECT a.*,fp.tools_enabled,fp.knowledge_enabled
+     FROM assistants a JOIN feature_policy fp ON fp.customer_id=a.customer_id
+     WHERE a.id=? AND a.customer_id=? AND a.status='active' LIMIT 1`,
+  ).bind(assistantId, customer.customerId).first<any>();
+  if (!assistant) return json({ error: { message: "assistant_not_found" } }, 404);
+
+  const alias = typeof body.model === "string" && /^mkety-[a-z0-9][a-z0-9-]{1,80}$/.test(body.model)
+    ? body.model
+    : assistant.model_alias;
+  const route = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  const rate = await env.DB.prepare(
+    "SELECT * FROM model_rates WHERE alias=? AND effective_at<=? ORDER BY version DESC LIMIT 1",
+  ).bind(alias, now).first<any>();
+  if (!route || !rate) return json({ error: { message: "model_unavailable" } }, 503);
+
+  const messages = Array.isArray(body.messages)
+    ? body.messages.slice(-40).map((m: any) => ({
+        role: ["system","assistant","user"].includes(String(m?.role)) ? String(m.role) : "user",
+        content: typeof m?.content === "string" ? m.content.slice(0, 30000) : JSON.stringify(m?.content ?? "").slice(0, 30000),
+      }))
+    : [];
+  if (!messages.length) return json({ error: { message: "messages_required" } }, 400);
+
+  const prompt = await env.DB.prepare(
+    "SELECT instructions FROM assistant_prompt_versions WHERE assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
+  ).bind(assistantId).first<any>();
+  const platformSystem = [
+    "You are an AI assistant configured by this business.",
+    "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
+    prompt?.instructions ? `BUSINESS INSTRUCTIONS:\n${prompt.instructions}` : "",
+  ].filter(Boolean).join("\n\n");
+  const mergedMessages = [
+    { role: "system", content: platformSystem },
+    ...messages,
+  ];
+  const inputChars = mergedMessages.reduce((n: number, m: any) => n + String(m.content || "").length, 0);
+  const estimatedInputTokens = Math.max(1, Math.ceil(inputChars / 4));
+  const maxOutputTokens = Math.max(1, Math.min(4096, parseInt(String(body.max_tokens || body.max_completion_tokens || 1024), 10) || 1024));
+
+  const commercial = await env.DB.prepare(
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
+            cp.hard_stop_enabled,c.billing_status,c.grace_until
+     FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id
+     WHERE cp.customer_id=? LIMIT 1`,
+  ).bind(customer.customerId).first<any>();
+  if (!commercial) return json({ error: { message: "commercial_policy_unavailable" } }, 503);
+  if (commercial.billing_status === "past_due" && commercial.grace_until && now > Number(commercial.grace_until)) {
+    return json({ error: { message: "billing_past_due" } }, 402);
+  }
+
+  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  const effectiveInputCredits = Math.ceil(Number(rate.input_credits_per_million || 0) * multiplierBps / 10000);
+  const effectiveOutputCredits = Math.ceil(Number(rate.output_credits_per_million || 0) * multiplierBps / 10000);
+  const reserveAmount = Math.max(1, Math.ceil(
+    (estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000,
+  ));
+  const estimatedProviderCostMicros = Math.max(0, Math.ceil(
+    (estimatedInputTokens * Number(rate.provider_input_cost_micros_per_million || 0)
+      + maxOutputTokens * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+  ));
+  if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
+    return json({ error: { message: "usage_limit_reached" } }, 402);
+  }
+
+  const reservation = await reserveCredits(env.DB, customer.customerId, assistantId, reserveAmount);
+  if (!reservation) return json({ error: { message: "insufficient_credits" } }, 402);
+
+  try {
+    const result = await invokeRoutedModel(env, route, {
+      messages: mergedMessages,
+      max_tokens: maxOutputTokens,
+      temperature: typeof body.temperature === "number" ? body.temperature : 0.4,
+    });
+    const text = extractAiText(result);
+    if (!text) throw new Error("empty model response");
+    const usage = extractUsage(result, estimatedInputTokens, text);
+    const actualCredits = Math.max(1, Math.ceil(
+      (usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000,
+    ));
+    const providerCostMicros = Math.max(0, Math.ceil(
+      (usage.input * Number(rate.provider_input_cost_micros_per_million || 0)
+        + usage.output * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+    ));
+    await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, actualCredits, {
+      modelAlias: alias,
+      provider: String(result?.__mketyProvider || route.provider),
+      providerModel: String(result?.__mketyProviderModel || route.provider_model),
+      conversationId: `api:${key.id}`,
+      inputUnits: usage.input,
+      outputUnits: usage.output,
+      providerCostMicros,
+      apiKeyId: key.id,
+    });
+    await env.DB.prepare("UPDATE customer_api_keys SET last_used_at=? WHERE id=?").bind(now, key.id).run();
+    return json({
+      id: `chatcmpl_${crypto.randomUUID().replace(/-/g, "")}`,
+      object: "chat.completion",
+      created: now,
+      model: alias,
+      choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
+      usage: { prompt_tokens: usage.input, completion_tokens: usage.output, total_tokens: usage.input + usage.output },
+      mkety: { credits_charged: actualCredits, assistant_id: assistantId },
+    });
+  } catch (error) {
+    await releaseReservation(env.DB, reservation.id, customer.customerId, reserveAmount);
+    console.error("Assist API inference failed", error);
+    return json({ error: { message: "inference_failed" } }, 502);
+  }
+}
+
 async function normalizeTelegramMessage(message: any, token: string, assistant: any, env: AssistEnv, conversationId: string) {
   const text = String(message.text || message.caption || "").trim();
   const mediaJson: any[] = [];
@@ -851,7 +1027,7 @@ async function settleReservation(
   assistantId: string,
   reserved: number,
   actual: number,
-  usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number; providerCostMicros: number },
+  usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number; providerCostMicros: number; apiKeyId?: string | null },
 ) {
   const now = unix();
   const refund = Math.max(0, reserved - actual);
@@ -864,8 +1040,8 @@ async function settleReservation(
     db.prepare("UPDATE credit_reservations SET status='settled',settled_credits=?,settled_at=? WHERE id=? AND status='open'")
       .bind(actual, now, reservationId),
     db.prepare(
-      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, actual, usage.providerCostMicros, now),
+      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, actual, usage.providerCostMicros, now, usage.apiKeyId ?? null),
     db.prepare(
       "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
     ).bind(id("pce"), customerId, usageId, usage.provider, usage.providerModel, usage.providerCostMicros, "USD", now),
@@ -928,6 +1104,65 @@ function annotateProviderResult(result: any, provider: string, model: string) {
     return { ...result, __mketyProvider: provider, __mketyProviderModel: model };
   }
   return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model };
+}
+
+function utf8(value: string | Uint8Array) {
+  return typeof value === "string" ? encoder.encode(value) : value;
+}
+
+async function digestSha256(value: string | Uint8Array) {
+  const data = utf8(value);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer));
+}
+
+function hex(bytes: Uint8Array) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256(key: string | Uint8Array, value: string) {
+  const data = utf8(key);
+  const imported = await crypto.subtle.importKey("raw", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", imported, encoder.encode(value)));
+}
+
+async function buildBedrockHeaders(input: {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  region: string;
+  host: string;
+  path: string;
+  body: string;
+}) {
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = hex(await digestSha256(input.body));
+  const pairs: Array<[string,string]> = [
+    ["content-type","application/json"],
+    ["host",input.host],
+    ["x-amz-content-sha256",payloadHash],
+    ["x-amz-date",amzDate],
+  ];
+  if (input.sessionToken) pairs.push(["x-amz-security-token",input.sessionToken]);
+  pairs.sort(([a],[b]) => a.localeCompare(b));
+  const canonicalHeaders = pairs.map(([k,v]) => `${k}:${v.trim()}\n`).join("");
+  const signedHeaders = pairs.map(([k]) => k).join(";");
+  const canonicalRequest = ["POST",input.path,"",canonicalHeaders,signedHeaders,payloadHash].join("\n");
+  const scope = `${dateStamp}/${input.region}/bedrock/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${hex(await digestSha256(canonicalRequest))}`;
+  const dateKey = await hmacSha256(`AWS4${input.secretAccessKey}`, dateStamp);
+  const regionKey = await hmacSha256(dateKey, input.region);
+  const serviceKey = await hmacSha256(regionKey, "bedrock");
+  const signingKey = await hmacSha256(serviceKey, "aws4_request");
+  const signature = hex(await hmacSha256(signingKey, stringToSign));
+  return {
+    authorization: `AWS4-HMAC-SHA256 Credential=${input.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    "content-type": "application/json",
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate,
+    ...(input.sessionToken ? { "x-amz-security-token": input.sessionToken } : {}),
+  };
 }
 
 async function invokeProviderModel(env: AssistEnv, route: any, input: any): Promise<any> {
@@ -1031,6 +1266,96 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
     const payload = await response.json<any>();
     if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
     return payload;
+  }
+
+  if (provider === "vertex") {
+    const projectId = String(extra.projectId || "").trim();
+    const location = String(extra.location || "global").trim();
+    if (!projectId) throw new Error("Vertex projectId is missing.");
+    const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const contents = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }],
+    }));
+    const response = await fetch(
+      `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
+          contents,
+          generationConfig: { maxOutputTokens: maxTokens, temperature },
+        }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return {
+      response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
+      usage: {
+        input_tokens: payload.usageMetadata?.promptTokenCount,
+        output_tokens: payload.usageMetadata?.candidatesTokenCount,
+      },
+      raw: payload,
+    };
+  }
+
+  if (provider === "cloudflare-ai") {
+    const accountId = String(extra.accountId || "").trim();
+    if (!accountId) throw new Error("Cloudflare accountId is missing.");
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok || payload?.success === false) {
+      throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    }
+    return payload?.result ?? payload;
+  }
+
+  if (provider === "bedrock") {
+    const accessKeyId = String(extra.accessKeyId || "").trim();
+    const region = String(extra.region || "us-east-1").trim();
+    const sessionToken = String(extra.sessionToken || "").trim();
+    if (!accessKeyId) throw new Error("Bedrock accessKeyId is missing.");
+    const host = `bedrock-runtime.${region}.amazonaws.com`;
+    const requestPath = `/model/${encodeURIComponent(model)}/converse`;
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const body = JSON.stringify({
+      system: systemText ? [{ text: systemText }] : undefined,
+      messages: messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: [{ text: String(m.content || "") }],
+      })),
+      inferenceConfig: { maxTokens, temperature },
+    });
+    const headers = await buildBedrockHeaders({
+      accessKeyId,
+      secretAccessKey: apiKey,
+      sessionToken: sessionToken || undefined,
+      region,
+      host,
+      path: requestPath,
+      body,
+    });
+    const response = await fetch(`https://${host}${requestPath}`, { method: "POST", headers, body });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return {
+      response: payload.output?.message?.content?.map((p: any) => p.text || "").join("") || "",
+      usage: {
+        input_tokens: payload.usage?.inputTokens,
+        output_tokens: payload.usage?.outputTokens,
+      },
+      raw: payload,
+    };
   }
 
   throw new Error(`Unsupported provider: ${provider}`);

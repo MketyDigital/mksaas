@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 
@@ -92,6 +92,11 @@ export default {
 
       if (url.pathname.startsWith("/api/auth/")) {
         return handleAuth(request, env, customer);
+      }
+
+      if (url.pathname.startsWith("/v1/")) {
+        const apiResponse = await handleApiKeyInference(request, env, customer);
+        if (apiResponse) return apiResponse;
       }
 
       if (url.pathname === "/setup" && request.method === "GET") {
@@ -504,7 +509,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/providers" && request.method === "POST") {
     const body = await readJson(request);
     const provider = requiredString(body.provider, "provider");
-    if (!["openai","anthropic","gemini","azure-openai","openai-compatible"].includes(provider)) {
+    if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
     const apiKey = requiredString(body.apiKey, "apiKey");

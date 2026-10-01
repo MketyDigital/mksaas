@@ -13,8 +13,9 @@ const compiled = ts.transpileModule(source, {
 
 const commonJsModule = { exports: {} };
 vm.runInNewContext(compiled, { module: commonJsModule, exports: commonJsModule.exports, require: () => { throw new Error("Unexpected require"); } });
-const { renderOperatorPortal } = commonJsModule.exports;
+const { renderCustomerPortal, renderOperatorPortal } = commonJsModule.exports;
 if (typeof renderOperatorPortal !== "function") throw new Error("renderOperatorPortal export missing");
+if (typeof renderCustomerPortal !== "function") throw new Error("renderCustomerPortal export missing");
 
 const html = renderOperatorPortal([]);
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -96,3 +97,72 @@ if (typeof document.getElementById("prSave").onclick !== "function") {
 }
 
 console.log("Operator browser script parses, initializes, and binds primary controls.");
+
+
+const customerHtml = renderCustomerPortal({
+  customerName: "Browser Test",
+  hostname: "browser-test.assist.mkety.app",
+  email: "owner@example.com",
+  role: "owner",
+});
+const customerMatch = customerHtml.match(/<script>([\s\S]*?)<\/script>/);
+if (!customerMatch) throw new Error("Customer page script not found");
+const customerScript = customerMatch[1];
+new Function(customerScript);
+
+const customerIds = ["brand","who","host","nav","logout","modal","dialog","toast","content","topTitle"];
+const customerElements = new Map(customerIds.map((id) => [id, new FakeElement(id)]));
+const customerDocument = {
+  body: new FakeElement("body"),
+  documentElement: { style: { setProperty() {} } },
+  getElementById(id) {
+    if (!customerElements.has(id)) customerElements.set(id, new FakeElement(id));
+    return customerElements.get(id);
+  },
+  querySelectorAll(selector) {
+    return selector === "[id]" ? [...customerElements.values()] : [];
+  },
+};
+const customerFetch = async (path) => ({
+  ok: true,
+  async json() {
+    const p = String(path);
+    if (p.includes("/assistants")) return { assistants: [] };
+    if (p.includes("/knowledge")) return { collections: [] };
+    if (p.includes("/usage")) return { credits: { balance: 0 }, plan: {} };
+    if (p.includes("/conversations")) return { conversations: [] };
+    if (p.includes("/handoffs")) return { handoffs: [] };
+    if (p.includes("/reminders")) return { reminders: [] };
+    if (p.includes("/keys")) return { keys: [] };
+    return {};
+  },
+});
+const oldDocument = globalThis.document;
+const oldWindow = globalThis.window;
+const oldFetch = globalThis.fetch;
+const oldLocation = globalThis.location;
+const oldAlert = globalThis.alert;
+const oldPrompt = globalThis.prompt;
+const oldConfirm = globalThis.confirm;
+try {
+  globalThis.document = customerDocument;
+  globalThis.window = globalThis;
+  globalThis.fetch = customerFetch;
+  globalThis.location = { reload() {}, href: "" };
+  globalThis.alert = () => {};
+  globalThis.prompt = () => null;
+  globalThis.confirm = () => true;
+  new Function(customerScript)();
+  if (typeof customerDocument.getElementById("nav").onclick !== "function") throw new Error("Customer navigation handler was not bound");
+  if (typeof customerDocument.getElementById("logout").onclick !== "function") throw new Error("Customer logout handler was not bound");
+  if (!customerHtml.includes("API Access")) throw new Error("Customer API Access section missing");
+} finally {
+  globalThis.document = oldDocument;
+  globalThis.window = oldWindow;
+  globalThis.fetch = oldFetch;
+  globalThis.location = oldLocation;
+  globalThis.alert = oldAlert;
+  globalThis.prompt = oldPrompt;
+  globalThis.confirm = oldConfirm;
+}
+console.log("Customer browser script parses, initializes, and exposes API Access.");
