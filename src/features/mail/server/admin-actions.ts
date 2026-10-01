@@ -221,7 +221,7 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
 export async function createMailPlanVersion(...args: Parameters<typeof createMailPlanVersionImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    path: `/ops/${tenantSlug}/platform-control/mail-operations`,
     action: 'createMailPlanVersion',
     work: () => createMailPlanVersionImpl(...args),
   });
@@ -230,7 +230,7 @@ export async function createMailPlanVersion(...args: Parameters<typeof createMai
 export async function reconcileMailCatalog(...args: Parameters<typeof reconcileMailCatalogImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    path: `/ops/${tenantSlug}/platform-control/mail-operations`,
     action: 'reconcileMailCatalog',
     work: () => reconcileMailCatalogImpl(...args),
   });
@@ -239,7 +239,7 @@ export async function reconcileMailCatalog(...args: Parameters<typeof reconcileM
 export async function updateMailWorkspaceOperations(...args: Parameters<typeof updateMailWorkspaceOperationsImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    path: `/ops/${tenantSlug}/platform-control/mail-operations`,
     action: 'updateMailWorkspaceOperations',
     work: () => updateMailWorkspaceOperationsImpl(...args),
   });
@@ -248,7 +248,7 @@ export async function updateMailWorkspaceOperations(...args: Parameters<typeof u
 export async function updateMailDomainOperations(...args: Parameters<typeof updateMailDomainOperationsImpl>) {
   const tenantSlug = args[0];
   return runPlatformControlMutation({
-    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    path: `/ops/${tenantSlug}/platform-control/mail-operations`,
     action: 'updateMailDomainOperations',
     work: () => updateMailDomainOperationsImpl(...args),
   });
