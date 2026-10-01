@@ -95,13 +95,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/" && request.method === "GET") {
-    const rows = await env.DB.prepare(
-      `SELECT c.id,c.slug,c.name,c.status,ca.balance,
-       (SELECT hostname FROM customer_domains d WHERE d.customer_id=c.id AND d.is_primary=1 LIMIT 1) AS primary_hostname
-       FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id
-       ORDER BY c.created_at DESC LIMIT 100`,
-    ).all();
-    return opsPage(rows.results ?? []);
+    // The HTML shell contains no customer data. Operator data is fetched only
+    // after the browser supplies the Operator bearer token (and Cloudflare
+    // Access should additionally guard this hostname in production).
+    return opsPage([]);
   }
 
   if (!isOpsAuthorized(request, env)) return json({ error: "not_found" }, 404);
@@ -153,7 +150,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       customerId,
       hostedHostname,
       customDomain,
-      setupUrl: `https://${customHostname || hostedHostname}/setup?token=${encodeURIComponent(setupToken)}`,
+      setupUrl: `https://${hostedHostname}/setup?token=${encodeURIComponent(setupToken)}`,
     }, 201);
   }
 
