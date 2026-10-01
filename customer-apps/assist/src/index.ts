@@ -3,6 +3,7 @@ import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
+import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 
 interface Env {
   DB: D1Database;
@@ -91,6 +92,10 @@ export default {
 
       const customer = await resolveCustomerByHost(env.DB, host, env.HOSTED_SUFFIX);
       if (!customer) return brandedNotFound(host);
+
+      if (url.pathname === "/.well-known/mkety-assist-domain" && request.method === "GET") {
+        return json({ service: "mkety-assist", hostname: host, owner: customer.customerSlug });
+      }
 
       if (url.pathname.startsWith("/api/auth/")) {
         return handleAuth(request, env, customer);
@@ -747,25 +752,61 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/ops/domains/status" && request.method === "GET") {
     const hostname = normalizeHostname(requiredString(url.searchParams.get("hostname"), "hostname"));
-    const local = await env.DB.prepare("SELECT provider_hostname_id FROM customer_domains WHERE hostname=? AND kind='custom' LIMIT 1")
-      .bind(hostname).first<any>();
+    const local = await env.DB.prepare(
+      `SELECT d.provider_hostname_id,d.customer_id,c.slug
+       FROM customer_domains d JOIN customers c ON c.id=d.customer_id
+       WHERE d.hostname=? AND d.kind='custom' LIMIT 1`,
+    ).bind(hostname).first<any>();
     if (!local?.provider_hostname_id) return json({ error: "domain_not_found" }, 404);
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames/${local.provider_hostname_id}`,
-      { headers: { authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}` } },
-    );
-    const data: any = await response.json();
-    if (!response.ok || !data.success) return json({ error: "cloudflare_lookup_failed", details: data.errors ?? [] }, 502);
-    const status = data.result.status === "active" ? "active" : "pending";
-    const sslStatus = data.result.ssl?.status ?? null;
-    await env.DB.prepare("UPDATE customer_domains SET status=?,ssl_status=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE hostname=?")
-      .bind(status, sslStatus, status, unix(), hostname).run();
+
+    let providerStatus = "pending";
+    let sslStatus: string | null = null;
+    try {
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames/${local.provider_hostname_id}`,
+        { headers: { authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}` } },
+      );
+      const data: any = await response.json();
+      if (response.ok && data.success) {
+        providerStatus = data.result.status === "active" ? "active" : "pending";
+        sslStatus = data.result.ssl?.status ?? null;
+      }
+    } catch {
+      providerStatus = "pending";
+    }
+
+    const evidence = await verifyDomainEvidence({
+      hostname,
+      expectedTarget: env.PORTAL_CNAME_TARGET,
+      expectedOwner: String(local.slug),
+      providerStatus,
+    });
+    const projected = projectDomainStatus(evidence);
+    await env.DB.prepare(
+      `UPDATE customer_domains
+       SET status=?,ssl_status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,provider_status=?,
+           verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
+       WHERE hostname=? AND customer_id=?`,
+    ).bind(
+      projected.status,
+      sslStatus,
+      evidence.dnsOk ? 1 : 0,
+      evidence.tlsOk ? 1 : 0,
+      evidence.ownershipOk ? 1 : 0,
+      evidence.checkedAt,
+      providerStatus,
+      projected.status,
+      evidence.checkedAt,
+      hostname,
+      local.customer_id,
+    ).run();
+
     const stored = await env.DB.prepare(
       "SELECT validation_json FROM customer_domains WHERE hostname=? AND kind='custom' LIMIT 1",
     ).bind(hostname).first<any>();
     return json({
       hostname,
-      status,
+      ...projected,
       sslStatus,
       cnameTarget: env.PORTAL_CNAME_TARGET,
       routingOrigin: env.ROUTING_ORIGIN,
