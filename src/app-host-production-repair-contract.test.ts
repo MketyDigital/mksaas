@@ -14,7 +14,8 @@ describe('app.mkety.com production repair workflow contract', () => {
     if (source.includes('push:')) {
       expect(source).toContain('branches:');
       expect(source).toContain('- main');
-      expect(source).toContain("'.github/workflows/mkety-app-host-production-repair.yml'");
+      expect(source).toContain("contains(github.event.head_commit.message, '[app-host-production]')");
+      expect(source).toContain("github.event_name == 'workflow_dispatch'");
       expect(source).toContain('One-time app-host promotion is restricted to main.');
     }
     expect(source).toContain('REPAIR APP.MKETY.COM');
