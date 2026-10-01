@@ -45,7 +45,7 @@ export default async function AiWorkspaceProvidersPage({
       workspace={getProjectWorkspaceByKey('ai')}
     >
       <section className="rounded-2xl border bg-card p-5 md:p-6">
-        <Link className="text-sm font-semibold text-primary" href={`/t/${tenantSlug}/projects/${projectSlug}/ai`}>
+        <Link className="text-sm font-semibold text-primary" href={`/app/${tenantSlug}/projects/${projectSlug}/ai`}>
           ← AI Workspace
         </Link>
         <h2 className="mt-3 text-2xl font-semibold">Providers & BYOK</h2>
