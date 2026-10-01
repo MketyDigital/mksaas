@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mkety-assist",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": { "enabled": true },
+  "ai": { "binding": "AI" },
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "mkety-assist-media" }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "HOSTED_SUFFIX": "assist.mkety.app",
+    "PORTAL_CNAME_TARGET": "mkety-assist.mkety.app",
+    "ROUTING_ORIGIN": "assist-origin.mkety.app",
+    "APP_WORKER_NAME": "mkety-assist",
+    "OPS_HOST": "assist-ops.mkety.com",
+    "SESSION_COOKIE_NAME": "__Host-mkety_assist_session",
+    "SESSION_TTL_SECONDS": "2592000",
+    "RECOVERY_TTL_SECONDS": "600"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mkety-assist-prod",
+      "database_id": "__MKETY_ASSIST_D1_DATABASE_ID__",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "routes": [
+    { "pattern": "*.assist.mkety.app/*", "zone_name": "mkety.app" },
+    { "pattern": "mkety-assist.mkety.app/*", "zone_name": "mkety.app" },
+    { "pattern": "assist-origin.mkety.app/*", "zone_name": "mkety.app" },
+    { "pattern": "assist-ops.mkety.com", "custom_domain": true }
+  ]
+}
