@@ -664,7 +664,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       "providerImageCostMicros","providerAudioCostMicrosPerMinute",
     ];
     const creditFields = ["inputCreditsPerMillion","outputCreditsPerMillion","imageCredits","audioCreditsPerMinute"];
-    if (costFields.concat(creditFields).some((key) => body[key] !== undefined) || body.generateRate === true) {
+    if (!targetCustomerId && (costFields.concat(creditFields).some((key) => body[key] !== undefined) || body.generateRate === true)) {
       const previous = await env.DB.prepare(
         "SELECT * FROM model_rates WHERE alias=? ORDER BY version DESC LIMIT 1",
       ).bind(alias).first<any>();
