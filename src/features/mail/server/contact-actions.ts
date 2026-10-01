@@ -34,33 +34,33 @@ export async function addMailContact(tenantSlug:string,formData:FormData){
   const name=String(formData.get('name')||'').trim().slice(0,255);
   const company=String(formData.get('company')||'').trim().slice(0,255);
   const tags=String(formData.get('tags')||'').split(',').map((v)=>v.trim()).filter(Boolean).slice(0,20);
-  if(!validEmail(email)) redirect(`/t/${tenantSlug}/mail/contacts?error=email`);
+  if(!validEmail(email)) redirect(`/app/${tenantSlug}/mail/contacts?error=email`);
   await db.insert(mailContacts).values({
     tenantId:tenant.id,email,name:name||null,company:company||null,tags,source:'manual',status:'active',
   }).onConflictDoUpdate({
     target:[mailContacts.tenantId,mailContacts.email],
     set:{name:name||null,company:company||null,tags,status:'active',updatedAt:new Date()},
   });
-  revalidatePath(`/t/${tenantSlug}/mail/contacts`);
-  redirect(`/t/${tenantSlug}/mail/contacts?added=1`);
+  revalidatePath(`/app/${tenantSlug}/mail/contacts`);
+  redirect(`/app/${tenantSlug}/mail/contacts?added=1`);
 }
 
 export async function importMailContactsCsv(tenantSlug:string,formData:FormData){
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const file=formData.get('file');
   if(!(file instanceof File)||file.size<=0||file.size>2_000_000){
-    redirect(`/t/${tenantSlug}/mail/contacts?error=file`);
+    redirect(`/app/${tenantSlug}/mail/contacts?error=file`);
   }
   const text=await file.text();
   const lines=text.split(/\r?\n/).map((v)=>v.trim()).filter(Boolean);
-  if(!lines.length) redirect(`/t/${tenantSlug}/mail/contacts?error=file`);
+  if(!lines.length) redirect(`/app/${tenantSlug}/mail/contacts?error=file`);
 
   const header=parseCsvLine(lines[0]).map((v)=>v.toLowerCase());
   const emailIndex=header.findIndex((v)=>['email','email address','email_address'].includes(v));
   const nameIndex=header.findIndex((v)=>['name','full name','full_name'].includes(v));
   const companyIndex=header.findIndex((v)=>['company','business','organization'].includes(v));
   const tagsIndex=header.findIndex((v)=>['tags','tag'].includes(v));
-  if(emailIndex<0) redirect(`/t/${tenantSlug}/mail/contacts?error=columns`);
+  if(emailIndex<0) redirect(`/app/${tenantSlug}/mail/contacts?error=columns`);
 
   const records=new Map<string,{email:string;name:string|null;company:string|null;tags:string[]}>();
   for(const line of lines.slice(1,3001)){
@@ -78,13 +78,13 @@ export async function importMailContactsCsv(tenantSlug:string,formData:FormData)
   if(values.length){
     await db.insert(mailContacts).values(values).onConflictDoNothing({target:[mailContacts.tenantId,mailContacts.email]});
   }
-  revalidatePath(`/t/${tenantSlug}/mail/contacts`);
-  redirect(`/t/${tenantSlug}/mail/contacts?imported=${values.length}`);
+  revalidatePath(`/app/${tenantSlug}/mail/contacts`);
+  redirect(`/app/${tenantSlug}/mail/contacts?imported=${values.length}`);
 }
 
 export async function archiveMailContact(tenantSlug:string,formData:FormData){
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const id=String(formData.get('id')||'');
   await db.update(mailContacts).set({status:'archived',updatedAt:new Date()}).where(and(eq(mailContacts.id,id),eq(mailContacts.tenantId,tenant.id)));
-  revalidatePath(`/t/${tenantSlug}/mail/contacts`);
+  revalidatePath(`/app/${tenantSlug}/mail/contacts`);
 }
