@@ -617,7 +617,7 @@ async function runAssistant(input: {
       max_tokens: maxOutputTokens,
       temperature: 0.4,
     };
-    let result = await invokeModel(env, route, aiInput);
+    let result = await invokeRoutedModel(env, route, aiInput);
     let text = extractAiText(result);
 
     const toolCall = parseToolCall(text, tools.results ?? []);
@@ -625,7 +625,7 @@ async function runAssistant(input: {
       const tool = (tools.results ?? []).find((t: any) => t.name === toolCall.tool);
       if (tool) {
         const toolResult = await invokeTool(env, tool, toolCall.arguments);
-        result = await invokeModel(env, route, {
+        result = await invokeRoutedModel(env, route, {
           messages: [
             ...aiInput.messages,
             { role: "assistant", content: text },
@@ -650,8 +650,8 @@ async function runAssistant(input: {
     ));
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
       modelAlias: assistant.model_alias,
-      provider: route.provider,
-      providerModel: route.provider_model,
+      provider: String(result?.__mketyProvider || route.provider),
+      providerModel: String(result?.__mketyProviderModel || route.provider_model),
       conversationId,
       inputUnits: usage.input,
       outputUnits: usage.output,
@@ -866,7 +866,38 @@ async function providerBudgetAllows(
   return parseFloat(String(spent?.spent || 0)) + estimatedCostMicros <= usableProviderMicros;
 }
 
-async function invokeModel(env: AssistEnv, route: any, input: any): Promise<any> {
+async function invokeRoutedModel(env: AssistEnv, route: any, input: any): Promise<any> {
+  try {
+    const result = await invokeProviderModel(env, {
+      provider: route.provider,
+      provider_model: route.provider_model,
+      provider_connection_id: route.provider_connection_id,
+    }, input);
+    return annotateProviderResult(result, String(route.provider), String(route.provider_model));
+  } catch (primaryError) {
+    if (!route.fallback_provider || !route.fallback_model) throw primaryError;
+    console.warn("primary model route failed; using configured fallback", {
+      alias: route.alias,
+      provider: route.provider,
+      fallbackProvider: route.fallback_provider,
+    });
+    const result = await invokeProviderModel(env, {
+      provider: route.fallback_provider,
+      provider_model: route.fallback_model,
+      provider_connection_id: route.fallback_provider_connection_id,
+    }, input);
+    return annotateProviderResult(result, String(route.fallback_provider), String(route.fallback_model));
+  }
+}
+
+function annotateProviderResult(result: any, provider: string, model: string) {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    return { ...result, __mketyProvider: provider, __mketyProviderModel: model };
+  }
+  return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model };
+}
+
+async function invokeProviderModel(env: AssistEnv, route: any, input: any): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
     return env.AI.run(String(route.provider_model), input);
