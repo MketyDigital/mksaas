@@ -29,6 +29,8 @@ type CustomerContext = {
   customerSlug: string;
   customerName: string;
   hostname: string;
+  brandColor?: string | null;
+  logoUrl?: string | null;
 };
 
 type Session = {
@@ -494,7 +496,94 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const user = await env.DB.prepare(
       "SELECT email,display_name,telegram_user_id,telegram_username FROM users WHERE id=?",
     ).bind(session.userId).first();
-    return json({ customer, session, user });
+    const features = await env.DB.prepare("SELECT * FROM feature_policy WHERE customer_id=?").bind(customer.customerId).first();
+    return json({ customer, session, user, features });
+  }
+
+  if (url.pathname === "/api/settings" && request.method === "GET") {
+    const row = await env.DB.prepare("SELECT id,name,slug,logo_url,brand_color,status FROM customers WHERE id=?")
+      .bind(customer.customerId).first();
+    return json({ customer: row });
+  }
+
+  if (url.pathname === "/api/settings" && request.method === "PATCH") {
+    if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
+    const body = await readJson(request);
+    const color = body.brandColor === null || body.brandColor === "" ? null : String(body.brandColor || "").trim();
+    if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) return json({ error: "invalid_brand_color" }, 400);
+    const logoUrl = body.logoUrl === null || body.logoUrl === "" ? null : String(body.logoUrl || "").trim();
+    if (logoUrl) {
+      const parsed = new URL(logoUrl);
+      if (parsed.protocol !== "https:") return json({ error: "logo_url_must_be_https" }, 400);
+    }
+    await env.DB.prepare(
+      "UPDATE customers SET logo_url=?,brand_color=?,updated_at=? WHERE id=?",
+    ).bind(logoUrl, color, unix(), customer.customerId).run();
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?,?)",
+    ).bind(id("aud"), "customer_user", session.userId, customer.customerId, "branding.updated", "customer", customer.customerId, unix()).run();
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/team" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      `SELECT u.id,u.email,u.display_name,u.telegram_username,u.status,cu.role,cu.created_at
+       FROM customer_users cu JOIN users u ON u.id=cu.user_id
+       WHERE cu.customer_id=? ORDER BY cu.created_at ASC`,
+    ).bind(customer.customerId).all();
+    return json({ members: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/team" && request.method === "POST") {
+    if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
+    const body = await readJson(request);
+    const email = normalizeEmail(requiredString(body.email, "email"));
+    const role = String(body.role || "member");
+    if (!["admin","member"].includes(role) && !(session.role === "owner" && role === "owner")) {
+      return json({ error: "invalid_role" }, 400);
+    }
+    const now = unix();
+    let user = await env.DB.prepare("SELECT id,password_hash FROM users WHERE email=? LIMIT 1").bind(email).first<any>();
+    let created = false;
+    if (!user) {
+      user = { id: id("usr"), password_hash: null };
+      await env.DB.prepare("INSERT INTO users (id,email,status,created_at,updated_at) VALUES (?,?,?,?,?)")
+        .bind(user.id, email, "active", now, now).run();
+      created = true;
+    }
+    await env.DB.prepare(
+      "INSERT INTO customer_users (customer_id,user_id,role,created_at) VALUES (?,?,?,?) ON CONFLICT(customer_id,user_id) DO UPDATE SET role=excluded.role",
+    ).bind(customer.customerId, user.id, role, now).run();
+
+    let setupUrl: string | null = null;
+    if (!user.password_hash) {
+      const token = randomToken(32);
+      await env.DB.prepare(
+        "INSERT INTO setup_tokens (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)",
+      ).bind(id("set"), customer.customerId, user.id, await sha256(token), now + 86400, now).run();
+      setupUrl = `https://${customer.hostname}/setup?token=${encodeURIComponent(token)}`;
+    }
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    ).bind(id("aud"), "customer_user", session.userId, customer.customerId, created ? "team.invited" : "team.added", "user", user.id, JSON.stringify({ email, role }), now).run();
+    return json({ ok: true, userId: user.id, setupUrl }, 201);
+  }
+
+  if (url.pathname.startsWith("/api/team/") && request.method === "PATCH") {
+    if (session.role !== "owner") return json({ error: "owner_required" }, 403);
+    const userId = decodeURIComponent(url.pathname.slice("/api/team/".length));
+    if (userId === session.userId) return json({ error: "cannot_change_own_membership_here" }, 400);
+    const body = await readJson(request);
+    if (body.remove === true) {
+      await env.DB.prepare("DELETE FROM customer_users WHERE customer_id=? AND user_id=?").bind(customer.customerId, userId).run();
+      await env.DB.prepare("DELETE FROM sessions WHERE customer_id=? AND user_id=?").bind(customer.customerId, userId).run();
+      return json({ ok: true });
+    }
+    const role = String(body.role || "");
+    if (!["owner","admin","member"].includes(role)) return json({ error: "invalid_role" }, 400);
+    await env.DB.prepare("UPDATE customer_users SET role=? WHERE customer_id=? AND user_id=?")
+      .bind(role, customer.customerId, userId).run();
+    return json({ ok: true });
   }
 
   if (url.pathname === "/api/assistants" && request.method === "GET") {
@@ -694,15 +783,15 @@ async function resolveCustomerByHost(db: D1Database, host: string, hostedSuffix:
      FROM customer_domains d JOIN customers c ON c.id=d.customer_id
      WHERE d.hostname=? AND d.status='active' AND c.status='active' LIMIT 1`,
   ).bind(host).first<any>();
-  if (direct) return { customerId: direct.customer_id, customerSlug: direct.slug, customerName: direct.name, hostname: direct.hostname };
+  if (direct) return { customerId: direct.customer_id, customerSlug: direct.slug, customerName: direct.name, hostname: direct.hostname, brandColor: direct.brand_color, logoUrl: direct.logo_url };
 
   if (host.endsWith(`.${hostedSuffix}`)) {
     const slug = host.slice(0, -1 * (`.${hostedSuffix}`.length));
     if (slug && !slug.includes(".")) {
       const row = await db.prepare(
-        "SELECT id,slug,name FROM customers WHERE slug=? AND status='active' LIMIT 1",
+        "SELECT id,slug,name,brand_color,logo_url FROM customers WHERE slug=? AND status='active' LIMIT 1",
       ).bind(slug).first<any>();
-      if (row) return { customerId: row.id, customerSlug: row.slug, customerName: row.name, hostname: host };
+      if (row) return { customerId: row.id, customerSlug: row.slug, customerName: row.name, hostname: host, brandColor: row.brand_color, logoUrl: row.logo_url };
     }
   }
   return null;
@@ -920,6 +1009,8 @@ function dashboardPage(customer: CustomerContext, session: Session) {
     hostname: customer.hostname,
     email: session.email,
     role: session.role,
+    brandColor: customer.brandColor ?? null,
+    logoUrl: customer.logoUrl ?? null,
   }));
 }
 
