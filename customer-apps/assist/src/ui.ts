@@ -98,7 +98,7 @@ function render_settings(){return '<h1 class="title">Settings</h1><p class="sub"
 '<div class="two"><div class="card"><h3>Branding</h3><div class="field"><label>Brand color</label><input class="input" id="brandColor" placeholder="#7c5cff" value="'+esc(APP.brandColor||'')+'"></div><div class="field"><label>Logo URL (HTTPS)</label><input class="input" id="logoUrl" placeholder="https://..." value="'+esc(APP.logoUrl||'')+'"></div><button class="btn primary" data-action="save-branding">Save branding</button></div>'+
 '<div class="card"><h3>Security</h3><p class="muted">Change your password and revoke other signed-in sessions.</p><button class="btn primary" data-action="change-password">Change password</button> <button class="btn" data-action="manage-sessions">Manage sessions</button><h3 style="margin-top:20px">Telegram recovery</h3><p class="muted">Connect Telegram while signed in so it can receive recovery codes.</p><button class="btn" data-action="link-telegram">Connect Telegram</button></div></div>'+
 '<div class="card" style="margin-top:16px"><h3>Owner alerts</h3><p class="muted">Telegram alerts use only a recovery identity securely linked to the same assistant.</p><div id="notificationPrefsBox"><div class="empty">Loading alert preferences…</div></div></div>'+
-'<div class="card" style="margin-top:16px"><div class="spread"><div><h3 style="margin:0">Portal domains</h3><p class="muted">Public DNS, HTTPS and Assist ownership determine usability; provider provisioning status remains diagnostic.</p></div><button class="btn" data-action="refresh-domains">Refresh</button></div><div id="customerDomainsBox"><div class="empty">Loading domains…</div></div></div>'}
+'<div class="card" style="margin-top:16px"><div class="spread"><div><h3 style="margin:0">Portal domains</h3><p class="muted">Add your own hostname, point one CNAME to Mkety Assist, then verify. Public DNS, HTTPS and Assist ownership determine usability.</p></div><button class="btn" data-action="refresh-domains">Refresh</button></div><div class="two" style="margin:12px 0"><input class="input" id="customerNewDomain" placeholder="ai.yourcompany.com"><button class="btn primary" data-action="add-customer-domain">Add custom domain</button></div><div id="customerDomainsBox"><div class="empty">Loading domains…</div></div></div>'}
 function bindSection(){
  content.querySelectorAll('[data-action="new-assistant"]').forEach(b=>b.onclick=newAssistant);
  content.querySelectorAll('[data-edit-assistant]').forEach(b=>b.onclick=()=>editAssistant(b.dataset.editAssistant));
@@ -119,6 +119,7 @@ function bindSection(){
  content.querySelectorAll('[data-action="manage-sessions"]').forEach(b=>b.onclick=manageSessions);
  content.querySelectorAll('[data-action="save-branding"]').forEach(b=>b.onclick=saveBranding);
  content.querySelectorAll('[data-action="refresh-domains"]').forEach(b=>b.onclick=loadCustomerDomains);
+ content.querySelectorAll('[data-action="add-customer-domain"]').forEach(b=>b.onclick=addCustomerDomain);
  content.querySelectorAll('[data-action="invite-member"]').forEach(b=>b.onclick=inviteMember);
  content.querySelectorAll('[data-action="buy-credits"]').forEach(b=>b.onclick=buyCredits);
  content.querySelectorAll('[data-action="pay-plan"]').forEach(b=>b.onclick=payPlan);
@@ -224,6 +225,17 @@ async function loadCustomerDomains(){
   customerDomainsBox.innerHTML=domains.length?domains.map(x=>'<div class="assistant-item"><div class="spread"><div><strong>'+esc(x.hostname)+'</strong><div class="muted">'+esc(x.kind)+' · '+esc(x.status)+' · HTTPS '+(x.publicTlsOk?'verified':esc(x.sslStatus||'pending'))+(x.isPrimary?' · primary':'')+(x.providerPending?' · Cloudflare provisioning pending':'')+'</div></div><span><span class="pill '+(x.status==='active'?'ok':'warn')+'">'+esc(x.status)+'</span> '+(x.kind==='custom'?'<button class="btn" data-verify-domain="'+esc(x.hostname)+'">Verify now</button>':'')+'</span></div>'+(x.kind==='custom'?'<p class="muted">DNS: CNAME <strong>'+esc(x.hostname)+'</strong> → <strong>'+esc(d.cnameTarget)+'</strong>. Public DNS + HTTPS + Assist ownership can verify this domain even if the provider still reports pending.</p>':'')+'</div>').join(''):'<div class="empty">No portal domains.</div>';
   customerDomainsBox.querySelectorAll('[data-verify-domain]').forEach(b=>b.onclick=()=>verifyCustomerDomain(b.dataset.verifyDomain));
  }catch(e){customerDomainsBox.textContent=e.message}
+}
+async function addCustomerDomain(){
+ try{
+  const input=document.getElementById('customerNewDomain');
+  const hostname=(input?.value||'').trim();
+  if(!hostname)throw new Error('Enter a custom domain first');
+  const x=await api('/api/domains',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({hostname})});
+  toastMsg('Domain added. Set CNAME to '+(x.cnameTarget||'mkety-assist.mkety.app'));
+  if(input)input.value='';
+  await loadCustomerDomains();
+ }catch(e){toastMsg(e.message)}
 }
 async function verifyCustomerDomain(hostname){try{await api('/api/domains/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({hostname})});toastMsg('Domain verification refreshed');await loadCustomerDomains()}catch(e){toastMsg(e.message)}}
 async function saveBranding(){try{await api('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({brandColor:brandColor.value||null,logoUrl:logoUrl.value||null})});toastMsg('Branding saved');setTimeout(()=>location.reload(),500)}catch(e){toastMsg(e.message)}}
