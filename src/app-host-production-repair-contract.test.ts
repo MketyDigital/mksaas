@@ -11,12 +11,15 @@ describe('app.mkety.com production repair workflow contract', () => {
 
     expect(source).toContain('workflow_dispatch:');
     expect(source).not.toContain('pull_request:');
-    if (source.includes('push:')) {
-      expect(source).toContain('branches:');
-      expect(source).toContain('- main');
-      expect(source).toContain("'.github/workflows/mkety-app-host-production-repair.yml'");
-      expect(source).toContain('One-time app-host promotion is restricted to main.');
-    }
+    expect(source).toContain('push:');
+    expect(source).toContain('branches:');
+    expect(source).toContain('- main');
+    expect(source).toContain("'.github/workflows/mkety-app-host-production-repair.yml'");
+    expect(source).toContain("'src/app/app/**'");
+    expect(source).toContain("'src/app/ops/**'");
+    expect(source).toContain("'src/app/(auth)/**'");
+    expect(source).toContain("'src/proxy.ts'");
+    expect(source).toContain('One-time app-host promotion is restricted to main.');
     expect(source).toContain('REPAIR APP.MKETY.COM');
     expect(source).toContain('APP_WORKER_NAME: mkety-app-host');
     expect(source).toContain('RELEASE_BRANCH: main');
