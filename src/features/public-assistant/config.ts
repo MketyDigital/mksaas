@@ -21,6 +21,12 @@ export interface PublicAssistantEnvironment {
   // Foundry-friendly aliases used by deployment environments. Keep both spellings
   // so existing Azure OpenAI configuration remains backward compatible.
   MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY?: string;
+  MKETY_PUBLIC_AZURE_OPEN_AI_KEY?: string;
+  MKETY_PUBLIC_AZURE_OPENAI_KEY?: string;
+  MKETY_PUBLIC_AZURE_API_KEY?: string;
+  MKETY_PUBLIC_AZURE_KEY?: string;
+  AZURE_OPENAI_API_KEY?: string;
+  AZURE_AI_API_KEY?: string;
   MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT?: string;
   MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT?: string;
   MKETY_PUBLIC_AZURE_OPEN_AI_MODEL?: string;
@@ -90,7 +96,15 @@ export function parsePublicAIProviderConfig(environment: PublicAssistantEnvironm
 }
 
 export function resolvePublicAzureOpenAIConfig(environment: PublicAssistantEnvironment) {
-  const apiKey = environment.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY ?? environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY;
+  const apiKey =
+    environment.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY ??
+    environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY ??
+    environment.MKETY_PUBLIC_AZURE_OPEN_AI_KEY ??
+    environment.MKETY_PUBLIC_AZURE_OPENAI_KEY ??
+    environment.MKETY_PUBLIC_AZURE_API_KEY ??
+    environment.MKETY_PUBLIC_AZURE_KEY ??
+    environment.AZURE_OPENAI_API_KEY ??
+    environment.AZURE_AI_API_KEY;
   const endpoint = environment.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT ?? environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT;
   const deployment =
     environment.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL ??
