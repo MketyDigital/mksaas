@@ -839,7 +839,10 @@ jobs:
           app_entry_headers=/tmp/mkety-app-entry.headers
           app_entry_code="$(curl --connect-timeout 10 --max-time 25 -sS -D "$app_entry_headers" -o /dev/null -w '%{http_code}' 'https://app.mkety.com/app' || true)"
           app_entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$app_entry_headers")"
-          [ "$app_entry_code" -ge 300 ] && [ "$app_entry_code" -lt 400 ] && [ -n "$app_entry_location" ] || { echo "Unauthenticated app entry expected redirect, got HTTP $app_entry_code"; false; }
+          if ! { [ "$app_entry_code" -ge 300 ] && [ "$app_entry_code" -lt 400 ] && [ -n "$app_entry_location" ]; }; then
+            echo "Unauthenticated app entry expected redirect, got HTTP $app_entry_code"
+            false
+          fi
           APP_ENTRY_LOCATION="$app_entry_location" node <<'NODE'
           const u=new URL(process.env.APP_ENTRY_LOCATION,'https://app.mkety.com/app');
           if(u.origin!=='https://app.mkety.com'||u.pathname!=='/login') throw new Error('Unauthenticated app entry did not remain on app.mkety.com/login');
@@ -904,11 +907,11 @@ jobs:
 
           fetch_production_page '/mail' /tmp/mkety-mail-page.html
           grep -Fq 'Mail Starter' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Starter.'; false; }
-          grep -Fq '$4.99' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Starter price.'; false; }
+          grep -Fq "\$4.99" /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Starter price.'; false; }
           grep -Fq 'Mail Growth' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Growth.'; false; }
-          grep -Fq '$9.99' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Growth price.'; false; }
+          grep -Fq "\$9.99" /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Growth price.'; false; }
           grep -Fq 'Mail Business' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Business.'; false; }
-          grep -Fq '$24.99' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Business price.'; false; }
+          grep -Fq "\$24.99" /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Mail Business price.'; false; }
           grep -Fq 'Enterprise Mail' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Enterprise Mail.'; false; }
           grep -Fq 'Marketing' /tmp/mkety-mail-page.html || { echo 'Production Mail page missing Marketing Coming Soon boundary.'; false; }
 
