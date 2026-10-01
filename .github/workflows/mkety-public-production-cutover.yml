@@ -124,9 +124,9 @@ jobs:
       MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || 'support@mkety.com,hello@mkety.com' }}
       MKETY_PUBLIC_AI_VISITOR_SECRET: ${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
       MKETY_PUBLIC_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY }}
-      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
-      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
-      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: ${{ secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPENAI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || vars.MKETY_PUBLIC_AZURE_OPENAI_MODEL || vars.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
       MKETY_PUBLIC_GEMINI_API_KEY: ${{ secrets.MKETY_PUBLIC_GEMINI_API_KEY }}
       MKETY_PUBLIC_VERTEX_PROJECT_ID: ${{ secrets.MKETY_PUBLIC_VERTEX_PROJECT_ID }}
       MKETY_PUBLIC_VERTEX_LOCATION: ${{ secrets.MKETY_PUBLIC_VERTEX_LOCATION }}
@@ -239,8 +239,11 @@ jobs:
         run: |
           set -euo pipefail
           providers=()
-          if [ -n "${MKETY_PUBLIC_OPENAI_API_KEY:-}" ]; then providers+=(openai); fi
+          # Prefer Azure/Foundry when configured. This prevents an exhausted
+          # legacy OpenAI key from becoming primary while a healthy Foundry
+          # deployment is available.
           if [ -n "${MKETY_PUBLIC_AZURE_OPENAI_API_KEY:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT:-}" ] && [ -n "${MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT:-}" ]; then providers+=(azure-openai); fi
+          if [ -n "${MKETY_PUBLIC_OPENAI_API_KEY:-}" ]; then providers+=(openai); fi
           if [ -n "${MKETY_PUBLIC_GEMINI_API_KEY:-}" ]; then providers+=(gemini); fi
           if [ -n "${MKETY_PUBLIC_VERTEX_PROJECT_ID:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_LOCATION:-}" ] && [ -n "${MKETY_PUBLIC_VERTEX_ACCESS_TOKEN:-}" ]; then providers+=(vertex); fi
           if [ -n "${MKETY_PUBLIC_CLOUDFLARE_AI_API_TOKEN:-}" ]; then providers+=(cloudflare-ai); fi
