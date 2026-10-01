@@ -59,14 +59,14 @@ export async function createAutomationWorkflowDraft(formData: FormData) {
   const existing = await db.query.workflows.findFirst({ where: and(eq(workflows.projectId, access.project.id), eq(workflows.slug, draft.slug)) });
   if (existing) throw new Error('That workflow slug is already in use in this project.');
   await db.insert(workflows).values(draft);
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${draft.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${draft.slug}`);
 }
 
 export async function updateAutomationWorkflowMetadata(formData: FormData) {
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflows.');
   const update = buildWorkflowMetadataUpdateInput({ description: String(formData.get('description') || ''), name: String(formData.get('name') || ''), triggerType: String(formData.get('triggerType') || '') });
   await db.update(workflows).set({ description: update.description, name: update.name, triggerType: update.triggerType, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
 
 export async function addAutomationWorkflowDraftNode(formData: FormData) {
@@ -74,7 +74,7 @@ export async function addAutomationWorkflowDraftNode(formData: FormData) {
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflow nodes.');
   const definition = buildWorkflowDefinitionWithDraftNode({ currentDefinition: workflow.definition, nodeType });
   await db.update(workflows).set({ definition, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
 
 export async function updateAutomationWorkflowNodeConfigDraft(formData: FormData) {
@@ -82,7 +82,7 @@ export async function updateAutomationWorkflowNodeConfigDraft(formData: FormData
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflow node configuration.');
   const definition = buildWorkflowDefinitionWithNodeConfigDraft({ currentDefinition: workflow.definition, nodeId, label: String(formData.get('label') || ''), notes: String(formData.get('notes') || ''), triggerMode: String(formData.get('triggerMode') || ''), agentId: String(formData.get('agentId') || ''), prompt: String(formData.get('prompt') || ''), method: String(formData.get('method') || ''), url: String(formData.get('url') || ''), headers: String(formData.get('headers') || ''), body: String(formData.get('body') || ''), input: String(formData.get('input') || ''), mapping: String(formData.get('mapping') || ''), field: String(formData.get('field') || ''), operator: String(formData.get('operator') || ''), value: String(formData.get('value') || '') });
   await db.update(workflows).set({ definition, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
 
 export async function updateAutomationWorkflowNodeStructureDraft(formData: FormData) {
@@ -91,7 +91,7 @@ export async function updateAutomationWorkflowNodeStructureDraft(formData: FormD
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to edit automation workflow structure.');
   const definition = buildWorkflowDefinitionWithNodeStructureDraft({ currentDefinition: workflow.definition, nodeId, operation });
   await db.update(workflows).set({ definition, updatedAt: new Date() }).where(and(eq(workflows.tenantId, access.tenant.id), eq(workflows.projectId, access.project.id), eq(workflows.id, workflow.id)));
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
 
 export async function startAutomationWorkflowManualRun(formData: FormData) {
@@ -103,7 +103,7 @@ export async function startAutomationWorkflowManualRun(formData: FormData) {
   const existingRun = await db.query.workflowRuns.findFirst({ where: and(eq(workflowRuns.tenantId, access.tenant.id), eq(workflowRuns.projectId, access.project.id), eq(workflowRuns.workflowId, workflow.id), or(eq(workflowRuns.status, 'queued'), eq(workflowRuns.status, 'running'))) });
   if (existingRun) throw new Error('This workflow already has a manual run in progress.');
   await executeAutomationWorkflowRun({ workflow, triggerType: 'manual', input: {}, dependencyReadiness }, automationWorkflowExecutionDbDependencies);
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
 
 export async function createAutomationWorkflowWebhook(formData: FormData) {
@@ -121,5 +121,5 @@ export async function disableAutomationWorkflowWebhook(formData: FormData) {
   const endpointId = String(formData.get('endpointId') || '');
   const { access, workflow } = await getManageableWorkflow(formData, 'You do not have permission to manage automation webhooks.');
   await disableWorkflowWebhookEndpoint({ tenantId: access.tenant.id, projectId: access.project.id, workflowId: workflow.id, endpointId }, webhookEndpointDependencies);
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/automation/${workflow.slug}`);
 }
