@@ -1277,6 +1277,48 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   return { retry: false, delaySeconds: 0 };
 }
 
+export async function syncTelegramBusinessWebhookCapabilities(env: AssistEnv): Promise<void> {
+  const rows = await env.DB.prepare(
+    `SELECT ch.customer_id,ch.assistant_id
+     FROM assistant_channels ch
+     LEFT JOIN telegram_webhook_capabilities twc ON twc.assistant_id=ch.assistant_id
+     WHERE ch.channel='telegram' AND ch.status='active'
+       AND COALESCE(twc.version,0)<2
+     ORDER BY ch.updated_at ASC LIMIT 25`,
+  ).all<any>();
+
+  for (const row of rows.results ?? []) {
+    const assistantId = String(row.assistant_id);
+    const customerId = String(row.customer_id);
+    try {
+      const token = await getAssistantSecret(env, assistantId, "telegram_bot_token");
+      const secret = await getAssistantSecret(env, assistantId, "telegram_webhook_secret");
+      if (!token || !secret) throw new Error("telegram_credentials_unavailable");
+      const result = await telegramSetWebhook(
+        token,
+        `https://mkety-assist.mkety.app/api/telegram/${encodeURIComponent(assistantId)}`,
+        secret,
+      );
+      if (!result?.ok) throw new Error(String(result?.description || "telegram_set_webhook_failed"));
+      const now = unix();
+      await env.DB.prepare(
+        `INSERT INTO telegram_webhook_capabilities(assistant_id,customer_id,version,last_synced_at,last_error)
+         VALUES (?,?,?,?,NULL)
+         ON CONFLICT(assistant_id) DO UPDATE SET
+           customer_id=excluded.customer_id,version=excluded.version,last_synced_at=excluded.last_synced_at,last_error=NULL`,
+      ).bind(assistantId,customerId,2,now).run();
+    } catch (error) {
+      const now = unix();
+      await env.DB.prepare(
+        `INSERT INTO telegram_webhook_capabilities(assistant_id,customer_id,version,last_synced_at,last_error)
+         VALUES (?,?,0,?,?)
+         ON CONFLICT(assistant_id) DO UPDATE SET
+           customer_id=excluded.customer_id,last_synced_at=excluded.last_synced_at,last_error=excluded.last_error`,
+      ).bind(assistantId,customerId,now,String(error instanceof Error ? error.message : error).slice(0,500)).run();
+    }
+  }
+}
+
 export async function processDueReminders(env: AssistEnv): Promise<void> {
   const now = unix();
   const rows = await env.DB.prepare(
@@ -2605,7 +2647,14 @@ async function telegramSetWebhook(token: string, url: string, secret: string) {
     body: JSON.stringify({
       url,
       secret_token: secret,
-      allowed_updates: ["message", "edited_message"],
+      allowed_updates: [
+        "message",
+        "edited_message",
+        "business_connection",
+        "business_message",
+        "edited_business_message",
+        "deleted_business_messages",
+      ],
       drop_pending_updates: false,
     }),
   }).then((r) => r.json<any>());
