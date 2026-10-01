@@ -159,8 +159,9 @@ export async function handleRuntimeApi(
     const collectionId = parts[2];
     await assertCollection(env.DB, customer.customerId, collectionId);
     const assets = await env.DB.prepare(
-      "SELECT r2_key FROM knowledge_items WHERE collection_id=? AND customer_id=? AND r2_key IS NOT NULL",
+      "SELECT id,r2_key FROM knowledge_items WHERE collection_id=? AND customer_id=?",
     ).bind(collectionId, customer.customerId).all<any>();
+    await deleteKnowledgeChunks(env.DB, (assets.results ?? []).map((row: any) => String(row.id)));
     for (const row of assets.results ?? []) if (row.r2_key) await env.MEDIA.delete(String(row.r2_key));
     await env.DB.prepare("DELETE FROM knowledge_collections WHERE id=? AND customer_id=?").bind(collectionId, customer.customerId).run();
     return json({ ok: true });
@@ -184,6 +185,7 @@ export async function handleRuntimeApi(
     ).bind(parts[2], customer.customerId).first<any>();
     if (!item) return json({ error: "knowledge_item_not_found" }, 404);
     if (item.r2_key) await env.MEDIA.delete(String(item.r2_key));
+    await deleteKnowledgeChunks(env.DB, [parts[2]]);
     await env.DB.prepare("DELETE FROM knowledge_items WHERE id=? AND customer_id=?").bind(parts[2], customer.customerId).run();
     return json({ ok: true });
   }
@@ -215,6 +217,20 @@ export async function handleRuntimeApi(
     await env.DB.prepare(
       "UPDATE knowledge_items SET status=?,content_text=?,error_code=?,retry_count=retry_count+1,updated_at=? WHERE id=? AND customer_id=?",
     ).bind(textual ? "ready" : "error", textual, errorCode, unix(), item.id, customer.customerId).run();
+    if (textual) {
+      const itemRow = await env.DB.prepare("SELECT collection_id FROM knowledge_items WHERE id=? AND customer_id=? LIMIT 1")
+        .bind(item.id, customer.customerId).first<any>();
+      if (itemRow?.collection_id) {
+        await replaceKnowledgeChunks({
+          db: env.DB,
+          customerId: customer.customerId,
+          collectionId: String(itemRow.collection_id),
+          itemId: String(item.id),
+          title: String(item.title),
+          text: textual,
+        });
+      }
+    }
     return json({ ok: Boolean(textual), status: textual ? "ready" : "error", error: errorCode });
   }
 
@@ -260,6 +276,16 @@ export async function handleRuntimeApi(
         itemId, customer.customerId, collectionId, key, file.name, file.type || null,
         textual ? "ready" : "error", textual, JSON.stringify({ size: file.size }), conversionError, 0, now, now,
       ).run();
+      if (textual) {
+        await replaceKnowledgeChunks({
+          db: env.DB,
+          customerId: customer.customerId,
+          collectionId,
+          itemId,
+          title: file.name,
+          text: textual,
+        });
+      }
       return json({
         id: itemId,
         title: file.name,
@@ -281,6 +307,14 @@ export async function handleRuntimeApi(
        (id,customer_id,collection_id,title,mime_type,status,content_text,created_at,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
     ).bind(itemId, customer.customerId, collectionId, title, "text/plain", "ready", content, now, now).run();
+    await replaceKnowledgeChunks({
+      db: env.DB,
+      customerId: customer.customerId,
+      collectionId,
+      itemId,
+      title,
+      text: content,
+    });
     return json({ id: itemId, title, status: "ready" }, 201);
   }
 
