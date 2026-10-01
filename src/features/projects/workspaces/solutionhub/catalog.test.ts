@@ -28,7 +28,7 @@ describe('SolutionHub catalog', () => {
     for (const entry of shared) {
       expect(
         getSolutionHubEntryDestination(entry, { tenantSlug: 'acme', projectSlug: 'demo' }),
-      ).toMatch(/^\/t\/acme\/projects\/demo\/(ai|automation|deploy)$/);
+      ).toMatch(/^\/app\/acme\/projects\/demo\/(ai|automation|deploy)$/);
     }
   });
 
