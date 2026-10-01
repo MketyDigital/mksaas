@@ -571,19 +571,35 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
     const alias = decodeURIComponent(url.pathname.slice("/api/ops/models/".length));
-    const current = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? LIMIT 1").bind(alias).first<any>();
-    if (!current) return json({ error: "model_alias_not_found" }, 404);
     const body = await readJson(request);
+    const targetCustomerId = body.customerId ? requiredString(body.customerId, "customerId") : null;
+    const globalRoute = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? LIMIT 1").bind(alias).first<any>();
+    if (!globalRoute) return json({ error: "model_alias_not_found" }, 404);
+    if (targetCustomerId) {
+      const target = await env.DB.prepare("SELECT id FROM customers WHERE id=? LIMIT 1").bind(targetCustomerId).first();
+      if (!target) return json({ error: "customer_not_found" }, 404);
+    }
+    const override = targetCustomerId
+      ? await env.DB.prepare("SELECT * FROM customer_model_routes WHERE customer_id=? AND alias=? LIMIT 1").bind(targetCustomerId, alias).first<any>()
+      : null;
+    const current = override ?? globalRoute;
     const now = unix();
 
     const provider = body.provider ?? current.provider;
+    const providerModel = body.providerModel ?? current.provider_model;
     const providerConnectionId = body.providerConnectionId === undefined
       ? current.provider_connection_id
       : (body.providerConnectionId || null);
     const fallbackProvider = body.fallbackProvider ?? current.fallback_provider ?? null;
+    const fallbackModel = body.fallbackModel ?? current.fallback_model ?? null;
     const fallbackProviderConnectionId = body.fallbackProviderConnectionId === undefined
       ? current.fallback_provider_connection_id
       : (body.fallbackProviderConnectionId || null);
+    const byokPolicy = body.byokPolicy ?? current.byok_policy ?? "managed";
+    if (!["managed","strict_byok","explicit_paid_fallback"].includes(String(byokPolicy))) {
+      return json({ error: "invalid_byok_policy" }, 400);
+    }
+
     if (!["workers-ai","mkety-managed"].includes(String(provider)) && !providerConnectionId) {
       return json({ error: "provider_connection_required" }, 400);
     }
@@ -594,35 +610,54 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       if (!connection || connection.status !== "active" || !connection.validated_at || connection.provider !== provider) {
         return json({ error: "provider_connection_unvalidated_or_mismatch" }, 400);
       }
+      if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
+        return json({ error: "customer_provider_requires_matching_tenant_route" }, 400);
+      }
     }
+
     if (fallbackProvider && !["workers-ai","mkety-managed"].includes(String(fallbackProvider)) && !fallbackProviderConnectionId) {
       return json({ error: "fallback_provider_connection_required" }, 400);
     }
     if (fallbackProviderConnectionId) {
       const connection = await env.DB.prepare(
-        "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
+        "SELECT id,provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
       ).bind(fallbackProviderConnectionId).first<any>();
       if (!connection || connection.status !== "active" || !connection.validated_at || connection.provider !== fallbackProvider) {
         return json({ error: "fallback_provider_connection_unvalidated_or_mismatch" }, 400);
       }
+      if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
+        return json({ error: "customer_fallback_requires_matching_tenant_route" }, 400);
+      }
     }
 
-    await env.DB.prepare(
-      `UPDATE model_routes SET provider=COALESCE(?,provider),provider_model=COALESCE(?,provider_model),
-       provider_connection_id=?,fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,
-       byok_policy=COALESCE(?,byok_policy),status=COALESCE(?,status),updated_at=? WHERE alias=?`,
-    ).bind(
-      body.provider ?? null,
-      body.providerModel ?? null,
-      providerConnectionId,
-      fallbackProvider,
-      body.fallbackModel ?? current.fallback_model ?? null,
-      fallbackProviderConnectionId,
-      body.byokPolicy ?? null,
-      body.status ?? null,
-      now,
-      alias,
-    ).run();
+    if (targetCustomerId) {
+      await env.DB.prepare(
+        `INSERT INTO customer_model_routes
+         (customer_id,alias,provider,provider_model,provider_connection_id,fallback_provider,fallback_model,
+          fallback_provider_connection_id,byok_policy,status,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(customer_id,alias) DO UPDATE SET
+           provider=excluded.provider,provider_model=excluded.provider_model,
+           provider_connection_id=excluded.provider_connection_id,
+           fallback_provider=excluded.fallback_provider,fallback_model=excluded.fallback_model,
+           fallback_provider_connection_id=excluded.fallback_provider_connection_id,
+           byok_policy=excluded.byok_policy,status=excluded.status,updated_at=excluded.updated_at`,
+      ).bind(
+        targetCustomerId, alias, provider, providerModel, providerConnectionId,
+        fallbackProvider, fallbackModel, fallbackProviderConnectionId,
+        byokPolicy, body.status ?? current.status ?? "active", now, now,
+      ).run();
+    } else {
+      await env.DB.prepare(
+        `UPDATE model_routes SET provider=?,provider_model=?,provider_connection_id=?,
+         fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,
+         byok_policy=?,status=COALESCE(?,status),updated_at=? WHERE alias=?`,
+      ).bind(
+        provider, providerModel, providerConnectionId,
+        fallbackProvider, fallbackModel, fallbackProviderConnectionId,
+        byokPolicy, body.status ?? null, now, alias,
+      ).run();
+    }
 
     const costFields = [
       "providerInputCostMicrosPerMillion","providerOutputCostMicrosPerMillion",
@@ -662,13 +697,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     await env.DB.prepare(
       "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
-    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias, provider }), now).run();
+    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias, provider, customerId: targetCustomerId, byokPolicy }), now).run();
     return json({ ok: true });
   }
 
   if (url.pathname === "/api/ops/providers" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT id,name,provider,endpoint_url,extra_json,status,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
+      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
     ).all();
     return json({ providers: rows.results ?? [] });
   }
