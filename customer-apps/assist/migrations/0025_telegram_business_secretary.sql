@@ -1,4 +1,5 @@
 ALTER TABLE reply_jobs ADD COLUMN business_connection_id TEXT;
+ALTER TABLE conversations ADD COLUMN business_connection_id TEXT;
 
 CREATE TABLE IF NOT EXISTS telegram_business_connections (
   id TEXT PRIMARY KEY,
