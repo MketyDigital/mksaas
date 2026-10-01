@@ -1,5 +1,6 @@
-import { resolveAutomationState } from "./handoff/service";
+import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
 import { mayUseFallback } from "./providers/validation";
+import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
@@ -204,6 +205,41 @@ export async function handleRuntimeApi(
     return json({ messages: rows.results ?? [] });
   }
 
+  if (url.pathname === "/api/automation" && request.method === "GET") {
+    const row = await env.DB.prepare("SELECT automation_paused FROM customers WHERE id=? LIMIT 1")
+      .bind(customer.customerId).first<any>();
+    return json({ paused: Boolean(row?.automation_paused) });
+  }
+
+  if (url.pathname === "/api/automation" && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    await pauseCustomer(env.DB, customer.customerId, Boolean(body.paused));
+    return json({ ok: true, paused: Boolean(body.paused) });
+  }
+
+  if (parts[0] === "api" && parts[1] === "assistants" && parts[2] && parts[3] === "automation" && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    await pauseAssistant(env.DB, customer.customerId, parts[2], Boolean(body.paused));
+    return json({ ok: true, paused: Boolean(body.paused) });
+  }
+
+  if (parts[0] === "api" && parts[1] === "conversations" && parts[2] && parts[3] === "automation" && request.method === "PATCH") {
+    requireAdmin(session);
+    const conversation = await env.DB.prepare(
+      "SELECT assistant_id FROM conversations WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!conversation) return json({ error: "conversation_not_found" }, 404);
+    const body = await readJson(request);
+    if (body.paused === false) {
+      await returnToAi(env.DB, customer.customerId, conversation.assistant_id, parts[2]);
+    } else {
+      await takeOverConversation(env.DB, customer.customerId, conversation.assistant_id, parts[2], session.userId);
+    }
+    return json({ ok: true, paused: body.paused !== false });
+  }
+
   if (url.pathname === "/api/reminders" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT r.id,r.assistant_id,a.name AS assistant_name,r.conversation_id,r.due_at,r.payload_json,r.status,r.created_at,r.delivered_at
@@ -223,12 +259,24 @@ export async function handleRuntimeApi(
     await assertAssistant(env.DB, customer.customerId, assistantId);
     const dueAt = Math.floor(new Date(required(body.dueAt, "dueAt")).getTime() / 1000);
     if (!Number.isFinite(dueAt) || dueAt <= unix()) return json({ error: "invalid_due_at" }, 400);
+    const conversationId = body.conversationId ? required(body.conversationId, "conversationId") : null;
+    if (conversationId) {
+      const conversation = await env.DB.prepare(
+        "SELECT id FROM conversations WHERE id=? AND customer_id=? AND assistant_id=? LIMIT 1",
+      ).bind(conversationId, customer.customerId, assistantId).first();
+      if (!conversation) return json({ error: "conversation_not_found" }, 404);
+    }
     const reminderId = id("rem");
+    const policy = await env.DB.prepare(
+      "SELECT max_attempts FROM reminder_policies WHERE assistant_id=? AND customer_id=? LIMIT 1",
+    ).bind(assistantId, customer.customerId).first<any>();
     await env.DB.prepare(
-      "INSERT INTO reminders (id,customer_id,assistant_id,conversation_id,due_at,payload_json,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO reminders (id,customer_id,assistant_id,conversation_id,due_at,payload_json,status,created_at,max_attempts,idempotency_key) VALUES (?,?,?,?,?,?,?,?,?,?)",
     ).bind(
-      reminderId, customer.customerId, assistantId, body.conversationId || null, dueAt,
-      JSON.stringify({ text: required(body.text, "text"), chatId: body.chatId || null }), "scheduled", unix(),
+      reminderId, customer.customerId, assistantId, conversationId, dueAt,
+      JSON.stringify({ text: required(body.text, "text") }), "scheduled", unix(),
+      Math.max(1, Number(policy?.max_attempts || 3)),
+      body.idempotencyKey ? String(body.idempotencyKey).slice(0, 160) : null,
     ).run();
     return json({ id: reminderId, dueAt }, 201);
   }
@@ -568,24 +616,43 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
 export async function processDueReminders(env: AssistEnv): Promise<void> {
   const now = unix();
   const rows = await env.DB.prepare(
-    `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,c.external_conversation_id
-     FROM reminders r LEFT JOIN conversations c ON c.id=r.conversation_id
-     WHERE r.status='scheduled' AND r.due_at<=? ORDER BY r.due_at ASC LIMIT 100`,
+    `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,r.attempts,r.max_attempts,
+            c.external_conversation_id
+     FROM reminders r
+     LEFT JOIN conversations c ON c.id=r.conversation_id AND c.customer_id=r.customer_id AND c.assistant_id=r.assistant_id
+     WHERE r.status='scheduled' AND r.due_at<=?
+     ORDER BY r.due_at ASC LIMIT 100`,
   ).bind(now).all<any>();
 
   for (const reminder of rows.results ?? []) {
     try {
       const payload = JSON.parse(reminder.payload_json || "{}");
-      const chatId = payload.chatId || reminder.external_conversation_id;
-      if (!chatId) throw new Error("reminder has no Telegram destination");
+      const chatId = reminder.external_conversation_id;
+      if (!chatId) throw new Error("reminder_has_no_conversation_destination");
+      const automation = await resolveAutomationState(env.DB, reminder.customer_id, reminder.assistant_id, reminder.conversation_id);
+      if (automation.paused) throw new Error("automation_paused");
       const token = await getAssistantSecret(env, reminder.assistant_id, "telegram_bot_token");
-      if (!token) throw new Error("assistant Telegram token unavailable");
+      if (!token) throw new Error("assistant_telegram_token_unavailable");
       const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"));
-      if (!sent.ok) throw new Error(sent.description || "Telegram send failed");
-      await env.DB.prepare("UPDATE reminders SET status='delivered',delivered_at=? WHERE id=? AND status='scheduled'")
-        .bind(now, reminder.id).run();
+      if (!sent.ok) throw new Error(sent.description || "telegram_send_failed");
+      await env.DB.prepare(
+        "UPDATE reminders SET status='delivered',delivered_at=?,last_error=NULL WHERE id=? AND customer_id=? AND status='scheduled'",
+      ).bind(now, reminder.id, reminder.customer_id).run();
     } catch (error) {
-      console.error("reminder delivery failed", reminder.id, error);
+      const attempts = Number(reminder.attempts || 0) + 1;
+      const maxAttempts = Math.max(1, Number(reminder.max_attempts || 3));
+      const terminal = attempts >= maxAttempts;
+      const retryAt = now + Math.min(3600, Math.max(60, 60 * (2 ** Math.min(attempts - 1, 5))));
+      await env.DB.prepare(
+        "UPDATE reminders SET attempts=?,last_error=?,status=?,due_at=? WHERE id=? AND customer_id=? AND status='scheduled'",
+      ).bind(
+        attempts,
+        String(error instanceof Error ? error.message : error).slice(0, 500),
+        terminal ? "failed" : "scheduled",
+        terminal ? reminder.due_at : retryAt,
+        reminder.id,
+        reminder.customer_id,
+      ).run();
     }
   }
 }
