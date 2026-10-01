@@ -12,7 +12,9 @@ const VISION_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 const TRANSCRIPTION_MODEL = '@cf/openai/whisper-large-v3-turbo';
 
 // Conservative internal provider-cost estimates. These are never customer-facing prices.
-const VISION_ESTIMATE_USD_MICROS = 2_500n;
+const VISION_FALLBACK_ESTIMATE_USD_MICROS = 2_500n;
+const GEMMA_INPUT_USD_MICROS_PER_MILLION = 100_000n;
+const GEMMA_OUTPUT_USD_MICROS_PER_MILLION = 300_000n;
 const WHISPER_USD_MICROS_PER_MINUTE = 513n;
 
 type WorkersAiBinding = {
@@ -51,7 +53,7 @@ export function estimateEnterpriseAiInboundMediaCostUsdMicros(
 ) {
   safeMediaCount(media);
   return media.reduce((total, item) => (
-    total + (item.kind === 'image' ? VISION_ESTIMATE_USD_MICROS : estimateAudioCost(item.durationSeconds))
+    total + (item.kind === 'image' ? VISION_FALLBACK_ESTIMATE_USD_MICROS : estimateAudioCost(item.durationSeconds))
   ), 0n);
 }
 
@@ -112,18 +114,45 @@ async function resolveTelegramFile(
   return { bytes, contentType };
 }
 
-function resultText(value: unknown) {
-  if (!value || typeof value !== 'object') return '';
+function resultRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
+  const nested = record.result;
+  if (nested && typeof nested === 'object') return nested as Record<string, unknown>;
+  return record;
+}
+
+function resultText(value: unknown) {
+  const record = resultRecord(value);
+  if (!record) return '';
   if (typeof record.response === 'string') return record.response.trim();
   if (typeof record.text === 'string') return record.text.trim();
-  const nested = record.result;
-  if (nested && typeof nested === 'object') {
-    const result = nested as Record<string, unknown>;
-    if (typeof result.response === 'string') return result.response.trim();
-    if (typeof result.text === 'string') return result.text.trim();
-  }
+  if (typeof record.description === 'string') return record.description.trim();
   return '';
+}
+
+function ceilDiv(numerator: bigint, denominator: bigint) {
+  return (numerator + denominator - 1n) / denominator;
+}
+
+export function calculateWorkersAiVisionCostUsdMicros(value: unknown) {
+  const record = resultRecord(value);
+  const usage = record?.usage && typeof record.usage === 'object'
+    ? record.usage as Record<string, unknown>
+    : null;
+  const promptTokens = Number(usage?.prompt_tokens ?? 0);
+  const completionTokens = Number(usage?.completion_tokens ?? 0);
+  if (!Number.isFinite(promptTokens) || !Number.isFinite(completionTokens)) {
+    return VISION_FALLBACK_ESTIMATE_USD_MICROS;
+  }
+  const input = BigInt(Math.max(0, Math.trunc(promptTokens)));
+  const output = BigInt(Math.max(0, Math.trunc(completionTokens)));
+  if (input === 0n && output === 0n) return VISION_FALLBACK_ESTIMATE_USD_MICROS;
+  return ceilDiv(
+    input * GEMMA_INPUT_USD_MICROS_PER_MILLION +
+      output * GEMMA_OUTPUT_USD_MICROS_PER_MILLION,
+    1_000_000n,
+  );
 }
 
 async function describeImage(file: ResolvedTelegramFile) {
@@ -133,16 +162,27 @@ async function describeImage(file: ResolvedTelegramFile) {
     {
       messages: [{
         role: 'user',
-        content: 'Describe this image accurately for another assistant. Include visible text, important objects, people/actions, layout, and details relevant to answering a user question. Do not invent hidden facts.',
+        content: [
+          {
+            type: 'text',
+            text: 'Describe this image accurately for another assistant. Include visible text, important objects, people/actions, layout, and details relevant to answering a user question. Do not invent hidden facts.',
+          },
+          {
+            type: 'image_url',
+            image_url: { url: `data:${file.contentType};base64,${base64}` },
+          },
+        ],
       }],
-      image: `data:${file.contentType};base64,${base64}`,
       max_tokens: 600,
     },
     workersAiOptions(),
   );
   const text = resultText(result);
   if (!text) throw new Error('Image understanding returned no usable description.');
-  return text.slice(0, 8_000);
+  return {
+    text: text.slice(0, 8_000),
+    providerCostUsdMicros: calculateWorkersAiVisionCostUsdMicros(result),
+  };
 }
 
 async function transcribeAudio(file: ResolvedTelegramFile) {
@@ -180,27 +220,30 @@ export async function resolveEnterpriseAiInboundMedia(input: {
   const context: string[] = [];
   const transcripts: string[] = [];
   const processed: Array<{ kind: 'image' | 'audio'; model: string }> = [];
+  let providerCostUsdMicros = 0n;
   for (const item of media) {
     if (item.kind === 'audio' && (item.durationSeconds ?? 0) > MAX_AUDIO_SECONDS) {
       throw new Error('Voice/audio attachment is too long.');
     }
     const file = await resolveTelegramFile(item, input.credentials);
     if (item.kind === 'image') {
-      const description = await describeImage(file);
-      context.push(`Image analysis: ${description}`);
+      const image = await describeImage(file);
+      context.push(`Image analysis: ${image.text}`);
       processed.push({ kind: 'image', model: VISION_MODEL });
+      providerCostUsdMicros += image.providerCostUsdMicros;
     } else {
       const transcript = await transcribeAudio(file);
       transcripts.push(transcript);
       context.push(`Voice/audio transcript: ${transcript}`);
       processed.push({ kind: 'audio', model: TRANSCRIPTION_MODEL });
+      providerCostUsdMicros += estimateAudioCost(item.durationSeconds);
     }
   }
 
   return {
     contextText: context.join('\n\n').slice(0, 24_000),
     transcriptText: transcripts.join('\n').slice(0, 16_000),
-    providerCostUsdMicros: estimateEnterpriseAiInboundMediaCostUsdMicros(media),
+    providerCostUsdMicros,
     processed,
   };
 }
