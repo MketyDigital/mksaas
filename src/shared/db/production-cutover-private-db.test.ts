@@ -57,10 +57,11 @@ describe('production cutover private database gate', () => {
     expect(workflow).toContain("'NEXT_PUBLIC_APP_URL'");
 
     expect(workflow).toContain('/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains');
-    expect(workflow).toContain('Attach public and app hosts as Worker Custom Domains');
+    expect(workflow).toContain('Attach public hosts as Worker Custom Domains');
     expect(workflow).toContain('(?:Growth|Pro|Business)\\s+(?:plan|tier|workspace)');
     expect(workflow).not.toContain('\\b(Growth|Pro|Business)\\b');
-    expect(workflow).toContain('for host in mkety.com www.mkety.com app.mkety.com');
+    expect(workflow).toContain('for host in mkety.com www.mkety.com; do');
+    expect(workflow).not.toContain('for host in mkety.com www.mkety.com app.mkety.com');
     expect(workflow).toContain('service:process.env.PRODUCTION_WORKER_NAME');
     expect(workflow).toContain('app.mkety.com');
     expect(workflow).toContain("u.pathname!=='/app'");
