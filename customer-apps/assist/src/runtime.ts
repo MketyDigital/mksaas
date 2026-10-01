@@ -524,11 +524,11 @@ async function runAssistant(input: {
   const userCombined = [input.userText, input.mediaContext].filter(Boolean).join("\n\n");
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
   const maxOutputTokens = 1024;
-  const reserveCredits = Math.max(1,
+  const reserveAmount = Math.max(1,
     Math.ceil((estimatedInputTokens * parseFloat(String(rate.input_credits_per_million || 0)) + maxOutputTokens * parseFloat(String(rate.output_credits_per_million || 0))) / 1_000_000),
   );
 
-  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveCredits);
+  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount);
   if (!reservation) return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
 
   try {
@@ -567,7 +567,7 @@ async function runAssistant(input: {
     const actualCredits = Math.max(1,
       Math.ceil((usage.input * parseFloat(String(rate.input_credits_per_million || 0)) + usage.output * parseFloat(String(rate.output_credits_per_million || 0))) / 1_000_000),
     );
-    await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveCredits, actualCredits, {
+    await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
       modelAlias: assistant.model_alias,
       provider: route.provider,
       providerModel: route.provider_model,
@@ -578,7 +578,7 @@ async function runAssistant(input: {
     return { ok: true as const, text };
   } catch (error) {
     console.error("assistant inference failed", error);
-    await releaseReservation(env.DB, reservation.id, assistant.customer_id, reserveCredits);
+    await releaseReservation(env.DB, reservation.id, assistant.customer_id, reserveAmount);
     return { ok: false as const, userMessage: "I couldn’t complete that request just now. Please try again shortly." };
   }
 }
