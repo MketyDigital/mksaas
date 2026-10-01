@@ -43,5 +43,5 @@ export async function createKnowledgeDocument(formData: FormData) {
   }).returning({ id: knowledgeDocuments.id });
 
   await ingestKnowledgeText({ tenantId: tenant.id, projectId: project.id, documentId: document.id, text });
-  redirect(`/t/${tenantSlug}/projects/${projectSlug}/knowledge`);
+  redirect(`/app/${tenantSlug}/projects/${projectSlug}/knowledge`);
 }
