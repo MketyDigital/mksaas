@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import {
   platformAppControlCenterModules,
   platformAppExperienceRevisions,
@@ -16,7 +17,7 @@ import {
   normalizeMketyPaymentSettings,
 } from '../config';
 
-export async function updateMketyPaymentSettings(tenantSlug: string, formData: FormData): Promise<void> {
+async function updateMketyPaymentSettingsImpl(tenantSlug: string, formData: FormData): Promise<void> {
   const actor = await requirePlatformControlAccess(tenantSlug);
   await requirePermission(tenantSlug, 'platform:billing');
 
@@ -75,4 +76,9 @@ export async function updateMketyPaymentSettings(tenantSlug: string, formData: F
   });
 
   revalidatePath(`/t/${tenantSlug}/admin/platform-control/payments`);
+}
+
+export async function updateMketyPaymentSettings(...args: Parameters<typeof updateMketyPaymentSettingsImpl>) {
+  'use server';
+  return withServerActionDatabase(() => updateMketyPaymentSettingsImpl(...args));
 }

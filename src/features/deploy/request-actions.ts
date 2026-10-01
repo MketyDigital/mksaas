@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
-import { withRequestDatabase } from '@/shared/db/request';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { deploymentRequests } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -16,7 +16,7 @@ function cleanOptional(value: FormDataEntryValue | null, max: number): string | 
   return cleaned ? cleaned.slice(0, max) : null;
 }
 
-export async function reviewDeploymentRequest(formData: FormData) {
+async function reviewDeploymentRequestImpl(formData: FormData) {
   const tenantSlug = String(formData.get('tenantSlug') || '');
   const requestId = String(formData.get('requestId') || '');
   const decision = String(formData.get('decision') || '');
@@ -31,8 +31,8 @@ export async function reviewDeploymentRequest(formData: FormData) {
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) throw new Error('Workspace not found.');
 
-  await withRequestDatabase(async (db) => {
-    const rows = await db
+  const { db } = await import('@/shared/db');
+  const rows = await db
       .update(deploymentRequests)
       .set({
         status: decision,
@@ -50,10 +50,13 @@ export async function reviewDeploymentRequest(formData: FormData) {
       )
       .returning({ id: deploymentRequests.id });
 
-    if (rows.length !== 1) {
-      throw new Error('Deployment request is no longer pending or does not belong to this workspace.');
-    }
-  });
+  if (rows.length !== 1) {
+    throw new Error('Deployment request is no longer pending or does not belong to this workspace.');
+  }
 
   revalidatePath(`/t/${tenantSlug}/admin/platform-control/deployments-domains`);
+}
+
+export async function reviewDeploymentRequest(formData: FormData) {
+  return withServerActionDatabase(() => reviewDeploymentRequestImpl(formData));
 }

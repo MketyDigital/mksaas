@@ -16,6 +16,7 @@ import {
   type PublicAIProviderId,
 } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import {
   platformAppControlCenterModules,
   platformAppExperienceRevisions,
@@ -91,7 +92,7 @@ function revalidate(tenantSlug: string) {
   revalidatePath('/api/public-ai');
 }
 
-export async function savePublicAiProviderConnection(tenantSlug: string, formData: FormData) {
+async function savePublicAiProviderConnectionImpl(tenantSlug: string, formData: FormData) {
   await requireAiOps(tenantSlug);
   await saveSystemAiProviderConnection({
     mode: 'public',
@@ -100,7 +101,7 @@ export async function savePublicAiProviderConnection(tenantSlug: string, formDat
   revalidate(tenantSlug);
 }
 
-export async function disablePublicAiProviderConnection(
+async function disablePublicAiProviderConnectionImpl(
   tenantSlug: string,
   providerKey: CentralAiProviderId,
 ) {
@@ -109,7 +110,7 @@ export async function disablePublicAiProviderConnection(
   revalidate(tenantSlug);
 }
 
-export async function updatePublicAiRouting(tenantSlug: string, formData: FormData) {
+async function updatePublicAiRoutingImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiOps(tenantSlug);
   const primaryProviderRaw = text(formData, 'primaryProvider');
   if (!isProvider(primaryProviderRaw)) throw new Error('Choose a valid primary provider.');
@@ -166,4 +167,16 @@ export async function updatePublicAiRouting(tenantSlug: string, formData: FormDa
   });
 
   revalidate(tenantSlug);
+}
+
+export async function savePublicAiProviderConnection(...args: Parameters<typeof savePublicAiProviderConnectionImpl>) {
+  return withServerActionDatabase(() => savePublicAiProviderConnectionImpl(...args));
+}
+
+export async function disablePublicAiProviderConnection(...args: Parameters<typeof disablePublicAiProviderConnectionImpl>) {
+  return withServerActionDatabase(() => disablePublicAiProviderConnectionImpl(...args));
+}
+
+export async function updatePublicAiRouting(...args: Parameters<typeof updatePublicAiRoutingImpl>) {
+  return withServerActionDatabase(() => updatePublicAiRoutingImpl(...args));
 }

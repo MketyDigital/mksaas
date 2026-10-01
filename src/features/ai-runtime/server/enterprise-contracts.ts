@@ -14,6 +14,7 @@ import type { BillingGatewayAdapter } from '@/features/billing/gateways/types';
 import { type EntitlementKey, isEntitlementKey } from '@/features/entitlements/entitlement-keys';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import {
   aiEnterpriseCommercialPolicies,
   billingCheckouts,
@@ -95,11 +96,10 @@ function parseIncludedEntitlements(formData: FormData) {
   );
 }
 
-export async function createEnterpriseAiContractVersion(
+async function createEnterpriseAiContractVersionImpl(
   opsTenantSlug: string,
   formData: FormData,
 ) {
-  'use server';
   await requirePlatformControlAccess(opsTenantSlug);
   await requirePermission(opsTenantSlug, 'platform:plans');
   const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
@@ -225,6 +225,16 @@ export async function createEnterpriseAiContractVersion(
 
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/ai-operations`);
   revalidatePath(`/t/${target.slug}/enterprise-ai`);
+}
+
+export async function createEnterpriseAiContractVersion(
+  opsTenantSlug: string,
+  formData: FormData,
+) {
+  'use server';
+  return withServerActionDatabase(() =>
+    createEnterpriseAiContractVersionImpl(opsTenantSlug, formData),
+  );
 }
 
 export async function getActiveEnterpriseAiContract(tenantId: string) {

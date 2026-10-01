@@ -37,3 +37,32 @@ export function providerCostToCreditsPerMillion(input: {
   return (input.providerUsdMicrosPerMillion * BigInt(rateMultiplierBps) + (creditUsdMicros * 10_000n - 1n))
     / (creditUsdMicros * 10_000n);
 }
+
+
+export function deriveProviderRateCardCredits(input: {
+  inputUsdMicrosPerMillion: bigint;
+  cachedInputUsdMicrosPerMillion?: bigint | null;
+  outputUsdMicrosPerMillion: bigint;
+  rateMultiplierBps?: number;
+  creditUsdMicros?: bigint;
+}) {
+  return {
+    inputCreditsPerMillion: providerCostToCreditsPerMillion({
+      providerUsdMicrosPerMillion: input.inputUsdMicrosPerMillion,
+      rateMultiplierBps: input.rateMultiplierBps,
+      creditUsdMicros: input.creditUsdMicros,
+    }),
+    cachedInputCreditsPerMillion: input.cachedInputUsdMicrosPerMillion && input.cachedInputUsdMicrosPerMillion > 0n
+      ? providerCostToCreditsPerMillion({
+          providerUsdMicrosPerMillion: input.cachedInputUsdMicrosPerMillion,
+          rateMultiplierBps: input.rateMultiplierBps,
+          creditUsdMicros: input.creditUsdMicros,
+        })
+      : null,
+    outputCreditsPerMillion: providerCostToCreditsPerMillion({
+      providerUsdMicrosPerMillion: input.outputUsdMicrosPerMillion,
+      rateMultiplierBps: input.rateMultiplierBps,
+      creditUsdMicros: input.creditUsdMicros,
+    }),
+  };
+}

@@ -6,11 +6,12 @@ import { revalidatePath } from 'next/cache';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { PUBLIC_AI_MODEL_REGISTRY, type PublicAIProviderId } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { aiModelAliases, aiModels, aiRateCards, aiRoutes, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 
 import { ENTERPRISE_AI_RUNTIME_POLICY_KEY } from './commercial-policy';
-import { DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS, providerCostToCreditsPerMillion } from './commercial-pricing';
+import { DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS, deriveProviderRateCardCredits } from './commercial-pricing';
 
 function parsePositiveBigInt(value: FormDataEntryValue | null, label: string) {
   const raw = String(value ?? '').trim();
@@ -70,7 +71,37 @@ function parseOptionalPositiveBigInt(value: FormDataEntryValue | null, label: st
   return parsePositiveBigInt(raw, label);
 }
 
-export async function reconcilePublishedManagedAiCatalog(tenantSlug: string) {
+function parseVerifiedProviderCostMetadata(metadata: Record<string, unknown>) {
+  const parse = (key: string, label: string, required: boolean) => {
+    const raw = String(metadata[key] ?? '').trim();
+    if (!raw) {
+      if (required) throw new Error(`Verified provider ${label} cost is missing. Save the model with provider cost and verification date first.`);
+      return 0n;
+    }
+    if (!/^\d+$/.test(raw)) {
+      throw new Error(`Verified provider ${label} cost is invalid. Re-save the model using whole micro-USD per 1M tokens.`);
+    }
+    const value = BigInt(raw);
+    if (required && value <= 0n) {
+      throw new Error(`Verified provider ${label} cost must be greater than zero.`);
+    }
+    return value;
+  };
+
+  const verifiedAt = String(metadata.providerCostVerifiedAt ?? '').trim();
+  if (!verifiedAt) {
+    throw new Error('Provider cost verification date is missing. Re-save the managed model with a verification date before generating a rate card.');
+  }
+
+  return {
+    inputCost: parse('inputUsdMicrosPerMillion', 'input', true),
+    cachedCost: parse('cachedInputUsdMicrosPerMillion', 'cached-input', false),
+    outputCost: parse('outputUsdMicrosPerMillion', 'output', true),
+    verifiedAt,
+  };
+}
+
+async function reconcilePublishedManagedAiCatalogImpl(tenantSlug: string) {
   await requireAiCommercialOps(tenantSlug);
 
   for (const [providerKey, provider] of Object.entries(PUBLIC_AI_MODEL_REGISTRY) as Array<
@@ -103,7 +134,7 @@ export async function reconcilePublishedManagedAiCatalog(tenantSlug: string) {
   revalidateAiOps(tenantSlug);
 }
 
-export async function upsertManagedAiModel(tenantSlug: string, formData: FormData) {
+async function upsertManagedAiModelImpl(tenantSlug: string, formData: FormData) {
   await requireAiCommercialOps(tenantSlug);
   const providerKey = parseManagedProvider(formData.get('providerKey'));
   const nativeModel = String(formData.get('nativeModel') ?? '').trim().slice(0, 200);
@@ -206,7 +237,7 @@ export async function upsertManagedAiModel(tenantSlug: string, formData: FormDat
   revalidateAiOps(tenantSlug);
 }
 
-export async function createAiRateCardFromProviderCost(tenantSlug: string, formData: FormData) {
+async function createAiRateCardFromProviderCostImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiCommercialOps(tenantSlug);
   const modelId = String(formData.get('modelId') ?? '').trim();
   if (!modelId) throw new Error('Model is required.');
@@ -221,12 +252,14 @@ export async function createAiRateCardFromProviderCost(tenantSlug: string, formD
   const metadata = model.providerCostMetadata && typeof model.providerCostMetadata === 'object'
     ? model.providerCostMetadata as Record<string, unknown>
     : {};
-  const inputCost = BigInt(String(metadata.inputUsdMicrosPerMillion ?? '0'));
-  const cachedCost = BigInt(String(metadata.cachedInputUsdMicrosPerMillion ?? '0'));
-  const outputCost = BigInt(String(metadata.outputUsdMicrosPerMillion ?? '0'));
-  if (inputCost <= 0n || outputCost <= 0n || !metadata.providerCostVerifiedAt) {
-    throw new Error('Verified provider input/output costs are required before generating a rate card.');
-  }
+  const { inputCost, cachedCost, outputCost } = parseVerifiedProviderCostMetadata(metadata);
+  const derived = deriveProviderRateCardCredits({
+    inputUsdMicrosPerMillion: inputCost,
+    cachedInputUsdMicrosPerMillion: cachedCost,
+    outputUsdMicrosPerMillion: outputCost,
+    rateMultiplierBps,
+    creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
+  });
 
   const latest = await db.query.aiRateCards.findFirst({
     where: eq(aiRateCards.modelId, modelId),
@@ -237,21 +270,7 @@ export async function createAiRateCardFromProviderCost(tenantSlug: string, formD
     modelId,
     version: (latest?.version ?? 0) + 1,
     status: 'draft',
-    inputCreditsPerMillion: providerCostToCreditsPerMillion({
-      providerUsdMicrosPerMillion: inputCost,
-      rateMultiplierBps,
-      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
-    }),
-    cachedInputCreditsPerMillion: cachedCost > 0n ? providerCostToCreditsPerMillion({
-      providerUsdMicrosPerMillion: cachedCost,
-      rateMultiplierBps,
-      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
-    }) : null,
-    outputCreditsPerMillion: providerCostToCreditsPerMillion({
-      providerUsdMicrosPerMillion: outputCost,
-      rateMultiplierBps,
-      creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
-    }),
+    ...derived,
     minimumCreditsPerRequest: 1n,
     effectiveFrom: new Date(),
     createdByUserId: actor.userId,
@@ -259,7 +278,7 @@ export async function createAiRateCardFromProviderCost(tenantSlug: string, formD
   revalidateAiOps(tenantSlug);
 }
 
-export async function createAiRateCard(tenantSlug: string, formData: FormData) {
+async function createAiRateCardImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiCommercialOps(tenantSlug);
   const modelId = String(formData.get('modelId') ?? '').trim();
   if (!modelId) throw new Error('Model is required.');
@@ -308,7 +327,7 @@ export async function createAiRateCard(tenantSlug: string, formData: FormData) {
   revalidateAiOps(tenantSlug);
 }
 
-export async function activateAiRateCard(
+async function activateAiRateCardImpl(
   tenantSlug: string,
   rateCardId: string,
 ) {
@@ -341,7 +360,7 @@ export async function activateAiRateCard(
   revalidateAiOps(tenantSlug);
 }
 
-export async function retireAiRateCard(
+async function retireAiRateCardImpl(
   tenantSlug: string,
   rateCardId: string,
 ) {
@@ -353,7 +372,7 @@ export async function retireAiRateCard(
   revalidateAiOps(tenantSlug);
 }
 
-export async function updateAiRuntimePolicy(tenantSlug: string, formData: FormData) {
+async function updateAiRuntimePolicyImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiCommercialOps(tenantSlug);
   const now = new Date();
   const values = {
@@ -387,7 +406,7 @@ export async function updateAiRuntimePolicy(tenantSlug: string, formData: FormDa
   revalidateAiOps(tenantSlug);
 }
 
-export async function disableEnterpriseAiInference(tenantSlug: string) {
+async function disableEnterpriseAiInferenceImpl(tenantSlug: string) {
   const actor = await requireAiCommercialOps(tenantSlug);
   await db
     .update(aiRuntimePolicies)
@@ -401,7 +420,7 @@ export async function disableEnterpriseAiInference(tenantSlug: string) {
   revalidateAiOps(tenantSlug);
 }
 
-export async function updateAiSolutionTemplate(
+async function updateAiSolutionTemplateImpl(
   tenantSlug: string,
   templateKey: string,
   formData: FormData,
@@ -434,4 +453,40 @@ export async function updateAiSolutionTemplate(
 
   revalidateAiOps(tenantSlug);
   revalidatePath('/ai/app');
+}
+
+export async function reconcilePublishedManagedAiCatalog(...args: Parameters<typeof reconcilePublishedManagedAiCatalogImpl>) {
+  return withServerActionDatabase(() => reconcilePublishedManagedAiCatalogImpl(...args));
+}
+
+export async function upsertManagedAiModel(...args: Parameters<typeof upsertManagedAiModelImpl>) {
+  return withServerActionDatabase(() => upsertManagedAiModelImpl(...args));
+}
+
+export async function createAiRateCardFromProviderCost(...args: Parameters<typeof createAiRateCardFromProviderCostImpl>) {
+  return withServerActionDatabase(() => createAiRateCardFromProviderCostImpl(...args));
+}
+
+export async function createAiRateCard(...args: Parameters<typeof createAiRateCardImpl>) {
+  return withServerActionDatabase(() => createAiRateCardImpl(...args));
+}
+
+export async function activateAiRateCard(...args: Parameters<typeof activateAiRateCardImpl>) {
+  return withServerActionDatabase(() => activateAiRateCardImpl(...args));
+}
+
+export async function retireAiRateCard(...args: Parameters<typeof retireAiRateCardImpl>) {
+  return withServerActionDatabase(() => retireAiRateCardImpl(...args));
+}
+
+export async function updateAiRuntimePolicy(...args: Parameters<typeof updateAiRuntimePolicyImpl>) {
+  return withServerActionDatabase(() => updateAiRuntimePolicyImpl(...args));
+}
+
+export async function disableEnterpriseAiInference(...args: Parameters<typeof disableEnterpriseAiInferenceImpl>) {
+  return withServerActionDatabase(() => disableEnterpriseAiInferenceImpl(...args));
+}
+
+export async function updateAiSolutionTemplate(...args: Parameters<typeof updateAiSolutionTemplateImpl>) {
+  return withServerActionDatabase(() => updateAiSolutionTemplateImpl(...args));
 }

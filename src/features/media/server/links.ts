@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { mediaTenantLinks, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { getTenantBySlug } from '@/shared/lib/tenant';
@@ -32,7 +33,7 @@ export async function listMediaTenantLinks() {
     .orderBy(desc(mediaTenantLinks.updatedAt));
 }
 
-export async function saveMediaTenantLink(
+async function saveMediaTenantLinkImpl(
   opsTenantSlug: string,
   formData: FormData,
 ) {
@@ -79,4 +80,8 @@ export async function saveMediaTenantLink(
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/media`);
   revalidatePath(`/t/${target.slug}/media`);
   revalidatePath(`/t/${target.slug}`);
+}
+
+export async function saveMediaTenantLink(...args: Parameters<typeof saveMediaTenantLinkImpl>) {
+  return withServerActionDatabase(() => saveMediaTenantLinkImpl(...args));
 }
