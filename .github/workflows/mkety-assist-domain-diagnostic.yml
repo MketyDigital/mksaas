@@ -21,7 +21,7 @@ jobs:
           zone_id="$(Z="$zones" node -e "const x=JSON.parse(process.env.Z);process.stdout.write(x.result?.[0]?.id||'')")"
           test -n "$zone_id"
           host="assist-diag-${GITHUB_RUN_ID}.mkety.com"
-          body="$(HOST="$host" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,ssl:{method:'http',type:'dv'},custom_origin_server:'assist-origin.mkety.app',custom_metadata:{product:'mkety-assist',diagnostic:'true'}}))")"
+          body="$(HOST="$host" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,ssl:{method:'http',type:'dv'},custom_origin_server:'assist-origin.mkety.app'}))")"
           set +e
           resp="$(curl -sS -w '\nHTTP_STATUS:%{http_code}' -X POST "https://api.cloudflare.com/client/v4/zones/$zone_id/custom_hostnames" -H "Authorization: Bearer $MKETY_ASSIST_CF_SAAS_TOKEN" -H 'Content-Type: application/json' --data "$body")"
           rc=$?
