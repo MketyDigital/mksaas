@@ -9,8 +9,6 @@ describe('Platform navigation route contract', () => {
   it('keeps every Admin sidebar destination backed by a real route', () => {
     const expected = [
       'admin/page.tsx',
-      'admin/platform-control/page.tsx',
-      'admin/platform-control/[module]/page.tsx',
       'admin/analytics/page.tsx',
       'admin/members/page.tsx',
       'admin/invites/page.tsx',
@@ -27,6 +25,12 @@ describe('Platform navigation route contract', () => {
     for (const candidate of expected) {
       expect(existsSync(route(candidate))).toBe(true);
     }
+  });
+
+  it('keeps Platform Control isolated under the standalone Ops tree', () => {
+    expect(existsSync(resolve(process.cwd(), 'src/app/ops/[tenant]/platform-control/page.tsx'))).toBe(true);
+    expect(existsSync(resolve(process.cwd(), 'src/app/ops/[tenant]/platform-control/[module]/page.tsx'))).toBe(true);
+    expect(existsSync(route('admin/platform-control/page.tsx'))).toBe(false);
   });
 
   it('keeps product-operations modules discoverable from the Admin sidebar', () => {
