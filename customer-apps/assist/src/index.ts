@@ -1671,7 +1671,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       ? Math.max(1, Math.floor(Number(policy.included_credits || 0) * recurringPaid / recurringBase))
       : Math.max(0, Number(policy.included_credits || 0));
 
-    const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
+    const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
       return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan" });
@@ -1711,7 +1711,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
       canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
     }
-    const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
+    const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
       return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup" });
@@ -1735,12 +1735,15 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   return json({ error: "not_found" }, 404);
 }
 
-async function resolveRequestedPaymentMethod(db: D1Database, requested: unknown) {
-  const rows = await db.prepare(
-    "SELECT method,enabled,healthy FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
-  ).all<any>();
-  const health = { nowpayments: false, flutterwave: false, kora: false };
-  for (const row of rows.results ?? []) if (row.method in health) (health as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
+async function resolveRequestedPaymentMethod(env: Env, requested: unknown) {
+  const koraRow = await env.DB.prepare(
+    "SELECT enabled,healthy FROM payment_method_health WHERE method='kora' LIMIT 1",
+  ).first<any>();
+  const health = {
+    nowpayments: Boolean(env.NOWPAYMENTS_API_KEY && env.NOWPAYMENTS_IPN_SECRET),
+    flutterwave: Boolean(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET),
+    kora: Boolean(koraRow?.enabled) && Boolean(koraRow?.healthy),
+  };
   const available = listPaymentMethods(health);
   const selected = String(requested || "").toLowerCase();
   return selected ? (available.includes(selected as any) ? selected : null) : (available[0] ?? null);
