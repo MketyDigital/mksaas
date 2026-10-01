@@ -202,6 +202,40 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     return json({ customer, commercial, features, credits, domains: domains.results ?? [] });
   }
 
+  if (url.pathname === "/api/ops/credits" && request.method === "POST") {
+    const body = await readJson(request);
+    const customerId = requiredString(body.customerId, "customerId");
+    const delta = parseInt(String(body.delta ?? "0"), 10);
+    if (!Number.isFinite(delta) || delta === 0) return json({ error: "credit_delta_must_be_nonzero" }, 400);
+    const reason = requiredString(body.reason, "reason").slice(0, 300);
+    const account = await env.DB.prepare("SELECT balance FROM credit_accounts WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
+    if (!account) return json({ error: "credit_account_not_found" }, 404);
+    const next = parseInt(String(account.balance || 0), 10) + delta;
+    if (next < 0) return json({ error: "credit_adjustment_would_go_negative" }, 409);
+    const now = unix();
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE credit_accounts SET balance=?,lifetime_granted=lifetime_granted+CASE WHEN ?>0 THEN ? ELSE 0 END,
+         updated_at=? WHERE customer_id=?`,
+      ).bind(next, delta, delta, now, customerId),
+      env.DB.prepare(
+        "INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
+      ).bind(id("led"), customerId, delta, "operator_adjustment", null, next, JSON.stringify({ reason }), now),
+      env.DB.prepare(
+        "INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
+      ).bind(id("aud"), "operator", customerId, "credits.adjusted", "customer", customerId, JSON.stringify({ delta, reason, balanceAfter: next }), now),
+    ]);
+    return json({ ok: true, balance: next });
+  }
+
+  if (url.pathname === "/api/ops/ledger" && request.method === "GET") {
+    const customerId = requiredString(url.searchParams.get("customerId"), "customerId");
+    const rows = await env.DB.prepare(
+      "SELECT id,delta,kind,reference_id,balance_after,metadata_json,created_at FROM credit_ledger WHERE customer_id=? ORDER BY created_at DESC LIMIT 200",
+    ).bind(customerId).all();
+    return json({ entries: rows.results ?? [] });
+  }
+
   if (url.pathname === "/api/ops/pricing/calculate" && request.method === "POST") {
     const body = await readJson(request);
     const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
