@@ -204,25 +204,38 @@ function launchFlutterwave(data){
  if(data.checkoutUrl){location.assign(data.checkoutUrl);return}
  throw new Error('Payment checkout unavailable');
 }
-function payPlan(){
- openModal('<h2>Pay plan</h2><p class="muted">Mkety calculates the amount due server-side. Access changes only after verified settlement.</p><div class="field"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div><p id="planPayMsg" class="muted"></p><div class="row"><button class="btn primary" id="planPayStart">Continue to secure payment</button><button class="btn" id="planPayCancel">Cancel</button></div>');
- planPayCancel.onclick=closeModal;
- planPayStart.onclick=async()=>{try{
-   planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';
-   const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentCurrency:planCurrency.value})});
-   planPayMsg.textContent='Opening secure checkout…';
-   launchFlutterwave(d);
- }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
+async function paymentMethodOptions(){
+ const d=await api('/api/billing/methods');
+ const methods=d.methods||[];
+ if(!methods.length)throw new Error('No payment method is currently available.');
+ const labels={nowpayments:'NOWPayments',flutterwave:'Flutterwave',kora:'Kora'};
+ return {html:methods.map((m,i)=>'<option value="'+esc(m)+'" '+(m===d.defaultMethod||(!d.defaultMethod&&i===0)?'selected':'')+'>'+esc(labels[m]||m)+'</option>').join(''),defaultMethod:d.defaultMethod||methods[0]};
 }
-function buyCredits(){
- openModal('<h2>Buy credits</h2><p class="muted">Payment is verified by Mkety before credits are added.</p><div class="field"><label>Credits</label><input class="input" id="topupCredits" type="number" min="100" max="5000000" value="5000"></div><div class="field"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted"></p><div class="row"><button class="btn primary" id="topupStart">Continue to secure payment</button><button class="btn" id="topupCancel">Cancel</button></div>');
- topupCancel.onclick=closeModal;
- topupStart.onclick=async()=>{try{
-   topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
-   const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credits:Number(topupCredits.value),paymentCurrency:topupCurrency.value})});
-   topupMsg.textContent='Opening secure checkout…';
-   launchFlutterwave(d);
- }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
+async function payPlan(){
+ try{
+  const methods=await paymentMethodOptions();
+  openModal('<h2>Pay plan</h2><p class="muted">Mkety calculates the amount due server-side. Access changes only after verified settlement.</p><div class="field"><label>Payment method</label><select class="input" id="planMethod">'+methods.html+'</select></div><div class="field"><label>Payment currency (Flutterwave)</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div><p id="planPayMsg" class="muted"></p><div class="row"><button class="btn primary" id="planPayStart">Continue to secure payment</button><button class="btn" id="planPayCancel">Cancel</button></div>');
+  planPayCancel.onclick=closeModal;
+  planPayStart.onclick=async()=>{try{
+    planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentMethod:planMethod.value,paymentCurrency:planCurrency.value})});
+    planPayMsg.textContent='Opening secure checkout…';
+    launchFlutterwave(d);
+  }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
+ }catch(e){toastMsg(e.message)}
+}
+async function buyCredits(){
+ try{
+  const methods=await paymentMethodOptions();
+  openModal('<h2>Buy credits</h2><p class="muted">Payment is verified by Mkety before credits are added.</p><div class="field"><label>Credits</label><input class="input" id="topupCredits" type="number" min="100" max="5000000" value="5000"></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field"><label>Payment currency (Flutterwave)</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted"></p><div class="row"><button class="btn primary" id="topupStart">Continue to secure payment</button><button class="btn" id="topupCancel">Cancel</button></div>');
+  topupCancel.onclick=closeModal;
+  topupStart.onclick=async()=>{try{
+    topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credits:Number(topupCredits.value),paymentMethod:topupMethod.value,paymentCurrency:topupCurrency.value})});
+    topupMsg.textContent='Opening secure checkout…';
+    launchFlutterwave(d);
+  }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
+ }catch(e){toastMsg(e.message)}
 }
 async function loadCheckouts(){try{
  const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
