@@ -78,7 +78,7 @@ function render_assistants(){return '<div class="spread"><div><h1 class="title">
 function assistantRows(rows){return rows.length?'<div class="assistant-list">'+rows.map(a=>'<div class="assistant-item spread"><div><strong>'+esc(a.name)+'</strong><div class="muted">'+esc(a.model_alias)+' · '+esc(a.status)+'</div></div><button class="btn" data-edit-assistant="'+a.id+'">Manage</button></div>').join('')+'</div>':'<div class="empty">No assistants yet.</div>'}
 function render_knowledge(){return '<div class="spread"><div><h1 class="title">Knowledge</h1><p class="sub">Reusable business knowledge that can be attached to assistants.</p></div><button class="btn primary" data-action="new-knowledge">New collection</button></div><div class="card">'+(state.knowledge.length?'<table class="table"><thead><tr><th>Collection</th><th>Items</th><th></th></tr></thead><tbody>'+state.knowledge.map(k=>'<tr><td>'+esc(k.name)+'</td><td>'+esc(k.items)+'</td><td><button class="btn" data-manage-knowledge="'+k.id+'">Manage</button> <button class="btn" data-add-knowledge="'+k.id+'">Add content</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Create a collection to start adding knowledge.</div>')+'</div>'}
 function render_conversations(){return '<h1 class="title">Conversations</h1><p class="sub">Live Telegram conversation history across assistants.</p><div class="chat"><div class="conversation-list">'+conversationRows(state.conversations)+'</div><div class="messages" id="messages"><div class="empty">Select a conversation</div></div></div>'}
-function conversationRows(rows){return rows.length?rows.map(c=>'<div class="conversation" data-conversation="'+c.id+'"><div class="spread"><strong>'+esc(c.assistant_name||'Assistant')+'</strong><span><button class="btn" data-takeover="'+c.id+'">Take over</button> <button class="btn" data-return-ai="'+c.id+'">AI on</button> <button class="btn" data-clear-memory="'+c.id+'">Clear AI memory</button></span></div><div class="muted">'+esc(c.channel)+' · '+new Date((c.updated_at||0)*1000).toLocaleString()+'</div><div>'+esc((c.last_message||'').slice(0,100))+'</div></div>').join(''):'<div class="empty">No conversations yet.</div>'}
+function conversationRows(rows){return rows.length?rows.map(c=>'<div class="conversation" data-conversation="'+c.id+'"><div class="spread"><strong>'+esc(c.assistant_name||'Assistant')+'</strong><span><button class="btn" data-takeover="'+c.id+'">Take over</button> <button class="btn" data-return-ai="'+c.id+'">AI on</button> <button class="btn" data-clear-memory="'+c.id+'">Clear AI memory</button> '+(c.sender_control_state&&c.sender_control_state!=='active'?'<button class="btn" data-sender-control="'+c.id+'" data-state="active">Restore sender</button>':'<button class="btn" data-sender-control="'+c.id+'" data-state="paused">Pause sender</button> <button class="btn danger" data-sender-control="'+c.id+'" data-state="banned">Ban sender</button>')+'</span></div><div class="muted">'+esc(c.channel)+' · '+new Date((c.updated_at||0)*1000).toLocaleString()+(c.sender_control_state&&c.sender_control_state!=='active'?' · sender '+esc(c.sender_control_state):'')+'</div><div>'+esc((c.last_message||'').slice(0,100))+'</div></div>').join(''):'<div class="empty">No conversations yet.</div>'}
 function render_handoffs(){return '<div class="spread"><div><h1 class="title">Human Handoff</h1><p class="sub">Pause all automation, pause one assistant, or take over one conversation.</p></div><button class="btn '+(state.automation?.paused?'primary':'')+'" data-action="toggle-global-automation">'+(state.automation?.paused?'Resume all AI':'Pause all AI')+'</button></div><div class="card">'+(state.handoffs.length?'<table class="table"><thead><tr><th>Assistant</th><th>Status</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+state.handoffs.map(h=>'<tr><td>'+esc(h.assistant_name)+'</td><td><span class="pill '+(h.status==='open'?'warn':'ok')+'">'+esc(h.status)+'</span></td><td>'+esc((h.reason||'').slice(0,120))+'</td><td>'+(h.status==='open'?'<button class="btn" data-reply-handoff="'+h.id+'">Reply</button> <button class="btn" data-resolve-handoff="'+h.id+'">Resolve</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No active handoffs.</div>')+'</div>'}
 function render_reminders(){return '<div class="spread"><div><h1 class="title">Reminders</h1><p class="sub">Scheduled messages are delivered by the connected Telegram assistant.</p></div><button class="btn primary" data-action="new-reminder">New reminder</button></div><div class="card">'+(state.reminders.length?'<table class="table"><thead><tr><th>Assistant</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>'+state.reminders.map(r=>'<tr><td>'+esc(r.assistant_name)+'</td><td>'+new Date(r.due_at*1000).toLocaleString()+'</td><td>'+esc(r.status)+'</td><td>'+(r.status==='scheduled'?'<button class="btn danger" data-cancel-reminder="'+r.id+'">Cancel</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No reminders.</div>')+'</div>'}
 function render_usage(){
@@ -109,6 +109,7 @@ function bindSection(){
  content.querySelectorAll('[data-takeover]').forEach(b=>b.onclick=e=>{e.stopPropagation();setConversationAutomation(b.dataset.takeover,true)});
  content.querySelectorAll('[data-return-ai]').forEach(b=>b.onclick=e=>{e.stopPropagation();setConversationAutomation(b.dataset.returnAi,false)});
  content.querySelectorAll('[data-clear-memory]').forEach(b=>b.onclick=e=>{e.stopPropagation();clearConversationMemory(b.dataset.clearMemory)});
+ content.querySelectorAll('[data-sender-control]').forEach(b=>b.onclick=e=>{e.stopPropagation();setSenderControl(b.dataset.senderControl,b.dataset.state)});
  content.querySelectorAll('[data-action="toggle-global-automation"]').forEach(b=>b.onclick=toggleGlobalAutomation);
  content.querySelectorAll('[data-reply-handoff]').forEach(b=>b.onclick=()=>replyHandoff(b.dataset.replyHandoff));
  content.querySelectorAll('[data-resolve-handoff]').forEach(b=>b.onclick=()=>resolveHandoff(b.dataset.resolveHandoff));
@@ -169,6 +170,15 @@ async function manageKnowledge(collectionId){
   dialog.querySelectorAll('[data-retry-knowledge]').forEach(b=>b.onclick=async()=>{try{await api('/api/knowledge-items/'+encodeURIComponent(b.dataset.retryKnowledge)+'/retry',{method:'POST'});toastMsg('Retry completed');await manageKnowledge(collectionId)}catch(e){toastMsg(e.message)}});
   dialog.querySelectorAll('[data-delete-knowledge-item]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this knowledge item?'))return;try{await api('/api/knowledge-items/'+encodeURIComponent(b.dataset.deleteKnowledgeItem),{method:'DELETE'});await manageKnowledge(collectionId)}catch(e){toastMsg(e.message)}});
   dialog.querySelectorAll('[data-rename-knowledge-item]').forEach(b=>b.onclick=async()=>{const title=prompt('New item title:',b.dataset.title||'');if(!title)return;try{await api('/api/knowledge-items/'+encodeURIComponent(b.dataset.renameKnowledgeItem),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({title})});await manageKnowledge(collectionId)}catch(e){toastMsg(e.message)}});
+ }catch(e){toastMsg(e.message)}
+}
+async function setSenderControl(conversationId,state){
+ try{
+  let reason=null;
+  if(state!=='active')reason=prompt((state==='banned'?'Ban':'Pause')+' this sender — optional reason')||null;
+  await api('/api/conversations/'+conversationId+'/sender-control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({state,reason})});
+  toastMsg(state==='active'?'Sender restored':'Sender '+state);
+  await refresh();
  }catch(e){toastMsg(e.message)}
 }
 async function clearConversationMemory(id){
@@ -505,12 +515,13 @@ function newCustomerDialog(){
 }
 async function manageCustomer(id){
   try{
-    const d=await api('/api/ops/customer?id='+encodeURIComponent(id));const c=d.customer,p=d.commercial||{},f=d.features||{},domains=d.domains||[],credits=d.credits||{};
+    const d=await api('/api/ops/customer?id='+encodeURIComponent(id));const c=d.customer,p=d.commercial||{},f=d.features||{},domains=d.domains||[],credits=d.credits||{},members=d.members||[];
     openModal('<div class="top" style="margin:0 0 10px"><div><h2 style="margin:0">'+esc(c.name)+'</h2><div class="muted">Balance: '+esc(credits.balance??0)+' · Billing: '+esc(c.billing_status||'current')+'</div></div></div>'+
       '<p class="muted">'+domains.map(x=>esc(x.hostname)+' · '+esc(x.status)+' / '+esc(x.ssl_status||'')).join('<br>')+'</p>'+
       '<h3>Customer access</h3><div class="card"><p class="muted">The hosted portal remains the recovery-safe entry point even when a custom domain is pending.</p><p><strong>'+(domains.find(x=>x.kind==='hosted')?esc(domains.find(x=>x.kind==='hosted').hostname):'Hosted portal unavailable')+'</strong></p>'+
       (d.ownerAccess?'<div class="field"><label>Active owner access link · expires '+new Date(d.ownerAccess.expiresAt*1000).toLocaleString()+'</label><div class="row"><input class="input" id="ownerAccessUrl" style="flex:1;min-width:260px" readonly value="'+esc(d.ownerAccess.accessUrl)+'"><button class="btn" id="copyOwnerAccess">Copy link</button></div></div>':'<p class="muted">No active revealable owner link. Generate one below.</p>')+
       '<div class="row"><button class="btn primary" id="regenerateAccess">Generate fresh owner access link</button><button class="btn danger" id="deleteUnpaid">Delete unpaid customer</button></div><p id="accessStatus" class="muted">The link remains here until it is used or expires. Delete is blocked automatically after any verified payment or AI usage.</p></div>'+
+      '<h3>User controls</h3><div class="card">'+(members.length?members.map(m=>'<div class="assistant-item spread"><div><strong>'+esc(m.email)+'</strong><div class="muted">'+esc(m.role)+' · '+esc(m.control_state||'active')+(m.control_reason?' · '+esc(m.control_reason):'')+'</div></div><span>'+(m.control_state&&m.control_state!=='active'?'<button class="btn" data-ops-user-control="'+m.id+'" data-state="active">Restore</button>':'<button class="btn" data-ops-user-control="'+m.id+'" data-state="paused">Pause</button> <button class="btn" data-ops-user-control="'+m.id+'" data-state="suspended">Suspend</button> <button class="btn danger" data-ops-user-control="'+m.id+'" data-state="banned">Ban</button>')+'</span></div>').join(''):'<div class="empty">No users.</div>')+'</div>'+
       '<h3>Commercial agreement</h3><div class="two">'+
         '<div class="field"><label>Monthly price (USD)</label><input class="input" id="pPrice" inputmode="decimal" value="'+(Number(p.subscription_amount_minor||0)/100).toFixed(2)+'"></div>'+
         '<div class="field"><label>Included credits per billing period</label><input class="input" id="pCredits" type="number" value="'+esc(p.included_credits||0)+'"></div>'+
@@ -549,6 +560,12 @@ async function manageCustomer(id){
       else{ownerAccessUrl.focus();ownerAccessUrl.select();document.execCommand('copy')}
       accessStatus.textContent='Owner access link copied.';
     }catch(e){accessStatus.textContent='Could not copy automatically. Select the link field and copy it manually.'}};
+    dialog.querySelectorAll('[data-ops-user-control]').forEach(btn=>btn.onclick=async()=>{try{
+      const state=btn.dataset.state,userId=btn.dataset.opsUserControl;
+      const reason=state==='active'?null:(prompt((state==='banned'?'Ban':state==='suspended'?'Suspend':'Pause')+' this user — optional reason')||null);
+      await api('/api/ops/user-control',{method:'POST',body:JSON.stringify({customerId:id,userId,state,reason})});
+      closeModal();await manageCustomer(id);
+    }catch(e){alert(e.message)}});
     regenerateAccess.onclick=async()=>{try{
       regenerateAccess.disabled=true;accessStatus.textContent='Generating a fresh owner access link…';
       await api('/api/ops/customer/access-link',{method:'POST',body:JSON.stringify({customerId:id})});

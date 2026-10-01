@@ -322,15 +322,25 @@ export async function handleRuntimeApi(
     const assistantId = url.searchParams.get("assistantId");
     const query = assistantId
       ? env.DB.prepare(
-          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.status,c.updated_at,
+          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.last_sender_id,c.status,c.updated_at,
+             COALESCE(sc.state,'active') AS sender_control_state,
+             sc.reason AS sender_control_reason,sc.expires_at AS sender_control_expires_at,
              (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message
-           FROM conversations c JOIN assistants a ON a.id=c.assistant_id
+           FROM conversations c
+           JOIN assistants a ON a.id=c.assistant_id
+           LEFT JOIN channel_sender_controls sc
+             ON sc.assistant_id=c.assistant_id AND sc.channel=c.channel AND sc.sender_id=COALESCE(c.last_sender_id,c.external_conversation_id)
            WHERE c.customer_id=? AND c.assistant_id=? ORDER BY c.updated_at DESC LIMIT 100`,
         ).bind(customer.customerId, assistantId)
       : env.DB.prepare(
-          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.status,c.updated_at,
+          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.last_sender_id,c.status,c.updated_at,
+             COALESCE(sc.state,'active') AS sender_control_state,
+             sc.reason AS sender_control_reason,sc.expires_at AS sender_control_expires_at,
              (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message
-           FROM conversations c JOIN assistants a ON a.id=c.assistant_id
+           FROM conversations c
+           JOIN assistants a ON a.id=c.assistant_id
+           LEFT JOIN channel_sender_controls sc
+             ON sc.assistant_id=c.assistant_id AND sc.channel=c.channel AND sc.sender_id=COALESCE(c.last_sender_id,c.external_conversation_id)
            WHERE c.customer_id=? ORDER BY c.updated_at DESC LIMIT 100`,
         ).bind(customer.customerId);
     const rows = await query.all();
@@ -393,6 +403,36 @@ export async function handleRuntimeApi(
       await takeOverConversation(env.DB, customer.customerId, conversation.assistant_id, parts[2], session.userId);
     }
     return json({ ok: true, paused: body.paused !== false });
+  }
+
+  if (parts[0] === "api" && parts[1] === "conversations" && parts[2] && parts[3] === "sender-control" && request.method === "POST") {
+    requireAdmin(session);
+    const conversation = await env.DB.prepare(
+      "SELECT assistant_id,channel,last_sender_id,external_conversation_id FROM conversations WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!conversation) return json({ error: "conversation_not_found" }, 404);
+    const body = await readJson(request);
+    const state = String(body.state || "").toLowerCase();
+    if (!["active","paused","suspended","banned"].includes(state)) return json({ error: "invalid_control_state" }, 400);
+    const senderId = String(conversation.last_sender_id || conversation.external_conversation_id || "");
+    if (!senderId) return json({ error: "conversation_sender_unknown" }, 409);
+    const expiresAt = body.expiresAt ? Math.floor(new Date(String(body.expiresAt)).getTime() / 1000) : null;
+    if (expiresAt && (!Number.isFinite(expiresAt) || expiresAt <= unix())) return json({ error: "invalid_control_expiry" }, 400);
+    const reason = body.reason ? String(body.reason).trim().slice(0,500) : null;
+    const now = unix();
+    await env.DB.prepare(
+      `INSERT INTO channel_sender_controls
+       (customer_id,assistant_id,channel,sender_id,state,reason,expires_at,updated_by_operator_id,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,NULL,?,?)
+       ON CONFLICT(assistant_id,channel,sender_id) DO UPDATE SET
+         state=excluded.state,reason=excluded.reason,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
+    ).bind(customer.customerId,conversation.assistant_id,conversation.channel,senderId,state,reason,expiresAt,now,now).run();
+    if (state !== "active") {
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='cancelled',last_error=?,completed_at=?,locked_at=NULL,updated_at=? WHERE conversation_id=? AND status IN ('pending','retry')",
+      ).bind("sender_"+state,now,now,parts[2]).run();
+    }
+    return json({ ok: true, state, senderId });
   }
 
   if (url.pathname === "/api/notifications/preferences" && request.method === "GET") {
@@ -673,6 +713,48 @@ export async function handleRuntimeApi(
       return json({ ok: true });
     }
 
+    if (parts[3] === "channel-identities" && request.method === "GET") {
+      const rows = await env.DB.prepare(
+        `SELECT id,channel,platform_user_id,identity_role,connection_mode,is_self_identity,created_at,updated_at
+         FROM assistant_channel_identities
+         WHERE assistant_id=? AND customer_id=?
+         ORDER BY created_at ASC`,
+      ).bind(assistantId, customer.customerId).all<any>();
+      return json({ identities: rows.results ?? [] });
+    }
+
+    if (parts[3] === "channel-identities" && request.method === "POST") {
+      requireAdmin(session);
+      const body = await readJson(request);
+      const channel = required(body.channel || "telegram", "channel").toLowerCase();
+      const platformUserId = required(body.platformUserId, "platformUserId");
+      const identityRole = ["owner","operator","assistant","connected_account"].includes(String(body.identityRole))
+        ? String(body.identityRole)
+        : "connected_account";
+      const connectionMode = ["bot_api","secretary","mtproto","other"].includes(String(body.connectionMode))
+        ? String(body.connectionMode)
+        : "secretary";
+      const now = unix();
+      const identityId = id("cid");
+      await env.DB.prepare(
+        `INSERT INTO assistant_channel_identities
+         (id,customer_id,assistant_id,channel,platform_user_id,identity_role,connection_mode,is_self_identity,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(assistant_id,channel,platform_user_id) DO UPDATE SET
+           identity_role=excluded.identity_role,connection_mode=excluded.connection_mode,
+           is_self_identity=excluded.is_self_identity,updated_at=excluded.updated_at`,
+      ).bind(identityId,customer.customerId,assistantId,channel,platformUserId,identityRole,connectionMode,body.isSelfIdentity===false?0:1,now,now).run();
+      return json({ ok: true });
+    }
+
+    if (parts[3] === "channel-identities" && parts[4] && request.method === "DELETE") {
+      requireAdmin(session);
+      await env.DB.prepare(
+        "DELETE FROM assistant_channel_identities WHERE id=? AND assistant_id=? AND customer_id=?",
+      ).bind(parts[4], assistantId, customer.customerId).run();
+      return json({ ok: true });
+    }
+
     if (parts[3] === "knowledge" && request.method === "PUT") {
       requireAdmin(session);
       if (!(await customerFeatureEnabled(env.DB, customer.customerId, "knowledge_enabled"))) {
@@ -769,6 +851,16 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true, ignoredBotSender: true });
   }
 
+  const selfIdentity = await env.DB.prepare(
+    `SELECT 1 FROM assistant_channel_identities
+     WHERE assistant_id=? AND channel='telegram' AND platform_user_id=? AND is_self_identity=1
+     LIMIT 1`,
+  ).bind(assistantId, senderId).first();
+  if (selfIdentity) {
+    await markWebhook(env.DB, assistantId, updateId, "ignored");
+    return json({ ok: true, ignoredSelfIdentity: true });
+  }
+
   const ownerSender = await env.DB.prepare(
     `SELECT 1
      FROM customer_users cu
@@ -781,6 +873,16 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   if (ownerSender) {
     await markWebhook(env.DB, assistantId, updateId, "ignored");
     return json({ ok: true, ignoredOwnerSender: true });
+  }
+
+  const senderControl = await effectiveSenderControl(env.DB, assistant.customer_id, assistantId, "telegram", senderId);
+  if (senderControl.state !== "active") {
+    await markWebhook(env.DB, assistantId, updateId, "ignored");
+    return json({
+      ok: true,
+      ignoredControlledSender: true,
+      controlState: senderControl.state,
+    });
   }
 
   const token = await getAssistantSecret(env, assistantId, "telegram_bot_token");
@@ -817,6 +919,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   }
 
   const conversation = await upsertConversation(env.DB, assistant.customer_id, assistantId, chatId);
+  await env.DB.prepare("UPDATE conversations SET last_sender_id=?,updated_at=? WHERE id=? AND customer_id=?")
+    .bind(senderId, unix(), conversation.id, assistant.customer_id).run();
   const inbound = await normalizeTelegramMessage(message, token, assistant, env, conversation.id);
 
   if (!inbound.text && !inbound.mediaContext) {
@@ -2456,6 +2560,38 @@ async function telegramSetWebhook(token: string, url: string, secret: string) {
       drop_pending_updates: false,
     }),
   }).then((r) => r.json<any>());
+}
+
+async function effectiveSenderControl(
+  db: D1Database,
+  customerId: string,
+  assistantId: string,
+  channel: string,
+  senderId: string,
+) {
+  const row = await db.prepare(
+    "SELECT state,reason,expires_at FROM channel_sender_controls WHERE customer_id=? AND assistant_id=? AND channel=? AND sender_id=? LIMIT 1",
+  ).bind(customerId,assistantId,channel,senderId).first<any>();
+  if (!row) return { state: "active", reason: null, expiresAt: null };
+  const expiresAt = row.expires_at === null || row.expires_at === undefined ? null : Number(row.expires_at);
+  if (expiresAt && expiresAt <= unix()) {
+    await db.prepare(
+      "UPDATE channel_sender_controls SET state='active',reason=NULL,expires_at=NULL,updated_at=? WHERE customer_id=? AND assistant_id=? AND channel=? AND sender_id=?",
+    ).bind(unix(),customerId,assistantId,channel,senderId).run();
+    return { state: "active", reason: null, expiresAt: null };
+  }
+  return { state: String(row.state), reason: row.reason ? String(row.reason) : null, expiresAt };
+}
+
+export function shouldIgnoreSecretaryEvent(input: {
+  outgoing?: boolean;
+  senderId?: string | number | null;
+  connectedAccountId?: string | number | null;
+}) {
+  if (input.outgoing === true) return true;
+  if (input.senderId === null || input.senderId === undefined) return false;
+  if (input.connectedAccountId === null || input.connectedAccountId === undefined) return false;
+  return String(input.senderId) === String(input.connectedAccountId);
 }
 
 async function telegramSend(token: string, chatId: string, text: string) {
