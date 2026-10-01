@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { billingPlans, billingPlanVersionEntitlements, billingPlanVersions, mailDomains, mailWorkspaces } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
@@ -33,7 +34,7 @@ function parseUsdMinor(value: FormDataEntryValue | null) {
   return BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2));
 }
 
-export async function createMailPlanVersion(opsTenantSlug: string, formData: FormData) {
+async function createMailPlanVersionImpl(opsTenantSlug: string, formData: FormData) {
   const actor = await requireMailOps(opsTenantSlug);
   const planKey = String(formData.get('planKey') || '');
   if (!isMailPlanKey(planKey)) throw new Error('Unknown Mkety Mail plan.');
@@ -134,7 +135,7 @@ export async function createMailPlanVersion(opsTenantSlug: string, formData: For
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
-export async function reconcileMailCatalog(opsTenantSlug: string) {
+async function reconcileMailCatalogImpl(opsTenantSlug: string) {
   const actor = await requireMailOps(opsTenantSlug);
   const result = await seedSelfServiceBillingCatalog();
   await logAuditEvent({
@@ -146,7 +147,7 @@ export async function reconcileMailCatalog(opsTenantSlug: string) {
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
-export async function updateMailWorkspaceOperations(opsTenantSlug: string, formData: FormData) {
+async function updateMailWorkspaceOperationsImpl(opsTenantSlug: string, formData: FormData) {
   const actor = await requireMailOps(opsTenantSlug);
   const workspaceId = String(formData.get('workspaceId') || '');
   const targetTenantId = String(formData.get('targetTenantId') || '');
@@ -173,7 +174,7 @@ export async function updateMailWorkspaceOperations(opsTenantSlug: string, formD
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
 }
 
-export async function updateMailDomainOperations(opsTenantSlug: string, formData: FormData) {
+async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: FormData) {
   const actor = await requireMailOps(opsTenantSlug);
   const domainId = String(formData.get('domainId') || '');
   const targetTenantId = String(formData.get('targetTenantId') || '');
@@ -223,4 +224,20 @@ export async function updateMailDomainOperations(opsTenantSlug: string, formData
     metadata: { targetTenantId },
   });
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/mail`);
+}
+
+export async function createMailPlanVersion(...args: Parameters<typeof createMailPlanVersionImpl>) {
+  return withServerActionDatabase(() => createMailPlanVersionImpl(...args));
+}
+
+export async function reconcileMailCatalog(...args: Parameters<typeof reconcileMailCatalogImpl>) {
+  return withServerActionDatabase(() => reconcileMailCatalogImpl(...args));
+}
+
+export async function updateMailWorkspaceOperations(...args: Parameters<typeof updateMailWorkspaceOperationsImpl>) {
+  return withServerActionDatabase(() => updateMailWorkspaceOperationsImpl(...args));
+}
+
+export async function updateMailDomainOperations(...args: Parameters<typeof updateMailDomainOperationsImpl>) {
+  return withServerActionDatabase(() => updateMailDomainOperationsImpl(...args));
 }
