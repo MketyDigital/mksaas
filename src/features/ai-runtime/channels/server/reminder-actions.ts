@@ -89,5 +89,5 @@ export async function cancelEnterpriseAiCommitmentReminder(
     inArray(aiScheduledActions.status, ['pending', 'claimed']),
   ));
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/reminders`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/reminders`);
 }
