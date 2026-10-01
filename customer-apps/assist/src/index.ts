@@ -1585,7 +1585,15 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   }
 
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT method,enabled,healthy,updated_at FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
+    ).all<any>();
     const status = { nowpayments: false, flutterwave: false, kora: false };
+    for (const row of rows.results ?? []) {
+      if (row.method in status) (status as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
+    }
+
+    let source = "last_known";
     if (env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) {
       try {
         const response = await fetch("https://mkety.com/api/payments/assist/methods", {
@@ -1596,6 +1604,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
           status.nowpayments = Boolean(payload.methods.nowpayments);
           status.flutterwave = Boolean(payload.methods.flutterwave);
           status.kora = Boolean(payload.methods.kora);
+          source = "central";
           const now = unix();
           await env.DB.batch([
             env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
@@ -1603,12 +1612,12 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
             env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
           ]);
         }
-      } catch {
-        // Fail closed: no method is exposed when central readiness cannot be verified.
+      } catch (error) {
+        console.warn("Central payment capability discovery unavailable; using last-known provider health", error);
       }
     }
     const methods = listPaymentMethods(status);
-    return json({ methods, defaultMethod: defaultPaymentMethod(status) });
+    return json({ methods, defaultMethod: defaultPaymentMethod(status), source });
   }
 
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
