@@ -31,14 +31,14 @@ VALUES ('commercial', '{"creditUsdMicros":1000}', unixepoch());
 -- as v2 so historical v1 rows remain immutable.
 UPDATE model_routes
 SET provider='workers-ai',
-    provider_model='@cf/meta/llama-3.1-8b-instruct-fp8',
+    provider_model='@cf/zai-org/glm-4.7-flash',
     provider_connection_id=NULL,
     updated_at=unixepoch()
 WHERE alias='mkety-fast';
 
 UPDATE model_routes
 SET provider='workers-ai',
-    provider_model='@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    provider_model='@cf/zai-org/glm-5.3-flash',
     provider_connection_id=NULL,
     updated_at=unixepoch()
 WHERE alias='mkety-smart';
@@ -48,20 +48,20 @@ INSERT OR IGNORE INTO model_rates (
   provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,provider_image_cost_micros,
   provider_audio_cost_micros_per_minute,effective_at,created_at
 ) VALUES
-('rate_fast_v2','mkety-fast',2,152,287,0,1,152000,287000,0,453,unixepoch(),unixepoch()),
-('rate_smart_v2','mkety-smart',2,293,2253,0,1,293000,2253000,0,453,unixepoch(),unixepoch());
+('rate_fast_v2','mkety-fast',2,60,400,0,1,60000,400000,0,500,unixepoch(),unixepoch()),
+('rate_smart_v2','mkety-smart',2,150,500,0,1,150000,500000,0,500,unixepoch(),unixepoch());
 
 
 INSERT OR IGNORE INTO model_routes
 (id,alias,provider,provider_model,fallback_provider,fallback_model,status,created_at,updated_at)
 VALUES
-('route_reasoning','mkety-reasoning','workers-ai','@cf/google/gemma-4-26b-a4b-it','workers-ai','@cf/meta/llama-3.3-70b-instruct-fp8-fast','active',unixepoch(),unixepoch()),
-('route_vision','mkety-vision','workers-ai','@cf/google/gemma-4-26b-a4b-it','workers-ai','@cf/meta/llama-3.3-70b-instruct-fp8-fast','active',unixepoch(),unixepoch());
+('route_reasoning','mkety-reasoning','workers-ai','@cf/zai-org/glm-5.3-flash','workers-ai','@cf/google/gemma-4-26b-a4b-it','active',unixepoch(),unixepoch()),
+('route_vision','mkety-vision','workers-ai','@cf/google/gemma-4-26b-a4b-it','workers-ai','@cf/zai-org/glm-5.3-flash','active',unixepoch(),unixepoch());
 
 INSERT OR IGNORE INTO model_rates (
   id,alias,version,input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,
   provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,provider_image_cost_micros,
   provider_audio_cost_micros_per_minute,effective_at,created_at
 ) VALUES
-('rate_reasoning_v1','mkety-reasoning',1,100,300,0,1,100000,300000,0,453,unixepoch(),unixepoch()),
-('rate_vision_v1','mkety-vision',1,100,300,0,1,100000,300000,0,453,unixepoch(),unixepoch());
+('rate_reasoning_v1','mkety-reasoning',1,150,500,0,1,150000,500000,0,500,unixepoch(),unixepoch()),
+('rate_vision_v1','mkety-vision',1,100,300,0,1,100000,300000,0,500,unixepoch(),unixepoch());
