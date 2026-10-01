@@ -116,6 +116,42 @@ jobs:
           echo "fallback=$fallback" >> "$GITHUB_OUTPUT"
           echo "Configured Public Mkety AI provider count: ${#providers[@]}"
 
+      - name: Validate Azure Foundry Public AI credentials
+        if: steps.public-ai.outputs.primary == 'azure-openai'
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="${MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT%/}"
+          request_body="$(node -e "process.stdout.write(JSON.stringify({model:process.env.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT,input:'Reply briefly with Mkety Azure ready.',max_output_tokens:64}))")"
+          code="$(curl --connect-timeout 10 --max-time 60 -sS             -o /tmp/mkety-azure-foundry-probe.json             -w '%{http_code}'             -X POST             -H 'Content-Type: application/json'             -H "api-key: $MKETY_PUBLIC_AZURE_OPENAI_API_KEY"             --data "$request_body"             "$endpoint/openai/v1/responses" || true)"
+          if [ "$code" != '200' ]; then
+            echo "Azure Foundry Public AI probe failed with HTTP $code."
+            RESPONSE=/tmp/mkety-azure-foundry-probe.json node <<'NODE'
+          const fs=require('node:fs');
+          let payload={};
+          try { payload=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8')); } catch {}
+          const error=payload.error && typeof payload.error==='object' ? payload.error : payload;
+          const code=typeof error.code==='string' ? error.code : '';
+          const message=typeof error.message==='string' ? error.message : '';
+          if(code) console.error('Azure error code: '+code);
+          if(message) console.error('Azure error: '+message.slice(0,500));
+          NODE
+            exit 1
+          fi
+          RESPONSE=/tmp/mkety-azure-foundry-probe.json node <<'NODE'
+          const fs=require('node:fs');
+          const payload=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8'));
+          const text=typeof payload.output_text==='string'
+            ? payload.output_text.trim()
+            : (Array.isArray(payload.output) ? payload.output : [])
+                .flatMap((item)=>Array.isArray(item?.content)?item.content:[])
+                .map((part)=>typeof part?.text==='string'?part.text:'')
+                .join('\n')
+                .trim();
+          if(!text) throw new Error('Azure Foundry returned HTTP 200 without usable response text.');
+          console.log('Azure Foundry Public AI probe passed.');
+          NODE
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
