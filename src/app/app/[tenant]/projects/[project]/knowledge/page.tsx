@@ -28,7 +28,7 @@ export default async function KnowledgePage({ params }: { params: Promise<{ tena
     <main className="mx-auto max-w-6xl space-y-8 p-6 md:p-8">
       <div className="flex items-start justify-between gap-4">
         <div><p className="text-sm text-muted-foreground">Project · Knowledge</p><h1 className="text-2xl font-semibold">{project.name} knowledge</h1><p className="mt-1 text-sm text-muted-foreground">Add trusted project information for agents to retrieve at runtime.</p></div>
-        <Link href={`/t/${tenantSlug}/projects/${projectSlug}`} className="rounded-md border px-4 py-2 text-sm">Back to project</Link>
+        <Link href={`/app/${tenantSlug}/projects/${projectSlug}`} className="rounded-md border px-4 py-2 text-sm">Back to project</Link>
       </div>
 
       {canManage && (
