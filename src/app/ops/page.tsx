@@ -12,5 +12,5 @@ export default function MketyOpsEntryPage() {
   const tenant = configuredTenant || 'mkety-ops';
   if (!SLUG_PATTERN.test(tenant)) notFound();
 
-  redirect(`/t/${tenant}/admin/platform-control`);
+  redirect(`/ops/${tenant}/platform-control`);
 }
