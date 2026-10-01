@@ -1298,6 +1298,24 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     });
   }
 
+  if (url.pathname === "/api/domains" && request.method === "POST") {
+    if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
+    const body = await readJson(request);
+    const hostname = normalizeHostname(requiredString(body.hostname, "hostname"));
+    const existing = await env.DB.prepare(
+      "SELECT customer_id,kind FROM customer_domains WHERE hostname=? LIMIT 1",
+    ).bind(hostname).first<any>();
+    if (existing && existing.customer_id !== customer.customerId) return json({ error: "domain_already_in_use" }, 409);
+    if (existing?.kind === "hosted") return json({ error: "hosted_domain_cannot_be_reused" }, 409);
+    try {
+      return json(await createCustomHostname(env, customer.customerId, hostname), existing ? 200 : 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Customer custom-domain provisioning failed", { customerId: customer.customerId, hostname, error: message });
+      return json({ error: "custom_domain_provisioning_failed", details: message.slice(0, 500), cnameTarget: env.PORTAL_CNAME_TARGET }, 502);
+    }
+  }
+
   if (url.pathname === "/api/domains/verify" && request.method === "POST") {
     if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
     const body = await readJson(request);
