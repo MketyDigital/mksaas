@@ -42,7 +42,7 @@ async function renderMailWorkspaceChooser() {
       name: membership.tenant.name,
     }));
 
-  if (entitled.length === 1) redirect(`/t/${entitled[0].slug}/mail`);
+  if (entitled.length === 1) redirect(`/app/${entitled[0].slug}/mail`);
 
   if (!entitled.length) {
     return (
@@ -86,7 +86,7 @@ async function renderMailWorkspaceChooser() {
         </div>
         <div className="grid gap-3">
           {entitled.map((tenant) => (
-            <Link key={tenant.slug} href={`/t/${tenant.slug}/mail`}>
+            <Link key={tenant.slug} href={`/app/${tenant.slug}/mail`}>
               <Card className="rounded-2xl transition hover:border-primary/50 hover:shadow-sm">
                 <CardHeader>
                   <CardTitle>{tenant.name}</CardTitle>
