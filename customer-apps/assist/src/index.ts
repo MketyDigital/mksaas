@@ -580,11 +580,17 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
          mr.provider_output_cost_micros_per_million,
          mr.provider_image_cost_micros,
          mr.provider_audio_cost_micros_per_minute,
-         mr.effective_at
+         mr.effective_at,
+         rl.requests_per_second,
+         rl.requests_per_minute,
+         rl.tokens_per_minute,
+         rl.retry_base_seconds,
+         rl.retry_max_seconds
        FROM model_routes r
        LEFT JOIN model_rates mr ON mr.id=(
          SELECT id FROM model_rates x WHERE x.alias=r.alias ORDER BY x.version DESC LIMIT 1
        )
+       LEFT JOIN model_runtime_limits rl ON rl.scope_key=('global:' || r.alias)
        ORDER BY r.alias`,
     ).all();
     return json({ models: rows.results ?? [] });
@@ -678,6 +684,40 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         fallbackProvider, fallbackModel, fallbackProviderConnectionId,
         byokPolicy, body.status ?? null, now, alias,
       ).run();
+    }
+
+    const runtimeLimitFields = [
+      "requestsPerSecond","requestsPerMinute","tokensPerMinute","retryBaseSeconds","retryMaxSeconds",
+    ];
+    if (runtimeLimitFields.some((key) => body[key] !== undefined)) {
+      const scopeKey = targetCustomerId ? `customer:${targetCustomerId}:${alias}` : `global:${alias}`;
+      const existingLimit = await env.DB.prepare(
+        "SELECT * FROM model_runtime_limits WHERE scope_key=? LIMIT 1",
+      ).bind(scopeKey).first<any>();
+      const optionalPositive = (value: unknown, current: unknown) => {
+        if (value === undefined) return current == null ? null : Math.max(1, Math.floor(Number(current)));
+        if (value === null || value === "" || Number(value) <= 0) return null;
+        const n = Number(value);
+        if (!Number.isFinite(n)) throw new HttpError(400, "invalid_model_runtime_limit");
+        return Math.max(1, Math.floor(n));
+      };
+      const rps = optionalPositive(body.requestsPerSecond, existingLimit?.requests_per_second);
+      const rpm = optionalPositive(body.requestsPerMinute, existingLimit?.requests_per_minute);
+      const tpm = optionalPositive(body.tokensPerMinute, existingLimit?.tokens_per_minute);
+      const retryBase = optionalPositive(body.retryBaseSeconds, existingLimit?.retry_base_seconds ?? 2) ?? 2;
+      const retryMax = Math.max(retryBase, optionalPositive(body.retryMaxSeconds, existingLimit?.retry_max_seconds ?? 120) ?? 120);
+      await env.DB.prepare(
+        `INSERT INTO model_runtime_limits
+         (scope_key,customer_id,alias,requests_per_second,requests_per_minute,tokens_per_minute,retry_base_seconds,retry_max_seconds,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(scope_key) DO UPDATE SET
+           requests_per_second=excluded.requests_per_second,
+           requests_per_minute=excluded.requests_per_minute,
+           tokens_per_minute=excluded.tokens_per_minute,
+           retry_base_seconds=excluded.retry_base_seconds,
+           retry_max_seconds=excluded.retry_max_seconds,
+           updated_at=excluded.updated_at`,
+      ).bind(scopeKey,targetCustomerId,alias,rps,rpm,tpm,retryBase,retryMax,now).run();
     }
 
     const costFields = [
