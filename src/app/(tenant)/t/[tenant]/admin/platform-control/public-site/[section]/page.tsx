@@ -124,7 +124,7 @@ export default async function PublicSiteSectionPage({ params }: PublicSiteSectio
     <div className="space-y-8">
       <div>
         <Link
-          href={`/t/${tenant}/admin/platform-control/public-site`}
+          href={`/ops/${tenant}/platform-control/public-site`}
           className="text-sm font-medium text-primary hover:underline"
         >
           ← Public Website & Docs
