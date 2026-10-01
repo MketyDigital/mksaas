@@ -267,6 +267,13 @@
       "when": 1790618400000,
       "tag": "0037_enterprise_ai_pricing_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790832600000,
+      "tag": "0038_enterprise_ai_default_multiplier_100",
+      "breakpoints": true
     }
   ]
 }
