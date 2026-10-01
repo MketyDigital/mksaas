@@ -103,7 +103,7 @@ async function renderEnterpriseAiConsolePage({
             ) : (
               <div className="flex flex-wrap gap-3">
                 <a className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" href="https://mkety.com/contact#enterprise">Request Enterprise AI access</a>
-                <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/t/${tenantSlug}`}>Back to workspace</Link>
+                <Link className="rounded-xl border px-5 py-3 text-sm font-semibold" href={`/app/${tenantSlug}`}>Back to workspace</Link>
               </div>
             )}
           </CardContent>
@@ -222,7 +222,7 @@ async function renderEnterpriseAiConsolePage({
           <p className="mt-1 text-sm text-muted-foreground">Continue a setup you already started.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {instances.slice(0, 6).map((instance) => (
-              <Link className="rounded-2xl border bg-card p-5 transition hover:border-primary/40" href={`/t/${tenantSlug}/enterprise-ai/solutions/${instance.id}`} key={instance.id}>
+              <Link className="rounded-2xl border bg-card p-5 transition hover:border-primary/40" href={`/app/${tenantSlug}/enterprise-ai/solutions/${instance.id}`} key={instance.id}>
                 <p className="font-semibold">{instance.name}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{instance.status === 'draft' ? 'Setup in progress' : instance.status}</p>
               </Link>
@@ -246,7 +246,7 @@ async function renderEnterpriseAiConsolePage({
                 <ul className="space-y-2 text-sm text-muted-foreground">
                   {solution.outcomes.slice(0, 3).map((outcome) => <li className="flex gap-2" key={outcome}><span className="text-primary">✓</span>{outcome}</li>)}
                 </ul>
-                <Link className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/setup?solution=${encodeURIComponent(solution.key)}`}>
+                <Link className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/setup?solution=${encodeURIComponent(solution.key)}`}>
                   Start simple setup <ArrowRight className="h-4 w-4" />
                 </Link>
               </CardContent>
@@ -261,7 +261,7 @@ async function renderEnterpriseAiConsolePage({
             <h2 className="text-2xl font-bold">Connect where your customers already are</h2>
             <p className="mt-1 text-sm text-muted-foreground">Day-one channels share one Enterprise AI runtime, permissions and usage policy.</p>
           </div>
-          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/enterprise-ai/channels`}><MessageSquareMore className="mr-2 inline h-4 w-4" /> Manage channels</Link>
+          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/enterprise-ai/channels`}><MessageSquareMore className="mr-2 inline h-4 w-4" /> Manage channels</Link>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {ENTERPRISE_AI_CHANNELS.map((channel) => (
@@ -275,27 +275,27 @@ async function renderEnterpriseAiConsolePage({
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="rounded-2xl">
           <CardHeader><FlaskConical className="h-5 w-5 text-primary" /><CardTitle>Playground</CardTitle><CardDescription>Test the selected solution with its real instructions, knowledge, model, credits and commercial safeguards before customer use.</CardDescription></CardHeader>
-          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/playground`}>Test solution <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+          <CardContent><Link className="font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/playground`}>Test solution <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader><Activity className="h-5 w-5 text-primary" /><CardTitle>Runs & logs</CardTitle><CardDescription>Inspect customer-safe request status, token usage, model and credits without exposing provider secrets or internal margins.</CardDescription></CardHeader>
-          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/runs`}>Open runs <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+          <CardContent><Link className="font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/runs`}>Open runs <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader><Headphones className="h-5 w-5 text-primary" /><CardTitle>Conversations & handoff</CardTitle><CardDescription>Review customer chats, take over one conversation, reply as an operator, and resume AI when ready.</CardDescription></CardHeader>
-          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/conversations`}>Open operator inbox <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+          <CardContent><Link className="font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/conversations`}>Open operator inbox <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader><BellRing className="h-5 w-5 text-primary" /><CardTitle>Commitment reminders</CardTitle><CardDescription>Review reminders created from explicit customer promises, cancel pending ones, and inspect any delivery that requires reconciliation.</CardDescription></CardHeader>
-          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/reminders`}>Manage reminders <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+          <CardContent><Link className="font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/reminders`}>Manage reminders <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader><Palette className="h-5 w-5 text-primary" /><CardTitle>Brand & white-label</CardTitle><CardDescription>{canWhiteLabel ? 'Use your own name, logo, colors, support and legal links.' : 'Available with Enterprise AI white-label access.'}</CardDescription></CardHeader>
-          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Open branding <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+          <CardContent><Link className="font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/branding`}>Open branding <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader><Globe2 className="h-5 w-5 text-primary" /><CardTitle>Your domain</CardTitle><CardDescription>Use {tenant.slug}.mkety.app or connect a customer hostname through Mkety Domains.</CardDescription></CardHeader>
-          <CardContent><Link className="font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai/branding`}>Manage domain <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
+          <CardContent><Link className="font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai/branding`}>Manage domain <ArrowRight className="ml-1 inline h-4 w-4" /></Link></CardContent>
         </Card>
       </section>
 
@@ -329,8 +329,8 @@ async function renderEnterpriseAiConsolePage({
             <CardDescription>Mkety checks prepaid credits and every applicable hard budget before managed AI work can start.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/wallet`}><CreditCard className="mr-2 inline h-4 w-4" /> Usage & credits</Link>
-            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/billing`}>Billing</Link>
+            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/wallet`}><CreditCard className="mr-2 inline h-4 w-4" /> Usage & credits</Link>
+            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/billing`}>Billing</Link>
           </CardContent>
         </Card>
 
@@ -339,8 +339,8 @@ async function renderEnterpriseAiConsolePage({
           <p className="mt-3 text-sm leading-6 text-muted-foreground">Open APIs, project-scoped keys, models, tools and custom integrations only when your team needs them.</p>
           <div className="mt-4 grid gap-2">
             <a className="rounded-lg border px-3 py-2 text-sm font-medium" href="https://mkety.com/docs"><Code2 className="mr-2 inline h-4 w-4" /> Developer docs</a>
-            <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/t/${tenantSlug}/projects`}>Projects</Link>
-            <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/t/${tenantSlug}/enterprise-ai/providers`}>Providers / BYOK</Link>
+            <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/app/${tenantSlug}/projects`}>Projects</Link>
+            <Link className="rounded-lg border px-3 py-2 text-sm font-medium" href={`/app/${tenantSlug}/enterprise-ai/providers`}>Providers / BYOK</Link>
           </div>
         </details>
       </section>
