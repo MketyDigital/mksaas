@@ -874,6 +874,16 @@ export async function handleApiKeyInference(
      LIMIT 1`,
   ).bind(await sha256Text(raw), customer.customerId, now).first<any>();
   if (!key) return json({ error: { message: "invalid_api_key" } }, 401);
+  let scopes: string[] = [];
+  try { scopes = JSON.parse(String(key.scopes_json || "[]")); } catch { scopes = []; }
+  if (!scopes.includes("inference")) return json({ error: { message: "api_key_scope_forbidden" } }, 403);
+  const rateLimit = Math.max(1, Math.min(10000, Number(key.rate_limit_per_minute || 60)));
+  const recent = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM usage_events WHERE api_key_id=? AND created_at>=?",
+  ).bind(key.id, now - 60).first<any>();
+  if (Number(recent?.n || 0) >= rateLimit) {
+    return json({ error: { message: "rate_limit_exceeded" } }, 429);
+  }
 
   const body = await readJson(request);
   const assistantId = String(key.assistant_id || body.assistant_id || "").trim();
@@ -1413,6 +1423,23 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
     return payload;
   }
 
+  if (provider === "azure-foundry") {
+    const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
+    if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
+    const apiVersion = String(extra.apiVersion || "2024-05-01-preview");
+    const url = endpoint.includes("/chat/completions")
+      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${encodeURIComponent(apiVersion)}`
+      : `${endpoint}/models/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return payload;
+  }
+
   if (provider === "vertex") {
     const projectId = String(extra.projectId || "").trim();
     const location = String(extra.location || "global").trim();
@@ -1507,19 +1534,21 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
 }
 
 async function invokeTool(env: AssistEnv, tool: any, args: unknown) {
+  const endpoint = validateToolEndpoint(String(tool.endpoint_url || ""));
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (tool.auth_header_ciphertext) headers.authorization = await revealSecret(tool.auth_header_ciphertext, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(tool.endpoint_url, {
+    const response = await fetch(endpoint.toString(), {
       method: "POST",
       headers,
       body: JSON.stringify({ arguments: args ?? {} }),
       signal: controller.signal,
+      redirect: "error",
     });
     const text = await response.text();
-    return `HTTP ${response.status}\n${text.slice(0, 12000)}`;
+    return clampToolResponse(`HTTP ${response.status}\n${text}`, 64 * 1024);
   } finally {
     clearTimeout(timeout);
   }
