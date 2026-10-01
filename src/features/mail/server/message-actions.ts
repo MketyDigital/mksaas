@@ -51,7 +51,7 @@ export async function composeMail(tenantSlug:string,formData:FormData){
   const text=String(formData.get('message')||'').trim().slice(0,200_000);
   const mode=String(formData.get('mode')||'send');
   const auth=await authorizeMailbox(tenantSlug,mailboxId);
-  if(!auth.mailbox||!auth.domain) redirect(`/t/${tenantSlug}/mail/inbox?error=mailbox`);
+  if(!auth.mailbox||!auth.domain) redirect(`/app/${tenantSlug}/mail/inbox?error=mailbox`);
 
   if(mode==='draft'){
     const [draft]=await db.insert(mailMessages).values({
@@ -67,15 +67,15 @@ export async function composeMail(tenantSlug:string,formData:FormData){
       status:'draft',
       folder:'drafts',
     }).returning();
-    revalidatePath(`/t/${tenantSlug}/mail/inbox`);
-    redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${auth.mailbox.id}&saved=${draft.id}`);
+    revalidatePath(`/app/${tenantSlug}/mail/inbox`);
+    redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${auth.mailbox.id}&saved=${draft.id}`);
   }
 
-  if(!to||!subject||!text) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=details`);
-  if(await suppressed(auth.tenant.id,to)) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=suppressed`);
-  if(!auth.domain.sendingEnabled) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=domain`);
+  if(!to||!subject||!text) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=details`);
+  if(await suppressed(auth.tenant.id,to)) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=suppressed`);
+  if(!auth.domain.sendingEnabled) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=domain`);
   const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
-  if(!capacity.allowed) redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=limit`);
+  if(!capacity.allowed) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=limit`);
 
   const from=`${auth.mailbox.localPart}@${auth.domain.domain}`;
   const [message]=await db.insert(mailMessages).values({
@@ -107,11 +107,11 @@ export async function composeMail(tenantSlug:string,formData:FormData){
     }]);
   }catch{
     await db.update(mailMessages).set({status:'failed'}).where(and(eq(mailMessages.id,message.id),eq(mailMessages.tenantId,auth.tenant.id)));
-    redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=queue`);
+    redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=queue`);
   }
 
-  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
-  redirect(`/t/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&sent=1`);
+  revalidatePath(`/app/${tenantSlug}/mail/inbox`);
+  redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&sent=1`);
 }
 
 export async function replyToMail(tenantSlug:string,formData:FormData){
@@ -152,7 +152,7 @@ export async function replyToMail(tenantSlug:string,formData:FormData){
     text,
     ...(original.internetMessageId?{headers:{'In-Reply-To':original.internetMessageId,'References':original.internetMessageId}}:{}),
   }]);
-  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
+  revalidatePath(`/app/${tenantSlug}/mail/inbox`);
 }
 
 export async function forwardMail(tenantSlug:string,formData:FormData){
@@ -202,7 +202,7 @@ export async function forwardMail(tenantSlug:string,formData:FormData){
     subject,
     text:quoted,
   }]);
-  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
+  revalidatePath(`/app/${tenantSlug}/mail/inbox`);
 }
 
 export async function moveMailMessage(tenantSlug:string,formData:FormData){
@@ -214,7 +214,7 @@ export async function moveMailMessage(tenantSlug:string,formData:FormData){
   const auth=await authorizeMailbox(tenantSlug,message.mailboxId);
   if(!auth.mailbox||message.tenantId!==auth.tenant.id) return;
   await db.update(mailMessages).set({folder}).where(and(eq(mailMessages.id,message.id),eq(mailMessages.tenantId,auth.tenant.id)));
-  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
+  revalidatePath(`/app/${tenantSlug}/mail/inbox`);
 }
 
 export async function toggleMailStar(tenantSlug:string,formData:FormData){
@@ -224,5 +224,5 @@ export async function toggleMailStar(tenantSlug:string,formData:FormData){
   const auth=await authorizeMailbox(tenantSlug,message.mailboxId);
   if(!auth.mailbox||message.tenantId!==auth.tenant.id) return;
   await db.update(mailMessages).set({isStarred:!message.isStarred}).where(and(eq(mailMessages.id,message.id),eq(mailMessages.tenantId,auth.tenant.id)));
-  revalidatePath(`/t/${tenantSlug}/mail/inbox`);
+  revalidatePath(`/app/${tenantSlug}/mail/inbox`);
 }
