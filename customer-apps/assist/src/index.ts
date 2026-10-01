@@ -862,22 +862,50 @@ async function handlePaymentWebhook(request: Request, env: Env): Promise<Respons
     return json({ ok: true, duplicate: true });
   }
 
-  if (eventType === "payment.succeeded" || eventType === "subscription.payment_succeeded") {
+  if (eventType === "subscription.payment_succeeded") {
+    const policy = await env.DB.prepare(
+      "SELECT included_credits FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customerId).first<any>();
+    const credits = positiveInt(policy?.included_credits, 0);
+    if (credits > 0) await grantCredits(env.DB, customerId, credits, "subscription_grant", eventId, now);
+    await env.DB.prepare(
+      "UPDATE customers SET billing_status='current',grace_until=NULL,updated_at=? WHERE id=?",
+    ).bind(now, customerId).run();
+  } else if (eventType === "payment.succeeded" && payload.grantType === "topup") {
+    // Mkety Payments confirms the paid order. The signed event carries the
+    // Assist top-up metadata created for that checkout.
     const credits = positiveInt(payload.credits, 0);
-    if (credits > 0) {
-      const account = await env.DB.prepare("SELECT balance,lifetime_granted FROM credit_accounts WHERE customer_id=?")
-        .bind(customerId).first<any>();
-      const next = Number(account?.balance || 0) + credits;
-      await env.DB.batch([
-        env.DB.prepare("UPDATE credit_accounts SET balance=?,lifetime_granted=lifetime_granted+?,updated_at=? WHERE customer_id=?")
-          .bind(next, credits, now, customerId),
-        env.DB.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(id("led"), customerId, credits, "payment_grant", eventId, next, now),
-        env.DB.prepare("UPDATE payment_events SET processed_at=? WHERE provider_event_id=?").bind(now, eventId),
-      ]);
-    }
+    if (credits > 0) await grantCredits(env.DB, customerId, credits, "topup_grant", eventId, now);
+  } else if (eventType === "subscription.payment_failed") {
+    const policy = await env.DB.prepare(
+      "SELECT grace_period_days FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customerId).first<any>();
+    const graceDays = Math.max(0, positiveInt(policy?.grace_period_days, 3));
+    await env.DB.prepare(
+      "UPDATE customers SET billing_status='past_due',grace_until=?,updated_at=? WHERE id=?",
+    ).bind(now + graceDays * 86400, now, customerId).run();
   }
+
+  await env.DB.prepare("UPDATE payment_events SET processed_at=? WHERE provider_event_id=?").bind(now, eventId).run();
   return json({ ok: true });
+}
+
+async function grantCredits(
+  db: D1Database,
+  customerId: string,
+  credits: number,
+  kind: string,
+  referenceId: string,
+  now: number,
+) {
+  const account = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
+  const next = Number(account?.balance || 0) + credits;
+  await db.batch([
+    db.prepare("UPDATE credit_accounts SET balance=?,lifetime_granted=lifetime_granted+?,updated_at=? WHERE customer_id=?")
+      .bind(next, credits, now, customerId),
+    db.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
+      .bind(id("led"), customerId, credits, kind, referenceId, next, now),
+  ]);
 }
 
 async function createCustomHostname(env: Env, customerId: string, hostnameInput: string) {
