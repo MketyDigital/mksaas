@@ -59,7 +59,7 @@ describe('final public production UX, support, docs and auth contract', () => {
   it('keeps Academy sales public-first while exposing a separate learning-access CTA and admin-managed tier cards', async () => {
     const [pages, admin] = await Promise.all([
       read('src/features/platform-content/public-page-defaults.ts'),
-      read('src/app/(tenant)/t/[tenant]/admin/platform-control/public-site/[section]/page.tsx'),
+      read('src/app/ops/[tenant]/platform-control/public-site/[section]/page.tsx'),
     ]);
 
     expect(pages).toContain("label: 'Ask Mkety AI about Academy'");
@@ -89,7 +89,7 @@ describe('final public production UX, support, docs and auth contract', () => {
       read('src/features/platform-content/schemas.ts'),
       read('src/features/platform-content/defaults.ts'),
       read('src/features/platform-content/server/actions.ts'),
-      read('src/app/(tenant)/t/[tenant]/admin/platform-control/public-site/[section]/page.tsx'),
+      read('src/app/ops/[tenant]/platform-control/public-site/[section]/page.tsx'),
     ]);
     for (const field of [
       'salesEmail',
