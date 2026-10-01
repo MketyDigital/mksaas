@@ -55,7 +55,7 @@ export default function AssistantError({ error, reset }: ErrorProps) {
               Try again
             </Button>
             <Button variant="outline" asChild>
-              <Link href={`/t/${tenantSlug}`}>Return to Dashboard</Link>
+              <Link href={`/app/${tenantSlug}`}>Return to Dashboard</Link>
             </Button>
           </div>
         </CardContent>
