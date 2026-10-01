@@ -195,8 +195,14 @@ async function loadCustomers(){const x=await api('/api/ops/customers');data=x.cu
 async function loadProviders(){
   try{
     const x=await api('/api/ops/providers');providerData=x.providers||[];
-    providersBox.innerHTML=providerData.length?'<table class="table"><thead><tr><th>Name</th><th>Provider</th><th>Endpoint</th></tr></thead><tbody>'+providerData.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+esc(p.provider)+'</td><td>'+esc(p.endpoint_url||'default')+'</td></tr>').join('')+'</tbody></table>':'No external credentials. Workers AI needs no provider key.';
+    providersBox.innerHTML=providerData.length?'<table class="table"><thead><tr><th>Name</th><th>Provider</th><th>Endpoint</th><th>Status</th><th></th></tr></thead><tbody>'+providerData.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+esc(p.provider)+'</td><td>'+esc(p.endpoint_url||'default')+'</td><td>'+esc(p.status)+'</td><td><button class="btn" data-provider-edit="'+p.id+'">Manage</button></td></tr>').join('')+'</tbody></table>':'No external credentials. Workers AI needs no provider key.';
+    document.querySelectorAll('[data-provider-edit]').forEach(b=>b.onclick=()=>editProvider(providerData.find(p=>p.id===b.dataset.providerEdit)));
   }catch(e){providersBox.textContent=e.message}
+}
+function editProvider(p){
+  openModal('<h2>Manage provider</h2><p class="muted">Saved API keys are never shown. Leave the key blank to keep the current secret.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="epName" value="'+esc(p.name)+'"></div><div class="field"><label>Provider</label><input class="input" value="'+esc(p.provider)+'" disabled></div></div><div class="field"><label>Endpoint URL</label><input class="input" id="epEndpoint" value="'+esc(p.endpoint_url||'')+'"></div><div class="field"><label>Replace API key</label><input class="input" id="epKey" type="password" autocomplete="off" placeholder="Leave blank to keep current key"></div><div class="field"><label>Extra JSON</label><input class="input" id="epExtra" value="'+esc(p.extra_json||'{}')+'"></div><div class="field"><label>Status</label><select class="input" id="epStatus"><option value="active">active</option><option value="disabled">disabled</option></select></div><div class="row"><button class="btn primary" id="epSave">Save</button><button class="btn" id="epClose">Close</button></div>');
+  epStatus.value=p.status||'active';epClose.onclick=closeModal;
+  epSave.onclick=async()=>{try{let extra={};if(epExtra.value.trim())extra=JSON.parse(epExtra.value);await api('/api/ops/providers/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify({name:epName.value,endpointUrl:epEndpoint.value||null,apiKey:epKey.value||undefined,extra,status:epStatus.value})});closeModal();await loadProviders();await loadModels()}catch(e){alert(e.message)}};
 }
 function providerOptions(selected,provider){
   const available=providerData.filter(p=>!provider||p.provider===provider);
