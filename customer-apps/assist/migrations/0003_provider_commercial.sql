@@ -1,4 +1,5 @@
 ALTER TABLE model_routes ADD COLUMN provider_connection_id TEXT;
+ALTER TABLE model_routes ADD COLUMN fallback_provider_connection_id TEXT;
 ALTER TABLE model_rates ADD COLUMN provider_input_cost_micros_per_million INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE model_rates ADD COLUMN provider_output_cost_micros_per_million INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE model_rates ADD COLUMN provider_image_cost_micros INTEGER NOT NULL DEFAULT 0;
