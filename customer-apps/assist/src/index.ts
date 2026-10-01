@@ -2,6 +2,7 @@
 import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
+import { customerUsageProjection } from "./billing/metering";
 
 interface Env {
   DB: D1Database;
@@ -778,6 +779,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
 async function handleAuth(request: Request, env: Env, customer: CustomerContext): Promise<Response> {
   const url = new URL(request.url);
+  if (!["GET","HEAD","OPTIONS"].includes(request.method)) {
+    const origin = request.headers.get("origin");
+    if (origin && origin !== url.origin) return json({ error: "invalid_origin" }, 403);
+  }
 
   if (url.pathname === "/api/auth/login" && request.method === "POST") {
     const body = await readJson(request);
@@ -839,8 +844,8 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       await env.DB.batch([
         env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
           .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
-        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now),
+        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at,user_agent) VALUES (?,?,?,?,?,?,?,?)")
+          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now, request.headers.get("user-agent")?.slice(0, 255) || null),
         env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=? AND consumed_at IS NULL")
           .bind(now, row.id),
       ]);
@@ -861,9 +866,49 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     });
   }
 
+  if (url.pathname === "/api/auth/password" && request.method === "POST") {
+    const session = await requireSession(request, env, customer.customerId);
+    if (!session) return json({ error: "unauthorized" }, 401);
+    const body = await readJson(request);
+    const currentPassword = requiredString(body.currentPassword, "currentPassword");
+    const newPassword = requiredString(body.newPassword, "newPassword");
+    validatePassword(newPassword);
+    const row = await env.DB.prepare(
+      "SELECT password_hash,password_salt,password_iterations FROM users WHERE id=? AND status='active' LIMIT 1",
+    ).bind(session.userId).first<any>();
+    if (!row?.password_hash || !row?.password_salt || !(await verifyPassword(currentPassword, row.password_salt, row.password_iterations, row.password_hash))) {
+      return json({ error: "invalid_current_password" }, 400);
+    }
+    const next = await hashPassword(newPassword);
+    const now = unix();
+    await env.DB.prepare(
+      "UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE id=?",
+    ).bind(next.hash, next.salt, next.iterations, now, now, session.userId).run();
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/auth/sessions" && request.method === "GET") {
+    const session = await requireSession(request, env, customer.customerId);
+    if (!session) return json({ error: "unauthorized" }, 401);
+    const rows = await env.DB.prepare(
+      "SELECT id,created_at,last_seen_at,expires_at,user_agent,revoked_at FROM sessions WHERE user_id=? AND customer_id=? ORDER BY created_at DESC",
+    ).bind(session.userId, customer.customerId).all();
+    return json({ sessions: rows.results ?? [] });
+  }
+
+  if (url.pathname.startsWith("/api/auth/sessions/") && request.method === "DELETE") {
+    const session = await requireSession(request, env, customer.customerId);
+    if (!session) return json({ error: "unauthorized" }, 401);
+    const sessionId = decodeURIComponent(url.pathname.slice("/api/auth/sessions/".length));
+    const result = await env.DB.prepare(
+      "UPDATE sessions SET revoked_at=? WHERE id=? AND user_id=? AND customer_id=? AND revoked_at IS NULL",
+    ).bind(unix(), sessionId, session.userId, customer.customerId).run();
+    return json({ ok: Boolean(result.meta.changes) });
+  }
+
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
     const token = getSessionCookie(request, env);
-    if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run();
+    if (token) await env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL").bind(unix(), await sha256(token)).run();
     return new Response(null, { status: 204, headers: { "set-cookie": clearSessionCookie(env) } });
   }
 
@@ -1159,15 +1204,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/usage" && request.method === "GET") {
     const account = await env.DB.prepare(
-      "SELECT balance,lifetime_granted,lifetime_consumed,updated_at FROM credit_accounts WHERE customer_id=?",
-    ).bind(customer.customerId).first();
+      "SELECT balance,lifetime_consumed FROM credit_accounts WHERE customer_id=?",
+    ).bind(customer.customerId).first<any>();
     const policy = await env.DB.prepare(
-      "SELECT currency,subscription_amount_minor,included_credits,topup_enabled,funding_mode,minimum_funding_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
-    ).bind(customer.customerId).first();
-    const billing = await env.DB.prepare(
-      "SELECT billing_status,grace_until FROM customers WHERE id=? LIMIT 1",
-    ).bind(customer.customerId).first();
-    return json({ credits: account, plan: policy, billing });
+      "SELECT subscription_amount_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
+    ).bind(customer.customerId).first<any>();
+    return json(customerUsageProjection({
+      monthlyFeeMinor: Math.max(0, Number(policy?.subscription_amount_minor || 0)),
+      setupFeeMinor: Math.max(0, Number(policy?.setup_fee_minor || 0)),
+      creditsAvailable: Math.max(0, Number(account?.balance || 0)),
+      creditsUsed: Math.max(0, Number(account?.lifetime_consumed || 0)),
+    }));
   }
 
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
@@ -1692,7 +1739,7 @@ async function requireSession(request: Request, env: Env, customerId: string): P
     `SELECT s.user_id,s.customer_id,u.email,cu.role FROM sessions s
      JOIN users u ON u.id=s.user_id
      JOIN customer_users cu ON cu.user_id=s.user_id AND cu.customer_id=s.customer_id
-     WHERE s.token_hash=? AND s.customer_id=? AND s.expires_at>? AND u.status='active' LIMIT 1`,
+     WHERE s.token_hash=? AND s.customer_id=? AND s.expires_at>? AND s.revoked_at IS NULL AND u.status='active' LIMIT 1`,
   ).bind(await sha256(token), customerId, now).first<any>();
   if (!row) return null;
   return { userId: row.user_id, customerId: row.customer_id, role: row.role, email: row.email };
@@ -1704,7 +1751,7 @@ async function issueSession(env: Env, customerId: string, userId: string, role: 
   const ttl = Number(env.SESSION_TTL_SECONDS || "2592000");
   await env.DB.prepare(
     "INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)",
-  ).bind(id("ses"), await sha256(token), userId, customerId, now + ttl, now, now).run();
+  ).bind(id("ses"), await sha256(token), userId, customerId, now + ttl, now, now, null).run();
   return new Response(JSON.stringify({ ok: true, role, email }), {
     status: 200,
     headers: {
