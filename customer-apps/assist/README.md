@@ -79,9 +79,11 @@ This avoids relying on Telegram's website Login Widget for every customer's cust
 
 Email/operator recovery remains the break-glass fallback if a customer loses access to their Telegram account.
 
-## Operator API
+## Operator
 
-Operator is deliberately small. Initial endpoints:
+Operator is deliberately small. The internal console covers customers, commercial policy, feature entitlements, custom domains, model routes/rates, credits, health and audit history.
+
+Key endpoints:
 
 - `POST /api/ops/customers` — create customer, hosted hostname, owner, commercial/feature defaults
 - `GET /api/ops/customers` — customer list
@@ -89,12 +91,19 @@ Operator is deliberately small. Initial endpoints:
 - `GET /api/ops/domains/status?hostname=...` — synchronize activation/TLS state
 - `PATCH /api/ops/policy` — commercial and feature controls
 - `GET /api/ops/models` — model route/rate visibility
+- `PATCH /api/ops/models/:alias` — publish route/rate changes
+- `GET /api/ops/health` — lightweight operational health
+- `GET /api/ops/audit` — recent audit activity
 
 Operator requests currently require `Authorization: Bearer <MKETY_ASSIST_OPS_TOKEN>`. Production should additionally place `assist-ops.mkety.com` behind Cloudflare Access.
 
-## Customer API
+## Customer console and runtime
 
-Initial customer endpoints:
+The customer console is a full private dashboard rather than the old StarAI browser-side database editor. It provides Dashboard, Assistants, Knowledge, Conversations, Human Handoff, Reminders, Usage & Credits, Team and Settings.
+
+Each assistant independently owns its prompt version, Telegram connection, model alias, knowledge assignment, tools, memory switch and optional monthly credit cap.
+
+Customer/runtime endpoints include:
 
 - `POST /api/auth/login`
 - `POST /api/auth/setup`
@@ -104,9 +113,21 @@ Initial customer endpoints:
 - `POST /api/auth/recovery/verify`
 - `GET /api/me`
 - `GET|POST /api/assistants`
+- `GET|PATCH /api/assistants/:id`
+- `POST|DELETE /api/assistants/:id/telegram`
+- `PUT /api/assistants/:id/knowledge`
+- assistant tool create/remove endpoints
+- `GET|POST /api/knowledge` and knowledge-item upload
+- `GET /api/conversations` and conversation messages
+- `GET|POST|DELETE /api/reminders`
+- human-handoff reply/resolve endpoints
 - `GET /api/usage`
+- `GET|POST|PATCH /api/team...`
+- `GET|PATCH /api/settings`
 
-The HTML shell is intentionally minimal; it proves the independent host/auth/control-plane path without copying the heavyweight Main Enterprise AI UI.
+Runtime behavior includes authenticated/idempotent Telegram ingress, real image download + Workers AI vision, real voice/audio download + Whisper transcription, R2 media storage, assistant-specific prompt/history/knowledge context, optional HTTPS tools, human escalation, scheduled Telegram reminders, stable Mkety model aliases and fail-closed credit reservation/settlement.
+
+Knowledge uploads are stored in R2. Plain-text formats are ingested directly; supported rich documents such as PDF/Office/image formats are converted to text through the Workers AI Markdown Conversion binding before retrieval. If conversion fails, the item remains stored with conversion-error metadata rather than silently pretending it is searchable.
 
 ## Payment contract
 
@@ -145,6 +166,7 @@ Events are idempotent by provider event ID. Assist, not the main Mkety system, o
 - `MKETY_ASSIST_CF_ZONE_ID`
 - `MKETY_ASSIST_CF_SAAS_TOKEN`
 - `MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET`
+- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` (or the shared stable `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY` as deployment fallback)
 
 Non-secret runtime value:
 
@@ -156,18 +178,20 @@ The GitHub deployment workflow can reuse the repository's existing `CLOUDFLARE_A
 
 The deployment workflow:
 
-1. verifies the isolated package;
+1. verifies the isolated package and runs its dedicated type-check/Wrangler dry-run;
 2. finds or creates `mkety-assist-prod` D1;
-3. injects the actual D1 UUID into a temporary Wrangler config;
-4. applies Assist-only migrations;
-5. uploads Assist-only Worker secrets;
-6. deploys `mkety-assist`;
-7. smoke-checks the Worker health endpoint.
+3. ensures the Assist R2 media bucket and provider-owned DNS topology;
+4. injects the actual D1 UUID into a temporary Wrangler config;
+5. applies Assist-only migrations;
+6. uploads Assist-only Worker secrets;
+7. deploys `mkety-assist`;
+8. configures the optional Telegram recovery bot automatically when its token is present;
+9. smoke-checks the Worker health endpoint.
 
 The main Mkety build/deployment is not invoked.
 
-## Current foundation vs next runtime layer
+## Deliberate Lite choices
 
-This foundation intentionally establishes the separation first: customer/domain routing, Operator control, independent commercial ledger, payment boundary, local auth and Telegram recovery.
+Assist keeps the behaviors customers need without copying Main Enterprise AI's large tenancy/routing/control-plane architecture. D1 is authoritative, R2 stores files/media, Workers AI handles inference/vision/transcription/document conversion, and a one-minute Worker cron delivers reminders. Retrieval is intentionally local/textual at this stage rather than requiring a separate vector service for every customer. The schema and assistant boundary allow a Vectorize-backed retrieval adapter later without changing customer-facing behavior.
 
-The next Assist-specific layer is the generic Telegram assistant runtime: encrypted per-assistant bot tokens, webhook registration, conversation Durable Objects, Workers AI/model aliases, R2/Vectorize knowledge, media handling, reminders and credit admission/settlement. Those should be implemented here, not imported from Main Enterprise AI.
+The product remains fail-closed for paid inference: an unavailable rate/route or failed credit reservation prevents a provider call. Provider costs, envelopes, reserves and model internals remain Operator-only.
