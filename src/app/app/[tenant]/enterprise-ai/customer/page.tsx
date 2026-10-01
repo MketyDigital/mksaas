@@ -26,7 +26,7 @@ export default async function EnterpriseAiCustomerAppPage({
     getTenantSettings(tenantSlug),
     listEnterpriseAiSolutionInstances(tenant.id),
   ]);
-  if (!enterprise) redirect(`/t/${tenantSlug}`);
+  if (!enterprise) redirect(`/app/${tenantSlug}`);
 
   const resolved = resolveEnterpriseAiBrand(settings, tenant.name);
   const brand = whiteLabel && resolved.enabled
