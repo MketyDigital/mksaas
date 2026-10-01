@@ -29,6 +29,7 @@ jobs:
       MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET: ${{ secrets.MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET }}
       MKETY_ASSIST_CF_SAAS_TOKEN: ${{ secrets.MKETY_ASSIST_CF_SAAS_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
       MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME: ${{ vars.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME }}
+      MKETY_ASSIST_SECRET_ENCRYPTION_KEY: ${{ secrets.MKETY_ASSIST_SECRET_ENCRYPTION_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -132,6 +133,20 @@ jobs:
           ensure_record AAAA "assist-origin.mkety.app" "100::"
           ensure_record CNAME "mkety-assist.mkety.app" "assist-origin.mkety.app"
 
+      - name: Ensure Assist media bucket exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          buckets="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          found="$(BUCKETS="$buckets" node - <<'NODE'
+          const v=JSON.parse(process.env.BUCKETS);
+          process.stdout.write((v.result?.buckets||v.result||[]).some((b)=>b.name==='mkety-assist-media')?'yes':'no');
+          NODE
+          )"
+          if [ "$found" != "yes" ]; then
+            curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-media"}' >/dev/null
+          fi
+
       - name: Build deploy-time Wrangler config
         working-directory: customer-apps/assist
         env:
@@ -166,6 +181,12 @@ jobs:
             MKETY_ASSIST_CF_ZONE_ID: process.env.MKETY_ASSIST_CF_ZONE_ID,
             MKETY_ASSIST_CF_SAAS_TOKEN: process.env.MKETY_ASSIST_CF_SAAS_TOKEN,
           };
+          if (process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) {
+            values.MKETY_ASSIST_SECRET_ENCRYPTION_KEY = process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
+          } else {
+            values.MKETY_ASSIST_SECRET_ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('hex');
+            console.log('Generated first-deploy Assist encryption key. Preserve the existing Cloudflare secret on future deploys or configure MKETY_ASSIST_SECRET_ENCRYPTION_KEY in GitHub.');
+          }
           if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN) values.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN = process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN;
           if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET) values.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET = process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET;
           if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME) values.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME = process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME;
