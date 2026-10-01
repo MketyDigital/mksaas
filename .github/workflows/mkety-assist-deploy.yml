@@ -259,6 +259,20 @@ jobs:
             curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-media"}' >/dev/null
           fi
 
+      - name: Ensure Assist reply queues exist
+        working-directory: customer-apps/assist
+        shell: bash
+        run: |
+          set -euo pipefail
+          ensure_queue() {
+            local name="$1"
+            if ! npx wrangler queues info "$name" >/dev/null 2>&1; then
+              npx wrangler queues create "$name" --message-retention-period-secs=1209600
+            fi
+          }
+          ensure_queue mkety-assist-replies
+          ensure_queue mkety-assist-replies-dlq
+
       - name: Build deploy-time Wrangler config
         working-directory: customer-apps/assist
         env:
