@@ -1611,6 +1611,18 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
             env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
             env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
           ]);
+        } else {
+          const routeHealth = await probeCentralAssistPaymentRoutes(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET);
+          status.nowpayments = routeHealth.nowpayments;
+          status.flutterwave = routeHealth.flutterwave;
+          status.kora = routeHealth.kora;
+          source = "route_probe";
+          const now = unix();
+          await env.DB.batch([
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
+          ]);
         }
       } catch (error) {
         console.warn("Central payment capability discovery unavailable; using last-known provider health", error);
@@ -1710,6 +1722,25 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   if (runtimeResponse) return runtimeResponse;
 
   return json({ error: "not_found" }, 404);
+}
+
+async function probeCentralAssistPaymentRoutes(secret: string) {
+  const names = ["nowpayments","flutterwave","kora"] as const;
+  const result = { nowpayments: false, flutterwave: false, kora: false };
+  await Promise.all(names.map(async (name) => {
+    try {
+      const response = await fetch(`https://mkety.com/api/payments/${name}/start`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${secret}` },
+        redirect: "manual",
+      });
+      // A method-not-allowed or validation response proves the route is deployed.
+      result[name] = response.status !== 404 && response.status !== 410 && response.status < 500;
+    } catch {
+      result[name] = false;
+    }
+  }));
+  return result;
 }
 
 async function resolveRequestedPaymentMethod(db: D1Database, requested: unknown) {
