@@ -1,5 +1,5 @@
 import { addMonths } from 'date-fns';
-import { and, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
 
 
 import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
@@ -298,6 +298,18 @@ export async function getActiveEnterpriseAiContract(tenantId: string) {
       updatedAt: row.effectiveFrom,
     },
   };
+}
+
+export async function listEnterpriseAiCustomerWorkspaces(opsTenantSlug: string) {
+  return db
+    .select({
+      id: tenants.id,
+      slug: tenants.slug,
+      name: tenants.name,
+    })
+    .from(tenants)
+    .where(ne(tenants.slug, opsTenantSlug))
+    .orderBy(asc(tenants.name), asc(tenants.slug));
 }
 
 export async function listEnterpriseAiContracts() {
