@@ -23,7 +23,15 @@ describe('Flutterwave billing adapter', () => {
     });
   });
 
-  it('creates an Mkety Inline launcher and persists the provider quote', async () => {
+  it('creates a hosted Flutterwave checkout and persists the provider quote', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        status: 'success',
+        data: { link: 'https://checkout.flutterwave.com/v3/hosted/pay/test-link' },
+      }),
+    } as unknown as Response);
+
     const adapter = createFlutterwaveBillingAdapter({
       publicKey: 'FLWPUBK_TEST-public',
       standardSecretKey: 'FLWSECK_TEST-secret',
@@ -48,10 +56,11 @@ describe('Flutterwave billing adapter', () => {
       providerAmountExpectedMinor: 1515000n,
       providerCurrency: 'NGN',
     });
-    const launcher = new URL(result.checkoutUrl);
-    expect(launcher.origin).toBe('https://mkety.com');
-    expect(launcher.pathname).toBe('/payments/flutterwave/inline');
-    expect(launcher.searchParams.get('checkout')).toBe(checkoutId);
+    expect(result.checkoutUrl).toBe('https://checkout.flutterwave.com/v3/hosted/pay/test-link');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://api.flutterwave.com/v3/payments',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('fails closed when Inline credentials are incomplete', async () => {

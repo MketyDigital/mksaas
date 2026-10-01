@@ -75,8 +75,23 @@ export function createNowPaymentsBillingAdapter(
         }),
       });
 
-      if (!response.ok) throw new Error('NOWPayments invoice creation failed.');
-      const payload = (await response.json()) as { id?: string | number; invoice_url?: string };
+      const payload = (await response.json().catch(() => null)) as {
+        id?: string | number;
+        invoice_url?: string;
+        message?: string;
+        error?: string;
+        code?: string | number;
+      } | null;
+      if (!response.ok) {
+        const detail = String(payload?.message ?? payload?.error ?? '').trim().slice(0, 180);
+        const code = payload?.code == null ? '' : ` (${String(payload.code).slice(0, 40)})`;
+        throw new Error(
+          detail
+            ? `NOWPayments rejected invoice creation${code}: ${detail}`
+            : `NOWPayments invoice creation failed with HTTP ${response.status}.`,
+        );
+      }
+      if (!payload) throw new Error('NOWPayments returned an empty invoice response.');
       if (!payload.invoice_url || !payload.invoice_url.startsWith('https://')) {
         throw new Error('NOWPayments returned an invalid invoice URL.');
       }
