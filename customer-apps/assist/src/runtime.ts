@@ -526,7 +526,7 @@ export async function handleRuntimeApi(
   if (parts[0] === "api" && parts[1] === "handoffs" && parts[2] && parts[3] === "reply" && request.method === "POST") {
     requireAdmin(session);
     const handoff = await env.DB.prepare(
-      `SELECT h.id,h.assistant_id,h.conversation_id,c.external_conversation_id
+      `SELECT h.id,h.assistant_id,h.conversation_id,c.external_conversation_id,c.business_connection_id
        FROM human_handoffs h JOIN conversations c ON c.id=h.conversation_id
        WHERE h.id=? AND h.customer_id=? AND h.status='open' LIMIT 1`,
     ).bind(parts[2], customer.customerId).first<any>();
@@ -535,7 +535,7 @@ export async function handleRuntimeApi(
     const text = required(body.text, "text");
     const token = await getAssistantSecret(env, handoff.assistant_id, "telegram_bot_token");
     if (!token) return json({ error: "telegram_not_connected" }, 409);
-    const sent = await telegramSend(token, handoff.external_conversation_id, text);
+    const sent = await telegramSend(token, handoff.external_conversation_id, text, handoff.business_connection_id ? String(handoff.business_connection_id) : null);
     if (!sent.ok) return json({ error: "telegram_send_failed" }, 502);
     await env.DB.prepare(
       "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -836,7 +836,35 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true, duplicate: true });
   }
 
-  const message = update.message ?? update.edited_message;
+  if (update.business_connection?.id && update.business_connection?.user?.id) {
+    const bc = update.business_connection;
+    const now = unix();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO telegram_business_connections
+         (id,customer_id,assistant_id,business_connection_id,business_user_id,user_chat_id,is_enabled,rights_json,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(assistant_id,business_connection_id) DO UPDATE SET
+           business_user_id=excluded.business_user_id,user_chat_id=excluded.user_chat_id,
+           is_enabled=excluded.is_enabled,rights_json=excluded.rights_json,updated_at=excluded.updated_at`,
+      ).bind(
+        id("tbc"),assistant.customer_id,assistantId,String(bc.id),String(bc.user.id),
+        bc.user_chat_id == null ? null : String(bc.user_chat_id),bc.is_enabled===false?0:1,
+        JSON.stringify(bc.rights || {}),now,now,
+      ),
+      env.DB.prepare(
+        `INSERT INTO assistant_channel_identities
+         (id,customer_id,assistant_id,channel,platform_user_id,identity_role,connection_mode,is_self_identity,created_at,updated_at)
+         VALUES (?,?,?,?,?,'connected_account','secretary',1,?,?)
+         ON CONFLICT(assistant_id,channel,platform_user_id) DO UPDATE SET
+           identity_role='connected_account',connection_mode='secretary',is_self_identity=1,updated_at=excluded.updated_at`,
+      ).bind(id("cid"),assistant.customer_id,assistantId,"telegram",String(bc.user.id),now,now),
+    ]);
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, businessConnectionUpdated: true, enabled: bc.is_enabled !== false });
+  }
+
+  const message = update.business_message ?? update.edited_business_message ?? update.message ?? update.edited_message;
   if (!message?.chat?.id || !message?.message_id) {
     await markWebhook(env.DB, assistantId, updateId, "ignored");
     return json({ ok: true });
@@ -845,10 +873,31 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const chatId = String(message.chat.id);
   const senderId = String(message.from?.id ?? message.chat.id);
   const providerMessageId = String(message.message_id);
+  const businessConnectionId = message.business_connection_id ? String(message.business_connection_id) : null;
+
+  if (message.sender_business_bot) {
+    await markWebhook(env.DB, assistantId, updateId, "ignored");
+    return json({ ok: true, ignoredBusinessBotEcho: true });
+  }
 
   if (message.from?.is_bot) {
     await markWebhook(env.DB, assistantId, updateId, "ignored");
     return json({ ok: true, ignoredBotSender: true });
+  }
+
+  if (businessConnectionId) {
+    const business = await env.DB.prepare(
+      `SELECT business_user_id,is_enabled FROM telegram_business_connections
+       WHERE assistant_id=? AND business_connection_id=? LIMIT 1`,
+    ).bind(assistantId,businessConnectionId).first<any>();
+    if (!business || !Number(business.is_enabled ?? 0)) {
+      await markWebhook(env.DB, assistantId, updateId, "ignored");
+      return json({ ok: true, ignoredInactiveBusinessConnection: true });
+    }
+    if (String(business.business_user_id) === senderId) {
+      await markWebhook(env.DB, assistantId, updateId, "ignored");
+      return json({ ok: true, ignoredBusinessOwnerMessage: true });
+    }
   }
 
   const selfIdentity = await env.DB.prepare(
@@ -919,8 +968,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   }
 
   const conversation = await upsertConversation(env.DB, assistant.customer_id, assistantId, chatId);
-  await env.DB.prepare("UPDATE conversations SET last_sender_id=?,updated_at=? WHERE id=? AND customer_id=?")
-    .bind(senderId, unix(), conversation.id, assistant.customer_id).run();
+  await env.DB.prepare("UPDATE conversations SET last_sender_id=?,business_connection_id=?,updated_at=? WHERE id=? AND customer_id=?")
+    .bind(senderId, businessConnectionId, unix(), conversation.id, assistant.customer_id).run();
   const inbound = await normalizeTelegramMessage(message, token, assistant, env, conversation.id);
 
   if (!inbound.text && !inbound.mediaContext) {
@@ -944,7 +993,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
       env.DB.prepare("UPDATE reminders SET status='cancelled',cancelled_at=? WHERE conversation_id=? AND customer_id=? AND assistant_id=? AND status='scheduled'")
         .bind(unix(), conversation.id, assistant.customer_id, assistantId),
     ]);
-    await telegramSend(token, chatId, "Reminders are off for this conversation. Send “resume reminders” if you want them again.");
+    await telegramSend(token, chatId, "Reminders are off for this conversation. Send “resume reminders” if you want them again.", businessConnectionId);
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, remindersOptedOut: true });
   }
@@ -952,7 +1001,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     await env.DB.prepare(
       "UPDATE conversations SET reminders_opt_out=0,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?",
     ).bind(unix(), conversation.id, assistant.customer_id, assistantId).run();
-    await telegramSend(token, chatId, "Reminders are enabled again for this conversation.");
+    await telegramSend(token, chatId, "Reminders are enabled again for this conversation.", businessConnectionId);
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, remindersOptedOut: false });
   }
@@ -961,7 +1010,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     await openHandoff(env.DB, assistant.customer_id, assistantId, conversation.id, inbound.text);
     await notifyLinkedOwners(env, assistant.customer_id, assistantId, "handoff",
       `Human handoff requested for ${assistant.name || "your assistant"}. Open the Mkety Assist portal to take over the conversation.`);
-    await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.");
+    await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.", businessConnectionId);
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, handoff: true });
   }
@@ -988,12 +1037,12 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     await env.DB.prepare(
       `INSERT INTO reply_jobs
        (id,customer_id,assistant_id,conversation_id,channel,external_conversation_id,provider_message_id,sender_id,
-        user_message_id,user_text,media_context,image_count,audio_seconds,status,due_at,attempts,max_attempts,
+        user_message_id,user_text,media_context,image_count,audio_seconds,business_connection_id,status,due_at,attempts,max_attempts,
         last_enqueued_at,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,0,20,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,0,20,?,?,?)`,
     ).bind(
       jobId, assistant.customer_id, assistantId, conversation.id, "telegram", chatId, providerMessageId, senderId,
-      userMessageId, inbound.text || "", inbound.mediaContext || "", inbound.imageCount, inbound.audioSeconds,
+      userMessageId, inbound.text || "", inbound.mediaContext || "", inbound.imageCount, inbound.audioSeconds, businessConnectionId,
       now + delaySeconds, now, now, now,
     ).run();
   } catch (error) {
@@ -1017,7 +1066,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     ).run();
   }
 
-  if (delaySeconds <= 4) void telegramAction(token, chatId, "typing");
+  if (delaySeconds <= 4) void telegramAction(token, chatId, "typing", businessConnectionId);
   await markWebhook(env.DB, assistantId, updateId, "processed");
   return json({ ok: true, queued: true, jobId, delaySeconds });
 }
@@ -1159,7 +1208,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
 
   let responseText = String(job.response_text || "");
   if (!responseText) {
-    void telegramAction(token, String(job.external_conversation_id), "typing");
+    void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
     const response = await runAssistant({
       env,
       assistant: {
@@ -1194,10 +1243,10 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     ).bind(responseText, unix(), job.id).run();
   }
 
-  void telegramAction(token, String(job.external_conversation_id), "typing");
+  void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
   await env.DB.prepare("UPDATE reply_jobs SET delivery_started_at=?,updated_at=? WHERE id=?")
     .bind(unix(), unix(), job.id).run();
-  const sent = await telegramSend(token, String(job.external_conversation_id), responseText);
+  const sent = await telegramSend(token, String(job.external_conversation_id), responseText, job.business_connection_id ? String(job.business_connection_id) : null);
   if (!sent.ok) {
     const description = String(sent.description || "telegram_send_failed");
     const terminal = /blocked by the user|chat not found|bot was blocked/i.test(description);
@@ -1228,11 +1277,53 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   return { retry: false, delaySeconds: 0 };
 }
 
+export async function syncTelegramBusinessWebhookCapabilities(env: AssistEnv): Promise<void> {
+  const rows = await env.DB.prepare(
+    `SELECT ch.customer_id,ch.assistant_id
+     FROM assistant_channels ch
+     LEFT JOIN telegram_webhook_capabilities twc ON twc.assistant_id=ch.assistant_id
+     WHERE ch.channel='telegram' AND ch.status='active'
+       AND COALESCE(twc.version,0)<2
+     ORDER BY ch.updated_at ASC LIMIT 25`,
+  ).all<any>();
+
+  for (const row of rows.results ?? []) {
+    const assistantId = String(row.assistant_id);
+    const customerId = String(row.customer_id);
+    try {
+      const token = await getAssistantSecret(env, assistantId, "telegram_bot_token");
+      const secret = await getAssistantSecret(env, assistantId, "telegram_webhook_secret");
+      if (!token || !secret) throw new Error("telegram_credentials_unavailable");
+      const result = await telegramSetWebhook(
+        token,
+        `https://mkety-assist.mkety.app/api/telegram/${encodeURIComponent(assistantId)}`,
+        secret,
+      );
+      if (!result?.ok) throw new Error(String(result?.description || "telegram_set_webhook_failed"));
+      const now = unix();
+      await env.DB.prepare(
+        `INSERT INTO telegram_webhook_capabilities(assistant_id,customer_id,version,last_synced_at,last_error)
+         VALUES (?,?,?,?,NULL)
+         ON CONFLICT(assistant_id) DO UPDATE SET
+           customer_id=excluded.customer_id,version=excluded.version,last_synced_at=excluded.last_synced_at,last_error=NULL`,
+      ).bind(assistantId,customerId,2,now).run();
+    } catch (error) {
+      const now = unix();
+      await env.DB.prepare(
+        `INSERT INTO telegram_webhook_capabilities(assistant_id,customer_id,version,last_synced_at,last_error)
+         VALUES (?,?,0,?,?)
+         ON CONFLICT(assistant_id) DO UPDATE SET
+           customer_id=excluded.customer_id,last_synced_at=excluded.last_synced_at,last_error=excluded.last_error`,
+      ).bind(assistantId,customerId,now,String(error instanceof Error ? error.message : error).slice(0,500)).run();
+    }
+  }
+}
+
 export async function processDueReminders(env: AssistEnv): Promise<void> {
   const now = unix();
   const rows = await env.DB.prepare(
     `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,r.attempts,r.max_attempts,
-            c.external_conversation_id,c.reminders_opt_out,
+            c.external_conversation_id,c.business_connection_id,c.reminders_opt_out,
             COALESCE(p.enabled,1) AS policy_enabled,COALESCE(p.timezone,'UTC') AS policy_timezone,
             p.quiet_start_hour,p.quiet_end_hour
      FROM reminders r
@@ -1274,7 +1365,7 @@ export async function processDueReminders(env: AssistEnv): Promise<void> {
       }
       const token = await getAssistantSecret(env, reminder.assistant_id, "telegram_bot_token");
       if (!token) throw new Error("assistant_telegram_token_unavailable");
-      const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"));
+      const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"), reminder.business_connection_id ? String(reminder.business_connection_id) : null);
       if (!sent.ok) throw new Error(sent.description || "telegram_send_failed");
       await env.DB.prepare(
         "UPDATE reminders SET status='delivered',delivered_at=?,last_error=NULL WHERE id=? AND customer_id=? AND status='scheduled'",
@@ -2556,7 +2647,14 @@ async function telegramSetWebhook(token: string, url: string, secret: string) {
     body: JSON.stringify({
       url,
       secret_token: secret,
-      allowed_updates: ["message", "edited_message"],
+      allowed_updates: [
+        "message",
+        "edited_message",
+        "business_connection",
+        "business_message",
+        "edited_business_message",
+        "deleted_business_messages",
+      ],
       drop_pending_updates: false,
     }),
   }).then((r) => r.json<any>());
@@ -2594,26 +2692,26 @@ export function shouldIgnoreSecretaryEvent(input: {
   return String(input.senderId) === String(input.connectedAccountId);
 }
 
-async function telegramSend(token: string, chatId: string, text: string) {
+async function telegramSend(token: string, chatId: string, text: string, businessConnectionId: string | null = null) {
   const chunks = splitTelegram(text);
   let last: any = { ok: true };
   for (const chunk of chunks) {
     last = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: chunk, disable_web_page_preview: true }),
+      body: JSON.stringify({ chat_id: chatId, text: chunk, disable_web_page_preview: true, ...(businessConnectionId ? { business_connection_id: businessConnectionId } : {}) }),
     }).then((r) => r.json<any>());
     if (!last.ok) return last;
   }
   return last;
 }
 
-async function telegramAction(token: string, chatId: string, action: string) {
+async function telegramAction(token: string, chatId: string, action: string, businessConnectionId: string | null = null) {
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, action }),
+      body: JSON.stringify({ chat_id: chatId, action, ...(businessConnectionId ? { business_connection_id: businessConnectionId } : {}) }),
     });
   } catch {}
 }
