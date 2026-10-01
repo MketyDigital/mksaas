@@ -34,7 +34,8 @@ jobs:
           set -euo pipefail
 
           zones="$(curl -fsS "https://api.cloudflare.com/client/v4/zones?name=mkety.app&status=active" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
-          read -r account_id zone_id < <(ZONES="$zones" node -e "const v=JSON.parse(process.env.ZONES);if(!v.success||!v.result?.[0]?.account?.id||!v.result?.[0]?.id)process.exit(1);console.log(v.result[0].account.id+' '+v.result[0].id)")"
+          account_id="$(ZONES="$zones" node -e "const v=JSON.parse(process.env.ZONES);if(!v.success||!v.result||!v.result[0]||!v.result[0].account||!v.result[0].account.id)process.exit(1);process.stdout.write(v.result[0].account.id)")"
+          zone_id="$(ZONES="$zones" node -e "const v=JSON.parse(process.env.ZONES);if(!v.success||!v.result||!v.result[0]||!v.result[0].id)process.exit(1);process.stdout.write(v.result[0].id)")"
           db="$(curl -fsS "https://api.cloudflare.com/client/v4/accounts/$account_id/d1/database?name=mkety-assist-prod" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
           d1_id="$(DB="$db" node -e "const v=JSON.parse(process.env.DB);if(!v.success||!v.result?.[0]?.uuid)process.exit(1);process.stdout.write(v.result[0].uuid)")"
 
