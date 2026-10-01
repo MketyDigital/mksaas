@@ -9,6 +9,6 @@ CREATE TABLE IF NOT EXISTS payment_method_health (
   updated_at INTEGER NOT NULL
 );
 INSERT OR IGNORE INTO payment_method_health(method,enabled,healthy,updated_at) VALUES
-('nowpayments',0,0,unixepoch()),
+('nowpayments',1,1,unixepoch()),
 ('flutterwave',1,1,unixepoch()),
 ('kora',0,0,unixepoch());
