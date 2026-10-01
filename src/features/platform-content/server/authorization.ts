@@ -35,11 +35,11 @@ export function isPlatformOperatorEmail(email: string) {
 
 export async function requirePlatformAdminArea(tenantSlug: string, area: PlatformAdminArea) {
   if (!isPlatformControlTenant(tenantSlug)) {
-    redirect(`/t/${tenantSlug}?error=unauthorized`);
+    redirect(`/app/${tenantSlug}?error=unauthorized`);
   }
   const actor = await requirePermission(tenantSlug, permissionByArea[area]);
   if (!isPlatformOperatorEmail(actor.email)) {
-    redirect(`/t/${tenantSlug}?error=unauthorized`);
+    redirect(`/app/${tenantSlug}?error=unauthorized`);
   }
   return actor;
 }
