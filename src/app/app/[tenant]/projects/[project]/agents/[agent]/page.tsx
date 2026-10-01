@@ -67,11 +67,11 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/t/${access.tenant.slug}/projects/${access.project.slug}/ai`} className="rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted/70">
+            <Link href={`/app/${access.tenant.slug}/projects/${access.project.slug}/ai`} className="rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted/70">
               Back to AI Workspace
             </Link>
             <Link
-              href={`/t/${access.tenant.slug}/projects/${access.project.slug}/knowledge`}
+              href={`/app/${access.tenant.slug}/projects/${access.project.slug}/knowledge`}
               className="rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted/70"
             >
               Manage knowledge
@@ -164,7 +164,7 @@ export default async function AgentBuilderPage({ params }: { params: Promise<{ t
 
         <div className="flex flex-wrap gap-3">
           <button className="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground">Save agent</button>
-          <Link href={`/t/${access.tenant.slug}/projects/${access.project.slug}/ai`} className="rounded-md border px-5 py-2 text-sm transition hover:bg-muted/70">
+          <Link href={`/app/${access.tenant.slug}/projects/${access.project.slug}/ai`} className="rounded-md border px-5 py-2 text-sm transition hover:bg-muted/70">
             Back to AI Workspace
           </Link>
         </div>
