@@ -28,7 +28,6 @@ import {
   tenants,
 } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
-import { getTenantBySlug } from '@/shared/lib/tenant';
 
 const CONTRACT_PREFIX = 'enterprise-ai-contract-';
 
@@ -101,9 +100,15 @@ async function createEnterpriseAiContractVersionImpl(
 ) {
   await requirePlatformControlAccess(opsTenantSlug);
   await requirePermission(opsTenantSlug, 'platform:plans');
+  const targetTenantId = String(formData.get('targetTenantId') ?? '').trim();
   const targetTenantSlug = String(formData.get('targetTenantSlug') ?? '').trim();
-  const target = await getTenantBySlug(targetTenantSlug);
-  if (!target) throw new Error('Target customer workspace was not found.');
+  const target = targetTenantId
+    ? await db.query.tenants.findFirst({ where: eq(tenants.id, targetTenantId) })
+    : targetTenantSlug
+      ? await db.query.tenants.findFirst({ where: eq(tenants.slug, targetTenantSlug) })
+      : null;
+  if (!target) throw new Error('Target customer workspace was not found. Refresh the page and select the workspace again.');
+  if (target.slug === opsTenantSlug) throw new Error('The reserved Mkety Ops workspace cannot receive a customer Enterprise AI contract.');
 
   const amountMinor = parseUsdMinor(formData.get('monthlyPriceUsd'));
   const fundingMode = String(formData.get('fundingMode') ?? 'full_period') === 'prepaid_partial'

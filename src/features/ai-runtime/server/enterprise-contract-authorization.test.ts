@@ -17,7 +17,18 @@ jest.mock('@/shared/lib/tenant', () => ({
     throw new Error('target_lookup_started');
   },
 }));
-jest.mock('@/shared/db', () => ({ db: {} }));
+jest.mock('@/shared/db', () => ({
+  db: {
+    query: {
+      tenants: {
+        findFirst: async () => {
+          mockTargetLookups += 1;
+          throw new Error('target_lookup_started');
+        },
+      },
+    },
+  },
+}));
 jest.mock('@/shared/db/cloudflare', () => ({ db: {} }));
 jest.mock('@/shared/db/request', () => ({
   withRequestDatabase: async (work: (database: object) => Promise<unknown>) => work({}),
@@ -32,6 +43,7 @@ jest.mock('next/cache', () => ({ revalidatePath: () => {} }));
 
 const form = () => {
   const value = new FormData();
+  value.set('targetTenantId', '11111111-1111-1111-1111-111111111111');
   value.set('targetTenantSlug', 'victim');
   value.set('externalWorkspaceRef', 'victim-media');
   return value;
