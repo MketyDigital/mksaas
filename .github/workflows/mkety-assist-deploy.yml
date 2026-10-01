@@ -92,6 +92,22 @@ jobs:
           echo "d1_id=$d1_id" >> "$GITHUB_OUTPUT"
           echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
 
+      - name: Ensure hosted-customer wildcard DNS exists
+        env:
+          ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=AAAA&name=*.assist.mkety.app"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          count="$(EXISTING="$existing" node - <<'NODE'
+          const v = JSON.parse(process.env.EXISTING);
+          process.stdout.write(String(v.result?.length || 0));
+          NODE
+          )"
+          if [ "$count" = "0" ]; then
+            curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"type":"AAAA","name":"*.assist.mkety.app","content":"100::","proxied":true,"ttl":1}' > /tmp/assist-wildcard-dns.json
+          fi
+
       - name: Build deploy-time Wrangler config
         working-directory: customer-apps/assist
         env:
@@ -107,7 +123,7 @@ jobs:
 
       - name: Apply Assist D1 migrations
         working-directory: customer-apps/assist
-        run: npx wrangler d1 migrations apply MKETY_ASSIST_DB --remote --config wrangler.deploy.jsonc
+        run: npx wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
 
       - name: Upload Assist secrets
         working-directory: customer-apps/assist
