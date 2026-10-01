@@ -16,7 +16,7 @@ export default async function AdminEntryPage() {
     : undefined;
   const adminTenant = platformTenant ?? Object.entries(roles).find(([, role]) => role === 'admin')?.[0];
 
-  if (adminTenant) redirect(`/t/${adminTenant}/admin`);
-  if (Object.keys(roles).length === 1) redirect(`/t/${Object.keys(roles)[0]}`);
+  if (adminTenant) redirect(`/app/${adminTenant}/admin`);
+  if (Object.keys(roles).length === 1) redirect(`/app/${Object.keys(roles)[0]}`);
   redirect('/select-tenant');
 }
