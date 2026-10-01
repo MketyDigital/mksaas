@@ -1,14 +1,14 @@
-import { getRequestDatabaseContext } from './request-context';
 import { withRequestDatabase } from './request';
 
 /**
- * Ensures a Server Action gets a fresh Hyperdrive-safe database connection.
+ * Ensures every top-level Server Action gets its own fresh Hyperdrive-safe
+ * PostgreSQL client.
  *
- * Page render request context does not carry into a later Server Action POST.
- * Reuse an existing request DB when one is already present (for nested actions/tests);
- * otherwise create and close one for this action invocation.
+ * A Server Action POST is a separate HTTP request from the page render that
+ * produced the form. Never reuse an AsyncLocalStorage database context here:
+ * in a long-lived Worker isolate that context may refer to a client whose
+ * originating render has already completed and closed it.
  */
 export async function withServerActionDatabase<T>(work: () => Promise<T>): Promise<T> {
-  if (getRequestDatabaseContext<object>() || process.env.NODE_ENV === 'test') return work();
   return withRequestDatabase(async () => work());
 }
