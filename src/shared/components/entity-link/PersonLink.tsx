@@ -14,7 +14,7 @@ export interface PersonLinkProps {
 }
 
 export function PersonLink({ tenantSlug, personId, displayName, className, style }: PersonLinkProps) {
-  const href = `/t/${tenantSlug}/team/${personId}`;
+  const href = `/app/${tenantSlug}/team/${personId}`;
 
   return (
     <Link
