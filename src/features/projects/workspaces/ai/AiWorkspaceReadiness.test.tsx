@@ -20,8 +20,8 @@ describe('AiWorkspaceReadiness', () => {
     const agentsHeading = screen.getByRole('heading', { name: 'Agents' });
     const knowledgeHeading = screen.getByRole('heading', { name: 'Knowledge' });
 
-    expect(agentsHeading.closest('a')).toHaveAttribute('href', '/t/acme/projects/demo/ai');
-    expect(knowledgeHeading.closest('a')).toHaveAttribute('href', '/t/acme/projects/demo/knowledge');
+    expect(agentsHeading.closest('a')).toHaveAttribute('href', '/app/acme/projects/demo/ai');
+    expect(knowledgeHeading.closest('a')).toHaveAttribute('href', '/app/acme/projects/demo/knowledge');
     expect(screen.queryByRole('link', { name: /Publish now/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Run agent/i })).not.toBeInTheDocument();
   });
