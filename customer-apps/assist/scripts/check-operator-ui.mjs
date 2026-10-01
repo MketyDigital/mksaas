@@ -166,3 +166,49 @@ try {
   globalThis.confirm = oldConfirm;
 }
 console.log("Customer browser script parses, initializes, and exposes API Access.");
+
+
+
+const indexSource = fs.readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+const indexCompiled = ts.transpileModule(indexSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText;
+const indexModule = { exports: {} };
+vm.runInNewContext(indexCompiled, {
+  module: indexModule,
+  exports: indexModule.exports,
+  require(specifier) {
+    if (String(specifier).endsWith("./ui")) return { renderCustomerPortal() { return ""; }, renderOperatorPortal() { return ""; } };
+    if (String(specifier).endsWith("./runtime")) return {};
+    if (String(specifier).endsWith("./operator-oidc")) return {};
+    return {};
+  },
+  crypto: globalThis.crypto,
+  TextEncoder,
+  TextDecoder,
+  URL,
+  Response,
+  Headers,
+  Blob,
+  atob,
+  btoa,
+  console,
+});
+const setupPage = indexModule.exports.setupPage;
+if (typeof setupPage !== "function") throw new Error("setupPage export missing from index module");
+const setupResponse = setupPage({
+  customerId: "cus_test",
+  customerSlug: "test",
+  customerName: "Setup Test",
+  hostname: "test.assist.mkety.app",
+}, "token_test_123");
+const setupHtml = await setupResponse.text();
+const setupMatch = setupHtml.match(/<script>([\s\S]*?)<\/script>/);
+if (!setupMatch) throw new Error("Setup page script not found");
+new Function(setupMatch[1]);
+if (!setupHtml.includes("/api/auth/setup/validate?token=")) throw new Error("Setup page preflight validation missing");
+if (!setupHtml.includes("setupPassword")) throw new Error("Setup page explicit password input missing");
+console.log("Setup page browser script parses and includes token preflight validation.");
