@@ -34,7 +34,7 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
   await requirePermission(tenantSlug, 'ai:channels:manage');
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
-  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/app/${tenantSlug}/enterprise-ai`);
 
   const [connections, solutions] = await Promise.all([
     listEnterpriseAiChannelConnections(tenant.id),
@@ -45,7 +45,7 @@ export default async function EnterpriseAiChannelsPage({ params }: { params: Pro
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <div>
-        <Link href={`/t/${tenantSlug}/enterprise-ai`} className="text-sm text-muted-foreground">← Enterprise AI</Link>
+        <Link href={`/app/${tenantSlug}/enterprise-ai`} className="text-sm text-muted-foreground">← Enterprise AI</Link>
         <div className="mt-2 flex items-center gap-3"><MessageSquareMore className="h-7 w-7 text-primary" /><h1 className="text-3xl font-bold">Channels</h1></div>
         <p className="mt-2 max-w-3xl text-muted-foreground">
           Connect the same approved AI solution to the places your customers and team already use. Credentials are encrypted server-side and each installation stays inside this workspace.
