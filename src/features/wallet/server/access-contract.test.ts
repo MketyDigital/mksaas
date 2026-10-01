@@ -11,7 +11,7 @@ async function read(relativePath: string) {
 
 describe('Wallet security and settlement contracts', () => {
   it('requires explicit tenant membership before reading wallet data', async () => {
-    const page = await read('src/app/(tenant)/t/[tenant]/wallet/page.tsx');
+    const page = await read('src/app/app/[tenant]/wallet/page.tsx');
 
     expect(page).toContain("import { requireTenantMembership } from '@/shared/lib/permissions';");
     expect(page).toContain('await requireTenantMembership(tenantSlug);');
