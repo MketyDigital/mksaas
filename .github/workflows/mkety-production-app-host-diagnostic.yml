@@ -97,4 +97,8 @@ jobs:
           ];
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\n')+'\n');
           console.log(JSON.stringify({cf,http,rootOk,entryOk},null,2));
+          if(!cf.customDomainPresent || cf.attachedToProductionWorker || cf.customDomainService!=='mkety-app-host' || !rootOk || !entryOk) {
+            console.error('app.mkety.com production health contract is not satisfied.');
+            process.exit(1);
+          }
           NODE
