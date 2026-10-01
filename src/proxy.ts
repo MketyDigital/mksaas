@@ -50,6 +50,7 @@ function getPublicHostProductRedirect(url: URL): URL | null {
   const pathname = url.pathname;
   const appOnly =
     pathname === '/app' ||
+    pathname.startsWith('/app/') ||
     pathname === '/select-tenant' ||
     pathname === '/create-workspace' ||
     pathname.startsWith('/t/');
@@ -61,7 +62,8 @@ function getPublicHostProductRedirect(url: URL): URL | null {
     } catch {
       appOrigin = 'https://app.mkety.com';
     }
-    return new URL(pathname + url.search, appOrigin);
+    const canonicalPath = pathname.startsWith('/t/') ? pathname.replace(/^\/t\//, '/app/') : pathname;
+    return new URL(canonicalPath + url.search, appOrigin);
   }
 
   if (pathname === '/mail/app') return new URL(url.search, 'https://mail.mkety.com');
@@ -79,7 +81,7 @@ function isPublicPath(pathname: string): boolean {
     pathname.startsWith('/docs') ||
     pathname.startsWith('/api/docs') ||
     pathname.startsWith('/api/auth/') ||
-    /^\/t\/[^/]+\/login$/.test(pathname)
+    /^\/app\/[^/]+\/login$/.test(pathname)
   );
 }
 
@@ -92,6 +94,12 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
 
   const productRedirect = getPublicHostProductRedirect(requestUrl);
   if (productRedirect) return NextResponse.redirect(productRedirect, 308);
+
+  if (pathname.startsWith('/t/')) {
+    const url = new URL(request.url);
+    url.pathname = pathname.replace(/^\/t\//, '/app/');
+    return NextResponse.redirect(url, 308);
+  }
 
   const session = await auth(request);
   let effectivePathname = pathname;
@@ -178,7 +186,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
       if (enterpriseHost) {
         if (!session) {
           const loginUrl = new URL(request.url);
-          loginUrl.pathname = `/t/${enterpriseHost.tenant.slug}/login`;
+          loginUrl.pathname = `/app/${enterpriseHost.tenant.slug}/login`;
           loginUrl.search = '';
           loginUrl.searchParams.set('enterpriseAiHost', hostname.toLowerCase());
           return NextResponse.rewrite(loginUrl);
@@ -187,7 +195,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
         const rewriteUrl = new URL(request.url);
         // Customer-owned and managed *.mkety.app hosts expose the customer app,
         // not Mkety's management console. Administration stays on ai.mkety.com/app.mkety.com.
-        rewriteUrl.pathname = `/t/${enterpriseHost.tenant.slug}/enterprise-ai/customer`;
+        rewriteUrl.pathname = `/app/${enterpriseHost.tenant.slug}/enterprise-ai/customer`;
         rewriteUrl.search = '';
         return NextResponse.rewrite(rewriteUrl);
       }
@@ -196,7 +204,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     }
   }
 
-  if (!pathname.startsWith('/t/') && hostname) {
+  if (!pathname.startsWith('/app/') && hostname) {
     const vercelHost = process.env.VERCEL_URL || '';
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
     const isKnownAppHost =
@@ -218,9 +226,9 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
         if (domain?.status === 'verified') {
           const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, domain.tenantId) });
           if (tenant) {
-            effectivePathname = `/t/${tenant.slug}${pathname === '/' ? '' : pathname}`;
+            effectivePathname = `/app/${tenant.slug}${pathname === '/' ? '' : pathname}`;
             const rewriteUrl = new URL(request.url);
-            rewriteUrl.pathname = session ? effectivePathname : `/t/${tenant.slug}/login`;
+            rewriteUrl.pathname = session ? effectivePathname : `/app/${tenant.slug}/login`;
             return NextResponse.rewrite(rewriteUrl);
           }
         }
@@ -236,10 +244,10 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return response;
   }
 
-  if (effectivePathname === '/select-tenant' || effectivePathname.startsWith('/t/')) {
+  if (effectivePathname === '/select-tenant' || effectivePathname.startsWith('/app/')) {
     if (!session) {
-      const tenantMatch = effectivePathname.match(/^\/t\/([^/]+)/);
-      const redirectPath = tenantMatch ? `/t/${tenantMatch[1]}/login` : '/login';
+      const tenantMatch = effectivePathname.match(/^\/app\/([^/]+)/);
+      const redirectPath = tenantMatch ? `/app/${tenantMatch[1]}/login` : '/login';
       const url = new URL(request.url);
       url.pathname = redirectPath;
       url.search = '';
@@ -250,18 +258,18 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
   const response = NextResponse.next();
   response.headers.set('x-pathname', effectivePathname);
 
-  const tenantMatch = effectivePathname.match(/^\/t\/([^/]+)/);
+  const tenantMatch = effectivePathname.match(/^\/app\/([^/]+)/);
   if (tenantMatch) {
     const tenantSlug = tenantMatch[1];
     response.headers.set('x-tenant-slug', tenantSlug);
 
-    if (effectivePathname.match(/^\/t\/[^/]+\/admin/)) {
+    if (effectivePathname.match(/^\/app\/[^/]+\/admin/)) {
       const userRoles = session?.user?.roles as Record<string, TenantRole> | undefined;
       const userRole = userRoles?.[tenantSlug];
 
       if (userRole !== 'admin') {
         const url = new URL(request.url);
-        url.pathname = `/t/${tenantSlug}`;
+        url.pathname = `/app/${tenantSlug}`;
         url.searchParams.set('error', 'unauthorized');
         return NextResponse.redirect(url);
       }
