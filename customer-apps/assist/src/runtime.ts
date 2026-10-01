@@ -2,6 +2,20 @@ import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, take
 import { mayUseFallback } from "./providers/validation";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
+import {
+  RetryableInferenceError,
+  claimModelCapacity,
+  classifyRetryableError,
+  compactInstructions,
+  computeHumanDelaySeconds,
+  deleteKnowledgeChunks,
+  getPromptCache,
+  mergeMemoryDigest,
+  providerHttpError,
+  putPromptCache,
+  replaceKnowledgeChunks,
+  sha256Text as resilienceSha256Text,
+} from "./resilience";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
@@ -18,6 +32,9 @@ type AssistEnv = {
   MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
   PORTAL_CNAME_TARGET: string;
+  REPLY_QUEUE: {
+    send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
+  };
 };
 
 type Customer = {
@@ -142,8 +159,9 @@ export async function handleRuntimeApi(
     const collectionId = parts[2];
     await assertCollection(env.DB, customer.customerId, collectionId);
     const assets = await env.DB.prepare(
-      "SELECT r2_key FROM knowledge_items WHERE collection_id=? AND customer_id=? AND r2_key IS NOT NULL",
+      "SELECT id,r2_key FROM knowledge_items WHERE collection_id=? AND customer_id=?",
     ).bind(collectionId, customer.customerId).all<any>();
+    await deleteKnowledgeChunks(env.DB, (assets.results ?? []).map((row: any) => String(row.id)));
     for (const row of assets.results ?? []) if (row.r2_key) await env.MEDIA.delete(String(row.r2_key));
     await env.DB.prepare("DELETE FROM knowledge_collections WHERE id=? AND customer_id=?").bind(collectionId, customer.customerId).run();
     return json({ ok: true });
@@ -167,6 +185,7 @@ export async function handleRuntimeApi(
     ).bind(parts[2], customer.customerId).first<any>();
     if (!item) return json({ error: "knowledge_item_not_found" }, 404);
     if (item.r2_key) await env.MEDIA.delete(String(item.r2_key));
+    await deleteKnowledgeChunks(env.DB, [parts[2]]);
     await env.DB.prepare("DELETE FROM knowledge_items WHERE id=? AND customer_id=?").bind(parts[2], customer.customerId).run();
     return json({ ok: true });
   }
@@ -198,6 +217,20 @@ export async function handleRuntimeApi(
     await env.DB.prepare(
       "UPDATE knowledge_items SET status=?,content_text=?,error_code=?,retry_count=retry_count+1,updated_at=? WHERE id=? AND customer_id=?",
     ).bind(textual ? "ready" : "error", textual, errorCode, unix(), item.id, customer.customerId).run();
+    if (textual) {
+      const itemRow = await env.DB.prepare("SELECT collection_id FROM knowledge_items WHERE id=? AND customer_id=? LIMIT 1")
+        .bind(item.id, customer.customerId).first<any>();
+      if (itemRow?.collection_id) {
+        await replaceKnowledgeChunks({
+          db: env.DB,
+          customerId: customer.customerId,
+          collectionId: String(itemRow.collection_id),
+          itemId: String(item.id),
+          title: String(item.title),
+          text: textual,
+        });
+      }
+    }
     return json({ ok: Boolean(textual), status: textual ? "ready" : "error", error: errorCode });
   }
 
@@ -243,6 +276,16 @@ export async function handleRuntimeApi(
         itemId, customer.customerId, collectionId, key, file.name, file.type || null,
         textual ? "ready" : "error", textual, JSON.stringify({ size: file.size }), conversionError, 0, now, now,
       ).run();
+      if (textual) {
+        await replaceKnowledgeChunks({
+          db: env.DB,
+          customerId: customer.customerId,
+          collectionId,
+          itemId,
+          title: file.name,
+          text: textual,
+        });
+      }
       return json({
         id: itemId,
         title: file.name,
@@ -264,6 +307,14 @@ export async function handleRuntimeApi(
        (id,customer_id,collection_id,title,mime_type,status,content_text,created_at,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
     ).bind(itemId, customer.customerId, collectionId, title, "text/plain", "ready", content, now, now).run();
+    await replaceKnowledgeChunks({
+      db: env.DB,
+      customerId: customer.customerId,
+      collectionId,
+      itemId,
+      title,
+      text: content,
+    });
     return json({ id: itemId, title, status: "ready" }, 201);
   }
 
@@ -494,7 +545,15 @@ export async function handleRuntimeApi(
       const now = unix();
       await env.DB.prepare(
         `UPDATE assistants SET name=COALESCE(?,name),status=COALESCE(?,status),model_alias=COALESCE(?,model_alias),
-         timezone=COALESCE(?,timezone),memory_enabled=COALESCE(?,memory_enabled),monthly_credit_cap=COALESCE(?,monthly_credit_cap),updated_at=?
+         timezone=COALESCE(?,timezone),memory_enabled=COALESCE(?,memory_enabled),monthly_credit_cap=COALESCE(?,monthly_credit_cap),
+         human_delay_enabled=COALESCE(?,human_delay_enabled),
+         human_delay_min_seconds=COALESCE(?,human_delay_min_seconds),
+         human_delay_max_seconds=COALESCE(?,human_delay_max_seconds),
+         human_delay_per_char_ms=COALESCE(?,human_delay_per_char_ms),
+         context_recent_message_limit=COALESCE(?,context_recent_message_limit),
+         context_knowledge_char_budget=COALESCE(?,context_knowledge_char_budget),
+         context_memory_char_budget=COALESCE(?,context_memory_char_budget),
+         updated_at=?
          WHERE id=? AND customer_id=?`,
       ).bind(
         body.name ?? null,
@@ -503,6 +562,13 @@ export async function handleRuntimeApi(
         body.timezone ?? null,
         typeof body.memoryEnabled === "boolean" ? (body.memoryEnabled ? 1 : 0) : null,
         body.monthlyCreditCap === undefined ? null : parseFloat(String(body.monthlyCreditCap)),
+        typeof body.humanDelayEnabled === "boolean" ? (body.humanDelayEnabled ? 1 : 0) : null,
+        body.humanDelayMinSeconds === undefined ? null : clampNumber(body.humanDelayMinSeconds, 0, 3600),
+        body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
+        body.humanDelayPerCharMs === undefined ? null : clampNumber(body.humanDelayPerCharMs, 0, 5000),
+        body.contextRecentMessageLimit === undefined ? null : clampNumber(body.contextRecentMessageLimit, 4, 40),
+        body.contextKnowledgeCharBudget === undefined ? null : clampNumber(body.contextKnowledgeCharBudget, 2000, 50000),
+        body.contextMemoryCharBudget === undefined ? null : clampNumber(body.contextMemoryCharBudget, 1000, 20000),
         now, assistantId, customer.customerId,
       ).run();
       if (typeof body.instructions === "string") {
@@ -738,10 +804,11 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true });
   }
 
+  const userMessageId = id("msg");
   await env.DB.prepare(
     "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,media_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
   ).bind(
-    id("msg"), assistant.customer_id, assistantId, conversation.id, "user",
+    userMessageId, assistant.customer_id, assistantId, conversation.id, "user",
     inbound.text || inbound.mediaContext || "", inbound.mediaJson ? JSON.stringify(inbound.mediaJson) : null, unix(),
   ).run();
 
@@ -789,34 +856,252 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true, automationPaused: true, pauseScope: automation.reason });
   }
 
-  const typing = telegramAction(token, chatId, "typing");
-  void typing;
-
-  const response = await runAssistant({
-    env,
-    assistant,
-    conversationId: conversation.id,
-    userText: inbound.text || "",
-    mediaContext: inbound.mediaContext || "",
-    imageCount: inbound.imageCount,
-    audioSeconds: inbound.audioSeconds,
-    senderId,
-    providerMessageId,
-  });
-
-  if (!response.ok) {
-    await telegramSend(token, chatId, response.userMessage);
-    await markWebhook(env.DB, assistantId, updateId, "error");
-    return json({ ok: true });
+  const delayContent = [inbound.text || "", inbound.mediaContext || ""].filter(Boolean).join("\n");
+  const delaySeconds = computeHumanDelaySeconds(assistant, delayContent);
+  const now = unix();
+  const jobId = id("rpl");
+  try {
+    await env.DB.prepare(
+      `INSERT INTO reply_jobs
+       (id,customer_id,assistant_id,conversation_id,channel,external_conversation_id,provider_message_id,sender_id,
+        user_message_id,user_text,media_context,image_count,audio_seconds,status,due_at,attempts,max_attempts,
+        last_enqueued_at,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,0,20,?,?,?)`,
+    ).bind(
+      jobId, assistant.customer_id, assistantId, conversation.id, "telegram", chatId, providerMessageId, senderId,
+      userMessageId, inbound.text || "", inbound.mediaContext || "", inbound.imageCount, inbound.audioSeconds,
+      now + delaySeconds, now, now, now,
+    ).run();
+  } catch (error) {
+    const existing = await env.DB.prepare(
+      "SELECT id,status FROM reply_jobs WHERE assistant_id=? AND channel='telegram' AND provider_message_id=? LIMIT 1",
+    ).bind(assistantId, providerMessageId).first<any>();
+    if (!existing) throw error;
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, queued: true, duplicate: true, jobId: existing.id });
   }
 
-  await env.DB.prepare(
-    "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
-  ).bind(id("msg"), assistant.customer_id, assistantId, conversation.id, "assistant", response.text, unix()).run();
-  await env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), conversation.id).run();
-  await telegramSend(token, chatId, response.text);
+  try {
+    await env.REPLY_QUEUE.send({ jobId }, { delaySeconds });
+  } catch (error) {
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET last_error=?,last_enqueued_at=NULL,updated_at=? WHERE id=? AND status='pending'",
+    ).bind(
+      `queue_enqueue_failed:${String(error instanceof Error ? error.message : error).slice(0, 300)}`,
+      unix(),
+      jobId,
+    ).run();
+  }
+
+  if (delaySeconds <= 4) void telegramAction(token, chatId, "typing");
   await markWebhook(env.DB, assistantId, updateId, "processed");
-  return json({ ok: true });
+  return json({ ok: true, queued: true, jobId, delaySeconds });
+}
+
+export async function processReplyQueue(batch: any, env: AssistEnv): Promise<void> {
+  for (const message of batch.messages ?? []) {
+    const jobId = String(message?.body?.jobId || "");
+    if (!jobId) {
+      message.ack?.();
+      continue;
+    }
+    try {
+      const outcome = await processReplyJob(env, jobId);
+      if (outcome.retry) message.retry?.({ delaySeconds: outcome.delaySeconds });
+      else message.ack?.();
+    } catch (error) {
+      const classified = classifyRetryableError(error);
+      const delaySeconds = classified.retryable ? classified.retryAfterSeconds : 30;
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status!='delivered'",
+      ).bind(classified.message.slice(0, 500), unix() + delaySeconds, unix(), jobId).run().catch(() => undefined);
+      message.retry?.({ delaySeconds });
+    }
+  }
+}
+
+export async function recoverReplyJobs(env: AssistEnv): Promise<void> {
+  const now = unix();
+  await env.DB.prepare(
+    "UPDATE reply_jobs SET status='retry',locked_at=NULL,due_at=?,updated_at=? WHERE status='processing' AND locked_at IS NOT NULL AND locked_at<?",
+  ).bind(now, now, now - 300).run();
+
+  const rows = await env.DB.prepare(
+    `SELECT id,due_at FROM reply_jobs
+     WHERE status IN ('pending','retry') AND due_at<=?
+       AND (last_enqueued_at IS NULL OR last_enqueued_at<?)
+     ORDER BY due_at ASC LIMIT 100`,
+  ).bind(now, now - 30).all<any>();
+
+  for (const row of rows.results ?? []) {
+    try {
+      await env.REPLY_QUEUE.send({ jobId: String(row.id) }, { delaySeconds: Math.max(0, Number(row.due_at || now) - now) });
+      await env.DB.prepare("UPDATE reply_jobs SET last_enqueued_at=?,updated_at=? WHERE id=?")
+        .bind(now, now, row.id).run();
+    } catch (error) {
+      await env.DB.prepare("UPDATE reply_jobs SET last_error=?,updated_at=? WHERE id=?")
+        .bind(`requeue_failed:${String(error instanceof Error ? error.message : error).slice(0, 300)}`, now, row.id).run();
+    }
+  }
+
+  await env.DB.prepare("DELETE FROM prompt_cache WHERE expires_at<?").bind(now).run();
+}
+
+async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: boolean; delaySeconds: number }> {
+  const now = unix();
+  let job = await env.DB.prepare(
+    `SELECT r.*,a.name,a.status AS assistant_status,a.model_alias,a.memory_enabled,a.human_delay_enabled,
+            a.human_delay_min_seconds,a.human_delay_max_seconds,a.human_delay_per_char_ms,
+            a.context_recent_message_limit,a.context_knowledge_char_budget,a.context_memory_char_budget,
+            fp.vision_enabled,fp.voice_enabled,fp.knowledge_enabled,fp.human_handoff_enabled,fp.tools_enabled
+     FROM reply_jobs r
+     JOIN assistants a ON a.id=r.assistant_id
+     JOIN feature_policy fp ON fp.customer_id=r.customer_id
+     WHERE r.id=? LIMIT 1`,
+  ).bind(jobId).first<any>();
+  if (!job) return { retry: false, delaySeconds: 0 };
+  if (["delivered","failed","superseded","cancelled"].includes(String(job.status))) return { retry: false, delaySeconds: 0 };
+
+  if (Number(job.due_at || 0) > now) return { retry: true, delaySeconds: Math.max(1, Number(job.due_at) - now) };
+
+  if (job.status === "processing" && Number(job.locked_at || 0) > now - 300) {
+    return { retry: true, delaySeconds: 15 };
+  }
+  if (job.status === "processing") {
+    await env.DB.prepare("UPDATE reply_jobs SET status='retry',locked_at=NULL,updated_at=? WHERE id=?")
+      .bind(now, jobId).run();
+    job.status = "retry";
+  }
+
+  if (!job.response_text) {
+    const newer = await env.DB.prepare(
+      `SELECT id FROM reply_jobs
+       WHERE conversation_id=? AND id<>? AND created_at>? AND status IN ('pending','retry','processing')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(job.conversation_id, job.id, job.created_at).first<any>();
+    if (newer) {
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='superseded',completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
+      ).bind(now, now, job.id).run();
+      return { retry: false, delaySeconds: 0 };
+    }
+  }
+
+  const claimed = await env.DB.prepare(
+    `UPDATE reply_jobs
+     SET status='processing',attempts=attempts+1,locked_at=?,updated_at=?
+     WHERE id=? AND status IN ('pending','retry')
+     RETURNING *`,
+  ).bind(now, now, job.id).first<any>();
+  if (!claimed && job.status !== "processing") {
+    return { retry: false, delaySeconds: 0 };
+  }
+  if (claimed) job = { ...job, ...claimed };
+
+  if (Number(job.attempts || 0) > Number(job.max_attempts || 20)) {
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='failed',last_error='max_attempts_exceeded',completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now, now, job.id).run();
+    return { retry: false, delaySeconds: 0 };
+  }
+
+  const handoff = await env.DB.prepare(
+    "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
+  ).bind(job.conversation_id).first();
+  if (handoff) {
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='cancelled',last_error='human_handoff_open',completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now, now, job.id).run();
+    return { retry: false, delaySeconds: 0 };
+  }
+
+  const automation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
+  if (automation.paused || job.assistant_status !== "active") {
+    const delaySeconds = 60;
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(`automation_paused:${String(automation.reason || job.assistant_status || "unknown")}`, now + delaySeconds, now, job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
+  const token = await getAssistantSecret(env, job.assistant_id, "telegram_bot_token");
+  if (!token) {
+    const delaySeconds = Math.min(600, 30 * Math.max(1, Number(job.attempts || 1)));
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error='assistant_telegram_token_unavailable',due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now + delaySeconds, now, job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
+  let responseText = String(job.response_text || "");
+  if (!responseText) {
+    void telegramAction(token, String(job.external_conversation_id), "typing");
+    const response = await runAssistant({
+      env,
+      assistant: {
+        ...job,
+        id: job.assistant_id,
+        customer_id: job.customer_id,
+      },
+      conversationId: String(job.conversation_id),
+      userText: String(job.user_text || ""),
+      mediaContext: String(job.media_context || ""),
+      imageCount: Number(job.image_count || 0),
+      audioSeconds: Number(job.audio_seconds || 0),
+      senderId: String(job.sender_id || ""),
+      providerMessageId: String(job.provider_message_id || ""),
+    });
+
+    if (!response.ok) {
+      if (response.retryable) {
+        const delaySeconds = Math.max(1, Math.min(86400, Number(response.retryAfterSeconds || 5)));
+        await env.DB.prepare(
+          "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+        ).bind(String(response.error || response.userMessage).slice(0, 500), unix() + delaySeconds, unix(), job.id).run();
+        return { retry: true, delaySeconds };
+      }
+      responseText = response.userMessage;
+    } else {
+      responseText = response.text;
+    }
+
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET response_text=?,delivery_started_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+    ).bind(responseText, unix(), job.id).run();
+  }
+
+  void telegramAction(token, String(job.external_conversation_id), "typing");
+  await env.DB.prepare("UPDATE reply_jobs SET delivery_started_at=?,updated_at=? WHERE id=?")
+    .bind(unix(), unix(), job.id).run();
+  const sent = await telegramSend(token, String(job.external_conversation_id), responseText);
+  if (!sent.ok) {
+    const description = String(sent.description || "telegram_send_failed");
+    const terminal = /blocked by the user|chat not found|bot was blocked/i.test(description);
+    if (terminal) {
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET status='failed',last_error=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+      ).bind(description.slice(0, 500), unix(), unix(), job.id).run();
+      return { retry: false, delaySeconds: 0 };
+    }
+    const delaySeconds = Math.min(600, 15 * Math.max(1, Number(job.attempts || 1)));
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(description.slice(0, 500), unix() + delaySeconds, unix(), job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
+  const deliveryId = sent?.result?.message_id ? String(sent.result.message_id) : null;
+  const assistantMessageId = `msg_reply_${String(job.id).replace(/[^a-zA-Z0-9_]/g, "")}`;
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
+    ).bind(assistantMessageId, job.customer_id, job.assistant_id, job.conversation_id, "assistant", responseText, unix()),
+    env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), job.conversation_id),
+    env.DB.prepare(
+      "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,completed_at=?,locked_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+    ).bind(deliveryId, unix(), unix(), job.id),
+  ]);
+  return { retry: false, delaySeconds: 0 };
 }
 
 export async function processDueReminders(env: AssistEnv): Promise<void> {
@@ -938,6 +1223,91 @@ function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, end
   }
 }
 
+async function buildConversationContext(db: D1Database, assistant: any, conversationId: string, currentUserText: string) {
+  if (!Number(assistant.memory_enabled ?? 1)) return { history: [] as any[], memory: "" };
+  const recentLimit = Math.max(4, Math.min(40, Number(assistant.context_recent_message_limit || 12)));
+  const memoryBudget = Math.max(1000, Math.min(20000, Number(assistant.context_memory_char_budget || 4000)));
+  const cutoffRow = await db.prepare("SELECT COALESCE(memory_cleared_at,0) AS cutoff FROM conversations WHERE id=? LIMIT 1")
+    .bind(conversationId).first<any>();
+  const cutoff = Number(cutoffRow?.cutoff || 0);
+
+  const recent = await db.prepare(
+    "SELECT id,role,content,created_at FROM messages WHERE conversation_id=? AND created_at>? ORDER BY created_at DESC LIMIT ?",
+  ).bind(conversationId, cutoff, recentLimit + 2).all<any>();
+  let history = (recent.results ?? []).reverse();
+  if (history.length) {
+    const last = history.at(-1);
+    if (last?.role === "user" && normalizeComparable(String(last.content || "")) === normalizeComparable(currentUserText)) {
+      history = history.slice(0, -1);
+    }
+  }
+  if (history.length > recentLimit) history = history.slice(-recentLimit);
+
+  const existing = await db.prepare(
+    "SELECT summary_text,through_message_created_at,source_message_count FROM conversation_summaries WHERE conversation_id=? LIMIT 1",
+  ).bind(conversationId).first<any>();
+  const earliestRecent = history.length ? Number(history[0].created_at || Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+  const through = Math.max(cutoff, Number(existing?.through_message_created_at || 0));
+  const older = await db.prepare(
+    `SELECT role,content,created_at FROM messages
+     WHERE conversation_id=? AND created_at>? AND created_at<? AND created_at>?
+     ORDER BY created_at ASC LIMIT 80`,
+  ).bind(conversationId, cutoff, earliestRecent, through).all<any>();
+
+  let memory = String(existing?.summary_text || "");
+  if ((older.results ?? []).length) {
+    memory = mergeMemoryDigest(
+      memory,
+      (older.results ?? []).map((m: any) => ({ role: String(m.role), content: String(m.content || "") })),
+      memoryBudget,
+    );
+    const lastThrough = Number((older.results ?? []).at(-1)?.created_at || through);
+    const count = Number(existing?.source_message_count || 0) + (older.results ?? []).length;
+    await db.prepare(
+      `INSERT INTO conversation_summaries
+       (conversation_id,customer_id,assistant_id,summary_text,through_message_created_at,source_message_count,updated_at)
+       VALUES (?,?,?,?,?,?,?)
+       ON CONFLICT(conversation_id) DO UPDATE SET
+         summary_text=excluded.summary_text,
+         through_message_created_at=excluded.through_message_created_at,
+         source_message_count=excluded.source_message_count,
+         updated_at=excluded.updated_at`,
+    ).bind(conversationId,assistant.customer_id,assistant.id,memory,lastThrough,count,unix()).run();
+  }
+
+  return { history, memory: memory.slice(0, memoryBudget) };
+}
+
+function normalizeComparable(value: string) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+async function staticAssistantContext(env: AssistEnv, assistant: any, instructions: string, toolDescriptions: string) {
+  const compacted = compactInstructions(instructions);
+  const sourceHash = await resilienceSha256Text(compacted + "\n---tools---\n" + toolDescriptions);
+  const cacheKey = `static-context:${assistant.id}`;
+  const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+  if (cached) return cached;
+  const value = [
+    "You are an AI assistant configured by this business. Follow the business instructions below.",
+    "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
+    "If the user asks for a human or clearly needs escalation, say that you can hand the conversation to a human.",
+    compacted ? `BUSINESS INSTRUCTIONS:\n${compacted}` : "",
+    toolDescriptions ? `AVAILABLE TOOLS:\n${toolDescriptions}\nIf you must use exactly one tool, respond ONLY with JSON: {\"tool\":\"tool-name\",\"arguments\":{...}}. Otherwise answer normally.` : "",
+  ].filter(Boolean).join("\n\n");
+  await putPromptCache({
+    db: env.DB,
+    cacheKey,
+    customerId: assistant.customer_id,
+    assistantId: assistant.id,
+    kind: "static_context",
+    value,
+    sourceHash,
+    ttlSeconds: 86400,
+  });
+  return value;
+}
+
 async function runAssistant(input: {
   env: AssistEnv;
   assistant: any;
@@ -964,16 +1334,6 @@ async function runAssistant(input: {
   const prompt = await env.DB.prepare(
     "SELECT instructions FROM assistant_prompt_versions WHERE assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
   ).bind(assistant.id).first<any>();
-  const recent = assistant.memory_enabled
-    ? await env.DB.prepare(
-        "SELECT role,content FROM messages WHERE conversation_id=? AND created_at>COALESCE((SELECT memory_cleared_at FROM conversations WHERE id=?),0) ORDER BY created_at DESC LIMIT 14",
-      ).bind(conversationId, conversationId).all<any>()
-    : { results: [] as any[] };
-  const history = (recent.results ?? []).reverse();
-
-  const knowledge = assistant.knowledge_enabled
-    ? await retrieveKnowledge(env.DB, assistant.id, input.userText)
-    : [];
   const tools = assistant.tools_enabled
     ? await env.DB.prepare(
         "SELECT id,name,description,endpoint_url,auth_header_ciphertext FROM assistant_tools WHERE assistant_id=? AND status='active' ORDER BY name LIMIT 12",
@@ -981,16 +1341,19 @@ async function runAssistant(input: {
     : { results: [] as any[] };
 
   const toolDescriptions = (tools.results ?? []).map((t: any) => `- ${t.name}: ${t.description || "External action"}`).join("\n");
-  const system = [
-    "You are an AI assistant configured by this business. Follow the business instructions below.",
-    "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
-    "If the user asks for a human or clearly needs escalation, say that you can hand the conversation to a human.",
-    prompt?.instructions ? `BUSINESS INSTRUCTIONS:\n${prompt.instructions}` : "",
-    knowledge.length ? `RELEVANT BUSINESS KNOWLEDGE:\n${knowledge.join("\n\n")}` : "",
-    toolDescriptions ? `AVAILABLE TOOLS:\n${toolDescriptions}\nIf you must use exactly one tool, respond ONLY with JSON: {"tool":"tool-name","arguments":{...}}. Otherwise answer normally.` : "",
-  ].filter(Boolean).join("\n\n");
-
+  const staticContext = await staticAssistantContext(env, assistant, String(prompt?.instructions || ""), toolDescriptions);
   const userCombined = [input.userText, input.mediaContext].filter(Boolean).join("\n\n");
+  const conversationContext = await buildConversationContext(env.DB, assistant, conversationId, userCombined);
+  const history = conversationContext.history;
+  const knowledgeBudget = Math.max(2000, Math.min(50000, Number(assistant.context_knowledge_char_budget || 12000)));
+  const knowledge = assistant.knowledge_enabled
+    ? await retrieveKnowledge(env.DB, assistant.customer_id, assistant.id, input.userText || input.mediaContext, knowledgeBudget)
+    : [];
+  const system = [
+    staticContext,
+    conversationContext.memory ? `CONVERSATION MEMORY (older context, compacted):\n${conversationContext.memory}` : "",
+    knowledge.length ? `RELEVANT BUSINESS KNOWLEDGE:\n${knowledge.join("\n\n")}` : "",
+  ].filter(Boolean).join("\n\n");
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
   const maxOutputTokens = 1024;
 
@@ -1091,7 +1454,16 @@ async function runAssistant(input: {
   } catch (error) {
     console.error("assistant inference failed", error);
     await releaseReservation(env.DB, reservation.id, assistant.customer_id, reserveAmount);
-    return { ok: false as const, userMessage: "I couldn’t complete that request just now. Please try again shortly." };
+    const classified = classifyRetryableError(error);
+    return {
+      ok: false as const,
+      retryable: classified.retryable,
+      retryAfterSeconds: classified.retryAfterSeconds,
+      error: classified.message,
+      userMessage: classified.retryable
+        ? "I’m still working on that request and will reply as soon as capacity is available."
+        : "I couldn’t complete that request just now. Please try again shortly.",
+    };
   }
 }
 
@@ -1237,6 +1609,21 @@ export async function handleApiKeyInference(
   } catch (error) {
     await releaseReservation(env.DB, reservation.id, customer.customerId, reserveAmount);
     console.error("Assist API inference failed", error);
+    const classified = classifyRetryableError(error);
+    if (classified.retryable) {
+      return new Response(JSON.stringify({
+        error: {
+          message: "capacity_temporarily_unavailable",
+          retry_after_seconds: classified.retryAfterSeconds,
+        },
+      }), {
+        status: 429,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "retry-after": String(classified.retryAfterSeconds),
+        },
+      });
+    }
     return json({ error: { message: "inference_failed" } }, 502);
   }
 }
@@ -1256,7 +1643,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
-      const vision = await describeImage(env, asset.bytes, text);
+      const vision = await describeImage(env, assistant, asset.bytes, text);
       if (vision) {
         contexts.push(`Image context: ${vision}`);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision, asset.id).run();
@@ -1271,7 +1658,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
-      const transcript = await transcribeAudio(env, asset.bytes);
+      const transcript = await transcribeAudio(env, assistant, asset.bytes);
       if (transcript) {
         contexts.push(`Voice transcript: ${transcript}`);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript, asset.id).run();
@@ -1298,8 +1685,14 @@ async function downloadTelegramFile(token: string, fileId: string, env: AssistEn
   return { id: assetId, bytes, meta: { id: assetId, kind, mime, size: bytes.byteLength } };
 }
 
-async function describeImage(env: AssistEnv, bytes: ArrayBuffer, caption: string) {
+async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer, caption: string) {
   try {
+    const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
+    const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
+    const cacheKey = `vision:${assistant.id}:${sourceHash}`;
+    const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+    if (cached) return cached;
+
     const b64 = arrayBufferToBase64(bytes);
     const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
       messages: [
@@ -1311,43 +1704,131 @@ async function describeImage(env: AssistEnv, bytes: ArrayBuffer, caption: string
       ],
       max_tokens: 500,
     });
-    return extractAiText(result);
+    const text = extractAiText(result);
+    if (text) {
+      await putPromptCache({
+        db: env.DB,
+        cacheKey,
+        customerId: assistant.customer_id,
+        assistantId: assistant.id,
+        kind: "vision",
+        value: text,
+        sourceHash,
+        ttlSeconds: 2592000,
+      }).catch(() => undefined);
+    }
+    return text;
   } catch (error) {
     console.error("vision extraction failed", error);
     return "";
   }
 }
 
-async function transcribeAudio(env: AssistEnv, bytes: ArrayBuffer) {
+async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffer) {
   try {
+    const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
+    const cacheKey = `audio:${assistant.id}:${sourceHash}`;
+    const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+    if (cached) return cached;
+
     const result = await env.AI.run("@cf/openai/whisper", { audio: [...new Uint8Array(bytes)] });
-    return String(result?.text || "").trim();
+    const text = String(result?.text || "").trim();
+    if (text) {
+      await putPromptCache({
+        db: env.DB,
+        cacheKey,
+        customerId: assistant.customer_id,
+        assistantId: assistant.id,
+        kind: "audio",
+        value: text,
+        sourceHash,
+        ttlSeconds: 2592000,
+      }).catch(() => undefined);
+    }
+    return text;
   } catch (error) {
     console.error("audio transcription failed", error);
     return "";
   }
 }
 
-async function retrieveKnowledge(db: D1Database, assistantId: string, query: string) {
-  const terms = Array.from(new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 4))).slice(0, 8);
+async function retrieveKnowledge(
+  db: D1Database,
+  customerId: string,
+  assistantId: string,
+  query: string,
+  charBudget: number,
+) {
+  const terms = Array.from(new Set(String(query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3))).slice(0, 10);
   if (!terms.length) return [];
-  const rows = await db.prepare(
-    `SELECT ki.title,ki.content_text FROM assistant_knowledge ak
-     JOIN knowledge_items ki ON ki.collection_id=ak.collection_id
-     WHERE ak.assistant_id=? AND ki.status='ready' AND ki.content_text IS NOT NULL
-     ORDER BY ki.updated_at DESC LIMIT 80`,
-  ).bind(assistantId).all<any>();
-  return (rows.results ?? [])
-    .map((r: any) => {
+  const normalizedQuery = terms.join(" ");
+  const sourceHash = await resilienceSha256Text(normalizedQuery + ":" + charBudget);
+  const cacheKey = `knowledge:${assistantId}:${sourceHash}`;
+  const cached = await getPromptCache(db, cacheKey, sourceHash);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {}
+  }
+
+  const match = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(" OR ");
+  let values: string[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT kc.title,kc.content,bm25(knowledge_chunks_fts) AS rank
+       FROM knowledge_chunks_fts
+       JOIN knowledge_chunks kc ON kc.id=knowledge_chunks_fts.chunk_id
+       JOIN assistant_knowledge ak ON ak.collection_id=kc.collection_id
+       WHERE ak.assistant_id=? AND knowledge_chunks_fts MATCH ?
+       ORDER BY rank ASC LIMIT 12`,
+    ).bind(assistantId, match).all<any>();
+    let remaining = Math.max(1000, charBudget);
+    for (const row of rows.results ?? []) {
+      if (remaining <= 0) break;
+      const value = `${String(row.title || "Knowledge")}:\n${String(row.content || "")}`;
+      const clipped = value.slice(0, remaining);
+      if (clipped.trim()) values.push(clipped);
+      remaining -= clipped.length;
+    }
+  } catch (error) {
+    console.warn("FTS knowledge retrieval failed; using compatibility fallback", error);
+  }
+
+  if (!values.length) {
+    const rows = await db.prepare(
+      `SELECT ki.title,ki.content_text FROM assistant_knowledge ak
+       JOIN knowledge_items ki ON ki.collection_id=ak.collection_id
+       WHERE ak.assistant_id=? AND ki.status='ready' AND ki.content_text IS NOT NULL
+       ORDER BY ki.updated_at DESC LIMIT 50`,
+    ).bind(assistantId).all<any>();
+    const scored = (rows.results ?? []).map((r: any) => {
       const text = String(r.content_text || "");
       const lower = text.toLowerCase();
       const score = terms.reduce((n, term) => n + (lower.includes(term) ? 1 : 0), 0);
-      return { score, value: `${r.title}:\n${text.slice(0, 3500)}` };
-    })
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4)
-    .map((r) => r.value);
+      return { score, title: String(r.title || "Knowledge"), text };
+    }).filter((r) => r.score > 0).sort((a,b) => b.score-a.score);
+
+    let remaining = Math.max(1000, charBudget);
+    for (const row of scored.slice(0, 6)) {
+      if (remaining <= 0) break;
+      const value = `${row.title}:\n${row.text.slice(0, Math.min(3200, remaining))}`;
+      if (value.trim()) values.push(value);
+      remaining -= value.length;
+    }
+  }
+
+  await putPromptCache({
+    db,
+    cacheKey,
+    customerId,
+    assistantId,
+    kind: "knowledge_retrieval",
+    value: JSON.stringify(values),
+    sourceHash,
+    ttlSeconds: 600,
+  }).catch(() => undefined);
+  return values;
 }
 
 async function reserveCredits(db: D1Database, customerId: string, assistantId: string, credits: number) {
@@ -1466,6 +1947,16 @@ async function resolveModelRoute(db: D1Database, customerId: string, alias: stri
 }
 
 async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
+  const inputChars = Array.isArray(input?.messages)
+    ? input.messages.reduce((n: number, m: any) => n + String(m?.content || "").length, 0)
+    : JSON.stringify(input || {}).length;
+  const estimatedTokens = Math.max(1, Math.ceil(inputChars / 4) + Number(input?.max_tokens || 0));
+  const alias = String(route.alias || route.provider_model || route.provider || "unknown");
+  const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+  if (!capacity.allowed) {
+    throw new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
+  }
+
   try {
     const result = await invokeProviderModel(env, {
       provider: route.provider,
@@ -1500,6 +1991,10 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
       provider: route.provider,
       fallbackProvider: route.fallback_provider,
     });
+    const fallbackCapacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+    if (!fallbackCapacity.allowed) {
+      throw new RetryableInferenceError("fallback_model_capacity_wait", fallbackCapacity.retryAfterSeconds);
+    }
     const result = await invokeProviderModel(env, {
       provider: route.fallback_provider,
       provider_model: route.fallback_model,
@@ -1604,7 +2099,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return payload;
   }
 
@@ -1625,7 +2120,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ model, system: String(systemMessage), messages: chatMessages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: Array.isArray(payload.content) ? payload.content.map((x: any) => x.text || "").join("") : "",
       usage: {
@@ -1653,7 +2148,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
       usage: {
@@ -1675,7 +2170,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return payload;
   }
 
@@ -1692,7 +2187,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return payload;
   }
 
@@ -1719,7 +2214,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       },
     );
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
       usage: {
@@ -1743,7 +2238,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     );
     const payload = await response.json<any>();
     if (!response.ok || payload?.success === false) {
-      throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+      throw providerHttpError(response, payload);
     }
     return payload?.result ?? payload;
   }
@@ -1775,7 +2270,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     });
     const response = await fetch(`https://${host}${requestPath}`, { method: "POST", headers, body });
     const payload = await response.json<any>();
-    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    if (!response.ok) throw providerHttpError(response, payload);
     return {
       response: payload.output?.message?.content?.map((p: any) => p.text || "").join("") || "",
       usage: {
@@ -1994,6 +2489,12 @@ function extractUsage(result: any, estimatedInput: number, text: string) {
     input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || estimatedInput)),
     output: parseFloat(String(usage.completion_tokens || usage.output_tokens || Math.max(1, Math.ceil(text.length / 4)))),
   };
+}
+
+function clampNumber(value: unknown, min: number, max: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new ApiError(400, "invalid_numeric_value");
+  return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
 function required(value: unknown, field: string) {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, processReplyQueue, recoverReplyJobs, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
@@ -38,6 +38,9 @@ interface Env {
   MKETY_ASSIST_CF_ACCOUNT_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
   FLUTTERWAVE_CHECKOUT_BROKER_SECRET?: string;
+  REPLY_QUEUE: {
+    send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
+  };
 }
 
 type CustomerContext = {
@@ -133,7 +136,14 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await processDueReminders(env);
+    await Promise.all([
+      processDueReminders(env),
+      recoverReplyJobs(env),
+    ]);
+  },
+
+  async queue(batch: any, env: Env): Promise<void> {
+    await processReplyQueue(batch, env);
   },
 };
 
@@ -570,11 +580,17 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
          mr.provider_output_cost_micros_per_million,
          mr.provider_image_cost_micros,
          mr.provider_audio_cost_micros_per_minute,
-         mr.effective_at
+         mr.effective_at,
+         rl.requests_per_second,
+         rl.requests_per_minute,
+         rl.tokens_per_minute,
+         rl.retry_base_seconds,
+         rl.retry_max_seconds
        FROM model_routes r
        LEFT JOIN model_rates mr ON mr.id=(
          SELECT id FROM model_rates x WHERE x.alias=r.alias ORDER BY x.version DESC LIMIT 1
        )
+       LEFT JOIN model_runtime_limits rl ON rl.scope_key=('global:' || r.alias)
        ORDER BY r.alias`,
     ).all();
     return json({ models: rows.results ?? [] });
@@ -668,6 +684,40 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         fallbackProvider, fallbackModel, fallbackProviderConnectionId,
         byokPolicy, body.status ?? null, now, alias,
       ).run();
+    }
+
+    const runtimeLimitFields = [
+      "requestsPerSecond","requestsPerMinute","tokensPerMinute","retryBaseSeconds","retryMaxSeconds",
+    ];
+    if (runtimeLimitFields.some((key) => body[key] !== undefined)) {
+      const scopeKey = targetCustomerId ? `customer:${targetCustomerId}:${alias}` : `global:${alias}`;
+      const existingLimit = await env.DB.prepare(
+        "SELECT * FROM model_runtime_limits WHERE scope_key=? LIMIT 1",
+      ).bind(scopeKey).first<any>();
+      const optionalPositive = (value: unknown, current: unknown) => {
+        if (value === undefined) return current == null ? null : Math.max(1, Math.floor(Number(current)));
+        if (value === null || value === "" || Number(value) <= 0) return null;
+        const n = Number(value);
+        if (!Number.isFinite(n)) throw new HttpError(400, "invalid_model_runtime_limit");
+        return Math.max(1, Math.floor(n));
+      };
+      const rps = optionalPositive(body.requestsPerSecond, existingLimit?.requests_per_second);
+      const rpm = optionalPositive(body.requestsPerMinute, existingLimit?.requests_per_minute);
+      const tpm = optionalPositive(body.tokensPerMinute, existingLimit?.tokens_per_minute);
+      const retryBase = optionalPositive(body.retryBaseSeconds, existingLimit?.retry_base_seconds ?? 2) ?? 2;
+      const retryMax = Math.max(retryBase, optionalPositive(body.retryMaxSeconds, existingLimit?.retry_max_seconds ?? 120) ?? 120);
+      await env.DB.prepare(
+        `INSERT INTO model_runtime_limits
+         (scope_key,customer_id,alias,requests_per_second,requests_per_minute,tokens_per_minute,retry_base_seconds,retry_max_seconds,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(scope_key) DO UPDATE SET
+           requests_per_second=excluded.requests_per_second,
+           requests_per_minute=excluded.requests_per_minute,
+           tokens_per_minute=excluded.tokens_per_minute,
+           retry_base_seconds=excluded.retry_base_seconds,
+           retry_max_seconds=excluded.retry_max_seconds,
+           updated_at=excluded.updated_at`,
+      ).bind(scopeKey,targetCustomerId,alias,rps,rpm,tpm,retryBase,retryMax,now).run();
     }
 
     const costFields = [
@@ -926,7 +976,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       await recordAuthFailure(env.DB, rateKey, loginNow);
       return json({ error: "invalid_credentials" }, 401);
     }
-    const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash);
+    const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash, env);
     if (!ok) {
       await recordAuthFailure(env.DB, rateKey, loginNow);
       return json({ error: "invalid_credentials" }, 401);
@@ -973,7 +1023,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
     let passwordData: Awaited<ReturnType<typeof hashPassword>>;
     try {
-      passwordData = await hashPassword(password);
+      passwordData = await hashPassword(password, env);
     } catch (error) {
       console.error("Assist customer password hashing failed", {
         customerId: customer.customerId,
@@ -1035,10 +1085,10 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     const row = await env.DB.prepare(
       "SELECT password_hash,password_salt,password_iterations FROM users WHERE id=? AND status='active' LIMIT 1",
     ).bind(session.userId).first<any>();
-    if (!row?.password_hash || !row?.password_salt || !(await verifyPassword(currentPassword, row.password_salt, row.password_iterations, row.password_hash))) {
+    if (!row?.password_hash || !row?.password_salt || !(await verifyPassword(currentPassword, row.password_salt, row.password_iterations, row.password_hash, env))) {
       return json({ error: "invalid_current_password" }, 400);
     }
-    const next = await hashPassword(newPassword);
+    const next = await hashPassword(newPassword, env);
     const now = unix();
     await env.DB.prepare(
       "UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE id=?",
@@ -1165,7 +1215,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       if (challenge) await env.DB.prepare("UPDATE recovery_challenges SET attempts=attempts+1 WHERE id=?").bind(challenge.id).run();
       return json({ error: "invalid_or_expired_code" }, 400);
     }
-    const p = await hashPassword(newPassword);
+    const p = await hashPassword(newPassword, env);
     await env.DB.batch([
       env.DB.prepare("UPDATE recovery_challenges SET consumed_at=? WHERE id=?").bind(now, challenge.id),
       env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
@@ -2212,18 +2262,49 @@ async function sendTelegramTextWithToken(botToken: string, telegramUserId: strin
   return response.ok;
 }
 
-async function hashPassword(password: string) {
-  const iterations = 310000;
+async function hashPassword(password: string, env: Env) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
-  return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt), iterations };
+  const pepper = env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
+  if (!pepper) throw new Error("password_pepper_unavailable");
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(pepper),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const material = new Uint8Array(salt.byteLength + encoder.encode(password).byteLength);
+  material.set(salt, 0);
+  material.set(encoder.encode(password), salt.byteLength);
+  const signature = await crypto.subtle.sign("HMAC", key, material);
+  // iterations=0 is the version marker for the server-peppered HMAC scheme.
+  return { hash: bytesToHex(new Uint8Array(signature)), salt: bytesToHex(salt), iterations: 0 };
 }
 
-async function verifyPassword(password: string, saltHex: string, iterations: number, expectedHash: string) {
+async function verifyPassword(password: string, saltHex: string, iterations: number, expectedHash: string, env: Env) {
   const salt = hexToBytes(saltHex);
+  const version = Number(iterations);
+  if (version === 0) {
+    const pepper = env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
+    if (!pepper) return false;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(pepper),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const passwordBytes = encoder.encode(password);
+    const material = new Uint8Array(salt.byteLength + passwordBytes.byteLength);
+    material.set(salt, 0);
+    material.set(passwordBytes, salt.byteLength);
+    const signature = await crypto.subtle.sign("HMAC", key, material);
+    return constantTimeEqual(bytesToHex(new Uint8Array(signature)), String(expectedHash));
+  }
+
+  // Backward compatibility for passwords created before the Worker-safe scheme.
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: Number(iterations) }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: version }, key, 256);
   return constantTimeEqual(bytesToHex(new Uint8Array(bits)), String(expectedHash));
 }
 

@@ -5,7 +5,7 @@ export async function recordAssistantVersion(
   userId: string | null,
 ) {
   const assistant = await db.prepare(
-    "SELECT name,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,current_version FROM assistants WHERE id=? AND customer_id=? AND deleted_at IS NULL LIMIT 1",
+    "SELECT name,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,current_version,human_delay_enabled,human_delay_min_seconds,human_delay_max_seconds,human_delay_per_char_ms,context_recent_message_limit,context_knowledge_char_budget,context_memory_char_budget FROM assistants WHERE id=? AND customer_id=? AND deleted_at IS NULL LIMIT 1",
   ).bind(assistantId, customerId).first<any>();
   if (!assistant) throw new Error("assistant_not_found");
   const next = Math.max(1, Number(assistant.current_version || 0) + 1);
@@ -25,6 +25,13 @@ export async function recordAssistantVersion(
         memoryEnabled: Boolean(assistant.memory_enabled),
         monthlyCreditCap: assistant.monthly_credit_cap,
         automationPaused: Boolean(assistant.automation_paused),
+        humanDelayEnabled: Boolean(assistant.human_delay_enabled),
+        humanDelayMinSeconds: assistant.human_delay_min_seconds,
+        humanDelayMaxSeconds: assistant.human_delay_max_seconds,
+        humanDelayPerCharMs: assistant.human_delay_per_char_ms,
+        contextRecentMessageLimit: assistant.context_recent_message_limit,
+        contextKnowledgeCharBudget: assistant.context_knowledge_char_budget,
+        contextMemoryCharBudget: assistant.context_memory_char_budget,
       }),
       userId,
     ),
@@ -83,7 +90,9 @@ export async function rollbackAssistantVersion(
   if (!row) throw new Error("assistant_version_not_found");
   const cfg = JSON.parse(row.config_json || "{}");
   await db.prepare(
-    `UPDATE assistants SET name=?,status=?,model_alias=?,timezone=?,memory_enabled=?,monthly_credit_cap=?,automation_paused=?,updated_at=unixepoch()
+    `UPDATE assistants SET name=?,status=?,model_alias=?,timezone=?,memory_enabled=?,monthly_credit_cap=?,automation_paused=?,
+       human_delay_enabled=?,human_delay_min_seconds=?,human_delay_max_seconds=?,human_delay_per_char_ms=?,
+       context_recent_message_limit=?,context_knowledge_char_budget=?,context_memory_char_budget=?,updated_at=unixepoch()
      WHERE id=? AND customer_id=? AND deleted_at IS NULL`,
   ).bind(
     String(cfg.name || "Assistant"),
@@ -93,6 +102,13 @@ export async function rollbackAssistantVersion(
     cfg.memoryEnabled === false ? 0 : 1,
     cfg.monthlyCreditCap == null ? null : Number(cfg.monthlyCreditCap),
     cfg.automationPaused ? 1 : 0,
+    cfg.humanDelayEnabled === false ? 0 : 1,
+    Number(cfg.humanDelayMinSeconds ?? 3),
+    Number(cfg.humanDelayMaxSeconds ?? 12),
+    Number(cfg.humanDelayPerCharMs ?? 10),
+    Number(cfg.contextRecentMessageLimit ?? 12),
+    Number(cfg.contextKnowledgeCharBudget ?? 12000),
+    Number(cfg.contextMemoryCharBudget ?? 4000),
     assistantId,
     customerId,
   ).run();
