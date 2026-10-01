@@ -48,7 +48,7 @@ async function renderAdminDashboard({ params }: AdminDashboardProps) {
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Link key={stat.name} href={`/t/${tenant}/admin/${stat.href}`}>
+            <Link key={stat.name} href={`/app/${tenant}/admin/${stat.href}`}>
               <Card className="rounded-xl border-0 shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer h-full">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{stat.name}</CardTitle>
@@ -72,7 +72,7 @@ async function renderAdminDashboard({ params }: AdminDashboardProps) {
           </CardHeader>
           <CardContent className="grid gap-4">
             <Link
-              href={`/t/${tenant}/admin/members`}
+              href={`/app/${tenant}/admin/members`}
               className="flex items-center gap-3 rounded-xl border p-4 hover:shadow-md hover:border-primary/30 transition-all duration-300"
             >
               <Users className="h-8 w-8 text-primary" />
@@ -82,7 +82,7 @@ async function renderAdminDashboard({ params }: AdminDashboardProps) {
               </div>
             </Link>
             <Link
-              href={`/t/${tenant}/admin/integrations`}
+              href={`/app/${tenant}/admin/integrations`}
               className="flex items-center gap-3 rounded-xl border p-4 hover:shadow-md hover:border-primary/30 transition-all duration-300"
             >
               <Mail className="h-8 w-8 text-primary" />
