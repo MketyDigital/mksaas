@@ -26,17 +26,17 @@ export default async function EnterpriseAiSetupPage({
   await requireTenantMembership(tenantSlug);
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
-  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/app/${tenantSlug}/enterprise-ai`);
 
   const [solution, projects] = await Promise.all([
     getEnterpriseAiSolutionTemplate(solutionKey ?? ''),
     listTenantProjectChoices(tenant.id),
   ]);
-  if (!solution) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if (!solution) redirect(`/app/${tenantSlug}/enterprise-ai`);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-4">
-      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai`}>
+      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai`}>
         <ArrowLeft className="h-4 w-4" /> Back to Mkety AI
       </Link>
 
