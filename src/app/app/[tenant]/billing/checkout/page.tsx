@@ -66,7 +66,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   const mailEntitled = isMailPlan && returned
     ? await hasEntitlement({ tenantId: tenant.id, entitlement: 'workspace.mail' })
     : false;
-  if (mailEntitled) redirect(`/t/${tenantSlug}/mail?payment=confirmed`);
+  if (mailEntitled) redirect(`/app/${tenantSlug}/mail?payment=confirmed`);
   const paymentSettings = await getMketyPaymentSettings();
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
   const flutterwaveEnabled = Boolean(
@@ -109,7 +109,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   return (
     <main className="min-h-screen bg-muted/20 px-4 py-12">
       <div className="mx-auto max-w-2xl">
-        <Link href={`/t/${tenantSlug}`} className="text-sm font-medium text-primary hover:underline">
+        <Link href={`/app/${tenantSlug}`} className="text-sm font-medium text-primary hover:underline">
           ← Back to workspace
         </Link>
 
@@ -136,7 +136,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
             {Object.values(SELF_SERVICE_BILLING_TERMS).map((term) => (
               <Link
                 key={term.key}
-                href={`/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${term.key}`}
+                href={`/app/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${term.key}`}
                 className={term.key === termKey ? 'rounded-xl border border-primary bg-primary/5 p-3 text-center' : 'rounded-xl border p-3 text-center hover:border-primary/50'}
               >
                 <span className="block text-sm font-semibold">{term.label}</span>
@@ -203,7 +203,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                     {flutterwaveCurrencies.map((currency) => (
                       <Link
                         key={currency}
-                        href={`/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&currency=${currency}`}
+                        href={`/app/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&currency=${currency}`}
                         className={currency === selectedCurrency ? 'rounded-lg border border-primary bg-primary/5 px-2 py-2 text-center text-xs font-semibold' : 'rounded-lg border px-2 py-2 text-center text-xs hover:border-primary/50'}
                       >
                         {currency}
@@ -240,7 +240,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
             </div>
           ) : (
             <Link
-              href={isMailPlan ? `/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&payment=returned` : `/t/${tenantSlug}`}
+              href={isMailPlan ? `/app/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&payment=returned` : `/app/${tenantSlug}`}
               className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground"
             >
               {isMailPlan ? 'Check Mail activation' : 'Return to workspace'}
