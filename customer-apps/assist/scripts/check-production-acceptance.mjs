@@ -27,5 +27,6 @@ assert.doesNotMatch(metering,/providerCost|multiplier|envelope|reserve/i);
 assert.match(domain,/providerPending/);
 assert.match(m13,/revoked_at/);
 assert.match(m22,/payment_method_health/);
-assert.doesNotMatch(ui,/provider_envelope_bps|operations_reserve_bps|provider_cost_micros|lifetime_granted|included_credits|minimum_funding_minor|funding_mode/i);
+const customerUi = ui.split("export function renderOperatorPortal")[0];
+assert.doesNotMatch(customerUi,/provider_envelope_bps|operations_reserve_bps|provider_cost_micros|lifetime_granted|included_credits|minimum_funding_minor|funding_mode/i);
 console.log("Assist production acceptance contract: ok");
