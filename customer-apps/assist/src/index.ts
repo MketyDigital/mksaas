@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
+import { claimOwnerAccess } from "./owner-access";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 
 interface Env {
@@ -819,8 +820,6 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
   if (url.pathname === "/api/auth/setup" && request.method === "POST") {
     const body = await readJson(request);
     const token = requiredString(body.token, "token");
-    const password = requiredString(body.password, "password");
-    validatePassword(password);
     const tokenHash = await sha256(token);
     const now = unix();
     const row = await env.DB.prepare(
@@ -830,20 +829,16 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
        WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
-    const passwordData = await hashPassword(password);
     const sessionToken = randomToken(32);
     const sessionHash = await sha256(sessionToken);
     const sessionTtl = Number(env.SESSION_TTL_SECONDS || "2592000");
     const sessionId = id("ses");
     try {
-      await env.DB.batch([
-        env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
-          .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
-        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now),
-        env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=? AND consumed_at IS NULL")
-          .bind(now, row.id),
-      ]);
+      const claimed = await claimOwnerAccess(env.DB, {
+        customerId: customer.customerId, tokenId: row.id, tokenHash, userId: row.user_id,
+        sessionId, sessionHash, now, expiresAt: now + sessionTtl,
+      });
+      if (!claimed) return json({ error: "invalid_or_expired_setup_token" }, 400);
     } catch (error) {
       console.error("Assist customer setup commit failed", {
         customerId: customer.customerId,
@@ -2027,12 +2022,11 @@ export function setupPage(customer: CustomerContext, token: string) {
 <style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(440px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:not-allowed}.muted{color:#a8adbd;font-size:14px}.error{color:#ff9b9b}.ok{color:#6ee7b7}</style></head>
 <body><main class="card"><h1>Set up your portal</h1><p class="muted">${escapeHtml(customer.customerName)} AI</p>
 <p id="setupStatus" class="muted">Validating this access link…</p>
-<form id="setupForm" style="display:none"><p id="ownerInfo" class="muted"></p><input id="setupPassword" type="password" minlength="12" placeholder="Choose password (12+ characters)" required><button id="setupSubmit" type="submit">Create access</button></form>
+<form id="setupForm" style="display:none"><p id="ownerInfo" class="muted"></p><button id="setupSubmit" type="submit">Enter portal</button></form>
 <p id="setupMsg" class="muted"></p>
 <script>
 const setupToken=${JSON.stringify(token)};
 const form=document.getElementById('setupForm');
-const passwordInput=document.getElementById('setupPassword');
 const submitButton=document.getElementById('setupSubmit');
 const statusEl=document.getElementById('setupStatus');
 const msgEl=document.getElementById('setupMsg');
@@ -2062,29 +2056,27 @@ form.addEventListener('submit',async(e)=>{
   e.preventDefault();
   submitButton.disabled=true;
   msgEl.className='muted';
-  msgEl.textContent='Creating your access…';
+  msgEl.textContent='Opening your portal…';
   try{
     const r=await fetch('/api/auth/setup',{
       method:'POST',
       headers:{'content-type':'application/json','accept':'application/json'},
-      body:JSON.stringify({token:setupToken,password:passwordInput.value})
+      body:JSON.stringify({token:setupToken})
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok){
       submitButton.disabled=false;
       msgEl.className='error';
-      msgEl.textContent=d.error==='password_must_be_at_least_12_characters'
-        ? 'Password must be at least 12 characters.'
-        : d.error==='invalid_or_expired_setup_token'
+      msgEl.textContent=d.error==='invalid_or_expired_setup_token'
           ? 'This setup link is invalid, expired, or already used.'
-          : 'Could not create access: '+String(d.error||('HTTP '+r.status));
+          : 'Could not open portal: '+String(d.error||('HTTP '+r.status));
       return;
     }
     location.href='/';
   }catch(e){
     submitButton.disabled=false;
     msgEl.className='error';
-    msgEl.textContent='Could not create access. Please try again.';
+    msgEl.textContent='Could not open portal. Please try again.';
   }
 });
 
@@ -2096,6 +2088,7 @@ function loginPage(customer: CustomerContext) {
   return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(customer.customerName)} AI</title>
 <style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(420px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}.muted{color:#a8adbd;font-size:14px}.error{color:#ff9b9b}</style></head>
 <body><main class="card"><h1>${escapeHtml(customer.customerName)} AI</h1><p class="muted">Private assistant administration portal</p>
+<p class="muted">Have a one-time owner access link? Open it to sign in. For a new device, request a fresh link from Mkety.</p>
 <form id="login"><input id="email" type="email" placeholder="Email" required><input id="password" type="password" placeholder="Password" required><button>Sign in</button></form>
 <p><button id="recover" type="button">Recover access with Telegram</button></p><p id="msg" class="muted"></p>
 <script>
