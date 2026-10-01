@@ -179,6 +179,32 @@ async function createEnterpriseAiContractVersionImpl(
       .orderBy(desc(billingPlanVersions.version))
       .limit(1);
 
+    const unpaidSubscriptions = await tx
+      .select({ id: billingSubscriptions.id })
+      .from(billingSubscriptions)
+      .innerJoin(billingPlanVersions, eq(billingPlanVersions.id, billingSubscriptions.planVersionId))
+      .where(and(
+        eq(billingSubscriptions.tenantId, target.id),
+        eq(billingPlanVersions.planId, plan.id),
+        eq(billingSubscriptions.status, 'pending_payment'),
+      ));
+    if (unpaidSubscriptions.length) {
+      const unpaidIds = unpaidSubscriptions.map((item) => item.id);
+      await tx.update(billingCheckouts).set({
+        status: 'failed',
+        updatedAt: new Date(),
+      }).where(and(
+        inArray(billingCheckouts.subscriptionId, unpaidIds),
+        inArray(billingCheckouts.status, ['created', 'redirected', 'awaiting_confirmation']),
+      ));
+      await tx.update(billingSubscriptions).set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancellationReason: 'enterprise_contract_superseded_before_payment',
+        updatedAt: new Date(),
+      }).where(inArray(billingSubscriptions.id, unpaidIds));
+    }
+
     const now = new Date();
     await tx.update(billingPlanVersions).set({ effectiveTo: now }).where(and(
       eq(billingPlanVersions.planId, plan.id),
@@ -338,21 +364,35 @@ export async function listEnterpriseAiContracts() {
     ))
     .orderBy(desc(billingPlanVersions.effectiveFrom));
 
-  const [tenantRows, policies] = await Promise.all([
+  const [tenantRows, policies, entitlementRows] = await Promise.all([
     db.select({ id: tenants.id, slug: tenants.slug, name: tenants.name }).from(tenants),
     db.select().from(aiEnterpriseCommercialPolicies),
+    db.select({
+      planVersionId: billingPlanVersionEntitlements.planVersionId,
+      key: billingPlanVersionEntitlements.entitlementKey,
+    }).from(billingPlanVersionEntitlements).where(eq(billingPlanVersionEntitlements.enabled, true)),
   ]);
   const tenantById = new Map(tenantRows.map((item) => [item.id, item]));
   const policyByVersionId = new Map(policies.map((item) => [item.planVersionId, item]));
+  const entitlementsByVersionId = new Map<string, string[]>();
+  for (const item of entitlementRows) {
+    const current = entitlementsByVersionId.get(item.planVersionId) ?? [];
+    current.push(item.key);
+    entitlementsByVersionId.set(item.planVersionId, current);
+  }
   return rows.map((row) => {
     const tenantId = row.planKey.slice(CONTRACT_PREFIX.length);
     return {
       ...row,
       tenant: tenantById.get(tenantId) ?? null,
+      entitlements: entitlementsByVersionId.get(row.versionId) ?? ['workspace.ai.enterprise'],
       commercialPolicy: policyByVersionId.get(row.versionId) ?? {
         planVersionId: row.versionId,
         minimumFundingMinor: row.amountMinor,
         managedCostShareBps: 1500,
+        operationsReserveBps: DEFAULT_ENTERPRISE_AI_OPERATIONS_RESERVE_BPS,
+        customerRateMultiplierBps: DEFAULT_ENTERPRISE_AI_RATE_MULTIPLIER_BPS,
+        creditUsdMicros: DEFAULT_ENTERPRISE_AI_CREDIT_USD_MICROS,
         setupFeeMinor: 0n,
         fundingMode: 'full_period',
         creditRollover: true,
@@ -431,7 +471,9 @@ export async function createEnterpriseAiContractCheckout(input: {
     throw new Error('Enterprise AI contract billing configuration is invalid.');
   }
 
-  const partialFunding = contract.commercialPolicy.fundingMode === 'prepaid_partial';
+  let partialFunding = contract.commercialPolicy.fundingMode === 'prepaid_partial';
+  let minimumFundingMinor = contract.commercialPolicy.minimumFundingMinor;
+  let billingAmountMinor = contract.amountMinor;
 
   const prepared = await db.transaction(async (tx) => {
     const currentRows = await tx
@@ -467,17 +509,41 @@ export async function createEnterpriseAiContractCheckout(input: {
         })
       : null;
 
-    if (!partialFunding) {
+    const paidThroughFuture = currentRows.find((item) =>
+      ['trialing', 'active', 'cancel_at_period_end'].includes(item.status)
+      && item.currentPeriodEnd
+      && item.currentPeriodEnd.getTime() > now.getTime()
+    );
+
+    if (paidThroughFuture
+      && paidThroughFuture.planVersionId !== contract.planVersionId
+      && input.fundingAmountMinor) {
+      const historicalPolicy = await tx.query.aiEnterpriseCommercialPolicies.findFirst({
+        where: eq(aiEnterpriseCommercialPolicies.planVersionId, paidThroughFuture.planVersionId),
+      });
+      const historicalPeriod = await tx.query.billingPeriods.findFirst({
+        where: and(
+          eq(billingPeriods.tenantId, input.tenantId),
+          eq(billingPeriods.subscriptionId, paidThroughFuture.id),
+        ),
+        orderBy: (table, { desc: orderDesc }) => [orderDesc(table.periodEnd)],
+      });
+      if (historicalPolicy && historicalPeriod) {
+        partialFunding = historicalPolicy.fundingMode === 'prepaid_partial';
+        minimumFundingMinor = historicalPolicy.minimumFundingMinor;
+        billingAmountMinor = historicalPeriod.amountDueMinor;
+        subscription = paidThroughFuture;
+        period = historicalPeriod;
+      }
+    }
+
+    const fullPeriodTopUp = !partialFunding && Boolean(input.fundingAmountMinor) && Boolean(paidThroughFuture);
+
+    if (!partialFunding && !fullPeriodTopUp) {
       const pending = currentRows.find((item) => item.status === 'pending_payment');
       if (pending) {
         throw new Error('This workspace already has an Enterprise AI payment awaiting completion.');
       }
-
-      const paidThroughFuture = currentRows.find((item) =>
-        ['trialing', 'active', 'cancel_at_period_end'].includes(item.status)
-        && item.currentPeriodEnd
-        && item.currentPeriodEnd.getTime() > now.getTime()
-      );
       if (paidThroughFuture) {
         throw new Error(
           `Enterprise AI is already paid through ${paidThroughFuture.currentPeriodEnd!.toISOString()}.`,
@@ -485,6 +551,15 @@ export async function createEnterpriseAiContractCheckout(input: {
       }
       subscription = null;
       period = null;
+    } else if (fullPeriodTopUp && paidThroughFuture) {
+      subscription = paidThroughFuture;
+      period = await tx.query.billingPeriods.findFirst({
+        where: and(
+          eq(billingPeriods.tenantId, input.tenantId),
+          eq(billingPeriods.subscriptionId, paidThroughFuture.id),
+        ),
+        orderBy: (table, { desc: orderDesc }) => [orderDesc(table.periodEnd)],
+      }) ?? null;
     }
 
     let createdSubscription = false;
@@ -551,23 +626,28 @@ export async function createEnterpriseAiContractCheckout(input: {
       ));
 
     const funded = BigInt(fundedMinor ?? 0);
-    const remaining = contract.amountMinor - funded;
-    if (remaining <= 0n) {
-      throw new Error(`Enterprise AI is already funded through ${period.periodEnd.toISOString()}.`);
-    }
-
-    const minimumFunding = remaining < contract.commercialPolicy.minimumFundingMinor
+    const remaining = billingAmountMinor - funded;
+    const minimumFunding = remaining > 0n && remaining < minimumFundingMinor
       ? remaining
-      : contract.commercialPolicy.minimumFundingMinor;
-    const requestedAmount = partialFunding
-      ? (input.fundingAmountMinor ?? minimumFunding)
-      : contract.amountMinor;
+      : minimumFundingMinor;
+    const requestedAmount = fullPeriodTopUp
+      ? input.fundingAmountMinor!
+      : partialFunding
+        ? (input.fundingAmountMinor ?? minimumFunding)
+        : contract.amountMinor;
 
-    if (requestedAmount < minimumFunding) {
-      throw new Error(`Enterprise AI funding must be at least USD ${(Number(minimumFunding) / 100).toFixed(2)}.`);
-    }
-    if (requestedAmount > remaining) {
-      throw new Error(`Enterprise AI funding cannot exceed the remaining USD ${(Number(remaining) / 100).toFixed(2)} commitment.`);
+    if (fullPeriodTopUp) {
+      if (requestedAmount <= 0n) throw new Error('Enterprise AI top-up amount must be greater than zero.');
+    } else {
+      if (remaining <= 0n) {
+        throw new Error(`Enterprise AI is already funded through ${period.periodEnd.toISOString()}.`);
+      }
+      if (requestedAmount < minimumFunding) {
+        throw new Error(`Enterprise AI funding must be at least USD ${(Number(minimumFunding) / 100).toFixed(2)}.`);
+      }
+      if (requestedAmount > remaining) {
+        throw new Error(`Enterprise AI funding cannot exceed the remaining USD ${(Number(remaining) / 100).toFixed(2)} commitment.`);
+      }
     }
 
     const [checkout] = await tx.insert(billingCheckouts).values({
@@ -575,7 +655,7 @@ export async function createEnterpriseAiContractCheckout(input: {
       subscriptionId: subscription.id,
       billingPeriodId: period.id,
       provider: input.adapter.provider,
-      purpose: partialFunding ? 'enterprise_ai_funding' : 'subscription',
+      purpose: partialFunding || fullPeriodTopUp ? 'enterprise_ai_funding' : 'subscription',
       amountExpectedMinor: requestedAmount,
       currency: contract.currency,
       status: 'created',

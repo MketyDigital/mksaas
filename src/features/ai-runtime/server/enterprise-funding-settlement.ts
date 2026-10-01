@@ -106,8 +106,8 @@ export async function applyEnterpriseAiFundingSettlement(input: {
       const policy = await tx.query.aiEnterpriseCommercialPolicies.findFirst({
         where: eq(aiEnterpriseCommercialPolicies.planVersionId, subscription.planVersionId),
       });
-      if (!policy || policy.fundingMode !== 'prepaid_partial') {
-        throw new Error('Enterprise AI partial funding policy is unavailable.');
+      if (!policy) {
+        throw new Error('Enterprise AI funding policy is unavailable.');
       }
       const credits = allowance?.creditAmount && period.amountDueMinor > 0n
         ? (allowance.creditAmount * checkout.amountExpectedMinor) / period.amountDueMinor
@@ -140,26 +140,33 @@ export async function applyEnterpriseAiFundingSettlement(input: {
       eq(billingSettlements.status, 'applied'),
     ));
 
-    const funded = fundedMinor ?? checkout.amountExpectedMinor;
-    await tx.update(billingPeriods).set({
-      collectionStatus: funded >= period.amountDueMinor ? 'paid' : 'partial',
-      updatedAt: input.occurredAt,
-    }).where(eq(billingPeriods.id, period.id));
+    const policy = await tx.query.aiEnterpriseCommercialPolicies.findFirst({
+      where: eq(aiEnterpriseCommercialPolicies.planVersionId, subscription.planVersionId),
+    });
+    if (!policy) throw new Error('Enterprise AI funding policy is unavailable.');
 
-    if (['pending_payment', 'active', 'trialing', 'past_due', 'cancel_at_period_end'].includes(subscription.status)
-      && subscription.currentPeriodStart?.getTime() === period.periodStart.getTime()
-      && subscription.currentPeriodEnd?.getTime() === period.periodEnd.getTime()
-      && input.occurredAt.getTime() < period.periodEnd.getTime()) {
-      await tx.update(billingSubscriptions).set({
-        status: subscription.status === 'cancel_at_period_end' ? 'cancel_at_period_end' : 'active',
-        gracePeriodEnd: null,
+    if (policy.fundingMode === 'prepaid_partial') {
+      const funded = fundedMinor ?? checkout.amountExpectedMinor;
+      await tx.update(billingPeriods).set({
+        collectionStatus: funded >= period.amountDueMinor ? 'paid' : 'partial',
         updatedAt: input.occurredAt,
-      }).where(and(
-        eq(billingSubscriptions.id, subscription.id),
-        eq(billingSubscriptions.status, subscription.status),
-        eq(billingSubscriptions.currentPeriodStart, period.periodStart),
-        eq(billingSubscriptions.currentPeriodEnd, period.periodEnd),
-      ));
+      }).where(eq(billingPeriods.id, period.id));
+
+      if (['pending_payment', 'active', 'trialing', 'past_due', 'cancel_at_period_end'].includes(subscription.status)
+        && subscription.currentPeriodStart?.getTime() === period.periodStart.getTime()
+        && subscription.currentPeriodEnd?.getTime() === period.periodEnd.getTime()
+        && input.occurredAt.getTime() < period.periodEnd.getTime()) {
+        await tx.update(billingSubscriptions).set({
+          status: subscription.status === 'cancel_at_period_end' ? 'cancel_at_period_end' : 'active',
+          gracePeriodEnd: null,
+          updatedAt: input.occurredAt,
+        }).where(and(
+          eq(billingSubscriptions.id, subscription.id),
+          eq(billingSubscriptions.status, subscription.status),
+          eq(billingSubscriptions.currentPeriodStart, period.periodStart),
+          eq(billingSubscriptions.currentPeriodEnd, period.periodEnd),
+        ));
+      }
     }
 
     await tx.update(billingCheckouts).set({
@@ -173,13 +180,6 @@ export async function applyEnterpriseAiFundingSettlement(input: {
         eq(billingPlanVersionCreditAllowances.grantInterval, 'billing_period'),
       ),
     });
-    const policy = await tx.query.aiEnterpriseCommercialPolicies.findFirst({
-      where: eq(aiEnterpriseCommercialPolicies.planVersionId, subscription.planVersionId),
-    });
-    if (!policy || policy.fundingMode !== 'prepaid_partial') {
-      throw new Error('Enterprise AI partial funding policy is unavailable.');
-    }
-
     const credits = allowance?.creditAmount && period.amountDueMinor > 0n
       ? (allowance.creditAmount * checkout.amountExpectedMinor) / period.amountDueMinor
       : 0n;

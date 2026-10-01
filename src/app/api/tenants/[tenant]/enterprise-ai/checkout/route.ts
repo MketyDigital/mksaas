@@ -70,7 +70,7 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
   }
 
   const origin = new URL(request.url).origin;
-  const page = `${origin}/t/${encodeURIComponent(tenantSlug)}/enterprise-ai`;
+  const page = `${origin}/app/${encodeURIComponent(tenantSlug)}/enterprise-ai`;
 
   try {
     const checkout = await createEnterpriseAiContractCheckout({

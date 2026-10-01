@@ -393,6 +393,100 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
                       <p>Setup fee: USD {(Number(contract.commercialPolicy.setupFeeMinor) / 100).toFixed(2)}</p>
                       <p>Unused credits: {contract.commercialPolicy.creditRollover ? 'roll over' : 'period-bound'}</p>
                     </div>
+                    {contract.tenant ? (
+                      <div className="mt-4 space-y-2 rounded-lg border bg-muted/20 p-3">
+                        <p className="text-xs font-semibold text-foreground">Customer agreement link</p>
+                        <input
+                          className="w-full rounded-lg border bg-background px-3 py-2 font-mono text-xs"
+                          readOnly
+                          value={`https://app.mkety.com/app/${contract.tenant.slug}/enterprise-ai`}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <a
+                            className="rounded-lg border bg-background px-3 py-2 text-xs font-semibold"
+                            href={`https://app.mkety.com/app/${contract.tenant.slug}/enterprise-ai`}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            Open agreement
+                          </a>
+                          <a
+                            className="rounded-lg border bg-background px-3 py-2 text-xs font-semibold"
+                            href={`mailto:?subject=${encodeURIComponent(`${contract.name} · Enterprise AI agreement`)}&body=${encodeURIComponent(`Your Enterprise AI agreement is ready. Sign in to review and pay: https://app.mkety.com/app/${contract.tenant.slug}/enterprise-ai`)}`}
+                          >
+                            Email agreement link
+                          </a>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">The URL is durable and can be copied into any email, WhatsApp or customer message. Authentication is still required before contract or payment details are shown.</p>
+                      </div>
+                    ) : null}
+                    {contract.tenant ? (
+                      <details className="mt-4 rounded-lg border p-3">
+                        <summary className="cursor-pointer text-sm font-semibold">Amend contract</summary>
+                        <p className="mt-2 text-xs text-muted-foreground">Before payment, saving a new version cancels superseded unpaid checkouts. After payment, the paid period remains pinned to its original version and this amendment becomes the commercial version used for the next billing period.</p>
+                        <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <input name="targetTenantId" type="hidden" value={contract.tenant.id} />
+                          <label className="text-xs font-medium">
+                            Contract name
+                            <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={contract.name} name="name" />
+                          </label>
+                          <label className="text-xs font-medium">
+                            Monthly price (USD)
+                            <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={(Number(contract.amountMinor) / 100).toFixed(2)} inputMode="decimal" name="monthlyPriceUsd" required />
+                          </label>
+                          <label className="text-xs font-medium">
+                            Funding mode
+                            <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={contract.commercialPolicy.fundingMode} name="fundingMode">
+                              <option value="full_period">Full monthly payment</option>
+                              <option value="prepaid_partial">Prepaid partial / top-ups</option>
+                            </select>
+                          </label>
+                          <label className="text-xs font-medium">
+                            Minimum partial funding (USD)
+                            <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={(Number(contract.commercialPolicy.minimumFundingMinor) / 100).toFixed(2)} inputMode="decimal" name="minimumFundingUsd" />
+                          </label>
+                          <label className="text-xs font-medium">
+                            Setup fee (USD)
+                            <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={(Number(contract.commercialPolicy.setupFeeMinor) / 100).toFixed(2)} inputMode="decimal" name="setupFeeUsd" />
+                          </label>
+                          <label className="text-xs font-medium">
+                            Managed cost envelope %
+                            <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={(contract.commercialPolicy.managedCostShareBps / 100).toFixed(2)} inputMode="decimal" name="managedCostSharePercent" required />
+                          </label>
+                          <input name="autoIncludedCredits" type="hidden" value="yes" />
+                          <input name="creditRollover" type="hidden" value={contract.commercialPolicy.creditRollover ? 'yes' : 'no'} />
+                          <input name="operationsReservePercent" type="hidden" value={(contract.commercialPolicy.operationsReserveBps / 100).toFixed(2)} />
+                          <input name="customerRateMultiplierPercent" type="hidden" value={(contract.commercialPolicy.customerRateMultiplierBps / 100).toFixed(2)} />
+                          <label className="text-xs font-medium sm:col-span-2">
+                            Description
+                            <textarea className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue={contract.description ?? ''} maxLength={2000} name="description" rows={2} />
+                          </label>
+                          <div className="sm:col-span-2">
+                            <p className="text-xs font-medium">Capabilities</p>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              {ENTERPRISE_AI_CONTRACT_ENTITLEMENTS.map((entitlement) => (
+                                <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px]" key={entitlement}>
+                                  <input
+                                    defaultChecked={entitlement === 'workspace.ai.enterprise' || contract.entitlements.includes(entitlement)}
+                                    disabled={entitlement === 'workspace.ai.enterprise'}
+                                    name={entitlement === 'workspace.ai.enterprise' ? undefined : 'entitlements'}
+                                    type="checkbox"
+                                    value={entitlement}
+                                  />
+                                  <span className="font-mono">{entitlement}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <ConfirmSubmitButton
+                            className="w-fit rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground sm:col-span-2"
+                            confirmMessage="Create a new immutable Enterprise AI contract version? Any superseded unpaid checkout will be cancelled; an already-paid current period will keep its original terms."
+                          >
+                            Save amended version
+                          </ConfirmSubmitButton>
+                        </form>
+                      </details>
+                    ) : null}
                   </div>
                 )) : <p className="text-sm text-muted-foreground">No Enterprise AI customer contracts configured yet.</p>}
               </div>

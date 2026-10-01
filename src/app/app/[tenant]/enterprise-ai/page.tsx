@@ -216,6 +216,40 @@ async function renderEnterpriseAiConsolePage({
         </section>
       ) : null}
 
+      {contractState.contract?.commercialPolicy.fundingMode === 'full_period'
+        && ['active', 'trialing', 'cancel_at_period_end'].includes(contractState.subscription?.status ?? '') ? (
+        <section className="rounded-2xl border bg-card p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Extra Enterprise AI credits</p>
+              <h2 className="mt-1 text-xl font-bold">Top up beyond your included monthly credits</h2>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Your base monthly commitment is already active. Add verified prepaid usage capacity without changing the contract or the current paid period.
+              </p>
+            </div>
+            <form action={`/api/tenants/${encodeURIComponent(tenantSlug)}/enterprise-ai/checkout`} className="grid min-w-[260px] gap-2" method="post">
+              <input
+                className="rounded-xl border bg-background px-3 py-2 text-sm"
+                defaultValue="10.00"
+                inputMode="decimal"
+                min="1.00"
+                name="fundingAmountUsd"
+                required
+                step="0.01"
+              />
+              <select className="rounded-xl border bg-background px-3 py-2 text-sm" defaultValue="nowpayments" name="provider">
+                <option value="nowpayments">Crypto / NOWPayments</option>
+                <option value="flutterwave">Card / bank · Flutterwave</option>
+                <option value="kora">Card / bank · Kora</option>
+              </select>
+              <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                Buy extra credits
+              </button>
+            </form>
+          </div>
+        </section>
+      ) : null}
+
       {instances.length ? (
         <section>
           <h2 className="text-2xl font-bold">Your AI solutions</h2>
