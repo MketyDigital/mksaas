@@ -62,15 +62,15 @@ describe('tenant', () => {
     });
 
     it('should handle slugs with hyphens', () => {
-      expect(extractTenantSlug('/t/my-company/dashboard')).toBe('my-company');
+      expect(extractTenantSlug('/app/my-company/dashboard')).toBe('my-company');
     });
 
     it('should handle slugs with underscores', () => {
-      expect(extractTenantSlug('/t/my_company/dashboard')).toBe('my_company');
+      expect(extractTenantSlug('/app/my_company/dashboard')).toBe('my_company');
     });
 
     it('should handle numeric slugs', () => {
-      expect(extractTenantSlug('/t/123/dashboard')).toBe('123');
+      expect(extractTenantSlug('/app/123/dashboard')).toBe('123');
     });
   });
 });
