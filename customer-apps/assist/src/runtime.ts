@@ -1109,12 +1109,12 @@ async function retrieveKnowledge(db: D1Database, assistantId: string, query: str
 }
 
 async function reserveCredits(db: D1Database, customerId: string, assistantId: string, credits: number) {
-  const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=?").bind(assistantId).first<any>();
+  const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=? AND customer_id=?").bind(assistantId, customerId).first<any>();
   if (limit?.monthly_credit_cap) {
     const start = startOfMonthUnix();
     const used = await db.prepare(
-      "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE assistant_id=? AND created_at>=?",
-    ).bind(assistantId, start).first<any>();
+      "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE customer_id=? AND assistant_id=? AND created_at>=?",
+    ).bind(customerId, assistantId, start).first<any>();
     if (parseFloat(String(used?.used || 0)) + credits > parseFloat(String(limit.monthly_credit_cap))) return null;
   }
   const update = await db.prepare(
@@ -1176,8 +1176,8 @@ async function settleReservation(
   const usageId = id("use");
   const statements: D1PreparedStatement[] = [
     db.prepare(
-      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, safeActual, usage.providerCostMicros, now, usage.apiKeyId ?? null),
+      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id,reservation_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, safeActual, usage.providerCostMicros, now, usage.apiKeyId ?? null, reservationId),
     db.prepare(
       "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
     ).bind(id("pce"), customerId, usageId, usage.provider, usage.providerModel, usage.providerCostMicros, "USD", now),
