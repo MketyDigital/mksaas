@@ -37,8 +37,8 @@ describe('TeamEntryPage', () => {
     });
     mockedGetAllRoles.mockResolvedValue({ current_workspace: 'member' });
 
-    await expect(TeamEntryPage()).rejects.toThrow('REDIRECT:/t/current_workspace/admin/members');
+    await expect(TeamEntryPage()).rejects.toThrow('REDIRECT:/app/current_workspace/admin/members');
     expect(mockedGetAllRoles).toHaveBeenCalledTimes(1);
-    expect(mockedRedirect).toHaveBeenCalledWith('/t/current_workspace/admin/members');
+    expect(mockedRedirect).toHaveBeenCalledWith('/app/current_workspace/admin/members');
   });
 });
