@@ -159,7 +159,7 @@ export function renderOperatorPortal(customers: any[]) {
 </head>
 <body>
 <main class="wrap">
-  <div class="top"><div><h1 style="margin:0">Mkety Assist Operator</h1><p class="muted">Internal customer, commercial, domain, model and operations control.</p></div><button class="btn primary" id="newCustomer">New customer</button></div>
+  <div class="top"><div><h1 style="margin:0">Mkety Assist Operator</h1><p class="muted">Internal customer, commercial, domain, model and operations control.</p></div><div class="row"><button class="btn primary" id="newCustomer">New customer</button><button class="btn" id="opsLogout">Sign out</button></div></div>
   <div class="grid" id="metrics"></div>
 
   <div class="card" style="margin-top:16px">
@@ -258,10 +258,11 @@ async function loadOps(){
   try{const [h,a]=await Promise.all([api('/api/ops/health'),api('/api/ops/audit')]);healthBox.innerHTML='<p>Status: <strong>'+esc(h.status)+'</strong></p><p>Active customers: '+esc(h.activeCustomers)+' · Assistants: '+esc(h.activeAssistants)+'</p><p>Webhook errors (24h): '+esc(h.webhookErrors24h)+' · Overdue reminders: '+esc(h.overdueReminders)+' · Open handoffs: '+esc(h.openHandoffs)+'</p>';auditBox.innerHTML=(a.events||[]).slice(0,14).map(e=>'<div style="padding:7px 0;border-bottom:1px solid var(--l)"><strong>'+esc(e.action)+'</strong><div class="muted">'+new Date(e.created_at*1000).toLocaleString()+' · '+esc(e.target_type||'')+' '+esc(e.target_id||'')+'</div></div>').join('')||'No audit events.'}catch(e){healthBox.textContent=e.message}
 }
 async function boot(){
-  if(!sessionStorage.getItem('mketyAssistOpsToken')){const t=prompt('Operator access token');if(t)sessionStorage.setItem('mketyAssistOpsToken',t)}
-  try{await Promise.all([loadCustomers(),loadProviders(),loadModels(),loadOps()])}catch(e){rows.innerHTML='<tr><td colspan="5">Operator authentication required.</td></tr>'}
+  try{await Promise.all([loadCustomers(),loadProviders(),loadModels(),loadOps()])}
+  catch(e){if(String(e.message).includes('unauthorized')) location.reload(); else rows.innerHTML='<tr><td colspan="5">'+esc(e.message)+'</td></tr>'}
 }
 newCustomer.onclick=newCustomerDialog;refreshCustomers.onclick=loadCustomers;refreshProviders.onclick=loadProviders;newProvider.onclick=addProvider;refreshModels.onclick=loadModels;refreshOps.onclick=loadOps;
+opsLogout.onclick=async()=>{await fetch('/api/ops/auth/logout',{method:'POST'});location.reload()};
 renderCustomers();boot();
 </script>
 </body>
