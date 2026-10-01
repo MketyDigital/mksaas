@@ -240,7 +240,7 @@ jobs:
           const hash=crypto.createHash('sha256').update(raw).digest('hex');
           const tokenId='opset_'+crypto.randomUUID().replace(/-/g,'');
           const expires=Math.floor(Date.now()/1000)+86400;
-          process.stdout.write([raw,hash,tokenId,expires].join(' '));
+          console.log([raw,hash,tokenId,expires].join(' '));
           NODE
               )
               npx wrangler d1 execute DB --remote --config wrangler.deploy.jsonc                 --command "INSERT INTO operator_setup_tokens (id,token_hash,expires_at,created_at) VALUES ('$token_id','$hash',$expires,$now);"
