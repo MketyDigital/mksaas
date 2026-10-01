@@ -1132,7 +1132,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/domains" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC",
+      "SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at,public_dns_ok,public_tls_ok,ownership_ok,public_checked_at,provider_status FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC",
     ).bind(customer.customerId).all<any>();
     return json({
       domains: (rows.results ?? []).map((row: any) => ({
@@ -1143,9 +1143,42 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
         sslStatus: row.ssl_status,
         validation: row.validation_json ? JSON.parse(row.validation_json) : null,
         verifiedAt: row.verified_at,
+        publicDnsOk: Boolean(row.public_dns_ok),
+        publicTlsOk: Boolean(row.public_tls_ok),
+        ownershipOk: Boolean(row.ownership_ok),
+        publicCheckedAt: row.public_checked_at,
+        providerStatus: row.provider_status,
+        providerPending: row.status === "active" && row.provider_status === "pending",
       })),
       cnameTarget: env.PORTAL_CNAME_TARGET,
     });
+  }
+
+  if (url.pathname === "/api/domains/verify" && request.method === "POST") {
+    if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
+    const body = await readJson(request);
+    const hostname = normalizeHostname(requiredString(body.hostname, "hostname"));
+    const domain = await env.DB.prepare(
+      "SELECT hostname,kind,provider_status FROM customer_domains WHERE hostname=? AND customer_id=? LIMIT 1",
+    ).bind(hostname, customer.customerId).first<any>();
+    if (!domain) return json({ error: "domain_not_found" }, 404);
+    if (domain.kind !== "custom") return json({ error: "custom_domain_required" }, 400);
+    const evidence = await verifyDomainEvidence({
+      hostname,
+      expectedTarget: env.PORTAL_CNAME_TARGET,
+      expectedOwner: customer.customerSlug,
+      providerStatus: String(domain.provider_status || "pending"),
+    });
+    const projected = projectDomainStatus(evidence);
+    await env.DB.prepare(
+      `UPDATE customer_domains SET status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,
+       verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
+       WHERE hostname=? AND customer_id=?`,
+    ).bind(
+      projected.status,evidence.dnsOk?1:0,evidence.tlsOk?1:0,evidence.ownershipOk?1:0,evidence.checkedAt,
+      projected.status,evidence.checkedAt,hostname,customer.customerId,
+    ).run();
+    return json({ hostname, ...projected });
   }
 
   if (url.pathname === "/api/settings" && request.method === "GET") {
@@ -1236,7 +1269,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/assistants" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap FROM assistants WHERE customer_id=? ORDER BY created_at DESC",
+      "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,archived_at,current_version FROM assistants WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
     ).bind(customer.customerId).all();
     return json({ assistants: rows.results ?? [] });
   }
@@ -1245,7 +1278,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
     const policy = await env.DB.prepare("SELECT max_assistants FROM feature_policy WHERE customer_id=?")
       .bind(customer.customerId).first<any>();
-    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM assistants WHERE customer_id=?")
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM assistants WHERE customer_id=? AND deleted_at IS NULL")
       .bind(customer.customerId).first<any>();
     if ((count?.n ?? 0) >= (policy?.max_assistants ?? 5)) return json({ error: "assistant_limit_reached" }, 409);
     const body = await readJson(request);
@@ -1261,6 +1294,13 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       env.DB.prepare(
         "INSERT INTO assistant_prompt_versions (id,customer_id,assistant_id,version,instructions,status,created_at,published_at) VALUES (?,?,?,?,?,?,?,?)",
       ).bind(id("prm"), customer.customerId, assistantId, 1, String(body.instructions || ""), "published", now, now),
+      env.DB.prepare(
+        "INSERT INTO assistant_config_versions (id,customer_id,assistant_id,version,config_json,created_by_user_id,created_at) VALUES (?,?,?,?,?,?,?)",
+      ).bind(
+        id("asv"), customer.customerId, assistantId, 1,
+        JSON.stringify({ name, status: "active", modelAlias, timezone: body.timezone || "UTC", memoryEnabled: body.memoryEnabled !== false, monthlyCreditCap: null, automationPaused: false }),
+        session.userId, now,
+      ),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?,?)")
         .bind(id("aud"), "customer_user", session.userId, customer.customerId, "assistant.created", "assistant", assistantId, now),
     ]);
