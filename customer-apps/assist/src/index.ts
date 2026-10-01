@@ -240,6 +240,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
          mr.output_credits_per_million,
          mr.image_credits,
          mr.audio_credits_per_minute,
+         mr.provider_input_cost_micros_per_million,
+         mr.provider_output_cost_micros_per_million,
+         mr.provider_image_cost_micros,
+         mr.provider_audio_cost_micros_per_minute,
          mr.effective_at
        FROM model_routes r
        LEFT JOIN model_rates mr ON mr.id=(
@@ -256,12 +260,30 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     if (!current) return json({ error: "model_alias_not_found" }, 404);
     const body = await readJson(request);
     const now = unix();
+
+    const provider = body.provider ?? current.provider;
+    const providerConnectionId = body.providerConnectionId === undefined
+      ? current.provider_connection_id
+      : (body.providerConnectionId || null);
+    if (!["workers-ai","mkety-managed"].includes(String(provider)) && !providerConnectionId) {
+      return json({ error: "provider_connection_required" }, 400);
+    }
+    if (providerConnectionId) {
+      const connection = await env.DB.prepare(
+        "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
+      ).bind(providerConnectionId).first<any>();
+      if (!connection || connection.status !== "active" || connection.provider !== provider) {
+        return json({ error: "provider_connection_mismatch" }, 400);
+      }
+    }
+
     await env.DB.prepare(
       `UPDATE model_routes SET provider=COALESCE(?,provider),provider_model=COALESCE(?,provider_model),
-       fallback_provider=?,fallback_model=?,status=COALESCE(?,status),updated_at=? WHERE alias=?`,
+       provider_connection_id=?,fallback_provider=?,fallback_model=?,status=COALESCE(?,status),updated_at=? WHERE alias=?`,
     ).bind(
       body.provider ?? null,
       body.providerModel ?? null,
+      providerConnectionId,
       body.fallbackProvider ?? current.fallback_provider ?? null,
       body.fallbackModel ?? current.fallback_model ?? null,
       body.status ?? null,
@@ -269,25 +291,112 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       alias,
     ).run();
 
-    const rateFields = ["inputCreditsPerMillion","outputCreditsPerMillion","imageCredits","audioCreditsPerMinute"];
-    if (rateFields.some((key) => body[key] !== undefined)) {
-      const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?").bind(alias).first<any>();
+    const costFields = [
+      "providerInputCostMicrosPerMillion","providerOutputCostMicrosPerMillion",
+      "providerImageCostMicros","providerAudioCostMicrosPerMinute",
+    ];
+    const creditFields = ["inputCreditsPerMillion","outputCreditsPerMillion","imageCredits","audioCreditsPerMinute"];
+    if (costFields.concat(creditFields).some((key) => body[key] !== undefined) || body.generateRate === true) {
+      const previous = await env.DB.prepare(
+        "SELECT * FROM model_rates WHERE alias=? ORDER BY version DESC LIMIT 1",
+      ).bind(alias).first<any>();
+      const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?")
+        .bind(alias).first<any>();
+      const commercialSetting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
+      const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(commercialSetting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+
+      const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || 0);
+      const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || 0);
+      const imageCost = positiveInt(body.providerImageCostMicros, previous?.provider_image_cost_micros || 0);
+      const audioCost = positiveInt(body.providerAudioCostMicrosPerMinute, previous?.provider_audio_cost_micros_per_minute || 0);
+      const generated = body.generateRate === true;
+      const inputCredits = generated ? costToBaseCredits(inputCost, creditUsdMicros) : positiveInt(body.inputCreditsPerMillion, previous?.input_credits_per_million || 0);
+      const outputCredits = generated ? costToBaseCredits(outputCost, creditUsdMicros) : positiveInt(body.outputCreditsPerMillion, previous?.output_credits_per_million || 0);
+      const imageCredits = generated ? costToBaseCredits(imageCost, creditUsdMicros) : positiveInt(body.imageCredits, previous?.image_credits || 0);
+      const audioCredits = generated ? costToBaseCredits(audioCost, creditUsdMicros) : positiveInt(body.audioCreditsPerMinute, previous?.audio_credits_per_minute || 0);
+
       await env.DB.prepare(
         `INSERT INTO model_rates
-         (id,alias,version,input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,effective_at,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+         (id,alias,version,input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,
+          provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,provider_image_cost_micros,
+          provider_audio_cost_micros_per_minute,effective_at,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
-        id("rate"), alias, Number(latest?.v || 0) + 1,
-        positiveInt(body.inputCreditsPerMillion, 0),
-        positiveInt(body.outputCreditsPerMillion, 0),
-        positiveInt(body.imageCredits, 0),
-        positiveInt(body.audioCreditsPerMinute, 0),
-        now, now,
+        id("rate"), alias, parseInt(String(latest?.v || 0), 10) + 1,
+        inputCredits, outputCredits, imageCredits, audioCredits,
+        inputCost, outputCost, imageCost, audioCost, now, now,
       ).run();
     }
     await env.DB.prepare(
       "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
-    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias }), now).run();
+    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias, provider }), now).run();
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/ops/providers" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT id,name,provider,endpoint_url,extra_json,status,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
+    ).all();
+    return json({ providers: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/ops/providers" && request.method === "POST") {
+    const body = await readJson(request);
+    const provider = requiredString(body.provider, "provider");
+    if (!["openai","anthropic","gemini","azure-openai","openai-compatible"].includes(provider)) {
+      return json({ error: "unsupported_provider" }, 400);
+    }
+    const apiKey = requiredString(body.apiKey, "apiKey");
+    const endpointUrl = body.endpointUrl ? String(body.endpointUrl).trim() : null;
+    if (endpointUrl) {
+      const parsed = new URL(endpointUrl);
+      if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
+    }
+    const providerId = id("prv");
+    const now = unix();
+    await env.DB.prepare(
+      "INSERT INTO provider_connections (id,name,provider,endpoint_url,api_key_ciphertext,extra_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    ).bind(
+      providerId,
+      requiredString(body.name, "name"),
+      provider,
+      endpointUrl,
+      await protectStoredSecret(apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
+      JSON.stringify(body.extra || {}),
+      "active",
+      now,
+      now,
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
+    ).bind(id("aud"), "operator", "provider.created", "provider_connection", providerId, JSON.stringify({ provider }), now).run();
+    return json({ id: providerId, provider }, 201);
+  }
+
+  if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
+    const providerId = decodeURIComponent(url.pathname.slice("/api/ops/providers/".length));
+    const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
+    if (!current) return json({ error: "provider_not_found" }, 404);
+    const body = await readJson(request);
+    const endpointUrl = body.endpointUrl === undefined ? current.endpoint_url : (body.endpointUrl || null);
+    if (endpointUrl) {
+      const parsed = new URL(String(endpointUrl));
+      if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
+    }
+    const cipher = body.apiKey
+      ? await protectStoredSecret(String(body.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
+      : current.api_key_ciphertext;
+    await env.DB.prepare(
+      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status=COALESCE(?,status),updated_at=? WHERE id=?",
+    ).bind(
+      body.name ?? null,
+      endpointUrl,
+      cipher,
+      body.extra === undefined ? null : JSON.stringify(body.extra),
+      body.status ?? null,
+      unix(),
+      providerId,
+    ).run();
     return json({ ok: true });
   }
 
@@ -948,6 +1057,36 @@ function normalizeHostname(value: string) {
 
 function optionalHostname(value: unknown) {
   return typeof value === "string" && value.trim() ? normalizeHostname(value) : null;
+}
+
+function costToBaseCredits(providerCostMicros: number, creditUsdMicros: number) {
+  if (providerCostMicros <= 0) return 0;
+  return Math.ceil(providerCostMicros / Math.max(1, creditUsdMicros));
+}
+
+async function protectStoredSecret(secret: string, configured: string) {
+  const keyBytes = decodeStoredSecretKey(configured);
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoder.encode(secret)));
+  return `mas1.${base64UrlBytes(iv)}.${base64UrlBytes(encrypted)}`;
+}
+
+function decodeStoredSecretKey(value: string) {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    const out = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) out[i] = parseInt(value.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
+  const raw = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = raw + "===".slice((raw.length + 3) % 4);
+  const bytes = Uint8Array.from(atob(padded), (ch) => ch.charCodeAt(0));
+  if (bytes.length !== 32) throw new HttpError(500, "invalid_secret_encryption_key");
+  return bytes;
+}
+
+function base64UrlBytes(bytes: Uint8Array) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function positiveInt(value: unknown, fallback: number) {
