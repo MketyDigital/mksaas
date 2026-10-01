@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db/cloudflare';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import {
   platformAppControlCenterModules,
   platformAppExperienceRevisions,
@@ -80,5 +80,10 @@ async function updateMketyPaymentSettingsImpl(tenantSlug: string, formData: Form
 
 export async function updateMketyPaymentSettings(...args: Parameters<typeof updateMketyPaymentSettingsImpl>) {
   'use server';
-  return withServerActionDatabase(() => updateMketyPaymentSettingsImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/payments`,
+    action: 'payment-settings',
+    work: () => updateMketyPaymentSettingsImpl(...args),
+  });
 }
