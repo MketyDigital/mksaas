@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { grantCredits } from '@/features/usage-credits/server/service';
@@ -11,7 +12,7 @@ function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? '').trim();
 }
 
-export async function grantManualTenantCredits(opsTenantSlug: string, formData: FormData) {
+async function grantManualTenantCreditsImpl(opsTenantSlug: string, formData: FormData) {
   const actor = await requirePlatformControlAccess(opsTenantSlug);
   await requirePermission(opsTenantSlug, 'platform:billing');
 
@@ -50,4 +51,9 @@ export async function grantManualTenantCredits(opsTenantSlug: string, formData: 
   revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/billing`);
   revalidatePath(`/t/${target.slug}/wallet`);
   revalidatePath(`/t/${target.slug}/enterprise-ai`);
+}
+
+export async function grantManualTenantCredits(...args: Parameters<typeof grantManualTenantCreditsImpl>) {
+  'use server';
+  return withServerActionDatabase(() => grantManualTenantCreditsImpl(...args));
 }
