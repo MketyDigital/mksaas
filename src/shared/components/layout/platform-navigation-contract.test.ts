@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function route(path: string) {
-  return resolve(process.cwd(), 'src/app/(tenant)/t/[tenant]', path);
+  return resolve(process.cwd(), 'src/app/app/[tenant]', path);
 }
 
 describe('Platform navigation route contract', () => {
