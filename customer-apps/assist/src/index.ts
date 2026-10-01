@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 
@@ -92,6 +92,11 @@ export default {
 
       if (url.pathname.startsWith("/api/auth/")) {
         return handleAuth(request, env, customer);
+      }
+
+      if (url.pathname.startsWith("/v1/")) {
+        const apiResponse = await handleApiKeyInference(request, env, customer);
+        if (apiResponse) return apiResponse;
       }
 
       if (url.pathname === "/setup" && request.method === "GET") {
