@@ -213,5 +213,6 @@ const setupMatch = setupHtml.match(/<script>([\s\S]*?)<\/script>/);
 if (!setupMatch) throw new Error("Setup page script not found");
 new Function(setupMatch[1]);
 if (!setupHtml.includes("/api/auth/setup/validate?token=")) throw new Error("Setup page preflight validation missing");
-if (!setupHtml.includes("setupPassword")) throw new Error("Setup page explicit password input missing");
-console.log("Setup page browser script parses and includes token preflight validation.");
+if (!setupHtml.includes('id="setupSubmit"') || !setupHtml.includes("Enter portal")) throw new Error("One-time owner claim control missing");
+if (setupHtml.includes('id="setupPassword"')) throw new Error("Owner claim still requires password creation");
+console.log("Setup page browser script parses and includes one-time token preflight validation.");
