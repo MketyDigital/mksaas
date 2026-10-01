@@ -118,7 +118,7 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
       <AdminPageHeader
         title={t('integrationsPage.title')}
         description={t('integrationsPage.description')}
-        backHref={`/t/${tenant}/admin`}
+        backHref={`/app/${tenant}/admin`}
         backLabel={t('title')}
       />
 
@@ -164,7 +164,7 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
                       </div>
                     )}
                     <Button asChild>
-                      <Link href={`/t/${tenant}${integration.href}`}>{t('integrationsPage.configure')}</Link>
+                      <Link href={`/app/${tenant}${integration.href}`}>{t('integrationsPage.configure')}</Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -197,7 +197,7 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <Button asChild variant="secondary">
-                      <Link href={`/t/${tenant}${integration.href}`}>{t('integrationsPage.configure')}</Link>
+                      <Link href={`/app/${tenant}${integration.href}`}>{t('integrationsPage.configure')}</Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -234,7 +234,7 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/t/${tenant}${integration.href}`}>{t('integrationsPage.learnMore')}</Link>
+                      <Link href={`/app/${tenant}${integration.href}`}>{t('integrationsPage.learnMore')}</Link>
                     </Button>
                   </CardContent>
                 </Card>
