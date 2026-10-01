@@ -18,7 +18,7 @@ export default async function MembersPage({ params }: MembersPageProps) {
   const session = await auth();
 
   if (!session?.user?.id) {
-    redirect(`/t/${tenant}/login`);
+    redirect(`/app/${tenant}/login`);
   }
 
   const result = await listMembers(tenant, { page: 1 });
