@@ -69,8 +69,12 @@ export default {
         return handleTelegramAuthBotWebhook(request, env);
       }
 
-      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/webhook" && request.method === "POST") {
-        return handlePaymentWebhook(request, env);
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/flutterwave/webhook" && request.method === "POST") {
+        return handleFlutterwavePaymentWebhook(request, env);
+      }
+
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/payment/return" && request.method === "GET") {
+        return handlePaymentReturn(url, env);
       }
 
       const customer = await resolveCustomerByHost(env.DB, host, env.HOSTED_SUFFIX);
@@ -921,77 +925,188 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json({ credits: account, plan: policy });
   }
 
+  if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      `SELECT id,reference,provider,credits,canonical_amount_minor,canonical_currency,
+              provider_amount_minor,provider_currency,status,created_at,settled_at
+       FROM payment_checkouts WHERE customer_id=? ORDER BY created_at DESC LIMIT 50`,
+    ).bind(customer.customerId).all();
+    return json({ checkouts: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/billing/topup/start" && request.method === "POST") {
+    if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "topup_provider_not_configured" }, 503);
+    const policy = await env.DB.prepare(
+      "SELECT topup_enabled,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customer.customerId).first<any>();
+    if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
+
+    const body = await readJson(request);
+    const credits = positiveInt(body.credits, 0);
+    if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
+
+    const setting = await env.DB.prepare(
+      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
+    ).first<any>();
+    const creditUsdMicros = Math.max(
+      1,
+      parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10),
+    );
+    const canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
+    const checkoutId = id("chk");
+    const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+    const now = unix();
+
+    await env.DB.prepare(
+      `INSERT INTO payment_checkouts
+       (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ).bind(
+      checkoutId, customer.customerId, session.userId, reference, "flutterwave",
+      credits, canonicalAmountMinor, "USD", "pending", now,
+    ).run();
+
+    const canonicalAmountUsd = (canonicalAmountMinor / 100).toFixed(2);
+    const brokerResponse = await fetch("https://mkety.com/api/payments/flutterwave/start", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        source: "assist",
+        reference,
+        canonical_amount_usd: canonicalAmountUsd,
+        requested_payment_currency: String(body.paymentCurrency || "USD").toUpperCase(),
+        email: session.email,
+        customer_name: customer.customerName,
+        checkout_id: checkoutId,
+        redirect_url: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
+        checkout_experience: "hosted",
+      }),
+    });
+    const broker = await brokerResponse.json<any>();
+    if (!brokerResponse.ok || !broker.success || !broker.checkout_url) {
+      await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'")
+        .bind(checkoutId).run();
+      return json({ error: "topup_checkout_failed" }, 502);
+    }
+
+    await env.DB.prepare(
+      "UPDATE payment_checkouts SET provider_amount_minor=?,provider_currency=? WHERE id=?",
+    ).bind(
+      parseInt(String(broker.provider_amount_minor || 0), 10) || null,
+      broker.provider_currency || broker.checkout_currency || null,
+      checkoutId,
+    ).run();
+
+    return json({
+      checkoutId,
+      reference,
+      checkoutUrl: broker.checkout_url,
+      credits,
+      canonicalAmountMinor,
+      canonicalCurrency: "USD",
+      providerAmountMinor: broker.provider_amount_minor ?? null,
+      providerCurrency: broker.provider_currency ?? broker.checkout_currency ?? null,
+    }, 201);
+  }
+
   const runtimeResponse = await handleRuntimeApi(request, env, customer, session);
   if (runtimeResponse) return runtimeResponse;
 
   return json({ error: "not_found" }, 404);
 }
 
-async function handlePaymentWebhook(request: Request, env: Env): Promise<Response> {
+async function handleFlutterwavePaymentWebhook(request: Request, env: Env): Promise<Response> {
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_attestation_not_configured" }, 503);
   const raw = await request.text();
-  const supplied = request.headers.get("x-mkety-signature") || "";
-  const expected = await hmacHex(env.MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET, raw);
-  if (!constantTimeEqual(supplied, expected)) return json({ error: "invalid_signature" }, 401);
-  const payload = JSON.parse(raw);
-  const eventId = requiredString(payload.id, "id");
-  const eventType = requiredString(payload.type, "type");
-  const customerId = requiredString(payload.customerId, "customerId");
-  const customer = await env.DB.prepare("SELECT id,status FROM customers WHERE id=? LIMIT 1").bind(customerId).first<any>();
-  if (!customer) return json({ error: "unknown_customer" }, 404);
+  const supplied = request.headers.get("x-mkety-payment-attestation") || "";
+  if (!(await verifyPaymentAttestation(raw, supplied, env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET))) {
+    return json({ error: "invalid_payment_attestation" }, 401);
+  }
+
+  let payload: Record<string, any>;
+  try { payload = JSON.parse(raw) as Record<string, any>; }
+  catch { return json({ error: "invalid_json" }, 400); }
+
+  if (String(payload.event || "") !== "charge.completed") {
+    return json({ ok: true, ignored: true });
+  }
+  const data = payload.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return json({ error: "invalid_payment_payload" }, 400);
+
+  const reference = String(data.tx_ref || "");
+  const checkout = await env.DB.prepare(
+    "SELECT * FROM payment_checkouts WHERE reference=? AND provider='flutterwave' LIMIT 1",
+  ).bind(reference).first<any>();
+  if (!checkout) return json({ error: "unknown_payment_reference" }, 404);
+  if (checkout.status === "paid") return json({ ok: true, duplicate: true });
+
+  const status = String(data.status || "").toLowerCase();
+  const providerCurrency = String(data.currency || "").toUpperCase();
+  const providerAmountMinor = parsePaymentAmountMinor(data.amount ?? data.charged_amount);
+  const expectedCurrency = String(checkout.provider_currency || checkout.canonical_currency || "").toUpperCase();
+  const expectedAmountMinor = parseInt(String(checkout.provider_amount_minor || checkout.canonical_amount_minor || 0), 10);
+
+  if (!expectedCurrency || providerCurrency !== expectedCurrency || providerAmountMinor < expectedAmountMinor) {
+    return json({ error: "payment_quote_mismatch" }, 400);
+  }
+
   const now = unix();
-
-  try {
+  if (status !== "successful") {
     await env.DB.prepare(
-      "INSERT INTO payment_events (id,provider_event_id,customer_id,event_type,amount_minor,currency,payload_hash,created_at) VALUES (?,?,?,?,?,?,?,?)",
-    ).bind(id("pay"), eventId, customerId, eventType, Number(payload.amountMinor || 0), payload.currency || "USD", await sha256(raw), now).run();
-  } catch {
-    return json({ ok: true, duplicate: true });
+      "UPDATE payment_checkouts SET status='failed',provider_payment_id=?,provider_event_id=?,settled_at=? WHERE id=? AND status='pending'",
+    ).bind(String(data.id || ""), String(data.id || ""), now, checkout.id).run();
+    return json({ ok: true, settled: false, status });
   }
 
-  if (eventType === "subscription.payment_succeeded") {
-    const policy = await env.DB.prepare(
-      "SELECT included_credits FROM commercial_policy WHERE customer_id=? LIMIT 1",
-    ).bind(customerId).first<any>();
-    const credits = positiveInt(policy?.included_credits, 0);
-    if (credits > 0) await grantCredits(env.DB, customerId, credits, "subscription_grant", eventId, now);
-    await env.DB.prepare(
-      "UPDATE customers SET billing_status='current',grace_until=NULL,updated_at=? WHERE id=?",
-    ).bind(now, customerId).run();
-  } else if (eventType === "payment.succeeded" && payload.grantType === "topup") {
-    // Mkety Payments confirms the paid order. The signed event carries the
-    // Assist top-up metadata created for that checkout.
-    const credits = positiveInt(payload.credits, 0);
-    if (credits > 0) await grantCredits(env.DB, customerId, credits, "topup_grant", eventId, now);
-  } else if (eventType === "subscription.payment_failed") {
-    const policy = await env.DB.prepare(
-      "SELECT grace_period_days FROM commercial_policy WHERE customer_id=? LIMIT 1",
-    ).bind(customerId).first<any>();
-    const graceDays = Math.max(0, positiveInt(policy?.grace_period_days, 3));
-    await env.DB.prepare(
-      "UPDATE customers SET billing_status='past_due',grace_until=?,updated_at=? WHERE id=?",
-    ).bind(now + graceDays * 86400, now, customerId).run();
-  }
+  const updated = await env.DB.prepare(
+    `UPDATE payment_checkouts
+     SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?
+     WHERE id=? AND status='pending'`,
+  ).bind(String(data.id || ""), String(data.id || ""), now, checkout.id).run();
 
-  await env.DB.prepare("UPDATE payment_events SET processed_at=? WHERE provider_event_id=?").bind(now, eventId).run();
-  return json({ ok: true });
+  return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
 }
 
-async function grantCredits(
-  db: D1Database,
-  customerId: string,
-  credits: number,
-  kind: string,
-  referenceId: string,
-  now: number,
-) {
-  const account = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
-  const next = Number(account?.balance || 0) + credits;
-  await db.batch([
-    db.prepare("UPDATE credit_accounts SET balance=?,lifetime_granted=lifetime_granted+?,updated_at=? WHERE customer_id=?")
-      .bind(next, credits, now, customerId),
-    db.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
-      .bind(id("led"), customerId, credits, kind, referenceId, next, now),
-  ]);
+async function handlePaymentReturn(url: URL, env: Env): Promise<Response> {
+  const reference = String(url.searchParams.get("reference") || "");
+  const checkout = reference
+    ? await env.DB.prepare(
+        `SELECT pc.customer_id,pc.status,d.hostname
+         FROM payment_checkouts pc
+         JOIN customer_domains d ON d.customer_id=pc.customer_id AND d.is_primary=1
+         WHERE pc.reference=? LIMIT 1`,
+      ).bind(reference).first<any>()
+    : null;
+  const destination = checkout?.hostname
+    ? `https://${checkout.hostname}/?payment=${encodeURIComponent(reference)}&status=${encodeURIComponent(String(checkout.status || "pending"))}`
+    : `https://${env.PORTAL_CNAME_TARGET}/`;
+  return Response.redirect(destination, 302);
+}
+
+async function verifyPaymentAttestation(raw: string, signature: string, secret: string) {
+  if (!raw || !signature || !secret) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(raw));
+  const expected = arrayBufferToBase64(signed);
+  return constantTimeEqual(expected, signature.trim());
+}
+
+function arrayBufferToBase64(bytes: ArrayBuffer) {
+  let binary = "";
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function parsePaymentAmountMinor(value: unknown) {
+  const raw = typeof value === "number" ? value.toFixed(2) : String(value ?? "").trim();
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
+  if (!match) throw new HttpError(400, "invalid_payment_amount");
+  return parseInt(match[1], 10) * 100 + parseInt((match[2] || "").padEnd(2, "0") || "0", 10);
 }
 
 async function createCustomHostname(env: Env, customerId: string, hostnameInput: string) {
