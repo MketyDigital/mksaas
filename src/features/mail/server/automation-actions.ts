@@ -28,14 +28,14 @@ export async function createMailAutomationRule(tenantSlug:string,formData:FormDa
   await db.insert(mailAutomationRules).values({
     tenantId:tenant.id,mailboxId,name,triggerType,triggerValue:triggerValue||null,actionType,actionValue:actionValue||null,createdByUserId:actor.userId,
   });
-  revalidatePath(`/t/${tenantSlug}/mail/automation`);
+  revalidatePath(`/app/${tenantSlug}/mail/automation`);
 }
 
 export async function deleteMailAutomationRule(tenantSlug:string,formData:FormData){
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const id=String(formData.get('id')||'');
   await db.delete(mailAutomationRules).where(and(eq(mailAutomationRules.id,id),eq(mailAutomationRules.tenantId,tenant.id)));
-  revalidatePath(`/t/${tenantSlug}/mail/automation`);
+  revalidatePath(`/app/${tenantSlug}/mail/automation`);
 }
 
 export async function applyInboundMailAutomation(input:{
