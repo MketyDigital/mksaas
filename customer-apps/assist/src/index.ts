@@ -247,7 +247,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     if (!row?.password_hash || !row?.password_salt) return json({ error: "invalid_credentials" }, 401);
     const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash);
     if (!ok) return json({ error: "invalid_credentials" }, 401);
-    return issueSession(env, customerId, row.id, row.role, row.email);
+    return issueSession(env, customer.customerId, row.id, row.role, row.email);
   }
 
   if (url.pathname === "/api/auth/setup" && request.method === "POST") {
@@ -270,7 +270,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
         .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
       env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=?").bind(now, row.id),
     ]);
-    return issueSession(env, customerId, row.user_id, row.role, row.email);
+    return issueSession(env, customer.customerId, row.user_id, row.role, row.email);
   }
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
@@ -346,7 +346,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       env.DB.prepare("UPDATE recovery_challenges SET consumed_at=? WHERE id=?").bind(now, challenge.id),
       env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
         .bind(p.hash, p.salt, p.iterations, now, user.id),
-      env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND customer_id=?").bind(user.id, customerId),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND customer_id=?").bind(user.id, customer.customerId),
     ]);
     return issueSession(env, customer.customerId, user.id, user.role, user.email);
   }
@@ -422,12 +422,12 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     await env.DB.batch([
       env.DB.prepare(
         "INSERT INTO assistants (id,customer_id,name,slug,status,model_alias,timezone,memory_enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      ).bind(assistantId, customerId, name, slug, "active", modelAlias, body.timezone || "UTC", body.memoryEnabled === false ? 0 : 1, now, now),
+      ).bind(assistantId, customer.customerId, name, slug, "active", modelAlias, body.timezone || "UTC", body.memoryEnabled === false ? 0 : 1, now, now),
       env.DB.prepare(
         "INSERT INTO assistant_prompt_versions (id,customer_id,assistant_id,version,instructions,status,created_at,published_at) VALUES (?,?,?,?,?,?,?,?)",
       ).bind(id("prm"), customer.customerId, assistantId, 1, String(body.instructions || ""), "published", now, now),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id("aud"), "customer_user", session.userId, customerId, "assistant.created", "assistant", assistantId, now),
+        .bind(id("aud"), "customer_user", session.userId, customer.customerId, "assistant.created", "assistant", assistantId, now),
     ]);
     return json({ id: assistantId, name, slug, modelAlias }, 201);
   }
