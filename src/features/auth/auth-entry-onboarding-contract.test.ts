@@ -66,6 +66,13 @@ describe('Mkety auth entry and self-service onboarding contract', () => {
     expect(checkout).toContain('Access activates only after verified payment settlement');
   });
 
+  it('guards the canonical /app entry at the proxy boundary before page rendering', async () => {
+    const proxy = await read('src/proxy.ts');
+
+    expect(proxy).toContain("effectivePathname === '/app'");
+    expect(proxy).toContain("redirectPath = tenantMatch ?");
+    expect(proxy).toContain(": '/login';");
+  });
   it('reserves global Platform Control for the configured operator workspace and allowlisted identities', async () => {
     const [authorization, workspaceRoute] = await Promise.all([
       read('src/features/platform-content/server/authorization.ts'),

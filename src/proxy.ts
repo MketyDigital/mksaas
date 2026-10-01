@@ -244,7 +244,7 @@ export default async function proxy(request: Request & { nextUrl?: URL }) {
     return response;
   }
 
-  if (effectivePathname === '/select-tenant' || effectivePathname.startsWith('/app/')) {
+  if (effectivePathname === '/select-tenant' || effectivePathname === '/app' || effectivePathname.startsWith('/app/')) {
     if (!session) {
       const tenantMatch = effectivePathname.match(/^\/app\/([^/]+)/);
       const redirectPath = tenantMatch ? `/app/${tenantMatch[1]}/login` : '/login';
