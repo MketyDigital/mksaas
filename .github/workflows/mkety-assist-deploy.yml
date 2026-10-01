@@ -493,4 +493,22 @@ jobs:
                               values.append(clean[:240])
                   visit(event)
                   print('error_clues', values[:3])
+
+          code, databases = call('https://api.cloudflare.com/client/v4/accounts/' + account + '/d1/database?name=mkety-assist-prod')
+          if code != 200 or not databases.get('success') or not databases.get('result'):
+              raise SystemExit('Assist D1 lookup failed: HTTP ' + str(code))
+          database_id = databases['result'][0]['uuid']
+          d1_endpoint = 'https://api.cloudflare.com/client/v4/accounts/' + account + '/d1/database/' + database_id + '/query'
+          checks = {
+              'schema': "SELECT name FROM pragma_table_info('sessions') WHERE name IN ('id','token_hash','user_id','customer_id','expires_at','created_at','last_seen_at')",
+              'owner_state': "SELECT (u.password_hash IS NOT NULL) AS has_password, (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id AND s.customer_id=c.id) AS session_count, (SELECT COUNT(*) FROM setup_tokens st WHERE st.user_id=u.id AND st.customer_id=c.id AND st.consumed_at IS NULL AND st.expires_at>unixepoch()) AS active_links FROM customers c JOIN customer_users cu ON cu.customer_id=c.id AND cu.role='owner' JOIN users u ON u.id=cu.user_id WHERE c.slug='mkay' LIMIT 1",
+          }
+          for label, sql in checks.items():
+              code, result = call(d1_endpoint, {'sql': sql})
+              rows = result.get('result', [{}])[0].get('results', []) if result.get('success') else []
+              if label == 'schema':
+                  print('session_schema_columns', sorted(row.get('name') for row in rows))
+              else:
+                  print('owner_state', rows[:1])
+              print(label + '_query_http', code, 'success', result.get('success', False))
           PY
