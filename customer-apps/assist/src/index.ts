@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, processReplyQueue, recoverReplyJobs, runtimeErrorResponse } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
@@ -139,6 +139,7 @@ export default {
     await Promise.all([
       processDueReminders(env),
       recoverReplyJobs(env),
+      syncTelegramBusinessWebhookCapabilities(env),
     ]);
   },
 
