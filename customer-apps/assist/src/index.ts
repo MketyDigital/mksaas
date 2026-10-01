@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 
 interface Env {
@@ -23,6 +24,9 @@ interface Env {
   SESSION_TTL_SECONDS: string;
   RECOVERY_TTL_SECONDS: string;
   OPS_SESSION_COOKIE_NAME: string;
+  MKETY_ASSIST_OPS_AUTH_ISSUER: string;
+  MKETY_ASSIST_OPS_AUTH_CLIENT_ID: string;
+  MKETY_ASSIST_OPS_ALLOWED_EMAIL: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME?: string;
   MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET: string;
@@ -116,45 +120,47 @@ export default {
 async function handleOps(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
-  if (url.pathname === "/setup" && request.method === "GET") {
-    return operatorSetupPage(url.searchParams.get("token") || "");
+  if (url.pathname === "/setup") {
+    return Response.redirect(new URL("/", request.url).toString(), 302);
   }
-  if (url.pathname === "/api/ops/auth/setup" && request.method === "POST") {
-    const body = await readJson(request);
-    const token = requiredString(body.token, "token");
-    const email = normalizeEmail(requiredString(body.email, "email"));
-    const password = requiredString(body.password, "password");
-    validatePassword(password);
-    const now = unix();
-    const row = await env.DB.prepare(
-      "SELECT id FROM operator_setup_tokens WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",
-    ).bind(await sha256(token), now).first<any>();
-    if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
-    const existing = await env.DB.prepare("SELECT COUNT(*) AS n FROM operator_users").first<any>();
-    if (parseInt(String(existing?.n || 0), 10) > 0) return json({ error: "operator_already_configured" }, 409);
-    const pwd = await hashPassword(password);
-    const operatorId = id("ops");
-    await env.DB.batch([
-      env.DB.prepare(
-        "INSERT INTO operator_users (id,email,password_hash,password_salt,password_iterations,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-      ).bind(operatorId, email, pwd.hash, pwd.salt, pwd.iterations, "active", now, now),
-      env.DB.prepare("UPDATE operator_setup_tokens SET consumed_at=? WHERE id=?").bind(now, row.id),
-    ]);
-    return issueOperatorSession(env, operatorId, email);
-  }
-  if (url.pathname === "/api/ops/auth/login" && request.method === "POST") {
-    const body = await readJson(request);
-    const email = normalizeEmail(requiredString(body.email, "email"));
-    const password = requiredString(body.password, "password");
-    const row = await env.DB.prepare(
-      "SELECT id,email,password_hash,password_salt,password_iterations FROM operator_users WHERE email=? AND status='active' LIMIT 1",
-    ).bind(email).first<any>();
-    if (!row?.password_hash || !row?.password_salt) return json({ error: "invalid_credentials" }, 401);
-    if (!(await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash))) {
-      return json({ error: "invalid_credentials" }, 401);
+
+  if (url.pathname === "/api/ops/auth/login" && request.method === "GET") {
+    try {
+      return await startOperatorOidc(request, env);
+    } catch (error) {
+      console.error("Assist Operator OIDC start failed", error);
+      return html("<!doctype html><html><body style=\"font:16px system-ui;background:#0d0e14;color:white;padding:40px\"><h1>Operator sign-in unavailable</h1><p>Mkety authentication is temporarily unavailable.</p></body></html>", 503);
     }
-    return issueOperatorSession(env, row.id, row.email);
   }
+
+  if (url.pathname === "/api/ops/auth/callback" && request.method === "GET") {
+    try {
+      const email = await finishOperatorOidc(request, env);
+      const now = unix();
+      const existing = await env.DB.prepare(
+        "SELECT id FROM operator_users WHERE email=? LIMIT 1",
+      ).bind(email).first<any>();
+      const operatorId = existing?.id || id("ops");
+      if (existing?.id) {
+        await env.DB.prepare(
+          "UPDATE operator_users SET status='active',updated_at=? WHERE id=?",
+        ).bind(now, operatorId).run();
+      } else {
+        await env.DB.prepare(
+          "INSERT INTO operator_users (id,email,password_hash,password_salt,password_iterations,status,created_at,updated_at) VALUES (?,?,NULL,NULL,310000,'active',?,?)",
+        ).bind(operatorId, email, now, now).run();
+      }
+      return issueOperatorSessionRedirect(env, operatorId, email, new URL("/", request.url).toString());
+    } catch (error) {
+      console.error("Assist Operator OIDC callback failed", error);
+      return html("<!doctype html><html><body style=\"font:16px system-ui;background:#0d0e14;color:white;padding:40px\"><h1>Sign-in failed</h1><p>This Mkety identity is not authorized for Assist Operator access.</p><p><a style=\"color:#9f8cff\" href=\"/\">Try again</a></p></body></html>", 403);
+    }
+  }
+
+  if (url.pathname === "/api/ops/auth/setup" || (url.pathname === "/api/ops/auth/login" && request.method === "POST")) {
+    return json({ error: "password_bootstrap_retired" }, 410);
+  }
+
   if (url.pathname === "/api/ops/auth/logout" && request.method === "POST") {
     const token = getNamedCookie(request, env.OPS_SESSION_COOKIE_NAME);
     if (token) await env.DB.prepare("DELETE FROM operator_sessions WHERE token_hash=?").bind(await sha256(token)).run();
@@ -1364,6 +1370,14 @@ async function requireOperatorSession(request: Request, env: Env) {
   return row ? { operatorUserId: row.operator_user_id, email: row.email } : null;
 }
 
+async function issueOperatorSessionRedirect(env: Env, operatorUserId: string, email: string, destination: string) {
+  const response = await issueOperatorSession(env, operatorUserId, email);
+  const cookie = response.headers.get("set-cookie");
+  const headers = new Headers({ location: destination, "cache-control": "no-store" });
+  if (cookie) headers.set("set-cookie", cookie);
+  return new Response(null, { status: 302, headers });
+}
+
 async function issueOperatorSession(env: Env, operatorUserId: string, email: string) {
   const token = randomToken(32);
   const now = unix();
@@ -1550,9 +1564,8 @@ function operatorSetupPage(token: string) {
 
 function operatorLoginPage() {
   return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Mkety Assist Operator</title>
-<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(420px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}.muted{color:#a8adbd;font-size:14px}</style></head>
-<body><main class="card"><h1>Mkety Assist Operator</h1><p class="muted">Internal administration</p><form id="login"><input id="email" type="email" placeholder="Email" required><input id="password" type="password" placeholder="Password" required><button>Sign in</button></form><p id="msg" class="muted"></p>
-<script>login.onsubmit=async(e)=>{e.preventDefault();const r=await fetch('/api/ops/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});if(r.ok)location.reload();else msg.textContent='Sign in failed';};</script></main></body></html>`);
+<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(420px,90vw);background:#171924;padding:28px;border-radius:18px}.button{box-sizing:border-box;width:100%;display:block;text-align:center;padding:12px;margin:18px 0 8px;border-radius:10px;background:#6d4aff;color:#fff;text-decoration:none;font-weight:700}.muted{color:#a8adbd;font-size:14px}</style></head>
+<body><main class="card"><h1>Mkety Assist Operator</h1><p class="muted">Internal administration · authorized Mkety identity only</p><a class="button" href="/api/ops/auth/login">Sign in with Mkety</a><p class="muted">Access is restricted to the approved Mkety Operator account.</p></main></body></html>`);
 }
 
 function setupPage(customer: CustomerContext, token: string) {
