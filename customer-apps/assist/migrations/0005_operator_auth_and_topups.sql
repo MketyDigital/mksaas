@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS payment_checkouts (
   credits INTEGER NOT NULL,
   canonical_amount_minor INTEGER NOT NULL,
   canonical_currency TEXT NOT NULL DEFAULT 'USD',
+  provider_amount_minor INTEGER,
+  provider_currency TEXT,
   provider_payment_id TEXT,
   provider_event_id TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','failed','cancelled')),
@@ -43,3 +45,28 @@ CREATE TABLE IF NOT EXISTS payment_checkouts (
   settled_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_payment_checkouts_customer ON payment_checkouts(customer_id,created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS trg_payment_checkout_grant_credits
+AFTER UPDATE OF status ON payment_checkouts
+WHEN OLD.status='pending' AND NEW.status='paid'
+BEGIN
+  UPDATE credit_accounts
+  SET balance=balance+NEW.credits,
+      lifetime_granted=lifetime_granted+NEW.credits,
+      updated_at=unixepoch()
+  WHERE customer_id=NEW.customer_id;
+
+  INSERT INTO credit_ledger
+  (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at)
+  SELECT
+    'led_' || lower(hex(randomblob(16))),
+    NEW.customer_id,
+    NULL,
+    NEW.credits,
+    'topup',
+    NEW.id,
+    balance,
+    unixepoch()
+  FROM credit_accounts
+  WHERE customer_id=NEW.customer_id;
+END;
