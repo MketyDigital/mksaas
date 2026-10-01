@@ -6,6 +6,7 @@ import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/serve
 import {
   createEnterpriseAiContractVersion,
   listEnterpriseAiContracts,
+  listEnterpriseAiCustomerWorkspaces,
 } from '@/features/ai-runtime/server/enterprise-contracts';
 import { DeploymentApprovalQueue } from '@/features/deploy/components/DeploymentApprovalQueue';
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
@@ -124,6 +125,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
   let mailOperations = null;
   let aiCommercialOverview = null;
   let enterpriseAiContracts = null;
+  let enterpriseAiCustomerWorkspaces = null;
   let mediaLinks = null;
   let domainResellerConnections = null;
 
@@ -146,9 +148,10 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
 
   if (isAiOperations) {
     await requirePermission(tenant, 'platform:plans');
-    [aiCommercialOverview, enterpriseAiContracts] = await Promise.all([
+    [aiCommercialOverview, enterpriseAiContracts, enterpriseAiCustomerWorkspaces] = await Promise.all([
       withAdminTimeout(getAiCommercialControlOverview(), null),
       withAdminTimeout(listEnterpriseAiContracts(), []),
+      withAdminTimeout(listEnterpriseAiCustomerWorkspaces(tenant), []),
     ]);
   }
 
@@ -273,9 +276,16 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
               </div>
               <form action={createEnterpriseAiContractVersion.bind(null, tenant)} className="grid gap-4 rounded-xl border p-4 lg:grid-cols-2">
                 <label className="text-sm font-medium">
-                  Customer workspace slug
-                  <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" placeholder="customer-workspace" required />
-                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Use the exact existing Mkety workspace slug. This contract is attached to that tenant; it does not create a second account.</span>
+                  Customer workspace
+                  <select className="mt-1 w-full rounded-lg border bg-background px-3 py-2" name="targetTenantSlug" required>
+                    <option value="">Select an existing customer workspace</option>
+                    {(enterpriseAiCustomerWorkspaces ?? []).map((workspace) => (
+                      <option key={workspace.id} value={workspace.slug}>
+                        {workspace.name} · {workspace.slug}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">Choose the existing Mkety customer workspace. The reserved operator workspace is excluded automatically.</span>
                 </label>
                 <label className="text-sm font-medium">
                   Contract name
