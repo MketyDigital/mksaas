@@ -51,7 +51,7 @@ async function renderBillingHome({
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-xl font-bold">Active subscriptions</h2>
-          <Link className="text-sm font-semibold text-primary" href={`/t/${tenantSlug}/wallet`}>
+          <Link className="text-sm font-semibold text-primary" href={`/app/${tenantSlug}/wallet`}>
             Usage & credits →
           </Link>
         </div>
@@ -72,7 +72,7 @@ async function renderBillingHome({
                 <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Renewal</span><span>{subscription.renewalMode}{subscription.autoRenew ? ' · auto-renew' : ''}</span></div>
                 {subscription.periodEnd ? <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Period ends</span><span>{subscription.periodEnd.toLocaleDateString()}</span></div> : null}
                 {subscription.planKey.startsWith('mail-') ? (
-                  <Link className="inline-flex font-semibold text-primary" href={`/t/${tenantSlug}/mail`}>Open Mkety Mail →</Link>
+                  <Link className="inline-flex font-semibold text-primary" href={`/app/${tenantSlug}/mail`}>Open Mkety Mail →</Link>
                 ) : null}
               </CardContent>
             </Card>
@@ -120,7 +120,7 @@ async function renderBillingHome({
               <CardHeader><CardTitle>{plan.name}</CardTitle><CardDescription>{plan.description}</CardDescription></CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">{money(plan.amountMinor, plan.currency)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
-                <Link className="mt-4 inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold hover:border-primary/50" href={`/t/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}`}>
+                <Link className="mt-4 inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold hover:border-primary/50" href={`/app/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}`}>
                   <CreditCard className="h-4 w-4" /> View checkout
                 </Link>
               </CardContent>
@@ -132,7 +132,7 @@ async function renderBillingHome({
       <Card className="rounded-2xl">
         <CardHeader><CardTitle>Other Mkety products</CardTitle><CardDescription>Standalone products keep their existing runtime and product-specific commercial rules while linking back to the same Mkety ecosystem.</CardDescription></CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <Link className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/media`}>Mkety Media <ExternalLink className="h-4 w-4" /></Link>
+          <Link className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/media`}>Mkety Media <ExternalLink className="h-4 w-4" /></Link>
           <a className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold" href="https://mkety.com/enterprise">Enterprise products <ExternalLink className="h-4 w-4" /></a>
         </CardContent>
       </Card>
