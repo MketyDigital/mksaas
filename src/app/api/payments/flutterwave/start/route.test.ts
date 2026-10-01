@@ -99,6 +99,36 @@ describe('POST /api/payments/flutterwave/start', () => {
     );
   });
 
+  it('creates a hosted Flutterwave checkout for Assist using only the stable Assist return host', async () => {
+    const assistRequest = new Request('https://mkety.com/api/payments/flutterwave/start', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${'x'.repeat(40)}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'assist',
+        reference: 'ASSIST-MKA-A83K27',
+        canonical_amount_usd: 5,
+        requested_payment_currency: 'USD',
+        email: 'owner@example.com',
+        customer_name: 'Example Assist Customer',
+        checkout_id: 'chk_1',
+        redirect_url: 'https://mkety-assist.mkety.app/payment/return?reference=ASSIST-MKA-A83K27',
+        checkout_experience: 'hosted',
+      }),
+    });
+
+    const response = await POST(assistRequest);
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      success: true,
+      reference: 'ASSIST-MKA-A83K27',
+      checkout_url: 'https://checkout.flutterwave.com/v3/hosted/pay/example',
+    });
+  });
+
   it('returns a signed Flutterwave Inline payload for Media without exposing the secret key', async () => {
     const inlineRequest = new Request('https://mkety.com/api/payments/flutterwave/start', {
       method: 'POST',
