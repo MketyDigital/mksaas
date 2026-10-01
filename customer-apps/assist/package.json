@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy",
     "type-check": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "check:operator-ui": "node scripts/check-operator-ui.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261001.1",
