@@ -20,6 +20,7 @@
     "APP_WORKER_NAME": "mkety-assist",
     "OPS_HOST": "assist-ops.mkety.com",
     "SESSION_COOKIE_NAME": "__Host-mkety_assist_session",
+    "OPS_SESSION_COOKIE_NAME": "__Host-mkety_assist_ops_session",
     "SESSION_TTL_SECONDS": "2592000",
     "RECOVERY_TTL_SECONDS": "600"
   },
