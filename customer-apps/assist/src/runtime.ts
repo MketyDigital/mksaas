@@ -526,7 +526,7 @@ export async function handleRuntimeApi(
   if (parts[0] === "api" && parts[1] === "handoffs" && parts[2] && parts[3] === "reply" && request.method === "POST") {
     requireAdmin(session);
     const handoff = await env.DB.prepare(
-      `SELECT h.id,h.assistant_id,h.conversation_id,c.external_conversation_id
+      `SELECT h.id,h.assistant_id,h.conversation_id,c.external_conversation_id,c.business_connection_id
        FROM human_handoffs h JOIN conversations c ON c.id=h.conversation_id
        WHERE h.id=? AND h.customer_id=? AND h.status='open' LIMIT 1`,
     ).bind(parts[2], customer.customerId).first<any>();
@@ -535,7 +535,7 @@ export async function handleRuntimeApi(
     const text = required(body.text, "text");
     const token = await getAssistantSecret(env, handoff.assistant_id, "telegram_bot_token");
     if (!token) return json({ error: "telegram_not_connected" }, 409);
-    const sent = await telegramSend(token, handoff.external_conversation_id, text);
+    const sent = await telegramSend(token, handoff.external_conversation_id, text, handoff.business_connection_id ? String(handoff.business_connection_id) : null);
     if (!sent.ok) return json({ error: "telegram_send_failed" }, 502);
     await env.DB.prepare(
       "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -993,7 +993,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
       env.DB.prepare("UPDATE reminders SET status='cancelled',cancelled_at=? WHERE conversation_id=? AND customer_id=? AND assistant_id=? AND status='scheduled'")
         .bind(unix(), conversation.id, assistant.customer_id, assistantId),
     ]);
-    await telegramSend(token, chatId, "Reminders are off for this conversation. Send “resume reminders” if you want them again.");
+    await telegramSend(token, chatId, "Reminders are off for this conversation. Send “resume reminders” if you want them again.", businessConnectionId);
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, remindersOptedOut: true });
   }
@@ -1001,7 +1001,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     await env.DB.prepare(
       "UPDATE conversations SET reminders_opt_out=0,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?",
     ).bind(unix(), conversation.id, assistant.customer_id, assistantId).run();
-    await telegramSend(token, chatId, "Reminders are enabled again for this conversation.");
+    await telegramSend(token, chatId, "Reminders are enabled again for this conversation.", businessConnectionId);
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, remindersOptedOut: false });
   }
@@ -1010,7 +1010,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     await openHandoff(env.DB, assistant.customer_id, assistantId, conversation.id, inbound.text);
     await notifyLinkedOwners(env, assistant.customer_id, assistantId, "handoff",
       `Human handoff requested for ${assistant.name || "your assistant"}. Open the Mkety Assist portal to take over the conversation.`);
-    await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.");
+    await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.", businessConnectionId);
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, handoff: true });
   }
@@ -1281,7 +1281,7 @@ export async function processDueReminders(env: AssistEnv): Promise<void> {
   const now = unix();
   const rows = await env.DB.prepare(
     `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,r.attempts,r.max_attempts,
-            c.external_conversation_id,c.reminders_opt_out,
+            c.external_conversation_id,c.business_connection_id,c.reminders_opt_out,
             COALESCE(p.enabled,1) AS policy_enabled,COALESCE(p.timezone,'UTC') AS policy_timezone,
             p.quiet_start_hour,p.quiet_end_hour
      FROM reminders r
@@ -1323,7 +1323,7 @@ export async function processDueReminders(env: AssistEnv): Promise<void> {
       }
       const token = await getAssistantSecret(env, reminder.assistant_id, "telegram_bot_token");
       if (!token) throw new Error("assistant_telegram_token_unavailable");
-      const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"));
+      const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"), reminder.business_connection_id ? String(reminder.business_connection_id) : null);
       if (!sent.ok) throw new Error(sent.description || "telegram_send_failed");
       await env.DB.prepare(
         "UPDATE reminders SET status='delivered',delivered_at=?,last_error=NULL WHERE id=? AND customer_id=? AND status='scheduled'",
