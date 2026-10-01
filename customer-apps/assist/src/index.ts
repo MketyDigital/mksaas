@@ -1164,13 +1164,16 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const policy = await env.DB.prepare(
       "SELECT currency,subscription_amount_minor,included_credits,topup_enabled,funding_mode,minimum_funding_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
     ).bind(customer.customerId).first();
-    return json({ credits: account, plan: policy });
+    const billing = await env.DB.prepare(
+      "SELECT billing_status,grace_until FROM customers WHERE id=? LIMIT 1",
+    ).bind(customer.customerId).first();
+    return json({ credits: account, plan: policy, billing });
   }
 
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT id,reference,provider,credits,canonical_amount_minor,canonical_currency,
-              provider_amount_minor,provider_currency,status,created_at,settled_at
+              provider_amount_minor,provider_currency,status,created_at,settled_at,purchase_type
        FROM payment_checkouts WHERE customer_id=? ORDER BY created_at DESC LIMIT 50`,
     ).bind(customer.customerId).all();
     return json({ checkouts: rows.results ?? [] });
@@ -1255,9 +1258,9 @@ async function startAssistFlutterwaveCheckout(input: {
   const now = unix();
   await env.DB.prepare(
     `INSERT INTO payment_checkouts
-     (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-  ).bind(checkoutId, customer.customerId, session.userId, reference, "flutterwave", credits, canonicalAmountMinor, "USD", "pending", now).run();
+     (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at,purchase_type)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(checkoutId, customer.customerId, session.userId, reference, "flutterwave", credits, canonicalAmountMinor, "USD", "pending", now, purchaseType).run();
 
   const requestBroker = async (experience: "inline" | "hosted") => {
     const response = await fetch("https://mkety.com/api/payments/flutterwave/start", {
