@@ -18,7 +18,7 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
   return withRequestDatabase(async () => {
     const { tenant } = await params;
     const canAccessAdmin = await hasPermission(tenant, 'admin:dashboard');
-    if (!canAccessAdmin) redirect(`/t/${tenant}?error=unauthorized`);
+    if (!canAccessAdmin) redirect(`/app/${tenant}?error=unauthorized`);
     return <>{children}</>;
   });
 }
