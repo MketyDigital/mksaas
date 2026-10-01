@@ -327,6 +327,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     for (const domain of domains.results ?? []) {
       await deleteCustomHostnameInfrastructure(env, String(domain.hostname), domain.provider_hostname_id ? String(domain.provider_hostname_id) : null);
     }
+    await deleteCustomerR2Objects(env.MEDIA, customerId);
 
     const members = await env.DB.prepare(
       "SELECT user_id FROM customer_users WHERE customer_id=?",
@@ -1275,6 +1276,18 @@ function parsePaymentAmountMinor(value: unknown) {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
   if (!match) throw new HttpError(400, "invalid_payment_amount");
   return parseInt(match[1], 10) * 100 + parseInt((match[2] || "").padEnd(2, "0") || "0", 10);
+}
+
+async function deleteCustomerR2Objects(bucket: R2Bucket, customerId: string) {
+  for (const prefix of [`knowledge/${customerId}/`, `media/${customerId}/`]) {
+    let cursor: string | undefined;
+    do {
+      const listed = await bucket.list({ prefix, cursor, limit: 1000 });
+      const keys = listed.objects.map((object) => object.key);
+      if (keys.length) await bucket.delete(keys);
+      cursor = listed.truncated ? listed.cursor : undefined;
+    } while (cursor);
+  }
 }
 
 async function deleteCustomHostnameInfrastructure(env: Env, hostnameInput: string, providerHostnameId: string | null) {
