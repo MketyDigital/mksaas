@@ -53,7 +53,7 @@ export async function createEnterpriseAiSolutionInstance(
   }).returning({ id: aiSolutionInstances.id });
 
   if (!instance) throw new Error('Solution setup could not be created.');
-  redirect(`/t/${tenantSlug}/enterprise-ai/solutions/${instance.id}`);
+  redirect(`/app/${tenantSlug}/enterprise-ai/solutions/${instance.id}`);
 }
 
 
@@ -139,7 +139,7 @@ export async function updateEnterpriseAiSolutionConfiguration(
       eq(aiSolutionInstances.tenantId, tenant.id),
     ));
 
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai`);
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/solutions/${solutionId}`);
-  revalidatePath(`/t/${tenantSlug}/enterprise-ai/channels`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/solutions/${solutionId}`);
+  revalidatePath(`/app/${tenantSlug}/enterprise-ai/channels`);
 }
