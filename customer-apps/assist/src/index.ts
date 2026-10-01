@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, processReplyQueue, recoverReplyJobs, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
@@ -38,6 +38,9 @@ interface Env {
   MKETY_ASSIST_CF_ACCOUNT_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
   FLUTTERWAVE_CHECKOUT_BROKER_SECRET?: string;
+  REPLY_QUEUE: {
+    send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
+  };
 }
 
 type CustomerContext = {
@@ -133,7 +136,14 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await processDueReminders(env);
+    await Promise.all([
+      processDueReminders(env),
+      recoverReplyJobs(env),
+    ]);
+  },
+
+  async queue(batch: any, env: Env): Promise<void> {
+    await processReplyQueue(batch, env);
   },
 };
 
