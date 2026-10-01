@@ -13,41 +13,41 @@ import { buildTenantPath, extractTenantSlug } from '../tenant';
 describe('tenant', () => {
   describe('buildTenantPath', () => {
     it('should build path with leading slash', () => {
-      expect(buildTenantPath('acme', '/dashboard')).toBe('/t/acme/dashboard');
+      expect(buildTenantPath('acme', '/dashboard')).toBe('/app/acme/dashboard');
     });
 
     it('should build path without leading slash', () => {
-      expect(buildTenantPath('acme', 'settings')).toBe('/t/acme/settings');
+      expect(buildTenantPath('acme', 'settings')).toBe('/app/acme/settings');
     });
 
     it('should handle empty path', () => {
-      expect(buildTenantPath('acme', '')).toBe('/t/acme/');
+      expect(buildTenantPath('acme', '')).toBe('/app/acme/');
     });
 
     it('should handle root path', () => {
-      expect(buildTenantPath('acme', '/')).toBe('/t/acme/');
+      expect(buildTenantPath('acme', '/')).toBe('/app/acme/');
     });
 
     it('should handle nested paths', () => {
-      expect(buildTenantPath('acme', '/admin/settings/features')).toBe('/t/acme/admin/settings/features');
+      expect(buildTenantPath('acme', '/admin/settings/features')).toBe('/app/acme/admin/settings/features');
     });
 
     it('should handle path with query params', () => {
-      expect(buildTenantPath('acme', '/search?q=test')).toBe('/t/acme/search?q=test');
+      expect(buildTenantPath('acme', '/search?q=test')).toBe('/app/acme/search?q=test');
     });
   });
 
   describe('extractTenantSlug', () => {
     it('should extract slug from tenant path', () => {
-      expect(extractTenantSlug('/t/acme/dashboard')).toBe('acme');
+      expect(extractTenantSlug('/app/acme/dashboard')).toBe('acme');
     });
 
     it('should extract slug from path without subpath', () => {
-      expect(extractTenantSlug('/t/acme')).toBe('acme');
+      expect(extractTenantSlug('/app/acme')).toBe('acme');
     });
 
     it('should extract slug from path with trailing slash', () => {
-      expect(extractTenantSlug('/t/acme/')).toBe('acme');
+      expect(extractTenantSlug('/app/acme/')).toBe('acme');
     });
 
     it('should return null for non-tenant paths', () => {
@@ -58,7 +58,7 @@ describe('tenant', () => {
 
     it('should return null for paths that partially match', () => {
       expect(extractTenantSlug('/tenant/acme')).toBeNull();
-      expect(extractTenantSlug('/api/t/acme')).toBeNull();
+      expect(extractTenantSlug('/api/app/acme')).toBeNull();
     });
 
     it('should handle slugs with hyphens', () => {
