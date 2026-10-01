@@ -1208,6 +1208,91 @@ function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, end
   }
 }
 
+async function buildConversationContext(db: D1Database, assistant: any, conversationId: string, currentUserText: string) {
+  if (!Number(assistant.memory_enabled ?? 1)) return { history: [] as any[], memory: "" };
+  const recentLimit = Math.max(4, Math.min(40, Number(assistant.context_recent_message_limit || 12)));
+  const memoryBudget = Math.max(1000, Math.min(20000, Number(assistant.context_memory_char_budget || 4000)));
+  const cutoffRow = await db.prepare("SELECT COALESCE(memory_cleared_at,0) AS cutoff FROM conversations WHERE id=? LIMIT 1")
+    .bind(conversationId).first<any>();
+  const cutoff = Number(cutoffRow?.cutoff || 0);
+
+  const recent = await db.prepare(
+    "SELECT id,role,content,created_at FROM messages WHERE conversation_id=? AND created_at>? ORDER BY created_at DESC LIMIT ?",
+  ).bind(conversationId, cutoff, recentLimit + 2).all<any>();
+  let history = (recent.results ?? []).reverse();
+  if (history.length) {
+    const last = history.at(-1);
+    if (last?.role === "user" && normalizeComparable(String(last.content || "")) === normalizeComparable(currentUserText)) {
+      history = history.slice(0, -1);
+    }
+  }
+  if (history.length > recentLimit) history = history.slice(-recentLimit);
+
+  const existing = await db.prepare(
+    "SELECT summary_text,through_message_created_at,source_message_count FROM conversation_summaries WHERE conversation_id=? LIMIT 1",
+  ).bind(conversationId).first<any>();
+  const earliestRecent = history.length ? Number(history[0].created_at || Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+  const through = Math.max(cutoff, Number(existing?.through_message_created_at || 0));
+  const older = await db.prepare(
+    `SELECT role,content,created_at FROM messages
+     WHERE conversation_id=? AND created_at>? AND created_at<? AND created_at>?
+     ORDER BY created_at ASC LIMIT 80`,
+  ).bind(conversationId, cutoff, earliestRecent, through).all<any>();
+
+  let memory = String(existing?.summary_text || "");
+  if ((older.results ?? []).length) {
+    memory = mergeMemoryDigest(
+      memory,
+      (older.results ?? []).map((m: any) => ({ role: String(m.role), content: String(m.content || "") })),
+      memoryBudget,
+    );
+    const lastThrough = Number((older.results ?? []).at(-1)?.created_at || through);
+    const count = Number(existing?.source_message_count || 0) + (older.results ?? []).length;
+    await db.prepare(
+      `INSERT INTO conversation_summaries
+       (conversation_id,customer_id,assistant_id,summary_text,through_message_created_at,source_message_count,updated_at)
+       VALUES (?,?,?,?,?,?,?)
+       ON CONFLICT(conversation_id) DO UPDATE SET
+         summary_text=excluded.summary_text,
+         through_message_created_at=excluded.through_message_created_at,
+         source_message_count=excluded.source_message_count,
+         updated_at=excluded.updated_at`,
+    ).bind(conversationId,assistant.customer_id,assistant.id,memory,lastThrough,count,unix()).run();
+  }
+
+  return { history, memory: memory.slice(0, memoryBudget) };
+}
+
+function normalizeComparable(value: string) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+async function staticAssistantContext(env: AssistEnv, assistant: any, instructions: string, toolDescriptions: string) {
+  const compacted = compactInstructions(instructions);
+  const sourceHash = await resilienceSha256Text(compacted + "\n---tools---\n" + toolDescriptions);
+  const cacheKey = `static-context:${assistant.id}`;
+  const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+  if (cached) return cached;
+  const value = [
+    "You are an AI assistant configured by this business. Follow the business instructions below.",
+    "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
+    "If the user asks for a human or clearly needs escalation, say that you can hand the conversation to a human.",
+    compacted ? `BUSINESS INSTRUCTIONS:\n${compacted}` : "",
+    toolDescriptions ? `AVAILABLE TOOLS:\n${toolDescriptions}\nIf you must use exactly one tool, respond ONLY with JSON: {\"tool\":\"tool-name\",\"arguments\":{...}}. Otherwise answer normally.` : "",
+  ].filter(Boolean).join("\n\n");
+  await putPromptCache({
+    db: env.DB,
+    cacheKey,
+    customerId: assistant.customer_id,
+    assistantId: assistant.id,
+    kind: "static_context",
+    value,
+    sourceHash,
+    ttlSeconds: 86400,
+  });
+  return value;
+}
+
 async function runAssistant(input: {
   env: AssistEnv;
   assistant: any;
@@ -1234,16 +1319,6 @@ async function runAssistant(input: {
   const prompt = await env.DB.prepare(
     "SELECT instructions FROM assistant_prompt_versions WHERE assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
   ).bind(assistant.id).first<any>();
-  const recent = assistant.memory_enabled
-    ? await env.DB.prepare(
-        "SELECT role,content FROM messages WHERE conversation_id=? AND created_at>COALESCE((SELECT memory_cleared_at FROM conversations WHERE id=?),0) ORDER BY created_at DESC LIMIT 14",
-      ).bind(conversationId, conversationId).all<any>()
-    : { results: [] as any[] };
-  const history = (recent.results ?? []).reverse();
-
-  const knowledge = assistant.knowledge_enabled
-    ? await retrieveKnowledge(env.DB, assistant.id, input.userText)
-    : [];
   const tools = assistant.tools_enabled
     ? await env.DB.prepare(
         "SELECT id,name,description,endpoint_url,auth_header_ciphertext FROM assistant_tools WHERE assistant_id=? AND status='active' ORDER BY name LIMIT 12",
@@ -1251,16 +1326,19 @@ async function runAssistant(input: {
     : { results: [] as any[] };
 
   const toolDescriptions = (tools.results ?? []).map((t: any) => `- ${t.name}: ${t.description || "External action"}`).join("\n");
-  const system = [
-    "You are an AI assistant configured by this business. Follow the business instructions below.",
-    "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
-    "If the user asks for a human or clearly needs escalation, say that you can hand the conversation to a human.",
-    prompt?.instructions ? `BUSINESS INSTRUCTIONS:\n${prompt.instructions}` : "",
-    knowledge.length ? `RELEVANT BUSINESS KNOWLEDGE:\n${knowledge.join("\n\n")}` : "",
-    toolDescriptions ? `AVAILABLE TOOLS:\n${toolDescriptions}\nIf you must use exactly one tool, respond ONLY with JSON: {"tool":"tool-name","arguments":{...}}. Otherwise answer normally.` : "",
-  ].filter(Boolean).join("\n\n");
-
+  const staticContext = await staticAssistantContext(env, assistant, String(prompt?.instructions || ""), toolDescriptions);
   const userCombined = [input.userText, input.mediaContext].filter(Boolean).join("\n\n");
+  const conversationContext = await buildConversationContext(env.DB, assistant, conversationId, userCombined);
+  const history = conversationContext.history;
+  const knowledgeBudget = Math.max(2000, Math.min(50000, Number(assistant.context_knowledge_char_budget || 12000)));
+  const knowledge = assistant.knowledge_enabled
+    ? await retrieveKnowledge(env.DB, assistant.customer_id, assistant.id, input.userText || input.mediaContext, knowledgeBudget)
+    : [];
+  const system = [
+    staticContext,
+    conversationContext.memory ? `CONVERSATION MEMORY (older context, compacted):\n${conversationContext.memory}` : "",
+    knowledge.length ? `RELEVANT BUSINESS KNOWLEDGE:\n${knowledge.join("\n\n")}` : "",
+  ].filter(Boolean).join("\n\n");
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
   const maxOutputTokens = 1024;
 
@@ -1361,7 +1439,16 @@ async function runAssistant(input: {
   } catch (error) {
     console.error("assistant inference failed", error);
     await releaseReservation(env.DB, reservation.id, assistant.customer_id, reserveAmount);
-    return { ok: false as const, userMessage: "I couldn’t complete that request just now. Please try again shortly." };
+    const classified = classifyRetryableError(error);
+    return {
+      ok: false as const,
+      retryable: classified.retryable,
+      retryAfterSeconds: classified.retryAfterSeconds,
+      error: classified.message,
+      userMessage: classified.retryable
+        ? "I’m still working on that request and will reply as soon as capacity is available."
+        : "I couldn’t complete that request just now. Please try again shortly.",
+    };
   }
 }
 
