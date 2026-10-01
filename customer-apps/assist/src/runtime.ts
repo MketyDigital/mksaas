@@ -1609,6 +1609,21 @@ export async function handleApiKeyInference(
   } catch (error) {
     await releaseReservation(env.DB, reservation.id, customer.customerId, reserveAmount);
     console.error("Assist API inference failed", error);
+    const classified = classifyRetryableError(error);
+    if (classified.retryable) {
+      return new Response(JSON.stringify({
+        error: {
+          message: "capacity_temporarily_unavailable",
+          retry_after_seconds: classified.retryAfterSeconds,
+        },
+      }), {
+        status: 429,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "retry-after": String(classified.retryAfterSeconds),
+        },
+      });
+    }
     return json({ error: { message: "inference_failed" } }, 502);
   }
 }
@@ -1939,6 +1954,10 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
       provider: route.provider,
       fallbackProvider: route.fallback_provider,
     });
+    const fallbackCapacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+    if (!fallbackCapacity.allowed) {
+      throw new RetryableInferenceError("fallback_model_capacity_wait", fallbackCapacity.retryAfterSeconds);
+    }
     const result = await invokeProviderModel(env, {
       provider: route.fallback_provider,
       provider_model: route.fallback_model,
