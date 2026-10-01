@@ -2,7 +2,7 @@ import { type CentralAiProviderCredentials, createCentralExternalProvider } from
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 
 import type { PublicAIProviderAdapter } from './types';
-import type { PublicAssistantEnvironment } from '../../config';
+import { resolvePublicAzureOpenAIConfig, type PublicAssistantEnvironment } from '../../config';
 import type { PublicAIProviderId } from '../../models';
 
 function credentialsFor(
@@ -16,19 +16,10 @@ function credentialsFor(
       return environment.MKETY_PUBLIC_OPENAI_API_KEY
         ? { provider: 'openai', apiKey: environment.MKETY_PUBLIC_OPENAI_API_KEY }
         : null;
-    case 'azure-openai':
-      return (
-        environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY &&
-        environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT &&
-        environment.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT
-      )
-        ? {
-            provider: 'azure-openai',
-            apiKey: environment.MKETY_PUBLIC_AZURE_OPENAI_API_KEY,
-            endpoint: environment.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT,
-            deployment: environment.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT,
-          }
-        : null;
+    case 'azure-openai': {
+      const azure = resolvePublicAzureOpenAIConfig(environment);
+      return azure ? { provider: 'azure-openai', ...azure } : null;
+    }
     case 'gemini':
       return environment.MKETY_PUBLIC_GEMINI_API_KEY
         ? { provider: 'gemini', apiKey: environment.MKETY_PUBLIC_GEMINI_API_KEY }
