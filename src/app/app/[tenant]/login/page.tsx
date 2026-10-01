@@ -66,7 +66,7 @@ export default async function TenantLoginPage({ params, searchParams }: TenantLo
         handoff.searchParams.set('returnTo', '/ai/app');
         redirect(handoff.toString());
       }
-      redirect(`/t/${tenantSlug}`);
+      redirect(`/app/${tenantSlug}`);
     }
 
     return (
