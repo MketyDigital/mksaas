@@ -25,7 +25,7 @@ export function QuickActions({ tenantSlug }: QuickActionsProps) {
   const actions = useMemo(
     () => [
       {
-        href: `/t/${tenantSlug}/admin/invites`,
+        href: `/app/${tenantSlug}/admin/invites`,
         icon: UserPlus,
         label: t('inviteMember'),
         description: t('onboardNewTeamMember'),
@@ -33,7 +33,7 @@ export function QuickActions({ tenantSlug }: QuickActionsProps) {
         iconColor: 'text-violet-500',
       },
       {
-        href: `/t/${tenantSlug}/admin/members`,
+        href: `/app/${tenantSlug}/admin/members`,
         icon: Users,
         label: t('viewMembers'),
         description: t('browseTeamMembers'),
@@ -41,7 +41,7 @@ export function QuickActions({ tenantSlug }: QuickActionsProps) {
         iconColor: 'text-blue-500',
       },
       {
-        href: `/t/${tenantSlug}/assistant`,
+        href: `/app/${tenantSlug}/assistant`,
         icon: MessageSquare,
         label: tAssistant('title'),
         description: t('askAIAssistant'),
@@ -49,7 +49,7 @@ export function QuickActions({ tenantSlug }: QuickActionsProps) {
         iconColor: 'text-amber-500',
       },
       {
-        href: `/t/${tenantSlug}/admin/settings`,
+        href: `/app/${tenantSlug}/admin/settings`,
         icon: Settings,
         label: t('manageSettings'),
         description: t('configureYourTenant'),
