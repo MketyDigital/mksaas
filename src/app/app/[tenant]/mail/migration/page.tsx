@@ -21,9 +21,9 @@ export default async function MailMigrationPage({
   const {tenant:tenantSlug}=await params;
   const query=await searchParams;
   const access=await requireMailWorkspaceAccess(tenantSlug);
-  if(!['admin','manager'].includes(String(access.membership.role))) redirect(`/t/${tenantSlug}/mail`);
+  if(!['admin','manager'].includes(String(access.membership.role))) redirect(`/app/${tenantSlug}/mail`);
   const workspace=await getMailWorkspace(tenantSlug);
-  if(!workspace) redirect(`/t/${tenantSlug}/mail`);
+  if(!workspace) redirect(`/app/${tenantSlug}/mail`);
 
   const [mailboxes,domains,recentMessages]=await Promise.all([
     db.query.mailMailboxes.findMany({
@@ -123,7 +123,7 @@ export default async function MailMigrationPage({
         <CardHeader><CardTitle>Full-provider migration</CardTitle><CardDescription>Large Google Workspace, Microsoft 365 and IMAP mailbox migrations should run as controlled server-side jobs rather than browser uploads.</CardDescription></CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <span>Portable export/import is included.</span><MoveRight className="h-4 w-4" /><span>Managed bulk migration can be offered as an Enterprise/add-on service after provider-specific connector acceptance.</span>
-          <Link className="font-semibold text-primary" href={`/t/${tenantSlug}/mail/apps`}>Mail app access</Link>
+          <Link className="font-semibold text-primary" href={`/app/${tenantSlug}/mail/apps`}>Mail app access</Link>
         </CardContent>
       </Card>
     </div>
