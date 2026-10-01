@@ -20,7 +20,7 @@ export function buildAiWorkspaceCapabilities({
   agentCount: number;
   canManage: boolean;
 }): AiWorkspaceCapability[] {
-  const projectBasePath = `/t/${tenantSlug}/projects/${projectSlug}`;
+  const projectBasePath = `/app/${tenantSlug}/projects/${projectSlug}`;
 
   return [
     {
