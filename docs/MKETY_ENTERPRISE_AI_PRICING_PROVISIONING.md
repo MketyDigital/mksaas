@@ -34,17 +34,17 @@ For the initial defaults:
 
 - managed provider-cost envelope: 15%;
 - operations/safety reserve: 10%;
-- customer usage-rate multiplier: 200%;
+- customer usage-rate multiplier: 100% by default; increase only for explicitly approved contract pricing;
 - internal credit unit: 1,000 USD micros.
 
 Example for a USD 70 monthly contract:
 
 1. provider-cost ceiling = USD 70 × 15% = USD 10.50;
 2. reserve 10% internally, leaving USD 9.45 provider-cost capacity allocated to ordinary usage;
-3. apply 2× Mkety usage-rate multiplier, producing USD 18.90 equivalent customer usage value;
-4. at the internal 1,000-micro credit unit, grant 18,900 included credits.
+3. apply the default 1× Mkety usage-rate multiplier, producing USD 9.45 equivalent customer usage value;
+4. at the internal 1,000-micro credit unit, grant 9,450 included credits.
 
-Only USD 70/month and 18,900 credits are customer-facing. The provider-cost ceiling remains independently enforced against real provider spend.
+Only USD 70/month and 9,450 credits are customer-facing. The provider-cost ceiling remains independently enforced against real provider spend.
 
 ## Provider cost and Mkety model rates
 
@@ -80,8 +80,8 @@ Recommended initial contract:
 - full monthly payment;
 - setup fee: USD 0 unless separately agreed;
 - automatic included-credit calculation;
-- internal defaults: 15% provider-cost ceiling, 10% reserve, 2× usage-rate multiplier;
-- expected included credits with those defaults: 18,900;
+- internal defaults: 15% provider-cost ceiling, 10% reserve, 1× usage-rate multiplier;
+- expected included credits with those defaults: 9,450;
 - base Enterprise AI entitlement;
 - white-label;
 - managed/custom hostname;
