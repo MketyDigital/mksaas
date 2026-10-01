@@ -13,6 +13,6 @@ export default async function AppEntryPage() {
   const tenants = Object.keys(roles);
 
   if (tenants.length === 0) redirect('/create-workspace');
-  if (tenants.length === 1) redirect(`/t/${tenants[0]}`);
+  if (tenants.length === 1) redirect(`/app/${tenants[0]}`);
   redirect('/select-tenant');
 }
