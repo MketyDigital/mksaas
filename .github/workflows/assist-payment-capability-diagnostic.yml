@@ -1,0 +1,32 @@
+name: Assist Payment Capability Diagnostic
+on:
+  push:
+    branches: [fix/assist-product-ux-billing-domain-20261002]
+    paths: ['.github/workflows/assist-payment-capability-diagnostic.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BROKER_SECRET: ${{ secrets.FLUTTERWAVE_CHECKOUT_BROKER_SECRET }}
+    steps:
+      - name: Probe central Assist payment capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$BROKER_SECRET"
+          code="$(curl -sS -o /tmp/methods.json -w '%{http_code}' https://mkety.com/api/payments/assist/methods -H "Authorization: Bearer $BROKER_SECRET")"
+          echo "http_status=$code"
+          node - <<'NODE'
+          const fs=require('fs');
+          let x={};try{x=JSON.parse(fs.readFileSync('/tmp/methods.json','utf8'))}catch{}
+          console.log(JSON.stringify({
+            success:Boolean(x.success),
+            nowpayments:Boolean(x.methods?.nowpayments),
+            flutterwave:Boolean(x.methods?.flutterwave),
+            kora:Boolean(x.methods?.kora)
+          }));
+          NODE
+          test "$code" = "200"
