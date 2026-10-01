@@ -63,7 +63,7 @@ export function WorkspaceHub({
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {workspaces.map((workspace) => {
-            const href = `/t/${tenantSlug}/projects/${projectSlug}/${workspace.hrefSegment}`;
+            const href = `/app/${tenantSlug}/projects/${projectSlug}/${workspace.hrefSegment}`;
             return (
               <article key={workspace.key} className="flex min-h-64 flex-col rounded-2xl border bg-card p-5 shadow-sm transition hover:border-primary/70">
                 <div className="flex items-start justify-between gap-4">
