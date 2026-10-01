@@ -160,12 +160,13 @@ Browser return from Flutterwave is informational only and never grants credits.
 
 ## Required Worker secrets
 
-Required:
-- `MKETY_ASSIST_OPS_TOKEN`
+Required runtime/deployment bindings:
 - `MKETY_ASSIST_CF_ZONE_ID`
 - `MKETY_ASSIST_CF_SAAS_TOKEN` (deployment can fall back to the scoped repository Cloudflare token)
-- `MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET`
-- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` (deployment may use the existing stable `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY` as fallback)
+- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` — stable encryption root for saved assistant/provider credentials. If no repository value is supplied, first deployment generates the Worker secret once and later deploys preserve it.
+
+Shared payment secret when top-ups are enabled:
+- `FLUTTERWAVE_CHECKOUT_BROKER_SECRET` — the existing Mkety cross-product broker/attestation secret, not an Assist-owned provider credential.
 
 Optional central Telegram-recovery fallback:
 - `MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN`
