@@ -590,6 +590,7 @@ export async function handleRuntimeApi(
          human_delay_min_seconds=COALESCE(?,human_delay_min_seconds),
          human_delay_max_seconds=COALESCE(?,human_delay_max_seconds),
          human_delay_per_char_ms=COALESCE(?,human_delay_per_char_ms),
+         manual_reply_pause_seconds=COALESCE(?,manual_reply_pause_seconds),
          context_recent_message_limit=COALESCE(?,context_recent_message_limit),
          context_knowledge_char_budget=COALESCE(?,context_knowledge_char_budget),
          context_memory_char_budget=COALESCE(?,context_memory_char_budget),
@@ -606,6 +607,7 @@ export async function handleRuntimeApi(
         body.humanDelayMinSeconds === undefined ? null : clampNumber(body.humanDelayMinSeconds, 0, 3600),
         body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
         body.humanDelayPerCharMs === undefined ? null : clampNumber(body.humanDelayPerCharMs, 0, 5000),
+        body.manualReplyPauseSeconds === undefined ? null : clampNumber(body.manualReplyPauseSeconds, 60, 86400),
         body.contextRecentMessageLimit === undefined ? null : clampNumber(body.contextRecentMessageLimit, 4, 40),
         body.contextKnowledgeCharBudget === undefined ? null : clampNumber(body.contextKnowledgeCharBudget, 2000, 50000),
         body.contextMemoryCharBudget === undefined ? null : clampNumber(body.contextMemoryCharBudget, 1000, 20000),
@@ -895,8 +897,9 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
       return json({ ok: true, ignoredInactiveBusinessConnection: true });
     }
     if (String(business.business_user_id) === senderId) {
-      await markWebhook(env.DB, assistantId, updateId, "ignored");
-      return json({ ok: true, ignoredBusinessOwnerMessage: true });
+      const cooldown = await pauseConversationForManualReply(env.DB, assistant, chatId, businessConnectionId, message);
+      await markWebhook(env.DB, assistantId, updateId, "processed");
+      return json({ ok: true, ignoredBusinessOwnerMessage: true, manualReplyCooldownUntil: cooldown.resumeAt });
     }
   }
 
@@ -906,8 +909,9 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
      LIMIT 1`,
   ).bind(assistantId, senderId).first();
   if (selfIdentity) {
-    await markWebhook(env.DB, assistantId, updateId, "ignored");
-    return json({ ok: true, ignoredSelfIdentity: true });
+    const cooldown = await pauseConversationForManualReply(env.DB, assistant, chatId, businessConnectionId, message);
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, ignoredSelfIdentity: true, manualReplyCooldownUntil: cooldown.resumeAt });
   }
 
   const ownerSender = await env.DB.prepare(
@@ -920,8 +924,9 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
      LIMIT 1`,
   ).bind(assistant.customer_id, senderId, assistantId).first();
   if (ownerSender) {
-    await markWebhook(env.DB, assistantId, updateId, "ignored");
-    return json({ ok: true, ignoredOwnerSender: true });
+    const cooldown = await pauseConversationForManualReply(env.DB, assistant, chatId, businessConnectionId, message);
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, ignoredOwnerSender: true, manualReplyCooldownUntil: cooldown.resumeAt });
   }
 
   const senderControl = await effectiveSenderControl(env.DB, assistant.customer_id, assistantId, "telegram", senderId);
@@ -1241,6 +1246,15 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     await env.DB.prepare(
       "UPDATE reply_jobs SET response_text=?,delivery_started_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
     ).bind(responseText, unix(), job.id).run();
+  }
+
+  const beforeDeliveryAutomation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
+  if (beforeDeliveryAutomation.paused || job.assistant_status !== "active") {
+    const delaySeconds = 60;
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,delivery_started_at=NULL,updated_at=? WHERE id=? AND status='processing'",
+    ).bind(`automation_paused_before_delivery:${String(beforeDeliveryAutomation.reason || job.assistant_status || "unknown")}`, unix() + delaySeconds, unix(), job.id).run();
+    return { retry: true, delaySeconds };
   }
 
   void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
@@ -2572,6 +2586,38 @@ function decodeEncryptionKey(value: string) {
   const decoded = fromBase64Url(value);
   if (decoded.byteLength !== 32) throw new Error("MKETY_ASSIST_SECRET_ENCRYPTION_KEY must decode to 32 bytes");
   return decoded;
+}
+
+async function pauseConversationForManualReply(
+  db: D1Database,
+  assistant: any,
+  chatId: string,
+  businessConnectionId: string | null,
+  message: any,
+) {
+  const conversation = await upsertConversation(db, assistant.customer_id, assistant.id, chatId);
+  const now = unix();
+  const pauseSeconds = Math.max(60, Math.min(86400, Number(assistant.manual_reply_pause_seconds || 900)));
+  const resumeAt = now + pauseSeconds;
+  const text = String(message?.text || message?.caption || "").trim();
+
+  const statements = [
+    db.prepare(
+      "UPDATE conversations SET automation_paused=1,automation_resume_at=?,automation_pause_reason='human_manual_reply',business_connection_id=COALESCE(?,business_connection_id),updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?",
+    ).bind(resumeAt, businessConnectionId, now, conversation.id, assistant.customer_id, assistant.id),
+    db.prepare(
+      "UPDATE reply_jobs SET status='cancelled',last_error='human_manual_reply',completed_at=?,locked_at=NULL,delivery_started_at=NULL,updated_at=? WHERE conversation_id=? AND customer_id=? AND assistant_id=? AND status IN ('pending','retry','processing')",
+    ).bind(now, now, conversation.id, assistant.customer_id, assistant.id),
+  ];
+  if (text) {
+    statements.push(
+      db.prepare(
+        "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
+      ).bind(id("msg"), assistant.customer_id, assistant.id, conversation.id, "human", text.slice(0, 30000), now),
+    );
+  }
+  await db.batch(statements);
+  return { conversationId: conversation.id, resumeAt };
 }
 
 async function upsertConversation(db: D1Database, customerId: string, assistantId: string, chatId: string) {
