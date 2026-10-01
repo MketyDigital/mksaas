@@ -50,6 +50,10 @@ export default {
         return handleAuth(request, env, customer);
       }
 
+      if (url.pathname === "/setup" && request.method === "GET") {
+        return setupPage(customer, url.searchParams.get("token") || "");
+      }
+
       if (url.pathname === "/api/payment/webhook" && request.method === "POST") {
         return handlePaymentWebhook(request, env, customer);
       }
@@ -63,6 +67,7 @@ export default {
       if (!session) return loginPage(customer);
       return dashboardPage(customer, session);
     } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message }, error.status);
       console.error("mkety-assist request failed", error);
       return json({ error: "internal_error" }, 500);
     }
@@ -146,6 +151,76 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       "SELECT c.*,ca.balance FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id ORDER BY c.created_at DESC",
     ).all();
     return json({ customers: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/ops/policy" && request.method === "PATCH") {
+    const body = await readJson(request);
+    const customerId = requiredString(body.customerId, "customerId");
+    const now = unix();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE commercial_policy SET
+        subscription_amount_minor=COALESCE(?,subscription_amount_minor),
+        included_credits=COALESCE(?,included_credits),
+        provider_envelope_bps=COALESCE(?,provider_envelope_bps),
+        operations_reserve_bps=COALESCE(?,operations_reserve_bps),
+        rate_multiplier_bps=COALESCE(?,rate_multiplier_bps),
+        hard_stop_enabled=COALESCE(?,hard_stop_enabled),
+        topup_enabled=COALESCE(?,topup_enabled),
+        updated_at=? WHERE customer_id=?`)
+        .bind(
+          nullableInt(body.subscriptionAmountMinor), nullableInt(body.includedCredits),
+          nullableInt(body.providerEnvelopeBps), nullableInt(body.operationsReserveBps),
+          nullableInt(body.rateMultiplierBps), nullableBoolInt(body.hardStopEnabled),
+          nullableBoolInt(body.topupEnabled), now, customerId,
+        ),
+      env.DB.prepare(`UPDATE feature_policy SET
+        telegram_enabled=COALESCE(?,telegram_enabled),
+        vision_enabled=COALESCE(?,vision_enabled),
+        voice_enabled=COALESCE(?,voice_enabled),
+        knowledge_enabled=COALESCE(?,knowledge_enabled),
+        reminders_enabled=COALESCE(?,reminders_enabled),
+        human_handoff_enabled=COALESCE(?,human_handoff_enabled),
+        tools_enabled=COALESCE(?,tools_enabled),
+        vm_models_enabled=COALESCE(?,vm_models_enabled),
+        max_assistants=COALESCE(?,max_assistants),
+        updated_at=? WHERE customer_id=?`)
+        .bind(
+          nullableBoolInt(body.telegramEnabled), nullableBoolInt(body.visionEnabled),
+          nullableBoolInt(body.voiceEnabled), nullableBoolInt(body.knowledgeEnabled),
+          nullableBoolInt(body.remindersEnabled), nullableBoolInt(body.humanHandoffEnabled),
+          nullableBoolInt(body.toolsEnabled), nullableBoolInt(body.vmModelsEnabled),
+          nullableInt(body.maxAssistants), now, customerId,
+        ),
+      env.DB.prepare("INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?)")
+        .bind(id("aud"), "operator", customerId, "policy.updated", "customer", customerId, now),
+    ]);
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/ops/models" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      `SELECT r.*, (SELECT version FROM model_rates mr WHERE mr.alias=r.alias ORDER BY version DESC LIMIT 1) AS rate_version
+       FROM model_routes r ORDER BY alias`,
+    ).all();
+    return json({ models: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/ops/domains/status" && request.method === "GET") {
+    const hostname = normalizeHostname(requiredString(url.searchParams.get("hostname"), "hostname"));
+    const local = await env.DB.prepare("SELECT provider_hostname_id FROM customer_domains WHERE hostname=? AND kind='custom' LIMIT 1")
+      .bind(hostname).first<any>();
+    if (!local?.provider_hostname_id) return json({ error: "domain_not_found" }, 404);
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames/${local.provider_hostname_id}`,
+      { headers: { authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}` } },
+    );
+    const data: any = await response.json();
+    if (!response.ok || !data.success) return json({ error: "cloudflare_lookup_failed", details: data.errors ?? [] }, 502);
+    const status = data.result.status === "active" ? "active" : "pending";
+    const sslStatus = data.result.ssl?.status ?? null;
+    await env.DB.prepare("UPDATE customer_domains SET status=?,ssl_status=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE hostname=?")
+      .bind(status, sslStatus, status, unix(), hostname).run();
+    return json({ hostname, status, sslStatus, cnameTarget: env.PORTAL_CNAME_TARGET });
   }
 
   return json({ error: "not_found" }, 404);
@@ -588,6 +663,19 @@ function positiveInt(value: unknown, fallback: number) {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
 }
 
+function nullableInt(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw new HttpError(400, "invalid_numeric_policy_value");
+  return Math.floor(n);
+}
+
+function nullableBoolInt(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "boolean") throw new HttpError(400, "invalid_boolean_policy_value");
+  return value ? 1 : 0;
+}
+
 function id(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
@@ -607,6 +695,13 @@ class HttpError extends Error {
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+function setupPage(customer: CustomerContext, token: string) {
+  return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Set up ${escapeHtml(customer.customerName)} AI</title>
+<style>body{font:16px system-ui;margin:0;background:#0d0e14;color:#fff;display:grid;place-items:center;min-height:100vh}.card{width:min(440px,90vw);background:#171924;padding:28px;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid #34384a;background:#10121a;color:#fff}button{background:#6d4aff;border:0;font-weight:700;cursor:pointer}.muted{color:#a8adbd;font-size:14px}</style></head>
+<body><main class="card"><h1>Set up your portal</h1><p class="muted">${escapeHtml(customer.customerName)} AI</p><form id="setup"><input id="password" type="password" minlength="12" placeholder="Choose password (12+ characters)" required><button>Create access</button></form><p id="msg" class="muted"></p>
+<script>const token=${JSON.stringify(token)};document.getElementById('setup').onsubmit=async(e)=>{e.preventDefault();const r=await fetch('/api/auth/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,password:password.value})});if(r.ok)location.href='/';else msg.textContent='This setup link is invalid or expired.';};</script></main></body></html>`);
 }
 
 function loginPage(customer: CustomerContext) {
