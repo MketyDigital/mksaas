@@ -24,7 +24,7 @@ export default async function EnterpriseAiSolutionPage({
   await requireTenantMembership(tenantSlug);
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
-  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/app/${tenantSlug}/enterprise-ai`);
 
   const instance = await getEnterpriseAiSolutionInstance(tenant.id, id);
   if (!instance) notFound();
@@ -34,7 +34,7 @@ export default async function EnterpriseAiSolutionPage({
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-4">
-      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-primary" href={`/t/${tenantSlug}/enterprise-ai`}>
+      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-primary" href={`/app/${tenantSlug}/enterprise-ai`}>
         <ArrowLeft className="h-4 w-4" /> Back to Mkety AI
       </Link>
 
@@ -178,9 +178,9 @@ export default async function EnterpriseAiSolutionPage({
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           {instance.projectId ? (
-            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/projects`}>Open projects</Link>
+            <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/projects`}>Open projects</Link>
           ) : null}
-          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/wallet`}>View credits</Link>
+          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/wallet`}>View credits</Link>
           <a className="rounded-xl border px-4 py-2 text-sm font-semibold" href="https://mkety.com/docs">Help & guides</a>
         </CardContent>
       </Card>
