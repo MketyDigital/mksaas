@@ -61,6 +61,13 @@ jobs:
       MKETY_DOMAIN_RELAY_SECRET: ${{ secrets.MKETY_DOMAIN_RELAY_SECRET }}
       MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG || vars.MKETY_PLATFORM_CONTROL_TENANT_SLUG || 'mkety-ops' }}
       MKETY_PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS || vars.MKETY_PLATFORM_ADMIN_EMAILS }}
+      NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
+      NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
+      FLUTTERWAVE_PUBLIC_KEY: ${{ secrets.FLUTTERWAVE_PUBLIC_KEY }}
+      FLUTTERWAVE_STANDARD_SECRET_KEY: ${{ secrets.FLUTTERWAVE_STANDARD_SECRET_KEY }}
+      FLUTTERWAVE_STANDARD_WEBHOOK_HASH: ${{ secrets.FLUTTERWAVE_STANDARD_WEBHOOK_HASH }}
+      KORA_PUBLIC_KEY: ${{ secrets.KORA_PUBLIC_KEY }}
+      KORA_SECRET_KEY: ${{ secrets.KORA_SECRET_KEY }}
     steps:
       - name: Authorize exact production SHA
         shell: bash
@@ -113,7 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID MKETY_PLATFORM_CONTROL_TENANT_SLUG MKETY_PLATFORM_ADMIN_EMAILS; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ZITADEL_MANAGEMENT_TOKEN MKETY_AUTH_ISSUER ZITADEL_PROJECT_ID MKETY_PLATFORM_CONTROL_TENANT_SLUG MKETY_PLATFORM_ADMIN_EMAILS NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET; do
             [ -n "${!name:-}" ] || { echo "Missing production configuration: $name" >&2; exit 1; }
           done
           echo "::add-mask::$CLOUDFLARE_API_TOKEN"
@@ -219,6 +226,25 @@ jobs:
           put_secret MKETY_AUTH_POST_LOGOUT_REDIRECT_URI "$MKETY_AUTH_POST_LOGOUT_REDIRECT_URI"
           put_secret MKETY_PLATFORM_CONTROL_TENANT_SLUG "$MKETY_PLATFORM_CONTROL_TENANT_SLUG"
           put_secret MKETY_PLATFORM_ADMIN_EMAILS "$MKETY_PLATFORM_ADMIN_EMAILS"
+          put_secret NOWPAYMENTS_API_KEY "$NOWPAYMENTS_API_KEY"
+          put_secret NOWPAYMENTS_IPN_SECRET "$NOWPAYMENTS_IPN_SECRET"
+          if [ -n "${FLUTTERWAVE_PUBLIC_KEY:-}" ] || [ -n "${FLUTTERWAVE_STANDARD_SECRET_KEY:-}" ] || [ -n "${FLUTTERWAVE_STANDARD_WEBHOOK_HASH:-}" ]; then
+            [ -n "${FLUTTERWAVE_PUBLIC_KEY:-}" ] && [ -n "${FLUTTERWAVE_STANDARD_SECRET_KEY:-}" ] && [ -n "${FLUTTERWAVE_STANDARD_WEBHOOK_HASH:-}" ] || {
+              echo "Flutterwave Enterprise payment secrets must be configured together." >&2
+              exit 1
+            }
+            put_secret FLUTTERWAVE_PUBLIC_KEY "$FLUTTERWAVE_PUBLIC_KEY"
+            put_secret FLUTTERWAVE_STANDARD_SECRET_KEY "$FLUTTERWAVE_STANDARD_SECRET_KEY"
+            put_secret FLUTTERWAVE_STANDARD_WEBHOOK_HASH "$FLUTTERWAVE_STANDARD_WEBHOOK_HASH"
+          fi
+          if [ -n "${KORA_PUBLIC_KEY:-}" ] || [ -n "${KORA_SECRET_KEY:-}" ]; then
+            [ -n "${KORA_PUBLIC_KEY:-}" ] && [ -n "${KORA_SECRET_KEY:-}" ] || {
+              echo "Kora Enterprise payment secrets must be configured together." >&2
+              exit 1
+            }
+            put_secret KORA_PUBLIC_KEY "$KORA_PUBLIC_KEY"
+            put_secret KORA_SECRET_KEY "$KORA_SECRET_KEY"
+          fi
           if [ -n "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -n "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
             if [ -z "${MKETY_DOMAIN_RELAY_URL:-}" ] || [ -z "${MKETY_DOMAIN_RELAY_SECRET:-}" ]; then
               echo "MKETY_DOMAIN_RELAY_URL and MKETY_DOMAIN_RELAY_SECRET must be configured together." >&2
