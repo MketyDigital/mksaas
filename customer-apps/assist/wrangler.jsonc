@@ -19,6 +19,7 @@
     "ROUTING_ORIGIN": "assist-origin.mkety.app",
     "APP_WORKER_NAME": "mkety-assist",
     "OPS_HOST": "assist-ops.mkety.com",
+    "ENTRY_HOST": "assist.mkety.com",
     "SESSION_COOKIE_NAME": "__Host-mkety_assist_session",
     "OPS_SESSION_COOKIE_NAME": "__Host-mkety_assist_ops_session",
     "SESSION_TTL_SECONDS": "2592000",
@@ -36,6 +37,7 @@
     { "pattern": "*.assist.mkety.app/*", "zone_name": "mkety.app" },
     { "pattern": "mkety-assist.mkety.app/*", "zone_name": "mkety.app" },
     { "pattern": "assist-origin.mkety.app/*", "zone_name": "mkety.app" },
-    { "pattern": "assist-ops.mkety.com", "custom_domain": true }
+    { "pattern": "assist-ops.mkety.com", "custom_domain": true },
+    { "pattern": "assist.mkety.com", "custom_domain": true }
   ]
 }
