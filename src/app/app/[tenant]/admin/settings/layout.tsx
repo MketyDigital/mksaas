@@ -26,9 +26,9 @@ export default async function SettingsLayout({ children, params }: SettingsLayou
     >
       <div className="space-y-6">
         <nav className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <Link href={`/t/${tenant}/admin`} className="hover:text-foreground transition-colors">Admin</Link>
+          <Link href={`/app/${tenant}/admin`} className="hover:text-foreground transition-colors">Admin</Link>
           <ChevronRight className="h-4 w-4" />
-          <Link href={`/t/${tenant}/admin/settings`} className="text-foreground font-medium">Settings</Link>
+          <Link href={`/app/${tenant}/admin/settings`} className="text-foreground font-medium">Settings</Link>
         </nav>
         {children}
       </div>
