@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
+  toMarkdown(
+    files: { name: string; blob: Blob } | Array<{ name: string; blob: Blob }>,
+    options?: unknown,
+  ): Promise<any>;
 };
 
 type AssistEnv = {
@@ -51,6 +55,9 @@ export async function handleRuntimeApi(
 
   if (url.pathname === "/api/knowledge" && request.method === "POST") {
     requireAdmin(session);
+    if (!(await customerFeatureEnabled(env.DB, customer.customerId, "knowledge_enabled"))) {
+      return json({ error: "knowledge_not_enabled" }, 403);
+    }
     const body = await readJson(request);
     const name = required(body.name, "name");
     const now = unix();
@@ -63,6 +70,9 @@ export async function handleRuntimeApi(
 
   if (url.pathname === "/api/knowledge/item" && request.method === "POST") {
     requireAdmin(session);
+    if (!(await customerFeatureEnabled(env.DB, customer.customerId, "knowledge_enabled"))) {
+      return json({ error: "knowledge_not_enabled" }, 403);
+    }
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
@@ -75,7 +85,22 @@ export async function handleRuntimeApi(
       const itemId = id("kni");
       const key = `knowledge/${customer.customerId}/${itemId}/${sanitizeFilename(file.name)}`;
       await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: file.type || "application/octet-stream" } });
-      const textual = isTextMime(file.type, file.name) ? decoder.decode(bytes) : null;
+      let textual = isTextMime(file.type, file.name) ? decoder.decode(bytes) : null;
+      let conversionError: string | null = null;
+      if (!textual) {
+        try {
+          const converted = await env.AI.toMarkdown(
+            { name: file.name, blob: new Blob([bytes], { type: file.type || "application/octet-stream" }) },
+            { conversionOptions: { output: { format: "text" }, pdf: { metadata: false } } },
+          );
+          const result = Array.isArray(converted) ? converted[0] : converted;
+          if (result?.format === "error") conversionError = String(result.error || "conversion_failed");
+          else if (typeof result?.data === "string" && result.data.trim()) textual = result.data.trim();
+          else conversionError = "conversion_returned_no_text";
+        } catch (error) {
+          conversionError = error instanceof Error ? error.message : "conversion_failed";
+        }
+      }
       const now = unix();
       await env.DB.prepare(
         `INSERT INTO knowledge_items
@@ -83,9 +108,14 @@ export async function handleRuntimeApi(
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         itemId, customer.customerId, collectionId, key, file.name, file.type || null,
-        textual ? "ready" : "stored", textual, JSON.stringify({ size: file.size }), now, now,
+        textual ? "ready" : "stored", textual, JSON.stringify({ size: file.size, conversionError }), now, now,
       ).run();
-      return json({ id: itemId, title: file.name, status: textual ? "ready" : "stored" }, 201);
+      return json({
+        id: itemId,
+        title: file.name,
+        status: textual ? "ready" : "stored",
+        conversionError,
+      }, 201);
     }
 
     const body = await readJson(request);
@@ -143,6 +173,9 @@ export async function handleRuntimeApi(
 
   if (url.pathname === "/api/reminders" && request.method === "POST") {
     requireAdmin(session);
+    if (!(await customerFeatureEnabled(env.DB, customer.customerId, "reminders_enabled"))) {
+      return json({ error: "reminders_not_enabled" }, 403);
+    }
     const body = await readJson(request);
     const assistantId = required(body.assistantId, "assistantId");
     await assertAssistant(env.DB, customer.customerId, assistantId);
@@ -308,6 +341,9 @@ export async function handleRuntimeApi(
 
     if (parts[3] === "knowledge" && request.method === "PUT") {
       requireAdmin(session);
+      if (!(await customerFeatureEnabled(env.DB, customer.customerId, "knowledge_enabled"))) {
+        return json({ error: "knowledge_not_enabled" }, 403);
+      }
       const body = await readJson(request);
       const ids = Array.isArray(body.collectionIds) ? body.collectionIds.map(String) : [];
       for (const collectionId of ids) await assertCollection(env.DB, customer.customerId, collectionId);
@@ -321,6 +357,9 @@ export async function handleRuntimeApi(
 
     if (parts[3] === "tools" && request.method === "POST") {
       requireAdmin(session);
+      if (!(await customerFeatureEnabled(env.DB, customer.customerId, "tools_enabled"))) {
+        return json({ error: "tools_not_enabled" }, 403);
+      }
       const body = await readJson(request);
       const endpoint = required(body.endpointUrl, "endpointUrl");
       const parsed = new URL(endpoint);
@@ -854,6 +893,17 @@ async function openHandoff(db: D1Database, customerId: string, assistantId: stri
 function shouldRequestHuman(text: string) {
   const s = text.toLowerCase();
   return ["human", "real person", "agent please", "speak to someone", "customer service", "representative"].some((needle) => s.includes(needle));
+}
+
+async function customerFeatureEnabled(
+  db: D1Database,
+  customerId: string,
+  feature: "knowledge_enabled" | "reminders_enabled" | "tools_enabled",
+) {
+  const row = await db.prepare(
+    `SELECT knowledge_enabled,reminders_enabled,tools_enabled FROM feature_policy WHERE customer_id=? LIMIT 1`,
+  ).bind(customerId).first<any>();
+  return Boolean(row?.[feature]);
 }
 
 async function assertAssistant(db: D1Database, customerId: string, assistantId: string) {
