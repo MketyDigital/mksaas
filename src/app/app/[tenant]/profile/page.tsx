@@ -18,7 +18,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
   const session = await auth();
 
   if (!session?.user?.email) {
-    redirect(`/t/${tenantSlug}/login`);
+    redirect(`/app/${tenantSlug}/login`);
   }
 
   const tenant = await getTenantBySlug(tenantSlug);
@@ -28,7 +28,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     where: and(eq(persons.tenantId, tenant.id), eq(persons.email, session.user.email)),
   });
 
-  if (!person) redirect(`/t/${tenantSlug}/dashboard`);
+  if (!person) redirect(`/app/${tenantSlug}/dashboard`);
 
   const displayName = `${person.firstName} ${person.lastName}`.trim();
   const initials =
