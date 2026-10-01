@@ -226,15 +226,12 @@ jobs:
           NODE
           )"
           if [ "$users" = "0" ]; then
-            active_json="$(npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc               --command "SELECT COUNT(*) AS n FROM operator_setup_tokens WHERE consumed_at IS NULL AND expires_at > $now;")"
-            active="$(ACTIVE_JSON="$active_json" node - <<'NODE'
-          const v=JSON.parse(process.env.ACTIVE_JSON);
-          const row=v?.[0]?.results?.[0] || v?.result?.[0] || {};
-          process.stdout.write(String(row.n || 0));
-          NODE
-            )"
-            if [ "$active" = "0" ]; then
-              read -r raw hash token_id expires < <(node - <<'NODE'
+            # No Operator exists, so any previous bootstrap token is stale for
+            # practical onboarding purposes. Invalidate old unused tokens and
+            # issue exactly one fresh token for this deployment.
+            npx wrangler d1 execute DB --remote --config wrangler.deploy.jsonc               --command "UPDATE operator_setup_tokens SET consumed_at=$now WHERE consumed_at IS NULL;"
+
+            read -r raw hash token_id expires < <(node - <<'NODE'
           const crypto=require('crypto');
           const raw=crypto.randomBytes(32).toString('base64url');
           const hash=crypto.createHash('sha256').update(raw).digest('hex');
@@ -242,16 +239,25 @@ jobs:
           const expires=Math.floor(Date.now()/1000)+86400;
           console.log([raw,hash,tokenId,expires].join(' '));
           NODE
-              )
-              npx wrangler d1 execute DB --remote --config wrangler.deploy.jsonc                 --command "INSERT INTO operator_setup_tokens (id,token_hash,expires_at,created_at) VALUES ('$token_id','$hash',$expires,$now);"
-              {
-                echo "### Mkety Assist Operator setup"
-                echo ""
-                echo "First Operator setup is required. This one-time link expires in 24 hours:"
-                echo ""
-                echo "https://assist-ops.mkety.com/setup?token=$raw"
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
+            )
+
+            npx wrangler d1 execute DB --remote --config wrangler.deploy.jsonc               --command "INSERT INTO operator_setup_tokens (id,token_hash,expires_at,created_at) VALUES ('$token_id','$hash',$expires,$now);"
+
+            {
+              echo "### Mkety Assist Operator setup"
+              echo ""
+              echo "No Operator account exists. A fresh one-time setup link was generated."
+              echo "This link expires in 24 hours and replaces any previous unused setup link:"
+              echo ""
+              echo "https://assist-ops.mkety.com/setup?token=$raw"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Mkety Assist Operator"
+              echo ""
+              echo "An Operator account already exists. No bootstrap token was created."
+              echo "Use https://assist-ops.mkety.com to sign in."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Resolve Telegram recovery bot identity
