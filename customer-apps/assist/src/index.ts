@@ -917,6 +917,9 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
         userId: row.user_id,
         error: error instanceof Error ? error.message : String(error),
       });
+      await env.DB.prepare(
+        "UPDATE setup_tokens SET consumed_at=NULL WHERE id=? AND customer_id=? AND consumed_at=? AND expires_at>?",
+      ).bind(row.id, customer.customerId, now, unix()).run().catch(() => undefined);
       return json({ error: "setup_commit_failed_retryable" }, 500);
     }
     return new Response(JSON.stringify({ ok: true, role: row.role, email: row.email }), {
