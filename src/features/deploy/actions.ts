@@ -89,7 +89,7 @@ export async function createDeployApplication(formData: FormData) {
     });
   });
 
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/deploy`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/deploy`);
 }
 
 export async function createDeployEnvironment(formData: FormData) {
@@ -139,7 +139,7 @@ export async function createDeployEnvironment(formData: FormData) {
     });
   });
 
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/deploy`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/deploy`);
 }
 
 export async function createDeploymentRequest(formData: FormData) {
@@ -197,7 +197,7 @@ export async function createDeploymentRequest(formData: FormData) {
     });
   });
 
-  redirect(`/t/${access.tenant.slug}/projects/${access.project.slug}/deploy?request=created`);
+  redirect(`/app/${access.tenant.slug}/projects/${access.project.slug}/deploy?request=created`);
 }
 
 export async function executeApprovedDeploymentRequest(formData: FormData) {
@@ -352,6 +352,6 @@ export async function executeApprovedDeploymentRequest(formData: FormData) {
   }
 
   redirect(
-    `/t/${access.tenant.slug}/projects/${access.project.slug}/deploy?candidate=${outcome}`,
+    `/app/${access.tenant.slug}/projects/${access.project.slug}/deploy?candidate=${outcome}`,
   );
 }
