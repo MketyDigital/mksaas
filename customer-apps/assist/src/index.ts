@@ -615,6 +615,7 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
         body: JSON.stringify({
           hostname,
           ssl: { method: "http", type: "dv" },
+          custom_origin_server: env.ROUTING_ORIGIN,
           custom_metadata: { customer_id: customerId, product: "mkety-assist" },
         }),
       },
