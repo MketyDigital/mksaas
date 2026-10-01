@@ -35,7 +35,7 @@ export function StatsCards({
   webhooksCount = 0,
 }: StatsCardsProps) {
   const t = useTranslations('dashboard');
-  const base = `/t/${tenantSlug}`;
+  const base = `/app/${tenantSlug}`;
 
   const cards = [
     {
