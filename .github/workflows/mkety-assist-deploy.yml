@@ -219,6 +219,10 @@ jobs:
           )"
           echo "EFFECTIVE_TELEGRAM_AUTH_BOT_USERNAME=$username" >> "$GITHUB_ENV"
 
+      - name: Deploy isolated Assist Worker
+        working-directory: customer-apps/assist
+        run: npx wrangler deploy --config wrangler.deploy.jsonc
+
       - name: Upload configured Assist secrets
         working-directory: customer-apps/assist
         env:
@@ -274,10 +278,6 @@ jobs:
           else
             echo "generate=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Deploy isolated Assist Worker
-        working-directory: customer-apps/assist
-        run: npx wrangler deploy --config wrangler.deploy.jsonc
 
       - name: Bootstrap stable encryption root
         if: steps.encryption.outputs.generate == 'true'
