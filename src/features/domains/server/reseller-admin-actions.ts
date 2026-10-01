@@ -10,6 +10,7 @@ import {
 } from '@/features/platform-connections/server/service';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { requirePermission } from '@/shared/lib/permissions';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 
 async function requireDomainOps(tenantSlug: string) {
   const actor = await requirePlatformControlAccess(tenantSlug);
@@ -26,7 +27,7 @@ export async function getDomainResellerConnections() {
   return listPlatformServiceConnections('domains');
 }
 
-export async function saveDomainNameApiConnection(tenantSlug: string, formData: FormData) {
+async function saveDomainNameApiConnectionImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireDomainOps(tenantSlug);
   const mode = String(formData.get('mode') ?? 'ote') === 'production' ? 'production' : 'ote';
   let resellerId = String(formData.get('resellerId') ?? '').trim();
@@ -92,7 +93,7 @@ export async function saveDomainNameApiConnection(tenantSlug: string, formData: 
   revalidate(tenantSlug);
 }
 
-export async function disableDomainResellerConnection(
+async function disableDomainResellerConnectionImpl(
   tenantSlug: string,
   connectionId: string,
 ) {
@@ -102,7 +103,7 @@ export async function disableDomainResellerConnection(
 }
 
 
-export async function saveCloudflareDomainRoutingConnection(tenantSlug: string, formData: FormData) {
+async function saveCloudflareDomainRoutingConnectionImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireDomainOps(tenantSlug);
   const apiTokenInput = String(formData.get('apiToken') ?? '').trim();
   const accountId = String(formData.get('accountId') ?? '').trim();
@@ -148,11 +149,27 @@ export async function saveCloudflareDomainRoutingConnection(tenantSlug: string, 
   revalidate(tenantSlug);
 }
 
-export async function disableCloudflareDomainRoutingConnection(
+async function disableCloudflareDomainRoutingConnectionImpl(
   tenantSlug: string,
   connectionId: string,
 ) {
   const actor = await requireDomainOps(tenantSlug);
   await disablePlatformServiceConnection({ id: connectionId, actorUserId: actor.userId });
   revalidate(tenantSlug);
+}
+
+export async function saveDomainNameApiConnection(...args: Parameters<typeof saveDomainNameApiConnectionImpl>) {
+  return withServerActionDatabase(() => saveDomainNameApiConnectionImpl(...args));
+}
+
+export async function disableDomainResellerConnection(...args: Parameters<typeof disableDomainResellerConnectionImpl>) {
+  return withServerActionDatabase(() => disableDomainResellerConnectionImpl(...args));
+}
+
+export async function saveCloudflareDomainRoutingConnection(...args: Parameters<typeof saveCloudflareDomainRoutingConnectionImpl>) {
+  return withServerActionDatabase(() => saveCloudflareDomainRoutingConnectionImpl(...args));
+}
+
+export async function disableCloudflareDomainRoutingConnection(...args: Parameters<typeof disableCloudflareDomainRoutingConnectionImpl>) {
+  return withServerActionDatabase(() => disableCloudflareDomainRoutingConnectionImpl(...args));
 }
