@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
-import { withServerActionDatabase } from '@/shared/db/server-action';
+import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import { billingPlans, billingPlanVersionEntitlements, billingPlanVersions, mailDomains, mailWorkspaces } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
@@ -227,17 +227,37 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
 }
 
 export async function createMailPlanVersion(...args: Parameters<typeof createMailPlanVersionImpl>) {
-  return withServerActionDatabase(() => createMailPlanVersionImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    action: 'createMailPlanVersion',
+    work: () => createMailPlanVersionImpl(...args),
+  });
 }
 
 export async function reconcileMailCatalog(...args: Parameters<typeof reconcileMailCatalogImpl>) {
-  return withServerActionDatabase(() => reconcileMailCatalogImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    action: 'reconcileMailCatalog',
+    work: () => reconcileMailCatalogImpl(...args),
+  });
 }
 
 export async function updateMailWorkspaceOperations(...args: Parameters<typeof updateMailWorkspaceOperationsImpl>) {
-  return withServerActionDatabase(() => updateMailWorkspaceOperationsImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    action: 'updateMailWorkspaceOperations',
+    work: () => updateMailWorkspaceOperationsImpl(...args),
+  });
 }
 
 export async function updateMailDomainOperations(...args: Parameters<typeof updateMailDomainOperationsImpl>) {
-  return withServerActionDatabase(() => updateMailDomainOperationsImpl(...args));
+  const tenantSlug = args[0];
+  return runPlatformControlMutation({
+    path: `/t/${tenantSlug}/admin/platform-control/mail-operations`,
+    action: 'updateMailDomainOperations',
+    work: () => updateMailDomainOperationsImpl(...args),
+  });
 }
