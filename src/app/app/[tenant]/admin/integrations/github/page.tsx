@@ -29,12 +29,12 @@ export default async function GitHubPage({ params }: GitHubPageProps) {
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/t/${tenant}/login`);
+    redirect(`/app/${tenant}/login`);
   }
 
   const tenantRecord = await getTenantBySlug(tenant);
   if (!tenantRecord) {
-    redirect(`/t/${tenant}/admin`);
+    redirect(`/app/${tenant}/admin`);
   }
 
   // Check for credentials: tenant settings first, then env vars
@@ -49,7 +49,7 @@ export default async function GitHubPage({ params }: GitHubPageProps) {
         <AdminPageHeader
           title="GitHub"
           description="Track contributions and activity from GitHub repositories."
-          backHref={`/t/${tenant}/admin/integrations`}
+          backHref={`/app/${tenant}/admin/integrations`}
           backLabel="Integrations"
         />
         <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-500/25 dark:bg-amber-500/[0.07]">
@@ -94,7 +94,7 @@ export default async function GitHubPage({ params }: GitHubPageProps) {
       <AdminPageHeader
         title="GitHub"
         description="Track contributions and activity from GitHub repositories."
-        backHref={`/t/${tenant}/admin/integrations`}
+        backHref={`/app/${tenant}/admin/integrations`}
         backLabel="Integrations"
       />
 
