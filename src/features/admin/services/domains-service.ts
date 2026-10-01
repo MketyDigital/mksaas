@@ -49,7 +49,7 @@ function parseVerification(value: string | null): MketyDomainVerification | null
 }
 
 function revalidate(tenantSlug: string) {
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
+  revalidatePath(`/app/${tenantSlug}/admin/settings/domains`);
 }
 
 export async function listDomains(tenantSlug: string): Promise<DomainActionResult> {
