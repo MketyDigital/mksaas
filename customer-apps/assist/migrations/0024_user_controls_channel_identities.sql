@@ -1,3 +1,5 @@
+ALTER TABLE conversations ADD COLUMN last_sender_id TEXT;
+
 CREATE TABLE IF NOT EXISTS account_controls (
   customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
