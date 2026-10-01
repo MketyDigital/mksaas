@@ -31,14 +31,14 @@ export default async function EnterpriseAiRemindersPage({
   await requirePermission(tenantSlug, 'ai:channels:manage');
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
-  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/t/${tenantSlug}/enterprise-ai`);
+  if (!(await hasEnterpriseAiAccess(tenant.id))) redirect(`/app/${tenantSlug}/enterprise-ai`);
 
   const reminders = await listEnterpriseAiCommitmentReminders(tenant.id);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <div>
-        <Link className="text-sm text-muted-foreground" href={`/t/${tenantSlug}/enterprise-ai`}>← Enterprise AI</Link>
+        <Link className="text-sm text-muted-foreground" href={`/app/${tenantSlug}/enterprise-ai`}>← Enterprise AI</Link>
         <div className="mt-2 flex items-center gap-3">
           <BellRing className="h-7 w-7 text-primary" />
           <h1 className="text-3xl font-bold">Commitment reminders</h1>
