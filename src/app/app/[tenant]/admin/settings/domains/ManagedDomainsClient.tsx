@@ -87,7 +87,7 @@ export function ManagedDomainsClient({
               </label>
               {domain.dnsZoneId ? (
                 <Link
-                  href={`/t/${tenantSlug}/admin/settings/domains/${domain.id}`}
+                  href={`/app/${tenantSlug}/admin/settings/domains/${domain.id}`}
                   className="rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-muted"
                 >
                   Manage DNS
