@@ -71,13 +71,14 @@ Telegram recovery is opt-in and cannot be attached during recovery:
 1. User is already authenticated in the customer portal.
 2. User selects **Connect Telegram**.
 3. Assist creates a short-lived one-time linking token.
-4. User opens the Mkety Assist auth bot via a `t.me/...?...start=link_<token>` deep link.
-5. The auth-bot webhook binds that Telegram user ID to the already-authenticated Assist user.
-6. Later, **Recover access with Telegram** can send a short-lived recovery code only to that pre-linked Telegram identity.
+4. If the customer has a connected assistant bot, Assist prefers that bot and opens `t.me/<customer-bot>?start=link_<token>`.
+5. That assistant webhook binds the Telegram user ID only to the already-authenticated Assist user/challenge.
+6. If the customer has no assistant bot yet, an optional central Mkety Assist recovery bot can be used as a fallback.
+7. Later, **Recover access with Telegram** sends the short-lived recovery code through the same pre-linked Telegram recovery identity.
 
-This avoids relying on Telegram's website Login Widget for every customer's custom hostname and works cleanly across many customer domains.
+This avoids requiring a separate recovery bot per customer and avoids Telegram website-login configuration across every custom hostname.
 
-Email/operator recovery remains the break-glass fallback if a customer loses access to their Telegram account.
+Operator recovery remains the break-glass fallback if a customer loses access to Telegram.
 
 ## Operator
 
@@ -90,8 +91,12 @@ Key endpoints:
 - `POST /api/ops/domains` — create Cloudflare custom hostname
 - `GET /api/ops/domains/status?hostname=...` — synchronize activation/TLS state
 - `PATCH /api/ops/policy` — commercial and feature controls
+- `POST /api/ops/pricing/calculate` — deterministic envelope/reserve/multiplier credit calculation
 - `GET /api/ops/models` — model route/rate visibility
-- `PATCH /api/ops/models/:alias` — publish route/rate changes
+- `PATCH /api/ops/models/:alias` — publish versioned route/rate changes and fallbacks
+- `GET|POST|PATCH /api/ops/providers...` — encrypted external provider connections
+- `POST /api/ops/credits` — audited funding/credit adjustment
+- `GET /api/ops/ledger` — customer funding/credit history
 - `GET /api/ops/health` — lightweight operational health
 - `GET /api/ops/audit` — recent audit activity
 
@@ -125,30 +130,49 @@ Customer/runtime endpoints include:
 - `GET|POST|PATCH /api/team...`
 - `GET|PATCH /api/settings`
 
-Runtime behavior includes authenticated/idempotent Telegram ingress, real image download + Workers AI vision, real voice/audio download + Whisper transcription, R2 media storage, assistant-specific prompt/history/knowledge context, optional HTTPS tools, human escalation, scheduled Telegram reminders, stable Mkety model aliases and fail-closed credit reservation/settlement.
+Runtime behavior includes authenticated/idempotent Telegram ingress, real image download + Workers AI vision, real voice/audio download + Whisper transcription, R2 media storage, assistant-specific prompt/history/knowledge context, optional HTTPS tools, human escalation, scheduled Telegram reminders, stable Mkety model aliases and fail-closed commercial admission/credit reservation/settlement.
+
+Stable customer-facing model aliases are `mkety-fast`, `mkety-smart`, `mkety-reasoning` and `mkety-vision`. Operator may route them through Workers AI, Mkety-managed infrastructure, OpenAI, Anthropic, Gemini, Azure OpenAI or an OpenAI-compatible endpoint. External provider credentials are encrypted at rest and never returned to the browser. A route may also have an independently configured fallback provider/model.
+
+Provider-cost snapshots are versioned with the sell-rate cards. Runtime accounting includes text, image and audio usage. The customer rate multiplier is applied to base credit rates, while provider spend is checked against the customer monthly provider envelope minus operations reserve before paid inference when hard-stop is enabled.
 
 Knowledge uploads are stored in R2. Plain-text formats are ingested directly; supported rich documents such as PDF/Office/image formats are converted to text through the Workers AI Markdown Conversion binding before retrieval. If conversion fails, the item remains stored with conversion-error metadata rather than silently pretending it is searchable.
 
 ## Payment contract
 
-Mkety Payments posts to:
+Mkety Payments posts signed events to:
 
 ```
 https://mkety-assist.mkety.app/api/payment/webhook
 ```
 
-with a signed JSON body containing at least:
+Subscription payment success is a payment fact. Assist interprets the customer's local commercial policy and grants its configured included credits:
+
+```json
+{
+  "id": "payment-event-id",
+  "type": "subscription.payment_succeeded",
+  "customerId": "cus_...",
+  "amountMinor": 8000,
+  "currency": "USD"
+}
+```
+
+A confirmed top-up uses signed Assist checkout metadata:
 
 ```json
 {
   "id": "payment-event-id",
   "type": "payment.succeeded",
+  "grantType": "topup",
   "customerId": "cus_...",
-  "amountMinor": 8000,
+  "amountMinor": 2500,
   "currency": "USD",
-  "credits": 23280
+  "credits": 10000
 }
 ```
+
+A failed subscription moves the customer to `past_due` and starts the locally configured grace period. The portal remains available, but paid inference stops after grace expiry until billing becomes current.
 
 Signature:
 
@@ -156,21 +180,25 @@ Signature:
 x-mkety-signature = hex(HMAC-SHA256(MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET, raw_body))
 ```
 
-Events are idempotent by provider event ID. Assist, not the main Mkety system, owns the resulting credit ledger.
+Events are idempotent by provider event ID. Assist, not the main Mkety system, owns the resulting credit ledger and billing entitlement state.
+
+The current Main Mkety public enterprise checkout endpoint is intentionally quote/payment-link based rather than a generic self-service product checkout API, so Assist does not fake a customer top-up button. Operator funding/credit adjustments and signed Mkety payment events are the supported paths until the shared Mkety checkout contract is exposed.
 
 ## Required Worker secrets
 
+Required:
 - `MKETY_ASSIST_OPS_TOKEN`
+- `MKETY_ASSIST_CF_ZONE_ID`
+- `MKETY_ASSIST_CF_SAAS_TOKEN` (deployment can fall back to the scoped repository Cloudflare token)
+- `MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET`
+- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` (deployment may use the existing stable `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY` as fallback)
+
+Optional central Telegram-recovery fallback:
 - `MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN`
 - `MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET`
-- `MKETY_ASSIST_CF_ZONE_ID`
-- `MKETY_ASSIST_CF_SAAS_TOKEN`
-- `MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET`
-- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` (or the shared stable `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY` as deployment fallback)
-
-Non-secret runtime value:
-
 - `MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME`
+
+Customer-assistant bot recovery works without the optional central recovery bot once a customer has connected an assistant bot.
 
 The GitHub deployment workflow can reuse the repository's existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to create/find the dedicated D1 database and deploy this Worker. The runtime Cloudflare-for-SaaS token should remain a dedicated scoped token when possible.
 
