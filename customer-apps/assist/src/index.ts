@@ -781,7 +781,7 @@ async function resolveCustomerByHost(db: D1Database, host: string, hostedSuffix:
   const direct = await db.prepare(
     `SELECT c.id AS customer_id,c.slug,c.name,d.hostname
      FROM customer_domains d JOIN customers c ON c.id=d.customer_id
-     WHERE d.hostname=? AND d.status='active' AND c.status='active' LIMIT 1`,
+     WHERE d.hostname=? AND d.status IN ('active','pending') AND c.status='active' LIMIT 1`,
   ).bind(host).first<any>();
   if (direct) return { customerId: direct.customer_id, customerSlug: direct.slug, customerName: direct.name, hostname: direct.hostname, brandColor: direct.brand_color, logoUrl: direct.logo_url };
 
