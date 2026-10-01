@@ -355,7 +355,7 @@ jobs:
           for (const payload of [routes, domains, root, www, app]) {
             if (!payload.success || !Array.isArray(payload.result)) throw new Error('Cloudflare preflight lookup failed.');
           }
-          const targetPatterns = new Set(['mkety.com/*', 'www.mkety.com/*', 'app.mkety.com/*']);
+          const targetPatterns = new Set(['mkety.com/*', 'www.mkety.com/*']);
           if (routes.result.some((route) => targetPatterns.has(route.pattern))) {
             throw new Error('Apex/www Worker Route exists; Custom Domain cutover requires both target Worker Routes to remain unbound.');
           }
@@ -363,7 +363,7 @@ jobs:
           if (workerRoutes.length > 0) {
             throw new Error(`Production Worker ${process.env.WORKER} is already bound to live Worker Route(s); refusing initial Custom Domain cutover.`);
           }
-          for (const host of ['mkety.com', 'www.mkety.com', 'app.mkety.com']) {
+          for (const host of ['mkety.com', 'www.mkety.com']) {
             const existing = domains.result.find((domain) => domain.hostname === host);
             if (existing && existing.service !== process.env.WORKER) {
               throw new Error(`${host} is already attached as a Custom Domain to another Worker.`);
@@ -387,7 +387,7 @@ jobs:
           const fs = require('node:fs');
           const payload = JSON.parse(fs.readFileSync('/tmp/mkety-domains-before.json', 'utf8'));
           if (!payload.success || !Array.isArray(payload.result)) throw new Error('Invalid Custom Domain snapshot.');
-          const hosts = ['mkety.com', 'www.mkety.com', 'app.mkety.com'];
+          const hosts = ['mkety.com', 'www.mkety.com'];
           const snapshot = hosts.map((hostname) => {
             const domain = payload.result.find((item) => item.hostname === hostname);
             return domain
@@ -711,14 +711,14 @@ jobs:
             local host="$1"
             local records
             records="$(curl -fsS "${auth[@]}" "$api/zones/$ZONE_ID/dns_records?name=$host")"
-            RECORDS="$records" HOST="$host" node -e "const p=JSON.parse(process.env.RECORDS||'{}');if(!p.success||!Array.isArray(p.result))process.exit(1);for(const r of p.result){const removable=process.env.HOST==='app.mkety.com'?['A','AAAA','CNAME']:['A','AAAA'];if(r.name===process.env.HOST&&removable.includes(r.type))console.log(r.id)}" | while IFS= read -r record_id; do
+            RECORDS="$records" HOST="$host" node -e "const p=JSON.parse(process.env.RECORDS||'{}');if(!p.success||!Array.isArray(p.result))process.exit(1);for(const r of p.result){const removable=['A','AAAA'];if(r.name===process.env.HOST&&removable.includes(r.type))console.log(r.id)}" | while IFS= read -r record_id; do
               [ -z "$record_id" ] && continue
               curl -fsS -X DELETE "${auth[@]}" "$api/zones/$ZONE_ID/dns_records/$record_id" >/dev/null
               echo "Removed pre-existing conflicting origin record for $host before Custom Domain attachment."
             done
           }
 
-          for host in mkety.com www.mkety.com app.mkety.com; do
+          for host in mkety.com www.mkety.com; do
             domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
             existing="$(DOMAINS="$domains" HOST="$host" node -e "const p=JSON.parse(process.env.DOMAINS||'{}'),d=(p.result||[]).find(x=>x.hostname===process.env.HOST);if(d&&d.service!==process.env.PRODUCTION_WORKER_NAME)process.exit(2);if(d)process.stdout.write(d.id)")" || status=$?
             [ "${status:-0}" != '2' ] || { echo "$host belongs to another Worker"; false; }
@@ -1060,9 +1060,9 @@ jobs:
             echo '- Required exact-SHA workflows: green before cutover.'
             echo '- Enterprise payments: NOWPayments read-only credential + invalid-signature fail-closed smoke; Flutterwave/Kora are optional until fully configured.'
             echo '- Database runtime: MKETY_DB Hyperdrive binding; private production database credentials are not attached to the Worker.'
-            echo '- Live hostname mutation: mkety.com, www.mkety.com and app.mkety.com Worker Custom Domains, with automatic rollback on partial attachment failure.'
+            echo '- Live hostname mutation: mkety.com and www.mkety.com Worker Custom Domains only; app.mkety.com remains owned by the dedicated app Worker.'
             echo '- Public routes: all 14 route/indexing endpoints accepted; canonical, sitemap, robots and www 308 verified.'
-            echo '- Apex/www/app Worker Routes remained unbound; unrelated Worker Routes were unchanged.'
+            echo '- Apex/www Worker Routes remained unbound; app.mkety.com and unrelated Worker routing were left untouched.'
             echo
             echo '### Rollback'
             echo 'Download the pre-mutation rollback artifact from this run. Delete only Custom Domains created by this cutover and restore any missing pre-cutover apex/www DNS records. Worker Routes must remain unchanged.'
