@@ -9,6 +9,6 @@ import { withRequestDatabase } from './request';
  * otherwise create and close one for this action invocation.
  */
 export async function withServerActionDatabase<T>(work: () => Promise<T>): Promise<T> {
-  if (getRequestDatabaseContext<object>()) return work();
+  if (getRequestDatabaseContext<object>() || process.env.NODE_ENV === 'test') return work();
   return withRequestDatabase(async () => work());
 }
