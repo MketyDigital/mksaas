@@ -2,6 +2,10 @@
 import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
+import { customerUsageProjection } from "./billing/metering";
+import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
+import { defaultPaymentMethod, listPaymentMethods } from "./payments/service";
+import { validateProviderConnection } from "./providers/validation";
 
 interface Env {
   DB: D1Database;
@@ -83,6 +87,12 @@ export default {
       if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/flutterwave/webhook" && request.method === "POST") {
         return handleFlutterwavePaymentWebhook(request, env);
       }
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/nowpayments/webhook" && request.method === "POST") {
+        return handleNowPaymentsPaymentWebhook(request, env);
+      }
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/kora/webhook" && request.method === "POST") {
+        return handleKoraPaymentWebhook(request, env);
+      }
 
       if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/payment/return" && request.method === "GET") {
         return handlePaymentReturn(url, env);
@@ -90,6 +100,10 @@ export default {
 
       const customer = await resolveCustomerByHost(env.DB, host, env.HOSTED_SUFFIX);
       if (!customer) return brandedNotFound(host);
+
+      if (url.pathname === "/.well-known/mkety-assist-domain" && request.method === "GET") {
+        return json({ service: "mkety-assist", hostname: host, owner: customer.customerSlug });
+      }
 
       if (url.pathname.startsWith("/api/auth/")) {
         return handleAuth(request, env, customer);
@@ -557,64 +571,100 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
     const alias = decodeURIComponent(url.pathname.slice("/api/ops/models/".length));
-    const current = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? LIMIT 1").bind(alias).first<any>();
-    if (!current) return json({ error: "model_alias_not_found" }, 404);
     const body = await readJson(request);
+    const targetCustomerId = body.customerId ? requiredString(body.customerId, "customerId") : null;
+    const globalRoute = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? LIMIT 1").bind(alias).first<any>();
+    if (!globalRoute) return json({ error: "model_alias_not_found" }, 404);
+    if (targetCustomerId) {
+      const target = await env.DB.prepare("SELECT id FROM customers WHERE id=? LIMIT 1").bind(targetCustomerId).first();
+      if (!target) return json({ error: "customer_not_found" }, 404);
+    }
+    const override = targetCustomerId
+      ? await env.DB.prepare("SELECT * FROM customer_model_routes WHERE customer_id=? AND alias=? LIMIT 1").bind(targetCustomerId, alias).first<any>()
+      : null;
+    const current = override ?? globalRoute;
     const now = unix();
 
     const provider = body.provider ?? current.provider;
+    const providerModel = body.providerModel ?? current.provider_model;
     const providerConnectionId = body.providerConnectionId === undefined
       ? current.provider_connection_id
       : (body.providerConnectionId || null);
     const fallbackProvider = body.fallbackProvider ?? current.fallback_provider ?? null;
+    const fallbackModel = body.fallbackModel ?? current.fallback_model ?? null;
     const fallbackProviderConnectionId = body.fallbackProviderConnectionId === undefined
       ? current.fallback_provider_connection_id
       : (body.fallbackProviderConnectionId || null);
+    const byokPolicy = body.byokPolicy ?? current.byok_policy ?? "managed";
+    if (!["managed","strict_byok","explicit_paid_fallback"].includes(String(byokPolicy))) {
+      return json({ error: "invalid_byok_policy" }, 400);
+    }
+
     if (!["workers-ai","mkety-managed"].includes(String(provider)) && !providerConnectionId) {
       return json({ error: "provider_connection_required" }, 400);
     }
     if (providerConnectionId) {
       const connection = await env.DB.prepare(
-        "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
+        "SELECT id,provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
       ).bind(providerConnectionId).first<any>();
-      if (!connection || connection.status !== "active" || connection.provider !== provider) {
-        return json({ error: "provider_connection_mismatch" }, 400);
+      if (!connection || connection.status !== "active" || !connection.validated_at || connection.provider !== provider) {
+        return json({ error: "provider_connection_unvalidated_or_mismatch" }, 400);
+      }
+      if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
+        return json({ error: "customer_provider_requires_matching_tenant_route" }, 400);
       }
     }
+
     if (fallbackProvider && !["workers-ai","mkety-managed"].includes(String(fallbackProvider)) && !fallbackProviderConnectionId) {
       return json({ error: "fallback_provider_connection_required" }, 400);
     }
     if (fallbackProviderConnectionId) {
       const connection = await env.DB.prepare(
-        "SELECT id,provider,status FROM provider_connections WHERE id=? LIMIT 1",
+        "SELECT id,provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
       ).bind(fallbackProviderConnectionId).first<any>();
-      if (!connection || connection.status !== "active" || connection.provider !== fallbackProvider) {
-        return json({ error: "fallback_provider_connection_mismatch" }, 400);
+      if (!connection || connection.status !== "active" || !connection.validated_at || connection.provider !== fallbackProvider) {
+        return json({ error: "fallback_provider_connection_unvalidated_or_mismatch" }, 400);
+      }
+      if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
+        return json({ error: "customer_fallback_requires_matching_tenant_route" }, 400);
       }
     }
 
-    await env.DB.prepare(
-      `UPDATE model_routes SET provider=COALESCE(?,provider),provider_model=COALESCE(?,provider_model),
-       provider_connection_id=?,fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,
-       status=COALESCE(?,status),updated_at=? WHERE alias=?`,
-    ).bind(
-      body.provider ?? null,
-      body.providerModel ?? null,
-      providerConnectionId,
-      fallbackProvider,
-      body.fallbackModel ?? current.fallback_model ?? null,
-      fallbackProviderConnectionId,
-      body.status ?? null,
-      now,
-      alias,
-    ).run();
+    if (targetCustomerId) {
+      await env.DB.prepare(
+        `INSERT INTO customer_model_routes
+         (customer_id,alias,provider,provider_model,provider_connection_id,fallback_provider,fallback_model,
+          fallback_provider_connection_id,byok_policy,status,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(customer_id,alias) DO UPDATE SET
+           provider=excluded.provider,provider_model=excluded.provider_model,
+           provider_connection_id=excluded.provider_connection_id,
+           fallback_provider=excluded.fallback_provider,fallback_model=excluded.fallback_model,
+           fallback_provider_connection_id=excluded.fallback_provider_connection_id,
+           byok_policy=excluded.byok_policy,status=excluded.status,updated_at=excluded.updated_at`,
+      ).bind(
+        targetCustomerId, alias, provider, providerModel, providerConnectionId,
+        fallbackProvider, fallbackModel, fallbackProviderConnectionId,
+        byokPolicy, body.status ?? current.status ?? "active", now, now,
+      ).run();
+    } else {
+      await env.DB.prepare(
+        `UPDATE model_routes SET provider=?,provider_model=?,provider_connection_id=?,
+         fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,
+         byok_policy=?,status=COALESCE(?,status),updated_at=? WHERE alias=?`,
+      ).bind(
+        provider, providerModel, providerConnectionId,
+        fallbackProvider, fallbackModel, fallbackProviderConnectionId,
+        byokPolicy, body.status ?? null, now, alias,
+      ).run();
+    }
 
     const costFields = [
       "providerInputCostMicrosPerMillion","providerOutputCostMicrosPerMillion",
       "providerImageCostMicros","providerAudioCostMicrosPerMinute",
     ];
     const creditFields = ["inputCreditsPerMillion","outputCreditsPerMillion","imageCredits","audioCreditsPerMinute"];
-    if (costFields.concat(creditFields).some((key) => body[key] !== undefined) || body.generateRate === true) {
+    if (!targetCustomerId && (costFields.concat(creditFields).some((key) => body[key] !== undefined) || body.generateRate === true)) {
       const previous = await env.DB.prepare(
         "SELECT * FROM model_rates WHERE alias=? ORDER BY version DESC LIMIT 1",
       ).bind(alias).first<any>();
@@ -647,13 +697,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     await env.DB.prepare(
       "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
-    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias, provider }), now).run();
+    ).bind(id("aud"), "operator", "model.updated", "model_alias", alias, JSON.stringify({ alias, provider, customerId: targetCustomerId, byokPolicy }), now).run();
     return json({ ok: true });
   }
 
   if (url.pathname === "/api/ops/providers" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT id,name,provider,endpoint_url,extra_json,status,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
+      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
     ).all();
     return json({ providers: rows.results ?? [] });
   }
@@ -661,7 +711,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/providers" && request.method === "POST") {
     const body = await readJson(request);
     const provider = requiredString(body.provider, "provider");
-    if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","openai-compatible"].includes(provider)) {
+    if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","azure-foundry","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
     const apiKey = requiredString(body.apiKey, "apiKey");
@@ -670,25 +720,51 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const parsed = new URL(endpointUrl);
       if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
     }
+    const ownership = body.ownership === "customer" ? "customer" : "mkety";
+    const ownerCustomerId = ownership === "customer" ? requiredString(body.customerId, "customerId") : null;
+    if (ownerCustomerId) {
+      const owner = await env.DB.prepare("SELECT id FROM customers WHERE id=? LIMIT 1").bind(ownerCustomerId).first();
+      if (!owner) return json({ error: "customer_not_found" }, 404);
+    }
     const providerId = id("prv");
     const now = unix();
     await env.DB.prepare(
-      "INSERT INTO provider_connections (id,name,provider,endpoint_url,api_key_ciphertext,extra_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
     ).bind(
       providerId,
       requiredString(body.name, "name"),
+      ownerCustomerId,
       provider,
       endpointUrl,
       await protectStoredSecret(apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
       JSON.stringify(body.extra || {}),
-      "active",
+      ownership,
+      "disabled",
       now,
       now,
     ).run();
     await env.DB.prepare(
       "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
     ).bind(id("aud"), "operator", "provider.created", "provider_connection", providerId, JSON.stringify({ provider }), now).run();
-    return json({ id: providerId, provider }, 201);
+    return json({ id: providerId, provider, ownership, customerId: ownerCustomerId, status: "disabled", validationRequired: true }, 201);
+  }
+
+  if (url.pathname.startsWith("/api/ops/providers/") && url.pathname.endsWith("/test") && request.method === "POST") {
+    const providerId = decodeURIComponent(url.pathname.slice("/api/ops/providers/".length, -"/test".length));
+    const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
+    if (!current) return json({ error: "provider_not_found" }, 404);
+    const apiKey = await revealStoredSecret(String(current.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+    const result = await validateProviderConnection({
+      provider: String(current.provider),
+      endpointUrl: current.endpoint_url ? String(current.endpoint_url) : null,
+      apiKey,
+      extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
+    });
+    const now = unix();
+    await env.DB.prepare(
+      "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
+    ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
+    return json({ ok: result.ok, status: result.status, error: result.error ?? null, providerId }, result.ok ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
@@ -705,13 +781,12 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ? await protectStoredSecret(String(body.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
       : current.api_key_ciphertext;
     await env.DB.prepare(
-      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status=COALESCE(?,status),updated_at=? WHERE id=?",
+      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status='disabled',validated_at=NULL,validation_error='revalidation_required',updated_at=? WHERE id=?",
     ).bind(
       body.name ?? null,
       endpointUrl,
       cipher,
       body.extra === undefined ? null : JSON.stringify(body.extra),
-      body.status ?? null,
       unix(),
       providerId,
     ).run();
@@ -746,25 +821,61 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/ops/domains/status" && request.method === "GET") {
     const hostname = normalizeHostname(requiredString(url.searchParams.get("hostname"), "hostname"));
-    const local = await env.DB.prepare("SELECT provider_hostname_id FROM customer_domains WHERE hostname=? AND kind='custom' LIMIT 1")
-      .bind(hostname).first<any>();
+    const local = await env.DB.prepare(
+      `SELECT d.provider_hostname_id,d.customer_id,c.slug
+       FROM customer_domains d JOIN customers c ON c.id=d.customer_id
+       WHERE d.hostname=? AND d.kind='custom' LIMIT 1`,
+    ).bind(hostname).first<any>();
     if (!local?.provider_hostname_id) return json({ error: "domain_not_found" }, 404);
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames/${local.provider_hostname_id}`,
-      { headers: { authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}` } },
-    );
-    const data: any = await response.json();
-    if (!response.ok || !data.success) return json({ error: "cloudflare_lookup_failed", details: data.errors ?? [] }, 502);
-    const status = data.result.status === "active" ? "active" : "pending";
-    const sslStatus = data.result.ssl?.status ?? null;
-    await env.DB.prepare("UPDATE customer_domains SET status=?,ssl_status=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE hostname=?")
-      .bind(status, sslStatus, status, unix(), hostname).run();
+
+    let providerStatus = "pending";
+    let sslStatus: string | null = null;
+    try {
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/zones/${env.MKETY_ASSIST_CF_ZONE_ID}/custom_hostnames/${local.provider_hostname_id}`,
+        { headers: { authorization: `Bearer ${env.MKETY_ASSIST_CF_SAAS_TOKEN}` } },
+      );
+      const data: any = await response.json();
+      if (response.ok && data.success) {
+        providerStatus = data.result.status === "active" ? "active" : "pending";
+        sslStatus = data.result.ssl?.status ?? null;
+      }
+    } catch {
+      providerStatus = "pending";
+    }
+
+    const evidence = await verifyDomainEvidence({
+      hostname,
+      expectedTarget: env.PORTAL_CNAME_TARGET,
+      expectedOwner: String(local.slug),
+      providerStatus,
+    });
+    const projected = projectDomainStatus(evidence);
+    await env.DB.prepare(
+      `UPDATE customer_domains
+       SET status=?,ssl_status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,provider_status=?,
+           verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
+       WHERE hostname=? AND customer_id=?`,
+    ).bind(
+      projected.status,
+      sslStatus,
+      evidence.dnsOk ? 1 : 0,
+      evidence.tlsOk ? 1 : 0,
+      evidence.ownershipOk ? 1 : 0,
+      evidence.checkedAt,
+      providerStatus,
+      projected.status,
+      evidence.checkedAt,
+      hostname,
+      local.customer_id,
+    ).run();
+
     const stored = await env.DB.prepare(
       "SELECT validation_json FROM customer_domains WHERE hostname=? AND kind='custom' LIMIT 1",
     ).bind(hostname).first<any>();
     return json({
       hostname,
-      status,
+      ...projected,
       sslStatus,
       cnameTarget: env.PORTAL_CNAME_TARGET,
       routingOrigin: env.ROUTING_ORIGIN,
@@ -778,19 +889,38 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
 async function handleAuth(request: Request, env: Env, customer: CustomerContext): Promise<Response> {
   const url = new URL(request.url);
+  if (!["GET","HEAD","OPTIONS"].includes(request.method)) {
+    const origin = request.headers.get("origin");
+    if (origin && origin !== url.origin) return json({ error: "invalid_origin" }, 403);
+  }
 
   if (url.pathname === "/api/auth/login" && request.method === "POST") {
     const body = await readJson(request);
     const email = normalizeEmail(requiredString(body.email, "email"));
     const password = requiredString(body.password, "password");
+    const rateKey = "login:" + await sha256(customer.customerId + ":" + email);
+    const rate = await env.DB.prepare(
+      "SELECT attempts,window_started_at,blocked_until FROM auth_rate_limits WHERE scope_key=? LIMIT 1",
+    ).bind(rateKey).first<any>();
+    const loginNow = unix();
+    if (Number(rate?.blocked_until || 0) > loginNow) {
+      return json({ error: "too_many_attempts", retryAfter: Number(rate.blocked_until) - loginNow }, 429);
+    }
     const row = await env.DB.prepare(
       `SELECT u.id,u.email,u.password_hash,u.password_salt,u.password_iterations,cu.role
        FROM users u JOIN customer_users cu ON cu.user_id=u.id
        WHERE cu.customer_id=? AND u.email=? AND u.status='active' LIMIT 1`,
     ).bind(customer.customerId, email).first<any>();
-    if (!row?.password_hash || !row?.password_salt) return json({ error: "invalid_credentials" }, 401);
+    if (!row?.password_hash || !row?.password_salt) {
+      await recordAuthFailure(env.DB, rateKey, loginNow);
+      return json({ error: "invalid_credentials" }, 401);
+    }
     const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash);
-    if (!ok) return json({ error: "invalid_credentials" }, 401);
+    if (!ok) {
+      await recordAuthFailure(env.DB, rateKey, loginNow);
+      return json({ error: "invalid_credentials" }, 401);
+    }
+    await env.DB.prepare("DELETE FROM auth_rate_limits WHERE scope_key=?").bind(rateKey).run();
     return issueSession(env, customer.customerId, row.id, row.role, row.email);
   }
 
@@ -830,6 +960,10 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
        WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
+    const claimed = await env.DB.prepare(
+      "UPDATE setup_tokens SET consumed_at=? WHERE id=? AND customer_id=? AND consumed_at IS NULL AND expires_at>? RETURNING id",
+    ).bind(now, row.id, customer.customerId, now).first<any>();
+    if (!claimed) return json({ error: "invalid_or_expired_setup_token" }, 400);
     const passwordData = await hashPassword(password);
     const sessionToken = randomToken(32);
     const sessionHash = await sha256(sessionToken);
@@ -839,10 +973,8 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       await env.DB.batch([
         env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
           .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
-        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now),
-        env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=? AND consumed_at IS NULL")
-          .bind(now, row.id),
+        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at,user_agent) VALUES (?,?,?,?,?,?,?,?)")
+          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now, request.headers.get("user-agent")?.slice(0, 255) || null),
       ]);
     } catch (error) {
       console.error("Assist customer setup commit failed", {
@@ -850,6 +982,9 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
         userId: row.user_id,
         error: error instanceof Error ? error.message : String(error),
       });
+      await env.DB.prepare(
+        "UPDATE setup_tokens SET consumed_at=NULL WHERE id=? AND customer_id=? AND consumed_at=? AND expires_at>?",
+      ).bind(row.id, customer.customerId, now, unix()).run().catch(() => undefined);
       return json({ error: "setup_commit_failed_retryable" }, 500);
     }
     return new Response(JSON.stringify({ ok: true, role: row.role, email: row.email }), {
@@ -861,9 +996,49 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     });
   }
 
+  if (url.pathname === "/api/auth/password" && request.method === "POST") {
+    const session = await requireSession(request, env, customer.customerId);
+    if (!session) return json({ error: "unauthorized" }, 401);
+    const body = await readJson(request);
+    const currentPassword = requiredString(body.currentPassword, "currentPassword");
+    const newPassword = requiredString(body.newPassword, "newPassword");
+    validatePassword(newPassword);
+    const row = await env.DB.prepare(
+      "SELECT password_hash,password_salt,password_iterations FROM users WHERE id=? AND status='active' LIMIT 1",
+    ).bind(session.userId).first<any>();
+    if (!row?.password_hash || !row?.password_salt || !(await verifyPassword(currentPassword, row.password_salt, row.password_iterations, row.password_hash))) {
+      return json({ error: "invalid_current_password" }, 400);
+    }
+    const next = await hashPassword(newPassword);
+    const now = unix();
+    await env.DB.prepare(
+      "UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE id=?",
+    ).bind(next.hash, next.salt, next.iterations, now, now, session.userId).run();
+    return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/auth/sessions" && request.method === "GET") {
+    const session = await requireSession(request, env, customer.customerId);
+    if (!session) return json({ error: "unauthorized" }, 401);
+    const rows = await env.DB.prepare(
+      "SELECT id,created_at,last_seen_at,expires_at,user_agent,revoked_at FROM sessions WHERE user_id=? AND customer_id=? ORDER BY created_at DESC",
+    ).bind(session.userId, customer.customerId).all();
+    return json({ sessions: rows.results ?? [] });
+  }
+
+  if (url.pathname.startsWith("/api/auth/sessions/") && request.method === "DELETE") {
+    const session = await requireSession(request, env, customer.customerId);
+    if (!session) return json({ error: "unauthorized" }, 401);
+    const sessionId = decodeURIComponent(url.pathname.slice("/api/auth/sessions/".length));
+    const result = await env.DB.prepare(
+      "UPDATE sessions SET revoked_at=? WHERE id=? AND user_id=? AND customer_id=? AND revoked_at IS NULL",
+    ).bind(unix(), sessionId, session.userId, customer.customerId).run();
+    return json({ ok: Boolean(result.meta.changes) });
+  }
+
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
     const token = getSessionCookie(request, env);
-    if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await sha256(token)).run();
+    if (token) await env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL").bind(unix(), await sha256(token)).run();
     return new Response(null, { status: 204, headers: { "set-cookie": clearSessionCookie(env) } });
   }
 
@@ -1022,7 +1197,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/domains" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC",
+      "SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at,public_dns_ok,public_tls_ok,ownership_ok,public_checked_at,provider_status FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC",
     ).bind(customer.customerId).all<any>();
     return json({
       domains: (rows.results ?? []).map((row: any) => ({
@@ -1033,9 +1208,42 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
         sslStatus: row.ssl_status,
         validation: row.validation_json ? JSON.parse(row.validation_json) : null,
         verifiedAt: row.verified_at,
+        publicDnsOk: Boolean(row.public_dns_ok),
+        publicTlsOk: Boolean(row.public_tls_ok),
+        ownershipOk: Boolean(row.ownership_ok),
+        publicCheckedAt: row.public_checked_at,
+        providerStatus: row.provider_status,
+        providerPending: row.status === "active" && row.provider_status === "pending",
       })),
       cnameTarget: env.PORTAL_CNAME_TARGET,
     });
+  }
+
+  if (url.pathname === "/api/domains/verify" && request.method === "POST") {
+    if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
+    const body = await readJson(request);
+    const hostname = normalizeHostname(requiredString(body.hostname, "hostname"));
+    const domain = await env.DB.prepare(
+      "SELECT hostname,kind,provider_status FROM customer_domains WHERE hostname=? AND customer_id=? LIMIT 1",
+    ).bind(hostname, customer.customerId).first<any>();
+    if (!domain) return json({ error: "domain_not_found" }, 404);
+    if (domain.kind !== "custom") return json({ error: "custom_domain_required" }, 400);
+    const evidence = await verifyDomainEvidence({
+      hostname,
+      expectedTarget: env.PORTAL_CNAME_TARGET,
+      expectedOwner: customer.customerSlug,
+      providerStatus: String(domain.provider_status || "pending"),
+    });
+    const projected = projectDomainStatus(evidence);
+    await env.DB.prepare(
+      `UPDATE customer_domains SET status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,
+       verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
+       WHERE hostname=? AND customer_id=?`,
+    ).bind(
+      projected.status,evidence.dnsOk?1:0,evidence.tlsOk?1:0,evidence.ownershipOk?1:0,evidence.checkedAt,
+      projected.status,evidence.checkedAt,hostname,customer.customerId,
+    ).run();
+    return json({ hostname, ...projected });
   }
 
   if (url.pathname === "/api/settings" && request.method === "GET") {
@@ -1126,7 +1334,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/assistants" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap FROM assistants WHERE customer_id=? ORDER BY created_at DESC",
+      "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,archived_at,current_version FROM assistants WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
     ).bind(customer.customerId).all();
     return json({ assistants: rows.results ?? [] });
   }
@@ -1135,7 +1343,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     if (!["owner","admin"].includes(session.role)) return json({ error: "forbidden" }, 403);
     const policy = await env.DB.prepare("SELECT max_assistants FROM feature_policy WHERE customer_id=?")
       .bind(customer.customerId).first<any>();
-    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM assistants WHERE customer_id=?")
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM assistants WHERE customer_id=? AND deleted_at IS NULL")
       .bind(customer.customerId).first<any>();
     if ((count?.n ?? 0) >= (policy?.max_assistants ?? 5)) return json({ error: "assistant_limit_reached" }, 409);
     const body = await readJson(request);
@@ -1151,6 +1359,13 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       env.DB.prepare(
         "INSERT INTO assistant_prompt_versions (id,customer_id,assistant_id,version,instructions,status,created_at,published_at) VALUES (?,?,?,?,?,?,?,?)",
       ).bind(id("prm"), customer.customerId, assistantId, 1, String(body.instructions || ""), "published", now, now),
+      env.DB.prepare(
+        "INSERT INTO assistant_config_versions (id,customer_id,assistant_id,version,config_json,created_by_user_id,created_at) VALUES (?,?,?,?,?,?,?)",
+      ).bind(
+        id("asv"), customer.customerId, assistantId, 1,
+        JSON.stringify({ name, status: "active", modelAlias, timezone: body.timezone || "UTC", memoryEnabled: body.memoryEnabled !== false, monthlyCreditCap: null, automationPaused: false }),
+        session.userId, now,
+      ),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?,?)")
         .bind(id("aud"), "customer_user", session.userId, customer.customerId, "assistant.created", "assistant", assistantId, now),
     ]);
@@ -1159,15 +1374,44 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/usage" && request.method === "GET") {
     const account = await env.DB.prepare(
-      "SELECT balance,lifetime_granted,lifetime_consumed,updated_at FROM credit_accounts WHERE customer_id=?",
-    ).bind(customer.customerId).first();
+      "SELECT balance,lifetime_consumed FROM credit_accounts WHERE customer_id=?",
+    ).bind(customer.customerId).first<any>();
     const policy = await env.DB.prepare(
-      "SELECT currency,subscription_amount_minor,included_credits,topup_enabled,funding_mode,minimum_funding_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
-    ).bind(customer.customerId).first();
-    const billing = await env.DB.prepare(
-      "SELECT billing_status,grace_until FROM customers WHERE id=? LIMIT 1",
-    ).bind(customer.customerId).first();
-    return json({ credits: account, plan: policy, billing });
+      "SELECT subscription_amount_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
+    ).bind(customer.customerId).first<any>();
+    return json(customerUsageProjection({
+      monthlyFeeMinor: Math.max(0, Number(policy?.subscription_amount_minor || 0)),
+      setupFeeMinor: Math.max(0, Number(policy?.setup_fee_minor || 0)),
+      creditsAvailable: Math.max(0, Number(account?.balance || 0)),
+      creditsUsed: Math.max(0, Number(account?.lifetime_consumed || 0)),
+    }));
+  }
+
+  if (url.pathname === "/api/billing/methods" && request.method === "GET") {
+    const status = { nowpayments: false, flutterwave: false, kora: false };
+    if (env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) {
+      try {
+        const response = await fetch("https://mkety.com/api/payments/assist/methods", {
+          headers: { authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}` },
+        });
+        const payload = await response.json<any>().catch(() => null);
+        if (response.ok && payload?.success && payload.methods) {
+          status.nowpayments = Boolean(payload.methods.nowpayments);
+          status.flutterwave = Boolean(payload.methods.flutterwave);
+          status.kora = Boolean(payload.methods.kora);
+          const now = unix();
+          await env.DB.batch([
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
+          ]);
+        }
+      } catch {
+        // Fail closed: no method is exposed when central readiness cannot be verified.
+      }
+    }
+    const methods = listPaymentMethods(status);
+    return json({ methods, defaultMethod: defaultPaymentMethod(status) });
   }
 
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
@@ -1206,12 +1450,22 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       ? Math.max(1, Math.floor(Number(policy.included_credits || 0) * recurringPaid / recurringBase))
       : Math.max(0, Number(policy.included_credits || 0));
 
-    return startAssistFlutterwaveCheckout({
-      env, customer, session, credits,
-      canonicalAmountMinor,
-      paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
-      purchaseType: "plan",
-    });
+    const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
+    if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
+    if (paymentMethod === "nowpayments") {
+      return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan" });
+    }
+    if (paymentMethod === "flutterwave") {
+      return startAssistFlutterwaveCheckout({
+        env, customer, session, credits, canonicalAmountMinor,
+        paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
+        purchaseType: "plan",
+      });
+    }
+    if (paymentMethod === "kora") {
+      return startAssistKoraCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan" });
+    }
+    return json({ error: "payment_method_unavailable" }, 503);
   }
 
   if (url.pathname === "/api/billing/topup/start" && request.method === "POST") {
@@ -1228,17 +1482,149 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).first<any>();
     const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
     const canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
-    return startAssistFlutterwaveCheckout({
-      env, customer, session, credits, canonicalAmountMinor,
-      paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
-      purchaseType: "topup",
-    });
+    const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
+    if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
+    if (paymentMethod === "nowpayments") {
+      return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup" });
+    }
+    if (paymentMethod === "flutterwave") {
+      return startAssistFlutterwaveCheckout({
+        env, customer, session, credits, canonicalAmountMinor,
+        paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
+        purchaseType: "topup",
+      });
+    }
+    if (paymentMethod === "kora") {
+      return startAssistKoraCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup" });
+    }
+    return json({ error: "payment_method_unavailable" }, 503);
   }
 
   const runtimeResponse = await handleRuntimeApi(request, env, customer, session);
   if (runtimeResponse) return runtimeResponse;
 
   return json({ error: "not_found" }, 404);
+}
+
+async function resolveRequestedPaymentMethod(db: D1Database, requested: unknown) {
+  const rows = await db.prepare(
+    "SELECT method,enabled,healthy FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
+  ).all<any>();
+  const health = { nowpayments: false, flutterwave: false, kora: false };
+  for (const row of rows.results ?? []) if (row.method in health) (health as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
+  const available = listPaymentMethods(health);
+  const selected = String(requested || "").toLowerCase();
+  return selected ? (available.includes(selected as any) ? selected : null) : (available[0] ?? null);
+}
+
+async function startAssistNowPaymentsCheckout(input: {
+  env: Env;
+  customer: CustomerContext;
+  session: Session;
+  credits: number;
+  canonicalAmountMinor: number;
+  purchaseType: "plan" | "topup";
+}) {
+  const { env, customer, session, credits, canonicalAmountMinor, purchaseType } = input;
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_provider_not_configured" }, 503);
+  const checkoutId = id("chk");
+  const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  const now = unix();
+  await env.DB.prepare(
+    `INSERT INTO payment_checkouts
+     (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at,purchase_type)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(checkoutId, customer.customerId, session.userId, reference, "nowpayments", credits, canonicalAmountMinor, "USD", "pending", now, purchaseType).run();
+
+  const response = await fetch("https://mkety.com/api/payments/nowpayments/start", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      source: "assist",
+      reference,
+      canonical_amount_usd: (canonicalAmountMinor / 100).toFixed(2),
+      email: session.email,
+      customer_name: customer.customerName,
+      checkout_id: checkoutId,
+    }),
+  });
+  const payload = await response.json<any>().catch(() => null);
+  const checkoutUrl = String(payload?.checkout_url || "");
+  if (!response.ok || !payload?.success || !checkoutUrl.startsWith("https://")) {
+    await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'").bind(checkoutId).run();
+    return json({ error: "nowpayments_checkout_failed", message: String(payload?.message || "NOWPayments checkout could not be prepared.") }, 502);
+  }
+  await env.DB.prepare(
+    "UPDATE payment_checkouts SET provider_payment_id=?,provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
+  ).bind(String(payload.provider_checkout_id || ""), canonicalAmountMinor, "USD", checkoutId).run();
+  return json({
+    ok: true,
+    provider: "nowpayments",
+    purchaseType,
+    checkoutId,
+    reference,
+    checkoutExperience: "hosted",
+    checkoutUrl,
+    credits,
+    canonicalAmountMinor,
+    canonicalCurrency: "USD",
+    checkoutAmount: canonicalAmountMinor / 100,
+    checkoutCurrency: "USD",
+  }, 201);
+}
+
+async function startAssistKoraCheckout(input: {
+  env: Env;
+  customer: CustomerContext;
+  session: Session;
+  credits: number;
+  canonicalAmountMinor: number;
+  purchaseType: "plan" | "topup";
+}) {
+  const { env, customer, session, credits, canonicalAmountMinor, purchaseType } = input;
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_provider_not_configured" }, 503);
+  const checkoutId = id("chk");
+  const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  const now = unix();
+  await env.DB.prepare(
+    `INSERT INTO payment_checkouts
+     (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at,purchase_type)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(checkoutId, customer.customerId, session.userId, reference, "kora", credits, canonicalAmountMinor, "USD", "pending", now, purchaseType).run();
+
+  const response = await fetch("https://mkety.com/api/payments/kora/start", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      source: "assist",
+      reference,
+      canonical_amount_usd: (canonicalAmountMinor / 100).toFixed(2),
+      email: session.email,
+      customer_name: customer.customerName,
+      checkout_id: checkoutId,
+    }),
+  });
+  const payload = await response.json<any>().catch(() => null);
+  const checkoutUrl = String(payload?.checkout_url || "");
+  if (!response.ok || !payload?.success || !checkoutUrl.startsWith("https://mkety.com/")) {
+    await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'").bind(checkoutId).run();
+    return json({ error: "kora_checkout_failed", message: String(payload?.message || "Kora checkout could not be prepared.") }, 502);
+  }
+  await env.DB.prepare(
+    "UPDATE payment_checkouts SET provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
+  ).bind(canonicalAmountMinor, "USD", checkoutId).run();
+  return json({
+    ok: true, provider: "kora", purchaseType, checkoutId, reference,
+    checkoutExperience: "hosted", checkoutUrl, credits,
+    canonicalAmountMinor, canonicalCurrency: "USD",
+    checkoutAmount: canonicalAmountMinor / 100, checkoutCurrency: "USD",
+  }, 201);
 }
 
 async function startAssistFlutterwaveCheckout(input: {
@@ -1386,6 +1772,91 @@ async function handleFlutterwavePaymentWebhook(request: Request, env: Env): Prom
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
 }
 
+async function handleNowPaymentsPaymentWebhook(request: Request, env: Env): Promise<Response> {
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_attestation_not_configured" }, 503);
+  const raw = await request.text();
+  const supplied = request.headers.get("x-mkety-payment-attestation") || "";
+  if (!(await verifyPaymentAttestation(raw, supplied, env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET))) {
+    return json({ error: "invalid_payment_attestation" }, 401);
+  }
+  let payload: Record<string, any>;
+  try { payload = JSON.parse(raw) as Record<string, any>; }
+  catch { return json({ error: "invalid_json" }, 400); }
+  if (String(payload.provider || "") !== "nowpayments") return json({ error: "invalid_payment_provider" }, 400);
+
+  const reference = String(payload.reference || "");
+  const checkout = await env.DB.prepare(
+    "SELECT * FROM payment_checkouts WHERE reference=? AND provider='nowpayments' LIMIT 1",
+  ).bind(reference).first<any>();
+  if (!checkout) return json({ error: "unknown_payment_reference" }, 404);
+  if (checkout.status === "paid") return json({ ok: true, duplicate: true });
+
+  const status = String(payload.status || "").toLowerCase();
+  const amountMinor = parsePaymentAmountMinor(payload.amount);
+  const currency = String(payload.currency || "").toUpperCase();
+  if (currency !== String(checkout.canonical_currency || "USD").toUpperCase() || amountMinor < Number(checkout.canonical_amount_minor || 0)) {
+    return json({ error: "payment_quote_mismatch" }, 400);
+  }
+  if (["failed","expired","refunded"].includes(status)) {
+    await env.DB.prepare(
+      "UPDATE payment_checkouts SET status='failed',provider_payment_id=?,provider_event_id=?,settled_at=? WHERE id=? AND status='pending'",
+    ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), checkout.id).run();
+    return json({ ok: true, settled: false, status });
+  }
+  if (status !== "finished") return json({ ok: true, settled: false, status: "pending" });
+
+  const updated = await env.DB.prepare(
+    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status='pending'",
+  ).bind(
+    String(payload.provider_payment_id || ""),
+    String(payload.provider_event_id || ""),
+    unix(),
+    `nowpayments:${String(payload.provider_event_id || payload.provider_payment_id || reference)}`,
+    checkout.id,
+  ).run();
+  return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
+}
+
+async function handleKoraPaymentWebhook(request: Request, env: Env): Promise<Response> {
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_attestation_not_configured" }, 503);
+  const raw = await request.text();
+  const supplied = request.headers.get("x-mkety-payment-attestation") || "";
+  if (!(await verifyPaymentAttestation(raw, supplied, env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET))) {
+    return json({ error: "invalid_payment_attestation" }, 401);
+  }
+  let payload: Record<string, any>;
+  try { payload = JSON.parse(raw) as Record<string, any>; }
+  catch { return json({ error: "invalid_json" }, 400); }
+  if (String(payload.provider || "") !== "kora") return json({ error: "invalid_payment_provider" }, 400);
+
+  const reference = String(payload.reference || "");
+  const checkout = await env.DB.prepare(
+    "SELECT * FROM payment_checkouts WHERE reference=? AND provider='kora' LIMIT 1",
+  ).bind(reference).first<any>();
+  if (!checkout) return json({ error: "unknown_payment_reference" }, 404);
+  if (checkout.status === "paid") return json({ ok: true, duplicate: true });
+
+  const status = String(payload.status || "").toLowerCase();
+  const amountMinor = parsePaymentAmountMinor(payload.amount);
+  const currency = String(payload.currency || "").toUpperCase();
+  if (currency !== String(checkout.canonical_currency || "USD").toUpperCase() || amountMinor < Number(checkout.canonical_amount_minor || 0)) {
+    return json({ error: "payment_quote_mismatch" }, 400);
+  }
+  if (status === "failed") {
+    await env.DB.prepare(
+      "UPDATE payment_checkouts SET status='failed',provider_payment_id=?,provider_event_id=?,settled_at=? WHERE id=? AND status='pending'",
+    ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), checkout.id).run();
+    return json({ ok: true, settled: false, status });
+  }
+  if (status !== "success") return json({ ok: true, settled: false, status: "pending" });
+
+  const settlementKey = `kora:${String(payload.provider_event_id || payload.provider_payment_id || reference)}`;
+  const updated = await env.DB.prepare(
+    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status='pending'",
+  ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), settlementKey, checkout.id).run();
+  return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
+}
+
 async function handlePaymentReturn(url: URL, env: Env): Promise<Response> {
   const reference = String(url.searchParams.get("reference") || "");
   const checkout = reference
@@ -1400,6 +1871,21 @@ async function handlePaymentReturn(url: URL, env: Env): Promise<Response> {
     ? `https://${checkout.hostname}/?payment=${encodeURIComponent(reference)}&status=${encodeURIComponent(String(checkout.status || "pending"))}`
     : `https://${env.PORTAL_CNAME_TARGET}/`;
   return Response.redirect(destination, 302);
+}
+
+async function recordAuthFailure(db: D1Database, scopeKey: string, now: number) {
+  const current = await db.prepare(
+    "SELECT attempts,window_started_at FROM auth_rate_limits WHERE scope_key=? LIMIT 1",
+  ).bind(scopeKey).first<any>();
+  const withinWindow = current && now - Number(current.window_started_at || 0) < 900;
+  const attempts = (withinWindow ? Number(current.attempts || 0) : 0) + 1;
+  const windowStarted = withinWindow ? Number(current.window_started_at) : now;
+  const blockedUntil = attempts >= 5 ? now + 900 : null;
+  await db.prepare(
+    `INSERT INTO auth_rate_limits(scope_key,attempts,window_started_at,blocked_until)
+     VALUES (?,?,?,?)
+     ON CONFLICT(scope_key) DO UPDATE SET attempts=excluded.attempts,window_started_at=excluded.window_started_at,blocked_until=excluded.blocked_until`,
+  ).bind(scopeKey, attempts, windowStarted, blockedUntil).run();
 }
 
 async function verifyPaymentAttestation(raw: string, signature: string, secret: string) {
@@ -1692,7 +2178,7 @@ async function requireSession(request: Request, env: Env, customerId: string): P
     `SELECT s.user_id,s.customer_id,u.email,cu.role FROM sessions s
      JOIN users u ON u.id=s.user_id
      JOIN customer_users cu ON cu.user_id=s.user_id AND cu.customer_id=s.customer_id
-     WHERE s.token_hash=? AND s.customer_id=? AND s.expires_at>? AND u.status='active' LIMIT 1`,
+     WHERE s.token_hash=? AND s.customer_id=? AND s.expires_at>? AND s.revoked_at IS NULL AND u.status='active' LIMIT 1`,
   ).bind(await sha256(token), customerId, now).first<any>();
   if (!row) return null;
   return { userId: row.user_id, customerId: row.customer_id, role: row.role, email: row.email };
@@ -1703,8 +2189,8 @@ async function issueSession(env: Env, customerId: string, userId: string, role: 
   const now = unix();
   const ttl = Number(env.SESSION_TTL_SECONDS || "2592000");
   await env.DB.prepare(
-    "INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)",
-  ).bind(id("ses"), await sha256(token), userId, customerId, now + ttl, now, now).run();
+    "INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at,user_agent) VALUES (?,?,?,?,?,?,?,?)",
+  ).bind(id("ses"), await sha256(token), userId, customerId, now + ttl, now, now, null).run();
   return new Response(JSON.stringify({ ok: true, role, email }), {
     status: 200,
     headers: {

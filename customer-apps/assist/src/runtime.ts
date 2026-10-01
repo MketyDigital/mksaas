@@ -1,3 +1,7 @@
+import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
+import { mayUseFallback } from "./providers/validation";
+import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
+import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AiBinding = {
   run(model: string, input: unknown): Promise<any>;
@@ -45,7 +49,7 @@ export async function handleRuntimeApi(
     requireAdmin(session);
     const rows = await env.DB.prepare(
       `SELECT k.id,k.name,k.token_prefix,k.status,k.assistant_id,k.created_at,k.last_used_at,k.expires_at,
-              a.name AS assistant_name
+              k.scopes_json,k.rate_limit_per_minute,a.name AS assistant_name
        FROM customer_api_keys k
        LEFT JOIN assistants a ON a.id=k.assistant_id
        WHERE k.customer_id=?
@@ -66,10 +70,13 @@ export async function handleRuntimeApi(
     const keyId = id("key");
     const expiresAt = body.expiresAt ? Math.floor(new Date(String(body.expiresAt)).getTime() / 1000) : null;
     if (expiresAt && (!Number.isFinite(expiresAt) || expiresAt <= now)) throw new ApiError(400, "invalid_expiry");
+    const scopes = Array.isArray(body.scopes) ? body.scopes.map(String).filter((x: string) => x === "inference") : ["inference"];
+    if (!scopes.length) return json({ error: "api_key_scope_required" }, 400);
+    const rateLimitPerMinute = Math.max(1, Math.min(10000, Number(body.rateLimitPerMinute || 60)));
     await env.DB.prepare(
-      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt).run();
-    return json({ id: keyId, name, key: raw, prefix, assistantId, expiresAt }, 201);
+      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at,scopes_json,rate_limit_per_minute) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt, JSON.stringify(scopes), rateLimitPerMinute).run();
+    return json({ id: keyId, name, key: raw, prefix, assistantId, expiresAt, scopes, rateLimitPerMinute }, 201);
   }
 
   if (parts[0] === "api" && parts[1] === "keys" && parts[2] && request.method === "DELETE") {
@@ -108,6 +115,92 @@ export async function handleRuntimeApi(
     return json({ id: collectionId, name }, 201);
   }
 
+  if (parts[0] === "api" && parts[1] === "knowledge" && parts[2] && parts.length === 3 && request.method === "GET") {
+    const collectionId = parts[2];
+    await assertCollection(env.DB, customer.customerId, collectionId);
+    const collection = await env.DB.prepare(
+      "SELECT id,name,created_at,updated_at FROM knowledge_collections WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(collectionId, customer.customerId).first<any>();
+    const items = await env.DB.prepare(
+      "SELECT id,title,mime_type,status,error_code,retry_count,created_at,updated_at FROM knowledge_items WHERE collection_id=? AND customer_id=? ORDER BY updated_at DESC",
+    ).bind(collectionId, customer.customerId).all<any>();
+    return json({ collection, items: items.results ?? [] });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge" && parts[2] && parts.length === 3 && request.method === "PATCH") {
+    requireAdmin(session);
+    const name = required((await readJson(request)).name, "name").slice(0, 120);
+    const result = await env.DB.prepare(
+      "UPDATE knowledge_collections SET name=?,updated_at=? WHERE id=? AND customer_id=?",
+    ).bind(name, unix(), parts[2], customer.customerId).run();
+    if (!result.meta.changes) return json({ error: "knowledge_collection_not_found" }, 404);
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge" && parts[2] && parts.length === 3 && request.method === "DELETE") {
+    requireAdmin(session);
+    const collectionId = parts[2];
+    await assertCollection(env.DB, customer.customerId, collectionId);
+    const assets = await env.DB.prepare(
+      "SELECT r2_key FROM knowledge_items WHERE collection_id=? AND customer_id=? AND r2_key IS NOT NULL",
+    ).bind(collectionId, customer.customerId).all<any>();
+    for (const row of assets.results ?? []) if (row.r2_key) await env.MEDIA.delete(String(row.r2_key));
+    await env.DB.prepare("DELETE FROM knowledge_collections WHERE id=? AND customer_id=?").bind(collectionId, customer.customerId).run();
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge-items" && parts[2] && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const title = required(body.title, "title").slice(0, 200);
+    const result = await env.DB.prepare(
+      "UPDATE knowledge_items SET title=?,updated_at=? WHERE id=? AND customer_id=?",
+    ).bind(title, unix(), parts[2], customer.customerId).run();
+    if (!result.meta.changes) return json({ error: "knowledge_item_not_found" }, 404);
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge-items" && parts[2] && request.method === "DELETE") {
+    requireAdmin(session);
+    const item = await env.DB.prepare(
+      "SELECT r2_key FROM knowledge_items WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!item) return json({ error: "knowledge_item_not_found" }, 404);
+    if (item.r2_key) await env.MEDIA.delete(String(item.r2_key));
+    await env.DB.prepare("DELETE FROM knowledge_items WHERE id=? AND customer_id=?").bind(parts[2], customer.customerId).run();
+    return json({ ok: true });
+  }
+
+  if (parts[0] === "api" && parts[1] === "knowledge-items" && parts[2] && parts[3] === "retry" && request.method === "POST") {
+    requireAdmin(session);
+    const item = await env.DB.prepare(
+      "SELECT id,r2_key,title,mime_type FROM knowledge_items WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!item) return json({ error: "knowledge_item_not_found" }, 404);
+    if (!item.r2_key) return json({ error: "knowledge_retry_unavailable" }, 409);
+    const object = await env.MEDIA.get(String(item.r2_key));
+    if (!object) return json({ error: "knowledge_source_missing" }, 409);
+    const bytes = await object.arrayBuffer();
+    let textual: string | null = null;
+    let errorCode: string | null = null;
+    try {
+      const converted = await env.AI.toMarkdown(
+        { name: String(item.title), blob: new Blob([bytes], { type: String(item.mime_type || "application/octet-stream") }) },
+        { conversionOptions: { output: { format: "text" }, pdf: { metadata: false } } },
+      );
+      const result = Array.isArray(converted) ? converted[0] : converted;
+      if (result?.format === "error") errorCode = String(result.error || "conversion_failed");
+      else if (typeof result?.data === "string" && result.data.trim()) textual = result.data.trim();
+      else errorCode = "conversion_returned_no_text";
+    } catch (error) {
+      errorCode = error instanceof Error ? error.message.slice(0, 300) : "conversion_failed";
+    }
+    await env.DB.prepare(
+      "UPDATE knowledge_items SET status=?,content_text=?,error_code=?,retry_count=retry_count+1,updated_at=? WHERE id=? AND customer_id=?",
+    ).bind(textual ? "ready" : "error", textual, errorCode, unix(), item.id, customer.customerId).run();
+    return json({ ok: Boolean(textual), status: textual ? "ready" : "error", error: errorCode });
+  }
+
   if (url.pathname === "/api/knowledge/item" && request.method === "POST") {
     requireAdmin(session);
     if (!(await customerFeatureEnabled(env.DB, customer.customerId, "knowledge_enabled"))) {
@@ -144,16 +237,16 @@ export async function handleRuntimeApi(
       const now = unix();
       await env.DB.prepare(
         `INSERT INTO knowledge_items
-         (id,customer_id,collection_id,r2_key,title,mime_type,status,content_text,metadata_json,created_at,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         (id,customer_id,collection_id,r2_key,title,mime_type,status,content_text,metadata_json,error_code,retry_count,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         itemId, customer.customerId, collectionId, key, file.name, file.type || null,
-        textual ? "ready" : "stored", textual, JSON.stringify({ size: file.size, conversionError }), now, now,
+        textual ? "ready" : "error", textual, JSON.stringify({ size: file.size }), conversionError, 0, now, now,
       ).run();
       return json({
         id: itemId,
         title: file.name,
-        status: textual ? "ready" : "stored",
+        status: textual ? "ready" : "error",
         conversionError,
       }, 201);
     }
@@ -202,6 +295,81 @@ export async function handleRuntimeApi(
     return json({ messages: rows.results ?? [] });
   }
 
+  if (parts[0] === "api" && parts[1] === "conversations" && parts[2] && parts[3] === "memory" && request.method === "DELETE") {
+    requireAdmin(session);
+    const conversationId = parts[2];
+    await assertConversation(env.DB, customer.customerId, conversationId);
+    const now = unix();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE conversations SET memory_cleared_at=?,updated_at=? WHERE id=? AND customer_id=?")
+        .bind(now, now, conversationId, customer.customerId),
+      env.DB.prepare("DELETE FROM memories WHERE conversation_id=? AND customer_id=?")
+        .bind(conversationId, customer.customerId),
+    ]);
+    return json({ ok: true, memoryClearedAt: now });
+  }
+
+  if (url.pathname === "/api/automation" && request.method === "GET") {
+    const row = await env.DB.prepare("SELECT automation_paused FROM customers WHERE id=? LIMIT 1")
+      .bind(customer.customerId).first<any>();
+    return json({ paused: Boolean(row?.automation_paused) });
+  }
+
+  if (url.pathname === "/api/automation" && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    await pauseCustomer(env.DB, customer.customerId, Boolean(body.paused));
+    return json({ ok: true, paused: Boolean(body.paused) });
+  }
+
+  if (parts[0] === "api" && parts[1] === "assistants" && parts[2] && parts[3] === "automation" && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    await pauseAssistant(env.DB, customer.customerId, parts[2], Boolean(body.paused));
+    return json({ ok: true, paused: Boolean(body.paused) });
+  }
+
+  if (parts[0] === "api" && parts[1] === "conversations" && parts[2] && parts[3] === "automation" && request.method === "PATCH") {
+    requireAdmin(session);
+    const conversation = await env.DB.prepare(
+      "SELECT assistant_id FROM conversations WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!conversation) return json({ error: "conversation_not_found" }, 404);
+    const body = await readJson(request);
+    if (body.paused === false) {
+      await returnToAi(env.DB, customer.customerId, conversation.assistant_id, parts[2]);
+    } else {
+      await takeOverConversation(env.DB, customer.customerId, conversation.assistant_id, parts[2], session.userId);
+    }
+    return json({ ok: true, paused: body.paused !== false });
+  }
+
+  if (url.pathname === "/api/notifications/preferences" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT kind,enabled FROM owner_notification_preferences WHERE customer_id=? AND user_id=?",
+    ).bind(customer.customerId, session.userId).all<any>();
+    const preferences: Record<string, boolean> = { handoff: true, reminder_failure: true, channel_health: true };
+    for (const row of rows.results ?? []) preferences[String(row.kind)] = Boolean(row.enabled);
+    return json({ preferences });
+  }
+
+  if (url.pathname === "/api/notifications/preferences" && request.method === "PATCH") {
+    const body = await readJson(request);
+    const allowed = ["handoff","reminder_failure","channel_health"];
+    const now = unix();
+    const statements: D1PreparedStatement[] = [];
+    for (const kind of allowed) {
+      if (typeof body[kind] !== "boolean") continue;
+      statements.push(env.DB.prepare(
+        `INSERT INTO owner_notification_preferences(customer_id,user_id,kind,enabled,updated_at)
+         VALUES (?,?,?,?,?)
+         ON CONFLICT(customer_id,user_id,kind) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`,
+      ).bind(customer.customerId, session.userId, kind, body[kind] ? 1 : 0, now));
+    }
+    if (statements.length) await env.DB.batch(statements);
+    return json({ ok: true });
+  }
+
   if (url.pathname === "/api/reminders" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT r.id,r.assistant_id,a.name AS assistant_name,r.conversation_id,r.due_at,r.payload_json,r.status,r.created_at,r.delivered_at
@@ -221,12 +389,25 @@ export async function handleRuntimeApi(
     await assertAssistant(env.DB, customer.customerId, assistantId);
     const dueAt = Math.floor(new Date(required(body.dueAt, "dueAt")).getTime() / 1000);
     if (!Number.isFinite(dueAt) || dueAt <= unix()) return json({ error: "invalid_due_at" }, 400);
+    const conversationId = body.conversationId ? required(body.conversationId, "conversationId") : null;
+    if (conversationId) {
+      const conversation = await env.DB.prepare(
+        "SELECT id,reminders_opt_out FROM conversations WHERE id=? AND customer_id=? AND assistant_id=? LIMIT 1",
+      ).bind(conversationId, customer.customerId, assistantId).first();
+      if (!conversation) return json({ error: "conversation_not_found" }, 404);
+      if (Number((conversation as any).reminders_opt_out || 0)) return json({ error: "conversation_reminders_opted_out" }, 409);
+    }
     const reminderId = id("rem");
+    const policy = await env.DB.prepare(
+      "SELECT max_attempts FROM reminder_policies WHERE assistant_id=? AND customer_id=? LIMIT 1",
+    ).bind(assistantId, customer.customerId).first<any>();
     await env.DB.prepare(
-      "INSERT INTO reminders (id,customer_id,assistant_id,conversation_id,due_at,payload_json,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO reminders (id,customer_id,assistant_id,conversation_id,due_at,payload_json,status,created_at,max_attempts,idempotency_key) VALUES (?,?,?,?,?,?,?,?,?,?)",
     ).bind(
-      reminderId, customer.customerId, assistantId, body.conversationId || null, dueAt,
-      JSON.stringify({ text: required(body.text, "text"), chatId: body.chatId || null }), "scheduled", unix(),
+      reminderId, customer.customerId, assistantId, conversationId, dueAt,
+      JSON.stringify({ text: required(body.text, "text") }), "scheduled", unix(),
+      Math.max(1, Number(policy?.max_attempts || 3)),
+      body.idempotencyKey ? String(body.idempotencyKey).slice(0, 160) : null,
     ).run();
     return json({ id: reminderId, dueAt }, 201);
   }
@@ -334,7 +515,44 @@ export async function handleRuntimeApi(
           ).bind(id("prm"), customer.customerId, assistantId, parseInt(String(current?.v || 0), 10) + 1, body.instructions, "published", now, now),
         ]);
       }
+      await recordAssistantVersion(env.DB, customer.customerId, assistantId, session.userId);
       return json({ ok: true });
+    }
+
+    if (parts[3] === "versions" && request.method === "GET") {
+      return json({ versions: await listAssistantVersions(env.DB, customer.customerId, assistantId) });
+    }
+
+    if (parts[3] === "rollback" && request.method === "POST") {
+      requireAdmin(session);
+      const body = await readJson(request);
+      const version = Number(body.version);
+      if (!Number.isInteger(version) || version < 1) return json({ error: "invalid_version" }, 400);
+      const newVersion = await rollbackAssistantVersion(env.DB, customer.customerId, assistantId, version, session.userId);
+      return json({ ok: true, version: newVersion });
+    }
+
+    if (parts[3] === "archive" && request.method === "POST") {
+      requireAdmin(session);
+      await archiveAssistant(env.DB, customer.customerId, assistantId);
+      return json({ ok: true });
+    }
+
+    if (parts[3] === "restore" && request.method === "POST") {
+      requireAdmin(session);
+      await restoreAssistant(env.DB, customer.customerId, assistantId);
+      return json({ ok: true });
+    }
+
+    if (parts.length === 3 && request.method === "DELETE") {
+      requireAdmin(session);
+      try {
+        await deleteAssistant(env.DB, customer.customerId, assistantId);
+        return json({ ok: true });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "assistant_delete_failed";
+        return json({ error: code }, code === "assistant_not_found" ? 404 : 409);
+      }
     }
 
     if (parts[3] === "telegram" && request.method === "POST") {
@@ -364,6 +582,11 @@ export async function handleRuntimeApi(
           id("chn"), customer.customerId, assistantId, "telegram", String(me.result.id), "active",
           JSON.stringify({ username: me.result.username || null, firstName: me.result.first_name || null, webhookUrl }), now, now,
         ),
+        env.DB.prepare(
+          `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_success_at,last_error)
+           VALUES (?,?,?,'healthy',?,?,NULL)
+           ON CONFLICT(customer_id,assistant_id,channel) DO UPDATE SET status='healthy',last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,last_error=NULL`,
+        ).bind(customer.customerId, assistantId, "telegram", now, now),
       ]);
       return json({ ok: true, bot: { id: me.result.id, username: me.result.username, name: me.result.first_name }, webhookUrl });
     }
@@ -375,6 +598,11 @@ export async function handleRuntimeApi(
       await env.DB.batch([
         env.DB.prepare("DELETE FROM assistant_secrets WHERE assistant_id=? AND name IN ('telegram_bot_token','telegram_webhook_secret')").bind(assistantId),
         env.DB.prepare("UPDATE assistant_channels SET status='disabled',updated_at=? WHERE assistant_id=? AND channel='telegram'").bind(unix(), assistantId),
+        env.DB.prepare(
+          `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_error)
+           VALUES (?,?,?,'disconnected',?,NULL)
+           ON CONFLICT(customer_id,assistant_id,channel) DO UPDATE SET status='disconnected',last_checked_at=excluded.last_checked_at,last_error=NULL`,
+        ).bind(customer.customerId, assistantId, "telegram", unix()),
       ]);
       return json({ ok: true });
     }
@@ -402,8 +630,7 @@ export async function handleRuntimeApi(
       }
       const body = await readJson(request);
       const endpoint = required(body.endpointUrl, "endpointUrl");
-      const parsed = new URL(endpoint);
-      if (parsed.protocol !== "https:" || isPrivateHost(parsed.hostname)) return json({ error: "unsafe_tool_endpoint" }, 400);
+      try { validateToolEndpoint(endpoint); } catch { return json({ error: "unsafe_tool_endpoint" }, 400); }
       const now = unix();
       const toolId = id("tool");
       const authCipher = body.authHeader ? await protectSecret(String(body.authHeader), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) : null;
@@ -442,6 +669,12 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const webhookSecret = await getAssistantSecret(env, assistantId, "telegram_webhook_secret");
   const supplied = request.headers.get("x-telegram-bot-api-secret-token") || "";
   if (!webhookSecret || !constantTimeEqual(supplied, webhookSecret)) return json({ error: "not_found" }, 404);
+
+  await env.DB.prepare(
+    `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_success_at,last_error)
+     VALUES (?,?,?,'healthy',?,?,NULL)
+     ON CONFLICT(customer_id,assistant_id,channel) DO UPDATE SET status='healthy',last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,last_error=NULL`,
+  ).bind(assistant.customer_id, assistantId, "telegram", unix(), unix()).run();
 
   const update = await readJson(request);
   const updateId = String(update.update_id ?? "");
@@ -512,8 +745,31 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     inbound.text || inbound.mediaContext || "", inbound.mediaJson ? JSON.stringify(inbound.mediaJson) : null, unix(),
   ).run();
 
+  const reminderCommand = inbound.text.trim().toLowerCase();
+  if (["stop reminders","cancel reminders","unsubscribe reminders"].includes(reminderCommand)) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE conversations SET reminders_opt_out=1,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?")
+        .bind(unix(), conversation.id, assistant.customer_id, assistantId),
+      env.DB.prepare("UPDATE reminders SET status='cancelled',cancelled_at=? WHERE conversation_id=? AND customer_id=? AND assistant_id=? AND status='scheduled'")
+        .bind(unix(), conversation.id, assistant.customer_id, assistantId),
+    ]);
+    await telegramSend(token, chatId, "Reminders are off for this conversation. Send “resume reminders” if you want them again.");
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, remindersOptedOut: true });
+  }
+  if (reminderCommand === "resume reminders") {
+    await env.DB.prepare(
+      "UPDATE conversations SET reminders_opt_out=0,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?",
+    ).bind(unix(), conversation.id, assistant.customer_id, assistantId).run();
+    await telegramSend(token, chatId, "Reminders are enabled again for this conversation.");
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, remindersOptedOut: false });
+  }
+
   if (assistant.human_handoff_enabled && shouldRequestHuman(inbound.text)) {
     await openHandoff(env.DB, assistant.customer_id, assistantId, conversation.id, inbound.text);
+    await notifyLinkedOwners(env, assistant.customer_id, assistantId, "handoff",
+      `Human handoff requested for ${assistant.name || "your assistant"}. Open the Mkety Assist portal to take over the conversation.`);
     await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.");
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, handoff: true });
@@ -525,6 +781,12 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   if (existingHandoff) {
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, awaitingHuman: true });
+  }
+
+  const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistantId, conversation.id);
+  if (automation.paused) {
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, automationPaused: true, pauseScope: automation.reason });
   }
 
   const typing = telegramAction(token, chatId, "typing");
@@ -560,25 +822,119 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
 export async function processDueReminders(env: AssistEnv): Promise<void> {
   const now = unix();
   const rows = await env.DB.prepare(
-    `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,c.external_conversation_id
-     FROM reminders r LEFT JOIN conversations c ON c.id=r.conversation_id
-     WHERE r.status='scheduled' AND r.due_at<=? ORDER BY r.due_at ASC LIMIT 100`,
+    `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,r.attempts,r.max_attempts,
+            c.external_conversation_id,c.reminders_opt_out,
+            COALESCE(p.enabled,1) AS policy_enabled,COALESCE(p.timezone,'UTC') AS policy_timezone,
+            p.quiet_start_hour,p.quiet_end_hour
+     FROM reminders r
+     LEFT JOIN conversations c ON c.id=r.conversation_id AND c.customer_id=r.customer_id AND c.assistant_id=r.assistant_id
+     LEFT JOIN reminder_policies p ON p.assistant_id=r.assistant_id AND p.customer_id=r.customer_id
+     WHERE r.status='scheduled' AND r.due_at<=?
+     ORDER BY r.due_at ASC LIMIT 100`,
   ).bind(now).all<any>();
 
   for (const reminder of rows.results ?? []) {
     try {
+      if (Number(reminder.reminders_opt_out || 0)) {
+        await env.DB.prepare(
+          "UPDATE reminders SET status='cancelled',cancelled_at=?,last_error='recipient_opted_out' WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now, reminder.id, reminder.customer_id).run();
+        continue;
+      }
+      if (!Number(reminder.policy_enabled ?? 1)) {
+        await env.DB.prepare(
+          "UPDATE reminders SET status='cancelled',cancelled_at=?,last_error='reminder_policy_disabled' WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now, reminder.id, reminder.customer_id).run();
+        continue;
+      }
+      if (isQuietHour(now, String(reminder.policy_timezone || "UTC"), reminder.quiet_start_hour, reminder.quiet_end_hour)) {
+        await env.DB.prepare(
+          "UPDATE reminders SET due_at=?,last_error='quiet_hours' WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now + 3600, reminder.id, reminder.customer_id).run();
+        continue;
+      }
       const payload = JSON.parse(reminder.payload_json || "{}");
-      const chatId = payload.chatId || reminder.external_conversation_id;
-      if (!chatId) throw new Error("reminder has no Telegram destination");
+      const chatId = reminder.external_conversation_id;
+      if (!chatId) throw new Error("reminder_has_no_conversation_destination");
+      const automation = await resolveAutomationState(env.DB, reminder.customer_id, reminder.assistant_id, reminder.conversation_id);
+      if (automation.paused) {
+        await env.DB.prepare(
+          "UPDATE reminders SET due_at=?,last_error=? WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now + 300, "automation_paused:" + String(automation.reason || "unknown"), reminder.id, reminder.customer_id).run();
+        continue;
+      }
       const token = await getAssistantSecret(env, reminder.assistant_id, "telegram_bot_token");
-      if (!token) throw new Error("assistant Telegram token unavailable");
+      if (!token) throw new Error("assistant_telegram_token_unavailable");
       const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"));
-      if (!sent.ok) throw new Error(sent.description || "Telegram send failed");
-      await env.DB.prepare("UPDATE reminders SET status='delivered',delivered_at=? WHERE id=? AND status='scheduled'")
-        .bind(now, reminder.id).run();
+      if (!sent.ok) throw new Error(sent.description || "telegram_send_failed");
+      await env.DB.prepare(
+        "UPDATE reminders SET status='delivered',delivered_at=?,last_error=NULL WHERE id=? AND customer_id=? AND status='scheduled'",
+      ).bind(now, reminder.id, reminder.customer_id).run();
     } catch (error) {
-      console.error("reminder delivery failed", reminder.id, error);
+      const attempts = Number(reminder.attempts || 0) + 1;
+      const maxAttempts = Math.max(1, Number(reminder.max_attempts || 3));
+      const terminal = attempts >= maxAttempts;
+      const retryAt = now + Math.min(3600, Math.max(60, 60 * (2 ** Math.min(attempts - 1, 5))));
+      await env.DB.prepare(
+        "UPDATE reminders SET attempts=?,last_error=?,status=?,due_at=? WHERE id=? AND customer_id=? AND status='scheduled'",
+      ).bind(
+        attempts,
+        String(error instanceof Error ? error.message : error).slice(0, 500),
+        terminal ? "failed" : "scheduled",
+        terminal ? reminder.due_at : retryAt,
+        reminder.id,
+        reminder.customer_id,
+      ).run();
+      if (terminal) {
+        await notifyLinkedOwners(
+          env,
+          reminder.customer_id,
+          reminder.assistant_id,
+          "reminder_failure",
+          "A Mkety Assist reminder could not be delivered after all retry attempts. Check Reminders in the portal.",
+        ).catch(() => undefined);
+      }
     }
+  }
+}
+
+async function notifyLinkedOwners(
+  env: AssistEnv,
+  customerId: string,
+  assistantId: string,
+  kind: "handoff" | "reminder_failure" | "channel_health",
+  text: string,
+) {
+  const token = await getAssistantSecret(env, assistantId, "telegram_bot_token");
+  if (!token) return;
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT u.telegram_user_id
+     FROM customer_users cu
+     JOIN users u ON u.id=cu.user_id
+     LEFT JOIN owner_notification_preferences p
+       ON p.customer_id=cu.customer_id AND p.user_id=u.id AND p.kind=?
+     WHERE cu.customer_id=? AND cu.role IN ('owner','admin')
+       AND u.telegram_user_id IS NOT NULL
+       AND u.telegram_recovery_assistant_id=?
+       AND COALESCE(p.enabled,1)=1`,
+  ).bind(kind, customerId, assistantId).all<any>();
+  await Promise.all((rows.results ?? []).map((row: any) =>
+    telegramSend(token, String(row.telegram_user_id), text).catch(() => ({ ok: false }))
+  ));
+}
+
+function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, endValue: unknown) {
+  const start = startValue == null ? null : Number(startValue);
+  const end = endValue == null ? null : Number(endValue);
+  if (start == null || end == null || !Number.isInteger(start) || !Number.isInteger(end)) return false;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(nowUnix * 1000));
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? -1);
+    if (hour < 0) return false;
+    return start === end ? true : start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  } catch {
+    return false;
   }
 }
 
@@ -594,14 +950,15 @@ async function runAssistant(input: {
   providerMessageId: string;
 }) {
   const { env, assistant, conversationId } = input;
+  const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistant.id, conversationId);
+  if (automation.paused) return { ok: false as const, paused: true as const, userMessage: "Automation is paused for this conversation." };
+
   const rate = await env.DB.prepare(
     `SELECT mr.* FROM model_rates mr
      WHERE mr.alias=? AND mr.effective_at<=?
      ORDER BY mr.version DESC LIMIT 1`,
   ).bind(assistant.model_alias, unix()).first<any>();
-  const route = await env.DB.prepare(
-    "SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1",
-  ).bind(assistant.model_alias).first<any>();
+  const route = await resolveModelRoute(env.DB, assistant.customer_id, assistant.model_alias);
   if (!rate || !route) return { ok: false as const, userMessage: "This assistant’s model is temporarily unavailable." };
 
   const prompt = await env.DB.prepare(
@@ -609,8 +966,8 @@ async function runAssistant(input: {
   ).bind(assistant.id).first<any>();
   const recent = assistant.memory_enabled
     ? await env.DB.prepare(
-        "SELECT role,content FROM messages WHERE conversation_id=? ORDER BY created_at DESC LIMIT 14",
-      ).bind(conversationId).all<any>()
+        "SELECT role,content FROM messages WHERE conversation_id=? AND created_at>COALESCE((SELECT memory_cleared_at FROM conversations WHERE id=?),0) ORDER BY created_at DESC LIMIT 14",
+      ).bind(conversationId, conversationId).all<any>()
     : { results: [] as any[] };
   const history = (recent.results ?? []).reverse();
 
@@ -690,7 +1047,7 @@ async function runAssistant(input: {
       max_tokens: maxOutputTokens,
       temperature: 0.4,
     };
-    let result = await invokeRoutedModel(env, route, aiInput);
+    let result = await invokeRoutedModel(env, route, aiInput, assistant.customer_id);
     let text = extractAiText(result);
 
     const toolCall = parseToolCall(text, tools.results ?? []);
@@ -706,7 +1063,7 @@ async function runAssistant(input: {
           ],
           max_tokens: maxOutputTokens,
           temperature: 0.3,
-        });
+        }, assistant.customer_id);
         text = extractAiText(result);
       }
     }
@@ -759,6 +1116,16 @@ export async function handleApiKeyInference(
      LIMIT 1`,
   ).bind(await sha256Text(raw), customer.customerId, now).first<any>();
   if (!key) return json({ error: { message: "invalid_api_key" } }, 401);
+  let scopes: string[] = [];
+  try { scopes = JSON.parse(String(key.scopes_json || "[]")); } catch { scopes = []; }
+  if (!scopes.includes("inference")) return json({ error: { message: "api_key_scope_forbidden" } }, 403);
+  const rateLimit = Math.max(1, Math.min(10000, Number(key.rate_limit_per_minute || 60)));
+  const recent = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM usage_events WHERE api_key_id=? AND created_at>=?",
+  ).bind(key.id, now - 60).first<any>();
+  if (Number(recent?.n || 0) >= rateLimit) {
+    return json({ error: { message: "rate_limit_exceeded" } }, 429);
+  }
 
   const body = await readJson(request);
   const assistantId = String(key.assistant_id || body.assistant_id || "").trim();
@@ -773,7 +1140,7 @@ export async function handleApiKeyInference(
   const alias = typeof body.model === "string" && /^mkety-[a-z0-9][a-z0-9-]{1,80}$/.test(body.model)
     ? body.model
     : assistant.model_alias;
-  const route = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  const route = await resolveModelRoute(env.DB, customer.customerId, alias);
   const rate = await env.DB.prepare(
     "SELECT * FROM model_rates WHERE alias=? AND effective_at<=? ORDER BY version DESC LIMIT 1",
   ).bind(alias, now).first<any>();
@@ -836,7 +1203,7 @@ export async function handleApiKeyInference(
       messages: mergedMessages,
       max_tokens: maxOutputTokens,
       temperature: typeof body.temperature === "number" ? body.temperature : 0.4,
-    });
+    }, customer.customerId);
     const text = extractAiText(result);
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
@@ -984,12 +1351,12 @@ async function retrieveKnowledge(db: D1Database, assistantId: string, query: str
 }
 
 async function reserveCredits(db: D1Database, customerId: string, assistantId: string, credits: number) {
-  const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=?").bind(assistantId).first<any>();
+  const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=? AND customer_id=?").bind(assistantId, customerId).first<any>();
   if (limit?.monthly_credit_cap) {
     const start = startOfMonthUnix();
     const used = await db.prepare(
-      "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE assistant_id=? AND created_at>=?",
-    ).bind(assistantId, start).first<any>();
+      "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE customer_id=? AND assistant_id=? AND created_at>=?",
+    ).bind(customerId, assistantId, start).first<any>();
     if (parseFloat(String(used?.used || 0)) + credits > parseFloat(String(limit.monthly_credit_cap))) return null;
   }
   const update = await db.prepare(
@@ -1011,13 +1378,19 @@ async function reserveCredits(db: D1Database, customerId: string, assistantId: s
 
 async function releaseReservation(db: D1Database, reservationId: string, customerId: string, reserved: number) {
   const now = unix();
-  await db.prepare("UPDATE credit_accounts SET balance=balance+?,updated_at=? WHERE customer_id=?").bind(reserved, now, customerId).run();
+  const claimed = await db.prepare(
+    "UPDATE credit_reservations SET status='released',settled_at=? WHERE id=? AND customer_id=? AND status='open' RETURNING reserved_credits",
+  ).bind(now, reservationId, customerId).first<any>();
+  if (!claimed) return false;
+  const release = Math.max(0, parseInt(String(claimed.reserved_credits ?? reserved), 10));
+  await db.prepare(
+    "UPDATE credit_accounts SET balance=balance+?,updated_at=? WHERE customer_id=?",
+  ).bind(release, now, customerId).run();
   const account = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
-  await db.batch([
-    db.prepare("UPDATE credit_reservations SET status='released',settled_at=? WHERE id=? AND status='open'").bind(now, reservationId),
-    db.prepare("INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)")
-      .bind(id("led"), customerId, reserved, "inference_release", reservationId, parseFloat(String(account?.balance || 0)), now),
-  ]);
+  await db.prepare(
+    "INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)",
+  ).bind(id("led"), customerId, release, "inference_release", reservationId, parseInt(String(account?.balance || 0), 10), now).run();
+  return true;
 }
 
 async function settleReservation(
@@ -1030,18 +1403,23 @@ async function settleReservation(
   usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number; providerCostMicros: number; apiKeyId?: string | null },
 ) {
   const now = unix();
-  const refund = Math.max(0, reserved - actual);
+  const safeActual = Math.max(0, Math.min(reserved, Math.trunc(actual)));
+  const claimed = await db.prepare(
+    "UPDATE credit_reservations SET status='settled',settled_credits=?,settled_at=? WHERE id=? AND customer_id=? AND assistant_id=? AND status='open' RETURNING reserved_credits",
+  ).bind(safeActual, now, reservationId, customerId, assistantId).first<any>();
+  if (!claimed) return false;
+
+  const originallyReserved = Math.max(0, parseInt(String(claimed.reserved_credits ?? reserved), 10));
+  const refund = Math.max(0, originallyReserved - safeActual);
   await db.prepare(
     "UPDATE credit_accounts SET balance=balance+?,lifetime_consumed=lifetime_consumed+?,updated_at=? WHERE customer_id=?",
-  ).bind(refund, actual, now, customerId).run();
+  ).bind(refund, safeActual, now, customerId).run();
   const balance = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
   const usageId = id("use");
   const statements: D1PreparedStatement[] = [
-    db.prepare("UPDATE credit_reservations SET status='settled',settled_credits=?,settled_at=? WHERE id=? AND status='open'")
-      .bind(actual, now, reservationId),
     db.prepare(
-      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, actual, usage.providerCostMicros, now, usage.apiKeyId ?? null),
+      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id,reservation_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, safeActual, usage.providerCostMicros, now, usage.apiKeyId ?? null, reservationId),
     db.prepare(
       "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
     ).bind(id("pce"), customerId, usageId, usage.provider, usage.providerModel, usage.providerCostMicros, "USD", now),
@@ -1049,10 +1427,11 @@ async function settleReservation(
   if (refund) {
     statements.push(
       db.prepare("INSERT INTO credit_ledger (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", usageId, parseFloat(String(balance?.balance || 0)), now),
+        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", reservationId, parseInt(String(balance?.balance || 0), 10), now),
     );
   }
   await db.batch(statements);
+  return true;
 }
 
 async function providerBudgetAllows(
@@ -1075,17 +1454,48 @@ async function providerBudgetAllows(
   return parseFloat(String(spent?.spent || 0)) + estimatedCostMicros <= usableProviderMicros;
 }
 
-async function invokeRoutedModel(env: AssistEnv, route: any, input: any): Promise<any> {
+async function resolveModelRoute(db: D1Database, customerId: string, alias: string) {
+  const override = await db.prepare(
+    `SELECT alias,provider,provider_model,provider_connection_id,fallback_provider,fallback_model,
+            fallback_provider_connection_id,byok_policy,status
+     FROM customer_model_routes
+     WHERE customer_id=? AND alias=? AND status='active' LIMIT 1`,
+  ).bind(customerId, alias).first<any>();
+  if (override) return override;
+  return db.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+}
+
+async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   try {
     const result = await invokeProviderModel(env, {
       provider: route.provider,
       provider_model: route.provider_model,
       provider_connection_id: route.provider_connection_id,
-    }, input);
+    }, input, customerId);
     return annotateProviderResult(result, String(route.provider), String(route.provider_model));
   } catch (primaryError) {
     if (!route.fallback_provider || !route.fallback_model) throw primaryError;
-    console.warn("primary model route failed; using configured fallback", {
+
+    const primaryOwnership = route.provider_connection_id
+      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
+      : null;
+    const fallbackOwnership = route.fallback_provider_connection_id
+      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
+      : null;
+    if (primaryOwnership?.ownership === "customer" && primaryOwnership.customer_id !== customerId) throw primaryError;
+    if (fallbackOwnership?.ownership === "customer" && fallbackOwnership.customer_id !== customerId) throw primaryError;
+    const primaryIsByok = primaryOwnership?.ownership === "customer";
+    const fallbackIsManaged = route.fallback_provider === "workers-ai"
+      || route.fallback_provider === "mkety-managed"
+      || (!route.fallback_provider_connection_id)
+      || fallbackOwnership?.ownership === "mkety";
+
+    if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryIsByok, fallbackIsManaged)) {
+      console.warn("BYOK provider failed; funded fallback blocked by policy", { alias: route.alias, provider: route.provider });
+      throw primaryError;
+    }
+
+    console.warn("primary model route failed; using explicitly permitted fallback", {
       alias: route.alias,
       provider: route.provider,
       fallbackProvider: route.fallback_provider,
@@ -1094,7 +1504,7 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any): Promis
       provider: route.fallback_provider,
       provider_model: route.fallback_model,
       provider_connection_id: route.fallback_provider_connection_id,
-    }, input);
+    }, input, customerId);
     return annotateProviderResult(result, String(route.fallback_provider), String(route.fallback_model));
   }
 }
@@ -1165,7 +1575,7 @@ async function buildBedrockHeaders(input: {
   };
 }
 
-async function invokeProviderModel(env: AssistEnv, route: any, input: any): Promise<any> {
+async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
     return env.AI.run(String(route.provider_model), input);
@@ -1173,10 +1583,11 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
 
   if (!route.provider_connection_id) throw new Error("Provider connection is not configured for this model route.");
   const connection = await env.DB.prepare(
-    "SELECT provider,endpoint_url,api_key_ciphertext,extra_json,status FROM provider_connections WHERE id=? AND status='active' LIMIT 1",
+    "SELECT provider,endpoint_url,api_key_ciphertext,extra_json,status,ownership,customer_id,validated_at FROM provider_connections WHERE id=? AND status='active' LIMIT 1",
   ).bind(route.provider_connection_id).first<any>();
-  if (!connection?.api_key_ciphertext) throw new Error("Provider connection is unavailable.");
+  if (!connection?.api_key_ciphertext || !connection.validated_at) throw new Error("Provider connection is unavailable or unvalidated.");
   if (connection.provider !== provider) throw new Error("Provider connection type does not match model route.");
+  if (connection.ownership === "customer" && connection.customer_id !== customerId) throw new Error("Customer BYOK provider scope mismatch.");
   const apiKey = await revealSecret(connection.api_key_ciphertext, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
   const extra = connection.extra_json ? JSON.parse(connection.extra_json) : {};
   const model = String(route.provider_model);
@@ -1262,6 +1673,23 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
       body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return payload;
+  }
+
+  if (provider === "azure-foundry") {
+    const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
+    if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
+    const apiVersion = String(extra.apiVersion || "2024-05-01-preview");
+    const url = endpoint.includes("/chat/completions")
+      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${encodeURIComponent(apiVersion)}`
+      : `${endpoint}/models/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
@@ -1362,19 +1790,21 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any): Prom
 }
 
 async function invokeTool(env: AssistEnv, tool: any, args: unknown) {
+  const endpoint = validateToolEndpoint(String(tool.endpoint_url || ""));
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (tool.auth_header_ciphertext) headers.authorization = await revealSecret(tool.auth_header_ciphertext, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(tool.endpoint_url, {
+    const response = await fetch(endpoint.toString(), {
       method: "POST",
       headers,
       body: JSON.stringify({ arguments: args ?? {} }),
       signal: controller.signal,
+      redirect: "error",
     });
     const text = await response.text();
-    return `HTTP ${response.status}\n${text.slice(0, 12000)}`;
+    return clampToolResponse(`HTTP ${response.status}\n${text}`, 64 * 1024);
   } finally {
     clearTimeout(timeout);
   }

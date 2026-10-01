@@ -26,6 +26,9 @@ jobs:
       - name: Type-check
         working-directory: customer-apps/assist
         run: npm run type-check
+      - name: Production acceptance contracts
+        working-directory: customer-apps/assist
+        run: npm run check:all
       - name: Check Operator browser runtime
         working-directory: customer-apps/assist
         run: npm run check:operator-ui
@@ -35,4 +38,5 @@ jobs:
         run: |
           set -euo pipefail
           sed 's/__MKETY_ASSIST_D1_DATABASE_ID__/00000000-0000-0000-0000-000000000000/' wrangler.jsonc > wrangler.ci.jsonc
+          npx wrangler d1 migrations apply DB --local --config wrangler.ci.jsonc
           npx wrangler deploy --dry-run --outdir /tmp/mkety-assist-dry --config wrangler.ci.jsonc

@@ -10,6 +10,20 @@ function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
+async function signAssistAttestation(raw: string, secret: string) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw)));
+  let binary = '';
+  for (const byte of signature) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 export async function POST(request: Request) {
   const secretKey = process.env.KORA_SECRET_KEY;
   if (!secretKey) return json({ success: false, message: 'Webhook is not configured.' }, 503);
@@ -57,6 +71,28 @@ export async function POST(request: Request) {
         contentType: request.headers.get('content-type'),
       });
       return json({ success: true, settled: false, routedTo: route.source, ...forwarded });
+    }
+
+    if (route.source === 'assist') {
+      const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
+      if (!brokerSecret) return json({ success: false, message: 'Assist payment forwarding is not configured.' }, 503);
+      const body = JSON.stringify({
+        provider: 'kora',
+        reference,
+        provider_payment_id: String(verified.transaction_reference ?? verified.payment_reference ?? verified.reference ?? reference),
+        provider_event_id: String(verified.transaction_reference ?? verified.reference ?? reference),
+        status,
+        amount: verified.amount_paid ?? verified.amount,
+        currency: String(verified.currency ?? '').toUpperCase(),
+      });
+      const attestation = await signAssistAttestation(body, brokerSecret);
+      const forwarded = await fetch('https://mkety-assist.mkety.app/api/payment/kora/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-mkety-payment-attestation': attestation },
+        body,
+      });
+      if (!forwarded.ok) return json({ success: false, message: 'Assist settlement forwarding failed.' }, 502);
+      return json({ success: true, settled: false, routedTo: 'assist', status });
     }
 
     const result = await routeVerifiedMketyPayment({
