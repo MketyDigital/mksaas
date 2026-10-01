@@ -1,4 +1,5 @@
 import {
+  createFlutterwaveHostedCheckout,
   createSaasFlutterwaveMetadata,
   createSaasFlutterwaveReference,
   isMketyFlutterwaveCollectionCurrency,
@@ -25,11 +26,6 @@ const FLUTTERWAVE_CAPABILITIES: GatewayCapabilities = {
   supportsPartialPayment: false,
   supportsMultipleCurrencies: true,
 };
-
-function returnPathFromUrl(value: string): string {
-  const url = new URL(value);
-  return `${url.pathname}${url.search}`;
-}
 
 export function createFlutterwaveBillingAdapter(options: {
   publicKey?: string;
@@ -60,14 +56,28 @@ export function createFlutterwaveBillingAdapter(options: {
         markupBps: settings.flutterwave.fxMarkupBps,
       });
       const reference = createSaasFlutterwaveReference(input.checkoutId);
-      const launcher = new URL('/payments/flutterwave/inline', input.returnUrl);
-      launcher.searchParams.set('checkout', input.checkoutId);
-      launcher.searchParams.set('returnPath', returnPathFromUrl(input.returnUrl));
+      const checkoutUrl = await createFlutterwaveHostedCheckout({
+        source: 'saas',
+        reference,
+        amountMinor: quote.amountMinor,
+        currency: quote.currency,
+        email: input.customer.email,
+        customerName: input.customer.name,
+        redirectUrl: input.returnUrl,
+        metadata: {
+          ...createSaasFlutterwaveMetadata(input.checkoutId, input.tenantId),
+          canonical_amount_minor: input.amountExpectedMinor.toString(),
+          canonical_currency: input.currency,
+          provider_amount_minor: quote.amountMinor.toString(),
+          provider_currency: quote.currency,
+        },
+        secretKey: options.standardSecretKey,
+      });
 
       return {
         provider: 'flutterwave',
         providerCheckoutId: reference,
-        checkoutUrl: launcher.toString(),
+        checkoutUrl,
         providerAmountExpectedMinor: quote.amountMinor,
         providerCurrency: quote.currency,
       };
