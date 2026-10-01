@@ -51,6 +51,7 @@ verified webhook + server re-query
         +-- Enterprise ----> MkSaaS Enterprise order ledger
         +-- Media ---------> verified forwarding to Media-owned ledger
         +-- Host ----------> verified forwarding to Host-owned ledger
+        +-- Assist --------> verified forwarding to Assist-owned credit ledger
 ```
 
 ## Provider availability
@@ -131,7 +132,7 @@ The Kora success/pending/failed/close callbacks update only the customer-facing 
 
 ## Flutterwave v3 Standard broker
 
-Some independently deployed Mkety products cannot render the central Mkety Inline page and instead require a hosted provider link.
+Some independently deployed Mkety products cannot render the central Mkety Inline page and instead require a hosted provider link. Mkety Assist uses this boundary for customer credit top-ups.
 
 For that compatibility boundary only, the central broker remains:
 
@@ -171,7 +172,7 @@ The active webhook contract is v3/Standard:
 - require webhook ID/reference/status/currency/amount to match the re-queried transaction;
 - route the verified Mkety reference to its owning ledger.
 
-For Media/Host forwarding, central Mkety additionally signs an attestation with `FLUTTERWAVE_CHECKOUT_BROKER_SECRET` before forwarding the unchanged provider payload/signature to the configured product webhook.
+For Media/Host/Assist forwarding, central Mkety additionally signs an attestation with `FLUTTERWAVE_CHECKOUT_BROKER_SECRET` before forwarding the unchanged provider payload/signature to the configured product webhook. Assist accepts Flutterwave settlement only at its stable provider-owned endpoint and grants credits from its own stored checkout row, never from webhook-supplied credit metadata.
 
 Unknown references fail closed.
 
@@ -304,6 +305,7 @@ Canonical Mkety reference prefixes include:
 SAAS-MKS-*
 MEDIA-MKM-*
 HOST-MKH-*
+ASSIST-MKA-*
 ENT-MKE-*
 ```
 

@@ -51,6 +51,7 @@ function isAllowedRedirect(value: string, source: string): boolean {
     if (url.protocol !== 'https:') return false;
     if (source === 'media') return url.hostname === 'media.mkety.com';
     if (source === 'host') return url.hostname.endsWith('.mkety.com') || url.hostname === 'mkety.com';
+    if (source === 'assist') return url.hostname === 'mkety-assist.mkety.app';
     return url.hostname === 'mkety.com' || url.hostname === 'app.mkety.com';
   } catch {
     return false;
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as BrokerRequest;
     const source = safeString(body.source, 32);
-    if (!['media', 'host', 'saas', 'enterprise'].includes(source)) {
+    if (!['media', 'host', 'assist', 'saas', 'enterprise'].includes(source)) {
       return json({ success: false, message: 'Unknown Mkety payment source.' }, 400);
     }
 
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
     }
 
     const metadata = buildMketyPaymentMetadata({
-      source: source as 'saas' | 'media' | 'host' | 'enterprise',
+      source: source as 'saas' | 'media' | 'host' | 'assist' | 'enterprise',
       invoiceId: safeString(body.invoice_id, 120) || undefined,
       tenantId: safeString(body.tenant_id, 120) || undefined,
       checkoutId: safeString(body.checkout_id, 120) || undefined,
@@ -185,7 +186,7 @@ export async function POST(request: Request) {
     }
 
     const checkoutUrl = await createFlutterwaveHostedCheckout({
-      source: source as 'saas' | 'media' | 'host' | 'enterprise',
+      source: source as 'saas' | 'media' | 'host' | 'assist' | 'enterprise',
       reference,
       amountMinor: quote.amountMinor,
       currency: quote.currency,

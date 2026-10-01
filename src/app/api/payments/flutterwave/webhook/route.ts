@@ -138,7 +138,7 @@ export async function POST(request: Request) {
     const route = resolveMketyPaymentRoute(payment.reference, payment.verified);
     if (!route) return json({ success: false, message: 'Unknown Mkety payment reference.' }, 400);
 
-    if (route.source === 'media' || route.source === 'host') {
+    if (route.source === 'media' || route.source === 'host' || route.source === 'assist') {
       const brokerSecret = process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET;
       if (!brokerSecret) throw new Error('Flutterwave Standard forwarding attestation is not configured.');
       const attestation = await createMketyPaymentAttestation(rawBody, brokerSecret);

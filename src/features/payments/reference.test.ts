@@ -26,6 +26,11 @@ describe('Mkety payment references', () => {
       targetUuid: undefined,
     });
     expect(parseMketyPaymentReference('HOST-MKH-8G7P21')?.source).toBe('host');
+    expect(parseMketyPaymentReference('ASSIST-MKA-A83K27')).toEqual({
+      source: 'assist',
+      token: 'A83K27',
+      targetUuid: undefined,
+    });
   });
 
   it('builds explicit Mkety-owned metadata for downstream routing', () => {

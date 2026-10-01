@@ -133,6 +133,47 @@ describe('POST /api/payments/flutterwave/webhook', () => {
     expect(mockRoute).not.toHaveBeenCalled();
   });
 
+  it('attests and forwards a verified Assist payment without local central settlement', async () => {
+    const rawBody = JSON.stringify({
+      event: 'charge.completed',
+      data: {
+        id: 1991,
+        tx_ref: 'ASSIST-MKA-A83K27',
+        status: 'successful',
+        amount: 5,
+        currency: 'USD',
+      },
+    });
+    mockStandardVerify.mockResolvedValue({
+      id: 1991,
+      tx_ref: 'ASSIST-MKA-A83K27',
+      status: 'successful',
+      amount: 5,
+      currency: 'USD',
+      meta: { source: 'assist', checkout_id: 'chk_1' },
+    });
+    mockForward.mockResolvedValue({
+      forwarded: true,
+      destination: 'https://mkety-assist.mkety.app/api/payment/flutterwave/webhook',
+    });
+
+    const response = await POST(new Request('https://mkety.com/api/payments/flutterwave/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'verif-hash': 'standard-hash' },
+      body: rawBody,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockAttestation).toHaveBeenCalledWith(rawBody, 'b'.repeat(40));
+    expect(mockForward).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'assist',
+      provider: 'flutterwave',
+      rawBody,
+      attestation: 'signed-attestation',
+    }));
+    expect(mockRoute).not.toHaveBeenCalled();
+  });
+
   it('rejects forwarding when webhook fields disagree with the re-queried transaction', async () => {
     const rawBody = JSON.stringify({
       event: 'charge.completed',

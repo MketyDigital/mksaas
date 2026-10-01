@@ -1,6 +1,6 @@
 import type { MketyPaymentSource } from './reference';
 
-type ForwardableSource = Extract<MketyPaymentSource, 'media' | 'host'>;
+type ForwardableSource = Extract<MketyPaymentSource, 'media' | 'host' | 'assist'>;
 type ForwardableProvider = 'flutterwave' | 'kora';
 
 const DEFAULT_MEDIA_DESTINATIONS: Record<ForwardableProvider, string> = {
@@ -8,8 +8,12 @@ const DEFAULT_MEDIA_DESTINATIONS: Record<ForwardableProvider, string> = {
   kora: 'https://media.mkety.com/api/billing/kora/webhook',
 };
 
+const DEFAULT_ASSIST_DESTINATIONS: Partial<Record<ForwardableProvider, string>> = {
+  flutterwave: 'https://mkety-assist.mkety.app/api/payment/flutterwave/webhook',
+};
+
 function destinationFor(source: ForwardableSource, provider: ForwardableProvider): string | null {
-  const prefix = source === 'media' ? 'MKETY_MEDIA' : 'MKETY_HOST';
+  const prefix = source === 'media' ? 'MKETY_MEDIA' : source === 'assist' ? 'MKETY_ASSIST' : 'MKETY_HOST';
   const configured = process.env[`${prefix}_${provider.toUpperCase()}_WEBHOOK_URL`]?.trim();
   if (configured) {
     const url = new URL(configured);
@@ -18,6 +22,7 @@ function destinationFor(source: ForwardableSource, provider: ForwardableProvider
   }
 
   if (source === 'media') return DEFAULT_MEDIA_DESTINATIONS[provider];
+  if (source === 'assist') return DEFAULT_ASSIST_DESTINATIONS[provider] ?? null;
   return null;
 }
 

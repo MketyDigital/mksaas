@@ -100,7 +100,7 @@ Key endpoints:
 - `GET /api/ops/health` — lightweight operational health
 - `GET /api/ops/audit` — recent audit activity
 
-Operator requests currently require `Authorization: Bearer <MKETY_ASSIST_OPS_TOKEN>`. Production should additionally place `assist-ops.mkety.com` behind Cloudflare Access.
+Operator uses its own local secure session. On the first production deployment, if no Operator account exists, the deploy workflow creates a one-time setup token and writes the setup link to the private GitHub Actions job summary. The token is stored only as a hash in D1 and expires after 24 hours. Cloudflare Access may still be added as an outer defense layer, but it is not required for the Lite app to authenticate correctly.
 
 ## Customer console and runtime
 
@@ -140,58 +140,33 @@ Knowledge uploads are stored in R2. Plain-text formats are ingested directly; su
 
 ## Payment contract
 
-Mkety Payments posts signed events to:
+Assist uses the existing **Mkety Shared Payments** boundary instead of holding payment-provider credentials.
 
-```
-https://mkety-assist.mkety.app/api/payment/webhook
-```
+Top-up flow:
 
-Subscription payment success is a payment fact. Assist interprets the customer's local commercial policy and grants its configured included credits:
+1. Assist creates a pending local `payment_checkouts` row with the authoritative credit amount and USD value.
+2. Assist calls `POST https://mkety.com/api/payments/flutterwave/start` as source `assist`, authenticated by the existing `FLUTTERWAVE_CHECKOUT_BROKER_SECRET`.
+3. Main Mkety creates the hosted Flutterwave checkout.
+4. Main Mkety receives the provider webhook, validates the Flutterwave signature, re-queries the transaction and checks reference/amount/currency.
+5. Main Mkety forwards the unchanged verified webhook to:
+   ```
+   https://mkety-assist.mkety.app/api/payment/flutterwave/webhook
+   ```
+   with an internal `x-mkety-payment-attestation` signed using the same broker secret.
+6. Assist verifies the attestation and the stored quote, then moves its checkout from `pending` to `paid`.
+7. A D1 trigger atomically grants the stored credits exactly once.
 
-```json
-{
-  "id": "payment-event-id",
-  "type": "subscription.payment_succeeded",
-  "customerId": "cus_...",
-  "amountMinor": 8000,
-  "currency": "USD"
-}
-```
-
-A confirmed top-up uses signed Assist checkout metadata:
-
-```json
-{
-  "id": "payment-event-id",
-  "type": "payment.succeeded",
-  "grantType": "topup",
-  "customerId": "cus_...",
-  "amountMinor": 2500,
-  "currency": "USD",
-  "credits": 10000
-}
-```
-
-A failed subscription moves the customer to `past_due` and starts the locally configured grace period. The portal remains available, but paid inference stops after grace expiry until billing becomes current.
-
-Signature:
-
-```
-x-mkety-signature = hex(HMAC-SHA256(MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET, raw_body))
-```
-
-Events are idempotent by provider event ID. Assist, not the main Mkety system, owns the resulting credit ledger and billing entitlement state.
-
-The current Main Mkety public enterprise checkout endpoint is intentionally quote/payment-link based rather than a generic self-service product checkout API, so Assist does not fake a customer top-up button. Operator funding/credit adjustments and signed Mkety payment events are the supported paths until the shared Mkety checkout contract is exposed.
+Browser return from Flutterwave is informational only and never grants credits.
 
 ## Required Worker secrets
 
-Required:
-- `MKETY_ASSIST_OPS_TOKEN`
+Required runtime/deployment bindings:
 - `MKETY_ASSIST_CF_ZONE_ID`
 - `MKETY_ASSIST_CF_SAAS_TOKEN` (deployment can fall back to the scoped repository Cloudflare token)
-- `MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET`
-- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` (deployment may use the existing stable `MKETY_CONNECTION_SECRET_ENCRYPTION_KEY` as fallback)
+- `MKETY_ASSIST_SECRET_ENCRYPTION_KEY` — stable encryption root for saved assistant/provider credentials. If no repository value is supplied, first deployment generates the Worker secret once and later deploys preserve it.
+
+Shared payment secret when top-ups are enabled:
+- `FLUTTERWAVE_CHECKOUT_BROKER_SECRET` — the existing Mkety cross-product broker/attestation secret, not an Assist-owned provider credential.
 
 Optional central Telegram-recovery fallback:
 - `MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN`
