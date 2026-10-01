@@ -126,7 +126,21 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const hostedHostname = `${slug}.${env.HOSTED_SUFFIX}`;
 
     const monthlyPrice = positiveInt(body.monthlyPriceMinor, 0);
-    const includedCredits = positiveInt(body.includedCredits, 0);
+    const providerEnvelopeBps = positiveInt(body.providerEnvelopeBps, 2500);
+    const operationsReserveBps = positiveInt(body.operationsReserveBps, 300);
+    const rateMultiplierBps = positiveInt(body.rateMultiplierBps, 10000);
+    let includedCredits = positiveInt(body.includedCredits, 0);
+    if (body.autoCalculateCredits === true && monthlyPrice > 0) {
+      const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
+      const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+      includedCredits = calculateCommercialPlan({
+        monthlyAmountMinor: monthlyPrice,
+        providerEnvelopeBps,
+        operationsReserveBps,
+        rateMultiplierBps,
+        creditUsdMicros,
+      }).includedCredits;
+    }
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
 
     await env.DB.batch([
@@ -142,8 +156,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         .bind(id("set"), customerId, userId, setupHash, now + 86400, now),
       env.DB.prepare("INSERT INTO credit_accounts (customer_id,balance,lifetime_granted,lifetime_consumed,updated_at) VALUES (?,?,?,?,?)")
         .bind(customerId, includedCredits, includedCredits, 0, now),
-      env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,updated_at) VALUES (?,?,?,?)")
-        .bind(customerId, monthlyPrice, includedCredits, now),
+      env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,updated_at) VALUES (?,?,?,?,?,?,?)")
+        .bind(customerId, monthlyPrice, includedCredits, providerEnvelopeBps, operationsReserveBps, rateMultiplierBps, now),
       env.DB.prepare("INSERT INTO feature_policy (customer_id,max_assistants,updated_at) VALUES (?,?,?)")
         .bind(customerId, maxAssistants, now),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,action,target_type,target_id,customer_id,created_at) VALUES (?,?,?,?,?,?,?)")
