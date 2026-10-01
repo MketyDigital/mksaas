@@ -381,7 +381,7 @@ async function manageCustomer(id){
     closeCustomer.onclick=closeModal;
     regenerateAccess.onclick=async()=>{try{
       const x=await api('/api/ops/customer/access-link',{method:'POST',body:JSON.stringify({customerId:id})});
-      alert('Fresh owner access link for '+x.email+'\n\n'+x.accessUrl+'\n\nExpires: '+new Date(x.expiresAt*1000).toLocaleString());
+      alert('Fresh owner access link for '+x.email+'\\n\\n'+x.accessUrl+'\\n\\nExpires: '+new Date(x.expiresAt*1000).toLocaleString());
     }catch(e){alert(e.message)}};
     deleteUnpaid.onclick=async()=>{try{
       const phrase=prompt('This permanently deletes the unpaid/unused customer and any custom-domain Cloudflare routing. Type DELETE '+c.slug+' to continue.');
