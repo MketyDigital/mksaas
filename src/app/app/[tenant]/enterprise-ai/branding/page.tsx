@@ -55,7 +55,7 @@ export default async function EnterpriseAiBrandingPage({ params }: { params: Pro
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-4">
       <div>
-        <Link href={`/t/${tenantSlug}/enterprise-ai`} className="text-sm text-muted-foreground">← Enterprise AI</Link>
+        <Link href={`/app/${tenantSlug}/enterprise-ai`} className="text-sm text-muted-foreground">← Enterprise AI</Link>
         <h1 className="mt-2 text-3xl font-bold">Brand & domain</h1>
         <p className="mt-2 text-muted-foreground">Replace Mkety-facing product branding for your customer AI experience and connect your own hostname.</p>
       </div>
