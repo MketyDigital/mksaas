@@ -301,10 +301,51 @@ jobs:
         working-directory: customer-apps/assist
         run: npx wrangler deploy --config wrangler.deploy.jsonc
 
+      - name: Attach hosted customer portals as Worker Custom Domains
+        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
+          ACCOUNT_ID: ${{ steps.cloudflare.outputs.account_id }}
+          ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$CLOUDFLARE_API_TOKEN"
+          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then d1_token="$MKETY_ASSIST_CF_SAAS_TOKEN"; else d1_token="$CLOUDFLARE_API_TOKEN"; fi
+
+          hosted_json="$(CLOUDFLARE_API_TOKEN="$d1_token" npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc             --command "SELECT hostname FROM customer_domains WHERE kind='hosted' ORDER BY hostname;")"
+
+          HOSTED_JSON="$hosted_json" node - <<'NODE' >/tmp/assist-hosted-hostnames
+          const value=JSON.parse(process.env.HOSTED_JSON||'[]');
+          const rows=value?.[0]?.results || value?.result || [];
+          for (const row of rows) if (row?.hostname) console.log(String(row.hostname));
+          NODE
+
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          domains="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/workers/domains")"
+
+          while IFS= read -r host; do
+            [ -n "$host" ] || continue
+            service="$(DOMAINS="$domains" HOST="$host" node -e "const x=JSON.parse(process.env.DOMAINS||'{}');const d=(x.result||[]).find(v=>v.hostname===process.env.HOST);if(d)process.stdout.write(String(d.service||''))")"
+            if [ -n "$service" ] && [ "$service" != 'mkety-assist' ]; then
+              echo "::error::Hosted Assist domain $host belongs to Worker $service"
+              exit 1
+            fi
+            if [ "$service" = 'mkety-assist' ]; then
+              echo "Hosted portal already attached: $host"
+              continue
+            fi
+            body="$(HOST="$host" ZONE_ID="$ZONE_ID" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:'mkety-assist',zone_id:process.env.ZONE_ID,zone_name:'mkety.app'}))")"
+            curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$ACCOUNT_ID/workers/domains" >/dev/null
+            echo "Attached hosted portal: $host"
+          done </tmp/assist-hosted-hostnames
+
       - name: Upload configured Assist secrets
         working-directory: customer-apps/assist
         env:
           MKETY_ASSIST_CF_ZONE_ID: ${{ steps.cloudflare.outputs.zone_id }}
+          MKETY_ASSIST_CF_ACCOUNT_ID: ${{ steps.cloudflare.outputs.account_id }}
           MKETY_ASSIST_OPS_AUTH_CLIENT_ID: ${{ steps.zitadel_ops.outputs.client_id }}
         shell: bash
         run: |
@@ -315,6 +356,7 @@ jobs:
           const fs = require('fs');
           const values = {
             MKETY_ASSIST_CF_ZONE_ID: process.env.MKETY_ASSIST_CF_ZONE_ID,
+            MKETY_ASSIST_CF_ACCOUNT_ID: process.env.MKETY_ASSIST_CF_ACCOUNT_ID,
             MKETY_ASSIST_CF_SAAS_TOKEN: process.env.MKETY_ASSIST_CF_SAAS_TOKEN,
             MKETY_ASSIST_OPS_AUTH_ISSUER: process.env.MKETY_ASSIST_OPS_AUTH_ISSUER,
             MKETY_ASSIST_OPS_AUTH_CLIENT_ID: process.env.MKETY_ASSIST_OPS_AUTH_CLIENT_ID,
