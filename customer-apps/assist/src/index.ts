@@ -1,5 +1,10 @@
+import { handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, runtimeErrorResponse } from "./runtime";
+
 interface Env {
   DB: D1Database;
+  AI: { run(model: string, input: unknown): Promise<any> };
+  MEDIA: R2Bucket;
+  MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;
   HOSTED_SUFFIX: string;
   PORTAL_CNAME_TARGET: string;
   ROUTING_ORIGIN: string;
@@ -38,6 +43,9 @@ export default {
     try {
       const url = new URL(request.url);
       const host = url.hostname.toLowerCase();
+
+      const assistantWebhook = await handleAssistantTelegramWebhook(request, env);
+      if (assistantWebhook) return assistantWebhook;
 
       if (url.pathname === "/health") {
         return json({ ok: true, service: "mkety-assist", time: new Date().toISOString() });
@@ -443,6 +451,9 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(customer.customerId).first();
     return json({ credits: account, plan: policy });
   }
+
+  const runtimeResponse = await handleRuntimeApi(request, env, customer, session);
+  if (runtimeResponse) return runtimeResponse;
 
   return json({ error: "not_found" }, 404);
 }
