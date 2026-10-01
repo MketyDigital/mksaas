@@ -70,7 +70,7 @@ function generateToken(): string {
  */
 function buildInviteUrl(tenantSlug: string, token: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  return `${baseUrl.replace(/\/$/, '')}/t/${tenantSlug}/invite/${token}`;
+  return `${baseUrl.replace(/\/$/, '')}/app/${tenantSlug}/invite/${token}`;
 }
 
 // ============================================================================
@@ -185,7 +185,7 @@ export async function createInvite(
       })
       .returning();
 
-    revalidatePath(`/t/${tenantSlug}/admin/members`);
+    revalidatePath(`/app/${tenantSlug}/admin/members`);
 
     return {
       success: true,
@@ -337,7 +337,7 @@ export async function revokeInvite(tenantSlug: string, inviteId: string): Promis
       .set({ status: 'revoked', updatedAt: new Date() })
       .where(eq(schema.tenantInvitations.id, inviteId));
 
-    revalidatePath(`/t/${tenantSlug}/admin/members`);
+    revalidatePath(`/app/${tenantSlug}/admin/members`);
 
     return { success: true };
   } catch (error) {
@@ -392,7 +392,7 @@ export async function resendInvite(
       .where(eq(schema.tenantInvitations.id, inviteId))
       .returning();
 
-    revalidatePath(`/t/${tenantSlug}/admin/members`);
+    revalidatePath(`/app/${tenantSlug}/admin/members`);
 
     return {
       success: true,
