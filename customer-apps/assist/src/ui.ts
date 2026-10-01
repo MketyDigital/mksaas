@@ -97,6 +97,7 @@ function render_api(){
 function render_settings(){return '<h1 class="title">Settings</h1><p class="sub">Branding, security, domains and recovery.</p>'+
 '<div class="two"><div class="card"><h3>Branding</h3><div class="field"><label>Brand color</label><input class="input" id="brandColor" placeholder="#7c5cff" value="'+esc(APP.brandColor||'')+'"></div><div class="field"><label>Logo URL (HTTPS)</label><input class="input" id="logoUrl" placeholder="https://..." value="'+esc(APP.logoUrl||'')+'"></div><button class="btn primary" data-action="save-branding">Save branding</button></div>'+
 '<div class="card"><h3>Security</h3><p class="muted">Change your password and revoke other signed-in sessions.</p><button class="btn primary" data-action="change-password">Change password</button> <button class="btn" data-action="manage-sessions">Manage sessions</button><h3 style="margin-top:20px">Telegram recovery</h3><p class="muted">Connect Telegram while signed in so it can receive recovery codes.</p><button class="btn" data-action="link-telegram">Connect Telegram</button></div></div>'+
+'<div class="card" style="margin-top:16px"><h3>Owner alerts</h3><p class="muted">Telegram alerts use only a recovery identity securely linked to the same assistant.</p><div id="notificationPrefsBox"><div class="empty">Loading alert preferences…</div></div></div>'+
 '<div class="card" style="margin-top:16px"><div class="spread"><div><h3 style="margin:0">Portal domains</h3><p class="muted">Public DNS, HTTPS and Assist ownership determine usability; provider provisioning status remains diagnostic.</p></div><button class="btn" data-action="refresh-domains">Refresh</button></div><div id="customerDomainsBox"><div class="empty">Loading domains…</div></div></div>'}
 function bindSection(){
  content.querySelectorAll('[data-action="new-assistant"]').forEach(b=>b.onclick=newAssistant);
@@ -124,7 +125,7 @@ function bindSection(){
  if(state.section==='team')loadTeam();
  if(state.section==='usage')loadCheckouts();
  if(state.section==='api')loadApiKeys();
- if(state.section==='settings')loadCustomerDomains();
+ if(state.section==='settings'){loadCustomerDomains();loadNotificationPreferences();}
 }
 function newAssistant(){
  openModal('<h2>New assistant</h2><div class="field"><label>Name</label><input class="input" id="naName"></div><div class="field"><label>Instructions</label><textarea class="input textarea" id="naInstructions" placeholder="What should this assistant do?"></textarea></div><div class="field"><label>Model</label><select class="input" id="naModel"><option value="mkety-smart">Smart</option><option value="mkety-fast">Fast</option><option value="mkety-reasoning">Reasoning</option><option value="mkety-vision">Vision</option></select></div><div class="row"><button class="btn primary" id="naCreate">Create assistant</button><button class="btn" id="naCancel">Cancel</button></div>');
@@ -190,6 +191,13 @@ function newApiKey(){
 async function revokeApiKey(id){
  if(!confirm('Revoke this API key? Existing integrations using it will stop working.'))return;
  try{await api('/api/keys/'+encodeURIComponent(id),{method:'DELETE'});await loadApiKeys();toastMsg('API key revoked')}catch(e){toastMsg(e.message)}
+}
+async function loadNotificationPreferences(){
+ try{
+  const d=await api('/api/notifications/preferences'),p=d.preferences||{};
+  notificationPrefsBox.innerHTML='<label class="row"><input type="checkbox" data-notify-kind="handoff" '+(p.handoff!==false?'checked':'')+'> Human handoff alerts</label><label class="row"><input type="checkbox" data-notify-kind="reminder_failure" '+(p.reminder_failure!==false?'checked':'')+'> Reminder failure alerts</label><label class="row"><input type="checkbox" data-notify-kind="channel_health" '+(p.channel_health!==false?'checked':'')+'> Channel health alerts</label>';
+  notificationPrefsBox.querySelectorAll('[data-notify-kind]').forEach(x=>x.onchange=async()=>{try{await api('/api/notifications/preferences',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({[x.dataset.notifyKind]:x.checked})});toastMsg('Alert preference saved')}catch(e){toastMsg(e.message)}});
+ }catch(e){notificationPrefsBox.textContent=e.message}
 }
 async function loadCustomerDomains(){
  try{
