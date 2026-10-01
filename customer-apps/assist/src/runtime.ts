@@ -322,15 +322,25 @@ export async function handleRuntimeApi(
     const assistantId = url.searchParams.get("assistantId");
     const query = assistantId
       ? env.DB.prepare(
-          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.status,c.updated_at,
+          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.last_sender_id,c.status,c.updated_at,
+             COALESCE(sc.state,'active') AS sender_control_state,
+             sc.reason AS sender_control_reason,sc.expires_at AS sender_control_expires_at,
              (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message
-           FROM conversations c JOIN assistants a ON a.id=c.assistant_id
+           FROM conversations c
+           JOIN assistants a ON a.id=c.assistant_id
+           LEFT JOIN channel_sender_controls sc
+             ON sc.assistant_id=c.assistant_id AND sc.channel=c.channel AND sc.sender_id=COALESCE(c.last_sender_id,c.external_conversation_id)
            WHERE c.customer_id=? AND c.assistant_id=? ORDER BY c.updated_at DESC LIMIT 100`,
         ).bind(customer.customerId, assistantId)
       : env.DB.prepare(
-          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.status,c.updated_at,
+          `SELECT c.id,c.assistant_id,a.name AS assistant_name,c.channel,c.external_conversation_id,c.last_sender_id,c.status,c.updated_at,
+             COALESCE(sc.state,'active') AS sender_control_state,
+             sc.reason AS sender_control_reason,sc.expires_at AS sender_control_expires_at,
              (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message
-           FROM conversations c JOIN assistants a ON a.id=c.assistant_id
+           FROM conversations c
+           JOIN assistants a ON a.id=c.assistant_id
+           LEFT JOIN channel_sender_controls sc
+             ON sc.assistant_id=c.assistant_id AND sc.channel=c.channel AND sc.sender_id=COALESCE(c.last_sender_id,c.external_conversation_id)
            WHERE c.customer_id=? ORDER BY c.updated_at DESC LIMIT 100`,
         ).bind(customer.customerId);
     const rows = await query.all();
