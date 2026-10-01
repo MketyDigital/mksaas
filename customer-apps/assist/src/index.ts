@@ -961,7 +961,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/domains/status" && request.method === "GET") {
     const hostname = normalizeHostname(requiredString(url.searchParams.get("hostname"), "hostname"));
     const local = await env.DB.prepare(
-      `SELECT d.provider_hostname_id,d.customer_id,c.slug
+      `SELECT d.provider_hostname_id,d.customer_id,d.status,d.verified_at,c.slug
        FROM customer_domains d JOIN customers c ON c.id=d.customer_id
        WHERE d.hostname=? AND d.kind='custom' LIMIT 1`,
     ).bind(hostname).first<any>();
@@ -990,20 +990,22 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       providerStatus,
     });
     const projected = projectDomainStatus(evidence);
+    const stickyActive = String(local.status) === "active" && Boolean(local.verified_at);
+    const finalStatus = stickyActive ? "active" : projected.status;
     await env.DB.prepare(
       `UPDATE customer_domains
        SET status=?,ssl_status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,provider_status=?,
            verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
        WHERE hostname=? AND customer_id=?`,
     ).bind(
-      projected.status,
+      finalStatus,
       sslStatus,
       evidence.dnsOk ? 1 : 0,
       evidence.tlsOk ? 1 : 0,
       evidence.ownershipOk ? 1 : 0,
       evidence.checkedAt,
       providerStatus,
-      projected.status,
+      finalStatus,
       evidence.checkedAt,
       hostname,
       local.customer_id,
@@ -1015,6 +1017,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     return json({
       hostname,
       ...projected,
+      status: finalStatus,
+      publicVerified: finalStatus === "active",
       sslStatus,
       cnameTarget: env.PORTAL_CNAME_TARGET,
       routingOrigin: env.ROUTING_ORIGIN,
@@ -1415,7 +1419,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const body = await readJson(request);
     const hostname = normalizeHostname(requiredString(body.hostname, "hostname"));
     const domain = await env.DB.prepare(
-      "SELECT hostname,kind,provider_status FROM customer_domains WHERE hostname=? AND customer_id=? LIMIT 1",
+      "SELECT hostname,kind,status,verified_at,provider_status FROM customer_domains WHERE hostname=? AND customer_id=? LIMIT 1",
     ).bind(hostname, customer.customerId).first<any>();
     if (!domain) return json({ error: "domain_not_found" }, 404);
     if (domain.kind !== "custom") return json({ error: "custom_domain_required" }, 400);
@@ -1426,15 +1430,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       providerStatus: String(domain.provider_status || "pending"),
     });
     const projected = projectDomainStatus(evidence);
+    const stickyActive = String(domain.status) === "active" && Boolean(domain.verified_at);
+    const finalStatus = stickyActive ? "active" : projected.status;
     await env.DB.prepare(
       `UPDATE customer_domains SET status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,
        verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END
        WHERE hostname=? AND customer_id=?`,
     ).bind(
-      projected.status,evidence.dnsOk?1:0,evidence.tlsOk?1:0,evidence.ownershipOk?1:0,evidence.checkedAt,
-      projected.status,evidence.checkedAt,hostname,customer.customerId,
+      finalStatus,evidence.dnsOk?1:0,evidence.tlsOk?1:0,evidence.ownershipOk?1:0,evidence.checkedAt,
+      finalStatus,evidence.checkedAt,hostname,customer.customerId,
     ).run();
-    return json({ hostname, ...projected });
+    return json({ hostname, ...projected, status: finalStatus, publicVerified: finalStatus === "active" });
   }
 
   if (url.pathname === "/api/settings" && request.method === "GET") {
@@ -1578,8 +1584,51 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     }));
   }
 
+  if (url.pathname === "/api/billing/credit-offer" && request.method === "GET") {
+    const policy = await env.DB.prepare(
+      "SELECT subscription_amount_minor,included_credits,funding_mode,minimum_funding_minor,setup_fee_minor,topup_enabled,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customer.customerId).first<any>();
+    if (!policy) return json({ error: "commercial_policy_unavailable" }, 404);
+    const recurringAmountMinor = Math.max(0, Number(policy.subscription_amount_minor || 0));
+    const includedCredits = Math.max(0, Number(policy.included_credits || 0));
+    const minimumFundingMinor = Math.max(0, Number(policy.minimum_funding_minor || recurringAmountMinor));
+    const minimumFundingCredits = recurringAmountMinor > 0
+      ? Math.max(1, Math.floor(includedCredits * minimumFundingMinor / recurringAmountMinor))
+      : includedCredits;
+    return json({
+      currency: String(policy.currency || "USD"),
+      recurringAmountMinor,
+      recurringCredits: includedCredits,
+      setupFeeMinor: Math.max(0, Number(policy.setup_fee_minor || 0)),
+      fundingMode: String(policy.funding_mode || "full_period"),
+      minimumFundingMinor,
+      minimumFundingCredits,
+      topupEnabled: Boolean(policy.topup_enabled),
+    });
+  }
+
+  if (url.pathname === "/api/billing/credit-quote" && request.method === "POST") {
+    const body = await readJson(request);
+    const amountMinor = parsePaymentAmountMinor(body.amountUsd);
+    if (amountMinor < 100 || amountMinor > 10_000_000) return json({ error: "invalid_credit_amount" }, 400);
+    const setting = await env.DB.prepare(
+      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
+    ).first<any>();
+    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+    const credits = Math.max(1, Math.floor((amountMinor * 10_000) / creditUsdMicros));
+    return json({ amountMinor, currency: "USD", credits });
+  }
+
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT method,enabled,healthy,updated_at FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
+    ).all<any>();
     const status = { nowpayments: false, flutterwave: false, kora: false };
+    for (const row of rows.results ?? []) {
+      if (row.method in status) (status as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
+    }
+
+    let source = "last_known";
     if (env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) {
       try {
         const response = await fetch("https://mkety.com/api/payments/assist/methods", {
@@ -1590,6 +1639,19 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
           status.nowpayments = Boolean(payload.methods.nowpayments);
           status.flutterwave = Boolean(payload.methods.flutterwave);
           status.kora = Boolean(payload.methods.kora);
+          source = "central";
+          const now = unix();
+          await env.DB.batch([
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
+          ]);
+        } else {
+          const routeHealth = await probeCentralAssistPaymentRoutes(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET);
+          status.nowpayments = routeHealth.nowpayments;
+          status.flutterwave = routeHealth.flutterwave;
+          status.kora = routeHealth.kora;
+          source = "route_probe";
           const now = unix();
           await env.DB.batch([
             env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
@@ -1597,12 +1659,12 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
             env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
           ]);
         }
-      } catch {
-        // Fail closed: no method is exposed when central readiness cannot be verified.
+      } catch (error) {
+        console.warn("Central payment capability discovery unavailable; using last-known provider health", error);
       }
     }
     const methods = listPaymentMethods(status);
-    return json({ methods, defaultMethod: defaultPaymentMethod(status) });
+    return json({ methods, defaultMethod: defaultPaymentMethod(status), source });
   }
 
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
@@ -1666,13 +1728,21 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(customer.customerId).first<any>();
     if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
     const body = await readJson(request);
-    const credits = positiveInt(body.credits, 0);
-    if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
     const setting = await env.DB.prepare(
       "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
     ).first<any>();
     const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
-    const canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
+    let credits: number;
+    let canonicalAmountMinor: number;
+    if (body.amountUsd !== undefined && body.amountUsd !== null && String(body.amountUsd).trim() !== "") {
+      canonicalAmountMinor = parsePaymentAmountMinor(body.amountUsd);
+      if (canonicalAmountMinor < 100 || canonicalAmountMinor > 10_000_000) return json({ error: "invalid_topup_amount" }, 400);
+      credits = Math.max(1, Math.floor((canonicalAmountMinor * 10_000) / creditUsdMicros));
+    } else {
+      credits = positiveInt(body.credits, 0);
+      if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
+      canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
+    }
     const paymentMethod = await resolveRequestedPaymentMethod(env.DB, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
@@ -1695,6 +1765,25 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   if (runtimeResponse) return runtimeResponse;
 
   return json({ error: "not_found" }, 404);
+}
+
+async function probeCentralAssistPaymentRoutes(secret: string) {
+  const names = ["nowpayments","flutterwave","kora"] as const;
+  const result = { nowpayments: false, flutterwave: false, kora: false };
+  await Promise.all(names.map(async (name) => {
+    try {
+      const response = await fetch(`https://mkety.com/api/payments/${name}/start`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${secret}` },
+        redirect: "manual",
+      });
+      // A method-not-allowed or validation response proves the route is deployed.
+      result[name] = response.status !== 404 && response.status !== 410 && response.status < 500;
+    } catch {
+      result[name] = false;
+    }
+  }));
+  return result;
 }
 
 async function resolveRequestedPaymentMethod(db: D1Database, requested: unknown) {
@@ -2265,21 +2354,23 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
     worker_route: `${env.ROUTING_ORIGIN}/*`,
   };
 
-  const existing = await env.DB.prepare("SELECT id FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
+  const existing = await env.DB.prepare("SELECT id,status,verified_at FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
+  const providerProjectedStatus = result.status === "active" ? "active" : "pending";
+  const persistedStatus = existing?.status === "active" && existing?.verified_at ? "active" : providerProjectedStatus;
   await env.DB.batch([
     env.DB.prepare("UPDATE customer_domains SET is_primary=0 WHERE customer_id=?").bind(customerId),
     existing
       ? env.DB.prepare(
-          "UPDATE customer_domains SET customer_id=?,kind='custom',is_primary=1,status=?,ssl_status=?,provider_hostname_id=?,validation_json=?,verified_at=CASE WHEN ?='active' THEN ? ELSE verified_at END WHERE id=?",
-        ).bind(customerId, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), result.status, now, existing.id)
+          "UPDATE customer_domains SET customer_id=?,kind='custom',is_primary=1,status=?,ssl_status=?,provider_hostname_id=?,validation_json=?,verified_at=CASE WHEN ?='active' THEN COALESCE(verified_at,?) ELSE verified_at END WHERE id=?",
+        ).bind(customerId, persistedStatus, result.ssl?.status || null, result.id, JSON.stringify(validation), persistedStatus, now, existing.id)
       : env.DB.prepare(
           "INSERT INTO customer_domains (id,customer_id,hostname,kind,is_primary,status,ssl_status,provider_hostname_id,validation_json,created_at,verified_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        ).bind(id("dom"), customerId, hostname, "custom", 1, result.status === "active" ? "active" : "pending", result.ssl?.status || null, result.id, JSON.stringify(validation), now, result.status === "active" ? now : null),
+        ).bind(id("dom"), customerId, hostname, "custom", 1, providerProjectedStatus, result.ssl?.status || null, result.id, JSON.stringify(validation), now, result.status === "active" ? now : null),
   ]);
 
   return {
     hostname,
-    status: result.status,
+    status: persistedStatus,
     sslStatus: result.ssl?.status ?? null,
     cnameTarget: env.PORTAL_CNAME_TARGET,
     routingOrigin: env.ROUTING_ORIGIN,
