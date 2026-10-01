@@ -41,7 +41,7 @@ export default async function EnterpriseAiProvidersPage({
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-4">
       <div>
-        <Link className="text-sm font-medium text-primary" href={`/t/${tenantSlug}/enterprise-ai`}>
+        <Link className="text-sm font-medium text-primary" href={`/app/${tenantSlug}/enterprise-ai`}>
           ← Enterprise AI
         </Link>
         <h1 className="mt-3 text-3xl font-bold tracking-tight">AI providers & BYOK</h1>
