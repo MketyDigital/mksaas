@@ -11,7 +11,7 @@ export default async function SettingsEntryPage() {
 
   const roles = (session.user.roles ?? {}) as Record<string, TenantRole>;
   const adminTenant = Object.entries(roles).find(([, role]) => role === 'admin')?.[0];
-  if (adminTenant) redirect(`/t/${adminTenant}/admin/settings`);
-  if (Object.keys(roles).length === 1) redirect(`/t/${Object.keys(roles)[0]}/profile/settings`);
+  if (adminTenant) redirect(`/app/${adminTenant}/admin/settings`);
+  if (Object.keys(roles).length === 1) redirect(`/app/${Object.keys(roles)[0]}/profile/settings`);
   redirect('/select-tenant');
 }
