@@ -1,0 +1,35 @@
+name: Mkety Assist CI
+
+on:
+  pull_request:
+    paths:
+      - 'customer-apps/assist/**'
+      - '.github/workflows/mkety-assist-ci.yml'
+      - '.github/workflows/mkety-assist-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated Assist dependencies
+        working-directory: customer-apps/assist
+        run: npm install --no-audit --no-fund
+      - name: Type-check
+        working-directory: customer-apps/assist
+        run: npm run type-check
+      - name: Wrangler dry-run
+        working-directory: customer-apps/assist
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed 's/__MKETY_ASSIST_D1_DATABASE_ID__/00000000-0000-0000-0000-000000000000/' wrangler.jsonc > wrangler.ci.jsonc
+          npx wrangler deploy --dry-run --outdir /tmp/mkety-assist-dry --config wrangler.ci.jsonc
