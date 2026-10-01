@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feat/mkety-assist-foundation
+      - main
     paths:
       - 'customer-apps/assist/**'
       - '.github/workflows/mkety-assist-deploy.yml'
