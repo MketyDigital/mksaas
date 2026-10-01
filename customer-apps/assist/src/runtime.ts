@@ -536,9 +536,11 @@ async function runAssistant(input: {
   const prompt = await env.DB.prepare(
     "SELECT instructions FROM assistant_prompt_versions WHERE assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
   ).bind(assistant.id).first<any>();
-  const recent = await env.DB.prepare(
-    "SELECT role,content FROM messages WHERE conversation_id=? ORDER BY created_at DESC LIMIT 14",
-  ).bind(conversationId).all<any>();
+  const recent = assistant.memory_enabled
+    ? await env.DB.prepare(
+        "SELECT role,content FROM messages WHERE conversation_id=? ORDER BY created_at DESC LIMIT 14",
+      ).bind(conversationId).all<any>()
+    : { results: [] as any[] };
   const history = (recent.results ?? []).reverse();
 
   const knowledge = assistant.knowledge_enabled
@@ -563,9 +565,33 @@ async function runAssistant(input: {
   const userCombined = [input.userText, input.mediaContext].filter(Boolean).join("\n\n");
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
   const maxOutputTokens = 1024;
+
+  const commercial = await env.DB.prepare(
+    "SELECT subscription_amount_minor,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,hard_stop_enabled FROM commercial_policy WHERE customer_id=? LIMIT 1",
+  ).bind(assistant.customer_id).first<any>();
+  if (!commercial) return { ok: false as const, userMessage: "This assistant’s commercial policy is unavailable." };
+
+  const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
+  const baseInputCredits = parseFloat(String(rate.input_credits_per_million || 0));
+  const baseOutputCredits = parseFloat(String(rate.output_credits_per_million || 0));
+  const effectiveInputCredits = Math.ceil(baseInputCredits * multiplierBps / 10000);
+  const effectiveOutputCredits = Math.ceil(baseOutputCredits * multiplierBps / 10000);
   const reserveAmount = Math.max(1,
-    Math.ceil((estimatedInputTokens * parseFloat(String(rate.input_credits_per_million || 0)) + maxOutputTokens * parseFloat(String(rate.output_credits_per_million || 0))) / 1_000_000),
+    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000),
   );
+
+  const estimatedProviderCostMicros = Math.max(0, Math.ceil(
+    (estimatedInputTokens * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
+      + maxOutputTokens * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000,
+  ));
+  if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
+    env.DB,
+    assistant.customer_id,
+    commercial,
+    estimatedProviderCostMicros,
+  ))) {
+    return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
+  }
 
   const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount);
   if (!reservation) return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
@@ -580,7 +606,7 @@ async function runAssistant(input: {
       max_tokens: maxOutputTokens,
       temperature: 0.4,
     };
-    let result = await env.AI.run(route.provider_model, aiInput);
+    let result = await invokeModel(env, route, aiInput);
     let text = extractAiText(result);
 
     const toolCall = parseToolCall(text, tools.results ?? []);
@@ -588,7 +614,7 @@ async function runAssistant(input: {
       const tool = (tools.results ?? []).find((t: any) => t.name === toolCall.tool);
       if (tool) {
         const toolResult = await invokeTool(env, tool, toolCall.arguments);
-        result = await env.AI.run(route.provider_model, {
+        result = await invokeModel(env, route, {
           messages: [
             ...aiInput.messages,
             { role: "assistant", content: text },
@@ -604,8 +630,12 @@ async function runAssistant(input: {
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
     const actualCredits = Math.max(1,
-      Math.ceil((usage.input * parseFloat(String(rate.input_credits_per_million || 0)) + usage.output * parseFloat(String(rate.output_credits_per_million || 0))) / 1_000_000),
+      Math.ceil((usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000),
     );
+    const providerCostMicros = Math.max(0, Math.ceil(
+      (usage.input * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
+        + usage.output * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000,
+    ));
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
       modelAlias: assistant.model_alias,
       provider: route.provider,
@@ -613,6 +643,7 @@ async function runAssistant(input: {
       conversationId,
       inputUnits: usage.input,
       outputUnits: usage.output,
+      providerCostMicros,
     });
     return { ok: true as const, text };
   } catch (error) {
@@ -771,7 +802,7 @@ async function settleReservation(
   assistantId: string,
   reserved: number,
   actual: number,
-  usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number },
+  usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number; providerCostMicros: number },
 ) {
   const now = unix();
   const refund = Math.max(0, reserved - actual);
@@ -785,7 +816,10 @@ async function settleReservation(
       .bind(actual, now, reservationId),
     db.prepare(
       "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, actual, 0, now),
+    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, actual, usage.providerCostMicros, now),
+    db.prepare(
+      "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
+    ).bind(id("pce"), customerId, usageId, usage.provider, usage.providerModel, usage.providerCostMicros, "USD", now),
   ];
   if (refund) {
     statements.push(
@@ -794,6 +828,132 @@ async function settleReservation(
     );
   }
   await db.batch(statements);
+}
+
+async function providerBudgetAllows(
+  db: D1Database,
+  customerId: string,
+  policy: any,
+  estimatedCostMicros: number,
+) {
+  const monthlyAmountMinor = Math.max(0, parseInt(String(policy.subscription_amount_minor || 0), 10));
+  const envelopeBps = Math.max(0, Math.min(10000, parseInt(String(policy.provider_envelope_bps || 0), 10)));
+  const reserveBps = Math.max(0, Math.min(9999, parseInt(String(policy.operations_reserve_bps || 0), 10)));
+  if (!monthlyAmountMinor || !envelopeBps) return estimatedCostMicros <= 0;
+
+  const monthlyUsdMicros = monthlyAmountMinor * 10000;
+  const providerEnvelopeMicros = Math.floor(monthlyUsdMicros * envelopeBps / 10000);
+  const usableProviderMicros = Math.floor(providerEnvelopeMicros * (10000 - reserveBps) / 10000);
+  const spent = await db.prepare(
+    "SELECT COALESCE(SUM(cost_micros),0) AS spent FROM provider_cost_events WHERE customer_id=? AND created_at>=?",
+  ).bind(customerId, startOfMonthUnix()).first<any>();
+  return parseFloat(String(spent?.spent || 0)) + estimatedCostMicros <= usableProviderMicros;
+}
+
+async function invokeModel(env: AssistEnv, route: any, input: any): Promise<any> {
+  const provider = String(route.provider || "");
+  if (provider === "workers-ai" || provider === "mkety-managed") {
+    return env.AI.run(String(route.provider_model), input);
+  }
+
+  if (!route.provider_connection_id) throw new Error("Provider connection is not configured for this model route.");
+  const connection = await env.DB.prepare(
+    "SELECT provider,endpoint_url,api_key_ciphertext,extra_json,status FROM provider_connections WHERE id=? AND status='active' LIMIT 1",
+  ).bind(route.provider_connection_id).first<any>();
+  if (!connection?.api_key_ciphertext) throw new Error("Provider connection is unavailable.");
+  if (connection.provider !== provider) throw new Error("Provider connection type does not match model route.");
+  const apiKey = await revealSecret(connection.api_key_ciphertext, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+  const extra = connection.extra_json ? JSON.parse(connection.extra_json) : {};
+  const model = String(route.provider_model);
+  const messages = Array.isArray(input.messages) ? input.messages : [];
+  const maxTokens = parseInt(String(input.max_tokens || 1024), 10);
+  const temperature = typeof input.temperature === "number" ? input.temperature : 0.4;
+
+  if (provider === "openai" || provider === "openai-compatible") {
+    const base = String(connection.endpoint_url || (provider === "openai" ? "https://api.openai.com/v1" : "")).replace(/\/$/, "");
+    if (!base) throw new Error("OpenAI-compatible endpoint is missing.");
+    const response = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return payload;
+  }
+
+  if (provider === "anthropic") {
+    const base = String(connection.endpoint_url || "https://api.anthropic.com").replace(/\/$/, "");
+    const systemMessage = messages.find((m: any) => m.role === "system")?.content || "";
+    const chatMessages = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || ""),
+    }));
+    const response = await fetch(`${base}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": String(extra.anthropicVersion || "2023-06-01"),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model, system: String(systemMessage), messages: chatMessages, max_tokens: maxTokens, temperature }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return {
+      response: Array.isArray(payload.content) ? payload.content.map((x: any) => x.text || "").join("") : "",
+      usage: {
+        input_tokens: payload.usage?.input_tokens,
+        output_tokens: payload.usage?.output_tokens,
+      },
+      raw: payload,
+    };
+  }
+
+  if (provider === "gemini") {
+    const base = String(connection.endpoint_url || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const contents = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }],
+    }));
+    const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
+        contents,
+        generationConfig: { maxOutputTokens: maxTokens, temperature },
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return {
+      response: payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "",
+      usage: {
+        input_tokens: payload.usageMetadata?.promptTokenCount,
+        output_tokens: payload.usageMetadata?.candidatesTokenCount,
+      },
+      raw: payload,
+    };
+  }
+
+  if (provider === "azure-openai") {
+    const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
+    if (!endpoint) throw new Error("Azure OpenAI endpoint is missing.");
+    const apiVersion = String(extra.apiVersion || "2024-10-21");
+    const url = `${endpoint}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload).slice(0, 500)}`);
+    return payload;
+  }
+
+  throw new Error(`Unsupported provider: ${provider}`);
 }
 
 async function invokeTool(env: AssistEnv, tool: any, args: unknown) {
