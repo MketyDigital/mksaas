@@ -40,7 +40,7 @@ const WORKSPACE_ICONS = {
 
 function workspaceHref(tenantSlug: string, key: string, configuredHref: string) {
   if (['ai', 'automation', 'deploy', 'solutions', 'trading'].includes(key)) {
-    return `/t/${tenantSlug}/projects`;
+    return `/app/${tenantSlug}/projects`;
   }
   if (configuredHref.startsWith('/t/')) return configuredHref;
   return configuredHref;
@@ -71,13 +71,13 @@ async function renderTenantDashboard({ params }: TenantDashboardProps) {
         </h1>
         <p className="mt-3 max-w-3xl text-muted-foreground">{dashboard.description}</p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={`/t/${tenantSlug}/projects`}>
+          <Link className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={`/app/${tenantSlug}/projects`}>
             Open projects
           </Link>
-          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/billing`}>
+          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/billing`}>
             Billing & plan
           </Link>
-          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/t/${tenantSlug}/wallet`}>
+          <Link className="rounded-xl border px-4 py-2 text-sm font-semibold" href={`/app/${tenantSlug}/wallet`}>
             Usage & credits
           </Link>
         </div>
@@ -89,7 +89,7 @@ async function renderTenantDashboard({ params }: TenantDashboardProps) {
             <h2 className="text-xl font-bold">Your workspaces</h2>
             <p className="text-sm text-muted-foreground">Only products enabled for {tenant.name} are shown here.</p>
           </div>
-          <Link className="text-sm font-semibold text-primary" href={`/t/${tenantSlug}/projects`}>Manage projects →</Link>
+          <Link className="text-sm font-semibold text-primary" href={`/app/${tenantSlug}/projects`}>Manage projects →</Link>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {workspaces.map((workspace) => {
@@ -118,30 +118,30 @@ async function renderTenantDashboard({ params }: TenantDashboardProps) {
       <section>
         <h2 className="text-xl font-bold">Products & account</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/projects`}>
+          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/projects`}>
             <FolderKanban className="h-5 w-5 text-primary" />
             <p className="mt-3 font-semibold">Projects</p>
             <p className="mt-1 text-sm text-muted-foreground">Your apps, agents, automations and deployments.</p>
           </Link>
-          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/billing`}>
+          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/billing`}>
             <CreditCard className="h-5 w-5 text-primary" />
             <p className="mt-3 font-semibold">Plan & billing</p>
             <p className="mt-1 text-sm text-muted-foreground">Subscription, invoices and payment options.</p>
           </Link>
-          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/wallet`}>
+          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/wallet`}>
             <WalletCards className="h-5 w-5 text-primary" />
             <p className="mt-3 font-semibold">Usage & credits</p>
             <p className="mt-1 text-sm text-muted-foreground">Available credits, usage and hard limits.</p>
           </Link>
           {hasMail ? (
-            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/mail`}>
+            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/mail`}>
               <Mail className="h-5 w-5 text-primary" />
               <p className="mt-3 font-semibold">Mkety Mail</p>
               <p className="mt-1 text-sm text-muted-foreground">Business inboxes, domains, sending and contacts.</p>
             </Link>
           ) : null}
           {hasEnterpriseAi ? (
-            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/enterprise-ai`}>
+            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/enterprise-ai`}>
               <Bot className="h-5 w-5 text-primary" />
               <p className="mt-3 font-semibold">Enterprise AI</p>
               <p className="mt-1 text-sm text-muted-foreground">Customer AI, channels, domains, branding and usage.</p>
@@ -154,13 +154,13 @@ async function renderTenantDashboard({ params }: TenantDashboardProps) {
             </a>
           )}
           {!hasMail ? (
-            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/billing/checkout?plan=mail-starter`}>
+            <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/billing/checkout?plan=mail-starter`}>
               <Mail className="h-5 w-5 text-primary" />
               <p className="mt-3 font-semibold">Add Mkety Mail</p>
               <p className="mt-1 text-sm text-muted-foreground">Add professional business email to this workspace.</p>
             </Link>
           ) : null}
-          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/t/${tenantSlug}/media`}>
+          <Link className="rounded-2xl border bg-card p-5 hover:border-primary/50" href={`/app/${tenantSlug}/media`}>
             <Image className="h-5 w-5 text-primary" />
             <p className="mt-3 font-semibold">Mkety Media</p>
             <p className="mt-1 text-sm text-muted-foreground">View this workspace&apos;s Media connection, then open the existing standalone Media product.</p>
