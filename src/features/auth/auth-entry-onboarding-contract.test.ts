@@ -57,7 +57,7 @@ describe('Mkety auth entry and self-service onboarding contract', () => {
   });
 
   it('uses account and workspace creation before self-service payment', async () => {
-    const checkout = await read('src/app/(tenant)/t/[tenant]/billing/checkout/page.tsx');
+    const checkout = await read('src/app/app/[tenant]/billing/checkout/page.tsx');
     const workspaceRoute = await read('src/app/api/workspaces/route.ts');
 
     expect(workspaceRoute).toContain("role: 'admin'");

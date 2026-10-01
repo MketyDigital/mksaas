@@ -15,6 +15,7 @@ describe('canonical customer app root', () => {
     await expect(access(path.join(root, 'src/app/app/[tenant]/page.tsx'))).resolves.toBeUndefined();
     await expect(access(path.join(root, 'src/app/app/[tenant]/admin/page.tsx'))).resolves.toBeUndefined();
     await expect(access(path.join(root, 'src/app/app/[tenant]/admin/platform-control/page.tsx'))).rejects.toThrow();
+    await expect(access(path.join(root, 'src/app/(tenant)/t/[tenant]/layout.tsx'))).rejects.toThrow();
   });
 
   it('makes /app the canonical tenant route and permanently redirects legacy /t paths', async () => {

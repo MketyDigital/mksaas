@@ -7,7 +7,7 @@ on:
       - '.github/workflows/mkety-mail-production.yml'
       - 'src/app/api/mail/autoconfig/route.ts'
       - 'src/app/api/mail/autodiscover/route.ts'
-      - 'src/app/(tenant)/t/[tenant]/mail/apps/page.tsx'
+      - 'src/app/app/[tenant]/mail/apps/page.tsx'
   workflow_dispatch:
 
 permissions:

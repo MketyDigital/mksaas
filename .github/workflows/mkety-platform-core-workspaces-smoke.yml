@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'src/app/(tenant)/t/[tenant]/projects/**'
+      - 'src/app/app/[tenant]/projects/**'
       - 'src/app/api/automation/webhooks/**'
       - 'src/features/projects/**'
       - 'src/features/ai/lib/agent-runtime.ts'

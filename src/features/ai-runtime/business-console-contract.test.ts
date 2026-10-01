@@ -19,7 +19,7 @@ describe('Enterprise AI business console contract', () => {
 
   it('keeps the default customer experience outcome-first and developer controls secondary', async () => {
     const page = await readFile(
-      'src/app/(tenant)/t/[tenant]/enterprise-ai/page.tsx',
+      'src/app/app/[tenant]/enterprise-ai/page.tsx',
       'utf8',
     );
 
@@ -32,7 +32,7 @@ describe('Enterprise AI business console contract', () => {
   it('creates solution drafts without publishing or provider execution', async () => {
     const [action, detail] = await Promise.all([
       readFile('src/features/ai-runtime/server/business-solution-actions.ts', 'utf8'),
-      readFile('src/app/(tenant)/t/[tenant]/enterprise-ai/solutions/[id]/page.tsx', 'utf8'),
+      readFile('src/app/app/[tenant]/enterprise-ai/solutions/[id]/page.tsx', 'utf8'),
     ]);
 
     expect(action).toContain("status: 'draft'");

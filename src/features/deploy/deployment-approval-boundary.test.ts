@@ -40,7 +40,7 @@ describe('APP-07 deployment approval boundary', () => {
 
   it('requires Platform Control authority to approve or reject', async () => {
     const review = await read('src/features/deploy/request-actions.ts');
-    const page = await read('src/app/(tenant)/t/[tenant]/admin/platform-control/[module]/page.tsx');
+    const page = await read('src/app/ops/[tenant]/platform-control/[module]/page.tsx');
 
     expect(review).toContain('requirePlatformControlAccess(tenantSlug)');
     expect(review).toContain("requirePermission(tenantSlug, 'platform:deployments')");
