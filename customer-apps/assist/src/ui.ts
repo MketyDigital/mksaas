@@ -178,8 +178,7 @@ export function renderOperatorPortal(customers: any[]) {
 let data=${rows};
 let providerData=[];
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-const auth=()=>({authorization:'Bearer '+(sessionStorage.getItem('mketyAssistOpsToken')||''),'content-type':'application/json'});
-async function api(path,opt={}){opt.headers={...auth(),...(opt.headers||{})};const r=await fetch(path,opt);let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
+async function api(path,opt={}){opt.headers={'content-type':'application/json',...(opt.headers||{})};const r=await fetch(path,opt);let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
 function openModal(h){dialog.innerHTML=h;modal.classList.add('open')}
 function closeModal(){modal.classList.remove('open');dialog.innerHTML=''}
 modal.onclick=e=>{if(e.target===modal)closeModal()}
