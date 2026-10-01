@@ -1,6 +1,5 @@
 import { addMonths } from 'date-fns';
 import { and, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
 
 
 import { ENTERPRISE_AI_CONTRACT_ENTITLEMENTS } from '@/features/ai-runtime/server/enterprise-contract-entitlements';
@@ -222,9 +221,6 @@ async function createEnterpriseAiContractVersionImpl(
       });
     }
   });
-
-  revalidatePath(`/t/${opsTenantSlug}/admin/platform-control/ai-operations`);
-  revalidatePath(`/t/${target.slug}/enterprise-ai`);
 }
 
 export async function createEnterpriseAiContractVersion(
