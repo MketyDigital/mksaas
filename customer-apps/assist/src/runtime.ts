@@ -735,7 +735,9 @@ async function settleReservation(
 ) {
   const now = unix();
   const refund = Math.max(0, reserved - actual);
-  if (refund) await db.prepare("UPDATE credit_accounts SET balance=balance+?,updated_at=? WHERE customer_id=?").bind(refund, now, customerId).run();
+  await db.prepare(
+    "UPDATE credit_accounts SET balance=balance+?,lifetime_consumed=lifetime_consumed+?,updated_at=? WHERE customer_id=?",
+  ).bind(refund, actual, now, customerId).run();
   const balance = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
   const usageId = id("use");
   const statements: D1PreparedStatement[] = [
