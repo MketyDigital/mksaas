@@ -419,6 +419,21 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const features = await env.DB.prepare("SELECT * FROM feature_policy WHERE customer_id=?").bind(customerId).first();
     const credits = await env.DB.prepare("SELECT * FROM credit_accounts WHERE customer_id=?").bind(customerId).first();
     const domains = await env.DB.prepare("SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC").bind(customerId).all();
+    const members = await env.DB.prepare(
+      `SELECT u.id,u.email,u.display_name,u.telegram_username,u.status,cu.role,
+              COALESCE(ac.state,'active') AS control_state,ac.reason AS control_reason,ac.expires_at AS control_expires_at
+       FROM customer_users cu
+       JOIN users u ON u.id=cu.user_id
+       LEFT JOIN account_controls ac ON ac.customer_id=cu.customer_id AND ac.user_id=cu.user_id
+       WHERE cu.customer_id=? ORDER BY cu.created_at ASC`,
+    ).bind(customerId).all();
+    const senderControls = await env.DB.prepare(
+      `SELECT sc.assistant_id,a.name AS assistant_name,sc.channel,sc.sender_id,sc.state,sc.reason,sc.expires_at,sc.updated_at
+       FROM channel_sender_controls sc
+       JOIN assistants a ON a.id=sc.assistant_id
+       WHERE sc.customer_id=? AND sc.state!='active'
+       ORDER BY sc.updated_at DESC LIMIT 200`,
+    ).bind(customerId).all();
     const ownerAccess = await env.DB.prepare(
       `SELECT st.token_ciphertext,st.expires_at,u.email,d.hostname
        FROM setup_tokens st
@@ -441,7 +456,69 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         console.error("Could not reveal active owner access token", error);
       }
     }
-    return json({ customer, commercial, features, credits, domains: domains.results ?? [], ownerAccess: activeOwnerAccess });
+    return json({
+      customer,
+      commercial,
+      features,
+      credits,
+      domains: domains.results ?? [],
+      members: members.results ?? [],
+      senderControls: senderControls.results ?? [],
+      ownerAccess: activeOwnerAccess,
+    });
+  }
+
+  if (url.pathname === "/api/ops/user-control" && request.method === "POST") {
+    const body = await readJson(request);
+    const customerId = requiredString(body.customerId, "customerId");
+    const userId = requiredString(body.userId, "userId");
+    const state = normalizeControlState(body.state);
+    const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
+    const expiresAt = normalizeOptionalExpiry(body.expiresAt);
+    const membership = await env.DB.prepare(
+      "SELECT 1 FROM customer_users WHERE customer_id=? AND user_id=? LIMIT 1",
+    ).bind(customerId, userId).first();
+    if (!membership) return json({ error: "user_membership_not_found" }, 404);
+    await setAccountControl(env.DB, {
+      customerId, userId, state, reason, expiresAt, operatorId: operator.operatorUserId,
+    });
+    if (state !== "active") {
+      await env.DB.prepare("UPDATE sessions SET revoked_at=? WHERE customer_id=? AND user_id=? AND revoked_at IS NULL")
+        .bind(unix(), customerId, userId).run();
+    }
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    ).bind(
+      id("aud"), "operator", operator.operatorUserId, customerId,
+      "user.control." + state, "user", userId,
+      JSON.stringify({ reason, expiresAt }), unix(),
+    ).run();
+    return json({ ok: true, state, reason, expiresAt });
+  }
+
+  if (url.pathname === "/api/ops/sender-control" && request.method === "POST") {
+    const body = await readJson(request);
+    const customerId = requiredString(body.customerId, "customerId");
+    const assistantId = requiredString(body.assistantId, "assistantId");
+    const channel = requiredString(body.channel, "channel").toLowerCase();
+    const senderId = requiredString(body.senderId, "senderId");
+    const state = normalizeControlState(body.state);
+    const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
+    const expiresAt = normalizeOptionalExpiry(body.expiresAt);
+    const assistant = await env.DB.prepare("SELECT 1 FROM assistants WHERE id=? AND customer_id=? LIMIT 1")
+      .bind(assistantId, customerId).first();
+    if (!assistant) return json({ error: "assistant_not_found" }, 404);
+    await setSenderControl(env.DB, {
+      customerId, assistantId, channel, senderId, state, reason, expiresAt, operatorId: operator.operatorUserId,
+    });
+    await env.DB.prepare(
+      "INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    ).bind(
+      id("aud"), "operator", operator.operatorUserId, customerId,
+      "sender.control." + state, "channel_sender", senderId,
+      JSON.stringify({ assistantId, channel, reason, expiresAt }), unix(),
+    ).run();
+    return json({ ok: true, state, reason, expiresAt });
   }
 
   if (url.pathname === "/api/ops/credits" && request.method === "POST") {
@@ -976,6 +1053,14 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
       await recordAuthFailure(env.DB, rateKey, loginNow);
       return json({ error: "invalid_credentials" }, 401);
     }
+    const accountControl = await effectiveAccountControl(env.DB, customer.customerId, String(row.id));
+    if (accountControl.state !== "active") {
+      return json({
+        error: "account_" + accountControl.state,
+        reason: accountControl.reason || null,
+        expiresAt: accountControl.expiresAt,
+      }, accountControl.state === "banned" ? 403 : 423);
+    }
     const ok = await verifyPassword(password, row.password_salt, row.password_iterations, row.password_hash, env);
     if (!ok) {
       await recordAuthFailure(env.DB, rateKey, loginNow);
@@ -997,6 +1082,10 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
        WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ valid: false, error: "invalid_or_expired_setup_token" }, 400);
+    const setupControl = await effectiveAccountControl(env.DB, customer.customerId, String(row.user_id));
+    if (setupControl.state !== "active") {
+      return json({ valid: false, error: "account_" + setupControl.state, reason: setupControl.reason || null, expiresAt: setupControl.expiresAt }, setupControl.state === "banned" ? 403 : 423);
+    }
     return json({
       valid: true,
       email: row.email,
@@ -1021,6 +1110,10 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
        WHERE st.customer_id=? AND st.token_hash=? AND st.consumed_at IS NULL AND st.expires_at>? LIMIT 1`,
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
+    const setupControl = await effectiveAccountControl(env.DB, customer.customerId, String(row.user_id));
+    if (setupControl.state !== "active") {
+      return json({ error: "account_" + setupControl.state, reason: setupControl.reason || null, expiresAt: setupControl.expiresAt }, setupControl.state === "banned" ? 403 : 423);
+    }
     let passwordData: Awaited<ReturnType<typeof hashPassword>>;
     try {
       passwordData = await hashPassword(password, env);
@@ -2214,6 +2307,63 @@ async function resolveCustomerByHost(db: D1Database, host: string, hostedSuffix:
   return null;
 }
 
+type ControlState = "active" | "paused" | "suspended" | "banned";
+
+function normalizeControlState(value: unknown): ControlState {
+  const state = String(value || "").toLowerCase();
+  if (!["active","paused","suspended","banned"].includes(state)) throw new HttpError(400, "invalid_control_state");
+  return state as ControlState;
+}
+
+function normalizeOptionalExpiry(value: unknown) {
+  if (value === undefined || value === null || value === "") return null;
+  const ms = typeof value === "number" ? Number(value) * 1000 : Date.parse(String(value));
+  const seconds = Math.floor(ms / 1000);
+  if (!Number.isFinite(seconds) || seconds <= unix()) throw new HttpError(400, "invalid_control_expiry");
+  return seconds;
+}
+
+async function effectiveAccountControl(db: D1Database, customerId: string, userId: string) {
+  const row = await db.prepare(
+    "SELECT state,reason,expires_at FROM account_controls WHERE customer_id=? AND user_id=? LIMIT 1",
+  ).bind(customerId, userId).first<any>();
+  if (!row) return { state: "active" as ControlState, reason: null as string | null, expiresAt: null as number | null };
+  const expiresAt = row.expires_at === null || row.expires_at === undefined ? null : Number(row.expires_at);
+  if (expiresAt && expiresAt <= unix()) {
+    await db.prepare(
+      "UPDATE account_controls SET state='active',reason=NULL,expires_at=NULL,updated_at=? WHERE customer_id=? AND user_id=?",
+    ).bind(unix(), customerId, userId).run();
+    return { state: "active" as ControlState, reason: null, expiresAt: null };
+  }
+  return { state: String(row.state) as ControlState, reason: row.reason ? String(row.reason) : null, expiresAt };
+}
+
+async function setAccountControl(db: D1Database, input: {
+  customerId: string; userId: string; state: ControlState; reason: string | null; expiresAt: number | null; operatorId?: string | null;
+}) {
+  const now = unix();
+  await db.prepare(
+    `INSERT INTO account_controls(customer_id,user_id,state,reason,expires_at,updated_by_operator_id,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT(customer_id,user_id) DO UPDATE SET
+       state=excluded.state,reason=excluded.reason,expires_at=excluded.expires_at,
+       updated_by_operator_id=excluded.updated_by_operator_id,updated_at=excluded.updated_at`,
+  ).bind(input.customerId,input.userId,input.state,input.reason,input.expiresAt,input.operatorId || null,now,now).run();
+}
+
+async function setSenderControl(db: D1Database, input: {
+  customerId: string; assistantId: string; channel: string; senderId: string; state: ControlState; reason: string | null; expiresAt: number | null; operatorId?: string | null;
+}) {
+  const now = unix();
+  await db.prepare(
+    `INSERT INTO channel_sender_controls(customer_id,assistant_id,channel,sender_id,state,reason,expires_at,updated_by_operator_id,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(assistant_id,channel,sender_id) DO UPDATE SET
+       state=excluded.state,reason=excluded.reason,expires_at=excluded.expires_at,
+       updated_by_operator_id=excluded.updated_by_operator_id,updated_at=excluded.updated_at`,
+  ).bind(input.customerId,input.assistantId,input.channel,input.senderId,input.state,input.reason,input.expiresAt,input.operatorId || null,now,now).run();
+}
+
 async function requireSession(request: Request, env: Env, customerId: string): Promise<Session | null> {
   const token = getSessionCookie(request, env);
   if (!token) return null;
@@ -2225,6 +2375,8 @@ async function requireSession(request: Request, env: Env, customerId: string): P
      WHERE s.token_hash=? AND s.customer_id=? AND s.expires_at>? AND s.revoked_at IS NULL AND u.status='active' LIMIT 1`,
   ).bind(await sha256(token), customerId, now).first<any>();
   if (!row) return null;
+  const control = await effectiveAccountControl(env.DB, customerId, String(row.user_id));
+  if (control.state !== "active") return null;
   return { userId: row.user_id, customerId: row.customer_id, role: row.role, email: row.email };
 }
 
