@@ -831,12 +831,34 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     ).bind(customer.customerId, tokenHash, now).first<any>();
     if (!row) return json({ error: "invalid_or_expired_setup_token" }, 400);
     const passwordData = await hashPassword(password);
-    await env.DB.batch([
-      env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
-        .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
-      env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=?").bind(now, row.id),
-    ]);
-    return issueSession(env, customer.customerId, row.user_id, row.role, row.email);
+    const sessionToken = randomToken(32);
+    const sessionHash = await sha256(sessionToken);
+    const sessionTtl = Number(env.SESSION_TTL_SECONDS || "2592000");
+    const sessionId = id("ses");
+    try {
+      await env.DB.batch([
+        env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE id=?")
+          .bind(passwordData.hash, passwordData.salt, passwordData.iterations, now, row.user_id),
+        env.DB.prepare("INSERT INTO sessions (id,token_hash,user_id,customer_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(sessionId, sessionHash, row.user_id, customer.customerId, now + sessionTtl, now, now),
+        env.DB.prepare("UPDATE setup_tokens SET consumed_at=? WHERE id=? AND consumed_at IS NULL")
+          .bind(now, row.id),
+      ]);
+    } catch (error) {
+      console.error("Assist customer setup commit failed", {
+        customerId: customer.customerId,
+        userId: row.user_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return json({ error: "setup_commit_failed_retryable" }, 500);
+    }
+    return new Response(JSON.stringify({ ok: true, role: row.role, email: row.email }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": `${env.SESSION_COOKIE_NAME}=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${sessionTtl}`,
+      },
+    });
   }
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
@@ -1140,7 +1162,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       "SELECT balance,lifetime_granted,lifetime_consumed,updated_at FROM credit_accounts WHERE customer_id=?",
     ).bind(customer.customerId).first();
     const policy = await env.DB.prepare(
-      "SELECT currency,subscription_amount_minor,included_credits,topup_enabled FROM commercial_policy WHERE customer_id=?",
+      "SELECT currency,subscription_amount_minor,included_credits,topup_enabled,funding_mode,minimum_funding_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
     ).bind(customer.customerId).first();
     return json({ credits: account, plan: policy });
   }
@@ -1154,40 +1176,91 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json({ checkouts: rows.results ?? [] });
   }
 
+  if (url.pathname === "/api/billing/plan/start" && request.method === "POST") {
+    if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_provider_not_configured" }, 503);
+    const policy = await env.DB.prepare(
+      "SELECT subscription_amount_minor,included_credits,funding_mode,minimum_funding_minor,setup_fee_minor,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customer.customerId).first<any>();
+    if (!policy) return json({ error: "commercial_policy_unavailable" }, 404);
+    const customerRow = await env.DB.prepare("SELECT billing_status FROM customers WHERE id=? LIMIT 1")
+      .bind(customer.customerId).first<any>();
+    if (customerRow?.billing_status === "current") return json({ error: "plan_already_current" }, 409);
+
+    const body = await readJson(request);
+    const fullAmountMinor = Math.max(1, Number(policy.subscription_amount_minor || 0) + Number(policy.setup_fee_minor || 0));
+    let fundingAmountMinor = fullAmountMinor;
+    if (String(policy.funding_mode) === "prepaid_partial") {
+      const requested = body.fundingAmountUsd == null
+        ? Number(policy.minimum_funding_minor || policy.subscription_amount_minor || 0)
+        : parsePaymentAmountMinor(body.fundingAmountUsd);
+      const min = Math.max(1, Number(policy.minimum_funding_minor || 0));
+      if (requested < min || requested > fullAmountMinor) return json({ error: "invalid_funding_amount" }, 400);
+      fundingAmountMinor = requested;
+    }
+    const recurringBase = Math.max(1, Number(policy.subscription_amount_minor || 0));
+    const recurringPaid = Math.min(recurringBase, fundingAmountMinor);
+    const credits = String(policy.funding_mode) === "prepaid_partial"
+      ? Math.max(1, Math.floor(Number(policy.included_credits || 0) * recurringPaid / recurringBase))
+      : Math.max(0, Number(policy.included_credits || 0));
+
+    return startAssistFlutterwaveCheckout({
+      env, customer, session, credits,
+      canonicalAmountMinor: fundingAmountMinor,
+      paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
+      purchaseType: "plan",
+    });
+  }
+
   if (url.pathname === "/api/billing/topup/start" && request.method === "POST") {
     if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "topup_provider_not_configured" }, 503);
     const policy = await env.DB.prepare(
       "SELECT topup_enabled,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
     ).bind(customer.customerId).first<any>();
     if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
-
     const body = await readJson(request);
     const credits = positiveInt(body.credits, 0);
     if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
-
     const setting = await env.DB.prepare(
       "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
     ).first<any>();
-    const creditUsdMicros = Math.max(
-      1,
-      parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10),
-    );
+    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
     const canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
-    const checkoutId = id("chk");
-    const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
-    const now = unix();
+    return startAssistFlutterwaveCheckout({
+      env, customer, session, credits, canonicalAmountMinor,
+      paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
+      purchaseType: "topup",
+    });
+  }
 
-    await env.DB.prepare(
-      `INSERT INTO payment_checkouts
-       (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    ).bind(
-      checkoutId, customer.customerId, session.userId, reference, "flutterwave",
-      credits, canonicalAmountMinor, "USD", "pending", now,
-    ).run();
+  const runtimeResponse = await handleRuntimeApi(request, env, customer, session);
+  if (runtimeResponse) return runtimeResponse;
 
-    const canonicalAmountUsd = (canonicalAmountMinor / 100).toFixed(2);
-    const brokerResponse = await fetch("https://mkety.com/api/payments/flutterwave/start", {
+  return json({ error: "not_found" }, 404);
+}
+
+async function startAssistFlutterwaveCheckout(input: {
+  env: Env;
+  customer: CustomerContext;
+  session: Session;
+  credits: number;
+  canonicalAmountMinor: number;
+  paymentCurrency: string;
+  purchaseType: "plan" | "topup";
+}) {
+  const { env, customer, session, credits, canonicalAmountMinor, paymentCurrency, purchaseType } = input;
+  const allowedCurrencies = new Set(["USD","NGN","GHS","KES","GBP","EUR","ZAR","XAF","XOF","UGX","RWF","TZS","MWK","EGP"]);
+  if (!allowedCurrencies.has(paymentCurrency)) return json({ error: "invalid_payment_currency" }, 400);
+  const checkoutId = id("chk");
+  const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  const now = unix();
+  await env.DB.prepare(
+    `INSERT INTO payment_checkouts
+     (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(checkoutId, customer.customerId, session.userId, reference, "flutterwave", credits, canonicalAmountMinor, "USD", "pending", now).run();
+
+  const requestBroker = async (experience: "inline" | "hosted") => {
+    const response = await fetch("https://mkety.com/api/payments/flutterwave/start", {
       method: "POST",
       headers: {
         authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
@@ -1196,46 +1269,63 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       body: JSON.stringify({
         source: "assist",
         reference,
-        canonical_amount_usd: canonicalAmountUsd,
-        requested_payment_currency: String(body.paymentCurrency || "USD").toUpperCase(),
+        canonical_amount_usd: (canonicalAmountMinor / 100).toFixed(2),
+        requested_payment_currency: paymentCurrency,
         email: session.email,
         customer_name: customer.customerName,
         checkout_id: checkoutId,
         redirect_url: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
-        checkout_experience: "hosted",
+        checkout_experience: experience,
       }),
     });
-    const broker = await brokerResponse.json<any>();
-    if (!brokerResponse.ok || !broker.success || !broker.checkout_url) {
-      await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'")
-        .bind(checkoutId).run();
-      return json({ error: "topup_checkout_failed" }, 502);
-    }
+    const payload = await response.json<any>().catch(() => null);
+    return { response, payload };
+  };
 
-    await env.DB.prepare(
-      "UPDATE payment_checkouts SET provider_amount_minor=?,provider_currency=? WHERE id=?",
-    ).bind(
-      parseInt(String(broker.provider_amount_minor || 0), 10) || null,
-      broker.provider_currency || broker.checkout_currency || null,
-      checkoutId,
-    ).run();
-
-    return json({
-      checkoutId,
-      reference,
-      checkoutUrl: broker.checkout_url,
-      credits,
-      canonicalAmountMinor,
-      canonicalCurrency: "USD",
-      providerAmountMinor: broker.provider_amount_minor ?? null,
-      providerCurrency: broker.provider_currency ?? broker.checkout_currency ?? null,
-    }, 201);
+  let { response, payload } = await requestBroker("inline");
+  const inline = payload?.inline;
+  let inlineReady = Boolean(
+    response.ok && payload?.success && inline?.publicKey && inline?.reference &&
+    Number(inline?.amount) > 0 && inline?.currency && inline?.email && inline?.payloadHash
+  );
+  let checkoutUrl = "";
+  if (!inlineReady) {
+    ({ response, payload } = await requestBroker("hosted"));
+    checkoutUrl = String(payload?.url || payload?.checkout_url || "");
   }
 
-  const runtimeResponse = await handleRuntimeApi(request, env, customer, session);
-  if (runtimeResponse) return runtimeResponse;
+  const checkoutCurrency = String(payload?.currency || payload?.checkout_currency || "").toUpperCase();
+  const checkoutAmount = Number(payload?.amount ?? payload?.checkout_amount ?? NaN);
+  if (!response.ok || !payload?.success || (!inlineReady && !checkoutUrl) || !allowedCurrencies.has(checkoutCurrency) || !Number.isFinite(checkoutAmount) || checkoutAmount <= 0) {
+    await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'").bind(checkoutId).run();
+    return json({ error: "flutterwave_checkout_failed", message: String(payload?.message || "Flutterwave checkout could not be prepared.") }, 502);
+  }
+  if (checkoutCurrency !== paymentCurrency) {
+    await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'").bind(checkoutId).run();
+    return json({ error: "currency_quote_unavailable", requestedCurrency: paymentCurrency, checkoutCurrency }, 409);
+  }
 
-  return json({ error: "not_found" }, 404);
+  const providerAmountMinor = Math.round(checkoutAmount * 100);
+  await env.DB.prepare(
+    "UPDATE payment_checkouts SET provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
+  ).bind(providerAmountMinor, checkoutCurrency, checkoutId).run();
+
+  return json({
+    ok: true,
+    purchaseType,
+    checkoutId,
+    reference,
+    checkoutExperience: inlineReady ? "inline" : "hosted",
+    inline: inlineReady ? inline : null,
+    checkoutUrl: inlineReady ? "" : checkoutUrl,
+    credits,
+    canonicalAmountMinor,
+    canonicalCurrency: "USD",
+    checkoutAmount,
+    checkoutCurrency,
+    providerAmountMinor,
+    providerCurrency: checkoutCurrency,
+  }, 201);
 }
 
 async function handleFlutterwavePaymentWebhook(request: Request, env: Env): Promise<Response> {
