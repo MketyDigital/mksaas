@@ -8,6 +8,8 @@ interface Env {
   RECOVERY_TTL_SECONDS: string;
   MKETY_ASSIST_OPS_TOKEN: string;
   MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN: string;
+  MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME: string;
+  MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET: string;
   MKETY_ASSIST_CF_ZONE_ID: string;
   MKETY_ASSIST_CF_SAAS_TOKEN: string;
   MKETY_ASSIST_PAYMENT_WEBHOOK_SECRET: string;
@@ -45,6 +47,10 @@ export default {
 
       const customer = await resolveCustomerByHost(env.DB, host, env.HOSTED_SUFFIX);
       if (!customer) return brandedNotFound(host);
+
+      if (url.pathname === "/api/telegram/auth-webhook" && request.method === "POST") {
+        return handleTelegramAuthBotWebhook(request, env);
+      }
 
       if (url.pathname.startsWith("/api/auth/")) {
         return handleAuth(request, env, customer);
@@ -273,17 +279,20 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
     return new Response(null, { status: 204, headers: { "set-cookie": clearSessionCookie(env) } });
   }
 
-  if (url.pathname === "/api/auth/telegram/link" && request.method === "POST") {
+  if (url.pathname === "/api/auth/telegram/link/start" && request.method === "POST") {
     const session = await requireSession(request, env, customer.customerId);
     if (!session) return json({ error: "unauthorized" }, 401);
-    const payload = await readJson(request);
-    const verified = await verifyTelegramLogin(payload, env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN);
-    if (!verified) return json({ error: "invalid_telegram_authorization" }, 400);
+    if (!env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME) return json({ error: "telegram_linking_not_configured" }, 503);
+    const token = randomToken(24);
     const now = unix();
     await env.DB.prepare(
-      "UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_linked_at=?,updated_at=? WHERE id=?",
-    ).bind(String(payload.id), payload.username ? String(payload.username) : null, now, now, session.userId).run();
-    return json({ ok: true, telegramUserId: String(payload.id), username: payload.username ?? null });
+      "INSERT INTO telegram_link_challenges (id,customer_id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)",
+    ).bind(id("tlc"), customer.customerId, session.userId, await sha256(token), now + 600, now).run();
+    return json({
+      ok: true,
+      url: `https://t.me/${env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME}?start=link_${token}`,
+      expiresInSeconds: 600,
+    });
   }
 
   if (url.pathname === "/api/auth/recovery/start" && request.method === "POST") {
@@ -297,7 +306,7 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
 
     // Always return the same public response to avoid account enumeration.
     if (user?.telegram_user_id) {
-      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
       const now = unix();
       const challengeId = id("rec");
       const codeHash = await sha256(code);
@@ -343,6 +352,41 @@ async function handleAuth(request: Request, env: Env, customer: CustomerContext)
   }
 
   return json({ error: "not_found" }, 404);
+}
+
+async function handleTelegramAuthBotWebhook(request: Request, env: Env): Promise<Response> {
+  const secret = request.headers.get("x-telegram-bot-api-secret-token") || "";
+  if (!env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET || !constantTimeEqual(secret, env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET)) {
+    return json({ error: "not_found" }, 404);
+  }
+  const update = await readJson(request);
+  const message = update.message;
+  const text = typeof message?.text === "string" ? message.text.trim() : "";
+  const telegramUserId = message?.from?.id ? String(message.from.id) : "";
+  const username = message?.from?.username ? String(message.from.username) : null;
+  if (!telegramUserId || !text.startsWith("/start link_")) return json({ ok: true });
+
+  const token = text.slice("/start link_".length).split(/\s+/)[0];
+  const now = unix();
+  const challenge = await env.DB.prepare(
+    `SELECT id,user_id FROM telegram_link_challenges
+     WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? LIMIT 1`,
+  ).bind(await sha256(token), now).first<any>();
+  if (!challenge) {
+    await sendTelegramText(env, telegramUserId, "This Mkety Assist link has expired. Return to your portal and start Telegram linking again.");
+    return json({ ok: true });
+  }
+  try {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_linked_at=?,updated_at=? WHERE id=?")
+        .bind(telegramUserId, username, now, now, challenge.user_id),
+      env.DB.prepare("UPDATE telegram_link_challenges SET consumed_at=? WHERE id=?").bind(now, challenge.id),
+    ]);
+    await sendTelegramText(env, telegramUserId, "Telegram is now connected to your Mkety Assist account for secure access recovery.");
+  } catch {
+    await sendTelegramText(env, telegramUserId, "This Telegram account is already linked to another Mkety Assist user. Contact Mkety support if this is unexpected.");
+  }
+  return json({ ok: true });
 }
 
 async function handleCustomerApi(request: Request, env: Env, customer: CustomerContext, session: Session): Promise<Response> {
@@ -545,29 +589,20 @@ function clearSessionCookie(env: Env) {
   return `${env.SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-async function verifyTelegramLogin(payload: any, botToken: string): Promise<boolean> {
-  const hash = String(payload.hash || "").toLowerCase();
-  const authDate = Number(payload.auth_date || 0);
-  if (!hash || !authDate || Math.abs(unix() - authDate) > 600) return false;
-  const dataCheck = Object.keys(payload)
-    .filter((k) => k !== "hash" && payload[k] !== undefined && payload[k] !== null)
-    .sort()
-    .map((k) => `${k}=${payload[k]}`)
-    .join("\n");
-  const secret = await crypto.subtle.digest("SHA-256", encoder.encode(botToken));
-  const key = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(dataCheck));
-  return constantTimeEqual(hash, bytesToHex(new Uint8Array(signature)));
+async function sendTelegramRecoveryCode(env: Env, telegramUserId: string, customerName: string, code: string): Promise<boolean> {
+  return sendTelegramText(
+    env,
+    telegramUserId,
+    `${customerName} access recovery code: ${code}\n\nThis code expires in 10 minutes. If you did not request it, ignore this message.`,
+  );
 }
 
-async function sendTelegramRecoveryCode(env: Env, telegramUserId: string, customerName: string, code: string): Promise<boolean> {
+async function sendTelegramText(env: Env, telegramUserId: string, text: string): Promise<boolean> {
+  if (!env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN) return false;
   const response = await fetch(`https://api.telegram.org/bot${env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: telegramUserId,
-      text: `${customerName} access recovery code: ${code}\n\nThis code expires in 10 minutes. If you did not request it, ignore this message.`,
-    }),
+    body: JSON.stringify({ chat_id: telegramUserId, text }),
   });
   return response.ok;
 }
@@ -721,8 +756,8 @@ function dashboardPage(customer: CustomerContext, session: Session) {
   return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(customer.customerName)} AI</title>
 <style>body{font:15px system-ui;margin:0;background:#0d0e14;color:#f5f5f7}header{padding:18px 28px;border-bottom:1px solid #252838;display:flex;justify-content:space-between}.wrap{max-width:1100px;margin:auto;padding:28px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.card{background:#171924;border:1px solid #252838;padding:20px;border-radius:16px}a{color:#a996ff}button{padding:9px 13px;border:0;border-radius:9px;background:#6d4aff;color:#fff}</style></head>
 <body><header><strong>${escapeHtml(customer.customerName)} AI</strong><span>${escapeHtml(session.email)} · ${escapeHtml(session.role)}</span></header>
-<main class="wrap"><h1>Dashboard</h1><div class="grid"><section class="card"><h3>Assistants</h3><p id="assistants">Loading…</p></section><section class="card"><h3>Credits</h3><p id="credits">Loading…</p></section><section class="card"><h3>Telegram recovery</h3><p>Linking is available through the authenticated Telegram login endpoint. A linked Telegram account can receive recovery codes.</p></section><section class="card"><h3>Portal</h3><p>${escapeHtml(customer.hostname)}</p></section></div></main>
-<script>Promise.all([fetch('/api/assistants').then(r=>r.json()),fetch('/api/usage').then(r=>r.json())]).then(([a,u])=>{assistants.textContent=(a.assistants||[]).length+' active/configured';credits.textContent=(u.credits?.balance??0)+' remaining';});</script></body></html>`);
+<main class="wrap"><h1>Dashboard</h1><div class="grid"><section class="card"><h3>Assistants</h3><p id="assistants">Loading…</p></section><section class="card"><h3>Credits</h3><p id="credits">Loading…</p></section><section class="card"><h3>Telegram recovery</h3><p>Connect your Telegram once, then it can receive secure access-recovery codes.</p><button id="linkTelegram">Connect Telegram</button></section><section class="card"><h3>Portal</h3><p>${escapeHtml(customer.hostname)}</p></section></div></main>
+<script>Promise.all([fetch('/api/assistants').then(r=>r.json()),fetch('/api/usage').then(r=>r.json())]).then(([a,u])=>{assistants.textContent=(a.assistants||[]).length+' active/configured';credits.textContent=(u.credits?.balance??0)+' remaining';});document.getElementById('linkTelegram').onclick=async()=>{const r=await fetch('/api/auth/telegram/link/start',{method:'POST'});const j=await r.json();if(j.url)location.href=j.url;else alert('Telegram linking is not configured yet.');};</script></body></html>`);
 }
 
 function opsPage(customers: any[]) {
