@@ -167,7 +167,7 @@ export async function provisionManagedDomainDns(tenantSlug: string, managedDomai
   const tenant = await tenantBySlug(tenantSlug);
   if (!tenant) throw new Error('Tenant not found.');
   const result = await provisionManagedDomainDnsInternal(tenant.id, managedDomainId);
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
+  revalidatePath(`/app/${tenantSlug}/admin/settings/domains`);
   return result;
 }
 
@@ -199,7 +199,7 @@ export async function saveManagedDnsRecord(
     ...input,
     name: dnsNameForDomain(domain.domain, input.name),
   });
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains/${managedDomainId}`);
+  revalidatePath(`/app/${tenantSlug}/admin/settings/domains/${managedDomainId}`);
   return result;
 }
 
@@ -216,7 +216,7 @@ export async function removeManagedDnsRecord(
   if (!domain?.dnsZoneId) throw new Error('Mkety DNS is not provisioned for this domain.');
 
   await deleteCloudflareDnsRecord(domain.dnsZoneId, recordId);
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains/${managedDomainId}`);
+  revalidatePath(`/app/${tenantSlug}/admin/settings/domains/${managedDomainId}`);
 }
 
 export async function setManagedDomainAutoRenew(
@@ -235,6 +235,6 @@ export async function setManagedDomainAutoRenew(
     autoRenew: enabled,
     updatedAt: new Date(),
   }).where(eq(managedDomains.id, domain.id)).returning();
-  revalidatePath(`/t/${tenantSlug}/admin/settings/domains`);
+  revalidatePath(`/app/${tenantSlug}/admin/settings/domains`);
   return updated ?? domain;
 }
