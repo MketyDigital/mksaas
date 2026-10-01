@@ -241,6 +241,32 @@ export async function handleRuntimeApi(
     return json({ ok: true, paused: body.paused !== false });
   }
 
+  if (url.pathname === "/api/notifications/preferences" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT kind,enabled FROM owner_notification_preferences WHERE customer_id=? AND user_id=?",
+    ).bind(customer.customerId, session.userId).all<any>();
+    const preferences: Record<string, boolean> = { handoff: true, reminder_failure: true, channel_health: true };
+    for (const row of rows.results ?? []) preferences[String(row.kind)] = Boolean(row.enabled);
+    return json({ preferences });
+  }
+
+  if (url.pathname === "/api/notifications/preferences" && request.method === "PATCH") {
+    const body = await readJson(request);
+    const allowed = ["handoff","reminder_failure","channel_health"];
+    const now = unix();
+    const statements: D1PreparedStatement[] = [];
+    for (const kind of allowed) {
+      if (typeof body[kind] !== "boolean") continue;
+      statements.push(env.DB.prepare(
+        `INSERT INTO owner_notification_preferences(customer_id,user_id,kind,enabled,updated_at)
+         VALUES (?,?,?,?,?)
+         ON CONFLICT(customer_id,user_id,kind) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`,
+      ).bind(customer.customerId, session.userId, kind, body[kind] ? 1 : 0, now));
+    }
+    if (statements.length) await env.DB.batch(statements);
+    return json({ ok: true });
+  }
+
   if (url.pathname === "/api/reminders" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT r.id,r.assistant_id,a.name AS assistant_name,r.conversation_id,r.due_at,r.payload_json,r.status,r.created_at,r.delivered_at
@@ -453,6 +479,11 @@ export async function handleRuntimeApi(
           id("chn"), customer.customerId, assistantId, "telegram", String(me.result.id), "active",
           JSON.stringify({ username: me.result.username || null, firstName: me.result.first_name || null, webhookUrl }), now, now,
         ),
+        env.DB.prepare(
+          `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_success_at,last_error)
+           VALUES (?,?,?,'healthy',?,?,NULL)
+           ON CONFLICT(customer_id,assistant_id,channel) DO UPDATE SET status='healthy',last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,last_error=NULL`,
+        ).bind(customer.customerId, assistantId, "telegram", now, now),
       ]);
       return json({ ok: true, bot: { id: me.result.id, username: me.result.username, name: me.result.first_name }, webhookUrl });
     }
@@ -464,6 +495,11 @@ export async function handleRuntimeApi(
       await env.DB.batch([
         env.DB.prepare("DELETE FROM assistant_secrets WHERE assistant_id=? AND name IN ('telegram_bot_token','telegram_webhook_secret')").bind(assistantId),
         env.DB.prepare("UPDATE assistant_channels SET status='disabled',updated_at=? WHERE assistant_id=? AND channel='telegram'").bind(unix(), assistantId),
+        env.DB.prepare(
+          `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_error)
+           VALUES (?,?,?,'disconnected',?,NULL)
+           ON CONFLICT(customer_id,assistant_id,channel) DO UPDATE SET status='disconnected',last_checked_at=excluded.last_checked_at,last_error=NULL`,
+        ).bind(customer.customerId, assistantId, "telegram", unix()),
       ]);
       return json({ ok: true });
     }
@@ -530,6 +566,12 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const webhookSecret = await getAssistantSecret(env, assistantId, "telegram_webhook_secret");
   const supplied = request.headers.get("x-telegram-bot-api-secret-token") || "";
   if (!webhookSecret || !constantTimeEqual(supplied, webhookSecret)) return json({ error: "not_found" }, 404);
+
+  await env.DB.prepare(
+    `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_success_at,last_error)
+     VALUES (?,?,?,'healthy',?,?,NULL)
+     ON CONFLICT(customer_id,assistant_id,channel) DO UPDATE SET status='healthy',last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,last_error=NULL`,
+  ).bind(assistant.customer_id, assistantId, "telegram", unix(), unix()).run();
 
   const update = await readJson(request);
   const updateId = String(update.update_id ?? "");
@@ -623,6 +665,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
 
   if (assistant.human_handoff_enabled && shouldRequestHuman(inbound.text)) {
     await openHandoff(env.DB, assistant.customer_id, assistantId, conversation.id, inbound.text);
+    await notifyLinkedOwners(env, assistant.customer_id, assistantId, "handoff",
+      `Human handoff requested for ${assistant.name || "your assistant"}. Open the Mkety Assist portal to take over the conversation.`);
     await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.");
     await markWebhook(env.DB, assistantId, updateId, "processed");
     return json({ ok: true, handoff: true });
@@ -738,8 +782,42 @@ export async function processDueReminders(env: AssistEnv): Promise<void> {
         reminder.id,
         reminder.customer_id,
       ).run();
+      if (terminal) {
+        await notifyLinkedOwners(
+          env,
+          reminder.customer_id,
+          reminder.assistant_id,
+          "reminder_failure",
+          "A Mkety Assist reminder could not be delivered after all retry attempts. Check Reminders in the portal.",
+        ).catch(() => undefined);
+      }
     }
   }
+}
+
+async function notifyLinkedOwners(
+  env: AssistEnv,
+  customerId: string,
+  assistantId: string,
+  kind: "handoff" | "reminder_failure" | "channel_health",
+  text: string,
+) {
+  const token = await getAssistantSecret(env, assistantId, "telegram_bot_token");
+  if (!token) return;
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT u.telegram_user_id
+     FROM customer_users cu
+     JOIN users u ON u.id=cu.user_id
+     LEFT JOIN owner_notification_preferences p
+       ON p.customer_id=cu.customer_id AND p.user_id=u.id AND p.kind=?
+     WHERE cu.customer_id=? AND cu.role IN ('owner','admin')
+       AND u.telegram_user_id IS NOT NULL
+       AND u.telegram_recovery_assistant_id=?
+       AND COALESCE(p.enabled,1)=1`,
+  ).bind(kind, customerId, assistantId).all<any>();
+  await Promise.all((rows.results ?? []).map((row: any) =>
+    telegramSend(token, String(row.telegram_user_id), text).catch(() => ({ ok: false }))
+  ));
 }
 
 function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, endValue: unknown) {
