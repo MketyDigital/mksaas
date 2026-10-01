@@ -1,7 +1,7 @@
 import { createNowPaymentsAdapter } from './nowpayments';
 
 const input = {
-  orderId: 'MKETY-ENT-123',
+  orderId: 'MKETY-ENT-5e0d1f40-6bf5-4efd-bd75-a2223fb8ff91',
   customer: { fullName: 'Ada Lovelace', companyName: 'Analytical Engines', email: 'ada@example.com' },
   project: { name: 'Enterprise AI rollout' },
   amountMinor: BigInt(19999),
@@ -24,10 +24,10 @@ describe('NOWPayments enterprise adapter', () => {
     expect(body).toMatchObject({
       price_amount: 199.99,
       price_currency: 'usd',
-      order_id: 'MKETY-ENT-123',
+      order_id: 'ENT-MKE-5e0d1f406bf54efdbd75a2223fb8ff91',
       ipn_callback_url: 'https://mkety.com/api/webhooks/enterprise/nowpayments',
-      success_url: 'https://mkety.com/payment/enterprise/success?orderId=MKETY-ENT-123',
-      cancel_url: 'https://mkety.com/payment/enterprise/cancelled?orderId=MKETY-ENT-123',
+      success_url: 'https://mkety.com/payment/enterprise/success?orderId=MKETY-ENT-5e0d1f40-6bf5-4efd-bd75-a2223fb8ff91',
+      cancel_url: 'https://mkety.com/payment/enterprise/cancelled?orderId=MKETY-ENT-5e0d1f40-6bf5-4efd-bd75-a2223fb8ff91',
     });
     expect(result).toMatchObject({
       status: 'checkout_created',

@@ -69,11 +69,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
   if (mailEntitled) redirect(`/app/${tenantSlug}/mail?payment=confirmed`);
   const paymentSettings = await getMketyPaymentSettings();
   const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
-  const flutterwaveEnabled = Boolean(
-    process.env.FLUTTERWAVE_PUBLIC_KEY &&
-      process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
-      process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH,
-  );
+  const flutterwaveEnabled = Boolean(process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET);
   const koraEnabled = Boolean(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY);
   const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates);
   const selectedCurrency = flutterwaveCurrencies.includes(

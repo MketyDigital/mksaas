@@ -1,3 +1,5 @@
+import { createMketyPaymentReference } from '@/features/payments/reference';
+
 import type { EnterpriseCheckoutProviderAdapter, ProviderCheckoutInput } from './types';
 import { formatUsdMinorUnits } from '../domain';
 
@@ -16,6 +18,8 @@ export function createNowPaymentsAdapter(options: CreateNowPaymentsAdapterOption
 
       const priceAmount = Number(formatUsdMinorUnits(input.amountMinor));
       const encodedOrderId = encodeURIComponent(input.orderId);
+      const uuid = input.orderId.startsWith('MKETY-ENT-') ? input.orderId.slice('MKETY-ENT-'.length) : '';
+      const orderReference = createMketyPaymentReference('enterprise', uuid || undefined);
       const response = await fetchImpl('https://api.nowpayments.io/v1/invoice', {
         method: 'POST',
         headers: {
@@ -25,7 +29,7 @@ export function createNowPaymentsAdapter(options: CreateNowPaymentsAdapterOption
         body: JSON.stringify({
           price_amount: priceAmount,
           price_currency: 'usd',
-          order_id: input.orderId,
+          order_id: orderReference,
           order_description: `Mkety Enterprise - ${input.project.name} (${input.customer.companyName})`,
           ipn_callback_url: 'https://mkety.com/api/webhooks/enterprise/nowpayments',
           success_url: `https://mkety.com/payment/enterprise/success?orderId=${encodedOrderId}`,

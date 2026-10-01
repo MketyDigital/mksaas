@@ -15,7 +15,7 @@ describe('Enterprise AI payment launcher', () => {
     const page = await readFile('src/app/app/[tenant]/enterprise-ai/page.tsx', 'utf8');
 
     expect(page).toContain('process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET');
-    expect(page).toContain('process.env.FLUTTERWAVE_PUBLIC_KEY');
+    expect(page).toContain('process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET');
     expect(page).toContain('process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY');
     expect(page).not.toContain('<option value="kora">Kora</option>');
     expect(page).not.toContain('<option value="kora">Card / bank · Kora</option>');

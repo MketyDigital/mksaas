@@ -33,9 +33,7 @@ async function renderEnterpriseAiConsolePage({
     ...(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
       ? [{ value: 'nowpayments' as const, label: 'Crypto / NOWPayments' }]
       : []),
-    ...(process.env.FLUTTERWAVE_PUBLIC_KEY
-      && process.env.FLUTTERWAVE_STANDARD_SECRET_KEY
-      && process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
+    ...(process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
       ? [{ value: 'flutterwave' as const, label: 'Card / bank · Flutterwave' }]
       : []),
     ...(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY
