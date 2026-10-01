@@ -298,7 +298,7 @@ export function AiCommercialControlPanel({
                   <input name="modelId" type="hidden" value={model.id} />
                   <label className="text-xs font-medium">
                     Internal rate multiplier
-                    <input className="mt-1 w-32 rounded-lg border bg-background px-3 py-2 text-sm" defaultValue="200" min={100} max={1000} name="rateMultiplierPercent" step="0.01" type="number" />
+                    <input className="mt-1 w-32 rounded-lg border bg-background px-3 py-2 text-sm" defaultValue="100" min={100} max={1000} name="rateMultiplierPercent" step="0.01" type="number" />
                   </label>
                   <ConfirmSubmitButton
                     className="rounded-lg border px-3 py-2 text-xs font-semibold"

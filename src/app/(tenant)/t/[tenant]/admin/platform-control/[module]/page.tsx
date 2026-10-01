@@ -334,8 +334,8 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
                     </label>
                     <label className="text-sm font-medium text-foreground">
                       Customer rate multiplier %
-                      <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="200" min={100} max={1000} name="customerRateMultiplierPercent" step="0.01" type="number" />
-                      <span className="mt-1 block text-xs font-normal text-muted-foreground">200% means a 2× Mkety usage-rate multiplier over the verified provider-cost basis. This is internal only.</span>
+                      <input className="mt-1 w-full rounded-lg border bg-background px-3 py-2" defaultValue="100" min={100} max={1000} name="customerRateMultiplierPercent" step="0.01" type="number" />
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">100% means Mkety usage rates start at the verified provider-cost basis. Increase only when the customer contract intentionally includes a higher internal usage-rate multiplier. This is internal only.</span>
                     </label>
                   </div>
                   <p className="mt-3">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion are confidential Mkety commercial controls. Customers see only their price/top-ups, credit balance, usage, available features and resulting Mkety model rates.</p>

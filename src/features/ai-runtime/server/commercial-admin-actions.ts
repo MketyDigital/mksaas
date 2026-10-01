@@ -239,7 +239,7 @@ async function createAiRateCardFromProviderCostImpl(tenantSlug: string, formData
   const actor = await requireAiCommercialOps(tenantSlug);
   const modelId = String(formData.get('modelId') ?? '').trim();
   if (!modelId) throw new Error('Model is required.');
-  const multiplierText = String(formData.get('rateMultiplierPercent') ?? '200').trim();
+  const multiplierText = String(formData.get('rateMultiplierPercent') ?? '100').trim();
   const match = /^(\d{2,4})(?:\.(\d{1,2}))?$/.exec(multiplierText);
   if (!match) throw new Error('Rate multiplier must be a valid percentage.');
   const rateMultiplierBps = Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));

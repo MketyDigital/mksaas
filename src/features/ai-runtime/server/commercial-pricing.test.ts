@@ -5,6 +5,19 @@ import {
 } from './commercial-pricing';
 
 describe('Enterprise AI commercial pricing', () => {
+  it('uses a 100% rate multiplier by default', () => {
+    const result = calculateEnterpriseAiIncludedCredits({
+      monthlyAmountMinor: 10000n,
+      managedCostShareBps: 4000,
+      operationsReserveBps: 500,
+      creditUsdMicros: 1000n,
+    });
+    expect(result.providerEnvelopeUsdMicros).toBe(40_000_000n);
+    expect(result.usableProviderUsdMicros).toBe(38_000_000n);
+    expect(result.customerUsageValueUsdMicros).toBe(38_000_000n);
+    expect(result.includedCredits).toBe(38_000n);
+  });
+
   it('calculates an internal allowance without exposing provider economics to customers', () => {
     const result = calculateEnterpriseAiIncludedCredits({
       monthlyAmountMinor: 7000n,
