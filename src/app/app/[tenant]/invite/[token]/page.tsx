@@ -51,7 +51,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
 
   if (!session?.user?.id) {
     // Not authenticated - redirect to sign in with callback
-    const callbackUrl = encodeURIComponent(`/t/${tenantSlug}/invite/${token}`);
+    const callbackUrl = encodeURIComponent(`/app/${tenantSlug}/invite/${token}`);
     redirect(`/login?callbackUrl=${callbackUrl}&invite_email=${encodeURIComponent(inviteData.email)}`);
   }
 
@@ -79,7 +79,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
   }
 
   // Success - redirect to onboarding
-  redirect(`/t/${tenantSlug}/onboarding/cv`);
+  redirect(`/app/${tenantSlug}/onboarding/cv`);
 }
 
 // Error component
