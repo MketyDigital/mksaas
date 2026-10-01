@@ -156,6 +156,9 @@ try {
   if (typeof customerDocument.getElementById("nav").onclick !== "function") throw new Error("Customer navigation handler was not bound");
   if (typeof customerDocument.getElementById("logout").onclick !== "function") throw new Error("Customer logout handler was not bound");
   if (!customerHtml.includes("API Access")) throw new Error("Customer API Access section missing");
+  if (!customerHtml.includes("https://checkout.flutterwave.com/v3.js")) throw new Error("Flutterwave Inline SDK missing");
+  if (!customerHtml.includes("/api/billing/plan/start")) throw new Error("Plan funding checkout missing");
+  if (!customerHtml.includes("FlutterwaveCheckout")) throw new Error("Flutterwave Inline launcher missing");
 } finally {
   globalThis.document = oldDocument;
   globalThis.window = oldWindow;

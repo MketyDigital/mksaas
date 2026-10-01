@@ -21,6 +21,7 @@ button,input,textarea,select{font:inherit}button{cursor:pointer}.shell{min-heigh
 @media(max-width:900px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.nav{display:flex;overflow:auto}.nav button{width:auto;white-space:nowrap}.foot{display:none}.grid,.three,.two{grid-template-columns:1fr 1fr}.chat{grid-template-columns:1fr}.top{position:static}}
 @media(max-width:560px){.grid,.three,.two{grid-template-columns:1fr}.content{padding:18px}.top{padding:0 18px}}
 </style>
+<script src="https://checkout.flutterwave.com/v3.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -80,7 +81,18 @@ function render_conversations(){return '<h1 class="title">Conversations</h1><p c
 function conversationRows(rows){return rows.length?rows.map(c=>'<div class="conversation" data-conversation="'+c.id+'"><strong>'+esc(c.assistant_name||'Assistant')+'</strong><div class="muted">'+esc(c.channel)+' · '+new Date((c.updated_at||0)*1000).toLocaleString()+'</div><div>'+esc((c.last_message||'').slice(0,100))+'</div></div>').join(''):'<div class="empty">No conversations yet.</div>'}
 function render_handoffs(){return '<h1 class="title">Human Handoff</h1><p class="sub">Take over conversations when a person asks for human help.</p><div class="card">'+(state.handoffs.length?'<table class="table"><thead><tr><th>Assistant</th><th>Status</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+state.handoffs.map(h=>'<tr><td>'+esc(h.assistant_name)+'</td><td><span class="pill '+(h.status==='open'?'warn':'ok')+'">'+esc(h.status)+'</span></td><td>'+esc((h.reason||'').slice(0,120))+'</td><td>'+(h.status==='open'?'<button class="btn" data-reply-handoff="'+h.id+'">Reply</button> <button class="btn" data-resolve-handoff="'+h.id+'">Resolve</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No handoffs.</div>')+'</div>'}
 function render_reminders(){return '<div class="spread"><div><h1 class="title">Reminders</h1><p class="sub">Scheduled messages are delivered by the connected Telegram assistant.</p></div><button class="btn primary" data-action="new-reminder">New reminder</button></div><div class="card">'+(state.reminders.length?'<table class="table"><thead><tr><th>Assistant</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>'+state.reminders.map(r=>'<tr><td>'+esc(r.assistant_name)+'</td><td>'+new Date(r.due_at*1000).toLocaleString()+'</td><td>'+esc(r.status)+'</td><td>'+(r.status==='scheduled'?'<button class="btn danger" data-cancel-reminder="'+r.id+'">Cancel</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No reminders.</div>')+'</div>'}
-function render_usage(){const c=state.usage?.credits||{},p=state.usage?.plan||{};return '<div class="spread"><div><h1 class="title">Usage & Credits</h1><p class="sub">Customer-facing usage only. Provider cost and internal commercial controls stay in Mkety Operator.</p></div>'+(p.topup_enabled?'<button class="btn primary" data-action="buy-credits">Buy credits</button>':'')+'</div><div class="three">'+metric('Credits remaining',c.balance??0)+metric('Lifetime granted',c.lifetime_granted??0)+metric('Lifetime used',c.lifetime_consumed??0)+'</div><div class="two" style="margin-top:16px"><div class="card"><h3>Plan</h3><p>Included credits: <strong>'+esc(p.included_credits??0)+'</strong></p><p>Top-ups: <strong>'+(p.topup_enabled?'Enabled':'Disabled')+'</strong></p></div><div class="card"><h3>Recent top-ups</h3><div id="checkoutBox" class="muted">Loading…</div></div></div>'}
+function render_usage(){
+ const c=state.usage?.credits||{},p=state.usage?.plan||{},b=state.usage?.billing||{};
+ const pending=b.billing_status!=='current';
+ const price=(Number(p.subscription_amount_minor||0)/100).toFixed(2);
+ const min=(Number(p.minimum_funding_minor||0)/100).toFixed(2);
+ return '<div class="spread"><div><h1 class="title">Usage & Credits</h1><p class="sub">Customer-facing usage only. Provider cost and internal commercial controls stay in Mkety Operator.</p></div><div class="row">'+
+   (pending?'<button class="btn primary" data-action="pay-plan">Pay / fund plan</button>':'')+
+   (p.topup_enabled?'<button class="btn" data-action="buy-credits">Buy credits</button>':'')+
+ '</div></div>'+
+ '<div class="three">'+metric('Credits remaining',c.balance??0)+metric('Lifetime granted',c.lifetime_granted??0)+metric('Lifetime used',c.lifetime_consumed??0)+'</div>'+
+ '<div class="two" style="margin-top:16px"><div class="card"><h3>Plan</h3><p>Status: <strong>'+esc(b.billing_status||'pending')+'</strong></p><p>Monthly price: <strong>$'+esc(price)+'</strong></p><p>Included credits: <strong>'+esc(p.included_credits??0)+'</strong></p><p>Funding: <strong>'+(p.funding_mode==='prepaid_partial'?'Prepaid partial / top-ups':'Full monthly payment')+'</strong></p>'+(p.funding_mode==='prepaid_partial'?'<p>Minimum funding: <strong>$'+esc(min)+'</strong></p>':'')+'<p>Top-ups: <strong>'+(p.topup_enabled?'Enabled':'Disabled')+'</strong></p></div><div class="card"><h3>Payment history</h3><div id="checkoutBox" class="muted">Loading…</div></div></div>';
+}
 function render_team(){return '<div class="spread"><div><h1 class="title">Team</h1><p class="sub">Simple portal access for owners, admins and members.</p></div><button class="btn primary" data-action="invite-member">Add member</button></div><div class="card" id="teamBox"><div class="empty">Loading team…</div></div>'}
 function render_api(){
  return '<div class="spread"><div><h1 class="title">API Access</h1><p class="sub">Use your assistants from your own apps. API calls consume the same credits and limits as other Assist usage.</p></div><button class="btn primary" data-action="new-api-key">Create API key</button></div>'+
@@ -102,6 +114,7 @@ function bindSection(){
  content.querySelectorAll('[data-action="refresh-domains"]').forEach(b=>b.onclick=loadCustomerDomains);
  content.querySelectorAll('[data-action="invite-member"]').forEach(b=>b.onclick=inviteMember);
  content.querySelectorAll('[data-action="buy-credits"]').forEach(b=>b.onclick=buyCredits);
+ content.querySelectorAll('[data-action="pay-plan"]').forEach(b=>b.onclick=payPlan);
  content.querySelectorAll('[data-action="new-api-key"]').forEach(b=>b.onclick=newApiKey);
  content.querySelectorAll('[data-revoke-api-key]').forEach(b=>b.onclick=()=>revokeApiKey(b.dataset.revokeApiKey));
  if(state.section==='team')loadTeam();
@@ -166,8 +179,62 @@ async function loadCustomerDomains(){
  }catch(e){customerDomainsBox.textContent=e.message}
 }
 async function saveBranding(){try{await api('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({brandColor:brandColor.value||null,logoUrl:logoUrl.value||null})});toastMsg('Branding saved');setTimeout(()=>location.reload(),500)}catch(e){toastMsg(e.message)}}
-function buyCredits(){openModal('<h2>Buy credits</h2><p class="muted">Payment is verified by Mkety before credits are added.</p><div class="field"><label>Credits</label><input class="input" id="topupCredits" type="number" min="100" max="5000000" value="5000"></div><div class="field"><label>Payment currency</label><select class="input" id="topupCurrency"><option>USD</option><option>NGN</option><option>GHS</option><option>KES</option><option>GBP</option><option>EUR</option><option>ZAR</option></select></div><div class="row"><button class="btn primary" id="topupStart">Continue to payment</button><button class="btn" id="topupCancel">Cancel</button></div>');topupCancel.onclick=closeModal;topupStart.onclick=async()=>{try{topupStart.disabled=true;const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credits:Number(topupCredits.value),paymentCurrency:topupCurrency.value})});if(!d.checkoutUrl)throw new Error('Payment checkout unavailable');location.href=d.checkoutUrl}catch(e){topupStart.disabled=false;toastMsg(e.message)}}}
-async function loadCheckouts(){try{const d=await api('/api/billing/checkouts');const list=d.checkouts||[];checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Credits</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,8).map(x=>'<tr><td>'+esc(x.credits)+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No top-ups yet.'}catch(e){checkoutBox.textContent=e.message}}
+function paymentCurrencyOptions(){
+ return '<option>USD</option><option>NGN</option><option>GHS</option><option>KES</option><option>GBP</option><option>EUR</option><option>ZAR</option><option>XAF</option><option>XOF</option><option>UGX</option><option>RWF</option><option>TZS</option><option>MWK</option><option>EGP</option>';
+}
+function launchFlutterwave(data){
+ if(data.checkoutExperience==='inline'&&data.inline){
+  if(typeof window.FlutterwaveCheckout!=='function')throw new Error('Flutterwave checkout is still loading. Please try again.');
+  const p=data.inline;
+  window.FlutterwaveCheckout({
+    public_key:p.publicKey,
+    tx_ref:p.reference,
+    amount:p.amount,
+    currency:p.currency,
+    redirect_url:'https://mkety-assist.mkety.app'+p.redirectPath,
+    payload_hash:p.payloadHash,
+    customer:{email:p.email,...(p.customerName?{name:p.customerName}:{})},
+    meta:p.metadata||{},
+    customizations:{title:'Mkety Assist',description:'Secure Mkety Assist payment'},
+    onclose:()=>{toastMsg('Checkout closed. No credits are added until Mkety verifies payment.');loadCheckouts().catch(()=>{})},
+  });
+  return;
+ }
+ if(data.checkoutUrl){location.assign(data.checkoutUrl);return}
+ throw new Error('Payment checkout unavailable');
+}
+function payPlan(){
+ const p=state.usage?.plan||{};
+ const partial=p.funding_mode==='prepaid_partial';
+ const defaultAmount=(Number(partial?p.minimum_funding_minor:p.subscription_amount_minor||0)/100).toFixed(2);
+ const setupFee=(Number(p.setup_fee_minor||0)/100).toFixed(2);
+ const totalFull=((Number(p.subscription_amount_minor||0)+Number(p.setup_fee_minor||0))/100).toFixed(2);
+ openModal('<h2>Pay / fund plan</h2><p class="muted">Mkety activates the plan only after verified payment.</p>'+
+  (partial?'<div class="field"><label>Plan funding amount (USD)</label><input class="input" id="planFunding" inputmode="decimal" value="'+esc(defaultAmount)+'"><p class="muted">Minimum plan funding: $'+esc(defaultAmount)+(Number(p.setup_fee_minor||0)>0?' · plus one-time setup fee $'+esc(setupFee):'')+'</p></div>':'<p>Amount due: <strong>$'+esc(totalFull)+'</strong>'+(Number(p.setup_fee_minor||0)>0?' <span class="muted">(includes one-time setup fee $'+esc(setupFee)+')</span>':'')+'</p>')+
+  '<div class="field"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div>'+
+  '<p id="planPayMsg" class="muted"></p><div class="row"><button class="btn primary" id="planPayStart">Continue to secure payment</button><button class="btn" id="planPayCancel">Cancel</button></div>');
+ planPayCancel.onclick=closeModal;
+ planPayStart.onclick=async()=>{try{
+   planPayStart.disabled=true;planPayMsg.textContent='Preparing secure Flutterwave checkout…';
+   const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentCurrency:planCurrency.value,...(partial?{fundingAmountUsd:planFunding.value}:{})})});
+   planPayMsg.textContent='Opening secure checkout…';
+   launchFlutterwave(d);
+ }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
+}
+function buyCredits(){
+ openModal('<h2>Buy credits</h2><p class="muted">Payment is verified by Mkety before credits are added.</p><div class="field"><label>Credits</label><input class="input" id="topupCredits" type="number" min="100" max="5000000" value="5000"></div><div class="field"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted"></p><div class="row"><button class="btn primary" id="topupStart">Continue to secure payment</button><button class="btn" id="topupCancel">Cancel</button></div>');
+ topupCancel.onclick=closeModal;
+ topupStart.onclick=async()=>{try{
+   topupStart.disabled=true;topupMsg.textContent='Preparing secure Flutterwave checkout…';
+   const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credits:Number(topupCredits.value),paymentCurrency:topupCurrency.value})});
+   topupMsg.textContent='Opening secure checkout…';
+   launchFlutterwave(d);
+ }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
+}
+async function loadCheckouts(){try{
+ const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
+ checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Type</th><th>Credits</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type||'topup')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No payments yet.';
+}catch(e){checkoutBox.textContent=e.message}}
 async function linkTelegram(){try{const d=await api('/api/auth/telegram/link/start',{method:'POST'});location.href=d.url}catch(e){toastMsg(e.message)}}
 refresh().catch(e=>{content.innerHTML='<div class="card"><h2>Could not load console</h2><p class="muted">'+esc(e.message)+'</p></div>'});
 </script>
