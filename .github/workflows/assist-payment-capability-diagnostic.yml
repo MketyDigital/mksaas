@@ -29,4 +29,8 @@ jobs:
             kora:Boolean(x.methods?.kora)
           }));
           NODE
+          for path in nowpayments/start flutterwave/start kora/start; do
+            pcode="$(curl -sS -o /tmp/probe.json -w '%{http_code}' -X POST "https://mkety.com/api/payments/$path" -H "Authorization: Bearer $BROKER_SECRET" -H 'Content-Type: application/json' --data '{}')"
+            echo "provider_path=$path http_status=$pcode"
+          done
           test "$code" = "200"
