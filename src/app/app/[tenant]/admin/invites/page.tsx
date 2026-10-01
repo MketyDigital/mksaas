@@ -33,7 +33,7 @@ export default async function InvitesPage({ params }: InvitesPageProps) {
   // Check admin access
   const adminSession = await requireTenantAdmin(tenantSlug);
   if (!adminSession) {
-    redirect(`/t/${tenantSlug}`);
+    redirect(`/app/${tenantSlug}`);
   }
 
   return <InvitesClient tenantSlug={tenantSlug} />;
