@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { PUBLIC_AI_MODEL_REGISTRY, type PublicAIProviderId } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { aiModelAliases, aiModels, aiRateCards, aiRoutes, aiRuntimePolicies, aiSolutionTemplates } from '@/shared/db/schema/ai-runtime';
 import { requirePermission } from '@/shared/lib/permissions';
 
@@ -70,7 +71,7 @@ function parseOptionalPositiveBigInt(value: FormDataEntryValue | null, label: st
   return parsePositiveBigInt(raw, label);
 }
 
-export async function reconcilePublishedManagedAiCatalog(tenantSlug: string) {
+async function reconcilePublishedManagedAiCatalogImpl(tenantSlug: string) {
   await requireAiCommercialOps(tenantSlug);
 
   for (const [providerKey, provider] of Object.entries(PUBLIC_AI_MODEL_REGISTRY) as Array<
@@ -103,7 +104,7 @@ export async function reconcilePublishedManagedAiCatalog(tenantSlug: string) {
   revalidateAiOps(tenantSlug);
 }
 
-export async function upsertManagedAiModel(tenantSlug: string, formData: FormData) {
+async function upsertManagedAiModelImpl(tenantSlug: string, formData: FormData) {
   await requireAiCommercialOps(tenantSlug);
   const providerKey = parseManagedProvider(formData.get('providerKey'));
   const nativeModel = String(formData.get('nativeModel') ?? '').trim().slice(0, 200);
@@ -206,7 +207,7 @@ export async function upsertManagedAiModel(tenantSlug: string, formData: FormDat
   revalidateAiOps(tenantSlug);
 }
 
-export async function createAiRateCardFromProviderCost(tenantSlug: string, formData: FormData) {
+async function createAiRateCardFromProviderCostImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiCommercialOps(tenantSlug);
   const modelId = String(formData.get('modelId') ?? '').trim();
   if (!modelId) throw new Error('Model is required.');
@@ -259,7 +260,7 @@ export async function createAiRateCardFromProviderCost(tenantSlug: string, formD
   revalidateAiOps(tenantSlug);
 }
 
-export async function createAiRateCard(tenantSlug: string, formData: FormData) {
+async function createAiRateCardImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiCommercialOps(tenantSlug);
   const modelId = String(formData.get('modelId') ?? '').trim();
   if (!modelId) throw new Error('Model is required.');
@@ -308,7 +309,7 @@ export async function createAiRateCard(tenantSlug: string, formData: FormData) {
   revalidateAiOps(tenantSlug);
 }
 
-export async function activateAiRateCard(
+async function activateAiRateCardImpl(
   tenantSlug: string,
   rateCardId: string,
 ) {
@@ -341,7 +342,7 @@ export async function activateAiRateCard(
   revalidateAiOps(tenantSlug);
 }
 
-export async function retireAiRateCard(
+async function retireAiRateCardImpl(
   tenantSlug: string,
   rateCardId: string,
 ) {
@@ -353,7 +354,7 @@ export async function retireAiRateCard(
   revalidateAiOps(tenantSlug);
 }
 
-export async function updateAiRuntimePolicy(tenantSlug: string, formData: FormData) {
+async function updateAiRuntimePolicyImpl(tenantSlug: string, formData: FormData) {
   const actor = await requireAiCommercialOps(tenantSlug);
   const now = new Date();
   const values = {
@@ -387,7 +388,7 @@ export async function updateAiRuntimePolicy(tenantSlug: string, formData: FormDa
   revalidateAiOps(tenantSlug);
 }
 
-export async function disableEnterpriseAiInference(tenantSlug: string) {
+async function disableEnterpriseAiInferenceImpl(tenantSlug: string) {
   const actor = await requireAiCommercialOps(tenantSlug);
   await db
     .update(aiRuntimePolicies)
@@ -401,7 +402,7 @@ export async function disableEnterpriseAiInference(tenantSlug: string) {
   revalidateAiOps(tenantSlug);
 }
 
-export async function updateAiSolutionTemplate(
+async function updateAiSolutionTemplateImpl(
   tenantSlug: string,
   templateKey: string,
   formData: FormData,
@@ -434,4 +435,40 @@ export async function updateAiSolutionTemplate(
 
   revalidateAiOps(tenantSlug);
   revalidatePath('/ai/app');
+}
+
+export async function reconcilePublishedManagedAiCatalog(...args: Parameters<typeof reconcilePublishedManagedAiCatalogImpl>) {
+  return withServerActionDatabase(() => reconcilePublishedManagedAiCatalogImpl(...args));
+}
+
+export async function upsertManagedAiModel(...args: Parameters<typeof upsertManagedAiModelImpl>) {
+  return withServerActionDatabase(() => upsertManagedAiModelImpl(...args));
+}
+
+export async function createAiRateCardFromProviderCost(...args: Parameters<typeof createAiRateCardFromProviderCostImpl>) {
+  return withServerActionDatabase(() => createAiRateCardFromProviderCostImpl(...args));
+}
+
+export async function createAiRateCard(...args: Parameters<typeof createAiRateCardImpl>) {
+  return withServerActionDatabase(() => createAiRateCardImpl(...args));
+}
+
+export async function activateAiRateCard(...args: Parameters<typeof activateAiRateCardImpl>) {
+  return withServerActionDatabase(() => activateAiRateCardImpl(...args));
+}
+
+export async function retireAiRateCard(...args: Parameters<typeof retireAiRateCardImpl>) {
+  return withServerActionDatabase(() => retireAiRateCardImpl(...args));
+}
+
+export async function updateAiRuntimePolicy(...args: Parameters<typeof updateAiRuntimePolicyImpl>) {
+  return withServerActionDatabase(() => updateAiRuntimePolicyImpl(...args));
+}
+
+export async function disableEnterpriseAiInference(...args: Parameters<typeof disableEnterpriseAiInferenceImpl>) {
+  return withServerActionDatabase(() => disableEnterpriseAiInferenceImpl(...args));
+}
+
+export async function updateAiSolutionTemplate(...args: Parameters<typeof updateAiSolutionTemplateImpl>) {
+  return withServerActionDatabase(() => updateAiSolutionTemplateImpl(...args));
 }
