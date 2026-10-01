@@ -958,9 +958,7 @@ async function runAssistant(input: {
      WHERE mr.alias=? AND mr.effective_at<=?
      ORDER BY mr.version DESC LIMIT 1`,
   ).bind(assistant.model_alias, unix()).first<any>();
-  const route = await env.DB.prepare(
-    "SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1",
-  ).bind(assistant.model_alias).first<any>();
+  const route = await resolveModelRoute(env.DB, assistant.customer_id, assistant.model_alias);
   if (!rate || !route) return { ok: false as const, userMessage: "This assistant’s model is temporarily unavailable." };
 
   const prompt = await env.DB.prepare(
@@ -1142,7 +1140,7 @@ export async function handleApiKeyInference(
   const alias = typeof body.model === "string" && /^mkety-[a-z0-9][a-z0-9-]{1,80}$/.test(body.model)
     ? body.model
     : assistant.model_alias;
-  const route = await env.DB.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  const route = await resolveModelRoute(env.DB, customer.customerId, alias);
   const rate = await env.DB.prepare(
     "SELECT * FROM model_rates WHERE alias=? AND effective_at<=? ORDER BY version DESC LIMIT 1",
   ).bind(alias, now).first<any>();
@@ -1454,6 +1452,17 @@ async function providerBudgetAllows(
     "SELECT COALESCE(SUM(cost_micros),0) AS spent FROM provider_cost_events WHERE customer_id=? AND created_at>=?",
   ).bind(customerId, startOfMonthUnix()).first<any>();
   return parseFloat(String(spent?.spent || 0)) + estimatedCostMicros <= usableProviderMicros;
+}
+
+async function resolveModelRoute(db: D1Database, customerId: string, alias: string) {
+  const override = await db.prepare(
+    `SELECT alias,provider,provider_model,provider_connection_id,fallback_provider,fallback_model,
+            fallback_provider_connection_id,byok_policy,status
+     FROM customer_model_routes
+     WHERE customer_id=? AND alias=? AND status='active' LIMIT 1`,
+  ).bind(customerId, alias).first<any>();
+  if (override) return override;
+  return db.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
 }
 
 async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
