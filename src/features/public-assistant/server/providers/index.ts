@@ -2,7 +2,7 @@ import { type CentralAiProviderCredentials, createCentralExternalProvider } from
 import { getManagedWorkersAiProvider } from '@/features/ai-runtime/providers/runtime.cloudflare';
 
 import type { PublicAIProviderAdapter } from './types';
-import { resolvePublicAzureOpenAIConfig, type PublicAssistantEnvironment } from '../../config';
+import { type PublicAssistantEnvironment, resolvePublicAzureOpenAIConfig } from '../../config';
 import type { PublicAIProviderId } from '../../models';
 
 function credentialsFor(
