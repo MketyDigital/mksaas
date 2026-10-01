@@ -1287,7 +1287,7 @@ async function startAssistFlutterwaveCheckout(input: {
 
   let { response, payload } = await requestBroker("inline");
   const inline = payload?.inline;
-  let inlineReady = Boolean(
+  const inlineReady = Boolean(
     response.ok && payload?.success && inline?.publicKey && inline?.reference &&
     Number(inline?.amount) > 0 && inline?.currency && inline?.email && inline?.payloadHash
   );
