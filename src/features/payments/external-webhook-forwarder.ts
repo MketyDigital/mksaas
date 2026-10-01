@@ -8,9 +8,8 @@ const DEFAULT_MEDIA_DESTINATIONS: Record<ForwardableProvider, string> = {
   kora: 'https://media.mkety.com/api/billing/kora/webhook',
 };
 
-const DEFAULT_ASSIST_DESTINATIONS: Record<ForwardableProvider, string> = {
+const DEFAULT_ASSIST_DESTINATIONS: Partial<Record<ForwardableProvider, string>> = {
   flutterwave: 'https://mkety-assist.mkety.app/api/payment/flutterwave/webhook',
-  kora: 'https://mkety-assist.mkety.app/api/payment/kora/webhook',
 };
 
 function destinationFor(source: ForwardableSource, provider: ForwardableProvider): string | null {
@@ -23,7 +22,7 @@ function destinationFor(source: ForwardableSource, provider: ForwardableProvider
   }
 
   if (source === 'media') return DEFAULT_MEDIA_DESTINATIONS[provider];
-  if (source === 'assist') return DEFAULT_ASSIST_DESTINATIONS[provider];
+  if (source === 'assist') return DEFAULT_ASSIST_DESTINATIONS[provider] ?? null;
   return null;
 }
 
