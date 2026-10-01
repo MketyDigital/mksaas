@@ -29,7 +29,7 @@ export default async function MailboxesPage({params,searchParams}:{params:Promis
       <CardHeader><CardTitle>Create an email address</CardTitle><CardDescription>Examples: hello@company.com, sales@company.com or support@company.com.</CardDescription></CardHeader>
       <CardContent className="space-y-4">
         {query.error&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">Please check the mailbox details and try again.</div>}
-        {!domains.length?<a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/t/${tenant}/mail/domains`}>Connect a domain first</a>:
+        {!domains.length?<a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/domains`}>Connect a domain first</a>:
         <form action={action} className="grid gap-4 md:grid-cols-2">
           <label className="text-sm font-medium">Address name<input className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="localPart" placeholder="hello" required/></label>
           <label className="text-sm font-medium">Domain<select className="mt-2 w-full rounded-xl border bg-background px-4 py-3" name="domainId">{domains.map(d=><option value={d.id} key={d.id}>@{d.domain}</option>)}</select></label>
@@ -45,7 +45,7 @@ export default async function MailboxesPage({params,searchParams}:{params:Promis
     <div className="grid gap-4 md:grid-cols-2">
       {mailboxes.map(mailbox=>{
         const domain=domains.find(d=>d.id===mailbox.domainId);
-        return <Card className="rounded-2xl" key={mailbox.id}><CardHeader><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">{mailbox.type==='shared'?<Users className="h-5 w-5"/>:<Inbox className="h-5 w-5"/>}</div><div><CardTitle className="text-base">{mailbox.localPart}@{domain?.domain}</CardTitle><CardDescription>{mailbox.type==='shared'?'Shared business inbox':mailbox.type==='alias'?'Forward-only alias':'Personal business inbox'}{mailbox.catchAll?' · Catch-all':''}</CardDescription></div></div></div></CardHeader><CardContent>{mailbox.forwardingAddress&&<p className="text-sm text-muted-foreground">Forwarding to {mailbox.forwardingAddress}</p>}<a className="mt-3 inline-flex text-sm font-semibold text-primary" href={`/t/${tenant}/mail/inbox?mailbox=${mailbox.id}`}>Open inbox →</a></CardContent></Card>
+        return <Card className="rounded-2xl" key={mailbox.id}><CardHeader><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">{mailbox.type==='shared'?<Users className="h-5 w-5"/>:<Inbox className="h-5 w-5"/>}</div><div><CardTitle className="text-base">{mailbox.localPart}@{domain?.domain}</CardTitle><CardDescription>{mailbox.type==='shared'?'Shared business inbox':mailbox.type==='alias'?'Forward-only alias':'Personal business inbox'}{mailbox.catchAll?' · Catch-all':''}</CardDescription></div></div></div></CardHeader><CardContent>{mailbox.forwardingAddress&&<p className="text-sm text-muted-foreground">Forwarding to {mailbox.forwardingAddress}</p>}<a className="mt-3 inline-flex text-sm font-semibold text-primary" href={`/app/${tenant}/mail/inbox?mailbox=${mailbox.id}`}>Open inbox →</a></CardContent></Card>
       })}
     </div>
   </div>;
