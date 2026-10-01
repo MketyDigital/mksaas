@@ -924,9 +924,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
      LIMIT 1`,
   ).bind(assistant.customer_id, senderId, assistantId).first();
   if (ownerSender) {
-    const cooldown = await pauseConversationForManualReply(env.DB, assistant, chatId, businessConnectionId, message);
-    await markWebhook(env.DB, assistantId, updateId, "processed");
-    return json({ ok: true, ignoredOwnerSender: true, manualReplyCooldownUntil: cooldown.resumeAt });
+    await markWebhook(env.DB, assistantId, updateId, "ignored");
+    return json({ ok: true, ignoredOwnerSender: true });
   }
 
   const senderControl = await effectiveSenderControl(env.DB, assistant.customer_id, assistantId, "telegram", senderId);
