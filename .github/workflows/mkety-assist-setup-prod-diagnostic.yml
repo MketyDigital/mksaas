@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
 
           zones="$(curl -fsS "https://api.cloudflare.com/client/v4/zones?name=mkety.app&status=active" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
-          account_id="$(ZONES="$zones" node -e "const v=JSON.parse(process.env.ZONES);if(!v.success||!v.result?.[0]?.account?.id)process.exit(1);process.stdout.write(v.result[0].account.id)")"
+          read -r account_id zone_id < <(ZONES="$zones" node -e "const v=JSON.parse(process.env.ZONES);if(!v.success||!v.result?.[0]?.account?.id||!v.result?.[0]?.id)process.exit(1);console.log(v.result[0].account.id+' '+v.result[0].id)")"
           db="$(curl -fsS "https://api.cloudflare.com/client/v4/accounts/$account_id/d1/database?name=mkety-assist-prod" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
           d1_id="$(DB="$db" node -e "const v=JSON.parse(process.env.DB);if(!v.success||!v.result?.[0]?.uuid)process.exit(1);process.stdout.write(v.result[0].uuid)")"
 
@@ -51,8 +51,18 @@ jobs:
           exp="$((now+3600))"
           token_hash="$(TOKEN="$token" node -e "require('crypto').webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(process.env.TOKEN)).then(x=>process.stdout.write(Buffer.from(x).toString('hex')))")"
 
+          host="$slug.assist.mkety.app"
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          body="$(HOST="$host" ZONE_ID="$zone_id" node -e "process.stdout.write(JSON.stringify({hostname:process.env.HOST,service:'mkety-assist',zone_id:process.env.ZONE_ID,zone_name:'mkety.app'}))")"
+          curl -fsS -X PUT "${auth[@]}" --data "$body" "$api/accounts/$account_id/workers/domains" >/tmp/assist-domain.json
+
           cleanup() {
             npx wrangler d1 execute DB --remote --config wrangler.diag.jsonc --command "DELETE FROM customers WHERE id='$customer_id'; DELETE FROM users WHERE id='$user_id';" >/dev/null 2>&1 || true
+            domains="$(curl -fsS "${auth[@]}" "$api/accounts/$account_id/workers/domains" 2>/dev/null || true)"
+            domain_id="$(DOMAINS="$domains" HOST="$host" node -e "try{const v=JSON.parse(process.env.DOMAINS||'{}');const d=(v.result||[]).find(x=>x.hostname===process.env.HOST&&x.service==='mkety-assist');if(d?.id)process.stdout.write(String(d.id))}catch{}")"
+            if [ -n "$domain_id" ]; then curl -fsS -X DELETE "${auth[@]}" "$api/accounts/$account_id/workers/domains/$domain_id" >/dev/null 2>&1 || true; fi
           }
           trap cleanup EXIT
 
@@ -69,7 +79,7 @@ jobs:
           tail_pid=$!
           sleep 5
 
-          base="https://$slug.assist.mkety.app"
+          base="https://$host"
           validate_code="$(curl -sS -o /tmp/validate.json -w '%{http_code}' "$base/api/auth/setup/validate?token=$token")"
           echo "validate_http=$validate_code"
           cat /tmp/validate.json
