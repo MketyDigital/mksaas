@@ -89,6 +89,9 @@ export default {
       if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/nowpayments/webhook" && request.method === "POST") {
         return handleNowPaymentsPaymentWebhook(request, env);
       }
+      if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/api/payment/kora/webhook" && request.method === "POST") {
+        return handleKoraPaymentWebhook(request, env);
+      }
 
       if ((host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN) && url.pathname === "/payment/return" && request.method === "GET") {
         return handlePaymentReturn(url, env);
@@ -1323,18 +1326,27 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   }
 
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
-    const rows = await env.DB.prepare(
-      "SELECT method,enabled,healthy FROM payment_method_health ORDER BY CASE method WHEN 'nowpayments' THEN 1 WHEN 'flutterwave' THEN 2 ELSE 3 END",
-    ).all<any>();
     const status = { nowpayments: false, flutterwave: false, kora: false };
-    for (const row of rows.results ?? []) {
-      if (row.method in status) (status as any)[row.method] = Boolean(row.enabled) && Boolean(row.healthy);
-    }
-    // The same central broker secret authenticates Assist to the shared Mkety payment authority.
-    if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) {
-      status.nowpayments = false;
-      status.flutterwave = false;
-      status.kora = false;
+    if (env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) {
+      try {
+        const response = await fetch("https://mkety.com/api/payments/assist/methods", {
+          headers: { authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}` },
+        });
+        const payload = await response.json<any>().catch(() => null);
+        if (response.ok && payload?.success && payload.methods) {
+          status.nowpayments = Boolean(payload.methods.nowpayments);
+          status.flutterwave = Boolean(payload.methods.flutterwave);
+          status.kora = Boolean(payload.methods.kora);
+          const now = unix();
+          await env.DB.batch([
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='nowpayments'").bind(status.nowpayments ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=1,healthy=?,updated_at=? WHERE method='flutterwave'").bind(status.flutterwave ? 1 : 0, now),
+            env.DB.prepare("UPDATE payment_method_health SET enabled=?,healthy=?,updated_at=? WHERE method='kora'").bind(status.kora ? 1 : 0, status.kora ? 1 : 0, now),
+          ]);
+        }
+      } catch {
+        // Fail closed: no method is exposed when central readiness cannot be verified.
+      }
     }
     const methods = listPaymentMethods(status);
     return json({ methods, defaultMethod: defaultPaymentMethod(status) });
@@ -1388,6 +1400,9 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
         purchaseType: "plan",
       });
     }
+    if (paymentMethod === "kora") {
+      return startAssistKoraCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan" });
+    }
     return json({ error: "payment_method_unavailable" }, 503);
   }
 
@@ -1416,6 +1431,9 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
         paymentCurrency: String(body.paymentCurrency || "USD").toUpperCase(),
         purchaseType: "topup",
       });
+    }
+    if (paymentMethod === "kora") {
+      return startAssistKoraCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup" });
     }
     return json({ error: "payment_method_unavailable" }, 503);
   }
@@ -1493,6 +1511,57 @@ async function startAssistNowPaymentsCheckout(input: {
     canonicalCurrency: "USD",
     checkoutAmount: canonicalAmountMinor / 100,
     checkoutCurrency: "USD",
+  }, 201);
+}
+
+async function startAssistKoraCheckout(input: {
+  env: Env;
+  customer: CustomerContext;
+  session: Session;
+  credits: number;
+  canonicalAmountMinor: number;
+  purchaseType: "plan" | "topup";
+}) {
+  const { env, customer, session, credits, canonicalAmountMinor, purchaseType } = input;
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_provider_not_configured" }, 503);
+  const checkoutId = id("chk");
+  const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  const now = unix();
+  await env.DB.prepare(
+    `INSERT INTO payment_checkouts
+     (id,customer_id,user_id,reference,provider,credits,canonical_amount_minor,canonical_currency,status,created_at,purchase_type)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(checkoutId, customer.customerId, session.userId, reference, "kora", credits, canonicalAmountMinor, "USD", "pending", now, purchaseType).run();
+
+  const response = await fetch("https://mkety.com/api/payments/kora/start", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      source: "assist",
+      reference,
+      canonical_amount_usd: (canonicalAmountMinor / 100).toFixed(2),
+      email: session.email,
+      customer_name: customer.customerName,
+      checkout_id: checkoutId,
+    }),
+  });
+  const payload = await response.json<any>().catch(() => null);
+  const checkoutUrl = String(payload?.checkout_url || "");
+  if (!response.ok || !payload?.success || !checkoutUrl.startsWith("https://mkety.com/")) {
+    await env.DB.prepare("UPDATE payment_checkouts SET status='failed' WHERE id=? AND status='pending'").bind(checkoutId).run();
+    return json({ error: "kora_checkout_failed", message: String(payload?.message || "Kora checkout could not be prepared.") }, 502);
+  }
+  await env.DB.prepare(
+    "UPDATE payment_checkouts SET provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
+  ).bind(canonicalAmountMinor, "USD", checkoutId).run();
+  return json({
+    ok: true, provider: "kora", purchaseType, checkoutId, reference,
+    checkoutExperience: "hosted", checkoutUrl, credits,
+    canonicalAmountMinor, canonicalCurrency: "USD",
+    checkoutAmount: canonicalAmountMinor / 100, checkoutCurrency: "USD",
   }, 201);
 }
 
@@ -1683,6 +1752,46 @@ async function handleNowPaymentsPaymentWebhook(request: Request, env: Env): Prom
     `nowpayments:${String(payload.provider_event_id || payload.provider_payment_id || reference)}`,
     checkout.id,
   ).run();
+  return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
+}
+
+async function handleKoraPaymentWebhook(request: Request, env: Env): Promise<Response> {
+  if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_attestation_not_configured" }, 503);
+  const raw = await request.text();
+  const supplied = request.headers.get("x-mkety-payment-attestation") || "";
+  if (!(await verifyPaymentAttestation(raw, supplied, env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET))) {
+    return json({ error: "invalid_payment_attestation" }, 401);
+  }
+  let payload: Record<string, any>;
+  try { payload = JSON.parse(raw) as Record<string, any>; }
+  catch { return json({ error: "invalid_json" }, 400); }
+  if (String(payload.provider || "") !== "kora") return json({ error: "invalid_payment_provider" }, 400);
+
+  const reference = String(payload.reference || "");
+  const checkout = await env.DB.prepare(
+    "SELECT * FROM payment_checkouts WHERE reference=? AND provider='kora' LIMIT 1",
+  ).bind(reference).first<any>();
+  if (!checkout) return json({ error: "unknown_payment_reference" }, 404);
+  if (checkout.status === "paid") return json({ ok: true, duplicate: true });
+
+  const status = String(payload.status || "").toLowerCase();
+  const amountMinor = parsePaymentAmountMinor(payload.amount);
+  const currency = String(payload.currency || "").toUpperCase();
+  if (currency !== String(checkout.canonical_currency || "USD").toUpperCase() || amountMinor < Number(checkout.canonical_amount_minor || 0)) {
+    return json({ error: "payment_quote_mismatch" }, 400);
+  }
+  if (status === "failed") {
+    await env.DB.prepare(
+      "UPDATE payment_checkouts SET status='failed',provider_payment_id=?,provider_event_id=?,settled_at=? WHERE id=? AND status='pending'",
+    ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), checkout.id).run();
+    return json({ ok: true, settled: false, status });
+  }
+  if (status !== "success") return json({ ok: true, settled: false, status: "pending" });
+
+  const settlementKey = `kora:${String(payload.provider_event_id || payload.provider_payment_id || reference)}`;
+  const updated = await env.DB.prepare(
+    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status='pending'",
+  ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), settlementKey, checkout.id).run();
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
 }
 
