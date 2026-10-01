@@ -19,7 +19,7 @@ describe('Enterprise AI business console contract', () => {
 
   it('keeps the default customer experience outcome-first and developer controls secondary', async () => {
     const page = await readFile(
-      'src/app/(tenant)/t/[tenant]/enterprise-ai/page.tsx',
+      'src/app/app/[tenant]/enterprise-ai/page.tsx',
       'utf8',
     );
 
