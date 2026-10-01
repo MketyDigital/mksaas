@@ -17,13 +17,13 @@ export default async function ProfileSettingsPage({ params }: ProfileSettingsPag
 
   const session = await auth();
   if (!session?.user?.email) {
-    redirect(`/t/${tenant}/login`);
+    redirect(`/app/${tenant}/login`);
   }
 
   const person = await getMyPerson(tenant);
 
   if (!person) {
-    redirect(`/t/${tenant}/profile`);
+    redirect(`/app/${tenant}/profile`);
   }
 
   const displayName = person.displayName ?? `${person.firstName} ${person.lastName}`.trim();
@@ -32,7 +32,7 @@ export default async function ProfileSettingsPage({ params }: ProfileSettingsPag
     <div className="space-y-6">
       <PageHeader
         breadcrumb={{
-          backTo: `/t/${tenant}/profile`,
+          backTo: `/app/${tenant}/profile`,
           backLabel: t('backToProfile'),
           current: t('currentPage'),
         }}
