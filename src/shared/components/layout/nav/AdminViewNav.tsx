@@ -54,7 +54,7 @@ export function AdminViewNav({ basePath, permissions, hasPlatformControlAccess =
           />
           {hasPlatformControlAccess ? (
             <SidebarNavItem
-              href={`${adminBase}/platform-control`}
+              href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control`}
               label="Mkety Control Center"
               icon={Command}
               iconTint="primary"
@@ -78,21 +78,21 @@ export function AdminViewNav({ basePath, permissions, hasPlatformControlAccess =
             {canShowNav(permissions, 'platform:plans') && (
               <>
                 <SidebarNavItem
-                  href={`${adminBase}/platform-control/ai-operations`}
+                  href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control/ai-operations`}
                   label="Enterprise AI"
                   icon={Sparkles}
                   iconTint="assistant"
                   onClick={onItemClick}
                 />
                 <SidebarNavItem
-                  href={`${adminBase}/platform-control/mail`}
+                  href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control/mail`}
                   label="Mkety Mail"
                   icon={Mail}
                   iconTint="primary"
                   onClick={onItemClick}
                 />
                 <SidebarNavItem
-                  href={`${adminBase}/platform-control/media`}
+                  href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control/media`}
                   label="Mkety Media"
                   icon={ImageIcon}
                   iconTint="primary"
@@ -103,14 +103,14 @@ export function AdminViewNav({ basePath, permissions, hasPlatformControlAccess =
             {canShowNav(permissions, 'platform:billing') && (
               <>
                 <SidebarNavItem
-                  href={`${adminBase}/platform-control/billing`}
+                  href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control/billing`}
                   label="Billing & Ledger"
                   icon={WalletCards}
                   iconTint="primary"
                   onClick={onItemClick}
                 />
                 <SidebarNavItem
-                  href={`${adminBase}/platform-control/payments`}
+                  href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control/payments`}
                   label="Payments"
                   icon={CreditCard}
                   iconTint="primary"
@@ -120,7 +120,7 @@ export function AdminViewNav({ basePath, permissions, hasPlatformControlAccess =
             )}
             {canShowNav(permissions, 'platform:deployments') && (
               <SidebarNavItem
-                href={`${adminBase}/platform-control/domains-routing`}
+                href={`/ops/${basePath.split("/").filter(Boolean).pop()}/platform-control/domains-routing`}
                 label="Domains & DNS"
                 icon={Route}
                 iconTint="primary"
