@@ -263,9 +263,10 @@ export async function handleRuntimeApi(
     const conversationId = body.conversationId ? required(body.conversationId, "conversationId") : null;
     if (conversationId) {
       const conversation = await env.DB.prepare(
-        "SELECT id FROM conversations WHERE id=? AND customer_id=? AND assistant_id=? LIMIT 1",
+        "SELECT id,reminders_opt_out FROM conversations WHERE id=? AND customer_id=? AND assistant_id=? LIMIT 1",
       ).bind(conversationId, customer.customerId, assistantId).first();
       if (!conversation) return json({ error: "conversation_not_found" }, 404);
+      if (Number((conversation as any).reminders_opt_out || 0)) return json({ error: "conversation_reminders_opted_out" }, 409);
     }
     const reminderId = id("rem");
     const policy = await env.DB.prepare(
@@ -599,6 +600,27 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     inbound.text || inbound.mediaContext || "", inbound.mediaJson ? JSON.stringify(inbound.mediaJson) : null, unix(),
   ).run();
 
+  const reminderCommand = inbound.text.trim().toLowerCase();
+  if (["stop reminders","cancel reminders","unsubscribe reminders"].includes(reminderCommand)) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE conversations SET reminders_opt_out=1,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?")
+        .bind(unix(), conversation.id, assistant.customer_id, assistantId),
+      env.DB.prepare("UPDATE reminders SET status='cancelled',cancelled_at=? WHERE conversation_id=? AND customer_id=? AND assistant_id=? AND status='scheduled'")
+        .bind(unix(), conversation.id, assistant.customer_id, assistantId),
+    ]);
+    await telegramSend(token, chatId, "Reminders are off for this conversation. Send “resume reminders” if you want them again.");
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, remindersOptedOut: true });
+  }
+  if (reminderCommand === "resume reminders") {
+    await env.DB.prepare(
+      "UPDATE conversations SET reminders_opt_out=0,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=?",
+    ).bind(unix(), conversation.id, assistant.customer_id, assistantId).run();
+    await telegramSend(token, chatId, "Reminders are enabled again for this conversation.");
+    await markWebhook(env.DB, assistantId, updateId, "processed");
+    return json({ ok: true, remindersOptedOut: false });
+  }
+
   if (assistant.human_handoff_enabled && shouldRequestHuman(inbound.text)) {
     await openHandoff(env.DB, assistant.customer_id, assistantId, conversation.id, inbound.text);
     await telegramSend(token, chatId, "I’ve handed this conversation to a human team member. They can reply here when available.");
@@ -654,20 +676,46 @@ export async function processDueReminders(env: AssistEnv): Promise<void> {
   const now = unix();
   const rows = await env.DB.prepare(
     `SELECT r.id,r.customer_id,r.assistant_id,r.conversation_id,r.payload_json,r.attempts,r.max_attempts,
-            c.external_conversation_id
+            c.external_conversation_id,c.reminders_opt_out,
+            COALESCE(p.enabled,1) AS policy_enabled,COALESCE(p.timezone,'UTC') AS policy_timezone,
+            p.quiet_start_hour,p.quiet_end_hour
      FROM reminders r
      LEFT JOIN conversations c ON c.id=r.conversation_id AND c.customer_id=r.customer_id AND c.assistant_id=r.assistant_id
+     LEFT JOIN reminder_policies p ON p.assistant_id=r.assistant_id AND p.customer_id=r.customer_id
      WHERE r.status='scheduled' AND r.due_at<=?
      ORDER BY r.due_at ASC LIMIT 100`,
   ).bind(now).all<any>();
 
   for (const reminder of rows.results ?? []) {
     try {
+      if (Number(reminder.reminders_opt_out || 0)) {
+        await env.DB.prepare(
+          "UPDATE reminders SET status='cancelled',cancelled_at=?,last_error='recipient_opted_out' WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now, reminder.id, reminder.customer_id).run();
+        continue;
+      }
+      if (!Number(reminder.policy_enabled ?? 1)) {
+        await env.DB.prepare(
+          "UPDATE reminders SET status='cancelled',cancelled_at=?,last_error='reminder_policy_disabled' WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now, reminder.id, reminder.customer_id).run();
+        continue;
+      }
+      if (isQuietHour(now, String(reminder.policy_timezone || "UTC"), reminder.quiet_start_hour, reminder.quiet_end_hour)) {
+        await env.DB.prepare(
+          "UPDATE reminders SET due_at=?,last_error='quiet_hours' WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now + 3600, reminder.id, reminder.customer_id).run();
+        continue;
+      }
       const payload = JSON.parse(reminder.payload_json || "{}");
       const chatId = reminder.external_conversation_id;
       if (!chatId) throw new Error("reminder_has_no_conversation_destination");
       const automation = await resolveAutomationState(env.DB, reminder.customer_id, reminder.assistant_id, reminder.conversation_id);
-      if (automation.paused) throw new Error("automation_paused");
+      if (automation.paused) {
+        await env.DB.prepare(
+          "UPDATE reminders SET due_at=?,last_error=? WHERE id=? AND customer_id=? AND status='scheduled'",
+        ).bind(now + 300, "automation_paused:" + String(automation.reason || "unknown"), reminder.id, reminder.customer_id).run();
+        continue;
+      }
       const token = await getAssistantSecret(env, reminder.assistant_id, "telegram_bot_token");
       if (!token) throw new Error("assistant_telegram_token_unavailable");
       const sent = await telegramSend(token, String(chatId), String(payload.text || "Reminder"));
@@ -691,6 +739,21 @@ export async function processDueReminders(env: AssistEnv): Promise<void> {
         reminder.customer_id,
       ).run();
     }
+  }
+}
+
+function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, endValue: unknown) {
+  const start = startValue == null ? null : Number(startValue);
+  const end = endValue == null ? null : Number(endValue);
+  if (start == null || end == null || !Number.isInteger(start) || !Number.isInteger(end)) return false;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(nowUnix * 1000));
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? -1);
+    if (hour < 0) return false;
+    return start === end ? true : start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  } catch {
+    return false;
   }
 }
 
