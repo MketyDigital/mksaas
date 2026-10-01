@@ -72,7 +72,7 @@ jobs:
           if (!v.success || !v.result?.[0]?.id || !v.result?.[0]?.account?.id) {
             throw new Error('Active mkety.app Cloudflare zone/account not found');
           }
-          process.stdout.write(v.result[0].id + ' ' + v.result[0].account.id);
+          console.log(v.result[0].id + ' ' + v.result[0].account.id);
           NODE
           )
 
