@@ -481,6 +481,10 @@ jobs:
             const suffix=item.billingBlocked?' (credentials accepted; provider billing/quota blocked)':'';
             console.log(String(item.provider)+': '+(item.ok?'PASS':'NOT ACTIVE')+suffix+(item.model?' model='+item.model:''));
           }
+          for(const item of payload.vision?.models||[]){
+            console.log('vision '+String(item.provider)+': '+(item.ok?'PASS':'FAIL')+(item.model?' model='+item.model:''));
+          }
+          console.log('image-to-reply: '+(payload.vision?.imageToReplyOk?'PASS':'FAIL'));
           console.log('Ordered route targets visible: '+String((payload.routeTargets||[]).length));
           if(status<200||status>=300||payload.ok!==true){
             console.error(JSON.stringify(payload,null,2));
@@ -536,7 +540,10 @@ jobs:
           run_query "SELECT kind,size_bytes,LENGTH(COALESCE(vision_text,'')) AS vision_chars,LENGTH(COALESCE(transcript,'')) AS transcript_chars,created_at FROM media_assets ORDER BY created_at DESC LIMIT 12;"
 
           echo "=== Recent metered provider usage ==="
-          run_query "SELECT model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at FROM usage_events ORDER BY created_at DESC LIMIT 30;"
+          run_query "SELECT model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at FROM usage_events ORDER BY created_at DESC LIMIT 40;"
+
+          echo "=== Recent media settlements ==="
+          run_query "SELECT model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at FROM usage_events WHERE model_alias IN ('mkety-media-vision','mkety-media-speech') ORDER BY created_at DESC LIMIT 20;"
 
           echo "=== Recent provider cost ledger ==="
           run_query "SELECT provider,provider_model,cost_micros,created_at FROM provider_cost_events ORDER BY created_at DESC LIMIT 30;"
