@@ -379,16 +379,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
     const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
     const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
-    let includedCredits = positiveInt(body.includedCredits, 0);
+    let includedCredits = creditAtomsFromMkredits(body.includedCredits);
     if (autoIncludedCredits && monthlyPrice > 0) {
-      const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
       includedCredits = calculateCommercialPlan({
         monthlyAmountMinor: monthlyPrice,
         providerEnvelopeBps,
         operationsReserveBps,
         rateMultiplierBps,
-        mkreditsPerUsd,
       }).includedCredits;
     }
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
@@ -701,28 +698,23 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/ops/pricing/calculate" && request.method === "POST") {
     const body = await readJson(request);
-    const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     const result = calculateCommercialPlan({
       monthlyAmountMinor: parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
       providerEnvelopeBps: parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
       operationsReserveBps: parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
       rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-      mkreditsPerUsd,
     });
-    return json({ ...result, mkreditsPerUsd, creditUnit: "MKredit" });
+    return json({ ...result, includedCredits: result.includedMkredits, mkreditsPerUsd: MKREDITS_PER_USD, creditUnit: "MKredit" });
   }
 
   if (url.pathname === "/api/ops/policy" && request.method === "PATCH") {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
     const now = unix();
-    let includedCreditsValue = nullableInt(body.includedCredits);
+    let includedCreditsValue = body.includedCredits === undefined || body.includedCredits === null || body.includedCredits === "" ? null : creditAtomsFromMkredits(body.includedCredits);
     if (body.autoCalculateCredits === true) {
       const current = await env.DB.prepare("SELECT * FROM commercial_policy WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
       if (!current) return json({ error: "commercial_policy_not_found" }, 404);
-      const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
       includedCreditsValue = calculateCommercialPlan({
         monthlyAmountMinor: body.monthlyPriceUsd === undefined
           ? (body.subscriptionAmountMinor === undefined ? Number(current.subscription_amount_minor) : positiveInt(body.subscriptionAmountMinor, 0))
@@ -736,7 +728,6 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         rateMultiplierBps: body.customerRateMultiplierPercent === undefined
           ? (body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000))
           : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-        mkreditsPerUsd,
       }).includedCredits;
     }
     await env.DB.batch([
@@ -786,7 +777,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(id("aud"), "operator", customerId, "policy.updated", "customer", customerId, now),
     ]);
-    return json({ ok: true, includedCredits: includedCreditsValue });
+    return json({ ok: true, includedCredits: includedCreditsValue == null ? null : mkreditsFromCreditAtoms(includedCreditsValue) });
   }
 
   if (url.pathname === "/api/ops/models" && request.method === "GET") {
