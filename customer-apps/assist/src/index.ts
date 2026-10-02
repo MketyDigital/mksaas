@@ -1909,10 +1909,6 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const body = await readJson(request);
     const amountMinor = parsePaymentAmountMinor(body.amountUsd);
     if (amountMinor < 100 || amountMinor > 10_000_000) return json({ error: "invalid_credit_amount" }, 400);
-    const setting = await env.DB.prepare(
-      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
-    ).first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     const creditAtoms = Math.max(1, creditAtomsFromUsdMinor(amountMinor));
     return json({ amountMinor, currency: "USD", credits: mkreditsFromCreditAtoms(creditAtoms) });
   }
@@ -1991,10 +1987,6 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(customer.customerId).first<any>();
     if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
     const body = await readJson(request);
-    const setting = await env.DB.prepare(
-      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
-    ).first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     let credits: number;
     let canonicalAmountMinor: number;
     if (body.amountUsd !== undefined && body.amountUsd !== null && String(body.amountUsd).trim() !== "") {
