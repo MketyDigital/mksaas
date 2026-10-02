@@ -1,11 +1,28 @@
-name: Mkety ZITADEL Auth and Brevo Email Reconcile
+name: Mkety ZITADEL Auth and Mail Reconcile
 
 on:
+  workflow_dispatch:
+    inputs:
+      email_provider:
+        description: SMTP provider to test or activate; Brevo remains available for rollback
+        type: choice
+        options: [brevo, mkety]
+        default: brevo
+        required: true
+      test_provider:
+        description: Send a controlled test through the selected SMTP provider
+        type: boolean
+        default: false
+        required: true
+      activate_provider:
+        description: Activate the selected provider only after its test succeeds
+        type: boolean
+        default: false
+        required: true
   push:
     branches: [main]
     paths:
       - '.github/workflows/mkety-zitadel-email-reconcile.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,10 +35,12 @@ jobs:
       ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
       MKETY_AUTH_ISSUER: ${{ secrets.ZITADEL_URL }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
-      SMTP_HOST: ${{ secrets.BREVO_SMTP_HOST || secrets.BREVO_SMTP_SERVER || secrets.SMTP_HOST || secrets.SMTP_SERVER || 'smtp-relay.brevo.com:587' }}
-      SMTP_USER: ${{ secrets.BREVO_SMTP_LOGIN || secrets.BREVO_SMTP_USER || secrets.BREVO_SMTP_USERNAME || secrets.SMTP_USER || secrets.SMTP_USERNAME }}
-      SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}
-      SMTP_SENDER_EMAIL: ${{ secrets.BREVO_SENDER_EMAIL || secrets.BREVO_FROM_EMAIL || secrets.SMTP_SENDER_EMAIL || secrets.SMTP_FROM_EMAIL || secrets.EMAIL_FROM }}
+      EMAIL_PROVIDER: ${{ inputs.email_provider || 'brevo' }}
+      SMTP_HOST: ${{ inputs.email_provider == 'mkety' && 'smtp.mkety.com:465' || secrets.BREVO_SMTP_HOST || secrets.BREVO_SMTP_SERVER || secrets.SMTP_HOST || secrets.SMTP_SERVER || 'smtp-relay.brevo.com:587' }}
+      SMTP_USER: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_SMTP_LOGIN || secrets.BREVO_SMTP_USER || secrets.BREVO_SMTP_USERNAME || secrets.SMTP_USER || secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ inputs.email_provider == 'mkety' && secrets.MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD || secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}
+      SMTP_SENDER_EMAIL: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_SENDER_EMAIL || secrets.BREVO_FROM_EMAIL || secrets.SMTP_SENDER_EMAIL || secrets.SMTP_FROM_EMAIL || secrets.EMAIL_FROM }}
+      SMTP_DESCRIPTION: ${{ inputs.email_provider == 'mkety' && 'Mkety First-Party Mail SMTP' || 'Mkety Brevo SMTP' }}
       SMTP_SENDER_NAME: ${{ secrets.BREVO_SENDER_NAME || secrets.SMTP_SENDER_NAME || secrets.EMAIL_FROM_NAME || 'Mkety' }}
       SMTP_REPLY_TO: ${{ secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}
       PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS }}
@@ -349,8 +368,8 @@ jobs:
           if(verified.length<1 || unverified.length!==0) throw new Error('Operator duplicate cleanup did not converge safely.');
           NODE
 
-      - name: Validate Brevo repository secrets
-        id: brevo
+      - name: Validate selected SMTP provider configuration
+        id: smtp
         shell: bash
         run: |
           set -euo pipefail
@@ -359,20 +378,22 @@ jobs:
             if [ -z "${!n:-}" ]; then missing+=("$n"); else echo "::add-mask::${!n}"; fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::warning::Brevo SMTP is not fully configured. Missing expected repository secrets for: ${missing[*]}"
+            echo "::warning::Selected SMTP provider is not fully configured. Missing values for: ${missing[*]}"
             echo "ready=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
-      - name: Test Brevo SMTP through ZITADEL
-        if: steps.brevo.outputs.ready == 'true'
+      - name: Test selected SMTP provider through ZITADEL
+        id: smtp_test
+        if: steps.smtp.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.test_provider == true
         shell: bash
         run: |
           set -euo pipefail
           email_state="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.state||''))")"
-          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ]; then
-            echo 'Brevo SMTP provider is already active in ZITADEL; skipping obsolete credential-retest endpoint.'
+          active_description="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.description||''))")"
+          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ] && [ "$active_description" = "$SMTP_DESCRIPTION" ]; then
+            echo 'Selected SMTP provider is already active in ZITADEL; skipping a test-provider switch.'
             exit 0
           fi
           sender_name="${SMTP_SENDER_NAME:-Mkety}"
@@ -381,7 +402,7 @@ jobs:
           [ -n "$receiver" ] || receiver="$SMTP_SENDER_EMAIL"
           echo "::add-mask::$receiver"
 
-          HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" RECEIVER="$receiver" node <<'NODE' >/tmp/smtp-test.json
+          HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" RECEIVER="$receiver" DESCRIPTION="$SMTP_DESCRIPTION" node <<'NODE' >/tmp/smtp-test.json
           process.stdout.write(JSON.stringify({
             senderAddress:process.env.SENDER,
             senderName:process.env.SENDER_NAME,
@@ -391,7 +412,7 @@ jobs:
             password:process.env.PASSWORD,
             replyToAddress:process.env.REPLY,
             receiverAddress:process.env.RECEIVER,
-            description:'Mkety Brevo SMTP',
+            description:process.env.DESCRIPTION,
             plain:{}
           }));
           NODE
@@ -403,24 +424,25 @@ jobs:
           fi
           if [ "$code" != 200 ]; then
             node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/smtp-test-response.json','utf8'))}catch{};console.log('BREVO_SMTP_TEST_SAFE '+JSON.stringify({http:process.env.CODE||'',code:x.code||null,message:String(x.message||'').slice(0,240)}))" CODE="$code"
-            echo "::error::Brevo SMTP test through ZITADEL failed HTTP $code."
+            echo "::error::Selected SMTP test through ZITADEL failed HTTP $code."
             exit 1
           fi
-          echo 'Brevo SMTP test through ZITADEL succeeded.'
+          echo 'Selected SMTP provider test through ZITADEL succeeded.'
 
-      - name: Create/update and activate Brevo provider
-        if: steps.brevo.outputs.ready == 'true'
+      - name: Create/update and activate selected provider
+        if: steps.smtp.outputs.ready == 'true' && steps.smtp_test.outcome == 'success' && github.event_name == 'workflow_dispatch' && inputs.activate_provider == true
         shell: bash
         run: |
           set -euo pipefail
           email_state="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.state||''))")"
-          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ]; then
-            echo 'Brevo SMTP provider is already active in ZITADEL; no provider mutation required.'
+          active_description="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.description||''))")"
+          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ] && [ "$active_description" = "$SMTP_DESCRIPTION" ]; then
+            echo 'Selected SMTP provider is already active in ZITADEL; no provider mutation required.'
             exit 0
           fi
           sender_name="${SMTP_SENDER_NAME:-Mkety}"
           reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
-          HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" node <<'NODE' >/tmp/smtp-provider.json
+          HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" DESCRIPTION="$SMTP_DESCRIPTION" node <<'NODE' >/tmp/smtp-provider.json
           process.stdout.write(JSON.stringify({
             senderAddress:process.env.SENDER,
             senderName:process.env.SENDER_NAME,
@@ -429,7 +451,7 @@ jobs:
             user:process.env.USER,
             password:process.env.PASSWORD,
             replyToAddress:process.env.REPLY,
-            description:'Mkety Brevo SMTP',
+            description:process.env.DESCRIPTION,
             plain:{}
           }));
           NODE
@@ -448,17 +470,17 @@ jobs:
               provider_id="$(node -e "const x=require('/tmp/provider-write.json');process.stdout.write(x.id||'')")"
               [ -n "$provider_id" ] && echo "::add-mask::$provider_id"
             fi
-            [ "$code" = 200 ] || { echo "::error::Writing legacy Brevo SMTP provider failed HTTP $code."; exit 1; }
-            [ -n "$provider_id" ] || { echo "::error::Legacy Brevo provider id missing."; exit 1; }
+            [ "$code" = 200 ] || { echo "::error::Writing legacy SMTP provider failed HTTP $code."; exit 1; }
+            [ -n "$provider_id" ] || { echo "::error::Legacy SMTP provider id missing."; exit 1; }
             code="$(curl --silent --show-error -o /tmp/provider-activate.json -w '%{http_code}' -X POST "$issuer/admin/v1/smtp/$provider_id/_activate" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
-            [ "$code" = 200 ] || { echo "::error::Activating legacy Brevo SMTP provider failed HTTP $code."; exit 1; }
+            [ "$code" = 200 ] || { echo "::error::Activating legacy SMTP provider failed HTTP $code."; exit 1; }
             active="$(curl --fail-with-body --silent --show-error "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
             ACTIVE="$active" node -e "const x=JSON.parse(process.env.ACTIVE||'{}').smtpConfig||{};console.log('ZITADEL_ACTIVE_SMTP_LEGACY_SAFE '+JSON.stringify({state:x.state||null,description:x.description||null,host:x.host||null,senderAddress:x.senderAddress||null,tls:x.tls??null}));if(!x.id)process.exit(1)"
             exit 0
           fi
 
           search="$(curl --fail-with-body --silent --show-error -X POST "$issuer/admin/v1/email/_search"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
-          provider_id="$(SEARCH="$search" node -e "const x=JSON.parse(process.env.SEARCH||'{}');const a=Array.isArray(x.result)?x.result:[];const m=a.filter(p=>p.description==='Mkety Brevo SMTP');if(m.length>1)process.exit(2);process.stdout.write(m[0]?.id||'')")"
+          provider_id="$(SEARCH="$search" DESCRIPTION="$SMTP_DESCRIPTION" node -e "const x=JSON.parse(process.env.SEARCH||'{}');const a=Array.isArray(x.result)?x.result:[];const m=a.filter(p=>p.description===process.env.DESCRIPTION);if(m.length>1)process.exit(2);process.stdout.write(m[0]?.id||'')")"
           if [ -n "$provider_id" ]; then
             echo "::add-mask::$provider_id"
             code="$(curl --silent --show-error -o /tmp/provider-write.json -w '%{http_code}'               -X PUT "$issuer/admin/v1/email/smtp/$provider_id"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/smtp-provider.json)"
@@ -467,19 +489,19 @@ jobs:
             provider_id="$(node -e "const x=require('/tmp/provider-write.json');process.stdout.write(x.id||'')")"
             [ -n "$provider_id" ] && echo "::add-mask::$provider_id"
           fi
-          [ "$code" = 200 ] || { echo "::error::Writing Brevo SMTP provider failed HTTP $code."; exit 1; }
-          [ -n "$provider_id" ] || { echo "::error::Brevo provider id missing."; exit 1; }
+          [ "$code" = 200 ] || { echo "::error::Writing selected SMTP provider failed HTTP $code."; exit 1; }
+          [ -n "$provider_id" ] || { echo "::error::Selected SMTP provider id missing."; exit 1; }
 
           code="$(curl --silent --show-error -o /tmp/provider-activate.json -w '%{http_code}'             -X POST "$issuer/admin/v1/email/$provider_id/_activate"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data '{}')"
-          [ "$code" = 200 ] || { echo "::error::Activating Brevo SMTP provider failed HTTP $code."; exit 1; }
+          [ "$code" = 200 ] || { echo "::error::Activating selected SMTP provider failed HTTP $code."; exit 1; }
 
           active="$(curl --fail-with-body --silent --show-error "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN")"
-          ACTIVE="$active" node <<'NODE'
+          ACTIVE="$active" EXPECTED_DESCRIPTION="$SMTP_DESCRIPTION" node <<'NODE'
           const x=JSON.parse(process.env.ACTIVE||'{}').config||{};
           const smtp=x.smtp||{};
           const safe={description:x.description||null,state:x.state||null,kind:x.smtp?'smtp':x.http?'http':'unknown',host:smtp.host||null,senderAddress:smtp.senderAddress||null,tls:smtp.tls??null};
           console.log('ZITADEL_ACTIVE_EMAIL_PROVIDER_SAFE '+JSON.stringify(safe));
-          if(x.description!=='Mkety Brevo SMTP' || !x.smtp) throw new Error('Brevo SMTP did not become active');
+          if(x.description!==process.env.EXPECTED_DESCRIPTION || !x.smtp) throw new Error('Selected SMTP provider did not become active');
           NODE
 
       - name: Probe branded auth front channel
@@ -515,4 +537,3 @@ jobs:
 
           ready="$(curl -sS --connect-timeout 8 --max-time 20 -o /dev/null -w '%{http_code}' 'https://auth.mkety.com/ui/v2/login/ready' || true)"
           echo "AUTH_READY_SAFE HTTP=$ready"
-

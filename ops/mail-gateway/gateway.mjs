@@ -131,14 +131,14 @@ function parseLoginArgs(args){
   return parts;
 }
 
-async function authenticate(username,password){
-  const {response,payload}=await jsonApi('/api/internal/mail/gateway/auth',{username,password});
+async function authenticate(username,password,protocol){
+  const {response,payload}=await jsonApi('/api/internal/mail/gateway/auth',{username,password,protocol});
   if(!response.ok||payload.ok!==true) return null;
-  return {...payload,credentials:{username,password}};
+  return {...payload,protocol,credentials:{username,password}};
 }
 
 async function sessionAuthorized(session){
-  return session?.credentials&&Boolean(await authenticate(session.credentials.username,session.credentials.password));
+  return session?.credentials&&Boolean(await authenticate(session.credentials.username,session.credentials.password,session.protocol));
 }
 
 function startImap(){
@@ -169,7 +169,7 @@ function startImap(){
             const tag=authPlainPending;authPlainPending=null;
             const decoded=Buffer.from(line.trim(),'base64').toString('utf8').split('\0');
             const username=decoded.at(-2)||'',password=decoded.at(-1)||'';
-            session=await authenticate(username,password);
+            session=await authenticate(username,password,'imap');
             tagged(tag,session?'OK':'NO',session?'AUTHENTICATE completed':'Authentication failed');
             continue;
           }
@@ -196,13 +196,13 @@ function startImap(){
             tagged(tag,'OK','NAMESPACE completed');
           }else if(command==='LOGIN'){
             const [username,password]=parseLoginArgs(args);
-            session=await authenticate(username||'',password||'');
+            session=await authenticate(username||'',password||'','imap');
             tagged(tag,session?'OK':'NO',session?'LOGIN completed':'Authentication failed');
           }else if(command==='AUTHENTICATE'&&args.toUpperCase().startsWith('PLAIN')){
             const initial=args.slice(5).trim();
             if(initial){
               const decoded=Buffer.from(initial,'base64').toString('utf8').split('\0');
-              session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'');
+              session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'','imap');
               tagged(tag,session?'OK':'NO',session?'AUTHENTICATE completed':'Authentication failed');
             }else{
               authPlainPending=tag;send('+');
@@ -385,7 +385,7 @@ function startSmtp(){
           }
           if(authLoginStage==='password'){
             const password=Buffer.from(line.trim(),'base64').toString('utf8');authLoginStage='';
-            session=await authenticate(authLoginUser,password);
+            session=await authenticate(authLoginUser,password,'smtp');
             send(session?'235 2.7.0 Authentication successful':'535 5.7.8 Authentication credentials invalid');
             continue;
           }
@@ -403,7 +403,7 @@ function startSmtp(){
               if(!initial){send('334 ');authLoginStage='plain';}
               else{
                 const decoded=Buffer.from(initial,'base64').toString('utf8').split('\0');
-                session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'');
+                session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'','smtp');
                 send(session?'235 2.7.0 Authentication successful':'535 5.7.8 Authentication credentials invalid');
               }
             }else if(String(method).toUpperCase()==='LOGIN'){
@@ -412,7 +412,7 @@ function startSmtp(){
           }else if(authLoginStage==='plain'){
             authLoginStage='';
             const decoded=Buffer.from(line.trim(),'base64').toString('utf8').split('\0');
-            session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'');
+            session=await authenticate(decoded.at(-2)||'',decoded.at(-1)||'','smtp');
             send(session?'235 2.7.0 Authentication successful':'535 5.7.8 Authentication credentials invalid');
           }else if(!session){send('530 5.7.0 Authentication required');
           }else if(!(await sessionAuthorized(session))){session=null;send('535 5.7.8 Authorization expired');reset();

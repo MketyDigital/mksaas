@@ -360,8 +360,11 @@ jobs:
         env:
           SEND_QUEUE_ID: ${{ steps.infra.outputs.send_queue_id }}
           EVENT_QUEUE_ID: ${{ steps.infra.outputs.event_queue_id }}
+          MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID }}
         run: |
           set -euo pipefail
+          : "${MKETY_FIRST_PARTY_MAIL_TENANT_ID:?Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret}"
+          echo "::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
           internal_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$internal_secret"
 
@@ -386,6 +389,7 @@ jobs:
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_QUEUE_ID "$SEND_QUEUE_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_EVENT_QUEUE_ID "$EVENT_QUEUE_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_HOST 'mail.mkety.com'
+          put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_CONTENT_URL 'https://mail-content.mkety.com'
           # External IMAP/SMTP remains fail-closed until the dedicated TCP gateway
           # passes TLS, app-password, mailbox and send acceptance.

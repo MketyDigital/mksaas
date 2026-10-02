@@ -33,4 +33,23 @@ describe('SelectTenantPage', () => {
     await expect(SelectTenantPage()).rejects.toThrow('REDIRECT:/app/current_workspace');
     expect(mockedGetAllRoles).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves the public pricing plan and term into the selected workspace checkout', async () => {
+    mockedAuth.mockResolvedValue({
+      expiresAt: new Date(Date.now() + 60_000),
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+        name: 'User',
+        image: null,
+        roles: {},
+        permissions: {},
+      },
+    });
+    mockedGetAllRoles.mockResolvedValue({ current_workspace: 'member' });
+
+    await expect(
+      SelectTenantPage({ searchParams: Promise.resolve({ plan: 'starter', term: '12m' }) }),
+    ).rejects.toThrow('REDIRECT:/app/current_workspace/billing/checkout?plan=starter&term=12m');
+  });
 });

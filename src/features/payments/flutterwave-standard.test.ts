@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import { getMketyFlutterwaveMethodLabelsForCurrency } from './flutterwave-payment-methods';
 import {
   createFlutterwaveHostedCheckout,
   createFlutterwaveInlinePayload,
@@ -7,7 +8,6 @@ import {
   quoteFlutterwaveCollection,
   verifyFlutterwaveStandardTransaction,
 } from './flutterwave-standard';
-import { getMketyFlutterwaveMethodLabelsForCurrency } from './flutterwave-payment-methods';
 
 describe('Flutterwave v3 shared payments', () => {
   it('uses the canonical amount unchanged for USD collection', async () => {
@@ -156,8 +156,33 @@ describe('Flutterwave v3 shared payments', () => {
       meta: { source: 'media' },
     });
     expect(body.payload_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(body.payment_options).toBe('card,account');
+    expect(body).not.toHaveProperty('payment_options');
     expect(JSON.stringify(body)).not.toContain('FLWSECK_TEST-private');
+  });
+
+  it('keeps the NGN bank-transfer expiry while allowing Flutterwave dashboard methods', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'success', data: { link: 'https://checkout.flutterwave.com/v3/hosted/pay/ngn' } }),
+    });
+
+    await createFlutterwaveHostedCheckout({
+      source: 'saas',
+      reference: 'SAAS-MKS-NGN123',
+      amountMinor: 3999n,
+      currency: 'NGN',
+      email: 'billing@example.com',
+      redirectUrl: 'https://app.mkety.com/app/example/billing/checkout',
+      metadata: { source: 'saas' },
+      secretKey: 'FLWSECK_TEST-private',
+      fetchImpl: fetchMock,
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ tx_ref: 'SAAS-MKS-NGN123', amount: '39.99', currency: 'NGN' });
+    expect(body).toHaveProperty('bank_transfer_options', { expires: 3600 });
+    expect(body).not.toHaveProperty('payment_options');
   });
 
   it('keeps the dashboard-controlled method catalogue currency aware without restricting checkout', () => {

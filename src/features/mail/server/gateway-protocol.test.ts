@@ -20,6 +20,7 @@ function gateway() {
   let failBody = false;
   let revoked = false;
   let failMessages = false;
+  const authRequests: Array<Record<string, unknown>> = [];
   const context = {
     Buffer, createHash, AbortSignal,
     console: { log: () => {}, error: () => {} },
@@ -29,7 +30,10 @@ function gateway() {
     fetch: async (url: string, options: { body: string }) => {
       // Force an asynchronous provider boundary so pipelined commands exercise ordering.
       await new Promise<void>((resolve) => setImmediate(resolve));
-      if (url.endsWith('/auth')) return { ok: !revoked, json: async () => ({ ok: !revoked, tenantId: 'tenant', mailboxId: 'mailbox', address: 'a@example.com' }) };
+      if (url.endsWith('/auth')) {
+        authRequests.push(JSON.parse(options.body) as Record<string, unknown>);
+        return { ok: !revoked, json: async () => ({ ok: !revoked, tenantId: 'tenant', mailboxId: 'mailbox', address: 'a@example.com' }) };
+      }
       if (url.endsWith('/messages')) return { ok: !failMessages, json: async () => ({ ok: !failMessages, messages }) };
       if (url.endsWith('/flags')) {
         flagsBody = JSON.parse(options.body);
@@ -46,10 +50,23 @@ function gateway() {
     socket.emit('data', Buffer.from(line));
     for (let tick = 0; tick < 15; tick += 1) await new Promise<void>((resolve) => setImmediate(resolve));
   };
-  return { connect, send, flags: () => flagsBody, failFlags: () => { failFlags = true; }, failBody: () => { failBody = true; }, revoke: () => { revoked = true; }, failMessages: (fail: boolean) => { failMessages = fail; } };
+  return { connect, send, flags: () => flagsBody, authRequests: () => authRequests, failFlags: () => { failFlags = true; }, failBody: () => { failBody = true; }, revoke: () => { revoked = true; }, failMessages: (fail: boolean) => { failMessages = fail; } };
 }
 
 describe('Mail gateway protocol behavior', () => {
+  it('identifies IMAP during authentication so SMTP-only credentials can be refused', async () => {
+    const g = gateway(); const socket = g.connect(993);
+    await g.send(socket, 'a1 LOGIN a@example.com mkmail-fixture\r\n');
+    expect(g.authRequests()[0]).toEqual({ username: 'a@example.com', password: 'mkmail-fixture', protocol: 'imap' });
+  });
+
+  it('identifies SMTP during authentication so the platform credential can submit mail', async () => {
+    const g = gateway(); const socket = g.connect(465);
+    const credential = Buffer.from('\0a@example.com\0mkmail-fixture').toString('base64');
+    await g.send(socket, `AUTH PLAIN ${credential}\r\n`);
+    expect(g.authRequests()[0]).toEqual({ username: 'a@example.com', password: 'mkmail-fixture', protocol: 'smtp' });
+  });
+
   it('serializes IMAP commands arriving in separate chunks during authentication', async () => {
     const g = gateway(); const socket = g.connect(993);
     socket.emit('data', Buffer.from('a1 LOGIN a@example.com mkmail-fixture\r\n'));

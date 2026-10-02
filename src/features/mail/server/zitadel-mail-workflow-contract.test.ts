@@ -1,0 +1,38 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+describe('ZITADEL first-party Mail rollout workflow', () => {
+  const workflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-zitadel-email-reconcile.yml'), 'utf8');
+
+  it('requires an explicit manual provider test and activation choice', () => {
+    expect(workflow).toContain('email_provider:');
+    expect(workflow).toContain('test_provider:');
+    expect(workflow).toContain('activate_provider:');
+    expect(workflow).toContain("github.event_name == 'workflow_dispatch'");
+    expect(workflow).toContain("inputs.test_provider == true");
+    expect(workflow).toContain("inputs.activate_provider == true");
+  });
+
+  it('supports Mkety SMTP while preserving a tested Brevo rollback path', () => {
+    expect(workflow).toContain('MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD');
+    expect(workflow).toContain('smtp.mkety.com:465');
+    expect(workflow).toContain('info@mkety.com');
+    expect(workflow).toContain('Mkety First-Party Mail SMTP');
+    expect(workflow).toContain('Mkety Brevo SMTP');
+    expect(workflow).toContain('steps.smtp_test.outcome == \'success\'');
+  });
+
+  it('masks credentials and logs provider metadata without secret values', () => {
+    expect(workflow).toContain('echo "::add-mask::${!n}"');
+    expect(workflow).toContain('process.env.PASSWORD');
+    expect(workflow).toContain('ZITADEL_ACTIVE_EMAIL_PROVIDER_SAFE');
+  });
+
+  it('fails closed when production Mail has no reserved tenant binding and never prints it', () => {
+    const mailWorkflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-mail-production.yml'), 'utf8');
+    expect(mailWorkflow).toContain('secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID');
+    expect(mailWorkflow).toContain('Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret');
+    expect(mailWorkflow).toContain('::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID');
+    expect(mailWorkflow).toContain('put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
+  });
+});

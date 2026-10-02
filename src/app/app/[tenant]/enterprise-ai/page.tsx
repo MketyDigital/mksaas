@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { getTenantSettings } from '@/features/admin/services/settings-service';
-import { EnterpriseAiCheckoutForm } from '@/features/ai-runtime/components/EnterpriseAiCheckoutForm';
 import { ENTERPRISE_AI_CHANNELS } from '@/features/ai-runtime/channels/registry';
+import { EnterpriseAiCheckoutForm } from '@/features/ai-runtime/components/EnterpriseAiCheckoutForm';
 import { hasEnterpriseAiAccess, hasEnterpriseAiWhiteLabelAccess } from '@/features/ai-runtime/server/access';
 import {
   listEnterpriseAiSolutionInstances,
@@ -14,6 +14,9 @@ import {
 import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
 import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
+import { getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
+import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getCreditBalance } from '@/features/usage-credits/server/service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { withRequestDatabase } from '@/shared/db/request';
@@ -29,17 +32,26 @@ async function renderEnterpriseAiConsolePage({
 }) {
   const { tenant: tenantSlug } = await params;
   await requireTenantMembership(tenantSlug);
-  const paymentProviders = [
-    ...(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
-      ? [{ value: 'nowpayments' as const, label: 'Crypto / NOWPayments' }]
-      : []),
-    ...(process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
-      ? [{ value: 'flutterwave' as const, label: 'Card / bank · Flutterwave' }]
-      : []),
-    ...(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY
-      ? [{ value: 'kora' as const, label: 'Card / bank · Kora' }]
-      : []),
-  ];
+  const paymentSettings = await getMketyPaymentSettings();
+  const paymentProviders = getAvailableMketyPaymentProviders({
+    nowpayments: {
+      apiKey: process.env.NOWPAYMENTS_API_KEY,
+      ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+    },
+    flutterwave: {
+      brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+      collectionCurrencies: getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates),
+      hasConfiguredCurrencyQuote: Object.keys(paymentSettings.flutterwave.fxRates).length > 0,
+    },
+    kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+  }).map(({ provider }) => ({
+    value: provider,
+    label: provider === 'nowpayments'
+      ? 'Crypto / NOWPayments'
+      : provider === 'flutterwave'
+        ? 'Card / bank · Flutterwave'
+        : 'Card / bank · Kora',
+  }));
   const tenant = await getTenantBySlug(tenantSlug);
   if (!tenant) redirect('/select-tenant');
 

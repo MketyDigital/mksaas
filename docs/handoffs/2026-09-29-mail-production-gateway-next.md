@@ -176,3 +176,24 @@ Infrastructure acceptance does **not** claim app-password functional acceptance.
 ## Safety rule
 
 Do not call external-client support production-accepted merely because 993/465 are reachable. Infrastructure TLS/protocol acceptance and real app-password/client functional acceptance are separate gates.
+
+## Current Mkety first-party Mail and Starpips sequence — 2026-10-02
+
+This section supersedes earlier handoff ordering that placed Starpips after an Enterprise AI customer. The approved order is:
+
+1. Complete Mkety first-party Mail using the reserved platform-owned Mail tenant and `info@mkety.com`; ZITADEL remains on its current provider until a real Mail-backed test passes with rollback ready.
+2. Make Starpips the first paid Enterprise Mail customer. Confirm its existing commercial terms before checkout; do not infer or invent an Enterprise Mail price from an AI contract.
+3. After Starpips completes and accepts its Mail setup, use Mkety's own reserved internal system and isolated non-production fixture to verify Enterprise AI commercial, runtime and accounting paths.
+4. Keep Starpips out of Enterprise AI unless there is a separately approved AI contract. Keep production inference disabled after the internal AI fixture is cleaned up.
+
+Customer-facing transactional producers currently identified in `src/` are tenant invitations and ZITADEL identity mail. Invitations use the shared first-party sender; ZITADEL remains the identity-owned producer through its selected SMTP provider. Billing/payment, domain/product-status and support-acknowledgement email producers were not present in the source inventory as of this date; do not manufacture notification events without a product event contract. Mail automation/customer-update messages remain customer Mail product sends, not Mkety platform notifications.
+
+### Local first-party Mail implementation checkpoint — 2026-10-02
+
+Branch `codex/mkety-first-party-mail-20261002` is based on `2181bc76de4136c068f3b9aa54555b56a2fa8ddf`. It adds SMTP-only reserved-tenant credentials, first-party transactional queueing with tenant-scoped idempotency, invitation delivery, reserved inbox operator checks, `info@mkety.com` support defaults, and an explicitly tested/activated ZITADEL SMTP workflow with Brevo rollback. Invitation links now default to `https://app.mkety.com` if `NEXT_PUBLIC_APP_URL` is absent. The SMTP provisioning action exits before mailbox lookup if the reserved workspace is missing/inactive.
+
+Local evidence: 11 focused suites / 52 tests pass; TypeScript, migration baseline, repository ESLint (0 errors; 19 existing warnings), `git diff --check`, and Vinext production build pass. The full Jest run had 274 suites pass, 1 skipped, and 7 failures across two unrelated child-process tests that receive `EPERM`/empty output in this restricted environment. No `customer-apps/assist` files are in this branch diff.
+
+Production acceptance is still pending. DNS/provider/live workspace and ZITADEL status could not be inspected from this session. The production workflow requires the repository secret `MKETY_FIRST_PARTY_MAIL_TENANT_ID`; after issuing the one-time credential from Mail Operations, store it as `MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD`. Keep customer external clients disabled. Do not dispatch the provider test/activation workflow until domain, mailbox, credential and controlled recipient readiness are confirmed. Do not call first-party Mail production-ready from local checks alone.
+
+Provisioning access check — 2026-10-02: no live tenant, Mail workspace, domain, mailbox, DNS record, repository secret, or ZITADEL provider was changed. The Cloudflare dashboard served a persistent security-verification page in the browser after one reload; no local Cloudflare API token was available. The production Mail Operations route redirected to ZITADEL, where secure sign-in returned the generic error `Could not create session for user`; no credential retry was made. The available GitHub connector can read repository metadata but has no Actions-secret management or workflow-dispatch operation, `gh` CLI is absent, and `git fetch origin main` cannot reach GitHub through the current network proxy. GitHub reports `main` at `58477b11e5271be34668e3d35fe2c85030cb9cbf`, newer than this local branch's base; do not update or merge shared `main` until a safe non-Assist sync path is available.

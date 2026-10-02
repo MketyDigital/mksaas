@@ -424,7 +424,7 @@ Final reconciliation completed:
 - restored the five approved Mkety Academy hub photos to current `main` from the already-approved release blobs and restored local-first image rendering with a safe external fallback;
 - confirmed the public release branch already carries the approved Academy image set and the explicit sign-in/signup OIDC intent repair;
 - made the public Contact experience actionable using established Mkety-owned channels:
-  - product/support: `support@mkety.com`;
+  - product/support: `info@mkety.com`;
   - Enterprise/partnerships: `hello@mkety.com`;
   - Telegram: `https://t.me/mketyadmin`;
   - Academy: `https://academy.mkety.com`;

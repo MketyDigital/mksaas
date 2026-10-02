@@ -10,12 +10,13 @@ import {
 } from '@/features/billing/catalog/self-service-plans';
 import { getActiveSelfServiceBillingQuote } from '@/features/billing/server/active-catalog';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
+import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';
 import {
   getEnabledMketyFlutterwaveCurrencies,
   isMketyFlutterwaveCollectionCurrency,
   quoteFlutterwaveCollection,
 } from '@/features/payments/flutterwave-standard';
-import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';
+import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
@@ -68,9 +69,6 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
     : false;
   if (mailEntitled) redirect(`/app/${tenantSlug}/mail?payment=confirmed`);
   const paymentSettings = await getMketyPaymentSettings();
-  const nowPaymentsEnabled = Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET);
-  const flutterwaveEnabled = Boolean(process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET);
-  const koraEnabled = Boolean(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY);
   const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates);
   const selectedCurrency = flutterwaveCurrencies.includes(
     query.currency as (typeof flutterwaveCurrencies)[number],
@@ -80,7 +78,11 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
 
   let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
   const flutterwaveMethodLabels = getMketyFlutterwaveMethodLabelsForCurrency(selectedCurrency);
-  if (flutterwaveEnabled && isMketyFlutterwaveCollectionCurrency(selectedCurrency)) {
+  const hasConfiguredFlutterwaveQuote = Object.keys(paymentSettings.flutterwave.fxRates).length > 0;
+  const flutterwaveBrokerReady = Boolean(
+    process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET && hasConfiguredFlutterwaveQuote,
+  );
+  if (flutterwaveBrokerReady && isMketyFlutterwaveCollectionCurrency(selectedCurrency)) {
     try {
       flutterwaveQuote = await quoteFlutterwaveCollection({
         canonicalAmountMinor: quote.amountMinor,
@@ -94,13 +96,18 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
     }
   }
 
-  const paymentProviders = [
-    ...(nowPaymentsEnabled ? [{ key: 'nowpayments', label: 'Crypto', detail: 'Primary payment method · supported digital assets.' }] : []),
-    ...(flutterwaveEnabled && flutterwaveQuote
-      ? [{ key: 'flutterwave', label: 'Card / local methods', detail: 'Flutterwave v3 Inline opens securely over Mkety · methods depend on your currency and merchant availability.' }]
-      : []),
-    ...(koraEnabled ? [{ key: 'kora', label: 'Card / bank', detail: 'Kora secure checkout is embedded inside Mkety.' }] : []),
-  ];
+  const paymentProviders = getAvailableMketyPaymentProviders({
+    nowpayments: {
+      apiKey: process.env.NOWPAYMENTS_API_KEY,
+      ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+    },
+    flutterwave: {
+      brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+      collectionCurrencies: flutterwaveQuote ? [selectedCurrency] : [],
+      hasConfiguredCurrencyQuote: hasConfiguredFlutterwaveQuote,
+    },
+    kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+  });
 
   return (
     <main className="min-h-screen bg-muted/20 px-4 py-12">
@@ -172,7 +179,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
 
           {!returned ? (
             <div className="mt-8 space-y-5">
-              {flutterwaveEnabled ? (
+              {flutterwaveBrokerReady ? (
                 <div className="rounded-2xl border bg-muted/30 p-4">
                   <p className="text-sm font-medium">Flutterwave payment currency</p>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -210,11 +217,11 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
               ) : null}
 
               {paymentProviders.length ? paymentProviders.map((provider, index) => (
-                <form key={provider.key} action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post">
+                <form key={provider.provider} action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post">
                   <input type="hidden" name="planKey" value={plan.key} />
                   <input type="hidden" name="termKey" value={termKey} />
-                  <input type="hidden" name="provider" value={provider.key} />
-                  {provider.key === 'flutterwave' ? (
+                  <input type="hidden" name="provider" value={provider.provider} />
+                  {provider.provider === 'flutterwave' ? (
                     <input type="hidden" name="collectionCurrency" value={selectedCurrency} />
                   ) : null}
                   <button
