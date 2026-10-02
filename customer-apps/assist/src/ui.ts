@@ -473,26 +473,34 @@ async function testProvider(id){
 }
 function providerExtraUi(provider,prefix,value){
   let extra={};try{extra=JSON.parse(value||'{}')}catch{}
-  if(provider==='vertex')return '<div class="field"><label>Vertex service account / configuration JSON</label><textarea class="input" id="'+prefix+'Extra" rows="6" placeholder="Paste the Vertex JSON here">'+esc(value||'{}')+'</textarea></div>';
-  if(provider==='bedrock')return '<div class="field"><label>Bedrock credentials JSON</label><textarea class="input" id="'+prefix+'Extra" rows="6" placeholder="{&quot;accessKeyId&quot;:&quot;...&quot;,&quot;secretAccessKey&quot;:&quot;...&quot;,&quot;region&quot;:&quot;us-east-1&quot;}">'+esc(value||'{}')+'</textarea></div>';
+  if(provider==='vertex')return '<div class="field"><label>Vertex service-account JSON (encrypted)</label><textarea class="input" id="'+prefix+'CredentialJson" rows="7" placeholder="Paste the complete Google service-account JSON here"></textarea></div><div class="field"><label>Vertex location</label><input class="input" id="'+prefix+'Location" value="'+esc(extra.location||'global')+'"></div>';
+  if(provider==='bedrock')return '<div class="field"><label>Bedrock credentials JSON (encrypted)</label><textarea class="input" id="'+prefix+'CredentialJson" rows="6" placeholder="{&quot;accessKeyId&quot;:&quot;...&quot;,&quot;secretAccessKey&quot;:&quot;...&quot;,&quot;region&quot;:&quot;us-east-1&quot;}"></textarea></div><div class="field"><label>AWS region</label><input class="input" id="'+prefix+'Region" value="'+esc(extra.region||'us-east-1')+'"></div>';
+  if(provider==='cloudflare-ai')return '<div class="field"><label>Cloudflare account ID</label><input class="input" id="'+prefix+'AccountId" value="'+esc(extra.accountId||'')+'"></div>';
   if(provider==='azure-openai')return '<div class="field"><label>API version (optional)</label><input class="input" id="'+prefix+'ApiVersion" value="'+esc(extra.apiVersion||'2024-10-21')+'"></div>';
   return '';
 }
 function readProviderExtra(provider,prefix){
-  if(provider==='vertex'||provider==='bedrock'){
-    const el=byId(prefix+'Extra');return el&&el.value.trim()?JSON.parse(el.value):{};
-  }
-  if(provider==='azure-openai'){
-    const el=byId(prefix+'ApiVersion');return el&&el.value.trim()?{apiVersion:el.value.trim()}:{};
-  }
+  if(provider==='vertex'){const el=byId(prefix+'Location');return {location:(el&&el.value.trim())||'global'}}
+  if(provider==='bedrock'){const el=byId(prefix+'Region');return {region:(el&&el.value.trim())||'us-east-1'}}
+  if(provider==='cloudflare-ai'){const el=byId(prefix+'AccountId');return {accountId:(el&&el.value.trim())||''}}
+  if(provider==='azure-openai'){const el=byId(prefix+'ApiVersion');return el&&el.value.trim()?{apiVersion:el.value.trim()}:{}}
   return {};
 }
+function readStructuredCredential(provider,prefix){
+  if(provider!=='vertex'&&provider!=='bedrock')return undefined;
+  const el=byId(prefix+'CredentialJson');
+  return el&&el.value.trim()?el.value.trim():undefined;
+}
 function editProvider(p){
-  const needsModel=!['vertex','bedrock','cloudflare-ai'].includes(p.provider);
-  openModal('<h2>Manage provider</h2><p class="muted">Saved secrets are never shown. Save disables the connection until a real provider inference test passes again.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="epName" value="'+esc(p.name)+'"></div><div class="field"><label>Provider</label><input class="input" value="'+esc(p.provider)+'" disabled></div></div><div class="field"><label>Ownership</label><input class="input" value="'+esc(p.ownership||'mkety')+(p.customer_id?' · '+esc((data.find(c=>c.id===p.customer_id)||{}).name||p.customer_id):'')+'" disabled></div><div class="field"><label>Endpoint URL</label><input class="input" id="epEndpoint" value="'+esc(p.endpoint_url||'')+'" placeholder="'+(p.provider==='azure-foundry'?'https://resource.services.ai.azure.com/api/projects/project':'https://...')+'"></div>'+(needsModel?'<div class="field"><label>Model'+(p.provider==='azure-foundry'?' / deployment':'')+'</label><input class="input" id="epModel" value="'+esc(p.default_model||'')+'" placeholder="'+(p.provider==='azure-foundry'?'gpt-5.6-sol-1':'model id')+'"></div>':'')+'<div class="field"><label>Replace API key / secret</label><input class="input" id="epKey" type="password" autocomplete="off" placeholder="Leave blank to keep current secret"></div><div id="epProviderExtra">'+providerExtraUi(p.provider,'ep',p.extra_json||'{}')+'</div><div class="row"><button class="btn primary" id="epSave">Save & require retest</button><button class="btn" id="epTest">Run real test now</button><button class="btn" id="epClose">Close</button></div>');
+  const structured=p.provider==='vertex'||p.provider==='bedrock';
+  openModal('<h2>Manage provider</h2><p class="muted">Saved secrets are never shown. Save disables the connection until a real provider inference test passes again.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="epName" value="'+esc(p.name)+'"></div><div class="field"><label>Provider</label><input class="input" value="'+esc(p.provider)+'" disabled></div></div><div class="field"><label>Ownership</label><input class="input" value="'+esc(p.ownership||'mkety')+(p.customer_id?' · '+esc((data.find(c=>c.id===p.customer_id)||{}).name||p.customer_id):'')+'" disabled></div><div class="field"><label>Endpoint URL</label><input class="input" id="epEndpoint" value="'+esc(p.endpoint_url||'')+'" placeholder="'+(p.provider==='azure-foundry'?'https://resource.services.ai.azure.com/api/projects/project':'https://...')+'"></div><div class="field"><label>Model / deployment</label><input class="input" id="epModel" value="'+esc(p.default_model||'')+'" placeholder="'+(p.provider==='azure-foundry'?'gpt-5.6-sol-1':'model id')+'"></div>'+(structured?'':'<div class="field"><label>Replace API key / secret</label><input class="input" id="epKey" type="password" autocomplete="off" placeholder="Leave blank to keep current secret"></div>')+'<div id="epProviderExtra">'+providerExtraUi(p.provider,'ep',p.extra_json||'{}')+'</div><div class="row"><button class="btn primary" id="epSave">Save & require retest</button><button class="btn" id="epTest">Run real test now</button><button class="btn" id="epClose">Close</button></div>');
   const epName=byId('epName'),epEndpoint=byId('epEndpoint'),epModel=byId('epModel'),epKey=byId('epKey'),epSave=byId('epSave'),epTest=byId('epTest'),epClose=byId('epClose');
   epClose.onclick=closeModal;
-  epSave.onclick=async()=>{try{const extra=readProviderExtra(p.provider,'ep');await api('/api/ops/providers/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify({name:epName.value,endpointUrl:epEndpoint.value||null,model:epModel?epModel.value:null,apiKey:epKey.value||undefined,extra})});closeModal();await loadProviders();alert('Saved. Run the real provider test before using it in a route.')}catch(e){alert(e.message)}};
+  epSave.onclick=async()=>{try{
+    const extra=readProviderExtra(p.provider,'ep'),credentialJson=readStructuredCredential(p.provider,'ep');
+    await api('/api/ops/providers/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify({name:epName.value,endpointUrl:epEndpoint.value||null,model:epModel?epModel.value:null,apiKey:epKey?epKey.value||undefined:undefined,credentialJson,extra})});
+    closeModal();await loadProviders();alert('Saved. Run the real provider test before using it in a route.');
+  }catch(e){alert(e.message)}};
   epTest.onclick=async()=>{closeModal();await testProvider(p.id)};
 }
 function providerOptions(selected,provider,customerId){
@@ -501,11 +509,21 @@ function providerOptions(selected,provider,customerId){
 }
 function addProvider(){
   const customers='<option value="">Select customer</option>'+data.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
-  openModal('<h2>Add provider connection</h2><p class="muted">Azure Foundry uses normal Model + Endpoint + API Key fields. Vertex and Bedrock expose JSON only because their credential/config structures require it. Save immediately runs a real provider inference test.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="prName" placeholder="Managed provider"></div><div class="field"><label>Provider</label><select class="input" id="prType"><option>openai</option><option>anthropic</option><option>gemini</option><option>vertex</option><option>cloudflare-ai</option><option>bedrock</option><option>azure-openai</option><option>azure-foundry</option><option>openai-compatible</option></select></div><div class="field"><label>Ownership</label><select class="input" id="prOwnership"><option value="mkety">Mkety managed</option><option value="customer">Customer BYOK</option></select></div><div class="field"><label>Customer (BYOK only)</label><select class="input" id="prCustomer" disabled>'+customers+'</select></div></div><div class="field"><label>Endpoint URL</label><input class="input" id="prEndpoint" placeholder="https://..."></div><div class="field" id="prModelWrap"><label>Model / deployment</label><input class="input" id="prModel" placeholder="gpt-5.6-sol-1"></div><div class="field"><label>API key / secret</label><input class="input" id="prKey" type="password" autocomplete="off"></div><div id="prProviderExtra"></div><button class="btn primary" id="prSave">Save & run real test</button>');
-  const prName=byId('prName'),prType=byId('prType'),prOwnership=byId('prOwnership'),prCustomer=byId('prCustomer'),prEndpoint=byId('prEndpoint'),prModel=byId('prModel'),prModelWrap=byId('prModelWrap'),prKey=byId('prKey'),prProviderExtra=byId('prProviderExtra'),prSave=byId('prSave');
-  const refresh=()=>{prCustomer.disabled=prOwnership.value!=='customer';if(prModelWrap)prModelWrap.hidden=['vertex','bedrock','cloudflare-ai'].includes(prType.value);if(prProviderExtra)prProviderExtra.innerHTML=providerExtraUi(prType.value,'pr','{}')if(prType.value==='azure-foundry'){prEndpoint.placeholder='https://resource.services.ai.azure.com/api/projects/project';if(prModel)prModel.placeholder='gpt-5.6-sol-1'}else{prEndpoint.placeholder='https://...';if(prModel)prModel.placeholder='model id'}};
+  openModal('<h2>Add provider connection</h2><p class="muted">Azure Foundry uses Model + Endpoint + API Key. Vertex and Bedrock accept their complete credential JSON, which is encrypted before storage. Save immediately runs a real provider inference test.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="prName" placeholder="Managed provider"></div><div class="field"><label>Provider</label><select class="input" id="prType"><option>openai</option><option>anthropic</option><option>gemini</option><option>vertex</option><option>cloudflare-ai</option><option>bedrock</option><option>azure-openai</option><option>azure-foundry</option><option>openai-compatible</option></select></div><div class="field"><label>Ownership</label><select class="input" id="prOwnership"><option value="mkety">Mkety managed</option><option value="customer">Customer BYOK</option></select></div><div class="field"><label>Customer (BYOK only)</label><select class="input" id="prCustomer" disabled>'+customers+'</select></div></div><div class="field"><label>Endpoint URL</label><input class="input" id="prEndpoint" placeholder="https://..."></div><div class="field"><label>Model / deployment</label><input class="input" id="prModel" placeholder="gpt-5.6-sol-1"></div><div class="field" id="prKeyWrap"><label>API key / secret</label><input class="input" id="prKey" type="password" autocomplete="off"></div><div id="prProviderExtra"></div><button class="btn primary" id="prSave">Save & run real test</button>');
+  const prName=byId('prName'),prType=byId('prType'),prOwnership=byId('prOwnership'),prCustomer=byId('prCustomer'),prEndpoint=byId('prEndpoint'),prModel=byId('prModel'),prKey=byId('prKey'),prKeyWrap=byId('prKeyWrap'),prProviderExtra=byId('prProviderExtra'),prSave=byId('prSave');
+  const refresh=()=>{
+    prCustomer.disabled=prOwnership.value!=='customer';
+    if(prKeyWrap)prKeyWrap.hidden=prType.value==='vertex'||prType.value==='bedrock';
+    if(prProviderExtra)prProviderExtra.innerHTML=providerExtraUi(prType.value,'pr','{}');
+    if(prType.value==='azure-foundry'){prEndpoint.placeholder='https://resource.services.ai.azure.com/api/projects/project';if(prModel)prModel.placeholder='gpt-5.6-sol-1'}
+    else{prEndpoint.placeholder='https://...';if(prModel)prModel.placeholder='model id'}
+  };
   prOwnership.onchange=refresh;prType.onchange=refresh;refresh();
-  prSave.onclick=async()=>{try{const extra=readProviderExtra(prType.value,'pr');const made=await api('/api/ops/providers',{method:'POST',body:JSON.stringify({name:prName.value,provider:prType.value,endpointUrl:prEndpoint.value||null,model:prModelWrap&&prModelWrap.hidden?null:(prModel?prModel.value:null),apiKey:prKey.value,extra,ownership:prOwnership.value,customerId:prOwnership.value==='customer'?prCustomer.value:null})});closeModal();await testProvider(made.id);await loadModels()}catch(e){alert(e.message)}};
+  prSave.onclick=async()=>{try{
+    const extra=readProviderExtra(prType.value,'pr'),credentialJson=readStructuredCredential(prType.value,'pr');
+    const made=await api('/api/ops/providers',{method:'POST',body:JSON.stringify({name:prName.value,provider:prType.value,endpointUrl:prEndpoint.value||null,model:prModel?prModel.value:null,apiKey:prKeyWrap&&prKeyWrap.hidden?undefined:prKey.value,credentialJson,extra,ownership:prOwnership.value,customerId:prOwnership.value==='customer'?prCustomer.value:null})});
+    closeModal();await testProvider(made.id);await loadModels();
+  }catch(e){alert(e.message)}};
 }
 async function loadModels(){
   try{
