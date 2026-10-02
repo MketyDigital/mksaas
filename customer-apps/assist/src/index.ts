@@ -2937,30 +2937,35 @@ function optionalHostname(value: unknown) {
   return typeof value === "string" && value.trim() ? normalizeHostname(value) : null;
 }
 
-const DEFAULT_MKREDITS_PER_USD = 10_000_000;
+const MKREDITS_PER_USD = 1_000;
+const CREDIT_ATOMS_PER_USD = 10_000_000;
+const CREDIT_ATOMS_PER_MKREDIT = CREDIT_ATOMS_PER_USD / MKREDITS_PER_USD;
 
-function commercialMkreditsPerUsd(valueJson: unknown) {
-  try {
-    const parsed = JSON.parse(String(valueJson || "{}"));
-    const configured = Number(parsed?.mkreditsPerUsd);
-    if (Number.isSafeInteger(configured) && configured > 0) return configured;
-  } catch {}
-  return DEFAULT_MKREDITS_PER_USD;
+function creditAtomsFromMkredits(value: unknown) {
+  const mkredits = Number(value || 0);
+  if (!Number.isFinite(mkredits) || mkredits < 0) throw new HttpError(400, "invalid_mkredit_value");
+  return Math.round(mkredits * CREDIT_ATOMS_PER_MKREDIT);
 }
 
-function mkreditsFromUsdMicros(usdMicros: number, mkreditsPerUsd: number) {
+function mkreditsFromCreditAtoms(value: unknown) {
+  const atoms = Number(value || 0);
+  if (!Number.isFinite(atoms)) return 0;
+  return Math.round((atoms / CREDIT_ATOMS_PER_MKREDIT) * 10000) / 10000;
+}
+
+function creditAtomsFromUsdMicros(usdMicros: number) {
   if (usdMicros <= 0) return 0;
-  return Math.ceil((usdMicros * mkreditsPerUsd) / 1_000_000);
+  return Math.ceil((usdMicros * CREDIT_ATOMS_PER_USD) / 1_000_000);
 }
 
-function mkreditsFromUsdMinor(amountMinor: number, mkreditsPerUsd: number) {
+function creditAtomsFromUsdMinor(amountMinor: number) {
   if (amountMinor <= 0) return 0;
-  return Math.floor((amountMinor * mkreditsPerUsd) / 100);
+  return Math.floor((amountMinor * CREDIT_ATOMS_PER_USD) / 100);
 }
 
-function usdMinorFromMkredits(mkredits: number, mkreditsPerUsd: number) {
-  if (mkredits <= 0) return 0;
-  return Math.ceil((mkredits * 100) / mkreditsPerUsd);
+function usdMinorFromCreditAtoms(atoms: number) {
+  if (atoms <= 0) return 0;
+  return Math.ceil((atoms * 100) / CREDIT_ATOMS_PER_USD);
 }
 
 function calculateCommercialPlan(input: {
@@ -2968,7 +2973,6 @@ function calculateCommercialPlan(input: {
   providerEnvelopeBps: number;
   operationsReserveBps: number;
   rateMultiplierBps: number;
-  mkreditsPerUsd: number;
 }) {
   if (input.monthlyAmountMinor <= 0) throw new HttpError(400, "monthly_amount_must_be_positive");
   if (input.providerEnvelopeBps < 1 || input.providerEnvelopeBps > 10000) throw new HttpError(400, "provider_envelope_invalid");
@@ -2978,12 +2982,22 @@ function calculateCommercialPlan(input: {
   const providerEnvelopeUsdMicros = Math.floor(monthlyUsdMicros * input.providerEnvelopeBps / 10000);
   const usableProviderUsdMicros = Math.floor(providerEnvelopeUsdMicros * (10000 - input.operationsReserveBps) / 10000);
   const customerUsageValueUsdMicros = Math.floor(usableProviderUsdMicros * input.rateMultiplierBps / 10000);
-  const includedCredits = Math.floor((customerUsageValueUsdMicros * input.mkreditsPerUsd) / 1_000_000);
-  return { providerEnvelopeUsdMicros, usableProviderUsdMicros, customerUsageValueUsdMicros, includedCredits };
+  const includedCredits = creditAtomsFromUsdMicros(customerUsageValueUsdMicros);
+  return {
+    providerEnvelopeUsdMicros,
+    usableProviderUsdMicros,
+    customerUsageValueUsdMicros,
+    includedCredits,
+    includedMkredits: mkreditsFromCreditAtoms(includedCredits),
+  };
 }
 
-function costToBaseCredits(providerCostMicros: number, mkreditsPerUsd: number) {
-  return mkreditsFromUsdMicros(providerCostMicros, mkreditsPerUsd);
+function publicCreditFields<T extends Record<string, any>>(row: T): T {
+  const out: any = { ...row };
+  for (const key of ["input_credits_per_million","output_credits_per_million","image_credits","audio_credits_per_minute"]) {
+    if (key in out) out[key] = mkreditsFromCreditAtoms(out[key]);
+  }
+  return out;
 }
 
 async function protectStoredSecret(secret: string, configured: string) {
