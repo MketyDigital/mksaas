@@ -17,7 +17,7 @@ export function renderCustomerPortal(input: {
 <style>
 :root{color-scheme:dark;--bg:#090a0f;--panel:#12141c;--panel2:#171a24;--line:#292d3c;--text:#f6f7fb;--muted:#969bad;--brand:#7c5cff;--danger:#ff6577;--ok:#65d6a6}
 *{box-sizing:border-box}body{margin:0;font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-button,input,textarea,select{font:inherit}button{cursor:pointer}.shell{min-height:100vh;display:grid;grid-template-columns:230px 1fr}.side{border-right:1px solid var(--line);background:#0d0f16;padding:20px 14px;position:sticky;top:0;height:100vh}.brand{font-weight:800;font-size:17px;padding:5px 10px 22px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500;margin-top:4px}.nav button{width:100%;text-align:left;padding:10px 11px;border:0;border-radius:9px;background:transparent;color:#c8ccda;margin:2px 0}.nav button.active,.nav button:hover{background:#1a1d29;color:white}.foot{position:absolute;bottom:18px;left:14px;right:14px;color:var(--muted);font-size:12px}.main{min-width:0}.top{height:62px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;background:rgba(9,10,15,.9);backdrop-filter:blur(14px);z-index:3}.content{padding:28px;max-width:1250px;margin:auto}.title{font-size:24px;margin:0 0 5px}.sub{color:var(--muted);margin:0 0 24px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}.metric{font-size:25px;font-weight:800;margin-top:8px}.muted{color:var(--muted)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.spread{display:flex;align-items:center;justify-content:space-between;gap:12px}.btn{border:1px solid var(--line);background:#1a1d28;color:white;border-radius:9px;padding:9px 12px}.btn.primary{background:var(--brand);border-color:transparent}.btn.danger{color:#ff96a3}.btn:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:6px;margin:12px 0}.field label{font-size:12px;color:#b8bdcc}.input{width:100%;border:1px solid #34394b;background:#0d0f16;color:white;border-radius:9px;padding:10px 11px}.textarea{min-height:170px;resize:vertical}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top}.table th{font-size:11px;text-transform:uppercase;color:#858b9f;letter-spacing:.05em}.pill{display:inline-flex;border:1px solid var(--line);border-radius:99px;padding:3px 8px;font-size:11px}.pill.ok{color:var(--ok)}.pill.warn{color:#ffc66f}.empty{padding:38px;text-align:center;color:var(--muted)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:10}.modal.open{display:grid}.dialog{width:min(680px,92vw);max-height:88vh;overflow:auto;background:#12141c;border:1px solid var(--line);border-radius:16px;padding:22px}.section{display:none}.section.active{display:block}.assistant-list{display:grid;gap:10px}.assistant-item{border:1px solid var(--line);background:var(--panel);padding:15px;border-radius:12px}.chat{display:grid;grid-template-columns:330px 1fr;gap:14px;min-height:520px}.conversation-list{border:1px solid var(--line);border-radius:12px;overflow:auto}.conversation{padding:12px;border-bottom:1px solid var(--line);cursor:pointer}.conversation:hover{background:#161924}.messages{border:1px solid var(--line);border-radius:12px;padding:15px;overflow:auto}.bubble{max-width:75%;padding:10px 12px;border-radius:12px;margin:8px 0;background:#1b1e2a}.bubble.assistant{margin-left:auto;background:#2b2358}.bubble.human{margin-left:auto;background:#1d493d}.toast{position:fixed;right:20px;bottom:20px;padding:12px 14px;border-radius:10px;background:#202432;border:1px solid var(--line);display:none;z-index:20}.toast.show{display:block}
+button,input,textarea,select{font:inherit}button{cursor:pointer}.shell{min-height:100vh;display:grid;grid-template-columns:230px 1fr}.side{border-right:1px solid var(--line);background:#0d0f16;padding:20px 14px;position:sticky;top:0;height:100vh}.brand{font-weight:800;font-size:17px;padding:5px 10px 22px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500;margin-top:4px}.nav button{width:100%;text-align:left;padding:10px 11px;border:0;border-radius:9px;background:transparent;color:#c8ccda;margin:2px 0}.nav button.active,.nav button:hover{background:#1a1d29;color:white}.foot{position:absolute;bottom:18px;left:14px;right:14px;color:var(--muted);font-size:12px}.main{min-width:0}.top{height:62px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;background:rgba(9,10,15,.9);backdrop-filter:blur(14px);z-index:3}.content{padding:28px;max-width:1250px;margin:auto}.title{font-size:24px;margin:0 0 5px}.sub{color:var(--muted);margin:0 0 24px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}.metric{font-size:25px;font-weight:800;margin-top:8px}.muted{color:var(--muted)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.spread{display:flex;align-items:center;justify-content:space-between;gap:12px}.btn{border:1px solid var(--line);background:#1a1d28;color:white;border-radius:9px;padding:9px 12px}.btn.primary{background:var(--brand);border-color:transparent}.btn.danger{color:#ff96a3}.btn:disabled{opacity:.45;cursor:not-allowed}.field{display:grid;gap:6px;margin:12px 0}.field label{font-size:12px;color:#b8bdcc}.input{width:100%;border:1px solid #34394b;background:#0d0f16;color:white;border-radius:9px;padding:10px 11px}.textarea{min-height:170px;resize:vertical}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top}.table th{font-size:11px;text-transform:uppercase;color:#858b9f;letter-spacing:.05em}.pill{display:inline-flex;border:1px solid var(--line);border-radius:99px;padding:3px 8px;font-size:11px}.pill.ok{color:var(--ok)}.pill.warn{color:#ffc66f}.pill.danger{color:var(--danger)}.empty{padding:38px;text-align:center;color:var(--muted)}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:10}.modal.open{display:grid}.dialog{width:min(680px,92vw);max-height:88vh;overflow:auto;background:#12141c;border:1px solid var(--line);border-radius:16px;padding:22px}.section{display:none}.section.active{display:block}.assistant-list{display:grid;gap:10px}.assistant-item{border:1px solid var(--line);background:var(--panel);padding:15px;border-radius:12px}.chat{display:grid;grid-template-columns:330px 1fr;gap:14px;min-height:520px}.conversation-list{border:1px solid var(--line);border-radius:12px;overflow:auto}.conversation{padding:12px;border-bottom:1px solid var(--line);cursor:pointer}.conversation:hover{background:#161924}.messages{border:1px solid var(--line);border-radius:12px;padding:15px;overflow:auto}.bubble{max-width:75%;padding:10px 12px;border-radius:12px;margin:8px 0;background:#1b1e2a}.bubble.assistant{margin-left:auto;background:#2b2358}.bubble.human{margin-left:auto;background:#1d493d}.toast{position:fixed;right:20px;bottom:20px;padding:12px 14px;border-radius:10px;background:#202432;border:1px solid var(--line);display:none;z-index:20}.toast.show{display:block}
 @media(max-width:900px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.nav{display:flex;overflow:auto}.nav button{width:auto;white-space:nowrap}.foot{display:none}.grid,.three,.two{grid-template-columns:1fr 1fr}.chat{grid-template-columns:1fr}.top{position:static}}
 @media(max-width:560px){.grid,.three,.two{grid-template-columns:1fr}.content{padding:18px}.top{padding:0 18px}}
 </style>
@@ -37,7 +37,7 @@ const brand=document.getElementById('brand'),who=document.getElementById('who'),
   dialog=document.getElementById('dialog'),toast=document.getElementById('toast'),content=document.getElementById('content'),
   topTitle=document.getElementById('topTitle');
 const APP=${initial};
-const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[],automation:{paused:false},features:{}};
+const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[],automation:{paused:false},features:{},account:{status:'active',billingStatus:'pending',userControl:{state:'active'}}};
 const sections=['dashboard','assistants','knowledge','conversations','handoffs','reminders','usage','api','team','settings'];
 const titles={dashboard:'Dashboard',assistants:'Assistants',knowledge:'Knowledge',conversations:'Conversations',handoffs:'Human Handoff',reminders:'Reminders',usage:'Usage & Credits',api:'API Access',team:'Team',settings:'Settings'};
 if(APP.brandColor&&/^#[0-9a-fA-F]{6}$/.test(APP.brandColor))document.documentElement.style.setProperty('--brand',APP.brandColor);
@@ -56,7 +56,7 @@ async function refresh(){
  const [a,k,u,c,h,r,g,me]=await Promise.all([
   api('/api/assistants'),api('/api/knowledge'),api('/api/usage'),api('/api/conversations'),api('/api/handoffs'),api('/api/reminders'),api('/api/automation'),api('/api/me')
  ]);
- state.assistants=a.assistants||[];state.knowledge=k.collections||[];state.usage=u;state.conversations=c.conversations||[];state.handoffs=h.handoffs||[];state.reminders=r.reminders||[];state.automation=g||{paused:false};state.features=me.features||{};
+ state.assistants=a.assistants||[];state.knowledge=k.collections||[];state.usage=u;state.conversations=c.conversations||[];state.handoffs=h.handoffs||[];state.reminders=r.reminders||[];state.automation=g||{paused:false};state.features=me.features||{};state.account={status:me.accountStatus||'active',billingStatus:me.billingStatus||'pending',graceUntil:me.graceUntil||null,userControl:me.userControl||{state:'active'}};
  render();
 }
 function go(s){state.section=s;topTitle.textContent=titles[s];render()}
@@ -68,8 +68,16 @@ function render(){
 }
 function render_dashboard(){
  const open=state.handoffs.filter(h=>h.status==='open').length,active=state.assistants.filter(a=>a.status==='active').length;
- return '<h1 class="title">Dashboard</h1><p class="sub">Your assistants, conversations and usage in one place.</p><div class="grid">'+
- metric('Assistants',active+'/'+state.assistants.length)+metric('Credits',state.usage?.creditsAvailable??0)+metric('Open handoffs',open)+metric('Conversations',state.conversations.length)+
+ const platform=String(state.account?.status||'active');
+ const billing=String(state.account?.billingStatus||'pending');
+ const control=String(state.account?.userControl?.state||'active');
+ let accountLabel='Active',accountClass='ok',accountNote='Your Mkety Assist account is active.';
+ if(control!=='active'){accountLabel=control[0].toUpperCase()+control.slice(1);accountClass=control==='banned'||control==='suspended'?'danger':'warn';accountNote='Your portal access is '+control+'.';}
+ else if(platform!=='active'){accountLabel=platform==='paused'?'Paused':'Suspended';accountClass='warn';accountNote='Your Mkety Assist account is '+platform+'.';}
+ else if(billing!=='current'){accountLabel='Payment pending';accountClass='warn';accountNote='Fund your credits to activate billing.';}
+ return '<div class="spread"><div><h1 class="title">Dashboard</h1><p class="sub">Your assistants, conversations and usage in one place.</p></div><span class="pill '+accountClass+'">'+esc(accountLabel)+'</span></div>'+
+ '<div class="card" style="margin-bottom:16px"><strong>Account status: '+esc(accountLabel)+'</strong><div class="muted">'+esc(accountNote)+'</div></div>'+
+ '<div class="grid">'+metric('Assistants',active+'/'+state.assistants.length)+metric('Credits',state.usage?.creditsAvailable??0)+metric('Open handoffs',open)+metric('Conversations',state.conversations.length)+
  '</div><div class="two" style="margin-top:16px"><div class="card"><div class="spread"><h3>Assistants</h3><button class="btn primary" data-action="new-assistant">New assistant</button></div>'+assistantRows(state.assistants.slice(0,5))+'</div>'+
  '<div class="card"><h3>Recent conversations</h3>'+conversationRows(state.conversations.slice(0,6))+'</div></div>';
 }
@@ -279,6 +287,8 @@ function launchFlutterwave(data){
     currency:p.currency,
     redirect_url:'https://mkety-assist.mkety.app'+p.redirectPath,
     payload_hash:p.payloadHash,
+    ...(p.paymentOptions?{payment_options:p.paymentOptions}:{}),
+    ...(p.bankTransferOptions?{bank_transfer_options:p.bankTransferOptions}:{}),
     customer:{email:p.email,...(p.customerName?{name:p.customerName}:{})},
     meta:p.metadata||{},
     customizations:{title:'Mkety Assist',description:'Secure Mkety Assist payment'},
@@ -299,21 +309,55 @@ async function paymentMethodOptions(){
 async function payPlan(){
  try{
   const [methods,offer]=await Promise.all([paymentMethodOptions(),api('/api/billing/credit-offer')]);
-  const total=((Number(offer.recurringAmountMinor||0)+Number(offer.setupFeeMinor||0))/100).toFixed(2);
-  openModal('<h2>Fund monthly credits</h2><div class="card"><div class="muted">You fund</div><div class="metric">$'+esc(total)+'</div><div style="font-size:22px;font-weight:800;margin-top:8px">→ '+esc(offer.recurringCredits||0)+' Mkety credits</div></div><div class="field"><label>Payment method</label><select class="input" id="planMethod">'+methods.html+'</select></div><div class="field"><label>Payment currency (Flutterwave)</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div><p id="planPayMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="planPayStart">Fund credits</button><button class="btn" id="planPayCancel">Cancel</button></div>');
+  const fullRecurring=(Number(offer.recurringAmountMinor||0)/100).toFixed(2);
+  const minRecurring=(Number(offer.minimumFundingMinor||offer.recurringAmountMinor||0)/100).toFixed(2);
+  const partial=offer.fundingMode==='prepaid_partial';
+  openModal('<h2>Fund monthly credits</h2>'+
+    (partial?'<div class="field"><label>Amount to fund (USD)</label><input class="input" id="planFundingAmount" inputmode="decimal" value="'+esc(fullRecurring)+'"><div class="muted">You can fund from $'+esc(minRecurring)+' up to $'+esc(fullRecurring)+'. Full funding is selected by default.</div></div>':'')+
+    '<div class="card" id="planFundingQuote"><span class="muted">Calculating…</span></div>'+
+    '<div class="field"><label>Payment method</label><select class="input" id="planMethod">'+methods.html+'</select></div>'+
+    '<div class="field" id="planCurrencyWrap"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div>'+
+    '<p id="planPayMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="planPayStart">Fund credits</button><button class="btn" id="planPayCancel">Cancel</button></div>');
   planPayCancel.onclick=closeModal;
-  planPayStart.onclick=async()=>{try{planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentMethod:planMethod.value,paymentCurrency:planCurrency.value})});planPayMsg.textContent='Opening secure checkout…';launchFlutterwave(d)}catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
+  const toggleCurrency=()=>{planCurrencyWrap.style.display=planMethod.value==='flutterwave'?'grid':'none'};planMethod.onchange=toggleCurrency;toggleCurrency();
+  let quoteTimer=null;
+  const refreshFundingQuote=async()=>{try{
+    const q=await api('/api/billing/funding-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fundingAmountUsd:partial?planFundingAmount.value:undefined})});
+    planFundingQuote.innerHTML='<div class="muted">You fund</div><div class="metric">$'+(Number(q.totalAmountMinor||0)/100).toFixed(2)+'</div><div style="font-size:20px;font-weight:800;margin-top:8px">→ '+esc(q.credits)+' Mkety credits</div>';
+    return q;
+  }catch(e){planFundingQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
+  if(partial){planFundingAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshFundingQuote,250)}};await refreshFundingQuote();
+  planPayStart.onclick=async()=>{try{
+    planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+      fundingAmountUsd:partial?planFundingAmount.value:undefined,
+      paymentMethod:planMethod.value,
+      ...(planMethod.value==='flutterwave'?{paymentCurrency:planCurrency.value}:{})
+    })});
+    planPayMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
+  }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
  }catch(e){toastMsg(e.message)}
 }
 async function buyCredits(){
  try{
-  const methods=await paymentMethodOptions();
-  openModal('<h2>Add credits</h2><p class="muted">Choose how much to add. Mkety shows the exact credits before checkout.</p><div class="field"><label>Amount (USD)</label><input class="input" id="topupAmount" inputmode="decimal" value="25.00"></div><div class="card" id="creditQuote"><span class="muted">Calculating…</span></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field"><label>Payment currency (Flutterwave)</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="topupStart">Add credits</button><button class="btn" id="topupCancel">Cancel</button></div>');
+  const [methods,offer]=await Promise.all([paymentMethodOptions(),api('/api/billing/credit-offer').catch(()=>({recurringAmountMinor:0}))]);
+  const suggested=Number(offer.recurringAmountMinor||0)>0?(Number(offer.recurringAmountMinor)/100).toFixed(2):'';
+  openModal('<h2>Add credits</h2><p class="muted">Type how much you want to add. The normal full monthly funding amount is suggested when available, but you can change it.</p><div class="field"><label>Amount (USD)</label><input class="input" id="topupAmount" inputmode="decimal" placeholder="Enter amount" value="'+esc(suggested)+'"></div><div class="card" id="creditQuote"><span class="muted">Enter an amount to see your credits.</span></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field" id="topupCurrencyWrap"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="topupStart">Add credits</button><button class="btn" id="topupCancel">Cancel</button></div>');
   topupCancel.onclick=closeModal;
+  const toggleCurrency=()=>{topupCurrencyWrap.style.display=topupMethod.value==='flutterwave'?'grid':'none'};topupMethod.onchange=toggleCurrency;toggleCurrency();
   let quoteTimer=null;
-  const refreshQuote=async()=>{try{const q=await api('/api/billing/credit-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value})});creditQuote.innerHTML='<div class="muted">You add</div><div style="font-size:20px;font-weight:800">$'+(Number(q.amountMinor||0)/100).toFixed(2)+' → '+esc(q.credits)+' Mkety credits</div>';return q}catch(e){creditQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
+  const refreshQuote=async()=>{if(!String(topupAmount.value||'').trim()){creditQuote.innerHTML='<span class="muted">Enter an amount to see your credits.</span>';return null}try{const q=await api('/api/billing/credit-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value})});creditQuote.innerHTML='<div class="muted">You add</div><div style="font-size:20px;font-weight:800">$'+(Number(q.amountMinor||0)/100).toFixed(2)+' → '+esc(q.credits)+' Mkety credits</div>';return q}catch(e){creditQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
   topupAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshQuote,250)};await refreshQuote();
-  topupStart.onclick=async()=>{try{topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value,paymentMethod:topupMethod.value,paymentCurrency:topupCurrency.value})});topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)}catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
+  topupStart.onclick=async()=>{try{
+    if(!String(topupAmount.value||'').trim())throw new Error('Enter an amount first');
+    topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+      amountUsd:topupAmount.value,
+      paymentMethod:topupMethod.value,
+      ...(topupMethod.value==='flutterwave'?{paymentCurrency:topupCurrency.value}:{})
+    })});
+    topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
+  }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
  }catch(e){toastMsg(e.message)}
 }
 async function loadCheckouts(){try{
