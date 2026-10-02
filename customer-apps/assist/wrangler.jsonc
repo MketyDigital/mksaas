@@ -7,9 +7,6 @@
   "preview_urls": true,
   "observability": { "enabled": true },
   "ai": { "binding": "AI" },
-  "kv_namespaces": [
-    { "binding": "CONTEXT_CACHE", "id": "__MKETY_ASSIST_CONTEXT_CACHE_ID__" }
-  ],
   "durable_objects": {
     "bindings": [
       { "name": "SETTLEMENT_JOURNAL", "class_name": "SettlementJournal" }
