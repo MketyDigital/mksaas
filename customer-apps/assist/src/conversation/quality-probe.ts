@@ -28,7 +28,8 @@ const CUSTOMER_TURNS = [
 ];
 
 function hasSaturdayHours(reply: string): boolean {
-  return /\bsaturday\b/i.test(reply)
+  const statesWrongDay = /\b(?:sunday|monday|tuesday|wednesday|thursday|friday)\b/i.test(reply);
+  return !statesWrongDay
     && /\b0?9(?::00)?\s*(?:a\.?\s*m\.?)?(?!\d)/i.test(reply)
     && /\b1(?::00)?\s*(?:p\.?\s*m\.?)?(?!\d)/i.test(reply);
 }
