@@ -100,6 +100,28 @@
 - [ ] **Step 4: Run the focused test.** Expected: both budgets are selected correctly and no route exceeds the cap.
 - [ ] **Step 5: Commit** with message feat(assist): bound conversational reasoning budgets.
 
+### Task 5: Evaluate natural multi-turn behavior on the deployed model
+
+**Files:**
+- Modify: customer-apps/assist/src/index.ts
+- Create: customer-apps/assist/scripts/conversation-quality-fixtures.mjs
+- Create: customer-apps/assist/scripts/check-conversation-quality.mjs
+- Modify: customer-apps/assist/scripts/check-production-acceptance.mjs
+- Modify: .github/workflows/mkety-assist-deploy.yml
+
+**Interfaces:**
+- Produces: runConversationQualityProbe(env: Env) -> Promise<{ ok: boolean; cases: QualityCaseResult[]; providerCostMicros: number }>
+- Probe uses a synthetic business prompt, synthetic knowledge, and three linked turns; it does not read or write customer conversation data.
+- Each generated reply is capped at 256 tokens and the probe is capped at three completions on the selected Workers AI production target.
+
+- [ ] **Step 1: Add failing fixture tests** named testFollowUpUsesEarlierNameAndQuestion, testKnowledgeAnswerUsesOnlyFixtureFacts, testBusinessBoundaryRefusesMedicalAdviceNaturally, and testReplyDoesNotEchoPromptOrRepeatOpening.
+- [ ] **Step 2: Run the focused test.** Expected: the probe is absent and the tests fail.
+- [ ] **Step 3: Implement the synthetic dialogue probe** by passing three linked messages through the production context assembler and selected production Workers AI target. Require the second reply to use the prior name and relevant hours, the third to avoid giving medical dosage and offer a useful next step, and no reply to expose prompt text or claim a booking. Do not require exact prose.
+- [ ] **Step 4: Bound and report probe cost.** Enforce at most three completions of 256 output tokens each, estimate provider cost from the configured route, and return per-case pass/fail plus aggregate provider cost without recording usage against a customer.
+- [ ] **Step 5: Add the probe to production acceptance** behind the existing deploy-probe authorization; make the deploy workflow fail when any case fails. Keep the synthetic transcript and output in deployment logs only.
+- [ ] **Step 6: Run tests.** Expected: the script verifies context continuity, factual grounding, business-boundary adherence, and natural non-repetitive phrasing against the deployed model.
+- [ ] **Step 7: Commit** with message test(assist): verify natural multi-turn responses.
+
 ### Verification for this plan
 
 - Run from customer-apps/assist: npm run type-check
