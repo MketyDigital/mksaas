@@ -41,6 +41,12 @@ interface Env {
   FLUTTERWAVE_CHECKOUT_BROKER_URL?: string;
   NOWPAYMENTS_API_KEY?: string;
   NOWPAYMENTS_IPN_SECRET?: string;
+  MKETY_ASSIST_DEPLOY_PROBE_SECRET?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_API_KEY?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_MODEL?: string;
+  MKETY_ASSIST_OPENAI_API_KEY?: string;
+  MKETY_ASSIST_OPENAI_MODEL?: string;
   REPLY_QUEUE: {
     send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   };
@@ -75,6 +81,13 @@ export default {
 
       if (url.pathname === "/health") {
         return json({ ok: true, service: "mkety-assist", time: new Date().toISOString() });
+      }
+
+      if (url.pathname === "/api/internal/provider-bootstrap" && request.method === "POST") {
+        return handleManagedProviderBootstrap(request, env);
+      }
+      if (url.pathname === "/api/internal/inference-acceptance" && request.method === "POST") {
+        return handleInferenceAcceptance(request, env);
       }
 
       if (host === env.OPS_HOST) {
@@ -150,6 +163,126 @@ export default {
     await processReplyQueue(batch, env);
   },
 };
+
+function requireDeployProbe(request: Request, env: Env) {
+  const expected = String(env.MKETY_ASSIST_DEPLOY_PROBE_SECRET || "");
+  const auth = request.headers.get("authorization") || "";
+  const supplied = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!expected || !supplied || !constantTimeEqual(supplied, expected)) throw new HttpError(404, "not_found");
+}
+
+async function upsertManagedProvider(env: Env, input: {
+  id: string;
+  name: string;
+  provider: "azure-foundry" | "openai";
+  endpointUrl: string | null;
+  apiKey: string;
+  model: string;
+}) {
+  const now = unix();
+  const ciphertext = await protectStoredSecret(input.apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+  await env.DB.prepare(
+    `INSERT INTO provider_connections
+     (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,capabilities_json,ownership,status,validated_at,validation_error,created_at,updated_at,default_model)
+     VALUES (?,?,?,?,?,?,?,?,'mkety','disabled',NULL,'bootstrap_validation_required',?,?,?)
+     ON CONFLICT(id) DO UPDATE SET
+       name=excluded.name,provider=excluded.provider,endpoint_url=excluded.endpoint_url,
+       api_key_ciphertext=excluded.api_key_ciphertext,default_model=excluded.default_model,
+       ownership='mkety',customer_id=NULL,status='disabled',validated_at=NULL,
+       validation_error='bootstrap_validation_required',updated_at=excluded.updated_at`,
+  ).bind(
+    input.id,input.name,null,input.provider,input.endpointUrl,ciphertext,"{}",
+    '["text","vision","audio","tools"]',now,now,input.model,
+  ).run();
+
+  const result = await validateProviderConnection({
+    provider: input.provider,
+    endpointUrl: input.endpointUrl,
+    apiKey: input.apiKey,
+    model: input.model,
+    extra: {},
+  });
+  await env.DB.prepare(
+    "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
+  ).bind(
+    result.ok ? "active" : "disabled",
+    result.ok ? now : null,
+    result.ok ? null : String(result.error || "provider_validation_failed"),
+    now,input.id,
+  ).run();
+  return { id: input.id, provider: input.provider, model: input.model, ...result };
+}
+
+async function handleManagedProviderBootstrap(request: Request, env: Env) {
+  requireDeployProbe(request, env);
+  const results: any[] = [];
+  if (env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) {
+    results.push(await upsertManagedProvider(env, {
+      id: "prv_managed_azure_foundry",
+      name: "Mkety Managed Azure Foundry",
+      provider: "azure-foundry",
+      endpointUrl: env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT,
+      apiKey: env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY,
+      model: env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL,
+    }));
+  }
+  if (env.MKETY_ASSIST_OPENAI_API_KEY && env.MKETY_ASSIST_OPENAI_MODEL) {
+    results.push(await upsertManagedProvider(env, {
+      id: "prv_managed_openai",
+      name: "Mkety Managed OpenAI",
+      provider: "openai",
+      endpointUrl: "https://api.openai.com/v1",
+      apiKey: env.MKETY_ASSIST_OPENAI_API_KEY,
+      model: env.MKETY_ASSIST_OPENAI_MODEL,
+    }));
+  }
+  return json({ ok: true, bootstrapped: results });
+}
+
+async function handleInferenceAcceptance(request: Request, env: Env) {
+  requireDeployProbe(request, env);
+  const results: any[] = [];
+  const workersRoute = await env.DB.prepare(
+    "SELECT alias,provider_model FROM model_routes WHERE provider='workers-ai' AND status='active' ORDER BY alias LIMIT 1",
+  ).first<any>();
+  if (!workersRoute?.provider_model) {
+    results.push({ provider: "workers-ai", ok: false, error: "no_active_workers_ai_route" });
+  } else {
+    try {
+      const output = await env.AI.run(String(workersRoute.provider_model), {
+        messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
+        max_tokens: 32,
+      });
+      const raw = JSON.stringify(output ?? {});
+      results.push({ provider: "workers-ai", model: workersRoute.provider_model, ok: raw.length > 2 });
+    } catch (error) {
+      results.push({ provider: "workers-ai", model: workersRoute.provider_model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+    }
+  }
+
+  const managed = await env.DB.prepare(
+    "SELECT id,provider,endpoint_url,api_key_ciphertext,default_model,status,validation_error FROM provider_connections WHERE id IN ('prv_managed_azure_foundry','prv_managed_openai') ORDER BY provider",
+  ).all<any>();
+  for (const row of managed.results ?? []) {
+    const apiKey = await revealStoredSecret(String(row.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+    const probe = await validateProviderConnection({
+      provider: String(row.provider),
+      endpointUrl: row.endpoint_url ? String(row.endpoint_url) : null,
+      apiKey,
+      model: row.default_model ? String(row.default_model) : null,
+      extra: {},
+    });
+    results.push({ provider: row.provider, model: row.default_model, connectionStatus: row.status, ...probe });
+  }
+
+  const targetRows = await env.DB.prepare(
+    "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
+  ).all<any>();
+  const workersOk = results.some((item) => item.provider === "workers-ai" && item.ok);
+  const azureConfigured = Boolean(env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL);
+  const azureOk = !azureConfigured || results.some((item) => item.provider === "azure-foundry" && item.ok);
+  return json({ ok: workersOk && azureOk, providers: results, routeTargets: targetRows.results ?? [] }, workersOk && azureOk ? 200 : 503);
+}
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
