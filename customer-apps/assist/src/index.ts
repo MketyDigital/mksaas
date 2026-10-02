@@ -1845,8 +1845,8 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json(customerUsageProjection({
       monthlyFeeMinor: Math.max(0, Number(policy?.subscription_amount_minor || 0)),
       setupFeeMinor: Math.max(0, Number(policy?.setup_fee_minor || 0)),
-      creditsAvailable: Math.max(0, Number(account?.balance || 0)),
-      creditsUsed: Math.max(0, Number(account?.lifetime_consumed || 0)),
+      creditsAvailable: mkreditsFromCreditAtoms(Math.max(0, Number(account?.balance || 0))),
+      creditsUsed: mkreditsFromCreditAtoms(Math.max(0, Number(account?.lifetime_consumed || 0))),
     }));
   }
 
@@ -1864,11 +1864,11 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json({
       currency: String(policy.currency || "USD"),
       recurringAmountMinor,
-      recurringCredits: includedCredits,
+      recurringCredits: mkreditsFromCreditAtoms(includedCredits),
       setupFeeMinor: Math.max(0, Number(policy.setup_fee_minor || 0)),
       fundingMode: String(policy.funding_mode || "full_period"),
       minimumFundingMinor,
-      minimumFundingCredits,
+      minimumFundingCredits: mkreditsFromCreditAtoms(minimumFundingCredits),
       topupEnabled: Boolean(policy.topup_enabled),
     });
   }
@@ -1898,7 +1898,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       recurringAmountMinor: recurringPaid,
       setupFeeMinor,
       totalAmountMinor: recurringPaid + setupFeeMinor,
-      credits,
+      credits: mkreditsFromCreditAtoms(credits),
       minimumFundingMinor,
       maximumFundingMinor: recurringBase,
       fundingMode: String(policy.funding_mode || "full_period"),
@@ -1909,12 +1909,8 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const body = await readJson(request);
     const amountMinor = parsePaymentAmountMinor(body.amountUsd);
     if (amountMinor < 100 || amountMinor > 10_000_000) return json({ error: "invalid_credit_amount" }, 400);
-    const setting = await env.DB.prepare(
-      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
-    ).first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
-    const credits = Math.max(1, mkreditsFromUsdMinor(amountMinor, mkreditsPerUsd));
-    return json({ amountMinor, currency: "USD", credits });
+    const creditAtoms = Math.max(1, creditAtomsFromUsdMinor(amountMinor));
+    return json({ amountMinor, currency: "USD", credits: mkreditsFromCreditAtoms(creditAtoms) });
   }
 
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
@@ -1936,7 +1932,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
               provider_amount_minor,provider_currency,status,created_at,settled_at,purchase_type
        FROM payment_checkouts WHERE customer_id=? ORDER BY created_at DESC LIMIT 50`,
     ).bind(customer.customerId).all();
-    return json({ checkouts: rows.results ?? [] });
+    return json({ checkouts: (rows.results ?? []).map((row: any) => ({ ...row, credits: mkreditsFromCreditAtoms(row.credits) })) });
   }
 
   if (url.pathname === "/api/billing/plan/start" && request.method === "POST") {
@@ -1991,20 +1987,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(customer.customerId).first<any>();
     if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
     const body = await readJson(request);
-    const setting = await env.DB.prepare(
-      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
-    ).first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     let credits: number;
     let canonicalAmountMinor: number;
     if (body.amountUsd !== undefined && body.amountUsd !== null && String(body.amountUsd).trim() !== "") {
       canonicalAmountMinor = parsePaymentAmountMinor(body.amountUsd);
       if (canonicalAmountMinor < 100 || canonicalAmountMinor > 10_000_000) return json({ error: "invalid_topup_amount" }, 400);
-      credits = Math.max(1, mkreditsFromUsdMinor(canonicalAmountMinor, mkreditsPerUsd));
+      credits = Math.max(1, creditAtomsFromUsdMinor(canonicalAmountMinor));
     } else {
-      credits = positiveInt(body.credits, 0);
-      if (credits < 1_000_000 || credits > 50_000_000_000) return json({ error: "invalid_topup_credits" }, 400);
-      canonicalAmountMinor = Math.max(1, usdMinorFromMkredits(credits, mkreditsPerUsd));
+      const requestedMkredits = Number(body.credits || 0);
+      if (!Number.isFinite(requestedMkredits) || requestedMkredits < 100 || requestedMkredits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
+      credits = creditAtomsFromMkredits(requestedMkredits);
+      canonicalAmountMinor = Math.max(1, usdMinorFromCreditAtoms(credits));
     }
     const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
