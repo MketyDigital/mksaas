@@ -1212,6 +1212,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   }
 
   let responseText = String(job.response_text || "");
+  let responseFailure: string | null = null;
   if (!responseText) {
     void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
     const response = await runAssistant({
@@ -1239,14 +1240,15 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
         ).bind(String(response.error || response.userMessage).slice(0, 500), unix() + delaySeconds, unix(), job.id).run();
         return { retry: true, delaySeconds };
       }
+      responseFailure = String(response.error || "inference_failed").slice(0, 500);
       responseText = response.userMessage;
     } else {
       responseText = response.text;
     }
 
     await env.DB.prepare(
-      "UPDATE reply_jobs SET response_text=?,delivery_started_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
-    ).bind(responseText, unix(), job.id).run();
+      "UPDATE reply_jobs SET response_text=?,delivery_started_at=NULL,last_error=?,updated_at=? WHERE id=?",
+    ).bind(responseText, responseFailure, unix(), job.id).run();
   }
 
   const beforeDeliveryAutomation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
@@ -1292,7 +1294,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     ).bind(assistantMessageId, job.customer_id, job.assistant_id, job.conversation_id, "assistant", responseText, unix()),
     env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), job.conversation_id),
     env.DB.prepare(
-      "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,completed_at=?,locked_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+      "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
     ).bind(deliveryId, unix(), unix(), job.id),
   ]);
   return { retry: false, delaySeconds: 0 };
@@ -2618,12 +2620,13 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     } catch (error) {
       lastError = error;
       const classified = classifyRetryableError(error);
-      if (!classified.retryable) throw error;
       console.warn("model target failed; trying next ordered fallback", {
         alias,
         provider: target.provider,
         model: target.provider_model,
         position: target.position ?? index,
+        retryable: classified.retryable,
+        error: classified.message,
       });
     }
   }
