@@ -1889,7 +1889,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
-      const vision = await describeImage(env, assistant, asset.bytes, text);
+      const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime);
       if (vision) {
         contexts.push(`Image context: ${vision}`);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision, asset.id).run();
@@ -1904,7 +1904,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
-      const transcript = await transcribeAudio(env, assistant, asset.bytes);
+      const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime);
       if (transcript) {
         contexts.push(`Voice transcript: ${transcript}`);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript, asset.id).run();
@@ -1931,71 +1931,336 @@ async function downloadTelegramFile(token: string, fileId: string, env: AssistEn
   return { id: assetId, bytes, meta: { id: assetId, kind, mime, size: bytes.byteLength } };
 }
 
-async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer, caption: string) {
-  try {
-    const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
-    const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
-    const cacheKey = `vision:${assistant.id}:${sourceHash}`;
-    const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
-    if (cached) return cached;
 
-    const b64 = arrayBufferToBase64(bytes);
-    const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+async function mediaRouteTargets(db: D1Database, customerId: string, alias: "mkety-media-vision" | "mkety-media-speech") {
+  const route = await resolveModelRoute(db, customerId, alias);
+  if (!route) return [];
+  const configured = Array.isArray(route.__targets) && route.__targets.length
+    ? route.__targets
+    : [
+        { position: 0, provider: route.provider, provider_model: route.provider_model, provider_connection_id: route.provider_connection_id },
+        ...(route.fallback_provider && route.fallback_model
+          ? [{ position: 1, provider: route.fallback_provider, provider_model: route.fallback_model, provider_connection_id: route.fallback_provider_connection_id }]
+          : []),
+      ];
+  return configured.filter((target: any) => target?.provider && target?.provider_model);
+}
+
+async function mediaProviderConnection(env: AssistEnv, target: any, customerId: string) {
+  if (!target.provider_connection_id) throw new Error("media_provider_connection_required");
+  const row = await env.DB.prepare(
+    "SELECT provider,endpoint_url,api_key_ciphertext,extra_json,status,ownership,customer_id,validated_at FROM provider_connections WHERE id=? LIMIT 1",
+  ).bind(target.provider_connection_id).first<any>();
+  if (!row || row.status !== "active" || !row.validated_at) throw new Error("media_provider_unavailable");
+  if (String(row.provider) !== String(target.provider)) throw new Error("media_provider_connection_mismatch");
+  if (row.ownership === "customer" && row.customer_id !== customerId) throw new Error("media_provider_customer_scope_mismatch");
+  return {
+    ...row,
+    apiKey: await revealSecret(String(row.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
+    extra: row.extra_json ? JSON.parse(String(row.extra_json)) : {},
+  };
+}
+
+function responseApiText(payload: any) {
+  if (typeof payload?.output_text === "string") return payload.output_text.trim();
+  return (Array.isArray(payload?.output) ? payload.output : [])
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .map((part: any) => typeof part?.text === "string" ? part.text : "")
+    .join("")
+    .trim();
+}
+
+async function invokeVisionTarget(
+  env: AssistEnv,
+  target: any,
+  customerId: string,
+  bytes: ArrayBuffer,
+  mime: string,
+  caption: string,
+) {
+  const provider = String(target.provider);
+  const model = String(target.provider_model);
+  const b64 = arrayBufferToBase64(bytes);
+  const prompt = caption || "Describe this image accurately and concisely for another assistant. Do not invent unreadable text.";
+
+  if (provider === "workers-ai" || provider === "mkety-managed") {
+    const result = await env.AI.run(model, {
       messages: [
         { role: "system", content: "Describe the attached image accurately and concisely for another assistant. Do not invent unreadable text." },
         { role: "user", content: [
-          { type: "text", text: caption || "Describe this image." },
-          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } },
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mime || "image/jpeg"};base64,${b64}` } },
         ] },
       ],
       max_tokens: 500,
     });
-    const text = extractAiText(result);
-    if (text) {
-      await putPromptCache({
-        db: env.DB,
-        cacheKey,
-        customerId: assistant.customer_id,
-        assistantId: assistant.id,
-        kind: "vision",
-        value: text,
-        sourceHash,
-        ttlSeconds: 2592000,
-      }).catch(() => undefined);
-    }
-    return text;
-  } catch (error) {
-    console.error("vision extraction failed", error);
-    return "";
+    return extractAiText(result);
   }
+
+  const connection = await mediaProviderConnection(env, target, customerId);
+
+  if (provider === "vertex") {
+    const service = await vertexAccessTokenFromServiceAccount(connection.apiKey);
+    const projectId = String(connection.extra.projectId || service.projectId || "").trim();
+    const location = String(connection.extra.location || "global").trim();
+    const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    const response = await fetch(
+      `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${service.accessToken}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [
+            { text: prompt },
+            { inlineData: { mimeType: mime || "image/jpeg", data: b64 } },
+          ] }],
+          generationConfig: { maxOutputTokens: 500, temperature: 0 },
+        }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    return String(payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
+  }
+
+  if (provider === "gemini") {
+    const base = String(connection.endpoint_url || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/,"");
+    const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(connection.apiKey)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [
+          { text: prompt },
+          { inlineData: { mimeType: mime || "image/jpeg", data: b64 } },
+        ] }],
+        generationConfig: { maxOutputTokens: 500, temperature: 0 },
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    return String(payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
+  }
+
+  if (provider === "azure-foundry" || provider === "openai") {
+    const base = provider === "openai"
+      ? String(connection.endpoint_url || "https://api.openai.com/v1").replace(/\/$/,"")
+      : String(connection.endpoint_url || "").replace(/\/$/,"");
+    if (!base) throw new Error("media_frontier_endpoint_missing");
+    const url = provider === "openai"
+      ? `${base}/responses`
+      : (/\/openai\/v1\/responses$/i.test(base) ? base : `${base}/openai/v1/responses`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: provider === "openai"
+        ? { authorization: `Bearer ${connection.apiKey}`, "content-type": "application/json" }
+        : { "api-key": connection.apiKey, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        input: [{ role: "user", content: [
+          { type: "input_text", text: prompt },
+          { type: "input_image", image_url: `data:${mime || "image/jpeg"};base64,${b64}`, detail: "auto" },
+        ] }],
+        max_output_tokens: 500,
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    return responseApiText(payload);
+  }
+
+  if (provider === "azure-openai") {
+    const endpoint = String(connection.endpoint_url || "").replace(/\/$/,"");
+    if (!endpoint) throw new Error("azure_openai_endpoint_missing");
+    const apiVersion = String(connection.extra.apiVersion || "2024-10-21");
+    const response = await fetch(
+      `${endpoint}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`,
+      {
+        method: "POST",
+        headers: { "api-key": connection.apiKey, "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${mime || "image/jpeg"};base64,${b64}` } },
+          ] }],
+          max_tokens: 500,
+          temperature: 0,
+        }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    return extractAiText(payload);
+  }
+
+  throw new Error(`media_vision_provider_unsupported:${provider}`);
 }
 
-async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffer) {
-  try {
-    const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
-    const cacheKey = `audio:${assistant.id}:${sourceHash}`;
-    const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
-    if (cached) return cached;
-
-    const result = await env.AI.run("@cf/openai/whisper", { audio: [...new Uint8Array(bytes)] });
-    const text = String(result?.text || "").trim();
-    if (text) {
-      await putPromptCache({
-        db: env.DB,
-        cacheKey,
-        customerId: assistant.customer_id,
-        assistantId: assistant.id,
-        kind: "audio",
-        value: text,
-        sourceHash,
-        ttlSeconds: 2592000,
-      }).catch(() => undefined);
-    }
-    return text;
-  } catch (error) {
-    console.error("audio transcription failed", error);
-    return "";
+function audioResponseText(result: any) {
+  const direct = String(result?.text || result?.transcript || "").trim();
+  if (direct) return direct;
+  const channels = result?.results?.channels;
+  if (Array.isArray(channels)) {
+    return channels.flatMap((channel: any) => channel?.alternatives || [])
+      .map((alt: any) => String(alt?.transcript || ""))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
   }
+  return "";
+}
+
+async function invokeSpeechTarget(
+  env: AssistEnv,
+  target: any,
+  customerId: string,
+  bytes: ArrayBuffer,
+  mime: string,
+) {
+  const provider = String(target.provider);
+  const model = String(target.provider_model);
+  const b64 = arrayBufferToBase64(bytes);
+
+  if (provider === "workers-ai" || provider === "mkety-managed") {
+    const result = await env.AI.run(model, { audio: b64 });
+    const text = audioResponseText(result);
+    if (!text) throw new Error("media_speech_empty_transcript");
+    return text;
+  }
+
+  const connection = await mediaProviderConnection(env, target, customerId);
+
+  if (provider === "vertex") {
+    const service = await vertexAccessTokenFromServiceAccount(connection.apiKey);
+    const projectId = String(connection.extra.projectId || service.projectId || "").trim();
+    const location = String(connection.extra.location || "global").trim();
+    const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    const response = await fetch(
+      `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${service.accessToken}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [
+            { text: "Transcribe this audio accurately. Return only the transcript." },
+            { inlineData: { mimeType: mime || "audio/ogg", data: b64 } },
+          ] }],
+          generationConfig: { maxOutputTokens: 2048, temperature: 0 },
+        }),
+      },
+    );
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    const text = String(payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
+    if (!text) throw new Error("media_speech_empty_transcript");
+    return text;
+  }
+
+  if (provider === "gemini") {
+    const base = String(connection.endpoint_url || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/,"");
+    const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(connection.apiKey)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [
+          { text: "Transcribe this audio accurately. Return only the transcript." },
+          { inlineData: { mimeType: mime || "audio/ogg", data: b64 } },
+        ] }],
+        generationConfig: { maxOutputTokens: 2048, temperature: 0 },
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    const text = String(payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
+    if (!text) throw new Error("media_speech_empty_transcript");
+    return text;
+  }
+
+  if (provider === "azure-foundry" || provider === "openai") {
+    const normalizedMime = String(mime || "").toLowerCase();
+    const format = normalizedMime.includes("wav") ? "wav" : normalizedMime.includes("mpeg") || normalizedMime.includes("mp3") ? "mp3" : null;
+    if (!format) throw new Error("responses_audio_requires_mp3_or_wav");
+    const base = provider === "openai"
+      ? String(connection.endpoint_url || "https://api.openai.com/v1").replace(/\/$/,"")
+      : String(connection.endpoint_url || "").replace(/\/$/,"");
+    if (!base) throw new Error("media_frontier_endpoint_missing");
+    const url = provider === "openai" ? `${base}/responses` : (/\/openai\/v1\/responses$/i.test(base) ? base : `${base}/openai/v1/responses`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: provider === "openai"
+        ? { authorization: `Bearer ${connection.apiKey}`, "content-type": "application/json" }
+        : { "api-key": connection.apiKey, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        input: [{ role: "user", content: [
+          { type: "input_text", text: "Transcribe this audio accurately. Return only the transcript." },
+          { type: "input_audio", input_audio: { data: b64, format } },
+        ] }],
+        max_output_tokens: 2048,
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    const text = responseApiText(payload);
+    if (!text) throw new Error("media_speech_empty_transcript");
+    return text;
+  }
+
+  throw new Error(`media_speech_provider_unsupported:${provider}`);
+}
+
+async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer, caption: string, mime = "image/jpeg") {
+  const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
+  const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
+  const cacheKey = `vision:${assistant.id}:${sourceHash}`;
+  const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+  if (cached) return cached;
+
+  const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-vision");
+  for (const target of targets) {
+    try {
+      const text = (await invokeVisionTarget(env, target, assistant.customer_id, bytes, mime, caption)).trim();
+      if (!text) continue;
+      await putPromptCache({
+        db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
+        kind: "vision", value: text, sourceHash, ttlSeconds: 2592000,
+      }).catch(() => undefined);
+      return text;
+    } catch (error) {
+      console.warn("vision target failed; trying next capability fallback", {
+        provider: target.provider, model: target.provider_model,
+        error: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
+      });
+    }
+  }
+  console.error("vision extraction failed: no capability route target succeeded");
+  return "";
+}
+
+async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffer, mime = "audio/ogg") {
+  const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
+  const cacheKey = `audio:${assistant.id}:${sourceHash}`;
+  const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
+  if (cached) return cached;
+
+  const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-speech");
+  for (const target of targets) {
+    try {
+      const text = (await invokeSpeechTarget(env, target, assistant.customer_id, bytes, mime)).trim();
+      if (!text) continue;
+      await putPromptCache({
+        db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
+        kind: "audio", value: text, sourceHash, ttlSeconds: 2592000,
+      }).catch(() => undefined);
+      return text;
+    } catch (error) {
+      console.warn("speech target failed; trying next capability fallback", {
+        provider: target.provider, model: target.provider_model,
+        error: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
+      });
+    }
+  }
+  console.error("audio transcription failed: no capability route target succeeded");
+  return "";
 }
 
 async function retrieveKnowledge(

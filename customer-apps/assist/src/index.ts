@@ -260,27 +260,35 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   }
 
   const managed = await env.DB.prepare(
-    "SELECT id,provider,endpoint_url,api_key_ciphertext,default_model,status,validation_error FROM provider_connections WHERE id IN ('prv_managed_azure_foundry','prv_managed_openai') ORDER BY provider",
+    `SELECT id,provider,endpoint_url,api_key_ciphertext,default_model,status,validation_error,extra_json
+     FROM provider_connections
+     WHERE ownership='mkety' AND provider IN ('azure-foundry','vertex','openai')
+     ORDER BY CASE provider WHEN 'azure-foundry' THEN 1 WHEN 'vertex' THEN 2 ELSE 3 END,created_at DESC`,
   ).all<any>();
+  const seenProvider = new Set<string>();
   for (const row of managed.results ?? []) {
+    if (seenProvider.has(String(row.provider))) continue;
+    seenProvider.add(String(row.provider));
     const apiKey = await revealStoredSecret(String(row.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
     const probe = await validateProviderConnection({
       provider: String(row.provider),
       endpointUrl: row.endpoint_url ? String(row.endpoint_url) : null,
       apiKey,
       model: row.default_model ? String(row.default_model) : null,
-      extra: {},
+      extra: row.extra_json ? JSON.parse(String(row.extra_json)) : {},
     });
-    results.push({ provider: row.provider, model: row.default_model, connectionStatus: row.status, ...probe });
+    const reachable = Boolean(probe.ok || (probe.credentialAccepted && probe.billingBlocked));
+    results.push({ provider: row.provider, model: row.default_model, connectionStatus: row.status, reachable, ...probe });
   }
 
   const targetRows = await env.DB.prepare(
     "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
   ).all<any>();
   const workersOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai" && item.model === worker.model && item.ok));
-  const azureConfigured = Boolean(env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL);
-  const azureOk = !azureConfigured || results.some((item) => item.provider === "azure-foundry" && item.ok);
-  return json({ ok: workersOk && azureOk, providers: results, routeTargets: targetRows.results ?? [] }, workersOk && azureOk ? 200 : 503);
+  const azureOk = results.some((item) => item.provider === "azure-foundry" && (item.ok || item.reachable));
+  const vertexOk = results.some((item) => item.provider === "vertex" && (item.ok || item.reachable));
+  const ok = workersOk && azureOk && vertexOk;
+  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
 }
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
@@ -1113,18 +1121,27 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
     });
     const now = unix();
+    const credentialAccepted = Boolean(result.credentialAccepted ?? result.ok);
+    const billingBlocked = Boolean(result.billingBlocked);
+    const validated = result.ok || (credentialAccepted && billingBlocked);
     await env.DB.prepare(
       "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
-    ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
+    ).bind(
+      validated ? "active" : "disabled",
+      validated ? now : null,
+      result.ok ? null : (billingBlocked ? "provider_billing_blocked" : String(result.error || "provider_validation_failed")),
+      now,
+      providerId,
+    ).run();
     return json({
       ok: result.ok,
       status: result.status,
       error: result.error ?? null,
-      credentialAccepted: result.credentialAccepted ?? result.ok,
-      billingBlocked: result.billingBlocked ?? false,
+      credentialAccepted,
+      billingBlocked,
       returnedText: result.returnedText ?? null,
       providerId,
-    }, result.ok || result.billingBlocked ? 200 : 422);
+    }, validated ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
