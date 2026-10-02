@@ -259,7 +259,7 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
     }
   }
 
-  const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlWzWQAAAAASUVORK5CYII=";
+  const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGP8z0AaYCJR/aiGUQ1DSAMAQC4BH2bjRnMAAAAASUVORK5CYII=";
   for (const worker of workerModels) {
     try {
       const output = await env.AI.run(worker.model, {
