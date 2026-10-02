@@ -2180,56 +2180,121 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     : JSON.stringify(input || {}).length;
   const estimatedTokens = Math.max(1, Math.ceil(inputChars / 4) + Number(input?.max_tokens || 0));
   const alias = String(route.alias || route.provider_model || route.provider || "unknown");
-  const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
-  if (!capacity.allowed) {
-    throw new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
-  }
 
-  try {
-    const result = await invokeProviderModel(env, {
-      provider: route.provider,
-      provider_model: route.provider_model,
-      provider_connection_id: route.provider_connection_id,
-    }, input, customerId);
-    return annotateProviderResult(result, String(route.provider), String(route.provider_model));
-  } catch (primaryError) {
-    if (!route.fallback_provider || !route.fallback_model) throw primaryError;
+  const candidates: Array<{ provider: string; provider_model: string; provider_connection_id?: string | null }> = [{
+    provider: String(route.provider),
+    provider_model: String(route.provider_model),
+    provider_connection_id: route.provider_connection_id ? String(route.provider_connection_id) : null,
+  }];
 
-    const primaryOwnership = route.provider_connection_id
-      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
-      : null;
-    const fallbackOwnership = route.fallback_provider_connection_id
-      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
-      : null;
-    if (primaryOwnership?.ownership === "customer" && primaryOwnership.customer_id !== customerId) throw primaryError;
-    if (fallbackOwnership?.ownership === "customer" && fallbackOwnership.customer_id !== customerId) throw primaryError;
-    const primaryIsByok = primaryOwnership?.ownership === "customer";
-    const fallbackIsManaged = route.fallback_provider === "workers-ai"
-      || route.fallback_provider === "mkety-managed"
-      || (!route.fallback_provider_connection_id)
-      || fallbackOwnership?.ownership === "mkety";
-
-    if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryIsByok, fallbackIsManaged)) {
-      console.warn("BYOK provider failed; funded fallback blocked by policy", { alias: route.alias, provider: route.provider });
-      throw primaryError;
-    }
-
-    console.warn("primary model route failed; using explicitly permitted fallback", {
-      alias: route.alias,
-      provider: route.provider,
-      fallbackProvider: route.fallback_provider,
+  if (route.fallback_provider && route.fallback_model) {
+    candidates.push({
+      provider: String(route.fallback_provider),
+      provider_model: String(route.fallback_model),
+      provider_connection_id: route.fallback_provider_connection_id ? String(route.fallback_provider_connection_id) : null,
     });
-    const fallbackCapacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
-    if (!fallbackCapacity.allowed) {
-      throw new RetryableInferenceError("fallback_model_capacity_wait", fallbackCapacity.retryAfterSeconds);
-    }
-    const result = await invokeProviderModel(env, {
-      provider: route.fallback_provider,
-      provider_model: route.fallback_model,
-      provider_connection_id: route.fallback_provider_connection_id,
-    }, input, customerId);
-    return annotateProviderResult(result, String(route.fallback_provider), String(route.fallback_model));
   }
+
+  const managedFallbacks = await env.DB.prepare(
+    `SELECT id,provider,extra_json
+     FROM provider_connections
+     WHERE ownership='mkety' AND status='active' AND validated_at IS NOT NULL
+       AND fallback_enabled=1
+     ORDER BY fallback_priority ASC,name ASC`,
+  ).all<any>();
+
+  for (const connection of managedFallbacks.results ?? []) {
+    let extra: Record<string, unknown> = {};
+    try { extra = connection.extra_json ? JSON.parse(String(connection.extra_json)) : {}; } catch {}
+    const model = String(extra.defaultModel || extra.model || extra.deployment || "").trim();
+    if (!model) continue;
+    candidates.push({
+      provider: String(connection.provider),
+      provider_model: model,
+      provider_connection_id: String(connection.id),
+    });
+  }
+
+  const seen = new Set<string>();
+  const ordered = candidates.filter((candidate) => {
+    const key = [candidate.provider, candidate.provider_model, candidate.provider_connection_id || ""].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  let firstError: unknown = null;
+  let lastError: unknown = null;
+  let primaryOwnership: any = null;
+  if (ordered[0]?.provider_connection_id) {
+    primaryOwnership = await env.DB.prepare(
+      "SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
+    ).bind(ordered[0].provider_connection_id).first<any>();
+  }
+
+  for (let index = 0; index < ordered.length; index += 1) {
+    const candidate = ordered[index];
+    const ownership = candidate.provider_connection_id
+      ? await env.DB.prepare(
+          "SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
+        ).bind(candidate.provider_connection_id).first<any>()
+      : null;
+
+    if (ownership?.ownership === "customer" && ownership.customer_id !== customerId) {
+      const error = new Error("Customer BYOK provider scope mismatch.");
+      if (index === 0) throw error;
+      lastError = error;
+      continue;
+    }
+
+    if (index > 0) {
+      const primaryIsByok = primaryOwnership?.ownership === "customer";
+      const fallbackIsManaged =
+        candidate.provider === "workers-ai" ||
+        candidate.provider === "mkety-managed" ||
+        !candidate.provider_connection_id ||
+        ownership?.ownership === "mkety";
+      if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryIsByok, fallbackIsManaged)) {
+        continue;
+      }
+    }
+
+    const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+    if (!capacity.allowed) {
+      lastError = new RetryableInferenceError(
+        index === 0 ? "model_capacity_wait" : "fallback_model_capacity_wait",
+        capacity.retryAfterSeconds,
+      );
+      if (index === 0) firstError = lastError;
+      continue;
+    }
+
+    try {
+      const result = await invokeProviderModel(env, candidate, input, customerId);
+      if (index > 0) {
+        console.warn("model route failed over to managed provider", {
+          alias,
+          provider: candidate.provider,
+          model: candidate.provider_model,
+          priorityIndex: index,
+        });
+      }
+      return annotateProviderResult(result, candidate.provider, candidate.provider_model);
+    } catch (error) {
+      if (index === 0) firstError = error;
+      lastError = error;
+      if (index + 1 < ordered.length) {
+        console.warn("provider inference failed; trying next enabled fallback", {
+          alias,
+          provider: candidate.provider,
+          model: candidate.provider_model,
+          error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+        });
+      }
+    }
+  }
+
+  throw lastError ?? firstError ?? new Error("No enabled provider route could serve this request.");
 }
 
 function annotateProviderResult(result: any, provider: string, model: string) {
@@ -2405,18 +2470,38 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   if (provider === "azure-foundry") {
     const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
-    const apiVersion = String(extra.apiVersion || "2024-05-01-preview");
-    const url = endpoint.includes("/chat/completions")
-      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${encodeURIComponent(apiVersion)}`
-      : `${endpoint}/models/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const url = endpoint.includes("/openai/v1/responses")
+      ? endpoint
+      : `${endpoint}/openai/v1/responses`;
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify({
+        model,
+        input: messages.map((message: any) => ({
+          role: message.role === "assistant" ? "assistant" : message.role === "system" ? "system" : "user",
+          content: String(message.content || ""),
+        })),
+        max_output_tokens: maxTokens,
+      }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
-    return payload;
+    const responseText =
+      String(payload.output_text || "") ||
+      (Array.isArray(payload.output)
+        ? payload.output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+            .map((item: any) => item?.text || item?.content || "")
+            .join("")
+        : "");
+    return {
+      response: responseText,
+      usage: {
+        input_tokens: payload.usage?.input_tokens,
+        output_tokens: payload.usage?.output_tokens,
+      },
+      raw: payload,
+    };
   }
 
   if (provider === "vertex") {
