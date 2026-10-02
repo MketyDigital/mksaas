@@ -1674,7 +1674,7 @@ async function runAssistant(input: {
   const effectiveInputCredits = Math.ceil(maxOf("input_credits_per_million", rate.input_credits_per_million) * multiplierBps / 10000);
   const effectiveOutputCredits = Math.ceil(maxOf("output_credits_per_million", rate.output_credits_per_million) * multiplierBps / 10000);
   const reserveAmount = Math.max(1,
-    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000) + mediaCredits,
+    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000),
   );
 
   const estimatedTextProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => Math.ceil(
@@ -1948,7 +1948,6 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
   const text = String(message.text || message.caption || "").trim();
   const mediaJson: any[] = [];
   const contexts: string[] = [];
-  const mediaUsage: any[] = [];
   let imageCount = 0;
   let audioSeconds = 0;
 
@@ -1987,7 +1986,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
     }
   }
 
-  return { text, mediaContext: contexts.join("\n"), mediaJson, mediaUsage, imageCount, audioSeconds };
+  return { text, mediaContext: contexts.join("\n"), mediaJson, mediaUsage: [], imageCount, audioSeconds };
 }
 
 async function downloadTelegramFile(token: string, fileId: string, env: AssistEnv, assistant: any, conversationId: string, kind: string, mime: string) {
