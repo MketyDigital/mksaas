@@ -1106,7 +1106,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(
       "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
     ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
-    return json({ ok: result.ok, status: result.status, error: result.error ?? null, providerId }, result.ok ? 200 : 422);
+    return json({
+      ok: result.ok,
+      status: result.status,
+      error: result.error ?? null,
+      credentialAccepted: result.credentialAccepted ?? result.ok,
+      billingBlocked: result.billingBlocked ?? false,
+      returnedText: result.returnedText ?? null,
+      providerId,
+    }, result.ok || result.billingBlocked ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
@@ -1114,6 +1122,12 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
     if (!current) return json({ error: "provider_not_found" }, 404);
     const body = await readJson(request);
+    if (body.enabled === false && Object.keys(body).every((key) => key === "enabled")) {
+      await env.DB.prepare(
+        "UPDATE provider_connections SET status='disabled',validation_error='disabled_by_operator',updated_at=? WHERE id=?",
+      ).bind(unix(),providerId).run();
+      return json({ ok: true, status: "disabled" });
+    }
     const endpointUrl = body.endpointUrl === undefined ? current.endpoint_url : (body.endpointUrl || null);
     if (endpointUrl) {
       const parsed = new URL(String(endpointUrl));
