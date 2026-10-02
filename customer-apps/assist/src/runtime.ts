@@ -1023,16 +1023,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const existingHandoff = await env.DB.prepare(
     "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
   ).bind(conversation.id).first();
-  if (existingHandoff) {
-    await markWebhook(env.DB, assistantId, updateId, "processed");
-    return json({ ok: true, awaitingHuman: true });
-  }
 
   const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistantId, conversation.id);
-  if (automation.paused) {
-    await markWebhook(env.DB, assistantId, updateId, "processed");
-    return json({ ok: true, automationPaused: true, pauseScope: automation.reason });
-  }
 
   const delayContent = [inbound.text || "", inbound.mediaContext || ""].filter(Boolean).join("\n");
   const delaySeconds = computeHumanDelaySeconds(assistant, delayContent);
@@ -1073,7 +1065,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
 
   if (delaySeconds <= 4) void telegramAction(token, chatId, "typing", businessConnectionId);
   await markWebhook(env.DB, assistantId, updateId, "processed");
-  return json({ ok: true, queued: true, jobId, delaySeconds });
+  return json({ ok: true, queued: true, jobId, delaySeconds, awaitingHuman: Boolean(existingHandoff), automationPaused: automation.paused, pauseScope: automation.reason });
 }
 
 export async function processReplyQueue(batch: any, env: AssistEnv): Promise<void> {
