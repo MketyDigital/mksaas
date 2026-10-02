@@ -70,6 +70,26 @@ test("testUnknownOutcomeDoesNotBecomeRetryableGeneration", async () => {
   assert.equal(attemptIdFor("job-1", "res-1", 0), started.attemptId);
 });
 
+test("testFetchTransportDispatchesJournalMethods", async () => {
+  const journal = makeJournal();
+  const startedResponse = await journal.fetch(new Request("https://journal.test/rpc", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ method: "recordAttemptStarted", args: [started] }),
+  }));
+  assert.equal(startedResponse.status, 200);
+  assert.equal((await startedResponse.json()).result.status, "started");
+
+  const getResponse = await journal.fetch(new Request("https://journal.test/rpc", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ method: "getAttempt", args: [started] }),
+  }));
+  const payload = await getResponse.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.result.attemptId, started.attemptId);
+});
+
 test("testProviderSuccessIsJournaledBeforeReturn", async () => {
   const runtime = await readFile(new URL("../src/runtime.ts", import.meta.url), "utf8");
   const call = runtime.slice(runtime.indexOf("async function invokeJournaledProviderCall"), runtime.indexOf("async function resolveModelRoute"));
