@@ -813,10 +813,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     for (const target of targets.results ?? []) {
       const key=String(target.alias);
       const list=byAlias.get(key) ?? [];
-      list.push(target);
+      list.push(publicCreditFields(target));
       byAlias.set(key,list);
     }
-    return json({ models: (rows.results ?? []).map((row: any) => ({ ...row, targets: byAlias.get(String(row.alias)) ?? [] })) });
+    return json({ models: (rows.results ?? []).map((row: any) => ({ ...publicCreditFields(row), targets: byAlias.get(String(row.alias)) ?? [] })) });
   }
 
   if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
@@ -917,10 +917,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         providerModel: requiredString(target.providerModel, "target.providerModel"),
         providerConnectionId: target.providerConnectionId ? String(target.providerConnectionId) : null,
         enabled: target.enabled === false ? 0 : 1,
-        inputCreditsPerMillion: positiveInt(target.inputCreditsPerMillion, 0),
-        outputCreditsPerMillion: positiveInt(target.outputCreditsPerMillion, 0),
-        imageCredits: positiveInt(target.imageCredits, 0),
-        audioCreditsPerMinute: positiveInt(target.audioCreditsPerMinute, 0),
+        inputCreditsPerMillion: creditAtomsFromMkredits(target.inputCreditsPerMillion),
+        outputCreditsPerMillion: creditAtomsFromMkredits(target.outputCreditsPerMillion),
+        imageCredits: creditAtomsFromMkredits(target.imageCredits),
+        audioCreditsPerMinute: creditAtomsFromMkredits(target.audioCreditsPerMinute),
         providerInputCostMicrosPerMillion: positiveInt(target.providerInputCostMicrosPerMillion, 0),
         providerOutputCostMicrosPerMillion: positiveInt(target.providerOutputCostMicrosPerMillion, 0),
         providerImageCostMicros: positiveInt(target.providerImageCostMicros, 0),
@@ -1009,18 +1009,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).bind(alias).first<any>();
       const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?")
         .bind(alias).first<any>();
-      const commercialSetting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const mkreditsPerUsd = commercialMkreditsPerUsd(commercialSetting?.value_json);
-
       const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || 0);
       const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || 0);
       const imageCost = positiveInt(body.providerImageCostMicros, previous?.provider_image_cost_micros || 0);
       const audioCost = positiveInt(body.providerAudioCostMicrosPerMinute, previous?.provider_audio_cost_micros_per_minute || 0);
       const generated = body.generateRate === true;
-      const inputCredits = generated ? costToBaseCredits(inputCost, mkreditsPerUsd) : positiveInt(body.inputCreditsPerMillion, previous?.input_credits_per_million || 0);
-      const outputCredits = generated ? costToBaseCredits(outputCost, mkreditsPerUsd) : positiveInt(body.outputCreditsPerMillion, previous?.output_credits_per_million || 0);
-      const imageCredits = generated ? costToBaseCredits(imageCost, mkreditsPerUsd) : positiveInt(body.imageCredits, previous?.image_credits || 0);
-      const audioCredits = generated ? costToBaseCredits(audioCost, mkreditsPerUsd) : positiveInt(body.audioCreditsPerMinute, previous?.audio_credits_per_minute || 0);
+      const inputCredits = generated ? creditAtomsFromUsdMicros(inputCost) : (body.inputCreditsPerMillion === undefined ? Number(previous?.input_credits_per_million || 0) : creditAtomsFromMkredits(body.inputCreditsPerMillion));
+      const outputCredits = generated ? creditAtomsFromUsdMicros(outputCost) : (body.outputCreditsPerMillion === undefined ? Number(previous?.output_credits_per_million || 0) : creditAtomsFromMkredits(body.outputCreditsPerMillion));
+      const imageCredits = generated ? creditAtomsFromUsdMicros(imageCost) : (body.imageCredits === undefined ? Number(previous?.image_credits || 0) : creditAtomsFromMkredits(body.imageCredits));
+      const audioCredits = generated ? creditAtomsFromUsdMicros(audioCost) : (body.audioCreditsPerMinute === undefined ? Number(previous?.audio_credits_per_minute || 0) : creditAtomsFromMkredits(body.audioCreditsPerMinute));
 
       await env.DB.prepare(
         `INSERT INTO model_rates
