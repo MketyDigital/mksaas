@@ -259,6 +259,49 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
     }
   }
 
+  const visionProbeImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZcGQAAAAASUVORK5CYII=";
+  const visionResults: any[] = [];
+  for (const worker of workerModels) {
+    try {
+      const visionOutput = await env.AI.run(worker.model, {
+        messages: [
+          { role: "system", content: "Analyze the attached image. Return a short factual description." },
+          { role: "user", content: [
+            { type: "text", text: "Describe the image briefly." },
+            { type: "image_url", image_url: { url: visionProbeImage } },
+          ] },
+        ],
+        max_tokens: 64,
+      });
+      const raw = JSON.stringify(visionOutput ?? {});
+      const ok = raw.length > 2;
+      visionResults.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok });
+    } catch (error) {
+      visionResults.push({
+        provider: "workers-ai",
+        role: worker.role,
+        model: worker.model,
+        ok: false,
+        error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300),
+      });
+    }
+  }
+
+  let imageToReplyOk = false;
+  try {
+    const primaryVision = visionResults.find((item) => item.ok);
+    if (primaryVision) {
+      const finalReply = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+        messages: [
+          { role: "system", content: "You are checking a multimodal support pipeline." },
+          { role: "user", content: "A vision processor successfully analyzed an image. Reply exactly with MKETY_IMAGE_REPLY_READY." },
+        ],
+        max_tokens: 32,
+      });
+      imageToReplyOk = JSON.stringify(finalReply ?? {}).includes("MKETY_IMAGE_REPLY_READY");
+    }
+  } catch {}
+
   const managed = await env.DB.prepare(
     `SELECT id,provider,endpoint_url,api_key_ciphertext,default_model,status,validation_error,extra_json
      FROM provider_connections
@@ -285,10 +328,17 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
     "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
   ).all<any>();
   const workersOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai" && item.model === worker.model && item.ok));
+  const visionOk = workerModels.every((worker) => visionResults.some((item) => item.model === worker.model && item.ok));
   const azureOk = results.some((item) => item.provider === "azure-foundry" && (item.ok || item.reachable));
   const vertexOk = results.some((item) => item.provider === "vertex" && (item.ok || item.reachable));
-  const ok = workersOk && azureOk && vertexOk;
-  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
+  const ok = workersOk && visionOk && imageToReplyOk && azureOk && vertexOk;
+  return json({
+    ok,
+    providers: results,
+    vision: { ok: visionOk, imageToReplyOk, models: visionResults },
+    routeTargets: targetRows.results ?? [],
+    frontier: { azureFoundry: azureOk, vertex: vertexOk },
+  }, ok ? 200 : 503);
 }
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
