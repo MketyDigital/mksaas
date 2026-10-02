@@ -31,59 +31,137 @@ export function normalizeAzureEndpoint(endpoint: string, deployment: string, api
   return `${base}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
 }
 
+export function normalizeFoundryResponsesEndpoint(endpoint: string) {
+  const base = endpoint.replace(/\/+$/, "");
+  if (!/^https:\/\//i.test(base)) throw new Error("azure_https_required");
+  if (/\/openai\/v1\/responses$/i.test(base)) return base;
+  return `${base}/openai/v1/responses`;
+}
+
+function billingBlocked(status: number, payload: any) {
+  if (status !== 402 && status !== 429) return false;
+  const raw = JSON.stringify(payload ?? {}).toLowerCase();
+  return /quota|billing|credit|balance|insufficient|payment|fund/i.test(raw);
+}
+
+function textFromResponses(payload: any) {
+  if (typeof payload?.output_text === "string") return payload.output_text.trim();
+  const output = Array.isArray(payload?.output) ? payload.output : [];
+  return output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .map((part: any) => typeof part?.text === "string" ? part.text : "")
+    .join("")
+    .trim();
+}
+
 export async function validateProviderConnection(input: {
   provider: string;
   endpointUrl?: string | null;
   apiKey: string;
+  model?: string | null;
   extra?: Record<string, unknown>;
   fetchImpl?: typeof fetch;
 }) {
   const fetchImpl = input.fetchImpl ?? fetch;
   const extra = input.extra ?? {};
-  let url = "";
+  const model = String(input.model || extra.model || extra.deployment || "").trim();
   const headers: Record<string,string> = { accept: "application/json" };
-  if (input.provider === "openai") {
-    url = (input.endpointUrl || "https://api.openai.com/v1").replace(/\/$/,"") + "/models";
-    headers.authorization = `Bearer ${input.apiKey}`;
-  } else if (input.provider === "openai-compatible") {
-    if (!input.endpointUrl) return { ok: false, status: 0, error: "endpoint_required" };
-    url = input.endpointUrl.replace(/\/$/,"") + "/models";
-    headers.authorization = `Bearer ${input.apiKey}`;
-  } else if (input.provider === "anthropic") {
-    url = (input.endpointUrl || "https://api.anthropic.com").replace(/\/$/,"") + "/v1/models";
-    headers["x-api-key"] = input.apiKey;
-    headers["anthropic-version"] = String(extra.anthropicVersion || "2023-06-01");
-  } else if (input.provider === "gemini") {
-    url = (input.endpointUrl || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/,"") + "/models?key=" + encodeURIComponent(input.apiKey);
-  } else if (input.provider === "azure-openai") {
-    if (!input.endpointUrl) return { ok: false, status: 0, error: "endpoint_required" };
-    url = input.endpointUrl.replace(/\/$/,"") + "/openai/models?api-version=" + encodeURIComponent(String(extra.apiVersion || "2024-10-21"));
-    headers["api-key"] = input.apiKey;
-  } else if (input.provider === "azure-foundry") {
-    if (!input.endpointUrl) return { ok: false, status: 0, error: "endpoint_required" };
-    url = input.endpointUrl.replace(/\/$/,"") + "/models?api-version=" + encodeURIComponent(String(extra.apiVersion || "2024-05-01-preview"));
-    headers["api-key"] = input.apiKey;
-  } else if (input.provider === "vertex" || input.provider === "cloudflare-ai") {
-    if (!input.endpointUrl) return { ok: false, status: 0, error: "endpoint_required" };
-    url = input.endpointUrl;
-    headers.authorization = `Bearer ${input.apiKey}`;
-  } else if (input.provider === "bedrock") {
-    const region = String(extra.region || "");
-    const accessKeyId = String(extra.accessKeyId || "");
-    const secretAccessKey = String(extra.secretAccessKey || "");
-    return { ok: Boolean(region && accessKeyId && secretAccessKey), status: 0, error: region && accessKeyId && secretAccessKey ? null : "bedrock_credentials_incomplete" };
-  } else {
-    return { ok: false, status: 0, error: "unsupported_provider" };
-  }
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    const response = await fetchImpl(url, { method: "GET", headers, signal: controller.signal, redirect: "error" });
+    const timer = setTimeout(() => controller.abort(), 12000);
+    let response: Response;
+    let payload: any = null;
+
+    if (input.provider === "openai") {
+      if (!model) return { ok: false, status: 0, error: "model_required", credentialAccepted: false, billingBlocked: false };
+      const base=(input.endpointUrl || "https://api.openai.com/v1").replace(/\/$/,"");
+      response=await fetchImpl(base+"/chat/completions",{
+        method:"POST",
+        headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
+        body:JSON.stringify({model,messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "openai-compatible") {
+      if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      response=await fetchImpl(input.endpointUrl.replace(/\/$/,"")+"/chat/completions",{
+        method:"POST",
+        headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
+        body:JSON.stringify({model,messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "azure-foundry") {
+      if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      response=await fetchImpl(normalizeFoundryResponsesEndpoint(input.endpointUrl),{
+        method:"POST",
+        headers:{"api-key":input.apiKey,"content-type":"application/json"},
+        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:8}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "azure-openai") {
+      if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      const apiVersion=String(extra.apiVersion || "2024-10-21");
+      response=await fetchImpl(normalizeAzureEndpoint(input.endpointUrl,model,apiVersion),{
+        method:"POST",
+        headers:{"api-key":input.apiKey,"content-type":"application/json"},
+        body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "anthropic") {
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      const base=(input.endpointUrl || "https://api.anthropic.com").replace(/\/$/,"");
+      response=await fetchImpl(base+"/v1/messages",{
+        method:"POST",
+        headers:{"x-api-key":input.apiKey,"anthropic-version":String(extra.anthropicVersion || "2023-06-01"),"content-type":"application/json"},
+        body:JSON.stringify({model,max_tokens:8,messages:[{role:"user",content:"Reply with OK"}]}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "gemini") {
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      const base=(input.endpointUrl || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/,"");
+      response=await fetchImpl(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(input.apiKey)}`,{
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:8,temperature:0}}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "vertex" || input.provider === "cloudflare-ai") {
+      if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
+      response=await fetchImpl(input.endpointUrl,{method:"GET",headers:{authorization:`Bearer ${input.apiKey}`},signal:controller.signal,redirect:"error"});
+    } else if (input.provider === "bedrock") {
+      const region=String(extra.region || "");
+      const accessKeyId=String(extra.accessKeyId || "");
+      const secretAccessKey=String(extra.secretAccessKey || "");
+      clearTimeout(timer);
+      const ok=Boolean(region && accessKeyId && secretAccessKey);
+      return { ok,status:0,error:ok?null:"bedrock_credentials_incomplete",credentialAccepted:ok,billingBlocked:false };
+    } else {
+      clearTimeout(timer);
+      return { ok:false,status:0,error:"unsupported_provider",credentialAccepted:false,billingBlocked:false };
+    }
+
     clearTimeout(timer);
-    const ok = response.ok;
-    return { ok, status: response.status, error: ok ? null : `provider_validation_http_${response.status}` };
+    try { payload=await response.clone().json(); } catch { payload=null; }
+    const blocked=billingBlocked(response.status,payload);
+    const ok=response.ok;
+    const returnedText=input.provider==="azure-foundry" && ok ? textFromResponses(payload) : "";
+    return {
+      ok,
+      status:response.status,
+      error:ok?null:(blocked?"provider_billing_blocked":`provider_validation_http_${response.status}`),
+      credentialAccepted:ok || blocked,
+      billingBlocked:blocked,
+      returnedText,
+    };
   } catch (error) {
-    return { ok: false, status: 0, error: error instanceof Error ? error.message.slice(0,200) : "provider_validation_failed" };
+    return { ok:false,status:0,error:error instanceof Error?error.message.slice(0,200):"provider_validation_failed",credentialAccepted:false,billingBlocked:false };
   }
 }
