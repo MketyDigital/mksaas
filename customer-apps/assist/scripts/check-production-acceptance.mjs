@@ -101,6 +101,15 @@ assert.match(m32,/provider_audio_cost_micros_per_minute=453/);
 assert.match(m32,/provider_input_cost_micros_per_million\*10/);
 assert.match(m32,/provider_audio_cost_micros_per_minute\*10/);
 assert.match(index,/api\/internal\/inference-acceptance/);
+assert.match(runtime,/CUSTOMER MESSAGE \(caption\/question and attached media are one turn\)/);
+assert.match(runtime,/Attached media understanding:/);
+assert.match(runtime,/settleMediaProcessing/);
+assert.match(runtime,/reserveMediaProcessing/);
+assert.match(runtime,/\.filter\(\(item: any\) => !item\?\.settled\)/);
+assert.match(runtime,/Treat each caption\/text and its attached media as one message/);
+assert.match(index,/visionProbeImage/);
+assert.match(index,/imageToReplyOk/);
+
 assert.match(index,/api\/internal\/provider-bootstrap/);
 assert.match(providers,/openai\/v1\/responses/);
 const customerUi = ui.split("export function renderOperatorPortal")[0];
