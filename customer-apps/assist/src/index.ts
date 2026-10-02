@@ -1051,7 +1051,18 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","azure-foundry","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
-    const apiKey = requiredString(body.apiKey, "apiKey");
+    const structuredSecret = provider === "vertex" || provider === "bedrock";
+    const apiKey = structuredSecret
+      ? requiredString(body.credentialJson, "credentialJson")
+      : requiredString(body.apiKey, "apiKey");
+    if (structuredSecret) {
+      try {
+        const parsed = JSON.parse(apiKey);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ error: "credential_json_must_be_object" }, 400);
+      } catch {
+        return json({ error: "invalid_credential_json" }, 400);
+      }
+    }
     const endpointUrl = body.endpointUrl ? String(body.endpointUrl).trim() : null;
     if (endpointUrl) {
       const parsed = new URL(endpointUrl);
@@ -1130,8 +1141,17 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const parsed = new URL(String(endpointUrl));
       if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
     }
-    const cipher = body.apiKey
-      ? await protectStoredSecret(String(body.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
+    const replacementSecret = body.credentialJson ?? body.apiKey;
+    if (replacementSecret && ["vertex","bedrock"].includes(String(current.provider))) {
+      try {
+        const parsed = JSON.parse(String(replacementSecret));
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ error: "credential_json_must_be_object" }, 400);
+      } catch {
+        return json({ error: "invalid_credential_json" }, 400);
+      }
+    }
+    const cipher = replacementSecret
+      ? await protectStoredSecret(String(replacementSecret), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
       : current.api_key_ciphertext;
     await env.DB.prepare(
       "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,default_model=COALESCE(?,default_model),extra_json=COALESCE(?,extra_json),status='disabled',validated_at=NULL,validation_error='revalidation_required',updated_at=? WHERE id=?",
