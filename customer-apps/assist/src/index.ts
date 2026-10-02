@@ -379,16 +379,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
     const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
     const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
-    let includedCredits = positiveInt(body.includedCredits, 0);
+    let includedCredits = creditAtomsFromMkredits(body.includedCredits);
     if (autoIncludedCredits && monthlyPrice > 0) {
-      const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
       includedCredits = calculateCommercialPlan({
         monthlyAmountMinor: monthlyPrice,
         providerEnvelopeBps,
         operationsReserveBps,
         rateMultiplierBps,
-        mkreditsPerUsd,
       }).includedCredits;
     }
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
@@ -552,7 +549,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const rows = await env.DB.prepare(
       "SELECT c.*,ca.balance FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id ORDER BY c.created_at DESC",
     ).all();
-    return json({ customers: rows.results ?? [] });
+    return json({ customers: (rows.results ?? []).map((row: any) => ({ ...row, balance: mkreditsFromCreditAtoms(row.balance) })) });
   }
 
   if (url.pathname === "/api/ops/customer" && request.method === "GET") {
@@ -602,9 +599,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     return json({
       customer,
-      commercial,
+      commercial: commercial ? { ...(commercial as any), included_credits: mkreditsFromCreditAtoms((commercial as any).included_credits) } : commercial,
       features,
-      credits,
+      credits: credits ? { ...(credits as any), balance: mkreditsFromCreditAtoms((credits as any).balance), lifetime_granted: mkreditsFromCreditAtoms((credits as any).lifetime_granted), lifetime_consumed: mkreditsFromCreditAtoms((credits as any).lifetime_consumed) } : credits,
       domains: domains.results ?? [],
       members: members.results ?? [],
       senderControls: senderControls.results ?? [],
@@ -668,8 +665,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/credits" && request.method === "POST") {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
-    const delta = parseInt(String(body.delta ?? "0"), 10);
-    if (!Number.isFinite(delta) || delta === 0) return json({ error: "credit_delta_must_be_nonzero" }, 400);
+    const publicDelta = Number(body.delta ?? 0);
+    if (!Number.isFinite(publicDelta) || publicDelta === 0) return json({ error: "credit_delta_must_be_nonzero" }, 400);
+    const delta = Math.round(publicDelta * CREDIT_ATOMS_PER_MKREDIT);
     const reason = requiredString(body.reason, "reason").slice(0, 300);
     const account = await env.DB.prepare("SELECT balance FROM credit_accounts WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
     if (!account) return json({ error: "credit_account_not_found" }, 404);
@@ -688,7 +686,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         "INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
       ).bind(id("aud"), "operator", customerId, "credits.adjusted", "customer", customerId, JSON.stringify({ delta, reason, balanceAfter: next }), now),
     ]);
-    return json({ ok: true, balance: next });
+    return json({ ok: true, balance: mkreditsFromCreditAtoms(next) });
   }
 
   if (url.pathname === "/api/ops/ledger" && request.method === "GET") {
@@ -701,28 +699,23 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/ops/pricing/calculate" && request.method === "POST") {
     const body = await readJson(request);
-    const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     const result = calculateCommercialPlan({
       monthlyAmountMinor: parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
       providerEnvelopeBps: parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
       operationsReserveBps: parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
       rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-      mkreditsPerUsd,
     });
-    return json({ ...result, mkreditsPerUsd, creditUnit: "MKredit" });
+    return json({ ...result, includedCredits: result.includedMkredits, mkreditsPerUsd: MKREDITS_PER_USD, creditUnit: "MKredit" });
   }
 
   if (url.pathname === "/api/ops/policy" && request.method === "PATCH") {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
     const now = unix();
-    let includedCreditsValue = nullableInt(body.includedCredits);
+    let includedCreditsValue = body.includedCredits === undefined || body.includedCredits === null || body.includedCredits === "" ? null : creditAtomsFromMkredits(body.includedCredits);
     if (body.autoCalculateCredits === true) {
       const current = await env.DB.prepare("SELECT * FROM commercial_policy WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
       if (!current) return json({ error: "commercial_policy_not_found" }, 404);
-      const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
       includedCreditsValue = calculateCommercialPlan({
         monthlyAmountMinor: body.monthlyPriceUsd === undefined
           ? (body.subscriptionAmountMinor === undefined ? Number(current.subscription_amount_minor) : positiveInt(body.subscriptionAmountMinor, 0))
@@ -736,7 +729,6 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         rateMultiplierBps: body.customerRateMultiplierPercent === undefined
           ? (body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000))
           : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-        mkreditsPerUsd,
       }).includedCredits;
     }
     await env.DB.batch([
@@ -786,7 +778,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(id("aud"), "operator", customerId, "policy.updated", "customer", customerId, now),
     ]);
-    return json({ ok: true, includedCredits: includedCreditsValue });
+    return json({ ok: true, includedCredits: includedCreditsValue == null ? null : mkreditsFromCreditAtoms(includedCreditsValue) });
   }
 
   if (url.pathname === "/api/ops/models" && request.method === "GET") {
@@ -821,10 +813,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     for (const target of targets.results ?? []) {
       const key=String(target.alias);
       const list=byAlias.get(key) ?? [];
-      list.push(target);
+      list.push(publicCreditFields(target));
       byAlias.set(key,list);
     }
-    return json({ models: (rows.results ?? []).map((row: any) => ({ ...row, targets: byAlias.get(String(row.alias)) ?? [] })) });
+    return json({ models: (rows.results ?? []).map((row: any) => ({ ...publicCreditFields(row), targets: byAlias.get(String(row.alias)) ?? [] })) });
   }
 
   if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
@@ -925,10 +917,10 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         providerModel: requiredString(target.providerModel, "target.providerModel"),
         providerConnectionId: target.providerConnectionId ? String(target.providerConnectionId) : null,
         enabled: target.enabled === false ? 0 : 1,
-        inputCreditsPerMillion: positiveInt(target.inputCreditsPerMillion, 0),
-        outputCreditsPerMillion: positiveInt(target.outputCreditsPerMillion, 0),
-        imageCredits: positiveInt(target.imageCredits, 0),
-        audioCreditsPerMinute: positiveInt(target.audioCreditsPerMinute, 0),
+        inputCreditsPerMillion: creditAtomsFromMkredits(target.inputCreditsPerMillion),
+        outputCreditsPerMillion: creditAtomsFromMkredits(target.outputCreditsPerMillion),
+        imageCredits: creditAtomsFromMkredits(target.imageCredits),
+        audioCreditsPerMinute: creditAtomsFromMkredits(target.audioCreditsPerMinute),
         providerInputCostMicrosPerMillion: positiveInt(target.providerInputCostMicrosPerMillion, 0),
         providerOutputCostMicrosPerMillion: positiveInt(target.providerOutputCostMicrosPerMillion, 0),
         providerImageCostMicros: positiveInt(target.providerImageCostMicros, 0),
@@ -1017,18 +1009,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).bind(alias).first<any>();
       const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?")
         .bind(alias).first<any>();
-      const commercialSetting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const mkreditsPerUsd = commercialMkreditsPerUsd(commercialSetting?.value_json);
-
       const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || 0);
       const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || 0);
       const imageCost = positiveInt(body.providerImageCostMicros, previous?.provider_image_cost_micros || 0);
       const audioCost = positiveInt(body.providerAudioCostMicrosPerMinute, previous?.provider_audio_cost_micros_per_minute || 0);
       const generated = body.generateRate === true;
-      const inputCredits = generated ? costToBaseCredits(inputCost, mkreditsPerUsd) : positiveInt(body.inputCreditsPerMillion, previous?.input_credits_per_million || 0);
-      const outputCredits = generated ? costToBaseCredits(outputCost, mkreditsPerUsd) : positiveInt(body.outputCreditsPerMillion, previous?.output_credits_per_million || 0);
-      const imageCredits = generated ? costToBaseCredits(imageCost, mkreditsPerUsd) : positiveInt(body.imageCredits, previous?.image_credits || 0);
-      const audioCredits = generated ? costToBaseCredits(audioCost, mkreditsPerUsd) : positiveInt(body.audioCreditsPerMinute, previous?.audio_credits_per_minute || 0);
+      const inputCredits = generated ? creditAtomsFromUsdMicros(inputCost) : (body.inputCreditsPerMillion === undefined ? Number(previous?.input_credits_per_million || 0) : creditAtomsFromMkredits(body.inputCreditsPerMillion));
+      const outputCredits = generated ? creditAtomsFromUsdMicros(outputCost) : (body.outputCreditsPerMillion === undefined ? Number(previous?.output_credits_per_million || 0) : creditAtomsFromMkredits(body.outputCreditsPerMillion));
+      const imageCredits = generated ? creditAtomsFromUsdMicros(imageCost) : (body.imageCredits === undefined ? Number(previous?.image_credits || 0) : creditAtomsFromMkredits(body.imageCredits));
+      const audioCredits = generated ? creditAtomsFromUsdMicros(audioCost) : (body.audioCreditsPerMinute === undefined ? Number(previous?.audio_credits_per_minute || 0) : creditAtomsFromMkredits(body.audioCreditsPerMinute));
 
       await env.DB.prepare(
         `INSERT INTO model_rates
@@ -1809,8 +1798,11 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   if (url.pathname === "/api/assistants" && request.method === "GET") {
     const rows = await env.DB.prepare(
       "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,archived_at,current_version FROM assistants WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
-    ).bind(customer.customerId).all();
-    return json({ assistants: rows.results ?? [] });
+    ).bind(customer.customerId).all<any>();
+    return json({ assistants: (rows.results ?? []).map((row: any) => ({
+      ...row,
+      monthly_credit_cap: row.monthly_credit_cap == null ? null : mkreditsFromCreditAtoms(row.monthly_credit_cap),
+    })) });
   }
 
   if (url.pathname === "/api/assistants" && request.method === "POST") {
@@ -1856,8 +1848,8 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json(customerUsageProjection({
       monthlyFeeMinor: Math.max(0, Number(policy?.subscription_amount_minor || 0)),
       setupFeeMinor: Math.max(0, Number(policy?.setup_fee_minor || 0)),
-      creditsAvailable: Math.max(0, Number(account?.balance || 0)),
-      creditsUsed: Math.max(0, Number(account?.lifetime_consumed || 0)),
+      creditsAvailable: mkreditsFromCreditAtoms(Math.max(0, Number(account?.balance || 0))),
+      creditsUsed: mkreditsFromCreditAtoms(Math.max(0, Number(account?.lifetime_consumed || 0))),
     }));
   }
 
@@ -1875,11 +1867,11 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json({
       currency: String(policy.currency || "USD"),
       recurringAmountMinor,
-      recurringCredits: includedCredits,
+      recurringCredits: mkreditsFromCreditAtoms(includedCredits),
       setupFeeMinor: Math.max(0, Number(policy.setup_fee_minor || 0)),
       fundingMode: String(policy.funding_mode || "full_period"),
       minimumFundingMinor,
-      minimumFundingCredits,
+      minimumFundingCredits: mkreditsFromCreditAtoms(minimumFundingCredits),
       topupEnabled: Boolean(policy.topup_enabled),
     });
   }
@@ -1909,7 +1901,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       recurringAmountMinor: recurringPaid,
       setupFeeMinor,
       totalAmountMinor: recurringPaid + setupFeeMinor,
-      credits,
+      credits: mkreditsFromCreditAtoms(credits),
       minimumFundingMinor,
       maximumFundingMinor: recurringBase,
       fundingMode: String(policy.funding_mode || "full_period"),
@@ -1920,12 +1912,8 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const body = await readJson(request);
     const amountMinor = parsePaymentAmountMinor(body.amountUsd);
     if (amountMinor < 100 || amountMinor > 10_000_000) return json({ error: "invalid_credit_amount" }, 400);
-    const setting = await env.DB.prepare(
-      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
-    ).first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
-    const credits = Math.max(1, mkreditsFromUsdMinor(amountMinor, mkreditsPerUsd));
-    return json({ amountMinor, currency: "USD", credits });
+    const creditAtoms = Math.max(1, creditAtomsFromUsdMinor(amountMinor));
+    return json({ amountMinor, currency: "USD", credits: mkreditsFromCreditAtoms(creditAtoms) });
   }
 
   if (url.pathname === "/api/billing/methods" && request.method === "GET") {
@@ -1947,7 +1935,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
               provider_amount_minor,provider_currency,status,created_at,settled_at,purchase_type
        FROM payment_checkouts WHERE customer_id=? ORDER BY created_at DESC LIMIT 50`,
     ).bind(customer.customerId).all();
-    return json({ checkouts: rows.results ?? [] });
+    return json({ checkouts: (rows.results ?? []).map((row: any) => ({ ...row, credits: mkreditsFromCreditAtoms(row.credits) })) });
   }
 
   if (url.pathname === "/api/billing/plan/start" && request.method === "POST") {
@@ -2002,20 +1990,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     ).bind(customer.customerId).first<any>();
     if (!policy?.topup_enabled) return json({ error: "topups_not_enabled" }, 403);
     const body = await readJson(request);
-    const setting = await env.DB.prepare(
-      "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
-    ).first<any>();
-    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     let credits: number;
     let canonicalAmountMinor: number;
     if (body.amountUsd !== undefined && body.amountUsd !== null && String(body.amountUsd).trim() !== "") {
       canonicalAmountMinor = parsePaymentAmountMinor(body.amountUsd);
       if (canonicalAmountMinor < 100 || canonicalAmountMinor > 10_000_000) return json({ error: "invalid_topup_amount" }, 400);
-      credits = Math.max(1, mkreditsFromUsdMinor(canonicalAmountMinor, mkreditsPerUsd));
+      credits = Math.max(1, creditAtomsFromUsdMinor(canonicalAmountMinor));
     } else {
-      credits = positiveInt(body.credits, 0);
-      if (credits < 1_000_000 || credits > 50_000_000_000) return json({ error: "invalid_topup_credits" }, 400);
-      canonicalAmountMinor = Math.max(1, usdMinorFromMkredits(credits, mkreditsPerUsd));
+      const requestedMkredits = Number(body.credits || 0);
+      if (!Number.isFinite(requestedMkredits) || requestedMkredits < 100 || requestedMkredits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
+      credits = creditAtomsFromMkredits(requestedMkredits);
+      canonicalAmountMinor = Math.max(1, usdMinorFromCreditAtoms(credits));
     }
     const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
@@ -2111,7 +2096,7 @@ async function startAssistNowPaymentsCheckout(input: {
     checkoutExperience: "embedded",
     widgetUrl: `https://nowpayments.io/embeds/payment-widget?iid=${encodeURIComponent(providerInvoiceId)}`,
     hostedUrl,
-    credits,
+    credits: mkreditsFromCreditAtoms(credits),
     canonicalAmountMinor,
     canonicalCurrency: "USD",
     checkoutAmount: canonicalAmountMinor / 100,
@@ -2164,7 +2149,7 @@ async function startAssistKoraCheckout(input: {
   ).bind(canonicalAmountMinor, "USD", checkoutId).run();
   return json({
     ok: true, provider: "kora", purchaseType, checkoutId, reference,
-    checkoutExperience: "hosted", checkoutUrl, credits,
+    checkoutExperience: "hosted", checkoutUrl, credits: mkreditsFromCreditAtoms(credits),
     canonicalAmountMinor, canonicalCurrency: "USD",
     checkoutAmount: canonicalAmountMinor / 100, checkoutCurrency: "USD",
   }, 201);
@@ -2251,7 +2236,7 @@ async function startAssistFlutterwaveCheckout(input: {
     checkoutExperience: inlineReady ? "inline" : "hosted",
     inline: inlineReady ? inline : null,
     checkoutUrl: inlineReady ? "" : checkoutUrl,
-    credits,
+    credits: mkreditsFromCreditAtoms(credits),
     canonicalAmountMinor,
     canonicalCurrency: "USD",
     checkoutAmount,
@@ -2937,30 +2922,35 @@ function optionalHostname(value: unknown) {
   return typeof value === "string" && value.trim() ? normalizeHostname(value) : null;
 }
 
-const DEFAULT_MKREDITS_PER_USD = 10_000_000;
+const MKREDITS_PER_USD = 1_000;
+const CREDIT_ATOMS_PER_USD = 10_000_000;
+const CREDIT_ATOMS_PER_MKREDIT = CREDIT_ATOMS_PER_USD / MKREDITS_PER_USD;
 
-function commercialMkreditsPerUsd(valueJson: unknown) {
-  try {
-    const parsed = JSON.parse(String(valueJson || "{}"));
-    const configured = Number(parsed?.mkreditsPerUsd);
-    if (Number.isSafeInteger(configured) && configured > 0) return configured;
-  } catch {}
-  return DEFAULT_MKREDITS_PER_USD;
+function creditAtomsFromMkredits(value: unknown) {
+  const mkredits = Number(value || 0);
+  if (!Number.isFinite(mkredits) || mkredits < 0) throw new HttpError(400, "invalid_mkredit_value");
+  return Math.round(mkredits * CREDIT_ATOMS_PER_MKREDIT);
 }
 
-function mkreditsFromUsdMicros(usdMicros: number, mkreditsPerUsd: number) {
+function mkreditsFromCreditAtoms(value: unknown) {
+  const atoms = Number(value || 0);
+  if (!Number.isFinite(atoms)) return 0;
+  return Math.round((atoms / CREDIT_ATOMS_PER_MKREDIT) * 10000) / 10000;
+}
+
+function creditAtomsFromUsdMicros(usdMicros: number) {
   if (usdMicros <= 0) return 0;
-  return Math.ceil((usdMicros * mkreditsPerUsd) / 1_000_000);
+  return Math.ceil((usdMicros * CREDIT_ATOMS_PER_USD) / 1_000_000);
 }
 
-function mkreditsFromUsdMinor(amountMinor: number, mkreditsPerUsd: number) {
+function creditAtomsFromUsdMinor(amountMinor: number) {
   if (amountMinor <= 0) return 0;
-  return Math.floor((amountMinor * mkreditsPerUsd) / 100);
+  return Math.floor((amountMinor * CREDIT_ATOMS_PER_USD) / 100);
 }
 
-function usdMinorFromMkredits(mkredits: number, mkreditsPerUsd: number) {
-  if (mkredits <= 0) return 0;
-  return Math.ceil((mkredits * 100) / mkreditsPerUsd);
+function usdMinorFromCreditAtoms(atoms: number) {
+  if (atoms <= 0) return 0;
+  return Math.ceil((atoms * 100) / CREDIT_ATOMS_PER_USD);
 }
 
 function calculateCommercialPlan(input: {
@@ -2968,7 +2958,6 @@ function calculateCommercialPlan(input: {
   providerEnvelopeBps: number;
   operationsReserveBps: number;
   rateMultiplierBps: number;
-  mkreditsPerUsd: number;
 }) {
   if (input.monthlyAmountMinor <= 0) throw new HttpError(400, "monthly_amount_must_be_positive");
   if (input.providerEnvelopeBps < 1 || input.providerEnvelopeBps > 10000) throw new HttpError(400, "provider_envelope_invalid");
@@ -2978,12 +2967,22 @@ function calculateCommercialPlan(input: {
   const providerEnvelopeUsdMicros = Math.floor(monthlyUsdMicros * input.providerEnvelopeBps / 10000);
   const usableProviderUsdMicros = Math.floor(providerEnvelopeUsdMicros * (10000 - input.operationsReserveBps) / 10000);
   const customerUsageValueUsdMicros = Math.floor(usableProviderUsdMicros * input.rateMultiplierBps / 10000);
-  const includedCredits = Math.floor((customerUsageValueUsdMicros * input.mkreditsPerUsd) / 1_000_000);
-  return { providerEnvelopeUsdMicros, usableProviderUsdMicros, customerUsageValueUsdMicros, includedCredits };
+  const includedCredits = creditAtomsFromUsdMicros(customerUsageValueUsdMicros);
+  return {
+    providerEnvelopeUsdMicros,
+    usableProviderUsdMicros,
+    customerUsageValueUsdMicros,
+    includedCredits,
+    includedMkredits: mkreditsFromCreditAtoms(includedCredits),
+  };
 }
 
-function costToBaseCredits(providerCostMicros: number, mkreditsPerUsd: number) {
-  return mkreditsFromUsdMicros(providerCostMicros, mkreditsPerUsd);
+function publicCreditFields<T extends Record<string, any>>(row: T): T {
+  const out: any = { ...row };
+  for (const key of ["input_credits_per_million","output_credits_per_million","image_credits","audio_credits_per_minute"]) {
+    if (key in out) out[key] = mkreditsFromCreditAtoms(out[key]);
+  }
+  return out;
 }
 
 async function protectStoredSecret(secret: string, configured: string) {

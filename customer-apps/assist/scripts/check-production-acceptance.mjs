@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (p) => readFile(new URL("../" + p, import.meta.url), "utf8");
-const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain,m12,m13,m20,m21,m22,m27,m28,m29,m30,m31,m32] = await Promise.all([
+const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain,m12,m13,m20,m21,m22,m27,m28,m29,m30,m31,m32,m33] = await Promise.all([
   read("src/runtime.ts"), read("src/index.ts"), read("src/ui.ts"),
   read("src/payments/service.ts"), read("src/providers/validation.ts"), read("src/providers/types.ts"),
   read("src/billing/metering.ts"), read("src/handoff/service.ts"),
@@ -12,6 +12,7 @@ const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain
   read("migrations/0027_ordered_provider_routes.sql"), read("migrations/0028_workers_gemma_primary.sql"),
   read("migrations/0029_media_capability_routes.sql"), read("migrations/0030_media_usage_metering.sql"),
   read("migrations/0031_true_mkredit_precision.sql"), read("migrations/0032_exact_provider_rate_reconciliation.sql"),
+  read("migrations/0033_mkredit_public_unit.sql"),
 ]);
 
 assert.match(index,/password_hash/);
@@ -22,6 +23,11 @@ assert.match(runtime,/model target failed; trying next ordered fallback/);
 assert.doesNotMatch(runtime,/if \(!classified\.retryable\) throw error/);
 assert.match(runtime,/responseFailure = String\(response\.error \|\| "inference_failed"\)/);
 assert.match(runtime,/"UPDATE reply_jobs SET status='delivered',external_delivery_id=\?,completed_at=\?,locked_at=NULL,updated_at=\? WHERE id=\?"/);
+assert.match(runtime,/batched_into:/);
+assert.match(runtime,/Customer message \$\{index \+ 1\}/);
+assert.match(runtime,/UPDATE human_handoffs SET status='resolved'/);
+assert.match(runtime,/CAST\(provider_message_id AS INTEGER\)/);
+assert.match(runtime,/human_handoff_open/);
 assert.match(runtime,/__mketyTargetRate/);
 assert.match(runtime,/status='released'.*status='open'.*RETURNING reserved_credits/s);
 assert.match(runtime,/status='settled'.*status='open'.*RETURNING reserved_credits/s);
@@ -83,8 +89,13 @@ assert.match(m31,/mkreditsPerUsd',10000000/);
 assert.match(m31,/balance=balance\*10000/);
 assert.match(m31,/credits_charged=credits_charged\*10000/);
 assert.match(m31,/input_credits_per_million=input_credits_per_million\*10000/);
-assert.match(index,/DEFAULT_MKREDITS_PER_USD = 10_000_000/);
-assert.match(index,/mkreditsFromUsdMicros/);
+assert.match(m33,/mkreditsPerUsd',1000/);
+assert.match(m33,/creditAtomsPerUsd',10000000/);
+assert.match(m33,/creditAtomsPerMkredit',10000/);
+assert.match(index,/MKREDITS_PER_USD = 1_000/);
+assert.match(index,/CREDIT_ATOMS_PER_USD = 10_000_000/);
+assert.match(index,/creditAtomsFromUsdMicros/);
+assert.match(index,/mkreditsFromCreditAtoms/);
 assert.doesNotMatch(index,/creditUsdMicros/);
 assert.match(m32,/provider_audio_cost_micros_per_minute=453/);
 assert.match(m32,/provider_input_cost_micros_per_million\*10/);
