@@ -1247,8 +1247,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     ).bind(job.conversation_id, afterDelivered, job.created_at, job.created_at, job.provider_message_id).all<any>();
     const unansweredBatch = batchRows.results ?? [];
     if (unansweredBatch.length > 1) {
-      const textParts: string[] = [];
-      const mediaParts: string[] = [];
+      const messageBlocks: string[] = [];
       const combinedUsage: any[] = [];
       let combinedImages = 0;
       let combinedAudioSeconds = 0;
@@ -1257,8 +1256,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
         const label = `Customer message ${index + 1}`;
         const userText = String(row.user_text || "").trim();
         const mediaText = String(row.media_context || "").trim();
-        if (userText) textParts.push(`[${label}] ${userText}`);
-        if (mediaText) mediaParts.push(`[${label} media]\n${mediaText}`);
+        messageBlocks.push([
+          `[${label}]`,
+          userText ? `Caption/text: ${userText}` : "Caption/text: (none)",
+          mediaText ? `Attached media understanding:\n${mediaText}` : "",
+        ].filter(Boolean).join("\n"));
         combinedImages += Number(row.image_count || 0);
         combinedAudioSeconds += Number(row.audio_seconds || 0);
         try {
@@ -1266,8 +1268,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
           if (Array.isArray(usage)) combinedUsage.push(...usage);
         } catch {}
       }
-      job.user_text = textParts.join("\n");
-      job.media_context = mediaParts.join("\n");
+      job.user_text = [
+        "The customer sent the following messages in this exact order. Treat each caption/text and its attached media as one message, then answer all still-unanswered points naturally in one coherent reply.",
+        ...messageBlocks,
+      ].join("\n\n");
+      job.media_context = "";
       job.media_usage_json = JSON.stringify(combinedUsage);
       job.image_count = combinedImages;
       job.audio_seconds = combinedAudioSeconds;
@@ -1639,7 +1644,17 @@ async function runAssistant(input: {
 
   const toolDescriptions = (tools.results ?? []).map((t: any) => `- ${t.name}: ${t.description || "External action"}`).join("\n");
   const staticContext = await staticAssistantContext(env, assistant, String(prompt?.instructions || ""), toolDescriptions);
-  const userCombined = [input.userText, input.mediaContext].filter(Boolean).join("\n\n");
+  const userCombined = input.mediaContext
+    ? [
+        "CUSTOMER MESSAGE (caption/question and attached media are one turn):",
+        input.userText || "(No caption or text was supplied.)",
+        "",
+        "ATTACHED MEDIA UNDERSTANDING FOR THAT SAME MESSAGE:",
+        input.mediaContext,
+        "",
+        "Answer the customer's message using the attached media understanding when relevant. Do not confuse media analysis with a separate customer message, and do not invent details that are not in the analysis.",
+      ].join("\n")
+    : input.userText;
   const conversationContext = await buildConversationContext(env.DB, assistant, conversationId, userCombined);
   const history = conversationContext.history;
   const knowledgeBudget = Math.max(2000, Math.min(50000, Number(assistant.context_knowledge_char_budget || 12000)));
@@ -1673,7 +1688,7 @@ async function runAssistant(input: {
   );
   const effectiveInputCredits = Math.ceil(maxOf("input_credits_per_million", rate.input_credits_per_million) * multiplierBps / 10000);
   const effectiveOutputCredits = Math.ceil(maxOf("output_credits_per_million", rate.output_credits_per_million) * multiplierBps / 10000);
-  const mediaUsage = Array.isArray(input.mediaUsage) ? input.mediaUsage : [];
+  const mediaUsage = (Array.isArray(input.mediaUsage) ? input.mediaUsage : []).filter((item: any) => !item?.settled);
   const mediaCredits = mediaUsage.reduce((total: number, item: any) => {
     const r = item?.rate || {};
     if (item?.kind === "speech") {
@@ -1990,11 +2005,13 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
-      const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime);
+      const vision = await describeImage(env, assistant, conversationId, asset.bytes, text, asset.meta.mime);
       if (vision.text) {
-        contexts.push(`Image context: ${vision.text}`);
+        contexts.push(`Attached image analysis for this same customer message:\n${vision.text}`);
         if (vision.usage) mediaUsage.push(vision.usage);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision.text, asset.id).run();
+      } else {
+        contexts.push("[An image was attached, but it could not be interpreted reliably. Do not claim details that are not available.]");
       }
     }
   }
@@ -2006,11 +2023,13 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
-      const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime, audioSeconds);
+      const transcript = await transcribeAudio(env, assistant, conversationId, asset.bytes, asset.meta.mime, audioSeconds);
       if (transcript.text) {
-        contexts.push(`Voice transcript: ${transcript.text}`);
+        contexts.push(`Voice transcript for this same customer message:\n${transcript.text}`);
         if (transcript.usage) mediaUsage.push(transcript.usage);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript.text, asset.id).run();
+      } else {
+        contexts.push("[A voice message was attached, but it could not be transcribed reliably.]");
       }
     }
   }
@@ -2093,6 +2112,121 @@ function mediaTargetUsage(target: any, kind: "vision" | "speech", inputUnits: nu
   };
 }
 
+
+function mediaUsageCharge(usage: any, multiplierBps: number) {
+  const r = usage?.rate || {};
+  if (usage?.kind === "speech") {
+    const perMinute = Math.ceil(Number(r.audioCreditsPerMinute || 0) * multiplierBps / 10000);
+    return Math.max(1, Math.ceil((Number(usage.audioSeconds || 0) / 60) * perMinute));
+  }
+  const inputRate = Math.ceil(Number(r.inputCreditsPerMillion || 0) * multiplierBps / 10000);
+  const outputRate = Math.ceil(Number(r.outputCreditsPerMillion || 0) * multiplierBps / 10000);
+  return Math.max(1, Math.ceil((
+    Number(usage.inputUnits || 0) * inputRate +
+    Number(usage.outputUnits || 0) * outputRate
+  ) / 1_000_000));
+}
+
+function mediaUsageProviderCostMicros(usage: any) {
+  const r = usage?.rate || {};
+  if (usage?.kind === "speech") {
+    return Math.max(0, Math.ceil((Number(usage.audioSeconds || 0) / 60) * Number(r.providerAudioCostMicrosPerMinute || 0)));
+  }
+  return Math.max(0, Math.ceil((
+    Number(usage.inputUnits || 0) * Number(r.providerInputCostMicrosPerMillion || 0) +
+    Number(usage.outputUnits || 0) * Number(r.providerOutputCostMicrosPerMillion || 0)
+  ) / 1_000_000));
+}
+
+async function mediaCommercialPolicy(env: AssistEnv, customerId: string) {
+  return env.DB.prepare(
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,
+            cp.rate_multiplier_bps,cp.hard_stop_enabled,c.billing_status,c.grace_until
+     FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id
+     WHERE cp.customer_id=? LIMIT 1`,
+  ).bind(customerId).first<any>();
+}
+
+async function reserveMediaProcessing(
+  env: AssistEnv,
+  assistant: any,
+  kind: "vision" | "speech",
+  targets: any[],
+  audioSeconds = 0,
+) {
+  const commercial = await mediaCommercialPolicy(env, assistant.customer_id);
+  if (!commercial) throw new Error("media_commercial_policy_unavailable");
+  if (commercial.billing_status === "past_due" && commercial.grace_until && unix() > Number(commercial.grace_until)) {
+    throw new Error("media_billing_past_due");
+  }
+  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  let reserveAtoms = 1;
+  let estimatedCostMicros = 0;
+
+  if (kind === "speech") {
+    const minutes = Math.max(1, Number(audioSeconds || 0)) / 60;
+    reserveAtoms = Math.max(1, ...targets.map((target: any) =>
+      Math.ceil(minutes * Math.ceil(Number(target.audio_credits_per_minute || 0) * multiplierBps / 10000))
+    ));
+    estimatedCostMicros = Math.max(0, ...targets.map((target: any) =>
+      Math.ceil(minutes * Number(target.provider_audio_cost_micros_per_minute || 0))
+    ));
+  } else {
+    // Conservative preauthorization. Actual settlement uses the serving target's returned usage.
+    const reserveInputTokens = 65536;
+    const reserveOutputTokens = 600;
+    reserveAtoms = Math.max(1, ...targets.map((target: any) => {
+      const inputRate = Math.ceil(Number(target.input_credits_per_million || 0) * multiplierBps / 10000);
+      const outputRate = Math.ceil(Number(target.output_credits_per_million || 0) * multiplierBps / 10000);
+      const fixedImage = Math.ceil(Number(target.image_credits || 0) * multiplierBps / 10000);
+      return Math.ceil((reserveInputTokens * inputRate + reserveOutputTokens * outputRate) / 1_000_000) + fixedImage;
+    }));
+    estimatedCostMicros = Math.max(0, ...targets.map((target: any) =>
+      Math.ceil((
+        reserveInputTokens * Number(target.provider_input_cost_micros_per_million || 0) +
+        reserveOutputTokens * Number(target.provider_output_cost_micros_per_million || 0)
+      ) / 1_000_000) + Number(target.provider_image_cost_micros || 0)
+    ));
+  }
+
+  if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, assistant.customer_id, commercial, estimatedCostMicros))) {
+    throw new Error("media_provider_budget_exhausted");
+  }
+  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAtoms);
+  if (!reservation) throw new Error("media_credit_reservation_failed");
+  return { reservation, reserveAtoms, multiplierBps };
+}
+
+async function settleMediaProcessing(
+  env: AssistEnv,
+  assistant: any,
+  conversationId: string,
+  authorization: { reservation: { id: string }; reserveAtoms: number; multiplierBps: number },
+  usage: any,
+) {
+  const actualAtoms = mediaUsageCharge(usage, authorization.multiplierBps);
+  const providerCostMicros = mediaUsageProviderCostMicros(usage);
+  const settled = await settleReservation(
+    env.DB,
+    authorization.reservation.id,
+    assistant.customer_id,
+    assistant.id,
+    authorization.reserveAtoms,
+    actualAtoms,
+    {
+      modelAlias: String(usage.modelAlias),
+      provider: String(usage.provider),
+      providerModel: String(usage.providerModel),
+      conversationId,
+      inputUnits: Number(usage.inputUnits || 0),
+      outputUnits: Number(usage.outputUnits || 0),
+      providerCostMicros,
+    },
+  );
+  if (!settled) throw new Error("media_credit_settlement_failed");
+  return { ...usage, settled: true, chargedAtoms: Math.min(actualAtoms, authorization.reserveAtoms), providerCostMicros };
+}
+
 async function invokeVisionTarget(
   env: AssistEnv,
   target: any,
@@ -2104,7 +2238,14 @@ async function invokeVisionTarget(
   const provider = String(target.provider);
   const model = String(target.provider_model);
   const b64 = arrayBufferToBase64(bytes);
-  const prompt = caption || "Describe this image accurately and concisely for another assistant. Do not invent unreadable text.";
+  const prompt = [
+    "Analyze the attached image as visual evidence for another assistant.",
+    "Do not answer the customer's business question yourself.",
+    "Describe the important visible objects, UI states, account/status indicators, numbers, names and readable text accurately.",
+    "If text is unclear, say it is unclear instead of inventing it.",
+    caption ? `Customer caption/question for context: ${caption}` : "There is no customer caption.",
+    "Return only a concise factual image analysis that the final assistant can use together with the customer's caption/question.",
+  ].join("\n");
   const estimatedInput = Math.max(1, Math.ceil(prompt.length / 4));
 
   if (provider === "workers-ai" || provider === "mkety-managed") {
@@ -2357,7 +2498,7 @@ async function invokeSpeechTarget(
   throw new Error(`media_speech_provider_unsupported:${provider}`);
 }
 
-async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer, caption: string, mime = "image/jpeg") {
+async function describeImage(env: AssistEnv, assistant: any, conversationId: string, bytes: ArrayBuffer, caption: string, mime = "image/jpeg") {
   const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
   const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
   const cacheKey = `vision:${assistant.id}:${sourceHash}`;
@@ -2365,16 +2506,26 @@ async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer,
   if (cached) return { text: cached, usage: null };
 
   const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-vision");
+  if (!targets.length) return { text: "", usage: null, error: "vision_route_unavailable" };
+  let authorization: Awaited<ReturnType<typeof reserveMediaProcessing>>;
+  try {
+    authorization = await reserveMediaProcessing(env, assistant, "vision", targets);
+  } catch (error) {
+    return { text: "", usage: null, error: error instanceof Error ? error.message : String(error) };
+  }
+
   for (const target of targets) {
     try {
       const output = await invokeVisionTarget(env, target, assistant.customer_id, bytes, mime, caption);
       const text = String(output.text || "").trim();
       if (!text) continue;
+      const rawUsage = mediaTargetUsage(target, "vision", output.inputUnits, output.outputUnits);
+      const settledUsage = await settleMediaProcessing(env, assistant, conversationId, authorization, rawUsage);
       await putPromptCache({
         db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
         kind: "vision", value: text, sourceHash, ttlSeconds: 2592000,
       }).catch(() => undefined);
-      return { text, usage: mediaTargetUsage(target, "vision", output.inputUnits, output.outputUnits) };
+      return { text, usage: settledUsage };
     } catch (error) {
       console.warn("vision target failed; trying next capability fallback", {
         provider: target.provider, model: target.provider_model,
@@ -2382,26 +2533,37 @@ async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer,
       });
     }
   }
+  await releaseReservation(env.DB, authorization.reservation.id, assistant.customer_id, authorization.reserveAtoms).catch(() => undefined);
   console.error("vision extraction failed: no capability route target succeeded");
-  return { text: "", usage: null };
+  return { text: "", usage: null, error: "vision_all_targets_failed" };
 }
 
-async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffer, mime = "audio/ogg", audioSeconds = 0) {
+async function transcribeAudio(env: AssistEnv, assistant: any, conversationId: string, bytes: ArrayBuffer, mime = "audio/ogg", audioSeconds = 0) {
   const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
   const cacheKey = `audio:${assistant.id}:${sourceHash}`;
   const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
   if (cached) return { text: cached, usage: null };
 
   const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-speech");
+  if (!targets.length) return { text: "", usage: null, error: "speech_route_unavailable" };
+  let authorization: Awaited<ReturnType<typeof reserveMediaProcessing>>;
+  try {
+    authorization = await reserveMediaProcessing(env, assistant, "speech", targets, audioSeconds);
+  } catch (error) {
+    return { text: "", usage: null, error: error instanceof Error ? error.message : String(error) };
+  }
+
   for (const target of targets) {
     try {
       const text = String(await invokeSpeechTarget(env, target, assistant.customer_id, bytes, mime)).trim();
       if (!text) continue;
+      const rawUsage = mediaTargetUsage(target, "speech", 0, 0, audioSeconds);
+      const settledUsage = await settleMediaProcessing(env, assistant, conversationId, authorization, rawUsage);
       await putPromptCache({
         db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
         kind: "audio", value: text, sourceHash, ttlSeconds: 2592000,
       }).catch(() => undefined);
-      return { text, usage: mediaTargetUsage(target, "speech", 0, 0, audioSeconds) };
+      return { text, usage: settledUsage };
     } catch (error) {
       console.warn("speech target failed; trying next capability fallback", {
         provider: target.provider, model: target.provider_model,
@@ -2409,8 +2571,9 @@ async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffe
       });
     }
   }
+  await releaseReservation(env.DB, authorization.reservation.id, assistant.customer_id, authorization.reserveAtoms).catch(() => undefined);
   console.error("audio transcription failed: no capability route target succeeded");
-  return { text: "", usage: null };
+  return { text: "", usage: null, error: "speech_all_targets_failed" };
 }
 
 async function retrieveKnowledge(
