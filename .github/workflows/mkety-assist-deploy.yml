@@ -508,13 +508,14 @@ jobs:
           const payload=JSON.parse(fs.readFileSync('/tmp/assist-commercial-unit.json','utf8'));
           const row=payload?.[0]?.results?.[0];
           const config=JSON.parse(row?.value_json||'{}');
-          if(config.mkreditsPerUsd!==10000000 || config.creditUnit!=='MKredit' || config.creditScaleVersion!==2){
-            throw new Error('Production MKredit precision configuration is not active: '+JSON.stringify(config));
+          if(config.mkreditsPerUsd!==1000 || config.creditAtomsPerUsd!==10000000 || config.creditAtomsPerMkredit!==10000 || config.creditUnit!=='MKredit' || config.creditScaleVersion!==3){
+            throw new Error('Production MKredit configuration is not active: '+JSON.stringify(config));
           }
-          const exampleMicros=403;
-          const mkredit=Math.ceil(exampleMicros*config.mkreditsPerUsd/1000000);
-          if(mkredit!==4030) throw new Error('MKredit conversion invariant failed: '+mkredit);
-          console.log('MKredit precision invariant: PASS; 403 provider-cost micros = 4030 MKredit before customer multiplier');
+          const providerCostUsd=0.03;
+          const publicMkredit=providerCostUsd*config.mkreditsPerUsd;
+          const internalAtoms=providerCostUsd*config.creditAtomsPerUsd;
+          if(publicMkredit!==30 || internalAtoms!==300000) throw new Error('MKredit/atom invariant failed');
+          console.log('MKredit invariant: PASS; $1 = 1000 MKredit and $0.03 = 30 MKredit = 300000 precision atoms');
           NODE
 
           echo "=== Active media route economics ==="
