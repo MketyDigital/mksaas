@@ -1468,7 +1468,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     ).bind(assistantMessageId, job.customer_id, job.assistant_id, job.conversation_id, "assistant", responseText, unix()),
     env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), job.conversation_id),
     env.DB.prepare(
-      "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+      "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,last_error=NULL,completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
     ).bind(deliveryId, unix(), unix(), job.id),
   ]);
   return { retry: false, delaySeconds: 0 };
