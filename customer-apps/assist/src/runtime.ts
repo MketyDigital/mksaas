@@ -1260,7 +1260,13 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
   await env.DB.prepare("UPDATE reply_jobs SET delivery_started_at=?,updated_at=? WHERE id=?")
     .bind(unix(), unix(), job.id).run();
-  const sent = await telegramSend(token, String(job.external_conversation_id), responseText, job.business_connection_id ? String(job.business_connection_id) : null);
+  const sent = await telegramSend(
+    token,
+    String(job.external_conversation_id),
+    responseText,
+    job.business_connection_id ? String(job.business_connection_id) : null,
+    job.provider_message_id ? String(job.provider_message_id) : null,
+  );
   if (!sent.ok) {
     const description = String(sent.description || "telegram_send_failed");
     const terminal = /blocked by the user|chat not found|bot was blocked/i.test(description);
@@ -1646,6 +1652,23 @@ async function runAssistant(input: {
     };
     let result = await invokeRoutedModel(env, route, aiInput, assistant.customer_id);
     let text = extractAiText(result);
+
+    if (text && modelResponseWasTruncated(result)) {
+      const continuation = await invokeRoutedModel(env, route, {
+        messages: [
+          ...aiInput.messages,
+          { role: "assistant", content: text },
+          { role: "user", content: "Continue exactly from where the previous reply stopped. Do not repeat earlier text." },
+        ],
+        max_tokens: maxOutputTokens,
+        temperature: 0.2,
+      }, assistant.customer_id);
+      const continuationText = extractAiText(continuation);
+      if (continuationText) {
+        text = (text.trimEnd() + " " + continuationText.trimStart()).trim();
+        result = continuation;
+      }
+    }
 
     const toolCall = parseToolCall(text, tools.results ?? []);
     if (toolCall) {
@@ -2121,7 +2144,10 @@ async function invokeSpeechTarget(
   const b64 = arrayBufferToBase64(bytes);
 
   if (provider === "workers-ai" || provider === "mkety-managed") {
-    const result = await env.AI.run(model, { audio: b64 });
+    const workersInput = model === "@cf/openai/whisper"
+      ? { audio: [...new Uint8Array(bytes)] }
+      : { audio: b64 };
+    const result = await env.AI.run(model, workersInput);
     const text = audioResponseText(result);
     if (!text) throw new Error("media_speech_empty_transcript");
     return text;
@@ -3044,14 +3070,31 @@ export function shouldIgnoreSecretaryEvent(input: {
   return String(input.senderId) === String(input.connectedAccountId);
 }
 
-async function telegramSend(token: string, chatId: string, text: string, businessConnectionId: string | null = null) {
+async function telegramSend(
+  token: string,
+  chatId: string,
+  text: string,
+  businessConnectionId: string | null = null,
+  replyToMessageId: string | number | null = null,
+) {
   const chunks = splitTelegram(text);
   let last: any = { ok: true };
-  for (const chunk of chunks) {
+  for (let index = 0; index < chunks.length; index++) {
+    const chunk = chunks[index];
+    const numericReplyId = replyToMessageId == null ? null : Number(replyToMessageId);
+    const replyParameters = index === 0 && Number.isFinite(numericReplyId) && numericReplyId! > 0
+      ? { reply_parameters: { message_id: numericReplyId, allow_sending_without_reply: true } }
+      : {};
     last = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: chunk, disable_web_page_preview: true, ...(businessConnectionId ? { business_connection_id: businessConnectionId } : {}) }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: chunk,
+        disable_web_page_preview: true,
+        ...(businessConnectionId ? { business_connection_id: businessConnectionId } : {}),
+        ...replyParameters,
+      }),
     }).then((r) => r.json<any>());
     if (!last.ok) return last;
   }
@@ -3088,6 +3131,24 @@ function extractAiText(result: any) {
   if (Array.isArray(result?.choices)) return String(result.choices[0]?.message?.content || result.choices[0]?.text || "").trim();
   if (typeof result?.text === "string") return result.text.trim();
   return "";
+}
+
+function modelResponseWasTruncated(result: any) {
+  const finish = String(
+    result?.finish_reason ??
+    result?.finishReason ??
+    result?.stop_reason ??
+    result?.stopReason ??
+    result?.choices?.[0]?.finish_reason ??
+    result?.raw?.finish_reason ??
+    result?.raw?.finishReason ??
+    result?.raw?.stop_reason ??
+    result?.raw?.stopReason ??
+    result?.raw?.choices?.[0]?.finish_reason ??
+    result?.raw?.candidates?.[0]?.finishReason ??
+    "",
+  ).toLowerCase();
+  return ["length","max_tokens","max_output_tokens","max_tokens_reached"].some((value) => finish.includes(value));
 }
 
 function extractUsage(result: any, estimatedInput: number, text: string) {
