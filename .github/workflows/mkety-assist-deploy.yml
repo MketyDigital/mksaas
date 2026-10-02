@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: mkety-assist-deploy
@@ -512,3 +513,29 @@ jobs:
           cat /tmp/health.json
           test "$status" -ge 200
           test "$status" -lt 300
+
+      - name: Publish production deployment proof
+        if: always()
+        env:
+          DEPLOY_STATE: ${{ job.status == 'success' && 'success' || 'failure' }}
+          DEPLOY_DESCRIPTION: ${{ job.status == 'success' && 'Assist production deploy and real inference acceptance passed' || 'Assist production deploy or acceptance failed' }}
+          DEPLOY_TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(node - <<'NODE'
+          process.stdout.write(JSON.stringify({
+            state: process.env.DEPLOY_STATE,
+            context: 'mkety-assist/production-deploy',
+            description: process.env.DEPLOY_DESCRIPTION,
+            target_url: process.env.DEPLOY_TARGET_URL
+          }));
+          NODE
+          )"
+          curl --fail-with-body --silent --show-error \
+            -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Content-Type: application/json" \
+            --data "$payload" >/dev/null
