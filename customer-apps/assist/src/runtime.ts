@@ -592,6 +592,9 @@ export async function handleRuntimeApi(
       const tools = await env.DB.prepare(
         "SELECT id,name,description,endpoint_url,status FROM assistant_tools WHERE assistant_id=? ORDER BY name",
       ).bind(assistantId).all();
+      if (assistant?.monthly_credit_cap != null) {
+        assistant.monthly_credit_cap = Math.round((Number(assistant.monthly_credit_cap) / 10000) * 10000) / 10000;
+      }
       return json({ assistant, knowledge: collections.results ?? [], tools: tools.results ?? [] });
     }
 
@@ -621,7 +624,7 @@ export async function handleRuntimeApi(
         body.modelAlias ?? null,
         body.timezone ?? null,
         typeof body.memoryEnabled === "boolean" ? (body.memoryEnabled ? 1 : 0) : null,
-        body.monthlyCreditCap === undefined ? null : parseFloat(String(body.monthlyCreditCap)),
+        body.monthlyCreditCap === undefined ? null : Math.round(Number(body.monthlyCreditCap) * 10000),
         typeof body.humanDelayEnabled === "boolean" ? (body.humanDelayEnabled ? 1 : 0) : null,
         body.humanDelayMinSeconds === undefined ? null : clampNumber(body.humanDelayMinSeconds, 0, 3600),
         body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
