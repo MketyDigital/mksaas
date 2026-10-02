@@ -488,6 +488,33 @@ jobs:
           }
           NODE
 
+      - name: Read-only media and MKredit reconciliation
+        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then d1_token="$MKETY_ASSIST_CF_SAAS_TOKEN"; else d1_token="$CLOUDFLARE_API_TOKEN"; fi
+          run_query() {
+            CLOUDFLARE_API_TOKEN="$d1_token" npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc --command "$1"
+          }
+
+          echo "=== Commercial MKredit conversion ==="
+          run_query "SELECT key,value_json FROM system_settings WHERE key='commercial';"
+
+          echo "=== Active media route economics ==="
+          run_query "SELECT alias,position,provider,provider_model,enabled,input_credits_per_million,output_credits_per_million,audio_credits_per_minute,provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,provider_audio_cost_micros_per_minute FROM model_route_targets WHERE alias IN ('mkety-media-vision','mkety-media-speech') ORDER BY alias,position;"
+
+          echo "=== Recent media proof (no message contents) ==="
+          run_query "SELECT kind,size_bytes,LENGTH(COALESCE(vision_text,'')) AS vision_chars,LENGTH(COALESCE(transcript,'')) AS transcript_chars,created_at FROM media_assets ORDER BY created_at DESC LIMIT 12;"
+
+          echo "=== Recent metered provider usage ==="
+          run_query "SELECT model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at FROM usage_events ORDER BY created_at DESC LIMIT 30;"
+
+          echo "=== Recent provider cost ledger ==="
+          run_query "SELECT provider,provider_model,cost_micros,created_at FROM provider_cost_events ORDER BY created_at DESC LIMIT 30;"
+
       - name: Register Telegram recovery webhook
         if: env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN != '' && env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET != ''
         shell: bash
