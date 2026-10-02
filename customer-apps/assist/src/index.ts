@@ -993,7 +993,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       providerStatus,
     });
     const projected = projectDomainStatus(evidence);
-    const stickyActive = String(local.status) === "active" && Boolean(local.verified_at);
+    const stickyActive = Boolean(local.verified_at) || String(local.status) === "active";
     const finalStatus = stickyActive ? "active" : projected.status;
     await env.DB.prepare(
       `UPDATE customer_domains
@@ -1456,7 +1456,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       providerStatus: String(domain.provider_status || "pending"),
     });
     const projected = projectDomainStatus(evidence);
-    const stickyActive = String(domain.status) === "active" && Boolean(domain.verified_at);
+    const stickyActive = Boolean(domain.verified_at) || String(domain.status) === "active";
     const finalStatus = stickyActive ? "active" : projected.status;
     await env.DB.prepare(
       `UPDATE customer_domains SET status=?,public_dns_ok=?,public_tls_ok=?,ownership_ok=?,public_checked_at=?,
@@ -2359,7 +2359,7 @@ async function createCustomHostname(env: Env, customerId: string, hostnameInput:
 
   const existing = await env.DB.prepare("SELECT id,status,verified_at FROM customer_domains WHERE hostname=? LIMIT 1").bind(hostname).first<any>();
   const providerProjectedStatus = result.status === "active" ? "active" : "pending";
-  const persistedStatus = existing?.status === "active" && existing?.verified_at ? "active" : providerProjectedStatus;
+  const persistedStatus = existing?.verified_at || existing?.status === "active" ? "active" : providerProjectedStatus;
   await env.DB.batch([
     env.DB.prepare("UPDATE customer_domains SET is_primary=0 WHERE customer_id=?").bind(customerId),
     existing
