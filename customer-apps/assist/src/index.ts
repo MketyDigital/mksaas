@@ -861,7 +861,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/providers" && request.method === "GET") {
     await bootstrapManagedProviderConnections(env);
     const rows = await env.DB.prepare(
-      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,fallback_enabled,fallback_priority,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY ownership DESC,fallback_priority ASC,name",
+      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,fallback_enabled,fallback_priority,provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,input_credits_per_million,output_credits_per_million,provider_cost_verified_at,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY ownership DESC,fallback_priority ASC,name",
     ).all();
     return json({ providers: rows.results ?? [] });
   }
@@ -887,8 +887,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     const providerId = id("prv");
     const now = unix();
+    const providerRate = await normalizeExternalProviderRateCard(env, body);
+    const requestedFallback = body.fallbackEnabled === true;
+    if (requestedFallback && ownership === "mkety" && !providerRate.ready) {
+      return json({ error: "provider_rate_card_required_before_fallback" }, 400);
+    }
     await env.DB.prepare(
-      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,fallback_enabled,fallback_priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,fallback_enabled,fallback_priority,provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,input_credits_per_million,output_credits_per_million,provider_cost_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).bind(
       providerId,
       requiredString(body.name, "name"),
@@ -899,8 +904,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       JSON.stringify(normalized.extra),
       ownership,
       "disabled",
-      body.fallbackEnabled === true ? 1 : 0,
+      requestedFallback ? 1 : 0,
       Math.max(2, Math.min(999, Number(body.fallbackPriority || 100))),
+      providerRate.inputCost,
+      providerRate.outputCost,
+      providerRate.inputCredits,
+      providerRate.outputCredits,
+      providerRate.verifiedAt,
       now,
       now,
     ).run();
@@ -933,6 +943,20 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         ? !["name","endpointUrl","apiKey","model","credentialsJson","extra"].some((key) => body[key] !== undefined)
         : false;
     if (routingOnly) {
+      if (body.fallbackEnabled === true && current.ownership === "mkety") {
+        const rateReady =
+          Number(current.provider_input_cost_micros_per_million || 0) > 0 &&
+          Number(current.provider_output_cost_micros_per_million || 0) > 0 &&
+          Number(current.input_credits_per_million || 0) > 0 &&
+          Number(current.output_credits_per_million || 0) > 0 &&
+          Boolean(current.provider_cost_verified_at);
+        if (current.status !== "active" || !current.validated_at) {
+          return json({ error: "provider_real_test_required_before_fallback" }, 400);
+        }
+        if (!rateReady) {
+          return json({ error: "provider_rate_card_required_before_fallback" }, 400);
+        }
+      }
       await env.DB.prepare(
         "UPDATE provider_connections SET fallback_enabled=COALESCE(?,fallback_enabled),fallback_priority=COALESCE(?,fallback_priority),updated_at=? WHERE id=?",
       ).bind(
@@ -960,8 +984,12 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const cipher = normalized.apiKey
       ? await protectStoredSecret(String(normalized.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
       : current.api_key_ciphertext;
+    const providerRate = await normalizeExternalProviderRateCard(env, body, current);
+    if (body.fallbackEnabled === true && current.ownership === "mkety" && !providerRate.ready) {
+      return json({ error: "provider_rate_card_required_before_fallback" }, 400);
+    }
     await env.DB.prepare(
-      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=?,status='disabled',validated_at=NULL,validation_error='revalidation_required',fallback_enabled=COALESCE(?,fallback_enabled),fallback_priority=COALESCE(?,fallback_priority),updated_at=? WHERE id=?",
+      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=?,status='disabled',validated_at=NULL,validation_error='revalidation_required',fallback_enabled=COALESCE(?,fallback_enabled),fallback_priority=COALESCE(?,fallback_priority),provider_input_cost_micros_per_million=?,provider_output_cost_micros_per_million=?,input_credits_per_million=?,output_credits_per_million=?,provider_cost_verified_at=?,updated_at=? WHERE id=?",
     ).bind(
       body.name ?? null,
       endpointUrl,
@@ -969,6 +997,11 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       JSON.stringify(normalized.extra),
       body.fallbackEnabled === undefined ? null : (body.fallbackEnabled ? 1 : 0),
       body.fallbackPriority === undefined ? null : Math.max(2, Math.min(999, Number(body.fallbackPriority || 100))),
+      providerRate.inputCost,
+      providerRate.outputCost,
+      providerRate.inputCredits,
+      providerRate.outputCredits,
+      providerRate.verifiedAt,
       unix(),
       providerId,
     ).run();
@@ -2750,6 +2783,40 @@ function costToBaseCredits(providerCostMicros: number, creditUsdMicros: number) 
   return Math.ceil(providerCostMicros / Math.max(1, creditUsdMicros));
 }
 
+async function normalizeExternalProviderRateCard(env: Env, body: any, current?: any) {
+  const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
+  const creditUsdMicros = Math.max(
+    1,
+    parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10),
+  );
+  const inputCost = positiveInt(
+    body.providerInputCostMicrosPerMillion,
+    Number(current?.provider_input_cost_micros_per_million || 0),
+  );
+  const outputCost = positiveInt(
+    body.providerOutputCostMicrosPerMillion,
+    Number(current?.provider_output_cost_micros_per_million || 0),
+  );
+  const verifiedAt = body.providerCostVerifiedAt === undefined
+    ? (current?.provider_cost_verified_at ? String(current.provider_cost_verified_at) : null)
+    : (String(body.providerCostVerifiedAt || "").trim() || null);
+  const generateRate = body.generateRate === true;
+  const inputCredits = generateRate
+    ? costToBaseCredits(inputCost, creditUsdMicros)
+    : positiveInt(body.inputCreditsPerMillion, Number(current?.input_credits_per_million || 0));
+  const outputCredits = generateRate
+    ? costToBaseCredits(outputCost, creditUsdMicros)
+    : positiveInt(body.outputCreditsPerMillion, Number(current?.output_credits_per_million || 0));
+  return {
+    inputCost,
+    outputCost,
+    inputCredits,
+    outputCredits,
+    verifiedAt,
+    ready: inputCost > 0 && outputCost > 0 && inputCredits > 0 && outputCredits > 0 && Boolean(verifiedAt),
+  };
+}
+
 function normalizeProviderConfiguration(provider: string, body: any, current?: any) {
   const priorExtra = (() => {
     try {
@@ -2914,7 +2981,7 @@ async function bootstrapManagedProviderConnections(env: Env) {
       ).run();
     }
 
-    const latest = await env.DB.prepare("SELECT status,validated_at,validation_error FROM provider_connections WHERE id=? LIMIT 1")
+    const latest = await env.DB.prepare("SELECT status,validated_at,validation_error,fallback_enabled,provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,input_credits_per_million,output_credits_per_million,provider_cost_verified_at FROM provider_connections WHERE id=? LIMIT 1")
       .bind(providerId).first<any>();
     let test: any = null;
     if (changed || !latest?.validated_at) {
@@ -2923,10 +2990,23 @@ async function bootstrapManagedProviderConnections(env: Env) {
 
     const active = test ? Boolean(test.ok) : String(latest?.status || "") === "active";
     const billingBlocked = test ? Boolean(test.billingBlocked && test.credentialsAccepted) : String(latest?.validation_error || "") === "provider_billing_or_quota_blocked";
-    const enableFallback = definition.fallbackEnabled && active;
-    await env.DB.prepare(
-      "UPDATE provider_connections SET fallback_enabled=?,fallback_priority=?,updated_at=? WHERE id=?",
-    ).bind(enableFallback ? 1 : 0, definition.fallbackPriority, unix(), providerId).run();
+    const rateReady =
+      Number(latest?.provider_input_cost_micros_per_million || 0) > 0 &&
+      Number(latest?.provider_output_cost_micros_per_million || 0) > 0 &&
+      Number(latest?.input_credits_per_million || 0) > 0 &&
+      Number(latest?.output_credits_per_million || 0) > 0 &&
+      Boolean(latest?.provider_cost_verified_at);
+    const currentFallbackEnabled = Boolean(latest?.fallback_enabled);
+    const enableFallback = active && rateReady && currentFallbackEnabled;
+    if (!enableFallback && currentFallbackEnabled) {
+      await env.DB.prepare(
+        "UPDATE provider_connections SET fallback_enabled=0,fallback_priority=?,updated_at=? WHERE id=?",
+      ).bind(definition.fallbackPriority, unix(), providerId).run();
+    } else {
+      await env.DB.prepare(
+        "UPDATE provider_connections SET fallback_priority=?,updated_at=? WHERE id=?",
+      ).bind(definition.fallbackPriority, unix(), providerId).run();
+    }
 
     bootstrapped.push({
       provider: definition.provider,
@@ -2934,6 +3014,7 @@ async function bootstrapManagedProviderConnections(env: Env) {
       changed,
       active,
       billingBlocked,
+      rateReady,
       fallbackEnabled: enableFallback,
       fallbackPriority: definition.fallbackPriority,
     });
