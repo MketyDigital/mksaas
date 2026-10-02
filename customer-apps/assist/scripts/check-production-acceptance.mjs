@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (p) => readFile(new URL("../" + p, import.meta.url), "utf8");
-const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain,m12,m13,m20,m21,m22,m27,m28,m29,m30,m31] = await Promise.all([
+const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain,m12,m13,m20,m21,m22,m27,m28,m29,m30,m31,m32] = await Promise.all([
   read("src/runtime.ts"), read("src/index.ts"), read("src/ui.ts"),
   read("src/payments/service.ts"), read("src/providers/validation.ts"), read("src/providers/types.ts"),
   read("src/billing/metering.ts"), read("src/handoff/service.ts"),
@@ -11,7 +11,7 @@ const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain
   read("migrations/0021_metering_invariants.sql"), read("migrations/0022_payment_methods.sql"),
   read("migrations/0027_ordered_provider_routes.sql"), read("migrations/0028_workers_gemma_primary.sql"),
   read("migrations/0029_media_capability_routes.sql"), read("migrations/0030_media_usage_metering.sql"),
-  read("migrations/0031_true_mkredit_precision.sql"),
+  read("migrations/0031_true_mkredit_precision.sql"), read("migrations/0032_mkredit_public_unit.sql"),
 ]);
 
 assert.match(index,/password_hash/);
