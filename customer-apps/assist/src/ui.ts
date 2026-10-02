@@ -37,7 +37,7 @@ const brand=document.getElementById('brand'),who=document.getElementById('who'),
   dialog=document.getElementById('dialog'),toast=document.getElementById('toast'),content=document.getElementById('content'),
   topTitle=document.getElementById('topTitle');
 const APP=${initial};
-const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[],automation:{paused:false},features:{}};
+const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[],automation:{paused:false},features:{},account:{status:'active',billingStatus:'pending',userControl:{state:'active'}}};
 const sections=['dashboard','assistants','knowledge','conversations','handoffs','reminders','usage','api','team','settings'];
 const titles={dashboard:'Dashboard',assistants:'Assistants',knowledge:'Knowledge',conversations:'Conversations',handoffs:'Human Handoff',reminders:'Reminders',usage:'Usage & Credits',api:'API Access',team:'Team',settings:'Settings'};
 if(APP.brandColor&&/^#[0-9a-fA-F]{6}$/.test(APP.brandColor))document.documentElement.style.setProperty('--brand',APP.brandColor);
@@ -56,7 +56,7 @@ async function refresh(){
  const [a,k,u,c,h,r,g,me]=await Promise.all([
   api('/api/assistants'),api('/api/knowledge'),api('/api/usage'),api('/api/conversations'),api('/api/handoffs'),api('/api/reminders'),api('/api/automation'),api('/api/me')
  ]);
- state.assistants=a.assistants||[];state.knowledge=k.collections||[];state.usage=u;state.conversations=c.conversations||[];state.handoffs=h.handoffs||[];state.reminders=r.reminders||[];state.automation=g||{paused:false};state.features=me.features||{};
+ state.assistants=a.assistants||[];state.knowledge=k.collections||[];state.usage=u;state.conversations=c.conversations||[];state.handoffs=h.handoffs||[];state.reminders=r.reminders||[];state.automation=g||{paused:false};state.features=me.features||{};state.account={status:me.accountStatus||'active',billingStatus:me.billingStatus||'pending',graceUntil:me.graceUntil||null,userControl:me.userControl||{state:'active'}};
  render();
 }
 function go(s){state.section=s;topTitle.textContent=titles[s];render()}
@@ -68,8 +68,16 @@ function render(){
 }
 function render_dashboard(){
  const open=state.handoffs.filter(h=>h.status==='open').length,active=state.assistants.filter(a=>a.status==='active').length;
- return '<h1 class="title">Dashboard</h1><p class="sub">Your assistants, conversations and usage in one place.</p><div class="grid">'+
- metric('Assistants',active+'/'+state.assistants.length)+metric('Credits',state.usage?.creditsAvailable??0)+metric('Open handoffs',open)+metric('Conversations',state.conversations.length)+
+ const platform=String(state.account?.status||'active');
+ const billing=String(state.account?.billingStatus||'pending');
+ const control=String(state.account?.userControl?.state||'active');
+ let accountLabel='Active',accountClass='ok',accountNote='Your Mkety Assist account is active.';
+ if(control!=='active'){accountLabel=control[0].toUpperCase()+control.slice(1);accountClass=control==='banned'||control==='suspended'?'danger':'warn';accountNote='Your portal access is '+control+'.';}
+ else if(platform!=='active'){accountLabel=platform==='paused'?'Paused':'Suspended';accountClass='warn';accountNote='Your Mkety Assist account is '+platform+'.';}
+ else if(billing!=='current'){accountLabel='Payment pending';accountClass='warn';accountNote='Fund your credits to activate billing.';}
+ return '<div class="spread"><div><h1 class="title">Dashboard</h1><p class="sub">Your assistants, conversations and usage in one place.</p></div><span class="pill '+accountClass+'">'+esc(accountLabel)+'</span></div>'+
+ '<div class="card" style="margin-bottom:16px"><strong>Account status: '+esc(accountLabel)+'</strong><div class="muted">'+esc(accountNote)+'</div></div>'+
+ '<div class="grid">'+metric('Assistants',active+'/'+state.assistants.length)+metric('Credits',state.usage?.creditsAvailable??0)+metric('Open handoffs',open)+metric('Conversations',state.conversations.length)+
  '</div><div class="two" style="margin-top:16px"><div class="card"><div class="spread"><h3>Assistants</h3><button class="btn primary" data-action="new-assistant">New assistant</button></div>'+assistantRows(state.assistants.slice(0,5))+'</div>'+
  '<div class="card"><h3>Recent conversations</h3>'+conversationRows(state.conversations.slice(0,6))+'</div></div>';
 }
@@ -279,6 +287,8 @@ function launchFlutterwave(data){
     currency:p.currency,
     redirect_url:'https://mkety-assist.mkety.app'+p.redirectPath,
     payload_hash:p.payloadHash,
+    ...(p.paymentOptions?{payment_options:p.paymentOptions}:{}),
+    ...(p.bankTransferOptions?{bank_transfer_options:p.bankTransferOptions}:{}),
     customer:{email:p.email,...(p.customerName?{name:p.customerName}:{})},
     meta:p.metadata||{},
     customizations:{title:'Mkety Assist',description:'Secure Mkety Assist payment'},
@@ -299,21 +309,55 @@ async function paymentMethodOptions(){
 async function payPlan(){
  try{
   const [methods,offer]=await Promise.all([paymentMethodOptions(),api('/api/billing/credit-offer')]);
-  const total=((Number(offer.recurringAmountMinor||0)+Number(offer.setupFeeMinor||0))/100).toFixed(2);
-  openModal('<h2>Fund monthly credits</h2><div class="card"><div class="muted">You fund</div><div class="metric">$'+esc(total)+'</div><div style="font-size:22px;font-weight:800;margin-top:8px">→ '+esc(offer.recurringCredits||0)+' Mkety credits</div></div><div class="field"><label>Payment method</label><select class="input" id="planMethod">'+methods.html+'</select></div><div class="field"><label>Payment currency (Flutterwave)</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div><p id="planPayMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="planPayStart">Fund credits</button><button class="btn" id="planPayCancel">Cancel</button></div>');
+  const fullRecurring=(Number(offer.recurringAmountMinor||0)/100).toFixed(2);
+  const minRecurring=(Number(offer.minimumFundingMinor||offer.recurringAmountMinor||0)/100).toFixed(2);
+  const partial=offer.fundingMode==='prepaid_partial';
+  openModal('<h2>Fund monthly credits</h2>'+
+    (partial?'<div class="field"><label>Amount to fund (USD)</label><input class="input" id="planFundingAmount" inputmode="decimal" value="'+esc(fullRecurring)+'"><div class="muted">You can fund from $'+esc(minRecurring)+' up to $'+esc(fullRecurring)+'. Full funding is selected by default.</div></div>':'')+
+    '<div class="card" id="planFundingQuote"><span class="muted">Calculating…</span></div>'+
+    '<div class="field"><label>Payment method</label><select class="input" id="planMethod">'+methods.html+'</select></div>'+
+    '<div class="field" id="planCurrencyWrap"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div>'+
+    '<p id="planPayMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="planPayStart">Fund credits</button><button class="btn" id="planPayCancel">Cancel</button></div>');
   planPayCancel.onclick=closeModal;
-  planPayStart.onclick=async()=>{try{planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentMethod:planMethod.value,paymentCurrency:planCurrency.value})});planPayMsg.textContent='Opening secure checkout…';launchFlutterwave(d)}catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
+  const toggleCurrency=()=>{planCurrencyWrap.style.display=planMethod.value==='flutterwave'?'grid':'none'};planMethod.onchange=toggleCurrency;toggleCurrency();
+  let quoteTimer=null;
+  const refreshFundingQuote=async()=>{try{
+    const q=await api('/api/billing/funding-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fundingAmountUsd:partial?planFundingAmount.value:undefined})});
+    planFundingQuote.innerHTML='<div class="muted">You fund</div><div class="metric">$'+(Number(q.totalAmountMinor||0)/100).toFixed(2)+'</div><div style="font-size:20px;font-weight:800;margin-top:8px">→ '+esc(q.credits)+' Mkety credits</div>';
+    return q;
+  }catch(e){planFundingQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
+  if(partial){planFundingAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshFundingQuote,250)}};await refreshFundingQuote();
+  planPayStart.onclick=async()=>{try{
+    planPayStart.disabled=true;planPayMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+      fundingAmountUsd:partial?planFundingAmount.value:undefined,
+      paymentMethod:planMethod.value,
+      ...(planMethod.value==='flutterwave'?{paymentCurrency:planCurrency.value}:{})
+    })});
+    planPayMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
+  }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
  }catch(e){toastMsg(e.message)}
 }
 async function buyCredits(){
  try{
-  const methods=await paymentMethodOptions();
-  openModal('<h2>Add credits</h2><p class="muted">Choose how much to add. Mkety shows the exact credits before checkout.</p><div class="field"><label>Amount (USD)</label><input class="input" id="topupAmount" inputmode="decimal" value="25.00"></div><div class="card" id="creditQuote"><span class="muted">Calculating…</span></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field"><label>Payment currency (Flutterwave)</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="topupStart">Add credits</button><button class="btn" id="topupCancel">Cancel</button></div>');
+  const [methods,offer]=await Promise.all([paymentMethodOptions(),api('/api/billing/credit-offer').catch(()=>({recurringAmountMinor:0}))]);
+  const suggested=Number(offer.recurringAmountMinor||0)>0?(Number(offer.recurringAmountMinor)/100).toFixed(2):'';
+  openModal('<h2>Add credits</h2><p class="muted">Type how much you want to add. The normal full monthly funding amount is suggested when available, but you can change it.</p><div class="field"><label>Amount (USD)</label><input class="input" id="topupAmount" inputmode="decimal" placeholder="Enter amount" value="'+esc(suggested)+'"></div><div class="card" id="creditQuote"><span class="muted">Enter an amount to see your credits.</span></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field" id="topupCurrencyWrap"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="topupStart">Add credits</button><button class="btn" id="topupCancel">Cancel</button></div>');
   topupCancel.onclick=closeModal;
+  const toggleCurrency=()=>{topupCurrencyWrap.style.display=topupMethod.value==='flutterwave'?'grid':'none'};topupMethod.onchange=toggleCurrency;toggleCurrency();
   let quoteTimer=null;
-  const refreshQuote=async()=>{try{const q=await api('/api/billing/credit-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value})});creditQuote.innerHTML='<div class="muted">You add</div><div style="font-size:20px;font-weight:800">$'+(Number(q.amountMinor||0)/100).toFixed(2)+' → '+esc(q.credits)+' Mkety credits</div>';return q}catch(e){creditQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
+  const refreshQuote=async()=>{if(!String(topupAmount.value||'').trim()){creditQuote.innerHTML='<span class="muted">Enter an amount to see your credits.</span>';return null}try{const q=await api('/api/billing/credit-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value})});creditQuote.innerHTML='<div class="muted">You add</div><div style="font-size:20px;font-weight:800">$'+(Number(q.amountMinor||0)/100).toFixed(2)+' → '+esc(q.credits)+' Mkety credits</div>';return q}catch(e){creditQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
   topupAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshQuote,250)};await refreshQuote();
-  topupStart.onclick=async()=>{try{topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value,paymentMethod:topupMethod.value,paymentCurrency:topupCurrency.value})});topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)}catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
+  topupStart.onclick=async()=>{try{
+    if(!String(topupAmount.value||'').trim())throw new Error('Enter an amount first');
+    topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+      amountUsd:topupAmount.value,
+      paymentMethod:topupMethod.value,
+      ...(topupMethod.value==='flutterwave'?{paymentCurrency:topupCurrency.value}:{})
+    })});
+    topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
+  }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
  }catch(e){toastMsg(e.message)}
 }
 async function loadCheckouts(){try{
