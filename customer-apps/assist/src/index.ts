@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, inspectStaleAttemptProjections, processDueReminders, processInboundQueue, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, inspectStaleAttemptProjections, invokeProviderModel, processDueReminders, processInboundQueue, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
-import { normalizeFoundryResponsesEndpoint, validateProviderConnection } from "./providers/validation";
+import { validateProviderConnection } from "./providers/validation";
 import { reasoningCapabilities } from "./providers/reasoning";
 import { evaluateMediaReadiness, evaluateRouteReadiness, routeTargetMediaSupported, routeTargetPricingConfigured, routeTargetValidated } from "./providers/route-readiness";
 import { runConversationQualityProbe } from "./conversation/quality-probe";
@@ -328,53 +328,12 @@ async function promoteManagedAzurePrimaryOnce(env: Env, azureModel: string) {
 }
 
 async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ role: "system" | "user" | "assistant"; content: string }>) {
-  const provider = String(target?.provider || "");
-  const model = String(target?.provider_model || "");
-  if (provider === "workers-ai" || provider === "mkety-managed") {
-    return env.AI.run(model, {
-      messages,
-      max_completion_tokens: 256,
-      reasoning_effort: "low",
-    });
-  }
-  if (provider === "azure-foundry") {
-    const connectionId = String(target?.provider_connection_id || "");
-    if (!connectionId) throw new Error("acceptance_azure_connection_missing");
-    const connection = await env.DB.prepare(
-      "SELECT endpoint_url,api_key_ciphertext,status,validated_at FROM provider_connections WHERE id=? LIMIT 1",
-    ).bind(connectionId).first<any>();
-    if (!connection || connection.status !== "active" || !connection.validated_at || !connection.endpoint_url) {
-      throw new Error("acceptance_azure_connection_unavailable");
-    }
-    const apiKey = await revealStoredSecret(String(connection.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
-    const instructions = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
-    const input = messages.filter((message) => message.role !== "system").map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
-    try {
-      const response = await fetch(normalizeFoundryResponsesEndpoint(String(connection.endpoint_url)), {
-        method: "POST",
-        headers: { "api-key": apiKey, "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          instructions,
-          input,
-          max_output_tokens: 256,
-        }),
-        signal: controller.signal,
-        redirect: "manual",
-      });
-      const payload = await response.json<any>();
-      if (!response.ok) throw new Error(`acceptance_azure_http_${response.status}`);
-      return payload;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw new Error(`acceptance_primary_provider_unsupported:${provider}`);
+  return invokeProviderModel(
+    env,
+    target,
+    { messages, max_tokens: 256, temperature: 0.2 },
+    "__mkety_acceptance__",
+  );
 }
 
 async function handleManagedProviderBootstrap(request: Request, env: Env) {
