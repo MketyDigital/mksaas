@@ -550,9 +550,15 @@ export async function handleRuntimeApi(
     if (!token) return json({ error: "telegram_not_connected" }, 409);
     const sent = await telegramSend(token, handoff.external_conversation_id, text, handoff.business_connection_id ? String(handoff.business_connection_id) : null);
     if (!sent.ok) return json({ error: "telegram_send_failed" }, 502);
-    await env.DB.prepare(
-      "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
-    ).bind(id("msg"), customer.customerId, handoff.assistant_id, handoff.conversation_id, "human", text, unix()).run();
+    const repliedAt = unix();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
+      ).bind(id("msg"), customer.customerId, handoff.assistant_id, handoff.conversation_id, "human", text, repliedAt),
+      env.DB.prepare(
+        "UPDATE reply_jobs SET status='cancelled',last_error='human_manual_reply',completed_at=?,locked_at=NULL,delivery_started_at=NULL,updated_at=? WHERE conversation_id=? AND customer_id=? AND status IN ('pending','retry','processing')",
+      ).bind(repliedAt, repliedAt, handoff.conversation_id, customer.customerId),
+    ]);
     return json({ ok: true });
   }
 
@@ -1157,9 +1163,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   if (!job.response_text) {
     const newer = await env.DB.prepare(
       `SELECT id FROM reply_jobs
-       WHERE conversation_id=? AND id<>? AND created_at>? AND status IN ('pending','retry','processing')
-       ORDER BY created_at DESC LIMIT 1`,
-    ).bind(job.conversation_id, job.id, job.created_at).first<any>();
+       WHERE conversation_id=? AND id<>?
+         AND (created_at>? OR (created_at=? AND CAST(provider_message_id AS INTEGER)>CAST(? AS INTEGER)))
+         AND status IN ('pending','retry','processing')
+       ORDER BY created_at DESC,CAST(provider_message_id AS INTEGER) DESC LIMIT 1`,
+    ).bind(job.conversation_id, job.id, job.created_at, job.created_at, job.provider_message_id).first<any>();
     if (newer) {
       await env.DB.prepare(
         "UPDATE reply_jobs SET status='superseded',last_error=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
@@ -1218,21 +1226,22 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   let responseText = String(job.response_text || "");
   let responseFailure: string | null = null;
   if (!responseText) {
-    const lastOutbound = await env.DB.prepare(
-      "SELECT COALESCE(MAX(created_at),0) AS created_at FROM messages WHERE conversation_id=? AND role IN ('assistant','human')",
+    const lastDelivered = await env.DB.prepare(
+      "SELECT COALESCE(MAX(created_at),0) AS created_at FROM reply_jobs WHERE conversation_id=? AND status='delivered'",
     ).bind(job.conversation_id).first<any>();
-    const afterOutbound = Number(lastOutbound?.created_at || 0);
+    const afterDelivered = Number(lastDelivered?.created_at || 0);
     const batchRows = await env.DB.prepare(
       `SELECT id,user_text,media_context,media_usage_json,image_count,audio_seconds,provider_message_id,created_at,status,last_error
        FROM reply_jobs
-       WHERE conversation_id=? AND created_at>? AND created_at<=?
+       WHERE conversation_id=? AND created_at>?
+         AND (created_at<? OR (created_at=? AND CAST(provider_message_id AS INTEGER)<=CAST(? AS INTEGER)))
          AND (
            status IN ('pending','retry','processing')
            OR (status='superseded' AND last_error LIKE 'batched_into:%')
          )
-       ORDER BY created_at ASC,id ASC LIMIT 30`,
-    ).bind(job.conversation_id, afterOutbound, job.created_at).all<any>();
-    const batch = (batchRows.results ?? []).filter((row: any) => String(row.id) !== String(job.id) || true);
+       ORDER BY created_at ASC,CAST(provider_message_id AS INTEGER) ASC LIMIT 30`,
+    ).bind(job.conversation_id, afterDelivered, job.created_at, job.created_at, job.provider_message_id).all<any>();
+    const batch = batchRows.results ?? [];
     if (batch.length > 1) {
       const textParts: string[] = [];
       const mediaParts: string[] = [];
