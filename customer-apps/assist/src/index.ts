@@ -41,6 +41,12 @@ interface Env {
   FLUTTERWAVE_CHECKOUT_BROKER_URL?: string;
   NOWPAYMENTS_API_KEY?: string;
   NOWPAYMENTS_IPN_SECRET?: string;
+  MKETY_ASSIST_DEPLOY_PROBE_SECRET?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_API_KEY?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_MODEL?: string;
+  MKETY_ASSIST_OPENAI_API_KEY?: string;
+  MKETY_ASSIST_OPENAI_MODEL?: string;
   REPLY_QUEUE: {
     send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   };
@@ -75,6 +81,13 @@ export default {
 
       if (url.pathname === "/health") {
         return json({ ok: true, service: "mkety-assist", time: new Date().toISOString() });
+      }
+
+      if (url.pathname === "/api/internal/provider-bootstrap" && request.method === "POST") {
+        return handleManagedProviderBootstrap(request, env);
+      }
+      if (url.pathname === "/api/internal/inference-acceptance" && request.method === "POST") {
+        return handleInferenceAcceptance(request, env);
       }
 
       if (host === env.OPS_HOST) {
@@ -150,6 +163,123 @@ export default {
     await processReplyQueue(batch, env);
   },
 };
+
+function requireDeployProbe(request: Request, env: Env) {
+  const expected = String(env.MKETY_ASSIST_DEPLOY_PROBE_SECRET || "");
+  const auth = request.headers.get("authorization") || "";
+  const supplied = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!expected || !supplied || !constantTimeEqual(supplied, expected)) throw new HttpError(404, "not_found");
+}
+
+async function upsertManagedProvider(env: Env, input: {
+  id: string;
+  name: string;
+  provider: "azure-foundry" | "openai";
+  endpointUrl: string | null;
+  apiKey: string;
+  model: string;
+}) {
+  const now = unix();
+  const ciphertext = await protectStoredSecret(input.apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+  await env.DB.prepare(
+    `INSERT INTO provider_connections
+     (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,capabilities_json,ownership,status,validated_at,validation_error,created_at,updated_at,default_model)
+     VALUES (?,?,?,?,?,?,?,?,'mkety','disabled',NULL,'bootstrap_validation_required',?,?,?)
+     ON CONFLICT(id) DO UPDATE SET
+       name=excluded.name,provider=excluded.provider,endpoint_url=excluded.endpoint_url,
+       api_key_ciphertext=excluded.api_key_ciphertext,default_model=excluded.default_model,
+       ownership='mkety',customer_id=NULL,status='disabled',validated_at=NULL,
+       validation_error='bootstrap_validation_required',updated_at=excluded.updated_at`,
+  ).bind(
+    input.id,input.name,null,input.provider,input.endpointUrl,ciphertext,"{}",
+    '["text","vision","audio","tools"]',now,now,input.model,
+  ).run();
+
+  const result = await validateProviderConnection({
+    provider: input.provider,
+    endpointUrl: input.endpointUrl,
+    apiKey: input.apiKey,
+    model: input.model,
+    extra: {},
+  });
+  await env.DB.prepare(
+    "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
+  ).bind(
+    result.ok ? "active" : "disabled",
+    result.ok ? now : null,
+    result.ok ? null : String(result.error || "provider_validation_failed"),
+    now,input.id,
+  ).run();
+  return { id: input.id, provider: input.provider, model: input.model, ...result };
+}
+
+async function handleManagedProviderBootstrap(request: Request, env: Env) {
+  requireDeployProbe(request, env);
+  const results: any[] = [];
+  if (env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) {
+    results.push(await upsertManagedProvider(env, {
+      id: "prv_managed_azure_foundry",
+      name: "Mkety Managed Azure Foundry",
+      provider: "azure-foundry",
+      endpointUrl: env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT,
+      apiKey: env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY,
+      model: env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL,
+    }));
+  }
+  if (env.MKETY_ASSIST_OPENAI_API_KEY && env.MKETY_ASSIST_OPENAI_MODEL) {
+    results.push(await upsertManagedProvider(env, {
+      id: "prv_managed_openai",
+      name: "Mkety Managed OpenAI",
+      provider: "openai",
+      endpointUrl: "https://api.openai.com/v1",
+      apiKey: env.MKETY_ASSIST_OPENAI_API_KEY,
+      model: env.MKETY_ASSIST_OPENAI_MODEL,
+    }));
+  }
+  return json({ ok: true, bootstrapped: results });
+}
+
+async function handleInferenceAcceptance(request: Request, env: Env) {
+  requireDeployProbe(request, env);
+  const results: any[] = [];
+  const workersTarget = await env.DB.prepare(
+    "SELECT provider_model FROM model_route_targets WHERE provider='workers-ai' ORDER BY enabled DESC,position ASC LIMIT 1",
+  ).first<any>();
+  const workersModel = String(workersTarget?.provider_model || "@cf/zai-org/glm-4.7-flash");
+  try {
+    const output = await env.AI.run(workersModel, {
+      messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
+      max_tokens: 32,
+    });
+    const raw = JSON.stringify(output ?? {});
+    results.push({ provider: "workers-ai", model: workersModel, ok: raw.length > 2 });
+  } catch (error) {
+    results.push({ provider: "workers-ai", model: workersModel, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+  }
+
+  const managed = await env.DB.prepare(
+    "SELECT id,provider,endpoint_url,api_key_ciphertext,default_model,status,validation_error FROM provider_connections WHERE id IN ('prv_managed_azure_foundry','prv_managed_openai') ORDER BY provider",
+  ).all<any>();
+  for (const row of managed.results ?? []) {
+    const apiKey = await revealStoredSecret(String(row.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+    const probe = await validateProviderConnection({
+      provider: String(row.provider),
+      endpointUrl: row.endpoint_url ? String(row.endpoint_url) : null,
+      apiKey,
+      model: row.default_model ? String(row.default_model) : null,
+      extra: {},
+    });
+    results.push({ provider: row.provider, model: row.default_model, connectionStatus: row.status, ...probe });
+  }
+
+  const targetRows = await env.DB.prepare(
+    "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
+  ).all<any>();
+  const workersOk = results.some((item) => item.provider === "workers-ai" && item.ok);
+  const azureConfigured = Boolean(env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL);
+  const azureOk = !azureConfigured || results.some((item) => item.provider === "azure-foundry" && item.ok);
+  return json({ ok: workersOk && azureOk, providers: results, routeTargets: targetRows.results ?? [] }, workersOk && azureOk ? 200 : 503);
+}
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -673,8 +803,18 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
        )
        LEFT JOIN model_runtime_limits rl ON rl.scope_key=('global:' || r.alias)
        ORDER BY r.alias`,
-    ).all();
-    return json({ models: rows.results ?? [] });
+    ).all<any>();
+    const targets = await env.DB.prepare(
+      "SELECT * FROM model_route_targets WHERE customer_id IS NULL ORDER BY alias,position",
+    ).all<any>();
+    const byAlias = new Map<string, any[]>();
+    for (const target of targets.results ?? []) {
+      const key=String(target.alias);
+      const list=byAlias.get(key) ?? [];
+      list.push(target);
+      byAlias.set(key,list);
+    }
+    return json({ models: (rows.results ?? []).map((row: any) => ({ ...row, targets: byAlias.get(String(row.alias)) ?? [] })) });
   }
 
   if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
@@ -767,6 +907,61 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).run();
     }
 
+    if (Array.isArray(body.targets)) {
+      const scopeKey = targetCustomerId ? `customer:${targetCustomerId}:${alias}` : `global:${alias}`;
+      const sanitizedTargets = body.targets.slice(0, 10).map((target: any, index: number) => ({
+        position: index,
+        provider: requiredString(target.provider, "target.provider"),
+        providerModel: requiredString(target.providerModel, "target.providerModel"),
+        providerConnectionId: target.providerConnectionId ? String(target.providerConnectionId) : null,
+        enabled: target.enabled === false ? 0 : 1,
+        inputCreditsPerMillion: positiveInt(target.inputCreditsPerMillion, 0),
+        outputCreditsPerMillion: positiveInt(target.outputCreditsPerMillion, 0),
+        imageCredits: positiveInt(target.imageCredits, 0),
+        audioCreditsPerMinute: positiveInt(target.audioCreditsPerMinute, 0),
+        providerInputCostMicrosPerMillion: positiveInt(target.providerInputCostMicrosPerMillion, 0),
+        providerOutputCostMicrosPerMillion: positiveInt(target.providerOutputCostMicrosPerMillion, 0),
+        providerImageCostMicros: positiveInt(target.providerImageCostMicros, 0),
+        providerAudioCostMicrosPerMinute: positiveInt(target.providerAudioCostMicrosPerMinute, 0),
+      }));
+      if (!sanitizedTargets.length || !sanitizedTargets.some((target: any) => target.enabled)) {
+        return json({ error: "at_least_one_enabled_model_target_required" }, 400);
+      }
+      for (const target of sanitizedTargets) {
+        if (!["workers-ai","mkety-managed"].includes(target.provider)) {
+          if (!target.providerConnectionId) return json({ error: "target_provider_connection_required" }, 400);
+          const connection = await env.DB.prepare(
+            "SELECT provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
+          ).bind(target.providerConnectionId).first<any>();
+          if (!connection || connection.provider !== target.provider || connection.status !== "active" || !connection.validated_at) {
+            return json({ error: "target_provider_connection_unvalidated_or_mismatch" }, 400);
+          }
+          if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
+            return json({ error: "customer_target_requires_matching_tenant_route" }, 400);
+          }
+        }
+      }
+      const statements: D1PreparedStatement[] = [
+        env.DB.prepare("DELETE FROM model_route_targets WHERE scope_key=?").bind(scopeKey),
+      ];
+      for (const target of sanitizedTargets) {
+        statements.push(env.DB.prepare(
+          `INSERT INTO model_route_targets
+           (scope_key,customer_id,alias,position,provider,provider_model,provider_connection_id,enabled,
+            input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,
+            provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,
+            provider_image_cost_micros,provider_audio_cost_micros_per_minute,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ).bind(
+          scopeKey,targetCustomerId,alias,target.position,target.provider,target.providerModel,target.providerConnectionId,target.enabled,
+          target.inputCreditsPerMillion,target.outputCreditsPerMillion,target.imageCredits,target.audioCreditsPerMinute,
+          target.providerInputCostMicrosPerMillion,target.providerOutputCostMicrosPerMillion,
+          target.providerImageCostMicros,target.providerAudioCostMicrosPerMinute,now,now,
+        ));
+      }
+      await env.DB.batch(statements);
+    }
+
     const runtimeLimitFields = [
       "requestsPerSecond","requestsPerMinute","tokensPerMinute","retryBaseSeconds","retryMaxSeconds",
     ];
@@ -845,7 +1040,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/ops/providers" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
+      "SELECT id,name,customer_id,provider,endpoint_url,default_model,extra_json,ownership,status,validated_at,validation_error,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
     ).all();
     return json({ providers: rows.results ?? [] });
   }
@@ -856,7 +1051,18 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","azure-foundry","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
-    const apiKey = requiredString(body.apiKey, "apiKey");
+    const structuredSecret = provider === "vertex" || provider === "bedrock";
+    const apiKey = structuredSecret
+      ? requiredString(body.credentialJson, "credentialJson")
+      : requiredString(body.apiKey, "apiKey");
+    if (structuredSecret) {
+      try {
+        const parsed = JSON.parse(apiKey);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ error: "credential_json_must_be_object" }, 400);
+      } catch {
+        return json({ error: "invalid_credential_json" }, 400);
+      }
+    }
     const endpointUrl = body.endpointUrl ? String(body.endpointUrl).trim() : null;
     if (endpointUrl) {
       const parsed = new URL(endpointUrl);
@@ -871,7 +1077,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const providerId = id("prv");
     const now = unix();
     await env.DB.prepare(
-      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,created_at,updated_at,default_model) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     ).bind(
       providerId,
       requiredString(body.name, "name"),
@@ -884,6 +1090,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       "disabled",
       now,
       now,
+      body.model ? String(body.model).trim() : null,
     ).run();
     await env.DB.prepare(
       "INSERT INTO audit_events (id,actor_type,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -900,13 +1107,22 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       provider: String(current.provider),
       endpointUrl: current.endpoint_url ? String(current.endpoint_url) : null,
       apiKey,
+      model: current.default_model ? String(current.default_model) : null,
       extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
     });
     const now = unix();
     await env.DB.prepare(
       "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
     ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
-    return json({ ok: result.ok, status: result.status, error: result.error ?? null, providerId }, result.ok ? 200 : 422);
+    return json({
+      ok: result.ok,
+      status: result.status,
+      error: result.error ?? null,
+      credentialAccepted: result.credentialAccepted ?? result.ok,
+      billingBlocked: result.billingBlocked ?? false,
+      returnedText: result.returnedText ?? null,
+      providerId,
+    }, result.ok || result.billingBlocked ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
@@ -914,20 +1130,36 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
     if (!current) return json({ error: "provider_not_found" }, 404);
     const body = await readJson(request);
+    if (body.enabled === false && Object.keys(body).every((key) => key === "enabled")) {
+      await env.DB.prepare(
+        "UPDATE provider_connections SET status='disabled',validation_error='disabled_by_operator',updated_at=? WHERE id=?",
+      ).bind(unix(),providerId).run();
+      return json({ ok: true, status: "disabled" });
+    }
     const endpointUrl = body.endpointUrl === undefined ? current.endpoint_url : (body.endpointUrl || null);
     if (endpointUrl) {
       const parsed = new URL(String(endpointUrl));
       if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
     }
-    const cipher = body.apiKey
-      ? await protectStoredSecret(String(body.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
+    const replacementSecret = body.credentialJson ?? body.apiKey;
+    if (replacementSecret && ["vertex","bedrock"].includes(String(current.provider))) {
+      try {
+        const parsed = JSON.parse(String(replacementSecret));
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ error: "credential_json_must_be_object" }, 400);
+      } catch {
+        return json({ error: "invalid_credential_json" }, 400);
+      }
+    }
+    const cipher = replacementSecret
+      ? await protectStoredSecret(String(replacementSecret), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
       : current.api_key_ciphertext;
     await env.DB.prepare(
-      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status='disabled',validated_at=NULL,validation_error='revalidation_required',updated_at=? WHERE id=?",
+      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,default_model=COALESCE(?,default_model),extra_json=COALESCE(?,extra_json),status='disabled',validated_at=NULL,validation_error='revalidation_required',updated_at=? WHERE id=?",
     ).bind(
       body.name ?? null,
       endpointUrl,
       cipher,
+      body.model === undefined ? null : (body.model ? String(body.model).trim() : null),
       body.extra === undefined ? null : JSON.stringify(body.extra),
       unix(),
       providerId,

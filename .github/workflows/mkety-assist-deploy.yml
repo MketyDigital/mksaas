@@ -35,6 +35,11 @@ jobs:
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
       MKETY_ASSIST_OPS_AUTH_ISSUER: ${{ secrets.ZITADEL_URL || vars.ZITADEL_URL }}
       MKETY_ASSIST_OPS_ALLOWED_EMAIL: hello@mkety.com
+      MKETY_ASSIST_AZURE_FOUNDRY_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_KEY || secrets.MKETY_PUBLIC_AZURE_API_KEY || secrets.MKETY_PUBLIC_AZURE_KEY || secrets.AZURE_OPENAI_API_KEY || secrets.AZURE_AI_API_KEY }}
+      MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_ASSIST_AZURE_FOUNDRY_MODEL: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPENAI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || vars.MKETY_PUBLIC_AZURE_OPENAI_MODEL || vars.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_ASSIST_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+      MKETY_ASSIST_OPENAI_MODEL: ${{ secrets.MKETY_PUBLIC_OPENAI_MODEL || vars.MKETY_PUBLIC_OPENAI_MODEL || 'gpt-5.6-luna' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET FLUTTERWAVE_CHECKOUT_BROKER_SECRET)
+          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET FLUTTERWAVE_CHECKOUT_BROKER_SECRET MKETY_ASSIST_AZURE_FOUNDRY_API_KEY MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT MKETY_ASSIST_AZURE_FOUNDRY_MODEL)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: $name"
@@ -365,6 +370,14 @@ jobs:
             echo "Attached hosted portal: $host"
           done </tmp/assist-hosted-hostnames
 
+      - name: Generate deploy probe credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+          echo "::add-mask::$probe"
+          echo "MKETY_ASSIST_DEPLOY_PROBE_SECRET=$probe" >> "$GITHUB_ENV"
+
       - name: Upload configured Assist secrets
         working-directory: customer-apps/assist
         env:
@@ -391,6 +404,12 @@ jobs:
           if (process.env.NOWPAYMENTS_IPN_SECRET) values.NOWPAYMENTS_IPN_SECRET = process.env.NOWPAYMENTS_IPN_SECRET;
           if (process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) values.MKETY_ASSIST_SECRET_ENCRYPTION_KEY = process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
           if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN) values.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN = process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN;
+          if (process.env.MKETY_ASSIST_DEPLOY_PROBE_SECRET) values.MKETY_ASSIST_DEPLOY_PROBE_SECRET = process.env.MKETY_ASSIST_DEPLOY_PROBE_SECRET;
+          if (process.env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY) values.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY = process.env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY;
+          if (process.env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT) values.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT = process.env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT;
+          if (process.env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) values.MKETY_ASSIST_AZURE_FOUNDRY_MODEL = process.env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL;
+          if (process.env.MKETY_ASSIST_OPENAI_API_KEY) values.MKETY_ASSIST_OPENAI_API_KEY = process.env.MKETY_ASSIST_OPENAI_API_KEY;
+          if (process.env.MKETY_ASSIST_OPENAI_MODEL) values.MKETY_ASSIST_OPENAI_MODEL = process.env.MKETY_ASSIST_OPENAI_MODEL;
           const telegramWebhookSecret = process.env.EFFECTIVE_TELEGRAM_AUTH_WEBHOOK_SECRET || process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET;
           if (telegramWebhookSecret) values.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET = telegramWebhookSecret;
           const telegramUsername = process.env.EFFECTIVE_TELEGRAM_AUTH_BOT_USERNAME || process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME;
@@ -438,6 +457,35 @@ jobs:
           set -euo pipefail
           generated="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
           printf '%s' "$generated" | npx wrangler secret put MKETY_ASSIST_SECRET_ENCRYPTION_KEY --config wrangler.deploy.jsonc
+
+      - name: Bootstrap shared managed AI credentials into isolated Assist records
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --retry 3 --retry-delay 2             --output /tmp/assist-provider-bootstrap.json --write-out '%{http_code}'             -X POST https://mkety-assist.mkety.app/api/internal/provider-bootstrap             -H "Authorization: Bearer $MKETY_ASSIST_DEPLOY_PROBE_SECRET"             -H 'Content-Type: application/json' --data '{}')"
+          cat /tmp/assist-provider-bootstrap.json
+          test "$status" -ge 200
+          test "$status" -lt 300
+
+      - name: Real production AI inference acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --retry 3 --retry-delay 2             --output /tmp/assist-inference-acceptance.json --write-out '%{http_code}'             -X POST https://mkety-assist.mkety.app/api/internal/inference-acceptance             -H "Authorization: Bearer $MKETY_ASSIST_DEPLOY_PROBE_SECRET"             -H 'Content-Type: application/json' --data '{}')"
+          ACCEPTANCE=/tmp/assist-inference-acceptance.json STATUS="$status" node <<'NODE'
+          const fs=require('node:fs');
+          const status=Number(process.env.STATUS||0);
+          const payload=JSON.parse(fs.readFileSync(process.env.ACCEPTANCE,'utf8'));
+          for(const item of payload.providers||[]){
+            const suffix=item.billingBlocked?' (credentials accepted; provider billing/quota blocked)':'';
+            console.log(String(item.provider)+': '+(item.ok?'PASS':'NOT ACTIVE')+suffix+(item.model?' model='+item.model:''));
+          }
+          console.log('Ordered route targets visible: '+String((payload.routeTargets||[]).length));
+          if(status<200||status>=300||payload.ok!==true){
+            console.error(JSON.stringify(payload,null,2));
+            process.exit(1);
+          }
+          NODE
 
       - name: Register Telegram recovery webhook
         if: env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN != '' && env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET != ''

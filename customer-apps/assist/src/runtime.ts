@@ -1,5 +1,6 @@
 import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
 import { mayUseFallback } from "./providers/validation";
+import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./providers/structured-credentials";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
 import {
@@ -1597,25 +1598,30 @@ async function runAssistant(input: {
   }
 
   const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
-  const baseInputCredits = parseFloat(String(rate.input_credits_per_million || 0));
-  const baseOutputCredits = parseFloat(String(rate.output_credits_per_million || 0));
-  const effectiveInputCredits = Math.ceil(baseInputCredits * multiplierBps / 10000);
-  const effectiveOutputCredits = Math.ceil(baseOutputCredits * multiplierBps / 10000);
-  const effectiveImageCredits = Math.ceil(parseFloat(String(rate.image_credits || 0)) * multiplierBps / 10000);
-  const effectiveAudioCreditsPerMinute = Math.ceil(parseFloat(String(rate.audio_credits_per_minute || 0)) * multiplierBps / 10000);
+  const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
+  const maxOf = (key: string, fallback: unknown) => Math.max(
+    Number(fallback || 0),
+    ...routeRates.map((target: any) => Number(target?.[key] || 0)),
+  );
+  const effectiveInputCredits = Math.ceil(maxOf("input_credits_per_million", rate.input_credits_per_million) * multiplierBps / 10000);
+  const effectiveOutputCredits = Math.ceil(maxOf("output_credits_per_million", rate.output_credits_per_million) * multiplierBps / 10000);
+  const effectiveImageCredits = Math.ceil(maxOf("image_credits", rate.image_credits) * multiplierBps / 10000);
+  const effectiveAudioCreditsPerMinute = Math.ceil(maxOf("audio_credits_per_minute", rate.audio_credits_per_minute) * multiplierBps / 10000);
   const mediaCredits = input.imageCount * effectiveImageCredits
     + Math.ceil((input.audioSeconds / 60) * effectiveAudioCreditsPerMinute);
   const reserveAmount = Math.max(1,
     Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000) + mediaCredits,
   );
 
-  const mediaProviderCostMicros = input.imageCount * parseFloat(String(rate.provider_image_cost_micros || 0))
-    + Math.ceil((input.audioSeconds / 60) * parseFloat(String(rate.provider_audio_cost_micros_per_minute || 0)));
-  const estimatedProviderCostMicros = Math.max(0, Math.ceil(
-    (estimatedInputTokens * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-      + maxOutputTokens * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
-      + mediaProviderCostMicros,
-  ));
+  const estimatedProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => {
+    const media = input.imageCount * Number(target?.provider_image_cost_micros || rate.provider_image_cost_micros || 0)
+      + Math.ceil((input.audioSeconds / 60) * Number(target?.provider_audio_cost_micros_per_minute || rate.provider_audio_cost_micros_per_minute || 0));
+    return Math.ceil(
+      (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
+        + media,
+    );
+  }));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,
     assistant.customer_id,
@@ -1661,13 +1667,21 @@ async function runAssistant(input: {
 
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
+    const servedRate = result?.__mketyTargetRate || rate;
+    const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
+    const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
+    const servedImageCredits = Math.ceil(Number(servedRate.image_credits || rate.image_credits || 0) * multiplierBps / 10000);
+    const servedAudioCredits = Math.ceil(Number(servedRate.audio_credits_per_minute || rate.audio_credits_per_minute || 0) * multiplierBps / 10000);
+    const servedMediaCredits = input.imageCount * servedImageCredits + Math.ceil((input.audioSeconds / 60) * servedAudioCredits);
     const actualCredits = Math.max(1,
-      Math.ceil((usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000) + mediaCredits,
+      Math.ceil((usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000) + servedMediaCredits,
     );
+    const servedMediaProviderCostMicros = input.imageCount * Number(servedRate.provider_image_cost_micros || rate.provider_image_cost_micros || 0)
+      + Math.ceil((input.audioSeconds / 60) * Number(servedRate.provider_audio_cost_micros_per_minute || rate.provider_audio_cost_micros_per_minute || 0));
     const providerCostMicros = Math.max(0, Math.ceil(
-      (usage.input * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-        + usage.output * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
-        + mediaProviderCostMicros,
+      (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
+        + servedMediaProviderCostMicros,
     ));
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
       modelAlias: assistant.model_alias,
@@ -1782,15 +1796,16 @@ export async function handleApiKeyInference(
   }
 
   const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
-  const effectiveInputCredits = Math.ceil(Number(rate.input_credits_per_million || 0) * multiplierBps / 10000);
-  const effectiveOutputCredits = Math.ceil(Number(rate.output_credits_per_million || 0) * multiplierBps / 10000);
+  const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
+  const reserveInputCredits = Math.ceil(Math.max(Number(rate.input_credits_per_million || 0), ...routeRates.map((target: any) => Number(target?.input_credits_per_million || 0))) * multiplierBps / 10000);
+  const reserveOutputCredits = Math.ceil(Math.max(Number(rate.output_credits_per_million || 0), ...routeRates.map((target: any) => Number(target?.output_credits_per_million || 0))) * multiplierBps / 10000);
   const reserveAmount = Math.max(1, Math.ceil(
-    (estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000,
+    (estimatedInputTokens * reserveInputCredits + maxOutputTokens * reserveOutputCredits) / 1_000_000,
   ));
-  const estimatedProviderCostMicros = Math.max(0, Math.ceil(
-    (estimatedInputTokens * Number(rate.provider_input_cost_micros_per_million || 0)
-      + maxOutputTokens * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
-  ));
+  const estimatedProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => Math.ceil(
+    (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+      + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+  )));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
     return json({ error: { message: "usage_limit_reached" } }, 402);
   }
@@ -1807,12 +1822,15 @@ export async function handleApiKeyInference(
     const text = extractAiText(result);
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
+    const servedRate = result?.__mketyTargetRate || rate;
+    const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
+    const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
     const actualCredits = Math.max(1, Math.ceil(
-      (usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000,
+      (usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000,
     ));
     const providerCostMicros = Math.max(0, Math.ceil(
-      (usage.input * Number(rate.provider_input_cost_micros_per_million || 0)
-        + usage.output * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+      (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
     ));
     await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, actualCredits, {
       modelAlias: alias,
@@ -2170,8 +2188,19 @@ async function resolveModelRoute(db: D1Database, customerId: string, alias: stri
      FROM customer_model_routes
      WHERE customer_id=? AND alias=? AND status='active' LIMIT 1`,
   ).bind(customerId, alias).first<any>();
-  if (override) return override;
-  return db.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  const route = override ?? await db.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  if (!route) return null;
+  const customerScope = `customer:${customerId}:${alias}`;
+  const globalScope = `global:${alias}`;
+  let targets = await db.prepare(
+    "SELECT * FROM model_route_targets WHERE scope_key=? AND enabled=1 ORDER BY position ASC",
+  ).bind(customerScope).all<any>();
+  if (!(targets.results ?? []).length) {
+    targets = await db.prepare(
+      "SELECT * FROM model_route_targets WHERE scope_key=? AND enabled=1 ORDER BY position ASC",
+    ).bind(globalScope).all<any>();
+  }
+  return { ...route, __targets: targets.results ?? [] };
 }
 
 async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
@@ -2180,122 +2209,93 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     : JSON.stringify(input || {}).length;
   const estimatedTokens = Math.max(1, Math.ceil(inputChars / 4) + Number(input?.max_tokens || 0));
   const alias = String(route.alias || route.provider_model || route.provider || "unknown");
-  const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
-  if (!capacity.allowed) {
-    throw new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
-  }
+  const configuredTargets = Array.isArray(route.__targets) && route.__targets.length
+    ? route.__targets
+    : [
+        { position: 0, provider: route.provider, provider_model: route.provider_model, provider_connection_id: route.provider_connection_id },
+        ...(route.fallback_provider && route.fallback_model
+          ? [{ position: 1, provider: route.fallback_provider, provider_model: route.fallback_model, provider_connection_id: route.fallback_provider_connection_id }]
+          : []),
+      ];
 
-  try {
-    const result = await invokeProviderModel(env, {
-      provider: route.provider,
-      provider_model: route.provider_model,
-      provider_connection_id: route.provider_connection_id,
-    }, input, customerId);
-    return annotateProviderResult(result, String(route.provider), String(route.provider_model));
-  } catch (primaryError) {
-    if (!route.fallback_provider || !route.fallback_model) throw primaryError;
-
-    const primaryOwnership = route.provider_connection_id
-      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
-      : null;
-    const fallbackOwnership = route.fallback_provider_connection_id
-      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
-      : null;
-    if (primaryOwnership?.ownership === "customer" && primaryOwnership.customer_id !== customerId) throw primaryError;
-    if (fallbackOwnership?.ownership === "customer" && fallbackOwnership.customer_id !== customerId) throw primaryError;
-    const primaryIsByok = primaryOwnership?.ownership === "customer";
-    const fallbackIsManaged = route.fallback_provider === "workers-ai"
-      || route.fallback_provider === "mkety-managed"
-      || (!route.fallback_provider_connection_id)
-      || fallbackOwnership?.ownership === "mkety";
-
-    if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryIsByok, fallbackIsManaged)) {
-      console.warn("BYOK provider failed; funded fallback blocked by policy", { alias: route.alias, provider: route.provider });
-      throw primaryError;
+  let lastError: unknown = null;
+  for (let index = 0; index < configuredTargets.length; index++) {
+    const target = configuredTargets[index];
+    if (!target?.provider || !target?.provider_model) continue;
+    if (target.provider_connection_id) {
+      const ownership = await env.DB.prepare(
+        "SELECT ownership,customer_id,status,validated_at FROM provider_connections WHERE id=? LIMIT 1",
+      ).bind(target.provider_connection_id).first<any>();
+      if (!ownership || ownership.status !== "active" || !ownership.validated_at) continue;
+      if (ownership.ownership === "customer" && ownership.customer_id !== customerId) continue;
+      if (index > 0) {
+        const primary = configuredTargets[0];
+        const primaryOwnership = primary?.provider_connection_id
+          ? await env.DB.prepare("SELECT ownership FROM provider_connections WHERE id=? LIMIT 1").bind(primary.provider_connection_id).first<any>()
+          : null;
+        const fallbackIsManaged = ownership.ownership === "mkety";
+        if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryOwnership?.ownership === "customer", fallbackIsManaged)) {
+          continue;
+        }
+      }
     }
 
-    console.warn("primary model route failed; using explicitly permitted fallback", {
-      alias: route.alias,
-      provider: route.provider,
-      fallbackProvider: route.fallback_provider,
-    });
-    const fallbackCapacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
-    if (!fallbackCapacity.allowed) {
-      throw new RetryableInferenceError("fallback_model_capacity_wait", fallbackCapacity.retryAfterSeconds);
+    const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+    if (!capacity.allowed) {
+      lastError = new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
+      continue;
     }
-    const result = await invokeProviderModel(env, {
-      provider: route.fallback_provider,
-      provider_model: route.fallback_model,
-      provider_connection_id: route.fallback_provider_connection_id,
-    }, input, customerId);
-    return annotateProviderResult(result, String(route.fallback_provider), String(route.fallback_model));
+
+    try {
+      const result = await invokeProviderModel(env, target, input, customerId);
+      return annotateProviderResult(result, String(target.provider), String(target.provider_model), target);
+    } catch (error) {
+      lastError = error;
+      const classified = classifyRetryableError(error);
+      if (!classified.retryable) throw error;
+      console.warn("model target failed; trying next ordered fallback", {
+        alias,
+        provider: target.provider,
+        model: target.provider_model,
+        position: target.position ?? index,
+      });
+    }
   }
+  if (lastError) throw lastError;
+  throw new Error("No enabled model route target is available.");
 }
 
-function annotateProviderResult(result: any, provider: string, model: string) {
+function annotateProviderResult(result: any, provider: string, model: string, target?: any) {
+  const targetRate = target ? {
+    input_credits_per_million: Number(target.input_credits_per_million || 0),
+    output_credits_per_million: Number(target.output_credits_per_million || 0),
+    image_credits: Number(target.image_credits || 0),
+    audio_credits_per_minute: Number(target.audio_credits_per_minute || 0),
+    provider_input_cost_micros_per_million: Number(target.provider_input_cost_micros_per_million || 0),
+    provider_output_cost_micros_per_million: Number(target.provider_output_cost_micros_per_million || 0),
+    provider_image_cost_micros: Number(target.provider_image_cost_micros || 0),
+    provider_audio_cost_micros_per_minute: Number(target.provider_audio_cost_micros_per_minute || 0),
+  } : null;
   if (result && typeof result === "object" && !Array.isArray(result)) {
-    return { ...result, __mketyProvider: provider, __mketyProviderModel: model };
+    return { ...result, __mketyProvider: provider, __mketyProviderModel: model, __mketyTargetRate: targetRate };
   }
-  return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model };
+  return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model, __mketyTargetRate: targetRate };
 }
 
-function utf8(value: string | Uint8Array) {
+function utf8Bytes(value: string | Uint8Array) {
   return typeof value === "string" ? encoder.encode(value) : value;
 }
 
 async function digestSha256(value: string | Uint8Array) {
-  const data = utf8(value);
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer));
+  const data = utf8Bytes(value);
+  return new Uint8Array(await crypto.subtle.digest(
+    "SHA-256",
+    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
+  ));
 }
 
 function hex(bytes: Uint8Array) {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hmacSha256(key: string | Uint8Array, value: string) {
-  const data = utf8(key);
-  const imported = await crypto.subtle.importKey("raw", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", imported, encoder.encode(value)));
-}
-
-async function buildBedrockHeaders(input: {
-  accessKeyId: string;
-  secretAccessKey: string;
-  sessionToken?: string;
-  region: string;
-  host: string;
-  path: string;
-  body: string;
-}) {
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-  const dateStamp = amzDate.slice(0, 8);
-  const payloadHash = hex(await digestSha256(input.body));
-  const pairs: Array<[string,string]> = [
-    ["content-type","application/json"],
-    ["host",input.host],
-    ["x-amz-content-sha256",payloadHash],
-    ["x-amz-date",amzDate],
-  ];
-  if (input.sessionToken) pairs.push(["x-amz-security-token",input.sessionToken]);
-  pairs.sort(([a],[b]) => a.localeCompare(b));
-  const canonicalHeaders = pairs.map(([k,v]) => `${k}:${v.trim()}\n`).join("");
-  const signedHeaders = pairs.map(([k]) => k).join(";");
-  const canonicalRequest = ["POST",input.path,"",canonicalHeaders,signedHeaders,payloadHash].join("\n");
-  const scope = `${dateStamp}/${input.region}/bedrock/aws4_request`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${hex(await digestSha256(canonicalRequest))}`;
-  const dateKey = await hmacSha256(`AWS4${input.secretAccessKey}`, dateStamp);
-  const regionKey = await hmacSha256(dateKey, input.region);
-  const serviceKey = await hmacSha256(regionKey, "bedrock");
-  const signingKey = await hmacSha256(serviceKey, "aws4_request");
-  const signature = hex(await hmacSha256(signingKey, stringToSign));
-  return {
-    authorization: `AWS4-HMAC-SHA256 Credential=${input.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-    "content-type": "application/json",
-    "x-amz-content-sha256": payloadHash,
-    "x-amz-date": amzDate,
-    ...(input.sessionToken ? { "x-amz-security-token": input.sessionToken } : {}),
-  };
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
@@ -2318,8 +2318,31 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   const maxTokens = parseInt(String(input.max_tokens || 1024), 10);
   const temperature = typeof input.temperature === "number" ? input.temperature : 0.4;
 
-  if (provider === "openai" || provider === "openai-compatible") {
-    const base = String(connection.endpoint_url || (provider === "openai" ? "https://api.openai.com/v1" : "")).replace(/\/$/, "");
+  if (provider === "openai") {
+    const base = String(connection.endpoint_url || "https://api.openai.com/v1").replace(/\/$/, "");
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const response = await fetch(`${base}/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        instructions: systemText || undefined,
+        input: messages.filter((m: any) => m.role !== "system").map((m: any) => ({ role: m.role, content: String(m.content || "") })),
+        max_output_tokens: maxTokens,
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    const output = Array.isArray(payload?.output) ? payload.output : [];
+    return {
+      response: typeof payload?.output_text === "string" ? payload.output_text : output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : []).map((part: any) => typeof part?.text === "string" ? part.text : "").join(""),
+      usage: payload?.usage,
+      raw: payload,
+    };
+  }
+
+  if (provider === "openai-compatible") {
+    const base = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!base) throw new Error("OpenAI-compatible endpoint is missing.");
     const response = await fetch(`${base}/chat/completions`, {
       method: "POST",
@@ -2405,22 +2428,38 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   if (provider === "azure-foundry") {
     const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
-    const apiVersion = String(extra.apiVersion || "2024-05-01-preview");
-    const url = endpoint.includes("/chat/completions")
-      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${encodeURIComponent(apiVersion)}`
-      : `${endpoint}/models/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const url = /\/openai\/v1\/responses$/i.test(endpoint) ? endpoint : `${endpoint}/openai/v1/responses`;
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const inputItems = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || ""),
+    }));
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify({ model, instructions: systemText || undefined, input: inputItems, max_output_tokens: maxTokens }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
-    return payload;
+    const output = Array.isArray(payload?.output) ? payload.output : [];
+    const responseText = typeof payload?.output_text === "string"
+      ? payload.output_text
+      : output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+          .map((part: any) => typeof part?.text === "string" ? part.text : "")
+          .join("");
+    return {
+      response: responseText,
+      usage: {
+        input_tokens: payload?.usage?.input_tokens ?? payload?.usage?.inputTokens,
+        output_tokens: payload?.usage?.output_tokens ?? payload?.usage?.outputTokens,
+      },
+      raw: payload,
+    };
   }
 
   if (provider === "vertex") {
-    const projectId = String(extra.projectId || "").trim();
+    const service = await vertexAccessTokenFromServiceAccount(apiKey);
+    const projectId = String(extra.projectId || service.projectId || "").trim();
     const location = String(extra.location || "global").trim();
     if (!projectId) throw new Error("Vertex projectId is missing.");
     const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
@@ -2433,7 +2472,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${service.accessToken}`, "content-type": "application/json" },
         body: JSON.stringify({
           systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
           contents,
@@ -2472,31 +2511,34 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   }
 
   if (provider === "bedrock") {
-    const accessKeyId = String(extra.accessKeyId || "").trim();
-    const region = String(extra.region || "us-east-1").trim();
-    const sessionToken = String(extra.sessionToken || "").trim();
-    if (!accessKeyId) throw new Error("Bedrock accessKeyId is missing.");
-    const host = `bedrock-runtime.${region}.amazonaws.com`;
-    const requestPath = `/model/${encodeURIComponent(model)}/converse`;
-    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const configuredRegion = String(extra.region || "").trim();
     const body = JSON.stringify({
-      system: systemText ? [{ text: systemText }] : undefined,
+      system: messages.filter((m: any) => m.role === "system").map((m: any) => ({ text: String(m.content || "") })),
       messages: messages.filter((m: any) => m.role !== "system").map((m: any) => ({
         role: m.role === "assistant" ? "assistant" : "user",
         content: [{ text: String(m.content || "") }],
       })),
       inferenceConfig: { maxTokens, temperature },
     });
-    const headers = await buildBedrockHeaders({
-      accessKeyId,
-      secretAccessKey: apiKey,
-      sessionToken: sessionToken || undefined,
-      region,
+    const preliminaryRegion = configuredRegion || "us-east-1";
+    const host = `bedrock-runtime.${preliminaryRegion}.amazonaws.com`;
+    const requestPath = `/model/${encodeURIComponent(model)}/converse`;
+    const signed = await bedrockHeadersFromCredentialJson({
+      secret: apiKey,
+      region: configuredRegion || undefined,
       host,
       path: requestPath,
       body,
     });
-    const response = await fetch(`https://${host}${requestPath}`, { method: "POST", headers, body });
+    const effectiveHost = `bedrock-runtime.${signed.region}.amazonaws.com`;
+    const finalSigned = effectiveHost === host ? signed : await bedrockHeadersFromCredentialJson({
+      secret: apiKey,
+      region: signed.region,
+      host: effectiveHost,
+      path: requestPath,
+      body,
+    });
+    const response = await fetch(`https://${effectiveHost}${requestPath}`, { method: "POST", headers: finalSigned.headers, body });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
     return {
@@ -2777,16 +2819,17 @@ function splitTelegram(text: string) {
 function extractAiText(result: any) {
   if (typeof result?.response === "string") return result.response.trim();
   if (typeof result?.result?.response === "string") return result.result.response.trim();
+  if (typeof result?.output_text === "string") return result.output_text.trim();
   if (Array.isArray(result?.choices)) return String(result.choices[0]?.message?.content || result.choices[0]?.text || "").trim();
   if (typeof result?.text === "string") return result.text.trim();
   return "";
 }
 
 function extractUsage(result: any, estimatedInput: number, text: string) {
-  const usage = result?.usage || result?.result?.usage || {};
+  const usage = result?.usage || result?.result?.usage || result?.raw?.usage || {};
   return {
-    input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || estimatedInput)),
-    output: parseFloat(String(usage.completion_tokens || usage.output_tokens || Math.max(1, Math.ceil(text.length / 4)))),
+    input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || usage.inputTokens || estimatedInput)),
+    output: parseFloat(String(usage.completion_tokens || usage.output_tokens || usage.outputTokens || Math.max(1, Math.ceil(text.length / 4)))),
   };
 }
 
