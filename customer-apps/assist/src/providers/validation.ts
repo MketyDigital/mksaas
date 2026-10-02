@@ -81,7 +81,7 @@ export async function validateProviderConnection(input: {
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
         body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:8}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "openai-compatible") {
       if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
@@ -91,7 +91,7 @@ export async function validateProviderConnection(input: {
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
         body:JSON.stringify({model,messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "azure-foundry") {
       if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
@@ -101,7 +101,7 @@ export async function validateProviderConnection(input: {
         headers:{"api-key":input.apiKey,"content-type":"application/json"},
         body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:8}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "azure-openai") {
       if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
@@ -112,7 +112,7 @@ export async function validateProviderConnection(input: {
         headers:{"api-key":input.apiKey,"content-type":"application/json"},
         body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "anthropic") {
       if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
@@ -122,7 +122,7 @@ export async function validateProviderConnection(input: {
         headers:{"x-api-key":input.apiKey,"anthropic-version":String(extra.anthropicVersion || "2023-06-01"),"content-type":"application/json"},
         body:JSON.stringify({model,max_tokens:8,messages:[{role:"user",content:"Reply with OK"}]}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "gemini") {
       if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
@@ -132,7 +132,7 @@ export async function validateProviderConnection(input: {
         headers:{"content-type":"application/json"},
         body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:8,temperature:0}}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "vertex") {
       if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
@@ -146,7 +146,7 @@ export async function validateProviderConnection(input: {
         headers:{authorization:`Bearer ${service.accessToken}`,"content-type":"application/json"},
         body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:8,temperature:0}}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "cloudflare-ai") {
       if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
@@ -157,7 +157,7 @@ export async function validateProviderConnection(input: {
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
         body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:8}),
         signal:controller.signal,
-        redirect:"error",
+        redirect:"manual",
       });
     } else if (input.provider === "bedrock") {
       if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
@@ -166,13 +166,16 @@ export async function validateProviderConnection(input: {
       const path=`/model/${encodeURIComponent(model)}/converse`;
       const body=JSON.stringify({messages:[{role:"user",content:[{text:"Reply with OK"}]}],inferenceConfig:{maxTokens:8,temperature:0}});
       const signed=await bedrockHeadersFromCredentialJson({secret:input.apiKey,region,host,path,body});
-      response=await fetchImpl(`https://${host}${path}`,{method:"POST",headers:signed.headers,body,signal:controller.signal,redirect:"error"});
+      response=await fetchImpl(`https://${host}${path}`,{method:"POST",headers:signed.headers,body,signal:controller.signal,redirect:"manual"});
     } else {
       clearTimeout(timer);
       return { ok:false,status:0,error:"unsupported_provider",credentialAccepted:false,billingBlocked:false };
     }
 
     clearTimeout(timer);
+    if (response.status >= 300 && response.status < 400) {
+      return { ok:false,status:response.status,error:"provider_redirect_rejected",credentialAccepted:false,billingBlocked:false };
+    }
     try { payload=await response.clone().json(); } catch { payload=null; }
     const blocked=billingBlocked(response.status,payload);
     const ok=response.ok;
