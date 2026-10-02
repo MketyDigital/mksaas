@@ -2170,8 +2170,19 @@ async function resolveModelRoute(db: D1Database, customerId: string, alias: stri
      FROM customer_model_routes
      WHERE customer_id=? AND alias=? AND status='active' LIMIT 1`,
   ).bind(customerId, alias).first<any>();
-  if (override) return override;
-  return db.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  const route = override ?? await db.prepare("SELECT * FROM model_routes WHERE alias=? AND status='active' LIMIT 1").bind(alias).first<any>();
+  if (!route) return null;
+  const customerScope = `customer:${customerId}:${alias}`;
+  const globalScope = `global:${alias}`;
+  let targets = await db.prepare(
+    "SELECT * FROM model_route_targets WHERE scope_key=? AND enabled=1 ORDER BY position ASC",
+  ).bind(customerScope).all<any>();
+  if (!(targets.results ?? []).length) {
+    targets = await db.prepare(
+      "SELECT * FROM model_route_targets WHERE scope_key=? AND enabled=1 ORDER BY position ASC",
+    ).bind(globalScope).all<any>();
+  }
+  return { ...route, __targets: targets.results ?? [] };
 }
 
 async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
@@ -2180,63 +2191,77 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     : JSON.stringify(input || {}).length;
   const estimatedTokens = Math.max(1, Math.ceil(inputChars / 4) + Number(input?.max_tokens || 0));
   const alias = String(route.alias || route.provider_model || route.provider || "unknown");
-  const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
-  if (!capacity.allowed) {
-    throw new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
-  }
+  const configuredTargets = Array.isArray(route.__targets) && route.__targets.length
+    ? route.__targets
+    : [
+        { position: 0, provider: route.provider, provider_model: route.provider_model, provider_connection_id: route.provider_connection_id },
+        ...(route.fallback_provider && route.fallback_model
+          ? [{ position: 1, provider: route.fallback_provider, provider_model: route.fallback_model, provider_connection_id: route.fallback_provider_connection_id }]
+          : []),
+      ];
 
-  try {
-    const result = await invokeProviderModel(env, {
-      provider: route.provider,
-      provider_model: route.provider_model,
-      provider_connection_id: route.provider_connection_id,
-    }, input, customerId);
-    return annotateProviderResult(result, String(route.provider), String(route.provider_model));
-  } catch (primaryError) {
-    if (!route.fallback_provider || !route.fallback_model) throw primaryError;
-
-    const primaryOwnership = route.provider_connection_id
-      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.provider_connection_id).first<any>()
-      : null;
-    const fallbackOwnership = route.fallback_provider_connection_id
-      ? await env.DB.prepare("SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(route.fallback_provider_connection_id).first<any>()
-      : null;
-    if (primaryOwnership?.ownership === "customer" && primaryOwnership.customer_id !== customerId) throw primaryError;
-    if (fallbackOwnership?.ownership === "customer" && fallbackOwnership.customer_id !== customerId) throw primaryError;
-    const primaryIsByok = primaryOwnership?.ownership === "customer";
-    const fallbackIsManaged = route.fallback_provider === "workers-ai"
-      || route.fallback_provider === "mkety-managed"
-      || (!route.fallback_provider_connection_id)
-      || fallbackOwnership?.ownership === "mkety";
-
-    if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryIsByok, fallbackIsManaged)) {
-      console.warn("BYOK provider failed; funded fallback blocked by policy", { alias: route.alias, provider: route.provider });
-      throw primaryError;
+  let lastError: unknown = null;
+  for (let index = 0; index < configuredTargets.length; index++) {
+    const target = configuredTargets[index];
+    if (!target?.provider || !target?.provider_model) continue;
+    if (target.provider_connection_id) {
+      const ownership = await env.DB.prepare(
+        "SELECT ownership,customer_id,status,validated_at FROM provider_connections WHERE id=? LIMIT 1",
+      ).bind(target.provider_connection_id).first<any>();
+      if (!ownership || ownership.status !== "active" || !ownership.validated_at) continue;
+      if (ownership.ownership === "customer" && ownership.customer_id !== customerId) continue;
+      if (index > 0) {
+        const primary = configuredTargets[0];
+        const primaryOwnership = primary?.provider_connection_id
+          ? await env.DB.prepare("SELECT ownership FROM provider_connections WHERE id=? LIMIT 1").bind(primary.provider_connection_id).first<any>()
+          : null;
+        const fallbackIsManaged = ownership.ownership === "mkety";
+        if (!mayUseFallback(String(route.byok_policy || "managed") as any, primaryOwnership?.ownership === "customer", fallbackIsManaged)) {
+          continue;
+        }
+      }
     }
 
-    console.warn("primary model route failed; using explicitly permitted fallback", {
-      alias: route.alias,
-      provider: route.provider,
-      fallbackProvider: route.fallback_provider,
-    });
-    const fallbackCapacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
-    if (!fallbackCapacity.allowed) {
-      throw new RetryableInferenceError("fallback_model_capacity_wait", fallbackCapacity.retryAfterSeconds);
+    const capacity = await claimModelCapacity(env.DB, customerId, alias, estimatedTokens);
+    if (!capacity.allowed) {
+      lastError = new RetryableInferenceError("model_capacity_wait", capacity.retryAfterSeconds);
+      continue;
     }
-    const result = await invokeProviderModel(env, {
-      provider: route.fallback_provider,
-      provider_model: route.fallback_model,
-      provider_connection_id: route.fallback_provider_connection_id,
-    }, input, customerId);
-    return annotateProviderResult(result, String(route.fallback_provider), String(route.fallback_model));
+
+    try {
+      const result = await invokeProviderModel(env, target, input, customerId);
+      return annotateProviderResult(result, String(target.provider), String(target.provider_model), target);
+    } catch (error) {
+      lastError = error;
+      const classified = classifyRetryableError(error);
+      if (!classified.retryable) throw error;
+      console.warn("model target failed; trying next ordered fallback", {
+        alias,
+        provider: target.provider,
+        model: target.provider_model,
+        position: target.position ?? index,
+      });
+    }
   }
+  if (lastError) throw lastError;
+  throw new Error("No enabled model route target is available.");
 }
 
-function annotateProviderResult(result: any, provider: string, model: string) {
+function annotateProviderResult(result: any, provider: string, model: string, target?: any) {
+  const targetRate = target ? {
+    input_credits_per_million: Number(target.input_credits_per_million || 0),
+    output_credits_per_million: Number(target.output_credits_per_million || 0),
+    image_credits: Number(target.image_credits || 0),
+    audio_credits_per_minute: Number(target.audio_credits_per_minute || 0),
+    provider_input_cost_micros_per_million: Number(target.provider_input_cost_micros_per_million || 0),
+    provider_output_cost_micros_per_million: Number(target.provider_output_cost_micros_per_million || 0),
+    provider_image_cost_micros: Number(target.provider_image_cost_micros || 0),
+    provider_audio_cost_micros_per_minute: Number(target.provider_audio_cost_micros_per_minute || 0),
+  } : null;
   if (result && typeof result === "object" && !Array.isArray(result)) {
-    return { ...result, __mketyProvider: provider, __mketyProviderModel: model };
+    return { ...result, __mketyProvider: provider, __mketyProviderModel: model, __mketyTargetRate: targetRate };
   }
-  return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model };
+  return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model, __mketyTargetRate: targetRate };
 }
 
 function utf8(value: string | Uint8Array) {
@@ -2405,18 +2430,32 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   if (provider === "azure-foundry") {
     const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
-    const apiVersion = String(extra.apiVersion || "2024-05-01-preview");
-    const url = endpoint.includes("/chat/completions")
-      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${encodeURIComponent(apiVersion)}`
-      : `${endpoint}/models/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const url = /\/openai\/v1\/responses$/i.test(endpoint) ? endpoint : `${endpoint}/openai/v1/responses`;
+    const inputItems = messages.map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
+      content: String(m.content || ""),
+    }));
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify({ model, input: inputItems, max_output_tokens: maxTokens, temperature }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
-    return payload;
+    const output = Array.isArray(payload?.output) ? payload.output : [];
+    const responseText = typeof payload?.output_text === "string"
+      ? payload.output_text
+      : output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+          .map((part: any) => typeof part?.text === "string" ? part.text : "")
+          .join("");
+    return {
+      response: responseText,
+      usage: {
+        input_tokens: payload?.usage?.input_tokens ?? payload?.usage?.inputTokens,
+        output_tokens: payload?.usage?.output_tokens ?? payload?.usage?.outputTokens,
+      },
+      raw: payload,
+    };
   }
 
   if (provider === "vertex") {
@@ -2777,16 +2816,17 @@ function splitTelegram(text: string) {
 function extractAiText(result: any) {
   if (typeof result?.response === "string") return result.response.trim();
   if (typeof result?.result?.response === "string") return result.result.response.trim();
+  if (typeof result?.output_text === "string") return result.output_text.trim();
   if (Array.isArray(result?.choices)) return String(result.choices[0]?.message?.content || result.choices[0]?.text || "").trim();
   if (typeof result?.text === "string") return result.text.trim();
   return "";
 }
 
 function extractUsage(result: any, estimatedInput: number, text: string) {
-  const usage = result?.usage || result?.result?.usage || {};
+  const usage = result?.usage || result?.result?.usage || result?.raw?.usage || {};
   return {
-    input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || estimatedInput)),
-    output: parseFloat(String(usage.completion_tokens || usage.output_tokens || Math.max(1, Math.ceil(text.length / 4)))),
+    input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || usage.inputTokens || estimatedInput)),
+    output: parseFloat(String(usage.completion_tokens || usage.output_tokens || usage.outputTokens || Math.max(1, Math.ceil(text.length / 4)))),
   };
 }
 
