@@ -259,6 +259,33 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
     }
   }
 
+  const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlWzWQAAAAASUVORK5CYII=";
+  for (const worker of workerModels) {
+    try {
+      const output = await env.AI.run(worker.model, {
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "An image is attached. Reply with a short acknowledgement of the image." },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${tinyPng}` } },
+          ],
+        }],
+        max_tokens: 32,
+      });
+      const raw = JSON.stringify(output ?? {});
+      const usage = output?.usage || output?.result?.usage || null;
+      results.push({
+        provider: "workers-ai-vision",
+        role: worker.role,
+        model: worker.model,
+        ok: raw.length > 2,
+        usageAvailable: Boolean(usage),
+      });
+    } catch (error) {
+      results.push({ provider: "workers-ai-vision", role: worker.role, model: worker.model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+    }
+  }
+
   const managed = await env.DB.prepare(
     `SELECT id,provider,endpoint_url,api_key_ciphertext,default_model,status,validation_error,extra_json
      FROM provider_connections
@@ -285,10 +312,11 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
     "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
   ).all<any>();
   const workersOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai" && item.model === worker.model && item.ok));
+  const workersVisionOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai-vision" && item.model === worker.model && item.ok));
   const azureOk = results.some((item) => item.provider === "azure-foundry" && (item.ok || item.reachable));
   const vertexOk = results.some((item) => item.provider === "vertex" && (item.ok || item.reachable));
-  const ok = workersOk && azureOk && vertexOk;
-  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
+  const ok = workersOk && workersVisionOk && azureOk && vertexOk;
+  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], workersVisionOk, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
 }
 
 async function handleOps(request: Request, env: Env): Promise<Response> {

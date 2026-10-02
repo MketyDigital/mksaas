@@ -1673,44 +1673,15 @@ async function runAssistant(input: {
   );
   const effectiveInputCredits = Math.ceil(maxOf("input_credits_per_million", rate.input_credits_per_million) * multiplierBps / 10000);
   const effectiveOutputCredits = Math.ceil(maxOf("output_credits_per_million", rate.output_credits_per_million) * multiplierBps / 10000);
-  const mediaUsage = Array.isArray(input.mediaUsage) ? input.mediaUsage : [];
-  const mediaCredits = mediaUsage.reduce((total: number, item: any) => {
-    const r = item?.rate || {};
-    if (item?.kind === "speech") {
-      const perMinute = Math.ceil(Number(r.audioCreditsPerMinute || 0) * multiplierBps / 10000);
-      return total + Math.ceil((Number(item.audioSeconds || 0) / 60) * perMinute);
-    }
-    const inRate = Math.ceil(Number(r.inputCreditsPerMillion || 0) * multiplierBps / 10000);
-    const outRate = Math.ceil(Number(r.outputCreditsPerMillion || 0) * multiplierBps / 10000);
-    return total + Math.ceil((Number(item.inputUnits || 0) * inRate + Number(item.outputUnits || 0) * outRate) / 1_000_000);
-  }, 0);
-  const mediaProviderCosts = mediaUsage.map((item: any) => {
-    const r = item?.rate || {};
-    const costMicros = item?.kind === "speech"
-      ? Math.ceil((Number(item.audioSeconds || 0) / 60) * Number(r.providerAudioCostMicrosPerMinute || 0))
-      : Math.ceil((
-          Number(item.inputUnits || 0) * Number(r.providerInputCostMicrosPerMillion || 0)
-          + Number(item.outputUnits || 0) * Number(r.providerOutputCostMicrosPerMillion || 0)
-        ) / 1_000_000);
-    return {
-      modelAlias: String(item.modelAlias || (item.kind === "speech" ? "mkety-media-speech" : "mkety-media-vision")),
-      provider: String(item.provider || "unknown"),
-      providerModel: String(item.providerModel || "unknown"),
-      inputUnits: Number(item.inputUnits || 0),
-      outputUnits: Number(item.outputUnits || 0),
-      costMicros,
-    };
-  });
-  const mediaProviderCostMicros = mediaProviderCosts.reduce((sum: number, item: any) => sum + Number(item.costMicros || 0), 0);
   const reserveAmount = Math.max(1,
-    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000) + mediaCredits,
+    Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000),
   );
 
   const estimatedTextProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => Math.ceil(
     (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
       + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
   )));
-  const estimatedProviderCostMicros = estimatedTextProviderCostMicros + mediaProviderCostMicros;
+  const estimatedProviderCostMicros = estimatedTextProviderCostMicros;
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,
     assistant.customer_id,
@@ -1777,7 +1748,7 @@ async function runAssistant(input: {
     const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
     const textCredits = Math.ceil((usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000);
-    const actualCredits = Math.max(1, textCredits + mediaCredits);
+    const actualCredits = Math.max(1, textCredits);
     const providerCostMicros = Math.max(0, Math.ceil(
       (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
         + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
@@ -1790,7 +1761,6 @@ async function runAssistant(input: {
       inputUnits: usage.input,
       outputUnits: usage.output,
       providerCostMicros,
-      additionalProviderCosts: mediaProviderCosts,
     });
     return { ok: true as const, text };
   } catch (error) {
@@ -1978,7 +1948,6 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
   const text = String(message.text || message.caption || "").trim();
   const mediaJson: any[] = [];
   const contexts: string[] = [];
-  const mediaUsage: any[] = [];
   let imageCount = 0;
   let audioSeconds = 0;
 
@@ -1990,11 +1959,12 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
-      const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime);
+      const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime, conversationId);
       if (vision.text) {
         contexts.push(`Image context: ${vision.text}`);
-        if (vision.usage) mediaUsage.push(vision.usage);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision.text, asset.id).run();
+      } else {
+        contexts.push("[An image was attached, but image understanding failed. Do not claim to have seen or read the image; ask the customer to resend it or try again.]");
       }
     }
   }
@@ -2006,16 +1976,17 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
-      const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime, audioSeconds);
+      const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime, audioSeconds, conversationId);
       if (transcript.text) {
         contexts.push(`Voice transcript: ${transcript.text}`);
-        if (transcript.usage) mediaUsage.push(transcript.usage);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript.text, asset.id).run();
+      } else {
+        contexts.push("[A voice message was attached, but transcription failed. Do not invent what was said; ask the customer to resend the voice note or type the message.]");
       }
     }
   }
 
-  return { text, mediaContext: contexts.join("\n"), mediaJson, mediaUsage, imageCount, audioSeconds };
+  return { text, mediaContext: contexts.join("\n"), mediaJson, mediaUsage: [], imageCount, audioSeconds };
 }
 
 async function downloadTelegramFile(token: string, fileId: string, env: AssistEnv, assistant: any, conversationId: string, kind: string, mime: string) {
@@ -2085,12 +2056,98 @@ function mediaTargetUsage(target: any, kind: "vision" | "speech", inputUnits: nu
     rate: {
       inputCreditsPerMillion: Number(target.input_credits_per_million || 0),
       outputCreditsPerMillion: Number(target.output_credits_per_million || 0),
+      imageCredits: Number(target.image_credits || 0),
       audioCreditsPerMinute: Number(target.audio_credits_per_minute || 0),
       providerInputCostMicrosPerMillion: Number(target.provider_input_cost_micros_per_million || 0),
       providerOutputCostMicrosPerMillion: Number(target.provider_output_cost_micros_per_million || 0),
+      providerImageCostMicros: Number(target.provider_image_cost_micros || 0),
       providerAudioCostMicrosPerMinute: Number(target.provider_audio_cost_micros_per_minute || 0),
     },
   };
+}
+
+
+async function mediaCommercialState(db: D1Database, customerId: string) {
+  return db.prepare(
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
+            cp.hard_stop_enabled,c.billing_status,c.grace_until
+     FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id
+     WHERE cp.customer_id=? LIMIT 1`,
+  ).bind(customerId).first<any>();
+}
+
+function mediaUsageEconomics(usage: any, multiplierBps: number) {
+  const rate = usage?.rate || {};
+  if (usage?.kind === "speech") {
+    const customerRate = Math.ceil(Number(rate.audioCreditsPerMinute || 0) * multiplierBps / 10000);
+    const credits = Math.max(1, Math.ceil((Number(usage.audioSeconds || 0) / 60) * customerRate));
+    const providerCostMicros = Math.max(0, Math.ceil(
+      (Number(usage.audioSeconds || 0) / 60) * Number(rate.providerAudioCostMicrosPerMinute || 0),
+    ));
+    return { credits, providerCostMicros };
+  }
+  const inputRate = Math.ceil(Number(rate.inputCreditsPerMillion || 0) * multiplierBps / 10000);
+  const outputRate = Math.ceil(Number(rate.outputCreditsPerMillion || 0) * multiplierBps / 10000);
+  const fixedImageCredits = Math.ceil(Number(rate.imageCredits || 0) * multiplierBps / 10000);
+  const credits = Math.max(1, fixedImageCredits + Math.ceil(
+    (Number(usage.inputUnits || 0) * inputRate + Number(usage.outputUnits || 0) * outputRate) / 1_000_000,
+  ));
+  const providerCostMicros = Math.max(0,
+    Number(rate.providerImageCostMicros || 0)
+    + Math.ceil((
+      Number(usage.inputUnits || 0) * Number(rate.providerInputCostMicrosPerMillion || 0)
+      + Number(usage.outputUnits || 0) * Number(rate.providerOutputCostMicrosPerMillion || 0)
+    ) / 1_000_000),
+  );
+  return { credits, providerCostMicros };
+}
+
+async function reserveMediaUsage(
+  env: AssistEnv,
+  assistant: any,
+  conversationId: string,
+  usage: any,
+) {
+  const commercial = await mediaCommercialState(env.DB, assistant.customer_id);
+  if (!commercial) return null;
+  if (commercial.billing_status === "past_due" && commercial.grace_until && unix() > Number(commercial.grace_until)) return null;
+  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  const economics = mediaUsageEconomics(usage, multiplierBps);
+  if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
+    env.DB,
+    assistant.customer_id,
+    commercial,
+    economics.providerCostMicros,
+  ))) return null;
+  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, economics.credits);
+  if (!reservation) return null;
+  return { reservation, commercial, multiplierBps, economics, conversationId };
+}
+
+async function settleMediaUsage(
+  env: AssistEnv,
+  assistant: any,
+  reserved: any,
+  usage: any,
+) {
+  const actual = mediaUsageEconomics(usage, reserved.multiplierBps);
+  return settleReservation(
+    env.DB,
+    reserved.reservation.id,
+    assistant.customer_id,
+    assistant.id,
+    reserved.economics.credits,
+    actual.credits,
+    {
+      modelAlias: String(usage.modelAlias),
+      provider: String(usage.provider),
+      providerModel: String(usage.providerModel),
+      conversationId: String(reserved.conversationId),
+      inputUnits: Number(usage.inputUnits || 0),
+      outputUnits: Number(usage.outputUnits || 0),
+      providerCostMicros: actual.providerCostMicros,
+    },
+  );
 }
 
 async function invokeVisionTarget(
@@ -2357,7 +2414,14 @@ async function invokeSpeechTarget(
   throw new Error(`media_speech_provider_unsupported:${provider}`);
 }
 
-async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer, caption: string, mime = "image/jpeg") {
+async function describeImage(
+  env: AssistEnv,
+  assistant: any,
+  bytes: ArrayBuffer,
+  caption: string,
+  mime = "image/jpeg",
+  conversationId = "",
+) {
   const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
   const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
   const cacheKey = `vision:${assistant.id}:${sourceHash}`;
@@ -2366,16 +2430,33 @@ async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer,
 
   const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-vision");
   for (const target of targets) {
+    const reserveEstimate = mediaTargetUsage(target, "vision", 65536, 500);
+    const reserved = await reserveMediaUsage(env, assistant, conversationId, reserveEstimate);
+    if (!reserved) {
+      console.warn("vision target skipped because media budget or customer credits are unavailable", {
+        provider: target.provider, model: target.provider_model,
+      });
+      continue;
+    }
     try {
       const output = await invokeVisionTarget(env, target, assistant.customer_id, bytes, mime, caption);
       const text = String(output.text || "").trim();
-      if (!text) continue;
+      if (!text) throw new Error("media_vision_empty_response");
+      const actualUsage = mediaTargetUsage(target, "vision", output.inputUnits, output.outputUnits);
+      const settled = await settleMediaUsage(env, assistant, reserved, actualUsage);
+      if (!settled) throw new Error("media_vision_settlement_failed");
       await putPromptCache({
         db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
         kind: "vision", value: text, sourceHash, ttlSeconds: 2592000,
       }).catch(() => undefined);
-      return { text, usage: mediaTargetUsage(target, "vision", output.inputUnits, output.outputUnits) };
+      return { text, usage: null };
     } catch (error) {
+      await releaseReservation(
+        env.DB,
+        reserved.reservation.id,
+        assistant.customer_id,
+        reserved.economics.credits,
+      ).catch(() => undefined);
       console.warn("vision target failed; trying next capability fallback", {
         provider: target.provider, model: target.provider_model,
         error: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
@@ -2386,7 +2467,14 @@ async function describeImage(env: AssistEnv, assistant: any, bytes: ArrayBuffer,
   return { text: "", usage: null };
 }
 
-async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffer, mime = "audio/ogg", audioSeconds = 0) {
+async function transcribeAudio(
+  env: AssistEnv,
+  assistant: any,
+  bytes: ArrayBuffer,
+  mime = "audio/ogg",
+  audioSeconds = 0,
+  conversationId = "",
+) {
   const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
   const cacheKey = `audio:${assistant.id}:${sourceHash}`;
   const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
@@ -2394,15 +2482,32 @@ async function transcribeAudio(env: AssistEnv, assistant: any, bytes: ArrayBuffe
 
   const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-speech");
   for (const target of targets) {
+    const reserveEstimate = mediaTargetUsage(target, "speech", 0, 0, audioSeconds);
+    const reserved = await reserveMediaUsage(env, assistant, conversationId, reserveEstimate);
+    if (!reserved) {
+      console.warn("speech target skipped because media budget or customer credits are unavailable", {
+        provider: target.provider, model: target.provider_model,
+      });
+      continue;
+    }
     try {
       const text = String(await invokeSpeechTarget(env, target, assistant.customer_id, bytes, mime)).trim();
-      if (!text) continue;
+      if (!text) throw new Error("media_speech_empty_transcript");
+      const actualUsage = mediaTargetUsage(target, "speech", 0, 0, audioSeconds);
+      const settled = await settleMediaUsage(env, assistant, reserved, actualUsage);
+      if (!settled) throw new Error("media_speech_settlement_failed");
       await putPromptCache({
         db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
         kind: "audio", value: text, sourceHash, ttlSeconds: 2592000,
       }).catch(() => undefined);
-      return { text, usage: mediaTargetUsage(target, "speech", 0, 0, audioSeconds) };
+      return { text, usage: null };
     } catch (error) {
+      await releaseReservation(
+        env.DB,
+        reserved.reservation.id,
+        assistant.customer_id,
+        reserved.economics.credits,
+      ).catch(() => undefined);
       console.warn("speech target failed; trying next capability fallback", {
         provider: target.provider, model: target.provider_model,
         error: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
@@ -2673,8 +2778,16 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     }
 
     try {
-      const result = await invokeProviderModel(env, target, input, customerId);
-      return annotateProviderResult(result, String(target.provider), String(target.provider_model), target);
+      const result = annotateProviderResult(
+        await invokeProviderModel(env, target, input, customerId),
+        String(target.provider),
+        String(target.provider_model),
+        target,
+      );
+      if (!extractAiText(result)) {
+        throw new Error(`empty_model_response:${String(target.provider)}:${String(target.provider_model)}`);
+      }
+      return result;
     } catch (error) {
       lastError = error;
       const classified = classifyRetryableError(error);
