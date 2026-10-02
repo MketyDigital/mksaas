@@ -1597,25 +1597,30 @@ async function runAssistant(input: {
   }
 
   const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
-  const baseInputCredits = parseFloat(String(rate.input_credits_per_million || 0));
-  const baseOutputCredits = parseFloat(String(rate.output_credits_per_million || 0));
-  const effectiveInputCredits = Math.ceil(baseInputCredits * multiplierBps / 10000);
-  const effectiveOutputCredits = Math.ceil(baseOutputCredits * multiplierBps / 10000);
-  const effectiveImageCredits = Math.ceil(parseFloat(String(rate.image_credits || 0)) * multiplierBps / 10000);
-  const effectiveAudioCreditsPerMinute = Math.ceil(parseFloat(String(rate.audio_credits_per_minute || 0)) * multiplierBps / 10000);
+  const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
+  const maxOf = (key: string, fallback: unknown) => Math.max(
+    Number(fallback || 0),
+    ...routeRates.map((target: any) => Number(target?.[key] || 0)),
+  );
+  const effectiveInputCredits = Math.ceil(maxOf("input_credits_per_million", rate.input_credits_per_million) * multiplierBps / 10000);
+  const effectiveOutputCredits = Math.ceil(maxOf("output_credits_per_million", rate.output_credits_per_million) * multiplierBps / 10000);
+  const effectiveImageCredits = Math.ceil(maxOf("image_credits", rate.image_credits) * multiplierBps / 10000);
+  const effectiveAudioCreditsPerMinute = Math.ceil(maxOf("audio_credits_per_minute", rate.audio_credits_per_minute) * multiplierBps / 10000);
   const mediaCredits = input.imageCount * effectiveImageCredits
     + Math.ceil((input.audioSeconds / 60) * effectiveAudioCreditsPerMinute);
   const reserveAmount = Math.max(1,
     Math.ceil((estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000) + mediaCredits,
   );
 
-  const mediaProviderCostMicros = input.imageCount * parseFloat(String(rate.provider_image_cost_micros || 0))
-    + Math.ceil((input.audioSeconds / 60) * parseFloat(String(rate.provider_audio_cost_micros_per_minute || 0)));
-  const estimatedProviderCostMicros = Math.max(0, Math.ceil(
-    (estimatedInputTokens * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-      + maxOutputTokens * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
-      + mediaProviderCostMicros,
-  ));
+  const estimatedProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => {
+    const media = input.imageCount * Number(target?.provider_image_cost_micros || rate.provider_image_cost_micros || 0)
+      + Math.ceil((input.audioSeconds / 60) * Number(target?.provider_audio_cost_micros_per_minute || rate.provider_audio_cost_micros_per_minute || 0));
+    return Math.ceil(
+      (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
+        + media,
+    );
+  }));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,
     assistant.customer_id,
@@ -1661,13 +1666,21 @@ async function runAssistant(input: {
 
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
+    const servedRate = result?.__mketyTargetRate || rate;
+    const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
+    const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
+    const servedImageCredits = Math.ceil(Number(servedRate.image_credits || rate.image_credits || 0) * multiplierBps / 10000);
+    const servedAudioCredits = Math.ceil(Number(servedRate.audio_credits_per_minute || rate.audio_credits_per_minute || 0) * multiplierBps / 10000);
+    const servedMediaCredits = input.imageCount * servedImageCredits + Math.ceil((input.audioSeconds / 60) * servedAudioCredits);
     const actualCredits = Math.max(1,
-      Math.ceil((usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000) + mediaCredits,
+      Math.ceil((usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000) + servedMediaCredits,
     );
+    const servedMediaProviderCostMicros = input.imageCount * Number(servedRate.provider_image_cost_micros || rate.provider_image_cost_micros || 0)
+      + Math.ceil((input.audioSeconds / 60) * Number(servedRate.provider_audio_cost_micros_per_minute || rate.provider_audio_cost_micros_per_minute || 0));
     const providerCostMicros = Math.max(0, Math.ceil(
-      (usage.input * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-        + usage.output * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
-        + mediaProviderCostMicros,
+      (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
+        + servedMediaProviderCostMicros,
     ));
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
       modelAlias: assistant.model_alias,
