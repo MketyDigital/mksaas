@@ -1146,13 +1146,15 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   if (!job.response_text) {
     const newer = await env.DB.prepare(
       `SELECT id FROM reply_jobs
-       WHERE conversation_id=? AND id<>? AND created_at>? AND status IN ('pending','retry','processing')
-       ORDER BY created_at DESC LIMIT 1`,
-    ).bind(job.conversation_id, job.id, job.created_at).first<any>();
+       WHERE conversation_id=? AND id<>?
+         AND (created_at>? OR (created_at=? AND CAST(provider_message_id AS INTEGER)>CAST(? AS INTEGER)))
+         AND status IN ('pending','retry','processing')
+       ORDER BY created_at DESC,CAST(provider_message_id AS INTEGER) DESC LIMIT 1`,
+    ).bind(job.conversation_id, job.id, job.created_at, job.created_at, job.provider_message_id).first<any>();
     if (newer) {
       await env.DB.prepare(
-        "UPDATE reply_jobs SET status='superseded',completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
-      ).bind(now, now, job.id).run();
+        "UPDATE reply_jobs SET status='superseded',last_error=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
+      ).bind("batched_into:" + String(newer.id), now, now, job.id).run();
       return { retry: false, delaySeconds: 0 };
     }
   }
@@ -1179,10 +1181,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
   ).bind(job.conversation_id).first();
   if (handoff) {
+    const delaySeconds = 60;
     await env.DB.prepare(
-      "UPDATE reply_jobs SET status='cancelled',last_error='human_handoff_open',completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
-    ).bind(now, now, job.id).run();
-    return { retry: false, delaySeconds: 0 };
+      "UPDATE reply_jobs SET status='retry',last_error='human_handoff_open',due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now + delaySeconds, now, job.id).run();
+    return { retry: true, delaySeconds };
   }
 
   const automation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
