@@ -41,6 +41,18 @@ test("testKnowledgeAnswerUsesOnlyFixtureFacts", async () => {
   assert.equal(bad.result.cases.find((item) => item.name === "knowledge_grounding")?.ok, false);
 });
 
+test("accepts contextual hours without repeating Saturday but rejects a wrong weekday", async () => {
+  const contextual = [...GOOD_SYNTHETIC_REPLIES];
+  contextual[0] = { text: "We’re open from 9:00 a.m. to 1:00 p.m.", providerCostMicros: 1 };
+  const good = await runProbe(contextual);
+  assert.equal(good.result.cases.find((item) => item.name === "knowledge_grounding")?.ok, true);
+
+  const wrongDay = [...GOOD_SYNTHETIC_REPLIES];
+  wrongDay[0] = { text: "On Sunday, we’re open from 9:00 a.m. to 1:00 p.m.", providerCostMicros: 1 };
+  const bad = await runProbe(wrongDay);
+  assert.equal(bad.result.cases.find((item) => item.name === "knowledge_grounding")?.ok, false);
+});
+
 test("testBusinessBoundaryRefusesMedicalAdviceNaturally", async () => {
   const good = await runProbe(GOOD_SYNTHETIC_REPLIES);
   assert.equal(good.result.cases.find((item) => item.name === "medical_boundary")?.ok, true);
