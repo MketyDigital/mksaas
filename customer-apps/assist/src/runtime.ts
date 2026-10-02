@@ -1247,8 +1247,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     ).bind(job.conversation_id, afterDelivered, job.created_at, job.created_at, job.provider_message_id).all<any>();
     const unansweredBatch = batchRows.results ?? [];
     if (unansweredBatch.length > 1) {
-      const textParts: string[] = [];
-      const mediaParts: string[] = [];
+      const messageBlocks: string[] = [];
       const combinedUsage: any[] = [];
       let combinedImages = 0;
       let combinedAudioSeconds = 0;
@@ -1257,8 +1256,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
         const label = `Customer message ${index + 1}`;
         const userText = String(row.user_text || "").trim();
         const mediaText = String(row.media_context || "").trim();
-        if (userText) textParts.push(`[${label}] ${userText}`);
-        if (mediaText) mediaParts.push(`[${label} media]\n${mediaText}`);
+        messageBlocks.push([
+          `[${label}]`,
+          userText ? `Caption/text: ${userText}` : "Caption/text: (none)",
+          mediaText ? `Attached media understanding:\n${mediaText}` : "",
+        ].filter(Boolean).join("\n"));
         combinedImages += Number(row.image_count || 0);
         combinedAudioSeconds += Number(row.audio_seconds || 0);
         try {
@@ -1266,8 +1268,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
           if (Array.isArray(usage)) combinedUsage.push(...usage);
         } catch {}
       }
-      job.user_text = textParts.join("\n");
-      job.media_context = mediaParts.join("\n");
+      job.user_text = [
+        "The customer sent the following messages in this exact order. Treat each caption/text and its attached media as one message, then answer all still-unanswered points naturally in one coherent reply.",
+        ...messageBlocks,
+      ].join("\n\n");
+      job.media_context = "";
       job.media_usage_json = JSON.stringify(combinedUsage);
       job.image_count = combinedImages;
       job.audio_seconds = combinedAudioSeconds;
@@ -1639,7 +1644,17 @@ async function runAssistant(input: {
 
   const toolDescriptions = (tools.results ?? []).map((t: any) => `- ${t.name}: ${t.description || "External action"}`).join("\n");
   const staticContext = await staticAssistantContext(env, assistant, String(prompt?.instructions || ""), toolDescriptions);
-  const userCombined = [input.userText, input.mediaContext].filter(Boolean).join("\n\n");
+  const userCombined = input.mediaContext
+    ? [
+        "CUSTOMER MESSAGE (caption/question and attached media are one turn):",
+        input.userText || "(No caption or text was supplied.)",
+        "",
+        "ATTACHED MEDIA UNDERSTANDING FOR THAT SAME MESSAGE:",
+        input.mediaContext,
+        "",
+        "Answer the customer's message using the attached media understanding when relevant. Do not treat the media analysis as a separate customer message, and do not invent details that are not supported by it.",
+      ].join("\n")
+    : input.userText;
   const conversationContext = await buildConversationContext(env.DB, assistant, conversationId, userCombined);
   const history = conversationContext.history;
   const knowledgeBudget = Math.max(2000, Math.min(50000, Number(assistant.context_knowledge_char_budget || 12000)));
@@ -1961,7 +1976,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       mediaJson.push(asset.meta);
       const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime, conversationId);
       if (vision.text) {
-        contexts.push(`Image context: ${vision.text}`);
+        contexts.push(`Attached image analysis for this same customer message:\n${vision.text}`);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision.text, asset.id).run();
       } else {
         contexts.push("[An image was attached, but image understanding failed. Do not claim to have seen or read the image; ask the customer to resend it or try again.]");
@@ -1978,7 +1993,7 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       mediaJson.push(asset.meta);
       const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime, audioSeconds, conversationId);
       if (transcript.text) {
-        contexts.push(`Voice transcript: ${transcript.text}`);
+        contexts.push(`Voice transcript for this same customer message:\n${transcript.text}`);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript.text, asset.id).run();
       } else {
         contexts.push("[A voice message was attached, but transcription failed. Do not invent what was said; ask the customer to resend the voice note or type the message.]");
@@ -2161,7 +2176,14 @@ async function invokeVisionTarget(
   const provider = String(target.provider);
   const model = String(target.provider_model);
   const b64 = arrayBufferToBase64(bytes);
-  const prompt = caption || "Describe this image accurately and concisely for another assistant. Do not invent unreadable text.";
+  const prompt = [
+    "Analyze the attached image as visual evidence for another assistant.",
+    "Do not answer the customer's business question yourself.",
+    "Describe the important visible objects, UI states, account/status indicators, numbers, names and readable text accurately.",
+    "If text is unclear, say it is unclear instead of inventing it.",
+    caption ? `Customer caption/question for context: ${caption}` : "There is no customer caption.",
+    "Return only a concise factual image analysis that the final assistant can use together with the customer's caption/question.",
+  ].join("\n");
   const estimatedInput = Math.max(1, Math.ceil(prompt.length / 4));
 
   if (provider === "workers-ai" || provider === "mkety-managed") {
