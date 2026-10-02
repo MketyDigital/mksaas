@@ -31,6 +31,11 @@ jobs:
       FLUTTERWAVE_CHECKOUT_BROKER_SECRET: ${{ secrets.FLUTTERWAVE_CHECKOUT_BROKER_SECRET }}
       NOWPAYMENTS_API_KEY: ${{ secrets.NOWPAYMENTS_API_KEY }}
       NOWPAYMENTS_IPN_SECRET: ${{ secrets.NOWPAYMENTS_IPN_SECRET }}
+      MKETY_ASSIST_AZURE_FOUNDRY_API_KEY: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_KEY || secrets.MKETY_PUBLIC_AZURE_API_KEY || secrets.MKETY_PUBLIC_AZURE_KEY || secrets.AZURE_OPENAI_API_KEY || secrets.AZURE_AI_API_KEY }}
+      MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_ASSIST_AZURE_FOUNDRY_MODEL: ${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPENAI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || vars.MKETY_PUBLIC_AZURE_OPENAI_MODEL || vars.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      MKETY_ASSIST_OPENAI_API_KEY: ${{ secrets.MKETY_PUBLIC_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+      MKETY_ASSIST_OPENAI_MODEL: ${{ secrets.MKETY_PUBLIC_OPENAI_MODEL || vars.MKETY_PUBLIC_OPENAI_MODEL || secrets.MKETY_PUBLIC_AI_MODEL || vars.MKETY_PUBLIC_AI_MODEL || 'gpt-5.6-luna' }}
       ZITADEL_MANAGEMENT_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
       MKETY_ASSIST_OPS_AUTH_ISSUER: ${{ secrets.ZITADEL_URL || vars.ZITADEL_URL }}
@@ -47,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET FLUTTERWAVE_CHECKOUT_BROKER_SECRET)
+          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET FLUTTERWAVE_CHECKOUT_BROKER_SECRET MKETY_ASSIST_AZURE_FOUNDRY_API_KEY MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT MKETY_ASSIST_AZURE_FOUNDRY_MODEL)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: $name"
@@ -365,6 +370,14 @@ jobs:
             echo "Attached hosted portal: $host"
           done </tmp/assist-hosted-hostnames
 
+      - name: Generate deployment acceptance token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+          echo "::add-mask::$token"
+          echo "MKETY_ASSIST_ACCEPTANCE_TOKEN=$token" >> "$GITHUB_ENV"
+
       - name: Upload configured Assist secrets
         working-directory: customer-apps/assist
         env:
@@ -391,6 +404,12 @@ jobs:
           if (process.env.NOWPAYMENTS_IPN_SECRET) values.NOWPAYMENTS_IPN_SECRET = process.env.NOWPAYMENTS_IPN_SECRET;
           if (process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) values.MKETY_ASSIST_SECRET_ENCRYPTION_KEY = process.env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY;
           if (process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN) values.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN = process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN;
+          if (process.env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY) values.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY = process.env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY;
+          if (process.env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT) values.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT = process.env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT;
+          if (process.env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) values.MKETY_ASSIST_AZURE_FOUNDRY_MODEL = process.env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL;
+          if (process.env.MKETY_ASSIST_OPENAI_API_KEY) values.MKETY_ASSIST_OPENAI_API_KEY = process.env.MKETY_ASSIST_OPENAI_API_KEY;
+          if (process.env.MKETY_ASSIST_OPENAI_MODEL) values.MKETY_ASSIST_OPENAI_MODEL = process.env.MKETY_ASSIST_OPENAI_MODEL;
+          if (process.env.MKETY_ASSIST_ACCEPTANCE_TOKEN) values.MKETY_ASSIST_ACCEPTANCE_TOKEN = process.env.MKETY_ASSIST_ACCEPTANCE_TOKEN;
           const telegramWebhookSecret = process.env.EFFECTIVE_TELEGRAM_AUTH_WEBHOOK_SECRET || process.env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET;
           if (telegramWebhookSecret) values.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET = telegramWebhookSecret;
           const telegramUsername = process.env.EFFECTIVE_TELEGRAM_AUTH_BOT_USERNAME || process.env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_USERNAME;
@@ -455,6 +474,38 @@ jobs:
           )"
           curl --fail-with-body --silent --show-error             -X POST "https://api.telegram.org/bot$MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN/setWebhook"             -H "Content-Type: application/json"             --data "$payload" >/tmp/assist-telegram-auth-webhook.json
           node -e "const v=require('/tmp/assist-telegram-auth-webhook.json'); if(!v.ok) throw new Error(v.description||'Telegram setWebhook failed')"
+
+      - name: Real production inference acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output /tmp/assist-inference-acceptance.json \
+            --write-out '%{http_code}' \
+            -X POST 'https://assist-origin.mkety.app/internal/production-inference-acceptance' \
+            -H "Authorization: Bearer $MKETY_ASSIST_ACCEPTANCE_TOKEN" \
+            -H 'Content-Type: application/json')"
+          node - <<'NODE'
+          const fs=require('fs');
+          const value=JSON.parse(fs.readFileSync('/tmp/assist-inference-acceptance.json','utf8'));
+          const summary={
+            ok:value.ok,
+            workers:value.workers,
+            providers:(value.providers||[]).map(p=>({
+              provider:p.provider,
+              ok:p.ok,
+              credentialsAccepted:p.credentialsAccepted,
+              billingBlocked:p.billingBlocked,
+              status:p.status,
+              error:p.error
+            })),
+            bootstrap:value.bootstrap
+          };
+          console.log(JSON.stringify(summary,null,2));
+          if(!value.ok) process.exit(1);
+          NODE
+          test "$status" -ge 200
+          test "$status" -lt 300
 
       - name: Smoke Worker
         shell: bash
