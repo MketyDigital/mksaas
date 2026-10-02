@@ -76,10 +76,10 @@ export async function validateProviderConnection(input: {
     if (input.provider === "openai") {
       if (!model) return { ok: false, status: 0, error: "model_required", credentialAccepted: false, billingBlocked: false };
       const base=(input.endpointUrl || "https://api.openai.com/v1").replace(/\/$/,"");
-      response=await fetchImpl(base+"/chat/completions",{
+      response=await fetchImpl(base+"/responses",{
         method:"POST",
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
-        body:JSON.stringify({model,messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
+        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:8}),
         signal:controller.signal,
         redirect:"error",
       });
