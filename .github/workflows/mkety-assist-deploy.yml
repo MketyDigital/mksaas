@@ -267,64 +267,6 @@ jobs:
             curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-media"}' >/dev/null
           fi
 
-      - name: Ensure Assist context KV namespace exists
-        id: context_kv
-        env:
-          ACCOUNT_ID: ${{ steps.cloudflare.outputs.account_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          probe_kv() {
-            local token="$1"
-            local output="$2"
-            curl --silent --show-error --output "$output" --write-out '%{http_code}' \
-              "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/storage/kv/namespaces?per_page=1000" \
-              -H "Authorization: Bearer $token" || true
-          }
-
-          token=""
-          namespaces=""
-          primary_code="$(probe_kv "$CLOUDFLARE_API_TOKEN" /tmp/assist-kv-primary.json)"
-          if [ "$primary_code" = "200" ]; then
-            token="$CLOUDFLARE_API_TOKEN"
-            namespaces="$(cat /tmp/assist-kv-primary.json)"
-          elif [ -n "${MKETY_ASSIST_CF_SAAS_TOKEN:-}" ]; then
-            saas_code="$(probe_kv "$MKETY_ASSIST_CF_SAAS_TOKEN" /tmp/assist-kv-saas.json)"
-            if [ "$saas_code" = "200" ]; then
-              token="$MKETY_ASSIST_CF_SAAS_TOKEN"
-              namespaces="$(cat /tmp/assist-kv-saas.json)"
-            else
-              echo "::error::Neither configured Cloudflare token can access Workers KV (primary HTTP $primary_code, Assist SaaS HTTP $saas_code)."
-              exit 1
-            fi
-          else
-            echo "::error::Configured Cloudflare token cannot access Workers KV (HTTP $primary_code), and no Assist SaaS token is available."
-            exit 1
-          fi
-
-          namespace_id="$(NAMESPACES="$namespaces" node - <<'NODE'
-          const v=JSON.parse(process.env.NAMESPACES||'{}');
-          if(!v.success) throw new Error(JSON.stringify(v.errors||v));
-          const found=(v.result||[]).find((item)=>item.title==='mkety-assist-context-cache');
-          process.stdout.write(found?.id||'');
-          NODE
-          )"
-          if [ -z "$namespace_id" ]; then
-            created="$(curl --fail-with-body --silent --show-error \
-              -X POST "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/storage/kv/namespaces" \
-              -H "Authorization: Bearer $token" \
-              -H 'Content-Type: application/json' \
-              --data '{"title":"mkety-assist-context-cache"}')"
-            namespace_id="$(CREATED="$created" node - <<'NODE'
-          const v=JSON.parse(process.env.CREATED||'{}');
-          if(!v.success||!v.result?.id) throw new Error(JSON.stringify(v.errors||v));
-          process.stdout.write(v.result.id);
-          NODE
-            )"
-          fi
-          echo "context_cache_id=$namespace_id" >> "$GITHUB_OUTPUT"
-
       - name: Ensure Assist reply queues exist
         working-directory: customer-apps/assist
         shell: bash
@@ -345,7 +287,6 @@ jobs:
         working-directory: customer-apps/assist
         env:
           D1_ID: ${{ steps.cloudflare.outputs.d1_id }}
-          CONTEXT_CACHE_ID: ${{ steps.context_kv.outputs.context_cache_id }}
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -353,8 +294,7 @@ jobs:
           const p = 'wrangler.jsonc';
           const raw = fs.readFileSync(p, 'utf8');
           const configured = raw
-            .replace('__MKETY_ASSIST_D1_DATABASE_ID__', process.env.D1_ID)
-            .replace('__MKETY_ASSIST_CONTEXT_CACHE_ID__', process.env.CONTEXT_CACHE_ID);
+            .replace('__MKETY_ASSIST_D1_DATABASE_ID__', process.env.D1_ID);
           fs.writeFileSync('wrangler.deploy.jsonc', configured);
           NODE
 
