@@ -14,6 +14,20 @@ const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain
   read("migrations/0031_true_mkredit_precision.sql"), read("migrations/0032_exact_provider_rate_reconciliation.sql"),
   read("migrations/0033_mkredit_public_unit.sql"),
 ]);
+const [conversationContext, conversationQuality] = await Promise.all([
+  read("src/conversation/context.ts"),
+  read("src/conversation/quality-probe.ts"),
+]);
+const contextCache = await read("src/conversation/context-cache.ts");
+const settlementJournal = await read("src/billing/settlement-journal.ts");
+const inferenceSettlement = await read("src/billing/inference-settlement.ts");
+const reasoningProvider = await read("src/providers/reasoning.ts");
+const routeReadiness = await read("src/providers/route-readiness.ts");
+const [migration34, migration35, migration36] = await Promise.all([
+  read("migrations/0034_idempotent_inference_attempts.sql"),
+  read("migrations/0035_webhook_processing_lease.sql"),
+  read("migrations/0036_assist_reasoning_reconciliation.sql"),
+]);
 
 assert.match(index,/password_hash/);
 assert.match(index,/setup_tokens/);
@@ -29,8 +43,8 @@ assert.match(runtime,/UPDATE human_handoffs SET status='resolved'/);
 assert.match(runtime,/CAST\(provider_message_id AS INTEGER\)/);
 assert.match(runtime,/human_handoff_open/);
 assert.match(runtime,/__mketyTargetRate/);
-assert.match(runtime,/status='released'.*status='open'.*RETURNING reserved_credits/s);
-assert.match(runtime,/status='settled'.*status='open'.*RETURNING reserved_credits/s);
+assert.match(inferenceSettlement,/status='released'.*status='open'/s);
+assert.match(inferenceSettlement,/status='settled'.*status='open'/s);
 assert.match(payments,/nowpayments/);
 assert.ok(payments.indexOf('"nowpayments"') < payments.indexOf('"flutterwave"'));
 assert.match(payments,/kora/);
@@ -80,7 +94,7 @@ assert.match(m29,/@cf\/openai\/whisper-large-v3-turbo/);
 assert.match(m29,/@cf\/deepgram\/nova-3/);
 assert.match(index,/frontier: \{ azureFoundry: azureOk, vertex: vertexOk \}/);
 assert.match(runtime,/media_usage_json/);
-assert.match(runtime,/CUSTOMER MESSAGE \(caption\/question and attached media are one turn\)/);
+assert.match(conversationContext,/CUSTOMER MESSAGE \(caption\/question and attached media are one turn\)/);
 assert.match(runtime,/Attached image analysis for this same customer message/);
 assert.match(runtime,/Treat each caption\/text and its attached media as one message/);
 assert.match(runtime,/Do not answer the customer's business question yourself/);
@@ -97,14 +111,62 @@ assert.match(runtime,/__mketyPriorAttempts/);
 assert.match(runtime,/routedResultAttempt/);
 assert.match(runtime,/primaryCredits/);
 assert.match(runtime,/creditsCharged/);
-assert.match(runtime,/reasoning_effort = "low"/);
+assert.match(runtime,/normalized\.reasoning_effort = selectReasoningEffort[\s\S]*?\|\| "low"/);
 assert.match(runtime,/max_completion_tokens = maxCompletion/);
+assert.match(runtime,/Math\.min\(2048, parseInt\(String\(input\.max_tokens \|\| 1536\)/);
 assert.match(runtime,/max_completion_tokens: 768/);
 assert.match(index,/max_completion_tokens: 256/);
 assert.match(index,/reasoning_effort: "low"/);
 assert.match(index,/function acceptanceText/);
 assert.match(index,/workers-ai-image-reply/);
 assert.match(index,/workersImageReplyOk/);
+assert.match(index,/runConversationQualityProbe/);
+assert.match(index,/max_completion_tokens: 256/);
+assert.match(index,/conversationQuality: conversationQualityResult/);
+assert.match(conversationQuality,/CUSTOMER_TURNS\.slice\(0, 3\)/);
+assert.match(conversationQuality,/256-token cap/);
+assert.match(conversationContext,/selectCompletionBudget/);
+assert.match(contextCache,/input\.customerId/);
+assert.match(contextCache,/input\.assistantId/);
+assert.match(runtime,/memory_cleared_at/);
+assert.match(runtime,/kind: "knowledge_retrieval"/);
+assert.match(runtime,/resolveAutomationState\(env\.DB/);
+assert.match(runtime,/reserveCredits\(env\.DB/);
+assert.match(settlementJournal,/unknown_outcome/);
+assert.match(settlementJournal,/assertIdentity/);
+assert.match(settlementJournal,/async claimAttempt\(/);
+assert.match(runtime,/async function invokeJournaledMediaAttempt/);
+assert.match(runtime,/media:\$\{await resilienceSha256Text\(/);
+assert.match(runtime,/providerAttemptId,/);
+assert.match(inferenceSettlement,/INSERT OR IGNORE INTO inference_settlements/);
+assert.match(inferenceSettlement,/await db\.batch\(statements\)/);
+assert.match(migration34,/idx_usage_provider_attempt_once/);
+assert.match(migration34,/idx_provider_cost_attempt_once/);
+assert.match(migration35,/processing_at INTEGER/);
+assert.match(migration36,/reasoning_mode TEXT NOT NULL DEFAULT 'standard'/);
+assert.match(migration36,/reasoning_fallback_policy TEXT NOT NULL DEFAULT 'allow_lower_effort'/);
+assert.match(migration36,/reasoning_units INTEGER NOT NULL DEFAULT 0/);
+assert.match(migration36,/requested_reasoning_mode TEXT NOT NULL DEFAULT 'standard'/);
+assert.match(migration36,/applied_reasoning_mode TEXT NOT NULL DEFAULT 'standard'/);
+assert.match(reasoningProvider,/planReasoningTargets/);
+assert.match(reasoningProvider,/fallbackPolicy === "strict"/);
+assert.match(reasoningProvider,/requestedMode !== appliedMode/);
+assert.match(runtime,/normalizeReasoningMode\(assistant\.reasoning_mode\)/);
+assert.match(runtime,/delete requestInput\.reasoning_effort/);
+assert.match(runtime,/provider_reasoning_cost_micros_per_million/);
+assert.match(inferenceSettlement,/reasoning_units/);
+assert.match(index,/reasoningCapabilities\(String\(target\.provider\)/);
+assert.match(ui,/data-target-reasoning-high/);
+assert.match(ui,/data-target-reasoning-maximum/);
+assert.match(index,/media_readiness: mediaReadiness/);
+assert.match(index,/active_route_requires_enabled_target/);
+assert.match(index,/invalid_model_route_status/);
+assert.match(index,/status: row\.override_status/);
+assert.match(routeReadiness,/feature_disabled/);
+assert.match(routeReadiness,/route_unavailable/);
+assert.match(routeReadiness,/alias_paused/);
+assert.match(runtime,/routeTargetPricingConfigured\(target, alias\)/);
+assert.match(runtime,/inbound_event_in_progress/);
 assert.match(m30,/creditUsdMicros/);
 assert.match(m30,/provider_audio_cost_micros_per_minute=5200/);
 assert.match(m30,/provider_input_cost_micros_per_million=100000/);

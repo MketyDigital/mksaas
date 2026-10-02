@@ -37,6 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed 's/__MKETY_ASSIST_D1_DATABASE_ID__/00000000-0000-0000-0000-000000000000/' wrangler.jsonc > wrangler.ci.jsonc
+          sed -e 's/__MKETY_ASSIST_D1_DATABASE_ID__/00000000-0000-0000-0000-000000000000/' \
+              -e 's/__MKETY_ASSIST_CONTEXT_CACHE_ID__/00000000000000000000000000000000/' \
+              wrangler.jsonc > wrangler.ci.jsonc
           npx wrangler d1 migrations apply DB --local --config wrangler.ci.jsonc
           npx wrangler deploy --dry-run --outdir /tmp/mkety-assist-dry --config wrangler.ci.jsonc
