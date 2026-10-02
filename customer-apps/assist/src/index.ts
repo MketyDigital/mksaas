@@ -495,7 +495,7 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   }
 
   const targetRows = await env.DB.prepare(
-    `SELECT scope_key,alias,position,provider,provider_model,enabled,
+    `SELECT scope_key,alias,position,provider,provider_model,provider_connection_id,enabled,
             provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
      FROM model_route_targets ORDER BY scope_key,position`,
   ).all<any>();
