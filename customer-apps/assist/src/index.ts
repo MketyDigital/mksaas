@@ -242,19 +242,21 @@ async function handleManagedProviderBootstrap(request: Request, env: Env) {
 async function handleInferenceAcceptance(request: Request, env: Env) {
   requireDeployProbe(request, env);
   const results: any[] = [];
-  const workersTarget = await env.DB.prepare(
-    "SELECT provider_model FROM model_route_targets WHERE provider='workers-ai' ORDER BY enabled DESC,position ASC LIMIT 1",
-  ).first<any>();
-  const workersModel = String(workersTarget?.provider_model || "@cf/zai-org/glm-4.7-flash");
-  try {
-    const output = await env.AI.run(workersModel, {
-      messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
-      max_tokens: 32,
-    });
-    const raw = JSON.stringify(output ?? {});
-    results.push({ provider: "workers-ai", model: workersModel, ok: raw.length > 2 });
-  } catch (error) {
-    results.push({ provider: "workers-ai", model: workersModel, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+  const workerModels = [
+    { role: "primary", model: "@cf/google/gemma-4-26b-a4b-it" },
+    { role: "fallback", model: "@cf/zai-org/glm-5.3-flash" },
+  ];
+  for (const worker of workerModels) {
+    try {
+      const output = await env.AI.run(worker.model, {
+        messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
+        max_tokens: 32,
+      });
+      const raw = JSON.stringify(output ?? {});
+      results.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok: raw.length > 2 });
+    } catch (error) {
+      results.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+    }
   }
 
   const managed = await env.DB.prepare(
@@ -275,7 +277,7 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   const targetRows = await env.DB.prepare(
     "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
   ).all<any>();
-  const workersOk = results.some((item) => item.provider === "workers-ai" && item.ok);
+  const workersOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai" && item.model === worker.model && item.ok));
   const azureConfigured = Boolean(env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL);
   const azureOk = !azureConfigured || results.some((item) => item.provider === "azure-foundry" && item.ok);
   return json({ ok: workersOk && azureOk, providers: results, routeTargets: targetRows.results ?? [] }, workersOk && azureOk ? 200 : 503);
