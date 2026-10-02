@@ -79,7 +79,12 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(base+"/responses",{
         method:"POST",
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
-        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:64}),
+        body:JSON.stringify({
+          model,
+          instructions:"Answer briefly.",
+          input:[{role:"user",content:"Reply with exactly: mkety-assist-ok"}],
+          max_output_tokens:64,
+        }),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -99,7 +104,12 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(normalizeFoundryResponsesEndpoint(input.endpointUrl),{
         method:"POST",
         headers:{"api-key":input.apiKey,"content-type":"application/json"},
-        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:64}),
+        body:JSON.stringify({
+          model,
+          instructions:"Answer briefly.",
+          input:[{role:"user",content:"Reply with exactly: mkety-assist-ok"}],
+          max_output_tokens:64,
+        }),
         signal:controller.signal,
         redirect:"manual",
       });
