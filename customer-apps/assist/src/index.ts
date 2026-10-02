@@ -5,7 +5,7 @@ import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
-import { validateProviderConnection } from "./providers/validation";
+import { normalizeFoundryResponsesEndpoint, validateProviderConnection } from "./providers/validation";
 import { reasoningCapabilities } from "./providers/reasoning";
 import { evaluateMediaReadiness, evaluateRouteReadiness, routeTargetMediaSupported, routeTargetPricingConfigured, routeTargetValidated } from "./providers/route-readiness";
 import { runConversationQualityProbe } from "./conversation/quality-probe";
@@ -224,6 +224,159 @@ async function upsertManagedProvider(env: Env, input: {
   return { id: input.id, provider: input.provider, model: input.model, ...result };
 }
 
+const AZURE_PRIMARY_PROMOTION_KEY = "assist.azure_primary.v1";
+
+async function promoteManagedAzurePrimaryOnce(env: Env, azureModel: string) {
+  const prior = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key=? LIMIT 1")
+    .bind(AZURE_PRIMARY_PROMOTION_KEY).first<any>();
+  if (prior) return { applied: false, reason: "already_recorded", aliases: [] as string[] };
+
+  const connection = await env.DB.prepare(
+    "SELECT id,status,validated_at FROM provider_connections WHERE id='prv_managed_azure_foundry' LIMIT 1",
+  ).first<any>();
+  if (!connection || connection.status !== "active" || !connection.validated_at) {
+    return { applied: false, reason: "azure_not_validated", aliases: [] as string[] };
+  }
+
+  const aliases = ["mkety-fast", "mkety-smart", "mkety-reasoning", "mkety-vision", "mkety-media-vision"];
+  const promoted: string[] = [];
+  const now = unix();
+
+  for (const alias of aliases) {
+    const scopeKey = `global:${alias}`;
+    const rows = await env.DB.prepare(
+      "SELECT * FROM model_route_targets WHERE scope_key=? ORDER BY position ASC",
+    ).bind(scopeKey).all<any>();
+    const existing = rows.results ?? [];
+    if (!existing.length) continue;
+
+    const currentPrimary = existing.find((row: any) => Number(row.enabled) === 1) ?? existing[0];
+    const pricingBase = currentPrimary;
+    const reasoningBase = existing.find((row: any) =>
+      row.reasoning_credits_per_million != null || row.provider_reasoning_cost_micros_per_million != null
+    ) ?? pricingBase;
+    const remaining = existing.filter((row: any) =>
+      !(String(row.provider) === "azure-foundry" && String(row.provider_connection_id || "") === "prv_managed_azure_foundry")
+    );
+
+    const azureTarget = {
+      ...pricingBase,
+      scope_key: scopeKey,
+      customer_id: null,
+      alias,
+      position: 0,
+      provider: "azure-foundry",
+      provider_model: azureModel,
+      provider_connection_id: "prv_managed_azure_foundry",
+      enabled: 1,
+      created_at: now,
+      updated_at: now,
+      reasoning_capabilities_json: null,
+      reasoning_credits_per_million: reasoningBase.reasoning_credits_per_million ?? null,
+      provider_reasoning_cost_micros_per_million: reasoningBase.provider_reasoning_cost_micros_per_million ?? null,
+    };
+    const ordered = [azureTarget, ...remaining].slice(0, 10).map((row: any, index: number) => ({ ...row, position: index }));
+
+    const statements: D1PreparedStatement[] = [
+      env.DB.prepare("DELETE FROM model_route_targets WHERE scope_key=?").bind(scopeKey),
+    ];
+    for (const row of ordered) {
+      statements.push(env.DB.prepare(
+        `INSERT INTO model_route_targets
+         (scope_key,customer_id,alias,position,provider,provider_model,provider_connection_id,enabled,
+          input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,
+          provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,
+          provider_image_cost_micros,provider_audio_cost_micros_per_minute,created_at,updated_at,
+          reasoning_capabilities_json,reasoning_credits_per_million,provider_reasoning_cost_micros_per_million)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        row.scope_key,row.customer_id ?? null,row.alias,row.position,row.provider,row.provider_model,row.provider_connection_id ?? null,Number(row.enabled ?? 1),
+        Number(row.input_credits_per_million || 0),Number(row.output_credits_per_million || 0),Number(row.image_credits || 0),Number(row.audio_credits_per_minute || 0),
+        Number(row.provider_input_cost_micros_per_million || 0),Number(row.provider_output_cost_micros_per_million || 0),
+        Number(row.provider_image_cost_micros || 0),Number(row.provider_audio_cost_micros_per_minute || 0),
+        Number(row.created_at || now),now,row.reasoning_capabilities_json ?? null,
+        row.reasoning_credits_per_million == null ? null : Number(row.reasoning_credits_per_million),
+        row.provider_reasoning_cost_micros_per_million == null ? null : Number(row.provider_reasoning_cost_micros_per_million),
+      ));
+    }
+    const firstFallback = ordered.find((row: any, index: number) => index > 0 && Number(row.enabled) === 1) ?? null;
+    statements.push(env.DB.prepare(
+      `UPDATE model_routes
+       SET provider='azure-foundry',provider_model=?,provider_connection_id='prv_managed_azure_foundry',
+           fallback_provider=?,fallback_model=?,fallback_provider_connection_id=?,status='active',updated_at=?
+       WHERE alias=?`,
+    ).bind(
+      azureModel,
+      firstFallback?.provider ?? null,
+      firstFallback?.provider_model ?? null,
+      firstFallback?.provider_connection_id ?? null,
+      now,
+      alias,
+    ));
+    await env.DB.batch(statements);
+    promoted.push(alias);
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO system_settings (key,value_json,updated_at) VALUES (?,?,?)",
+  ).bind(
+    AZURE_PRIMARY_PROMOTION_KEY,
+    JSON.stringify({ appliedAt: now, provider: "azure-foundry", providerConnectionId: "prv_managed_azure_foundry", aliases: promoted }),
+    now,
+  ).run();
+  return { applied: true, reason: "promoted", aliases: promoted };
+}
+
+async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ role: "system" | "user" | "assistant"; content: string }>) {
+  const provider = String(target?.provider || "");
+  const model = String(target?.provider_model || "");
+  if (provider === "workers-ai" || provider === "mkety-managed") {
+    return env.AI.run(model, {
+      messages,
+      max_completion_tokens: 256,
+      reasoning_effort: "low",
+    });
+  }
+  if (provider === "azure-foundry") {
+    const connectionId = String(target?.provider_connection_id || "");
+    if (!connectionId) throw new Error("acceptance_azure_connection_missing");
+    const connection = await env.DB.prepare(
+      "SELECT endpoint_url,api_key_ciphertext,status,validated_at FROM provider_connections WHERE id=? LIMIT 1",
+    ).bind(connectionId).first<any>();
+    if (!connection || connection.status !== "active" || !connection.validated_at || !connection.endpoint_url) {
+      throw new Error("acceptance_azure_connection_unavailable");
+    }
+    const apiKey = await revealStoredSecret(String(connection.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+    const instructions = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
+    const input = messages.filter((message) => message.role !== "system").map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(normalizeFoundryResponsesEndpoint(String(connection.endpoint_url)), {
+        method: "POST",
+        headers: { "api-key": apiKey, "content-type": "application/json" },
+        body: JSON.stringify({
+          model,
+          instructions,
+          input,
+          max_output_tokens: 256,
+        }),
+        signal: controller.signal,
+        redirect: "manual",
+      });
+      const payload = await response.json<any>();
+      if (!response.ok) throw new Error(`acceptance_azure_http_${response.status}`);
+      return payload;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`acceptance_primary_provider_unsupported:${provider}`);
+}
+
 async function handleManagedProviderBootstrap(request: Request, env: Env) {
   requireDeployProbe(request, env);
   const results: any[] = [];
@@ -247,7 +400,12 @@ async function handleManagedProviderBootstrap(request: Request, env: Env) {
       model: env.MKETY_ASSIST_OPENAI_MODEL,
     }));
   }
-  return json({ ok: true, bootstrapped: results });
+  let azurePrimary = { applied: false, reason: "azure_not_configured", aliases: [] as string[] };
+  const azureResult = results.find((item: any) => item.provider === "azure-foundry");
+  if (azureResult?.ok && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) {
+    azurePrimary = await promoteManagedAzurePrimaryOnce(env, env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL);
+  }
+  return json({ ok: true, bootstrapped: results, azurePrimary });
 }
 
 function acceptanceText(result: any): string {
@@ -382,24 +540,25 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
             provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
      FROM model_route_targets ORDER BY scope_key,position`,
   ).all<any>();
-  const selectedWorkerTarget = (targetRows.results ?? []).find((target: any) => target.provider === "workers-ai" && Number(target.enabled) === 1);
-  const qualityModel = String(selectedWorkerTarget?.provider_model || workerModels[0].model);
-  const qualityInputCost = Number(selectedWorkerTarget?.provider_input_cost_micros_per_million || 0);
-  const qualityOutputCost = Number(selectedWorkerTarget?.provider_output_cost_micros_per_million || 0);
+  const qualityTarget = (targetRows.results ?? []).find((target: any) =>
+    target.scope_key === "global:mkety-smart" && Number(target.position) === 0 && Number(target.enabled) === 1
+  ) ?? (targetRows.results ?? []).find((target: any) =>
+    ["mkety-smart","mkety-fast","mkety-reasoning"].includes(String(target.alias)) && Number(target.enabled) === 1
+  );
+  const qualityModel = String(qualityTarget?.provider_model || workerModels[0].model);
+  const qualityProvider = String(qualityTarget?.provider || "workers-ai");
+  const qualityInputCost = Number(qualityTarget?.provider_input_cost_micros_per_million || 0);
+  const qualityOutputCost = Number(qualityTarget?.provider_output_cost_micros_per_million || 0);
   const qualityCostRatesAvailable = Number.isFinite(qualityInputCost) && Number.isFinite(qualityOutputCost)
     && (qualityInputCost > 0 || qualityOutputCost > 0);
-  const conversationQuality = qualityCostRatesAvailable
+  const conversationQuality = qualityCostRatesAvailable && qualityTarget
     ? await runConversationQualityProbe({
         generate: async (messages) => {
           const inputChars = messages.reduce((sum, message) => sum + String(message.content || "").length, 0);
           const estimatedInputTokens = Math.max(1, Math.ceil(inputChars / 4));
           const estimatedMaximumCost = Math.ceil((estimatedInputTokens * qualityInputCost + 256 * qualityOutputCost) / 1_000_000);
           try {
-            const output = await env.AI.run(qualityModel, {
-              messages,
-              max_completion_tokens: 256,
-              reasoning_effort: "low",
-            });
+            const output = await generateAcceptanceReply(env, qualityTarget, messages);
             const usage = output?.usage || output?.result?.usage || {};
             const reportedInputTokens = Number(usage.input_tokens ?? usage.inputTokens ?? usage.prompt_tokens);
             const reportedOutputTokens = Number(usage.output_tokens ?? usage.outputTokens ?? usage.completion_tokens);
@@ -414,11 +573,12 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
       })
     : {
         ok: false,
-        cases: [{ name: "provider_cost_rate", ok: false, detail: "No configured Workers AI provider cost rates; synthetic probe skipped." }],
+        cases: [{ name: "provider_cost_rate", ok: false, detail: "No configured primary-route provider cost rates; synthetic probe skipped." }],
         providerCostMicros: 0,
       };
   const conversationQualityResult = {
     ...conversationQuality,
+    provider: qualityProvider,
     model: qualityModel,
     costRatesAvailable: qualityCostRatesAvailable,
   };
