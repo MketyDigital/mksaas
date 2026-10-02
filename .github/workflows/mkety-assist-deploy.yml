@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   statuses: write
+  statuses: write
 
 concurrency:
   group: mkety-assist-deploy
@@ -517,6 +518,7 @@ jobs:
       - name: Publish production deployment proof
         if: always()
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           DEPLOY_STATE: ${{ job.status == 'success' && 'success' || 'failure' }}
           DEPLOY_DESCRIPTION: ${{ job.status == 'success' && 'Assist production deploy and real inference acceptance passed' || 'Assist production deploy or acceptance failed' }}
           DEPLOY_TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
