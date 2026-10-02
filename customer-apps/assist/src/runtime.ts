@@ -592,6 +592,7 @@ export async function handleRuntimeApi(
       const tools = await env.DB.prepare(
         "SELECT id,name,description,endpoint_url,status FROM assistant_tools WHERE assistant_id=? ORDER BY name",
       ).bind(assistantId).all();
+      if (assistant?.monthly_credit_cap != null) assistant.monthly_credit_cap = Math.round((Number(assistant.monthly_credit_cap) / 10000) * 10000) / 10000;
       return json({ assistant, knowledge: collections.results ?? [], tools: tools.results ?? [] });
     }
 
