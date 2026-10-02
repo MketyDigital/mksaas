@@ -622,7 +622,7 @@ export async function handleRuntimeApi(
         body.modelAlias ?? null,
         body.timezone ?? null,
         typeof body.memoryEnabled === "boolean" ? (body.memoryEnabled ? 1 : 0) : null,
-        body.monthlyCreditCap === undefined ? null : parseFloat(String(body.monthlyCreditCap)),
+        body.monthlyCreditCap === undefined ? null : Math.round(Number(body.monthlyCreditCap) * 10000),
         typeof body.humanDelayEnabled === "boolean" ? (body.humanDelayEnabled ? 1 : 0) : null,
         body.humanDelayMinSeconds === undefined ? null : clampNumber(body.humanDelayMinSeconds, 0, 3600),
         body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
