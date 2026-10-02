@@ -3545,7 +3545,7 @@ function hex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
+export async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
     const normalized: any = input && typeof input === "object" ? { ...input } : input;
