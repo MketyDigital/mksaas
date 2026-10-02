@@ -79,7 +79,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(base+"/responses",{
         method:"POST",
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
-        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:8}),
+        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:64}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -89,7 +89,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(input.endpointUrl.replace(/\/$/,"")+"/chat/completions",{
         method:"POST",
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
-        body:JSON.stringify({model,messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
+        body:JSON.stringify({model,messages:[{role:"user",content:"Reply with OK"}],max_tokens:64,temperature:0}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -99,7 +99,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(normalizeFoundryResponsesEndpoint(input.endpointUrl),{
         method:"POST",
         headers:{"api-key":input.apiKey,"content-type":"application/json"},
-        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:8}),
+        body:JSON.stringify({model,input:"Reply with OK",max_output_tokens:64}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -110,7 +110,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(normalizeAzureEndpoint(input.endpointUrl,model,apiVersion),{
         method:"POST",
         headers:{"api-key":input.apiKey,"content-type":"application/json"},
-        body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:8,temperature:0}),
+        body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:64,temperature:0}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -120,7 +120,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(base+"/v1/messages",{
         method:"POST",
         headers:{"x-api-key":input.apiKey,"anthropic-version":String(extra.anthropicVersion || "2023-06-01"),"content-type":"application/json"},
-        body:JSON.stringify({model,max_tokens:8,messages:[{role:"user",content:"Reply with OK"}]}),
+        body:JSON.stringify({model,max_tokens:64,messages:[{role:"user",content:"Reply with OK"}]}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -130,7 +130,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(input.apiKey)}`,{
         method:"POST",
         headers:{"content-type":"application/json"},
-        body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:8,temperature:0}}),
+        body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:64,temperature:0}}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -144,7 +144,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(url,{
         method:"POST",
         headers:{authorization:`Bearer ${service.accessToken}`,"content-type":"application/json"},
-        body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:8,temperature:0}}),
+        body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:64,temperature:0}}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -155,7 +155,7 @@ export async function validateProviderConnection(input: {
       response=await fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`,{
         method:"POST",
         headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
-        body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:8}),
+        body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:64}),
         signal:controller.signal,
         redirect:"manual",
       });
@@ -179,7 +179,12 @@ export async function validateProviderConnection(input: {
     try { payload=await response.clone().json(); } catch { payload=null; }
     const blocked=billingBlocked(response.status,payload);
     const ok=response.ok;
-    const returnedText=input.provider==="azure-foundry" && ok ? textFromResponses(payload) : "";
+    const returnedText=(input.provider==="azure-foundry" || input.provider==="openai") && ok ? textFromResponses(payload) : "";
+    const providerError = payload && typeof payload === "object" && payload.error && typeof payload.error === "object"
+      ? payload.error
+      : payload;
+    const providerErrorCode = typeof providerError?.code === "string" ? providerError.code.slice(0,120) : null;
+    const providerErrorMessage = typeof providerError?.message === "string" ? providerError.message.slice(0,500) : null;
     return {
       ok,
       status:response.status,
@@ -187,6 +192,8 @@ export async function validateProviderConnection(input: {
       credentialAccepted:ok || blocked,
       billingBlocked:blocked,
       returnedText,
+      providerErrorCode,
+      providerErrorMessage,
     };
   } catch (error) {
     return { ok:false,status:0,error:error instanceof Error?error.message.slice(0,200):"provider_validation_failed",credentialAccepted:false,billingBlocked:false };
