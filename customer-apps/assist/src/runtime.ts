@@ -400,6 +400,18 @@ export async function handleRuntimeApi(
     const body = await readJson(request);
     if (body.paused === false) {
       await returnToAi(env.DB, customer.customerId, conversation.assistant_id, parts[2]);
+      const now = unix();
+      await env.DB.prepare(
+        "UPDATE human_handoffs SET status='resolved',resolved_at=? WHERE conversation_id=? AND customer_id=? AND status='open'",
+      ).bind(now, parts[2], customer.customerId).run();
+      const queued = await env.DB.prepare(
+        "SELECT id FROM reply_jobs WHERE conversation_id=? AND customer_id=? AND status IN ('pending','retry') ORDER BY created_at DESC LIMIT 1",
+      ).bind(parts[2], customer.customerId).first<any>();
+      if (queued?.id) {
+        await env.DB.prepare("UPDATE reply_jobs SET due_at=?,last_enqueued_at=?,updated_at=? WHERE id=?")
+          .bind(now, now, now, queued.id).run();
+        await env.REPLY_QUEUE.send({ jobId: String(queued.id) }, { delaySeconds: 0 }).catch(() => undefined);
+      }
     } else {
       await takeOverConversation(env.DB, customer.customerId, conversation.assistant_id, parts[2], session.userId);
     }
@@ -1023,16 +1035,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const existingHandoff = await env.DB.prepare(
     "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
   ).bind(conversation.id).first();
-  if (existingHandoff) {
-    await markWebhook(env.DB, assistantId, updateId, "processed");
-    return json({ ok: true, awaitingHuman: true });
-  }
-
   const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistantId, conversation.id);
-  if (automation.paused) {
-    await markWebhook(env.DB, assistantId, updateId, "processed");
-    return json({ ok: true, automationPaused: true, pauseScope: automation.reason });
-  }
 
   const delayContent = [inbound.text || "", inbound.mediaContext || ""].filter(Boolean).join("\n");
   const delaySeconds = computeHumanDelaySeconds(assistant, delayContent);
@@ -1073,7 +1076,7 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
 
   if (delaySeconds <= 4) void telegramAction(token, chatId, "typing", businessConnectionId);
   await markWebhook(env.DB, assistantId, updateId, "processed");
-  return json({ ok: true, queued: true, jobId, delaySeconds });
+  return json({ ok: true, queued: true, jobId, delaySeconds, awaitingHuman: Boolean(existingHandoff), automationPaused: automation.paused, pauseScope: automation.reason });
 }
 
 export async function processReplyQueue(batch: any, env: AssistEnv): Promise<void> {
@@ -1159,8 +1162,8 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     ).bind(job.conversation_id, job.id, job.created_at).first<any>();
     if (newer) {
       await env.DB.prepare(
-        "UPDATE reply_jobs SET status='superseded',completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
-      ).bind(now, now, job.id).run();
+        "UPDATE reply_jobs SET status='superseded',last_error=?,completed_at=?,locked_at=NULL,updated_at=? WHERE id=? AND status IN ('pending','retry')",
+      ).bind("batched_into:" + String(newer.id), now, now, job.id).run();
       return { retry: false, delaySeconds: 0 };
     }
   }
@@ -1187,10 +1190,11 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
   ).bind(job.conversation_id).first();
   if (handoff) {
+    const delaySeconds = 60;
     await env.DB.prepare(
-      "UPDATE reply_jobs SET status='cancelled',last_error='human_handoff_open',completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
-    ).bind(now, now, job.id).run();
-    return { retry: false, delaySeconds: 0 };
+      "UPDATE reply_jobs SET status='retry',last_error='human_handoff_open',due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now + delaySeconds, now, job.id).run();
+    return { retry: true, delaySeconds };
   }
 
   const automation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
@@ -1214,6 +1218,47 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   let responseText = String(job.response_text || "");
   let responseFailure: string | null = null;
   if (!responseText) {
+    const lastOutbound = await env.DB.prepare(
+      "SELECT COALESCE(MAX(created_at),0) AS created_at FROM messages WHERE conversation_id=? AND role IN ('assistant','human')",
+    ).bind(job.conversation_id).first<any>();
+    const afterOutbound = Number(lastOutbound?.created_at || 0);
+    const batchRows = await env.DB.prepare(
+      `SELECT id,user_text,media_context,media_usage_json,image_count,audio_seconds,provider_message_id,created_at,status,last_error
+       FROM reply_jobs
+       WHERE conversation_id=? AND created_at>? AND created_at<=?
+         AND (
+           status IN ('pending','retry','processing')
+           OR (status='superseded' AND last_error LIKE 'batched_into:%')
+         )
+       ORDER BY created_at ASC,id ASC LIMIT 30`,
+    ).bind(job.conversation_id, afterOutbound, job.created_at).all<any>();
+    const batch = (batchRows.results ?? []).filter((row: any) => String(row.id) !== String(job.id) || true);
+    if (batch.length > 1) {
+      const textParts: string[] = [];
+      const mediaParts: string[] = [];
+      const combinedUsage: any[] = [];
+      let combinedImages = 0;
+      let combinedAudioSeconds = 0;
+      for (let index = 0; index < batch.length; index++) {
+        const row = batch[index];
+        const label = `Customer message ${index + 1}`;
+        const userText = String(row.user_text || "").trim();
+        const mediaText = String(row.media_context || "").trim();
+        if (userText) textParts.push(`[${label}] ${userText}`);
+        if (mediaText) mediaParts.push(`[${label} media]\n${mediaText}`);
+        combinedImages += Number(row.image_count || 0);
+        combinedAudioSeconds += Number(row.audio_seconds || 0);
+        try {
+          const usage = JSON.parse(String(row.media_usage_json || "[]"));
+          if (Array.isArray(usage)) combinedUsage.push(...usage);
+        } catch {}
+      }
+      job.user_text = textParts.join("\n");
+      job.media_context = mediaParts.join("\n");
+      job.media_usage_json = JSON.stringify(combinedUsage);
+      job.image_count = combinedImages;
+      job.audio_seconds = combinedAudioSeconds;
+    }
     void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
     const response = await runAssistant({
       env,
