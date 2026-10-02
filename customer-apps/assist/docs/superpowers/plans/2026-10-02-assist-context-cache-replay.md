@@ -64,7 +64,7 @@
 **Interfaces:**
 - Consumes: contextCacheKey, readContextSnapshot, and writeContextSnapshot from Task 1.
 - Snapshot kinds: published_prompt_tools, conversation_context, and knowledge_retrieval.
-- Each snapshot is versioned from its D1 source rows and the current memory-clear cutoff.
+- Prompt source version is the published prompt version; knowledge source version hashes the assistant's collection links and item IDs/updated_at values; conversation source version includes the memory-clear cutoff and latest message timestamp.
 
 - [ ] **Step 1: Add failing tests** named testPromptEditChangesCacheVersion, testMemoryClearRejectsEarlierSnapshot, testKnowledgeSnapshotRequiresCurrentCollectionVersion, and testCacheFallbackNeverSuppliesBillingOrPauseState.
 - [ ] **Step 2: Run the focused tests.** Expected: the new invalidation and boundary tests fail.
@@ -86,14 +86,14 @@
 - Modify: customer-apps/assist/package.json
 
 **Interfaces:**
-- Produces: enqueueInboundUpdate(env: AssistEnv, update: TelegramUpdate) -> Promise<void>
+- Produces: enqueueInboundUpdate(env: AssistEnv, update: unknown) -> Promise<void>; validates and stores the provider update ID and payload before returning success.
 - The inbound queue payload retains the provider event ID and enough validated assistant/channel identity to resolve the same conversation.
 - D1 remains the deduplication and message-history authority once available.
 
 - [ ] **Step 1: Add failing tests** named testWebhookAcknowledgesOnlyAfterQueueReceipt, testQueueFailureReturnsRetryableResponse, testDuplicateUpdateCreatesOneTurn, and testD1RecoveryResumesSameConversation.
 - [ ] **Step 2: Run the focused test** with node --experimental-strip-types --test scripts/inbound-replay.test.mjs. Expected: the new replay tests fail.
 - [ ] **Step 3: Implement the inbound queue consumer** so a webhook is acknowledged only after durable queue acceptance; return a retryable response if both durable receipt and queue acceptance fail. Deduplicate provider event IDs in D1 after recovery, then resume the existing reply-job path with the same conversation identity.
-- [ ] **Step 4: Configure CI and deployment** to provision the queue and bind its producer/consumer; run the dry-run deployment and local D1 migrations.
+- [ ] **Step 4: Configure CI and deployment** to provision the queue and KV namespace, inject their IDs into the deploy-time Wrangler config, and bind their producer/consumer; run the dry-run deployment and local D1 migrations.
 - [ ] **Step 5: Run focused tests.** Expected: duplicate and D1-recovery tests pass with no provider inference until credit/control state is available.
 - [ ] **Step 6: Commit** with message feat(assist): durably queue inbound conversation turns.
 
