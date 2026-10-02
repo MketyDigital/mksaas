@@ -21,7 +21,7 @@ assert.match(handoff,/pauseCustomer/);
 assert.match(runtime,/model target failed; trying next ordered fallback/);
 assert.doesNotMatch(runtime,/if \(!classified\.retryable\) throw error/);
 assert.match(runtime,/responseFailure = String\(response\.error \|\| "inference_failed"\)/);
-assert.doesNotMatch(runtime,/status='delivered'.*last_error=NULL/);
+assert.match(runtime,/"UPDATE reply_jobs SET status='delivered',external_delivery_id=\?,completed_at=\?,locked_at=NULL,updated_at=\? WHERE id=\?"/);
 assert.match(runtime,/__mketyTargetRate/);
 assert.match(runtime,/status='released'.*status='open'.*RETURNING reserved_credits/s);
 assert.match(runtime,/status='settled'.*status='open'.*RETURNING reserved_credits/s);
