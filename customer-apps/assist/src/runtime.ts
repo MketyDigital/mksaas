@@ -1,5 +1,6 @@
 import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
 import { mayUseFallback } from "./providers/validation";
+import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./providers/structured-credentials";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
 import {
@@ -2476,7 +2477,8 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   }
 
   if (provider === "vertex") {
-    const projectId = String(extra.projectId || "").trim();
+    const service = await vertexAccessTokenFromServiceAccount(apiKey);
+    const projectId = String(extra.projectId || service.projectId || "").trim();
     const location = String(extra.location || "global").trim();
     if (!projectId) throw new Error("Vertex projectId is missing.");
     const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
@@ -2489,7 +2491,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${service.accessToken}`, "content-type": "application/json" },
         body: JSON.stringify({
           systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
           contents,
@@ -2528,31 +2530,34 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   }
 
   if (provider === "bedrock") {
-    const accessKeyId = String(extra.accessKeyId || "").trim();
-    const region = String(extra.region || "us-east-1").trim();
-    const sessionToken = String(extra.sessionToken || "").trim();
-    if (!accessKeyId) throw new Error("Bedrock accessKeyId is missing.");
-    const host = `bedrock-runtime.${region}.amazonaws.com`;
-    const requestPath = `/model/${encodeURIComponent(model)}/converse`;
-    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const configuredRegion = String(extra.region || "").trim();
     const body = JSON.stringify({
-      system: systemText ? [{ text: systemText }] : undefined,
+      system: messages.filter((m: any) => m.role === "system").map((m: any) => ({ text: String(m.content || "") })),
       messages: messages.filter((m: any) => m.role !== "system").map((m: any) => ({
         role: m.role === "assistant" ? "assistant" : "user",
         content: [{ text: String(m.content || "") }],
       })),
       inferenceConfig: { maxTokens, temperature },
     });
-    const headers = await buildBedrockHeaders({
-      accessKeyId,
-      secretAccessKey: apiKey,
-      sessionToken: sessionToken || undefined,
-      region,
+    const preliminaryRegion = configuredRegion || "us-east-1";
+    const host = `bedrock-runtime.${preliminaryRegion}.amazonaws.com`;
+    const requestPath = `/model/${encodeURIComponent(model)}/converse`;
+    const signed = await bedrockHeadersFromCredentialJson({
+      secret: apiKey,
+      region: configuredRegion || undefined,
       host,
       path: requestPath,
       body,
     });
-    const response = await fetch(`https://${host}${requestPath}`, { method: "POST", headers, body });
+    const effectiveHost = `bedrock-runtime.${signed.region}.amazonaws.com`;
+    const finalSigned = effectiveHost === host ? signed : await bedrockHeadersFromCredentialJson({
+      secret: apiKey,
+      region: signed.region,
+      host: effectiveHost,
+      path: requestPath,
+      body,
+    });
+    const response = await fetch(`https://${effectiveHost}${requestPath}`, { method: "POST", headers: finalSigned.headers, body });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
     return {
