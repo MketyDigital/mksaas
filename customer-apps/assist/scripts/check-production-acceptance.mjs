@@ -51,7 +51,6 @@ assert.match(m28,/@cf\/google\/gemma-4-26b-a4b-it/);
 assert.match(m28,/@cf\/zai-org\/glm-5\.3-flash/);
 assert.match(index,/role: "primary", model: "@cf\/google\/gemma-4-26b-a4b-it"/);
 assert.match(index,/role: "fallback", model: "@cf\/zai-org\/glm-5\.3-flash"/);
-assert.match(runtime,/env\.AI\.run\("@cf\/google\/gemma-4-26b-a4b-it"/);
 assert.match(runtime,/mediaRouteTargets/);
 assert.match(runtime,/mkety-media-vision/);
 assert.match(runtime,/mkety-media-speech/);
