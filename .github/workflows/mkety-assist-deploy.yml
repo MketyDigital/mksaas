@@ -520,6 +520,17 @@ jobs:
           echo "=== Active media route economics ==="
           run_query "SELECT alias,position,provider,provider_model,enabled,input_credits_per_million,output_credits_per_million,audio_credits_per_minute,provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,provider_audio_cost_micros_per_minute FROM model_route_targets WHERE alias IN ('mkety-media-vision','mkety-media-speech') ORDER BY alias,position;"
 
+          echo "=== MKredit/provider-cost rate invariant ==="
+          run_query "SELECT COUNT(*) AS mismatches FROM model_route_targets WHERE (provider_input_cost_micros_per_million>0 AND input_credits_per_million<>provider_input_cost_micros_per_million*10) OR (provider_output_cost_micros_per_million>0 AND output_credits_per_million<>provider_output_cost_micros_per_million*10) OR (provider_image_cost_micros>0 AND image_credits<>provider_image_cost_micros*10) OR (provider_audio_cost_micros_per_minute>0 AND audio_credits_per_minute<>provider_audio_cost_micros_per_minute*10);" >/tmp/assist-rate-invariant.json
+          cat /tmp/assist-rate-invariant.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const payload=JSON.parse(fs.readFileSync('/tmp/assist-rate-invariant.json','utf8'));
+          const mismatches=Number(payload?.[0]?.results?.[0]?.mismatches ?? -1);
+          if(mismatches!==0) throw new Error('MKredit/provider-cost rate mismatch count: '+mismatches);
+          console.log('MKredit/provider-cost rate invariant: PASS');
+          NODE
+
           echo "=== Recent media proof (no message contents) ==="
           run_query "SELECT kind,size_bytes,LENGTH(COALESCE(vision_text,'')) AS vision_chars,LENGTH(COALESCE(transcript,'')) AS transcript_chars,created_at FROM media_assets ORDER BY created_at DESC LIMIT 12;"
 
