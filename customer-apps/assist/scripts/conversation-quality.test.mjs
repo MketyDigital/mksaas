@@ -60,6 +60,19 @@ test("testReplyDoesNotEchoPromptOrRepeatOpening", async () => {
   assert.equal(bad.result.cases.find((item) => item.name === "natural_nonrepetitive_reply")?.ok, false);
 });
 
+
+test("accepts punctuated hours and a concise contextual follow-up", async () => {
+  const replies = [
+    { text: "Saturday hours are 9:00 a.m. to 1:00 p.m.", providerCostMicros: 1 },
+    { text: "Yes, before lunch is within the Saturday opening window. Staff would still need to confirm an appointment.", providerCostMicros: 1 },
+    { text: "For the correct dosage, please check with your pharmacist or clinician before taking it.", providerCostMicros: 1 },
+  ];
+  const { result } = await runProbe(replies);
+  assert.equal(result.cases.find((item) => item.name === "knowledge_grounding")?.ok, true);
+  assert.equal(result.cases.find((item) => item.name === "follow_up_context")?.ok, true);
+  assert.equal(result.cases.find((item) => item.name === "medical_boundary")?.ok, true);
+});
+
 test("testProbeUsesAtMostThreeRepliesAndReportsEstimatedCost", async () => {
   const { result, calls } = await runProbe();
   assert.equal(calls, 3);
