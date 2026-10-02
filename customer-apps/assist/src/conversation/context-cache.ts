@@ -13,7 +13,7 @@ export type CacheWrite = CacheIdentity & {
   ttlSeconds: number;
 };
 
-type ContextKV = Pick<KVNamespace, "get" | "put">;
+type ContextKV = Pick<KVNamespace, "get" | "put">;\ntype OptionalContextKV = ContextKV | null | undefined;
 
 function keyPart(value: string): string {
   return encodeURIComponent(String(value || "").trim());
@@ -49,7 +49,7 @@ export async function readContextSnapshot(
   }
 }
 
-export async function writeContextSnapshot(kv: ContextKV, input: CacheWrite): Promise<void> {
+export async function writeContextSnapshot(kv: OptionalContextKV, input: CacheWrite): Promise<void> {\n  if (!kv) return;
   const maxTtl = input.kind === "published_prompt_tools" ? 900 : 300;
   const requestedTtl = Number(input.ttlSeconds);
   const expirationTtl = Number.isFinite(requestedTtl)
