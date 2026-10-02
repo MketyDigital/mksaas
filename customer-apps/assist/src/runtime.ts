@@ -3480,7 +3480,7 @@ function textFromContentParts(value: any): string {
   }).join("").trim();
 }
 
-function extractAiText(result: any) {
+function extractAiText(result: any): string {
   if (typeof result?.response === "string" && result.response.trim()) return result.response.trim();
   if (typeof result?.result?.response === "string" && result.result.response.trim()) return result.result.response.trim();
   if (typeof result?.output_text === "string" && result.output_text.trim()) return result.output_text.trim();
@@ -3511,7 +3511,7 @@ function extractAiText(result: any) {
 
   const nestedResult = result?.result;
   if (nestedResult && nestedResult !== result) {
-    const nested = extractAiText(nestedResult);
+    const nested: string = extractAiText(nestedResult);
     if (nested) return nested;
   }
   return "";
