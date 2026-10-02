@@ -7,6 +7,7 @@ function base64Url(bytes: Uint8Array) {
 }
 
 function pemToBytes(pem: string) {
+  // secretlint-disable-next-line @secretlint/secretlint-rule-privatekey
   const body = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s+/g, "");
   if (!body) throw new Error("vertex_private_key_missing");
   const binary = atob(body);
