@@ -2,20 +2,24 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (p) => readFile(new URL("../" + p, import.meta.url), "utf8");
-const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain,m12,m13,m20,m21,m22] = await Promise.all([
+const [runtime,index,ui,payments,providers,providerTypes,metering,handoff,domain,m12,m13,m20,m21,m22,m27] = await Promise.all([
   read("src/runtime.ts"), read("src/index.ts"), read("src/ui.ts"),
   read("src/payments/service.ts"), read("src/providers/validation.ts"), read("src/providers/types.ts"),
   read("src/billing/metering.ts"), read("src/handoff/service.ts"),
   read("src/domains/verification.ts"), read("migrations/0012_payment_purchase_type.sql"),
   read("migrations/0013_customer_security.sql"), read("migrations/0020_provider_capabilities.sql"),
   read("migrations/0021_metering_invariants.sql"), read("migrations/0022_payment_methods.sql"),
+  read("migrations/0027_provider_fallback_priority.sql"),
 ]);
 
 assert.match(index,/password_hash/);
 assert.match(index,/setup_tokens/);
 assert.match(runtime,/automationPaused/);
 assert.match(handoff,/pauseCustomer/);
-assert.match(runtime,/BYOK provider failed; funded fallback blocked/);
+assert.match(runtime,/mayUseFallback/);
+assert.match(runtime,/fallback_enabled=1/);
+assert.match(runtime,/fallback_priority ASC/);
+assert.match(runtime,/openai\/v1\/responses/);
 assert.match(runtime,/status='released'.*status='open'.*RETURNING reserved_credits/s);
 assert.match(runtime,/status='settled'.*status='open'.*RETURNING reserved_credits/s);
 assert.match(payments,/nowpayments/);
@@ -42,6 +46,14 @@ assert.match(runtime,/manual_reply_pause_seconds/);
 assert.match(runtime,/human_manual_reply/);
 assert.match(handoff,/automation_resume_at/);
 assert.match(m22,/payment_method_health/);
+assert.match(m27,/fallback_enabled/);
+assert.match(m27,/fallback_priority/);
+assert.match(index,/bootstrapManagedProviderConnections/);
+assert.match(index,/production-inference-acceptance/);
+assert.match(index,/MKETY_ASSIST_AZURE_FOUNDRY_API_KEY/);
+assert.match(index,/MKETY_ASSIST_OPENAI_API_KEY/);
+assert.match(providers,/Reply exactly: OK/);
+assert.doesNotMatch(ui,/Extra JSON \(Azure/);
 const customerUi = ui.split("export function renderOperatorPortal")[0];
 assert.doesNotMatch(customerUi,/provider_envelope_bps|operations_reserve_bps|provider_cost_micros|lifetime_granted|included_credits|minimum_funding_minor|funding_mode/i);
 console.log("Assist production acceptance contract: ok");
