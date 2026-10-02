@@ -382,13 +382,13 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     let includedCredits = positiveInt(body.includedCredits, 0);
     if (autoIncludedCredits && monthlyPrice > 0) {
       const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+      const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
       includedCredits = calculateCommercialPlan({
         monthlyAmountMinor: monthlyPrice,
         providerEnvelopeBps,
         operationsReserveBps,
         rateMultiplierBps,
-        creditUsdMicros,
+        mkreditsPerUsd,
       }).includedCredits;
     }
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
@@ -702,15 +702,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/pricing/calculate" && request.method === "POST") {
     const body = await readJson(request);
     const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     const result = calculateCommercialPlan({
       monthlyAmountMinor: parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
       providerEnvelopeBps: parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
       operationsReserveBps: parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
       rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-      creditUsdMicros,
+      mkreditsPerUsd,
     });
-    return json({ ...result, creditUsdMicros });
+    return json({ ...result, mkreditsPerUsd, creditUnit: "MKredit" });
   }
 
   if (url.pathname === "/api/ops/policy" && request.method === "PATCH") {
@@ -722,7 +722,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const current = await env.DB.prepare("SELECT * FROM commercial_policy WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
       if (!current) return json({ error: "commercial_policy_not_found" }, 404);
       const setting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+      const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
       includedCreditsValue = calculateCommercialPlan({
         monthlyAmountMinor: body.monthlyPriceUsd === undefined
           ? (body.subscriptionAmountMinor === undefined ? Number(current.subscription_amount_minor) : positiveInt(body.subscriptionAmountMinor, 0))
@@ -736,7 +736,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         rateMultiplierBps: body.customerRateMultiplierPercent === undefined
           ? (body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000))
           : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-        creditUsdMicros,
+        mkreditsPerUsd,
       }).includedCredits;
     }
     await env.DB.batch([
@@ -1018,17 +1018,17 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?")
         .bind(alias).first<any>();
       const commercialSetting = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1").first<any>();
-      const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(commercialSetting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+      const mkreditsPerUsd = commercialMkreditsPerUsd(commercialSetting?.value_json);
 
       const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || 0);
       const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || 0);
       const imageCost = positiveInt(body.providerImageCostMicros, previous?.provider_image_cost_micros || 0);
       const audioCost = positiveInt(body.providerAudioCostMicrosPerMinute, previous?.provider_audio_cost_micros_per_minute || 0);
       const generated = body.generateRate === true;
-      const inputCredits = generated ? costToBaseCredits(inputCost, creditUsdMicros) : positiveInt(body.inputCreditsPerMillion, previous?.input_credits_per_million || 0);
-      const outputCredits = generated ? costToBaseCredits(outputCost, creditUsdMicros) : positiveInt(body.outputCreditsPerMillion, previous?.output_credits_per_million || 0);
-      const imageCredits = generated ? costToBaseCredits(imageCost, creditUsdMicros) : positiveInt(body.imageCredits, previous?.image_credits || 0);
-      const audioCredits = generated ? costToBaseCredits(audioCost, creditUsdMicros) : positiveInt(body.audioCreditsPerMinute, previous?.audio_credits_per_minute || 0);
+      const inputCredits = generated ? costToBaseCredits(inputCost, mkreditsPerUsd) : positiveInt(body.inputCreditsPerMillion, previous?.input_credits_per_million || 0);
+      const outputCredits = generated ? costToBaseCredits(outputCost, mkreditsPerUsd) : positiveInt(body.outputCreditsPerMillion, previous?.output_credits_per_million || 0);
+      const imageCredits = generated ? costToBaseCredits(imageCost, mkreditsPerUsd) : positiveInt(body.imageCredits, previous?.image_credits || 0);
+      const audioCredits = generated ? costToBaseCredits(audioCost, mkreditsPerUsd) : positiveInt(body.audioCreditsPerMinute, previous?.audio_credits_per_minute || 0);
 
       await env.DB.prepare(
         `INSERT INTO model_rates
@@ -1923,8 +1923,8 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const setting = await env.DB.prepare(
       "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
     ).first<any>();
-    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
-    const credits = Math.max(1, Math.floor((amountMinor * 10_000) / creditUsdMicros));
+    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
+    const credits = Math.max(1, mkreditsFromUsdMinor(amountMinor, mkreditsPerUsd));
     return json({ amountMinor, currency: "USD", credits });
   }
 
@@ -2005,17 +2005,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const setting = await env.DB.prepare(
       "SELECT value_json FROM system_settings WHERE key='commercial' LIMIT 1",
     ).first<any>();
-    const creditUsdMicros = Math.max(1, parseInt(String(JSON.parse(setting?.value_json || '{"creditUsdMicros":1000}').creditUsdMicros || 1000), 10));
+    const mkreditsPerUsd = commercialMkreditsPerUsd(setting?.value_json);
     let credits: number;
     let canonicalAmountMinor: number;
     if (body.amountUsd !== undefined && body.amountUsd !== null && String(body.amountUsd).trim() !== "") {
       canonicalAmountMinor = parsePaymentAmountMinor(body.amountUsd);
       if (canonicalAmountMinor < 100 || canonicalAmountMinor > 10_000_000) return json({ error: "invalid_topup_amount" }, 400);
-      credits = Math.max(1, Math.floor((canonicalAmountMinor * 10_000) / creditUsdMicros));
+      credits = Math.max(1, mkreditsFromUsdMinor(canonicalAmountMinor, mkreditsPerUsd));
     } else {
       credits = positiveInt(body.credits, 0);
-      if (credits < 100 || credits > 5_000_000) return json({ error: "invalid_topup_credits" }, 400);
-      canonicalAmountMinor = Math.max(1, Math.ceil((credits * creditUsdMicros) / 10_000));
+      if (credits < 1_000_000 || credits > 50_000_000_000) return json({ error: "invalid_topup_credits" }, 400);
+      canonicalAmountMinor = Math.max(1, usdMinorFromMkredits(credits, mkreditsPerUsd));
     }
     const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
@@ -2937,12 +2937,38 @@ function optionalHostname(value: unknown) {
   return typeof value === "string" && value.trim() ? normalizeHostname(value) : null;
 }
 
+const DEFAULT_MKREDITS_PER_USD = 10_000_000;
+
+function commercialMkreditsPerUsd(valueJson: unknown) {
+  try {
+    const parsed = JSON.parse(String(valueJson || "{}"));
+    const configured = Number(parsed?.mkreditsPerUsd);
+    if (Number.isSafeInteger(configured) && configured > 0) return configured;
+  } catch {}
+  return DEFAULT_MKREDITS_PER_USD;
+}
+
+function mkreditsFromUsdMicros(usdMicros: number, mkreditsPerUsd: number) {
+  if (usdMicros <= 0) return 0;
+  return Math.ceil((usdMicros * mkreditsPerUsd) / 1_000_000);
+}
+
+function mkreditsFromUsdMinor(amountMinor: number, mkreditsPerUsd: number) {
+  if (amountMinor <= 0) return 0;
+  return Math.floor((amountMinor * mkreditsPerUsd) / 100);
+}
+
+function usdMinorFromMkredits(mkredits: number, mkreditsPerUsd: number) {
+  if (mkredits <= 0) return 0;
+  return Math.ceil((mkredits * 100) / mkreditsPerUsd);
+}
+
 function calculateCommercialPlan(input: {
   monthlyAmountMinor: number;
   providerEnvelopeBps: number;
   operationsReserveBps: number;
   rateMultiplierBps: number;
-  creditUsdMicros: number;
+  mkreditsPerUsd: number;
 }) {
   if (input.monthlyAmountMinor <= 0) throw new HttpError(400, "monthly_amount_must_be_positive");
   if (input.providerEnvelopeBps < 1 || input.providerEnvelopeBps > 10000) throw new HttpError(400, "provider_envelope_invalid");
@@ -2952,13 +2978,12 @@ function calculateCommercialPlan(input: {
   const providerEnvelopeUsdMicros = Math.floor(monthlyUsdMicros * input.providerEnvelopeBps / 10000);
   const usableProviderUsdMicros = Math.floor(providerEnvelopeUsdMicros * (10000 - input.operationsReserveBps) / 10000);
   const customerUsageValueUsdMicros = Math.floor(usableProviderUsdMicros * input.rateMultiplierBps / 10000);
-  const includedCredits = Math.floor(customerUsageValueUsdMicros / Math.max(1, input.creditUsdMicros));
+  const includedCredits = Math.floor((customerUsageValueUsdMicros * input.mkreditsPerUsd) / 1_000_000);
   return { providerEnvelopeUsdMicros, usableProviderUsdMicros, customerUsageValueUsdMicros, includedCredits };
 }
 
-function costToBaseCredits(providerCostMicros: number, creditUsdMicros: number) {
-  if (providerCostMicros <= 0) return 0;
-  return Math.ceil(providerCostMicros / Math.max(1, creditUsdMicros));
+function costToBaseCredits(providerCostMicros: number, mkreditsPerUsd: number) {
+  return mkreditsFromUsdMicros(providerCostMicros, mkreditsPerUsd);
 }
 
 async function protectStoredSecret(secret: string, configured: string) {
