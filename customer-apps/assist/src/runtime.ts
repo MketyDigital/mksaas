@@ -1795,15 +1795,16 @@ export async function handleApiKeyInference(
   }
 
   const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
-  const effectiveInputCredits = Math.ceil(Number(rate.input_credits_per_million || 0) * multiplierBps / 10000);
-  const effectiveOutputCredits = Math.ceil(Number(rate.output_credits_per_million || 0) * multiplierBps / 10000);
+  const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
+  const reserveInputCredits = Math.ceil(Math.max(Number(rate.input_credits_per_million || 0), ...routeRates.map((target: any) => Number(target?.input_credits_per_million || 0))) * multiplierBps / 10000);
+  const reserveOutputCredits = Math.ceil(Math.max(Number(rate.output_credits_per_million || 0), ...routeRates.map((target: any) => Number(target?.output_credits_per_million || 0))) * multiplierBps / 10000);
   const reserveAmount = Math.max(1, Math.ceil(
-    (estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000,
+    (estimatedInputTokens * reserveInputCredits + maxOutputTokens * reserveOutputCredits) / 1_000_000,
   ));
-  const estimatedProviderCostMicros = Math.max(0, Math.ceil(
-    (estimatedInputTokens * Number(rate.provider_input_cost_micros_per_million || 0)
-      + maxOutputTokens * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
-  ));
+  const estimatedProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => Math.ceil(
+    (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+      + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+  )));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
     return json({ error: { message: "usage_limit_reached" } }, 402);
   }
@@ -1820,12 +1821,15 @@ export async function handleApiKeyInference(
     const text = extractAiText(result);
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
+    const servedRate = result?.__mketyTargetRate || rate;
+    const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
+    const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
     const actualCredits = Math.max(1, Math.ceil(
-      (usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000,
+      (usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000,
     ));
     const providerCostMicros = Math.max(0, Math.ceil(
-      (usage.input * Number(rate.provider_input_cost_micros_per_million || 0)
-        + usage.output * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+      (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
     ));
     await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, actualCredits, {
       modelAlias: alias,
