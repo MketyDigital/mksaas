@@ -52,7 +52,7 @@ function pemPkcs8Bytes(pem: string) {
   return bytes;
 }
 
-async function vertexAccessToken(credentialsJson: string, fetchImpl: typeof fetch) {
+export async function getVertexAccessToken(credentialsJson: string, fetchImpl: typeof fetch = fetch) {
   let credentials: any;
   try { credentials = JSON.parse(credentialsJson); } catch { throw new Error("vertex_credentials_must_be_json"); }
   const email = String(credentials.client_email || "").trim();
@@ -337,7 +337,7 @@ export async function validateProviderConnection(input: {
       if (!projectId || !credential.client_email || !credential.private_key || !model) {
         return { ok: false, status: 0, error: "vertex_service_account_json_incomplete", credentialsAccepted: false, billingBlocked: false, model };
       }
-      const token = await vertexAccessToken(input.apiKey, fetchImpl);
+      const token = await getVertexAccessToken(input.apiKey, fetchImpl);
       const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
       const response = await fetchImpl(
         `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
