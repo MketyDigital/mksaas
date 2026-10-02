@@ -99,6 +99,7 @@ async function sha256Hex(value: string) {
 
 async function hmac(key: string | Uint8Array, value: string) {
   const bytes = typeof key === "string" ? validationEncoder.encode(key) : key;
+  // WebCrypto's Worker typings require an ArrayBuffer-backed BufferSource here.
   const keyData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   const imported = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", imported, validationEncoder.encode(value)));
