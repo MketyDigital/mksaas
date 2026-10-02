@@ -1209,6 +1209,48 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   let responseText = String(job.response_text || "");
   let responseFailure: string | null = null;
   if (!responseText) {
+    const lastDelivered = await env.DB.prepare(
+      "SELECT COALESCE(MAX(created_at),0) AS created_at FROM reply_jobs WHERE conversation_id=? AND status='delivered'",
+    ).bind(job.conversation_id).first<any>();
+    const afterDelivered = Number(lastDelivered?.created_at || 0);
+    const batchRows = await env.DB.prepare(
+      `SELECT id,user_text,media_context,media_usage_json,image_count,audio_seconds,provider_message_id,created_at,status,last_error
+       FROM reply_jobs
+       WHERE conversation_id=? AND created_at>?
+         AND (created_at<? OR (created_at=? AND CAST(provider_message_id AS INTEGER)<=CAST(? AS INTEGER)))
+         AND (
+           status IN ('pending','retry','processing')
+           OR (status='superseded' AND last_error LIKE 'batched_into:%')
+         )
+       ORDER BY created_at ASC,CAST(provider_message_id AS INTEGER) ASC LIMIT 30`,
+    ).bind(job.conversation_id, afterDelivered, job.created_at, job.created_at, job.provider_message_id).all<any>();
+    const unansweredBatch = batchRows.results ?? [];
+    if (unansweredBatch.length > 1) {
+      const textParts: string[] = [];
+      const mediaParts: string[] = [];
+      const combinedUsage: any[] = [];
+      let combinedImages = 0;
+      let combinedAudioSeconds = 0;
+      for (let index = 0; index < unansweredBatch.length; index++) {
+        const row = unansweredBatch[index];
+        const label = `Customer message ${index + 1}`;
+        const userText = String(row.user_text || "").trim();
+        const mediaText = String(row.media_context || "").trim();
+        if (userText) textParts.push(`[${label}] ${userText}`);
+        if (mediaText) mediaParts.push(`[${label} media]\n${mediaText}`);
+        combinedImages += Number(row.image_count || 0);
+        combinedAudioSeconds += Number(row.audio_seconds || 0);
+        try {
+          const usage = JSON.parse(String(row.media_usage_json || "[]"));
+          if (Array.isArray(usage)) combinedUsage.push(...usage);
+        } catch {}
+      }
+      job.user_text = textParts.join("\n");
+      job.media_context = mediaParts.join("\n");
+      job.media_usage_json = JSON.stringify(combinedUsage);
+      job.image_count = combinedImages;
+      job.audio_seconds = combinedAudioSeconds;
+    }
     void telegramAction(token, String(job.external_conversation_id), "typing", job.business_connection_id ? String(job.business_connection_id) : null);
     const response = await runAssistant({
       env,
