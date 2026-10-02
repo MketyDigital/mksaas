@@ -1,3 +1,4 @@
+import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./structured-credentials";
 import type { ByokPolicy, ProviderCapability } from "./types";
 
 const CAPABILITIES: Record<string, ProviderCapability[]> = {
@@ -133,16 +134,39 @@ export async function validateProviderConnection(input: {
         signal:controller.signal,
         redirect:"error",
       });
-    } else if (input.provider === "vertex" || input.provider === "cloudflare-ai") {
-      if (!input.endpointUrl) return { ok:false,status:0,error:"endpoint_required",credentialAccepted:false,billingBlocked:false };
-      response=await fetchImpl(input.endpointUrl,{method:"GET",headers:{authorization:`Bearer ${input.apiKey}`},signal:controller.signal,redirect:"error"});
+    } else if (input.provider === "vertex") {
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      const service=await vertexAccessTokenFromServiceAccount(input.apiKey);
+      const projectId=String(extra.projectId || service.projectId || "").trim();
+      const location=String(extra.location || "global").trim();
+      const host=location==="global"?"aiplatform.googleapis.com":`${location}-aiplatform.googleapis.com`;
+      const url=`https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
+      response=await fetchImpl(url,{
+        method:"POST",
+        headers:{authorization:`Bearer ${service.accessToken}`,"content-type":"application/json"},
+        body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK"}]}],generationConfig:{maxOutputTokens:8,temperature:0}}),
+        signal:controller.signal,
+        redirect:"error",
+      });
+    } else if (input.provider === "cloudflare-ai") {
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      const accountId=String(extra.accountId || "").trim();
+      if (!accountId) return { ok:false,status:0,error:"account_id_required",credentialAccepted:false,billingBlocked:false };
+      response=await fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`,{
+        method:"POST",
+        headers:{authorization:`Bearer ${input.apiKey}`,"content-type":"application/json"},
+        body:JSON.stringify({messages:[{role:"user",content:"Reply with OK"}],max_tokens:8}),
+        signal:controller.signal,
+        redirect:"error",
+      });
     } else if (input.provider === "bedrock") {
-      const region=String(extra.region || "");
-      const accessKeyId=String(extra.accessKeyId || "");
-      const secretAccessKey=String(extra.secretAccessKey || "");
-      clearTimeout(timer);
-      const ok=Boolean(region && accessKeyId && secretAccessKey);
-      return { ok,status:0,error:ok?null:"bedrock_credentials_incomplete",credentialAccepted:ok,billingBlocked:false };
+      if (!model) return { ok:false,status:0,error:"model_required",credentialAccepted:false,billingBlocked:false };
+      const region=String(extra.region || "us-east-1").trim();
+      const host=`bedrock-runtime.${region}.amazonaws.com`;
+      const path=`/model/${encodeURIComponent(model)}/converse`;
+      const body=JSON.stringify({messages:[{role:"user",content:[{text:"Reply with OK"}]}],inferenceConfig:{maxTokens:8,temperature:0}});
+      const signed=await bedrockHeadersFromCredentialJson({secret:input.apiKey,region,host,path,body});
+      response=await fetchImpl(`https://${host}${path}`,{method:"POST",headers:signed.headers,body,signal:controller.signal,redirect:"error"});
     } else {
       clearTimeout(timer);
       return { ok:false,status:0,error:"unsupported_provider",credentialAccepted:false,billingBlocked:false };
