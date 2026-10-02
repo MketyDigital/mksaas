@@ -333,7 +333,7 @@ async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ 
   if (provider === "workers-ai" || provider === "mkety-managed") {
     return env.AI.run(model, {
       messages,
-      max_completion_tokens: 256,
+      max_completion_tokens: 1024,
       reasoning_effort: "low",
     });
   }
@@ -362,7 +362,7 @@ async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ 
           model,
           instructions,
           input,
-          max_output_tokens: 256,
+          max_output_tokens: 1024,
         }),
         signal: controller.signal,
         redirect: "manual",
@@ -559,13 +559,15 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
           const estimatedMaximumCost = Math.ceil((estimatedInputTokens * qualityInputCost + 256 * qualityOutputCost) / 1_000_000);
           try {
             const output = await generateAcceptanceReply(env, qualityTarget, messages);
+            const text = acceptanceText(output);
             const usage = output?.usage || output?.result?.usage || {};
             const reportedInputTokens = Number(usage.input_tokens ?? usage.inputTokens ?? usage.prompt_tokens);
             const reportedOutputTokens = Number(usage.output_tokens ?? usage.outputTokens ?? usage.completion_tokens);
             const inputTokens = Number.isFinite(reportedInputTokens) && reportedInputTokens > 0 ? reportedInputTokens : estimatedInputTokens;
-            const outputTokens = Number.isFinite(reportedOutputTokens) && reportedOutputTokens >= 0 ? reportedOutputTokens : 256;
-            const cost = Math.ceil((inputTokens * qualityInputCost + outputTokens * qualityOutputCost) / 1_000_000);
-            return { text: acceptanceText(output), providerCostMicros: Math.max(estimatedMaximumCost, cost), outputTokens };
+            const providerOutputTokens = Number.isFinite(reportedOutputTokens) && reportedOutputTokens >= 0 ? reportedOutputTokens : Math.max(1, Math.ceil(text.length / 4));
+            const visibleOutputTokens = Math.max(0, Math.ceil(text.length / 4));
+            const cost = Math.ceil((inputTokens * qualityInputCost + providerOutputTokens * qualityOutputCost) / 1_000_000);
+            return { text, providerCostMicros: Math.max(estimatedMaximumCost, cost), outputTokens: visibleOutputTokens };
           } catch {
             return { text: "", providerCostMicros: estimatedMaximumCost, outputTokens: 256 };
           }
