@@ -242,22 +242,19 @@ async function handleManagedProviderBootstrap(request: Request, env: Env) {
 async function handleInferenceAcceptance(request: Request, env: Env) {
   requireDeployProbe(request, env);
   const results: any[] = [];
-  const workersRoute = await env.DB.prepare(
-    "SELECT alias,provider_model FROM model_routes WHERE provider='workers-ai' AND status='active' ORDER BY alias LIMIT 1",
+  const workersTarget = await env.DB.prepare(
+    "SELECT provider_model FROM model_route_targets WHERE provider='workers-ai' ORDER BY enabled DESC,position ASC LIMIT 1",
   ).first<any>();
-  if (!workersRoute?.provider_model) {
-    results.push({ provider: "workers-ai", ok: false, error: "no_active_workers_ai_route" });
-  } else {
-    try {
-      const output = await env.AI.run(String(workersRoute.provider_model), {
-        messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
-        max_tokens: 32,
-      });
-      const raw = JSON.stringify(output ?? {});
-      results.push({ provider: "workers-ai", model: workersRoute.provider_model, ok: raw.length > 2 });
-    } catch (error) {
-      results.push({ provider: "workers-ai", model: workersRoute.provider_model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
-    }
+  const workersModel = String(workersTarget?.provider_model || "@cf/zai-org/glm-4.7-flash");
+  try {
+    const output = await env.AI.run(workersModel, {
+      messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
+      max_tokens: 32,
+    });
+    const raw = JSON.stringify(output ?? {});
+    results.push({ provider: "workers-ai", model: workersModel, ok: raw.length > 2 });
+  } catch (error) {
+    results.push({ provider: "workers-ai", model: workersModel, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
   }
 
   const managed = await env.DB.prepare(
