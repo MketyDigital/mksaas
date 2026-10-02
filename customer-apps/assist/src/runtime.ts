@@ -1936,15 +1936,15 @@ export async function handleApiKeyInference(
 
   const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
   const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
-  const reserveInputCredits = Math.ceil(Math.max(Number(rate.input_credits_per_million || 0), ...routeRates.map((target: any) => Number(target?.input_credits_per_million || 0))) * multiplierBps / 10000);
-  const reserveOutputCredits = Math.ceil(Math.max(Number(rate.output_credits_per_million || 0), ...routeRates.map((target: any) => Number(target?.output_credits_per_million || 0))) * multiplierBps / 10000);
-  const reserveAmount = Math.max(1, Math.ceil(
-    (estimatedInputTokens * reserveInputCredits + maxOutputTokens * reserveOutputCredits) / 1_000_000,
-  ));
-  const estimatedProviderCostMicros = Math.max(0, ...routeRates.map((target: any) => Math.ceil(
+  const reserveAmount = Math.max(1, routeRates.reduce((sum: number, target: any) => {
+    const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
+    const outputRate = Math.ceil(Number(target?.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
+    return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * outputRate) / 1_000_000);
+  }, 0));
+  const estimatedProviderCostMicros = Math.max(0, routeRates.reduce((sum: number, target: any) => sum + Math.ceil(
     (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
       + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
-  )));
+  ), 0));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
     return json({ error: { message: "usage_limit_reached" } }, 402);
   }
@@ -1964,13 +1964,16 @@ export async function handleApiKeyInference(
     const servedRate = result?.__mketyTargetRate || rate;
     const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
-    const actualCredits = Math.max(1, Math.ceil(
+    const primaryCredits = Math.max(0, Math.ceil(
       (usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000,
     ));
     const providerCostMicros = Math.max(0, Math.ceil(
       (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
         + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
     ));
+    const priorAttempts = Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : [];
+    const priorEconomics = priorAttempts.map((attempt: any) => ({ attempt, ...modelAttemptEconomics(attempt, multiplierBps) }));
+    const actualCredits = Math.max(1, primaryCredits + priorEconomics.reduce((sum: number, item: any) => sum + item.credits, 0));
     await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, actualCredits, {
       modelAlias: alias,
       provider: String(result?.__mketyProvider || route.provider),
@@ -1979,7 +1982,17 @@ export async function handleApiKeyInference(
       inputUnits: usage.input,
       outputUnits: usage.output,
       providerCostMicros,
+      primaryCredits,
       apiKeyId: key.id,
+      additionalProviderCosts: priorEconomics.map((item: any) => ({
+        modelAlias: alias,
+        provider: item.attempt.provider,
+        providerModel: item.attempt.providerModel,
+        inputUnits: item.attempt.inputUnits,
+        outputUnits: item.attempt.outputUnits,
+        costMicros: item.providerCostMicros,
+        creditsCharged: item.credits,
+      })),
     });
     await env.DB.prepare("UPDATE customer_api_keys SET last_used_at=? WHERE id=?").bind(now, key.id).run();
     return json({
@@ -1992,7 +2005,34 @@ export async function handleApiKeyInference(
       mkety: { credits_charged: actualCredits, assistant_id: assistantId },
     });
   } catch (error) {
-    await releaseReservation(env.DB, reservation.id, customer.customerId, reserveAmount);
+    const priorAttempts = Array.isArray((error as any)?.__mketyPriorAttempts) ? (error as any).__mketyPriorAttempts : [];
+    const priorEconomics = priorAttempts.map((attempt: any) => ({ attempt, ...modelAttemptEconomics(attempt, multiplierBps) }));
+    const incurredCredits = priorEconomics.reduce((sum: number, item: any) => sum + item.credits, 0);
+    if (priorEconomics.length && (incurredCredits > 0 || priorEconomics.some((item: any) => item.providerCostMicros > 0))) {
+      const first = priorEconomics[0];
+      await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, Math.min(reserveAmount, incurredCredits), {
+        modelAlias: alias,
+        provider: String(first?.attempt?.provider || route.provider),
+        providerModel: String(first?.attempt?.providerModel || route.provider_model),
+        conversationId: `api:${key.id}`,
+        inputUnits: Number(first?.attempt?.inputUnits || 0),
+        outputUnits: Number(first?.attempt?.outputUnits || 0),
+        providerCostMicros: Number(first?.providerCostMicros || 0),
+        primaryCredits: Number(first?.credits || 0),
+        apiKeyId: key.id,
+        additionalProviderCosts: priorEconomics.slice(1).map((item: any) => ({
+          modelAlias: alias,
+          provider: item.attempt.provider,
+          providerModel: item.attempt.providerModel,
+          inputUnits: item.attempt.inputUnits,
+          outputUnits: item.attempt.outputUnits,
+          costMicros: item.providerCostMicros,
+          creditsCharged: item.credits,
+        })),
+      });
+    } else {
+      await releaseReservation(env.DB, reservation.id, customer.customerId, reserveAmount);
+    }
     console.error("Assist API inference failed", error);
     const classified = classifyRetryableError(error);
     if (classified.retryable) {
@@ -2249,7 +2289,8 @@ async function invokeVisionTarget(
           { type: "image_url", image_url: { url: `data:${mime || "image/jpeg"};base64,${b64}` } },
         ] },
       ],
-      max_tokens: 500,
+      max_completion_tokens: 768,
+      reasoning_effort: "low",
     });
     const text = extractAiText(result);
     const usage = extractUsage(result, estimatedInput, text);
@@ -2936,7 +2977,14 @@ function hex(bytes: Uint8Array) {
 async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
-    return env.AI.run(String(route.provider_model), input);
+    const normalized: any = input && typeof input === "object" ? { ...input } : input;
+    if (normalized && Array.isArray(normalized.messages)) {
+      const maxCompletion = Math.max(64, Number(normalized.max_completion_tokens || normalized.max_tokens || 1024));
+      delete normalized.max_tokens;
+      normalized.max_completion_tokens = maxCompletion;
+      if (normalized.reasoning_effort === undefined) normalized.reasoning_effort = "low";
+    }
+    return env.AI.run(String(route.provider_model), normalized);
   }
 
   if (!route.provider_connection_id) throw new Error("Provider connection is not configured for this model route.");
