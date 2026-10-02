@@ -453,21 +453,76 @@ async function loadCustomers(){const x=await api('/api/ops/customers');data=x.cu
 async function loadProviders(){
   try{
     const x=await api('/api/ops/providers');providerData=x.providers||[];
-    const builtIns='<div class="two" style="margin-bottom:12px"><div class="card"><strong>Mkety Hosted / Workers AI</strong><div class="muted">Built-in · uses the Assist Worker AI binding · no provider key required</div></div><div class="card"><strong>Mkety Managed</strong><div class="muted">Built-in managed route · no customer-visible provider credentials</div></div></div>';
-    providersBox.innerHTML=builtIns+(providerData.length?'<table class="table"><thead><tr><th>Name</th><th>Provider</th><th>Owner</th><th>Validation</th><th></th></tr></thead><tbody>'+providerData.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+esc(p.provider)+'<div class="muted">'+esc(p.endpoint_url||'default')+'</div></td><td>'+esc(p.ownership||'mkety')+(p.customer_id?'<div class="muted">'+esc((data.find(c=>c.id===p.customer_id)||{}).name||p.customer_id)+'</div>':'')+'</td><td><span class="pill '+(p.status==='active'&&p.validated_at?'ok':'warn')+'">'+esc(p.status)+'</span><div class="muted">'+(p.validated_at?'tested '+new Date(p.validated_at*1000).toLocaleString():esc(p.validation_error||'test required'))+'</div></td><td><button class="btn" data-provider-test="'+p.id+'">Test</button> <button class="btn" data-provider-edit="'+p.id+'">Manage</button></td></tr>').join('')+'</tbody></table>':'<p class="muted">No external provider credentials configured.</p>');
+    const builtIns='<div class="two" style="margin-bottom:12px"><div class="card"><strong>Mkety Hosted / Workers AI</strong><div class="muted">Primary/default engine · native Assist Worker AI binding. To turn Workers AI off for an alias, publish that model route with another provider as primary.</div></div><div class="card"><strong>Managed fallback order</strong><div class="muted">Enabled managed providers are tried in ascending priority after the active primary. Failover is ordered, never random rotation.</div></div></div>';
+    providersBox.innerHTML=builtIns+(providerData.length?'<table class="table"><thead><tr><th>Name</th><th>Provider</th><th>Owner</th><th>Validation</th><th>Fallback</th><th></th></tr></thead><tbody>'+providerData.map(p=>{
+      let ex={};try{ex=JSON.parse(p.extra_json||'{}')}catch{}
+      const routing=(p.ownership||'mkety')==='mkety'
+        ? '<div><span class="pill '+(Number(p.fallback_enabled)?'ok':'warn')+'">'+(Number(p.fallback_enabled)?'ON':'OFF')+'</span> <span class="muted">priority '+esc(p.fallback_priority||100)+'</span></div><button class="btn" data-provider-fallback="'+p.id+'" data-next="'+(Number(p.fallback_enabled)?'0':'1')+'">'+(Number(p.fallback_enabled)?'Disable fallback':'Enable fallback')+'</button>'
+        : '<span class="muted">Customer BYOK</span>';
+      return '<tr><td><strong>'+esc(p.name)+'</strong>'+(ex.defaultModel?'<div class="muted">Model: '+esc(ex.defaultModel)+'</div>':'')+'</td><td>'+esc(p.provider)+'<div class="muted">'+esc(p.endpoint_url||'default')+'</div></td><td>'+esc(p.ownership||'mkety')+(p.customer_id?'<div class="muted">'+esc((data.find(c=>c.id===p.customer_id)||{}).name||p.customer_id)+'</div>':'')+'</td><td><span class="pill '+(p.status==='active'&&p.validated_at?'ok':'warn')+'">'+esc(p.status)+'</span><div class="muted">'+(p.validated_at?'tested '+new Date(p.validated_at*1000).toLocaleString():esc(p.validation_error||'real test required'))+'</div></td><td>'+routing+'</td><td><button class="btn" data-provider-test="'+p.id+'">Real test</button> <button class="btn" data-provider-edit="'+p.id+'">Manage</button></td></tr>';
+    }).join('')+'</tbody></table>':'<p class="muted">No external provider credentials configured.</p>');
     document.querySelectorAll('[data-provider-edit]').forEach(b=>b.onclick=()=>editProvider(providerData.find(p=>p.id===b.dataset.providerEdit)));
     document.querySelectorAll('[data-provider-test]').forEach(b=>b.onclick=()=>testProvider(b.dataset.providerTest));
+    document.querySelectorAll('[data-provider-fallback]').forEach(b=>b.onclick=async()=>{try{
+      await api('/api/ops/providers/'+encodeURIComponent(b.dataset.providerFallback),{method:'PATCH',body:JSON.stringify({fallbackEnabled:b.dataset.next==='1'})});
+      await loadProviders();
+    }catch(e){alert(e.message)}});
   }catch(e){providersBox.textContent=e.message}
 }
+function providerConfigHtml(prefix,provider,current){
+  let extra={};try{extra=JSON.parse(current?.extra_json||'{}')}catch{}
+  const model=extra.defaultModel||extra.model||extra.deployment||'';
+  const endpoint=current?.endpoint_url||'';
+  const saved=current?'Leave blank to keep current secret':'';
+  const commonModel='<div class="field"><label>Model'+(provider==='azure-openai'?' / Deployment':'')+'</label><input class="input" id="'+prefix+'Model" value="'+esc(model)+'" placeholder="'+(provider==='azure-foundry'?'gpt-5.6-sol-1':'Provider model name')+'"></div>';
+  if(provider==='vertex'){
+    return commonModel+'<div class="field"><label>Location</label><input class="input" id="'+prefix+'Location" value="'+esc(extra.location||'global')+'"></div><div class="field"><label>Google service-account JSON</label><textarea class="input" id="'+prefix+'Credentials" rows="8" placeholder="'+esc(saved||'Paste the full service-account JSON file here')+'"></textarea></div>';
+  }
+  if(provider==='bedrock'){
+    return commonModel+'<div class="field"><label>AWS credentials JSON</label><textarea class="input" id="'+prefix+'Credentials" rows="7" placeholder="'+esc(saved||'Paste JSON with accessKeyId, secretAccessKey, region and optional sessionToken')+'"></textarea></div>';
+  }
+  const endpointLabel=provider==='azure-foundry'?'Azure Foundry project endpoint':'Endpoint URL';
+  const endpointPlaceholder=provider==='azure-foundry'?'https://resource.services.ai.azure.com/api/projects/project-name':'https://...';
+  const keyLabel=provider==='azure-foundry'?'Azure Foundry API key':provider==='azure-openai'?'Azure OpenAI API key':'API key / token';
+  let html=commonModel+'<div class="field"><label>'+endpointLabel+'</label><input class="input" id="'+prefix+'Endpoint" value="'+esc(endpoint)+'" placeholder="'+endpointPlaceholder+'"></div><div class="field"><label>'+keyLabel+'</label><input class="input" id="'+prefix+'Key" type="password" autocomplete="off" placeholder="'+esc(saved)+'"></div>';
+  if(provider==='azure-openai')html+='<div class="field"><label>API version</label><input class="input" id="'+prefix+'ApiVersion" value="'+esc(extra.apiVersion||'2024-10-21')+'"></div>';
+  return html;
+}
+function collectProviderConfig(prefix,provider){
+  const get=id=>byId(prefix+id);
+  const payload={model:get('Model')?.value||''};
+  if(provider==='vertex'||provider==='bedrock'){
+    payload.credentialsJson=get('Credentials')?.value||undefined;
+    if(provider==='vertex')payload.location=get('Location')?.value||'global';
+  }else{
+    payload.endpointUrl=get('Endpoint')?.value||null;
+    payload.apiKey=get('Key')?.value||undefined;
+    if(provider==='azure-openai')payload.apiVersion=get('ApiVersion')?.value||undefined;
+  }
+  return payload;
+}
 async function testProvider(id){
-  try{const x=await api('/api/ops/providers/'+encodeURIComponent(id)+'/test',{method:'POST'});toastOps(x.ok?'Provider connection validated':'Provider validation failed');await loadProviders()}
-  catch(e){alert(e.message);await loadProviders()}
+  try{
+    const x=await api('/api/ops/providers/'+encodeURIComponent(id)+'/test',{method:'POST'});
+    toastOps(x.ok?'Real provider inference passed':(x.billingBlocked&&x.credentialsAccepted?'Credentials accepted; provider billing/quota currently blocks inference':'Provider inference test failed'));
+    await loadProviders();
+  }catch(e){alert(e.message);await loadProviders()}
 }
 function editProvider(p){
-  openModal('<h2>Manage provider</h2><p class="muted">Saved secrets are never shown. Any endpoint/key/config change disables this connection until it passes Test again.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="epName" value="'+esc(p.name)+'"></div><div class="field"><label>Provider</label><input class="input" value="'+esc(p.provider)+'" disabled></div></div><div class="field"><label>Ownership</label><input class="input" value="'+esc(p.ownership||'mkety')+(p.customer_id?' · '+esc((data.find(c=>c.id===p.customer_id)||{}).name||p.customer_id):'')+'" disabled></div><div class="field"><label>Endpoint URL</label><input class="input" id="epEndpoint" value="'+esc(p.endpoint_url||'')+'"></div><div class="field"><label>Replace secret / token</label><input class="input" id="epKey" type="password" autocomplete="off" placeholder="Leave blank to keep current secret"></div><div class="field"><label>Extra JSON</label><input class="input" id="epExtra" value="'+esc(p.extra_json||'{}')+'"></div><div class="row"><button class="btn primary" id="epSave">Save & require retest</button><button class="btn" id="epTest">Test now</button><button class="btn" id="epClose">Close</button></div>');
-  const epName=byId('epName'),epEndpoint=byId('epEndpoint'),epKey=byId('epKey'),epExtra=byId('epExtra'),epSave=byId('epSave'),epTest=byId('epTest'),epClose=byId('epClose');
+  openModal('<h2>Manage provider</h2><p class="muted">Saved secrets are never shown. Credential, endpoint or model changes require a fresh real inference test.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="epName" value="'+esc(p.name)+'"></div><div class="field"><label>Provider</label><input class="input" value="'+esc(p.provider)+'" disabled></div></div><div class="field"><label>Ownership</label><input class="input" value="'+esc(p.ownership||'mkety')+(p.customer_id?' · '+esc((data.find(c=>c.id===p.customer_id)||{}).name||p.customer_id):'')+'" disabled></div><div id="epConfig">'+providerConfigHtml('ep',p.provider,p)+'</div>'+((p.ownership||'mkety')==='mkety'?'<div class="two"><div class="field"><label>Managed fallback</label><select class="input" id="epFallback"><option value="0" '+(!Number(p.fallback_enabled)?'selected':'')+'>Off</option><option value="1" '+(Number(p.fallback_enabled)?'selected':'')+'>On after primary fails</option></select></div><div class="field"><label>Fallback priority</label><input class="input" id="epPriority" type="number" min="2" value="'+esc(p.fallback_priority||100)+'"></div></div>':'')+'<div class="row"><button class="btn primary" id="epSave">Save & require retest</button><button class="btn" id="epRouting">Save fallback only</button><button class="btn" id="epTest">Run real test</button><button class="btn" id="epClose">Close</button></div>');
+  const epName=byId('epName'),epSave=byId('epSave'),epRouting=byId('epRouting'),epTest=byId('epTest'),epClose=byId('epClose'),epFallback=byId('epFallback'),epPriority=byId('epPriority');
   epClose.onclick=closeModal;
-  epSave.onclick=async()=>{try{let extra={};if(epExtra.value.trim())extra=JSON.parse(epExtra.value);await api('/api/ops/providers/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify({name:epName.value,endpointUrl:epEndpoint.value||null,apiKey:epKey.value||undefined,extra})});closeModal();await loadProviders();alert('Saved. Test the connection before publishing it to a model route.')}catch(e){alert(e.message)}};
+  epSave.onclick=async()=>{try{
+    const payload={name:epName.value,...collectProviderConfig('ep',p.provider)};
+    if(epFallback){payload.fallbackEnabled=epFallback.value==='1';payload.fallbackPriority=Number(epPriority.value||100)}
+    await api('/api/ops/providers/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify(payload)});
+    closeModal();await loadProviders();alert('Saved. Run the real inference test before using this provider.');
+  }catch(e){alert(e.message)}};
+  epRouting.onclick=async()=>{try{
+    if(!epFallback){closeModal();return}
+    await api('/api/ops/providers/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify({fallbackEnabled:epFallback.value==='1',fallbackPriority:Number(epPriority.value||100)})});
+    closeModal();await loadProviders();
+  }catch(e){alert(e.message)}};
   epTest.onclick=async()=>{closeModal();await testProvider(p.id)};
 }
 function providerOptions(selected,provider,customerId){
@@ -476,10 +531,16 @@ function providerOptions(selected,provider,customerId){
 }
 function addProvider(){
   const customers='<option value="">Select customer</option>'+data.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
-  openModal('<h2>Add provider connection</h2><p class="muted">Connections start disabled and must pass a non-inference Test before a model route can use them.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="prName" placeholder="OpenAI primary"></div><div class="field"><label>Provider</label><select class="input" id="prType"><option>openai</option><option>anthropic</option><option>gemini</option><option>vertex</option><option>cloudflare-ai</option><option>bedrock</option><option>azure-openai</option><option>azure-foundry</option><option>openai-compatible</option></select></div><div class="field"><label>Ownership</label><select class="input" id="prOwnership"><option value="mkety">Mkety managed</option><option value="customer">Customer BYOK</option></select></div><div class="field"><label>Customer (BYOK only)</label><select class="input" id="prCustomer" disabled>'+customers+'</select></div></div><div class="field"><label>Endpoint URL</label><input class="input" id="prEndpoint" placeholder="https://..."></div><div class="field"><label>Primary secret / token</label><input class="input" id="prKey" type="password" autocomplete="off"></div><div class="field"><label>Extra JSON (Azure: apiVersion/deployment · Vertex: projectId/location · Bedrock: accessKeyId/secretAccessKey/region/sessionToken)</label><input class="input" id="prExtra" placeholder="{&quot;apiVersion&quot;:&quot;2024-10-21&quot;}"></div><button class="btn primary" id="prSave">Save & test connection</button>');
-  const prName=byId('prName'),prType=byId('prType'),prOwnership=byId('prOwnership'),prCustomer=byId('prCustomer'),prEndpoint=byId('prEndpoint'),prKey=byId('prKey'),prExtra=byId('prExtra'),prSave=byId('prSave');
-  prOwnership.onchange=()=>{prCustomer.disabled=prOwnership.value!=='customer'};prOwnership.onchange();
-  prSave.onclick=async()=>{try{let extra={};if(prExtra.value.trim())extra=JSON.parse(prExtra.value);const made=await api('/api/ops/providers',{method:'POST',body:JSON.stringify({name:prName.value,provider:prType.value,endpointUrl:prEndpoint.value||null,apiKey:prKey.value,extra,ownership:prOwnership.value,customerId:prOwnership.value==='customer'?prCustomer.value:null})});closeModal();await testProvider(made.id);await loadModels()}catch(e){alert(e.message)}};
+  openModal('<h2>Add provider connection</h2><p class="muted">Save runs a real provider inference test. Azure Foundry is Model + Endpoint + API Key. Vertex and Bedrock accept their full credential JSON.</p><div class="two"><div class="field"><label>Name</label><input class="input" id="prName" placeholder="Mkety Azure Foundry"></div><div class="field"><label>Provider</label><select class="input" id="prType"><option>azure-foundry</option><option>openai</option><option>anthropic</option><option>gemini</option><option>vertex</option><option>bedrock</option><option>azure-openai</option><option>cloudflare-ai</option><option>openai-compatible</option></select></div><div class="field"><label>Ownership</label><select class="input" id="prOwnership"><option value="mkety">Mkety managed</option><option value="customer">Customer BYOK</option></select></div><div class="field"><label>Customer (BYOK only)</label><select class="input" id="prCustomer" disabled>'+customers+'</select></div></div><div id="prConfig"></div><div class="two"><div class="field"><label>Managed fallback</label><select class="input" id="prFallback"><option value="0">Off</option><option value="1">On after primary fails</option></select></div><div class="field"><label>Fallback priority</label><input class="input" id="prPriority" type="number" min="2" value="100"></div></div><button class="btn primary" id="prSave">Save & run real test</button>');
+  const prName=byId('prName'),prType=byId('prType'),prOwnership=byId('prOwnership'),prCustomer=byId('prCustomer'),prConfig=byId('prConfig'),prFallback=byId('prFallback'),prPriority=byId('prPriority'),prSave=byId('prSave');
+  const paint=()=>{prConfig.innerHTML=providerConfigHtml('pr',prType.value,null)};
+  prType.onchange=paint;paint();
+  prOwnership.onchange=()=>{prCustomer.disabled=prOwnership.value!=='customer';if(prOwnership.value==='customer')prFallback.value='0'};prOwnership.onchange();
+  prSave.onclick=async()=>{try{
+    const payload={name:prName.value,provider:prType.value,ownership:prOwnership.value,customerId:prOwnership.value==='customer'?prCustomer.value:null,fallbackEnabled:prOwnership.value==='mkety'&&prFallback.value==='1',fallbackPriority:Number(prPriority.value||100),...collectProviderConfig('pr',prType.value)};
+    const made=await api('/api/ops/providers',{method:'POST',body:JSON.stringify(payload)});
+    closeModal();await testProvider(made.id);await loadModels();
+  }catch(e){alert(e.message)}};
 }
 async function loadModels(){
   try{
