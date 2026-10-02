@@ -549,7 +549,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const rows = await env.DB.prepare(
       "SELECT c.*,ca.balance FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id ORDER BY c.created_at DESC",
     ).all();
-    return json({ customers: rows.results ?? [] });
+    return json({ customers: (rows.results ?? []).map((row: any) => ({ ...row, balance: mkreditsFromCreditAtoms(row.balance) })) });
   }
 
   if (url.pathname === "/api/ops/customer" && request.method === "GET") {
@@ -599,9 +599,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     }
     return json({
       customer,
-      commercial,
+      commercial: commercial ? { ...(commercial as any), included_credits: mkreditsFromCreditAtoms((commercial as any).included_credits) } : commercial,
       features,
-      credits,
+      credits: credits ? { ...(credits as any), balance: mkreditsFromCreditAtoms((credits as any).balance), lifetime_granted: mkreditsFromCreditAtoms((credits as any).lifetime_granted), lifetime_consumed: mkreditsFromCreditAtoms((credits as any).lifetime_consumed) } : credits,
       domains: domains.results ?? [],
       members: members.results ?? [],
       senderControls: senderControls.results ?? [],
@@ -665,8 +665,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ops/credits" && request.method === "POST") {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
-    const delta = parseInt(String(body.delta ?? "0"), 10);
-    if (!Number.isFinite(delta) || delta === 0) return json({ error: "credit_delta_must_be_nonzero" }, 400);
+    const publicDelta = Number(body.delta ?? 0);
+    if (!Number.isFinite(publicDelta) || publicDelta === 0) return json({ error: "credit_delta_must_be_nonzero" }, 400);
+    const delta = Math.round(publicDelta * CREDIT_ATOMS_PER_MKREDIT);
     const reason = requiredString(body.reason, "reason").slice(0, 300);
     const account = await env.DB.prepare("SELECT balance FROM credit_accounts WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
     if (!account) return json({ error: "credit_account_not_found" }, 404);
@@ -685,7 +686,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         "INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
       ).bind(id("aud"), "operator", customerId, "credits.adjusted", "customer", customerId, JSON.stringify({ delta, reason, balanceAfter: next }), now),
     ]);
-    return json({ ok: true, balance: next });
+    return json({ ok: true, balance: mkreditsFromCreditAtoms(next) });
   }
 
   if (url.pathname === "/api/ops/ledger" && request.method === "GET") {
