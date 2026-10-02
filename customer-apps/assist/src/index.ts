@@ -41,6 +41,12 @@ interface Env {
   FLUTTERWAVE_CHECKOUT_BROKER_URL?: string;
   NOWPAYMENTS_API_KEY?: string;
   NOWPAYMENTS_IPN_SECRET?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_API_KEY?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT?: string;
+  MKETY_ASSIST_AZURE_FOUNDRY_MODEL?: string;
+  MKETY_ASSIST_OPENAI_API_KEY?: string;
+  MKETY_ASSIST_OPENAI_MODEL?: string;
+  MKETY_ASSIST_ACCEPTANCE_TOKEN?: string;
   REPLY_QUEUE: {
     send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   };
@@ -75,6 +81,14 @@ export default {
 
       if (url.pathname === "/health") {
         return json({ ok: true, service: "mkety-assist", time: new Date().toISOString() });
+      }
+
+      if (
+        url.pathname === "/internal/production-inference-acceptance" &&
+        request.method === "POST" &&
+        (host === env.PORTAL_CNAME_TARGET || host === env.ROUTING_ORIGIN)
+      ) {
+        return handleProductionInferenceAcceptance(request, env);
       }
 
       if (host === env.OPS_HOST) {
@@ -143,6 +157,7 @@ export default {
       processDueReminders(env),
       recoverReplyJobs(env),
       syncTelegramBusinessWebhookCapabilities(env),
+      bootstrapManagedProviderConnections(env),
     ]);
   },
 
@@ -844,8 +859,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/ops/providers" && request.method === "GET") {
+    await bootstrapManagedProviderConnections(env);
     const rows = await env.DB.prepare(
-      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY name",
+      "SELECT id,name,customer_id,provider,endpoint_url,extra_json,ownership,status,validated_at,validation_error,fallback_enabled,fallback_priority,created_at,updated_at,1 AS has_key FROM provider_connections ORDER BY ownership DESC,fallback_priority ASC,name",
     ).all();
     return json({ providers: rows.results ?? [] });
   }
@@ -856,8 +872,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     if (!["openai","anthropic","gemini","vertex","cloudflare-ai","bedrock","azure-openai","azure-foundry","openai-compatible"].includes(provider)) {
       return json({ error: "unsupported_provider" }, 400);
     }
-    const apiKey = requiredString(body.apiKey, "apiKey");
-    const endpointUrl = body.endpointUrl ? String(body.endpointUrl).trim() : null;
+    const normalized = normalizeProviderConfiguration(provider, body);
+    const apiKey = requiredString(normalized.apiKey, provider === "vertex" || provider === "bedrock" ? "credentialsJson" : "apiKey");
+    const endpointUrl = normalized.endpointUrl;
     if (endpointUrl) {
       const parsed = new URL(endpointUrl);
       if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
@@ -871,7 +888,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const providerId = id("prv");
     const now = unix();
     await env.DB.prepare(
-      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,fallback_enabled,fallback_priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).bind(
       providerId,
       requiredString(body.name, "name"),
@@ -879,9 +896,11 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       provider,
       endpointUrl,
       await protectStoredSecret(apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
-      JSON.stringify(body.extra || {}),
+      JSON.stringify(normalized.extra),
       ownership,
       "disabled",
+      body.fallbackEnabled === true ? 1 : 0,
+      Math.max(2, Math.min(999, Number(body.fallbackPriority || 100))),
       now,
       now,
     ).run();
@@ -893,20 +912,14 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname.startsWith("/api/ops/providers/") && url.pathname.endsWith("/test") && request.method === "POST") {
     const providerId = decodeURIComponent(url.pathname.slice("/api/ops/providers/".length, -"/test".length));
-    const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
-    if (!current) return json({ error: "provider_not_found" }, 404);
-    const apiKey = await revealStoredSecret(String(current.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
-    const result = await validateProviderConnection({
-      provider: String(current.provider),
-      endpointUrl: current.endpoint_url ? String(current.endpoint_url) : null,
-      apiKey,
-      extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
-    });
-    const now = unix();
-    await env.DB.prepare(
-      "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
-    ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
-    return json({ ok: result.ok, status: result.status, error: result.error ?? null, providerId }, result.ok ? 200 : 422);
+    const result = await testStoredProviderConnection(env, providerId);
+    const acceptable = result.ok || (result.credentialsAccepted && result.billingBlocked);
+    return json({
+      ...result,
+      integrationValid: acceptable,
+      inferenceAvailable: result.ok,
+      providerId,
+    }, acceptable ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
@@ -914,21 +927,48 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
     if (!current) return json({ error: "provider_not_found" }, 404);
     const body = await readJson(request);
-    const endpointUrl = body.endpointUrl === undefined ? current.endpoint_url : (body.endpointUrl || null);
+
+    const routingOnly =
+      body.fallbackEnabled !== undefined || body.fallbackPriority !== undefined
+        ? !["name","endpointUrl","apiKey","model","credentialsJson","extra"].some((key) => body[key] !== undefined)
+        : false;
+    if (routingOnly) {
+      await env.DB.prepare(
+        "UPDATE provider_connections SET fallback_enabled=COALESCE(?,fallback_enabled),fallback_priority=COALESCE(?,fallback_priority),updated_at=? WHERE id=?",
+      ).bind(
+        body.fallbackEnabled === undefined ? null : (body.fallbackEnabled ? 1 : 0),
+        body.fallbackPriority === undefined ? null : Math.max(2, Math.min(999, Number(body.fallbackPriority || 100))),
+        unix(),
+        providerId,
+      ).run();
+      return json({ ok: true });
+    }
+
+    const normalized = normalizeProviderConfiguration(String(current.provider), {
+      ...body,
+      endpointUrl: body.endpointUrl === undefined ? current.endpoint_url : body.endpointUrl,
+      apiKey: body.apiKey,
+      credentialsJson: body.credentialsJson,
+      extra: body.extra === undefined ? JSON.parse(String(current.extra_json || "{}")) : body.extra,
+    }, current);
+
+    const endpointUrl = normalized.endpointUrl;
     if (endpointUrl) {
       const parsed = new URL(String(endpointUrl));
       if (parsed.protocol !== "https:") return json({ error: "provider_endpoint_must_be_https" }, 400);
     }
-    const cipher = body.apiKey
-      ? await protectStoredSecret(String(body.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
+    const cipher = normalized.apiKey
+      ? await protectStoredSecret(String(normalized.apiKey), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY)
       : current.api_key_ciphertext;
     await env.DB.prepare(
-      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=COALESCE(?,extra_json),status='disabled',validated_at=NULL,validation_error='revalidation_required',updated_at=? WHERE id=?",
+      "UPDATE provider_connections SET name=COALESCE(?,name),endpoint_url=?,api_key_ciphertext=?,extra_json=?,status='disabled',validated_at=NULL,validation_error='revalidation_required',fallback_enabled=COALESCE(?,fallback_enabled),fallback_priority=COALESCE(?,fallback_priority),updated_at=? WHERE id=?",
     ).bind(
       body.name ?? null,
       endpointUrl,
       cipher,
-      body.extra === undefined ? null : JSON.stringify(body.extra),
+      JSON.stringify(normalized.extra),
+      body.fallbackEnabled === undefined ? null : (body.fallbackEnabled ? 1 : 0),
+      body.fallbackPriority === undefined ? null : Math.max(2, Math.min(999, Number(body.fallbackPriority || 100))),
       unix(),
       providerId,
     ).run();
@@ -2708,6 +2748,250 @@ function calculateCommercialPlan(input: {
 function costToBaseCredits(providerCostMicros: number, creditUsdMicros: number) {
   if (providerCostMicros <= 0) return 0;
   return Math.ceil(providerCostMicros / Math.max(1, creditUsdMicros));
+}
+
+function normalizeProviderConfiguration(provider: string, body: any, current?: any) {
+  const priorExtra = (() => {
+    try {
+      if (body.extra && typeof body.extra === "object") return { ...body.extra };
+      if (current?.extra_json) return JSON.parse(String(current.extra_json));
+    } catch {}
+    return {};
+  })() as Record<string, unknown>;
+  const extra: Record<string, unknown> = { ...priorExtra };
+  const model = String(body.model ?? extra.defaultModel ?? extra.model ?? extra.deployment ?? "").trim();
+  if (model) extra.defaultModel = model;
+
+  let endpointUrl = body.endpointUrl === undefined
+    ? (current?.endpoint_url ? String(current.endpoint_url) : null)
+    : (body.endpointUrl ? String(body.endpointUrl).trim() : null);
+  let apiKey = body.apiKey ? String(body.apiKey) : "";
+
+  if (provider === "azure-foundry") {
+    if (!endpointUrl) throw new HttpError(400, "azure_foundry_endpoint_required");
+    if (!model) throw new HttpError(400, "azure_foundry_model_required");
+  } else if (provider === "azure-openai") {
+    if (!endpointUrl) throw new HttpError(400, "azure_openai_endpoint_required");
+    if (!model) throw new HttpError(400, "azure_openai_model_required");
+    extra.deployment = model;
+    extra.apiVersion = String(body.apiVersion || extra.apiVersion || "2024-10-21");
+  } else if (provider === "vertex") {
+    const raw = body.credentialsJson ? String(body.credentialsJson) : apiKey;
+    if (raw) {
+      let credentials: any;
+      try { credentials = JSON.parse(raw); } catch { throw new HttpError(400, "vertex_credentials_must_be_json"); }
+      if (!credentials.project_id || !credentials.client_email || !credentials.private_key) {
+        throw new HttpError(400, "vertex_service_account_json_incomplete");
+      }
+      apiKey = raw;
+      extra.projectId = String(credentials.project_id);
+      extra.location = String(body.location || extra.location || "global");
+    }
+    if (!model) throw new HttpError(400, "vertex_model_required");
+  } else if (provider === "bedrock") {
+    const raw = body.credentialsJson ? String(body.credentialsJson) : "";
+    if (raw) {
+      let credentials: any;
+      try { credentials = JSON.parse(raw); } catch { throw new HttpError(400, "bedrock_credentials_must_be_json"); }
+      const accessKeyId = String(credentials.accessKeyId || credentials.aws_access_key_id || "").trim();
+      const secretAccessKey = String(credentials.secretAccessKey || credentials.aws_secret_access_key || "").trim();
+      const region = String(credentials.region || credentials.aws_region || "us-east-1").trim();
+      if (!accessKeyId || !secretAccessKey || !region) throw new HttpError(400, "bedrock_credentials_json_incomplete");
+      apiKey = secretAccessKey;
+      extra.accessKeyId = accessKeyId;
+      extra.region = region;
+      if (credentials.sessionToken || credentials.aws_session_token) {
+        extra.sessionToken = String(credentials.sessionToken || credentials.aws_session_token);
+      }
+    }
+    if (!model) throw new HttpError(400, "bedrock_model_required");
+  }
+
+  return { endpointUrl, apiKey, extra };
+}
+
+async function testStoredProviderConnection(env: Env, providerId: string) {
+  const current = await env.DB.prepare("SELECT * FROM provider_connections WHERE id=? LIMIT 1").bind(providerId).first<any>();
+  if (!current) throw new HttpError(404, "provider_not_found");
+  const apiKey = await revealStoredSecret(String(current.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY);
+  const result = await validateProviderConnection({
+    provider: String(current.provider),
+    endpointUrl: current.endpoint_url ? String(current.endpoint_url) : null,
+    apiKey,
+    extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
+  });
+  const now = unix();
+  const acceptedButBillingBlocked = Boolean(result.credentialsAccepted && result.billingBlocked);
+  await env.DB.prepare(
+    "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
+  ).bind(
+    result.ok ? "active" : "disabled",
+    result.ok || acceptedButBillingBlocked ? now : null,
+    result.ok ? null : String(result.error || "provider_validation_failed"),
+    now,
+    providerId,
+  ).run();
+  return result;
+}
+
+async function bootstrapManagedProviderConnections(env: Env) {
+  if (!env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY) return { bootstrapped: [], skipped: ["encryption_root_unavailable"] };
+  const definitions = [
+    {
+      provider: "azure-foundry",
+      name: "Mkety Azure Foundry",
+      apiKey: env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY || "",
+      endpointUrl: env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT || "",
+      model: env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL || "",
+      fallbackEnabled: true,
+      fallbackPriority: 20,
+    },
+    {
+      provider: "openai",
+      name: "Mkety OpenAI",
+      apiKey: env.MKETY_ASSIST_OPENAI_API_KEY || "",
+      endpointUrl: "https://api.openai.com/v1",
+      model: env.MKETY_ASSIST_OPENAI_MODEL || "",
+      fallbackEnabled: false,
+      fallbackPriority: 30,
+    },
+  ];
+
+  const bootstrapped: any[] = [];
+  const skipped: string[] = [];
+  for (const definition of definitions) {
+    if (!definition.apiKey || !definition.model || (definition.provider === "azure-foundry" && !definition.endpointUrl)) {
+      skipped.push(definition.provider);
+      continue;
+    }
+
+    const existing = await env.DB.prepare(
+      "SELECT * FROM provider_connections WHERE ownership='mkety' AND provider=? AND name=? LIMIT 1",
+    ).bind(definition.provider, definition.name).first<any>();
+
+    let changed = !existing;
+    if (existing) {
+      let savedKey = "";
+      try { savedKey = await revealStoredSecret(String(existing.api_key_ciphertext), env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY); } catch {}
+      let savedExtra: any = {};
+      try { savedExtra = JSON.parse(String(existing.extra_json || "{}")); } catch {}
+      changed =
+        savedKey !== definition.apiKey ||
+        String(existing.endpoint_url || "") !== definition.endpointUrl ||
+        String(savedExtra.defaultModel || "") !== definition.model;
+    }
+
+    const now = unix();
+    let providerId = existing?.id ? String(existing.id) : id("prv");
+    if (!existing) {
+      await env.DB.prepare(
+        "INSERT INTO provider_connections (id,name,customer_id,provider,endpoint_url,api_key_ciphertext,extra_json,ownership,status,fallback_enabled,fallback_priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      ).bind(
+        providerId,
+        definition.name,
+        null,
+        definition.provider,
+        definition.endpointUrl,
+        await protectStoredSecret(definition.apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
+        JSON.stringify({ defaultModel: definition.model, bootstrap: "repository-secret" }),
+        "mkety",
+        "disabled",
+        0,
+        definition.fallbackPriority,
+        now,
+        now,
+      ).run();
+    } else if (changed) {
+      await env.DB.prepare(
+        "UPDATE provider_connections SET endpoint_url=?,api_key_ciphertext=?,extra_json=?,status='disabled',validated_at=NULL,validation_error='repository_secret_changed',fallback_enabled=0,fallback_priority=?,updated_at=? WHERE id=?",
+      ).bind(
+        definition.endpointUrl,
+        await protectStoredSecret(definition.apiKey, env.MKETY_ASSIST_SECRET_ENCRYPTION_KEY),
+        JSON.stringify({ defaultModel: definition.model, bootstrap: "repository-secret" }),
+        definition.fallbackPriority,
+        now,
+        providerId,
+      ).run();
+    }
+
+    const latest = await env.DB.prepare("SELECT status,validated_at,validation_error FROM provider_connections WHERE id=? LIMIT 1")
+      .bind(providerId).first<any>();
+    let test: any = null;
+    if (changed || !latest?.validated_at) {
+      test = await testStoredProviderConnection(env, providerId);
+    }
+
+    const active = test ? Boolean(test.ok) : String(latest?.status || "") === "active";
+    const billingBlocked = test ? Boolean(test.billingBlocked && test.credentialsAccepted) : String(latest?.validation_error || "") === "provider_billing_or_quota_blocked";
+    const enableFallback = definition.fallbackEnabled && active;
+    await env.DB.prepare(
+      "UPDATE provider_connections SET fallback_enabled=?,fallback_priority=?,updated_at=? WHERE id=?",
+    ).bind(enableFallback ? 1 : 0, definition.fallbackPriority, unix(), providerId).run();
+
+    bootstrapped.push({
+      provider: definition.provider,
+      id: providerId,
+      changed,
+      active,
+      billingBlocked,
+      fallbackEnabled: enableFallback,
+      fallbackPriority: definition.fallbackPriority,
+    });
+  }
+  return { bootstrapped, skipped };
+}
+
+async function handleProductionInferenceAcceptance(request: Request, env: Env) {
+  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+  if (!env.MKETY_ASSIST_ACCEPTANCE_TOKEN || !constantTimeEqual(supplied, env.MKETY_ASSIST_ACCEPTANCE_TOKEN)) {
+    return json({ error: "not_found" }, 404);
+  }
+
+  const bootstrap = await bootstrapManagedProviderConnections(env);
+  const workersModel = "@cf/zai-org/glm-4.7-flash";
+  let workers: any;
+  try {
+    const result = await env.AI.run(workersModel, {
+      messages: [{ role: "user", content: "Reply exactly: OK" }],
+      max_tokens: 8,
+      temperature: 0,
+    });
+    const text = String(result?.response || result?.result?.response || result?.text || "").trim();
+    workers = { ok: Boolean(text), model: workersModel, text: text.slice(0, 40) };
+  } catch (error) {
+    workers = { ok: false, model: workersModel, error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300) };
+  }
+
+  const providerRows = await env.DB.prepare(
+    "SELECT id,provider,name,status,validated_at,validation_error,fallback_enabled,fallback_priority FROM provider_connections WHERE ownership='mkety' AND provider IN ('azure-foundry','openai') ORDER BY provider",
+  ).all<any>();
+  const providers: any[] = [];
+  for (const row of providerRows.results ?? []) {
+    const result = await testStoredProviderConnection(env, String(row.id));
+    providers.push({
+      provider: String(row.provider),
+      ok: Boolean(result.ok),
+      credentialsAccepted: Boolean(result.credentialsAccepted),
+      billingBlocked: Boolean(result.billingBlocked),
+      status: result.status,
+      error: result.error ?? null,
+    });
+  }
+
+  const azure = providers.find((item) => item.provider === "azure-foundry");
+  const openai = providers.find((item) => item.provider === "openai");
+  const azureRequired = Boolean(env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL);
+  const openaiConfigured = Boolean(env.MKETY_ASSIST_OPENAI_API_KEY && env.MKETY_ASSIST_OPENAI_MODEL);
+  const openaiAccepted = !openaiConfigured || Boolean(openai?.ok || (openai?.credentialsAccepted && openai?.billingBlocked));
+  const ok = Boolean(workers.ok) && (!azureRequired || Boolean(azure?.ok)) && openaiAccepted;
+
+  return json({
+    ok,
+    service: "mkety-assist",
+    workers,
+    providers,
+    bootstrap,
+  }, ok ? 200 : 503);
 }
 
 async function protectStoredSecret(secret: string, configured: string) {
