@@ -501,7 +501,21 @@ jobs:
           }
 
           echo "=== Commercial MKredit conversion ==="
-          run_query "SELECT key,value_json FROM system_settings WHERE key='commercial';"
+          run_query "SELECT key,value_json FROM system_settings WHERE key='commercial';" >/tmp/assist-commercial-unit.json
+          cat /tmp/assist-commercial-unit.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const payload=JSON.parse(fs.readFileSync('/tmp/assist-commercial-unit.json','utf8'));
+          const row=payload?.[0]?.results?.[0];
+          const config=JSON.parse(row?.value_json||'{}');
+          if(config.mkreditsPerUsd!==10000000 || config.creditUnit!=='MKredit' || config.creditScaleVersion!==2){
+            throw new Error('Production MKredit precision configuration is not active: '+JSON.stringify(config));
+          }
+          const exampleMicros=403;
+          const mkredit=Math.ceil(exampleMicros*config.mkreditsPerUsd/1000000);
+          if(mkredit!==4030) throw new Error('MKredit conversion invariant failed: '+mkredit);
+          console.log('MKredit precision invariant: PASS; 403 provider-cost micros = 4030 MKredit before customer multiplier');
+          NODE
 
           echo "=== Active media route economics ==="
           run_query "SELECT alias,position,provider,provider_model,enabled,input_credits_per_million,output_credits_per_million,audio_credits_per_minute,provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,provider_audio_cost_micros_per_minute FROM model_route_targets WHERE alias IN ('mkety-media-vision','mkety-media-speech') ORDER BY alias,position;"
@@ -514,6 +528,9 @@ jobs:
 
           echo "=== Recent provider cost ledger ==="
           run_query "SELECT provider,provider_model,cost_micros,created_at FROM provider_cost_events ORDER BY created_at DESC LIMIT 30;"
+
+          echo "=== Recent reply-job diagnostics (no message contents) ==="
+          run_query "SELECT status,attempts,last_error,LENGTH(COALESCE(response_text,'')) AS response_chars,provider_message_id,image_count,audio_seconds,created_at,completed_at FROM reply_jobs ORDER BY created_at DESC LIMIT 20;"
 
       - name: Register Telegram recovery webhook
         if: env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN != '' && env.MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET != ''
