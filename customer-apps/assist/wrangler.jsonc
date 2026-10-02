@@ -7,6 +7,17 @@
   "preview_urls": true,
   "observability": { "enabled": true },
   "ai": { "binding": "AI" },
+  "kv_namespaces": [
+    { "binding": "CONTEXT_CACHE", "id": "__MKETY_ASSIST_CONTEXT_CACHE_ID__" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "SETTLEMENT_JOURNAL", "class_name": "SettlementJournal" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1-settlement-journal", "new_sqlite_classes": ["SettlementJournal"] }
+  ],
   "r2_buckets": [
     { "binding": "MEDIA", "bucket_name": "mkety-assist-media" }
   ],
@@ -18,6 +29,10 @@
       {
         "binding": "REPLY_QUEUE",
         "queue": "mkety-assist-replies"
+      },
+      {
+        "binding": "INBOUND_QUEUE",
+        "queue": "mkety-assist-inbound"
       }
     ],
     "consumers": [
@@ -29,6 +44,15 @@
         "dead_letter_queue": "mkety-assist-replies-dlq",
         "max_concurrency": 5,
         "retry_delay": 5
+      },
+      {
+        "queue": "mkety-assist-inbound",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_retries": 20,
+        "dead_letter_queue": "mkety-assist-inbound-dlq",
+        "max_concurrency": 5,
+        "retry_delay": 15
       }
     ]
   },

@@ -1,17 +1,24 @@
 import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
 import { mayUseFallback } from "./providers/validation";
+import { planReasoningTargets, providerReasoningOptions, reasoningCapabilities, type ReasoningFallbackPolicy, type ReasoningMode } from "./providers/reasoning";
+import { routeTargetMediaSupported, routeTargetPricingConfigured } from "./providers/route-readiness";
 import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./providers/structured-credentials";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
-import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
+import { archiveAssistant, deleteAssistant, listAssistantVersions, normalizeReasoningFallbackPolicy, normalizeReasoningMode, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
+import { assembleAssistantContext, buildKnowledgeQuery, capKnowledgeSnippets, selectCompletionBudget, selectReasoningEffort } from "./conversation/context";
+import { emptyConversationMemory, summarizeArchivedMessages, type ConversationMemory } from "./conversation/memory";
+import { contextCacheKey, readContextSnapshot, writeContextSnapshot } from "./conversation/context-cache";
+import { enqueueInboundUpdate, replayInboundUpdate } from "./queues/inbound";
+import { attemptIdFor, settlementJournalStub } from "./billing/settlement-journal";
+import { reserveInference, releaseInferenceReservation, settleInference } from "./billing/inference-settlement";
+import { recordAttemptProjection, updateAttemptProjection } from "./billing/reconciliation";
 import {
   RetryableInferenceError,
   claimModelCapacity,
   classifyRetryableError,
-  compactInstructions,
   computeHumanDelaySeconds,
   deleteKnowledgeChunks,
   getPromptCache,
-  mergeMemoryDigest,
   providerHttpError,
   putPromptCache,
   replaceKnowledgeChunks,
@@ -28,6 +35,7 @@ type AiBinding = {
 
 type AssistEnv = {
   DB: D1Database;
+  CONTEXT_CACHE: KVNamespace;
   AI: AiBinding;
   MEDIA: R2Bucket;
   MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;
@@ -36,6 +44,8 @@ type AssistEnv = {
   REPLY_QUEUE: {
     send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   };
+  INBOUND_QUEUE: { send(body: unknown): Promise<void> };
+  SETTLEMENT_JOURNAL: DurableObjectNamespace<import("./billing/settlement-journal").SettlementJournal>;
 };
 
 type Customer = {
@@ -595,12 +605,31 @@ export async function handleRuntimeApi(
       if (assistant?.monthly_credit_cap != null) {
         assistant.monthly_credit_cap = Math.round((Number(assistant.monthly_credit_cap) / 10000) * 10000) / 10000;
       }
+      if (assistant) {
+        const reasoningRoute = await resolveModelRoute(env.DB, customer.customerId, String(assistant.model_alias || ""));
+        const reasoningTargets = Array.isArray(reasoningRoute?.__targets) && reasoningRoute.__targets.length
+          ? reasoningRoute.__targets
+          : reasoningRoute ? [reasoningRoute] : [];
+        assistant.reasoning_capabilities = [...new Set(["standard", ...reasoningTargets.flatMap((target: any) => {
+          let configured: string[] = [];
+          try { configured = JSON.parse(String(target.reasoning_capabilities_json || "[]")); } catch {}
+          return reasoningCapabilities(String(target.provider || ""), String(target.provider_model || ""), configured);
+        })])];
+      }
       return json({ assistant, knowledge: collections.results ?? [], tools: tools.results ?? [] });
     }
 
     if (parts.length === 3 && request.method === "PATCH") {
       requireAdmin(session);
       const body = await readJson(request);
+      const reasoningMode = body.reasoningMode === undefined ? null : normalizeReasoningMode(body.reasoningMode);
+      if (body.reasoningMode !== undefined && !reasoningMode) return json({ error: "invalid_reasoning_mode" }, 400);
+      const reasoningFallbackPolicy = body.reasoningFallbackPolicy === undefined
+        ? null
+        : normalizeReasoningFallbackPolicy(body.reasoningFallbackPolicy);
+      if (body.reasoningFallbackPolicy !== undefined && !reasoningFallbackPolicy) {
+        return json({ error: "invalid_reasoning_fallback_policy" }, 400);
+      }
       const allowedModels = await env.DB.prepare("SELECT 1 FROM model_routes WHERE alias=? AND status='active' LIMIT 1")
         .bind(body.modelAlias || "mkety-smart").first();
       if (body.modelAlias && !allowedModels) return json({ error: "model_alias_unavailable" }, 400);
@@ -613,6 +642,8 @@ export async function handleRuntimeApi(
          human_delay_max_seconds=COALESCE(?,human_delay_max_seconds),
          human_delay_per_char_ms=COALESCE(?,human_delay_per_char_ms),
          manual_reply_pause_seconds=COALESCE(?,manual_reply_pause_seconds),
+         reasoning_mode=COALESCE(?,reasoning_mode),
+         reasoning_fallback_policy=COALESCE(?,reasoning_fallback_policy),
          context_recent_message_limit=COALESCE(?,context_recent_message_limit),
          context_knowledge_char_budget=COALESCE(?,context_knowledge_char_budget),
          context_memory_char_budget=COALESCE(?,context_memory_char_budget),
@@ -630,6 +661,8 @@ export async function handleRuntimeApi(
         body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
         body.humanDelayPerCharMs === undefined ? null : clampNumber(body.humanDelayPerCharMs, 0, 5000),
         body.manualReplyPauseSeconds === undefined ? null : clampNumber(body.manualReplyPauseSeconds, 60, 86400),
+        reasoningMode,
+        reasoningFallbackPolicy,
         body.contextRecentMessageLimit === undefined ? null : clampNumber(body.contextRecentMessageLimit, 4, 40),
         body.contextKnowledgeCharBudget === undefined ? null : clampNumber(body.contextKnowledgeCharBudget, 2000, 50000),
         body.contextMemoryCharBudget === undefined ? null : clampNumber(body.contextMemoryCharBudget, 1000, 20000),
@@ -823,7 +856,7 @@ export async function handleRuntimeApi(
   return null;
 }
 
-export async function handleAssistantTelegramWebhook(request: Request, env: AssistEnv): Promise<Response | null> {
+export async function handleAssistantTelegramWebhook(request: Request, env: AssistEnv, replayed = false): Promise<Response | null> {
   const url = new URL(request.url);
   const match = url.pathname.match(/^\/api\/telegram\/([^/]+)$/);
   if (!match || request.method !== "POST") return null;
@@ -838,9 +871,11 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   ).bind(assistantId).first<any>();
   if (!assistant) return json({ ok: true });
 
-  const webhookSecret = await getAssistantSecret(env, assistantId, "telegram_webhook_secret");
-  const supplied = request.headers.get("x-telegram-bot-api-secret-token") || "";
-  if (!webhookSecret || !constantTimeEqual(supplied, webhookSecret)) return json({ error: "not_found" }, 404);
+  if (!replayed) {
+    const webhookSecret = await getAssistantSecret(env, assistantId, "telegram_webhook_secret");
+    const supplied = request.headers.get("x-telegram-bot-api-secret-token") || "";
+    if (!webhookSecret || !constantTimeEqual(supplied, webhookSecret)) return json({ error: "not_found" }, 404);
+  }
 
   await env.DB.prepare(
     `INSERT INTO channel_health(customer_id,assistant_id,channel,status,last_checked_at,last_success_at,last_error)
@@ -851,13 +886,32 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const update = await readJson(request);
   const updateId = String(update.update_id ?? "");
   if (!updateId) return json({ ok: true });
+  if (!replayed) {
+    try {
+      await enqueueInboundUpdate(env.INBOUND_QUEUE, { assistantId, providerEventId: updateId, update });
+      return json({ ok: true, queued: true, providerEventId: updateId });
+    } catch (error) {
+      console.error("telegram inbound queue receipt failed", error instanceof Error ? error.message : String(error));
+      return json({ error: "inbound_queue_unavailable", retryable: true }, 503);
+    }
+  }
 
-  try {
-    await env.DB.prepare(
-      "INSERT INTO webhook_events (id,source,external_event_id,status,received_at) VALUES (?,?,?,?,?)",
-    ).bind(id("wh"), `telegram:${assistantId}`, updateId, "received", unix()).run();
-  } catch {
-    return json({ ok: true, duplicate: true });
+  const webhookSource = `telegram:${assistantId}`;
+  const receivedAt = unix();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO webhook_events (id,source,external_event_id,status,received_at) VALUES (?,?,?,?,?)",
+  ).bind(id("wh"), webhookSource, updateId, "received", receivedAt).run();
+  const claim = await env.DB.prepare(
+    `UPDATE webhook_events SET status='processing',processing_at=?
+     WHERE source=? AND external_event_id=?
+       AND (status IN ('received','error') OR (status='processing' AND COALESCE(processing_at,0)<?))`,
+  ).bind(receivedAt, webhookSource, updateId, receivedAt - 60).run();
+  if (!claim.meta.changes) {
+    const existingEvent = await env.DB.prepare(
+      "SELECT status FROM webhook_events WHERE source=? AND external_event_id=? LIMIT 1",
+    ).bind(webhookSource, updateId).first<any>();
+    if (["processed","ignored"].includes(String(existingEvent?.status || ""))) return json({ ok: true, duplicate: true });
+    return json({ error: "inbound_event_in_progress", retryable: true }, 503);
   }
 
   if (update.business_connection?.id && update.business_connection?.user?.id) {
@@ -1089,6 +1143,26 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   return json({ ok: true, queued: true, jobId, delaySeconds, awaitingHuman: Boolean(existingHandoff), automationPaused: automation.paused, pauseScope: automation.reason });
 }
 
+export async function processInboundQueue(batch: any, env: AssistEnv): Promise<void> {
+  for (const message of batch.messages ?? []) {
+    try {
+      await replayInboundUpdate(message?.body, async (payload) => {
+        const replayRequest = new Request(`https://assist-origin.mkety.app/api/telegram/${encodeURIComponent(payload.assistantId)}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload.update),
+        });
+        const response = await handleAssistantTelegramWebhook(replayRequest, env, true);
+        if (response && response.status >= 500) throw new Error(`inbound_replay_http_${response.status}`);
+      });
+      message.ack?.();
+    } catch (error) {
+      console.warn("telegram inbound replay will retry", error instanceof Error ? error.message : String(error));
+      message.retry?.({ delaySeconds: 15 });
+    }
+  }
+}
+
 export async function processReplyQueue(batch: any, env: AssistEnv): Promise<void> {
   for (const message of batch.messages ?? []) {
     const jobId = String(message?.body?.jobId || "");
@@ -1136,6 +1210,42 @@ export async function recoverReplyJobs(env: AssistEnv): Promise<void> {
   }
 
   await env.DB.prepare("DELETE FROM prompt_cache WHERE expires_at<?").bind(now).run();
+}
+
+export async function inspectStaleAttemptProjections(env: AssistEnv): Promise<void> {
+  const cutoff = unix() - 60;
+  const rows = await env.DB.prepare(
+    `SELECT attempt_id,customer_id,assistant_id FROM inference_attempt_index
+     WHERE status IN ('started','unknown_outcome','result_recorded') AND updated_at<?
+     ORDER BY updated_at ASC LIMIT 50`,
+  ).bind(cutoff).all<any>();
+  for (const row of rows.results ?? []) {
+    const identity = {
+      attemptId: String(row.attempt_id), customerId: String(row.customer_id), assistantId: String(row.assistant_id),
+    };
+    try {
+      const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, identity.customerId, identity.assistantId);
+      let attempt = await journal.getAttempt(identity);
+      if (!attempt) continue;
+      if (attempt.status === "started" && Date.now() - attempt.updatedAt > 5 * 60_000) {
+        attempt = await journal.markAttemptUnknown(identity);
+      }
+      if (["started", "unknown_outcome", "result_recorded", "settled", "not_submitted"].includes(attempt.status)) {
+        await updateAttemptProjection(env.DB, {
+          ...identity, status: attempt.status, provider: attempt.provider, model: attempt.model,
+          inputUnits: attempt.result?.inputUnits ?? null, outputUnits: attempt.result?.outputUnits ?? null,
+          reasoningUnits: attempt.result?.reasoningUnits ?? null, providerCostMicros: attempt.result?.providerCostMicros ?? null,
+          rateSnapshot: attempt.result?.metadata?.targetRateJson
+            ? JSON.parse(String(attempt.result.metadata.targetRateJson)) : undefined,
+          resolved: attempt.status === "settled" || attempt.status === "not_submitted",
+        });
+      }
+    } catch (error) {
+      console.warn("stale inference attempt inspection failed", {
+        attemptId: identity.attemptId, error: String(error instanceof Error ? error.message : error).slice(0, 180),
+      });
+    }
+  }
 }
 
 async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: boolean; delaySeconds: number }> {
@@ -1293,6 +1403,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
       mediaUsage: (() => { try { const value=JSON.parse(String(job.media_usage_json || "[]")); return Array.isArray(value)?value:[]; } catch { return []; } })(),
       senderId: String(job.sender_id || ""),
       providerMessageId: String(job.provider_message_id || ""),
+      replyJobId: String(job.id),
     });
 
     if (!response.ok) {
@@ -1524,16 +1635,49 @@ function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, end
   }
 }
 
-async function buildConversationContext(db: D1Database, assistant: any, conversationId: string, currentUserText: string) {
-  if (!Number(assistant.memory_enabled ?? 1)) return { history: [] as any[], memory: "" };
+async function buildConversationContext(env: AssistEnv, assistant: any, conversationId: string, currentUserText: string) {
+  const { DB: db } = env;
+  const versionState = await db.prepare(
+    `SELECT COALESCE(c.memory_cleared_at,0) AS cutoff,
+            COALESCE((SELECT m.created_at FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC,m.id DESC LIMIT 1),0) AS latest_message_at,
+            COALESCE((SELECT m.id FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC,m.id DESC LIMIT 1),'') AS latest_message_id
+     FROM conversations c WHERE c.id=? AND c.customer_id=? AND c.assistant_id=? LIMIT 1`,
+  ).bind(conversationId, assistant.customer_id, assistant.id).first<any>();
+  const cutoffVersion = Number(versionState?.cutoff || 0);
+  const conversationVersion = await resilienceSha256Text([
+    cutoffVersion,
+    Number(versionState?.latest_message_at || 0),
+    String(versionState?.latest_message_id || ""),
+    Number(assistant.memory_enabled ?? 1),
+    Number(assistant.context_recent_message_limit || 12),
+  ].join(":"));
+  const cacheIdentity = {
+    customerId: String(assistant.customer_id), assistantId: String(assistant.id), conversationId,
+    kind: "conversation_context" as const, sourceVersion: conversationVersion,
+  };
+  const cached = await readContextSnapshot(env.CONTEXT_CACHE, contextCacheKey(cacheIdentity), conversationVersion);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed?.history) && parsed?.memory && typeof parsed.memory === "object") {
+        return { history: parsed.history, memory: parseConversationMemory(JSON.stringify(parsed.memory)) };
+      }
+    } catch {
+      // Treat corrupt cache values as misses and rebuild from D1.
+    }
+  }
+  if (!Number(assistant.memory_enabled ?? 1)) {
+    const empty = { history: [] as any[], memory: emptyConversationMemory() };
+    await writeContextSnapshot(env.CONTEXT_CACHE, { ...cacheIdentity, value: JSON.stringify(empty), ttlSeconds: 300 });
+    return empty;
+  }
   const recentLimit = Math.max(4, Math.min(40, Number(assistant.context_recent_message_limit || 12)));
-  const memoryBudget = Math.max(1000, Math.min(20000, Number(assistant.context_memory_char_budget || 4000)));
   const cutoffRow = await db.prepare("SELECT COALESCE(memory_cleared_at,0) AS cutoff FROM conversations WHERE id=? LIMIT 1")
     .bind(conversationId).first<any>();
   const cutoff = Number(cutoffRow?.cutoff || 0);
 
   const recent = await db.prepare(
-    "SELECT id,role,content,created_at FROM messages WHERE conversation_id=? AND created_at>? ORDER BY created_at DESC LIMIT ?",
+    "SELECT id,role,content,created_at FROM messages WHERE conversation_id=? AND created_at>? ORDER BY created_at DESC,id DESC LIMIT ?",
   ).bind(conversationId, cutoff, recentLimit + 2).all<any>();
   let history = (recent.results ?? []).reverse();
   if (history.length) {
@@ -1548,20 +1692,29 @@ async function buildConversationContext(db: D1Database, assistant: any, conversa
     "SELECT summary_text,through_message_created_at,source_message_count FROM conversation_summaries WHERE conversation_id=? LIMIT 1",
   ).bind(conversationId).first<any>();
   const earliestRecent = history.length ? Number(history[0].created_at || Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-  const through = Math.max(cutoff, Number(existing?.through_message_created_at || 0));
+  const existingThrough = Number(existing?.through_message_created_at || 0);
+  const through = Math.max(cutoff, existingThrough);
   const older = await db.prepare(
     `SELECT role,content,created_at FROM messages
      WHERE conversation_id=? AND created_at>? AND created_at<? AND created_at>?
      ORDER BY created_at ASC LIMIT 80`,
   ).bind(conversationId, cutoff, earliestRecent, through).all<any>();
 
-  let memory = String(existing?.summary_text || "");
+  const existingMemory = existingThrough > cutoff ? parseConversationMemory(existing?.summary_text) : emptyConversationMemory();
+  const olderMessages = (older.results ?? []).map((m: any) => ({
+    role: String(m.role),
+    content: String(m.content || ""),
+    createdAt: Number(m.created_at || 0),
+  }));
+  const { summary: memory } = await summarizeArchivedMessages({
+    existingSummary: existingMemory,
+    existingSummaryThrough: existingThrough,
+    memoryClearedAt: cutoff,
+    messages: olderMessages,
+    archivedSinceLastSummary: olderMessages.length,
+    recentWindowWouldLoseContext: olderMessages.length > 0,
+  });
   if ((older.results ?? []).length) {
-    memory = mergeMemoryDigest(
-      memory,
-      (older.results ?? []).map((m: any) => ({ role: String(m.role), content: String(m.content || "") })),
-      memoryBudget,
-    );
     const lastThrough = Number((older.results ?? []).at(-1)?.created_at || through);
     const count = Number(existing?.source_message_count || 0) + (older.results ?? []).length;
     await db.prepare(
@@ -1573,29 +1726,59 @@ async function buildConversationContext(db: D1Database, assistant: any, conversa
          through_message_created_at=excluded.through_message_created_at,
          source_message_count=excluded.source_message_count,
          updated_at=excluded.updated_at`,
-    ).bind(conversationId,assistant.customer_id,assistant.id,memory,lastThrough,count,unix()).run();
+    ).bind(conversationId,assistant.customer_id,assistant.id,JSON.stringify(memory),lastThrough,count,unix()).run();
   }
 
-  return { history, memory: memory.slice(0, memoryBudget) };
+  const result = { history, memory };
+  await writeContextSnapshot(env.CONTEXT_CACHE, { ...cacheIdentity, value: JSON.stringify(result), ttlSeconds: 300 });
+  return result;
+}
+
+function parseConversationMemory(value: unknown): ConversationMemory {
+  const serialized = String(value || "").trim();
+  if (!serialized) return emptyConversationMemory();
+  try {
+    const parsed = JSON.parse(serialized);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return {
+        preferences: Array.isArray(parsed.preferences) ? parsed.preferences.map(String) : [],
+        knownFacts: Array.isArray(parsed.knownFacts) ? parsed.knownFacts.map(String) : [],
+        goals: Array.isArray(parsed.goals) ? parsed.goals.map(String) : [],
+        openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions.map(String) : [],
+        decisions: Array.isArray(parsed.decisions) ? parsed.decisions.map(String) : [],
+        commitments: Array.isArray(parsed.commitments) ? parsed.commitments.map(String) : [],
+        latestState: String(parsed.latestState || ""),
+      };
+    }
+  } catch {
+    // Existing pre-structured summaries are retained as legacy factual context.
+  }
+  return { ...emptyConversationMemory(), knownFacts: [serialized.slice(0, 1024)] };
 }
 
 function normalizeComparable(value: string) {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-async function staticAssistantContext(env: AssistEnv, assistant: any, instructions: string, toolDescriptions: string) {
-  const compacted = compactInstructions(instructions);
-  const sourceHash = await resilienceSha256Text(compacted + "\n---tools---\n" + toolDescriptions);
+async function staticAssistantContext(env: AssistEnv, assistant: any, instructions: string, toolDescriptions: string, sourceVersion: string) {
+  const sourceHash = await resilienceSha256Text("context-envelope-v3\n" + sourceVersion + "\n" + instructions + "\n" + toolDescriptions);
+  const cacheIdentity = {
+    customerId: String(assistant.customer_id), assistantId: String(assistant.id),
+    kind: "published_prompt_tools" as const, sourceVersion: sourceHash,
+  };
+  const snapshot = await readContextSnapshot(env.CONTEXT_CACHE, contextCacheKey(cacheIdentity), sourceHash);
+  if (snapshot) return snapshot;
   const cacheKey = `static-context:${assistant.id}`;
   const cached = await getPromptCache(env.DB, cacheKey, sourceHash);
   if (cached) return cached;
-  const value = [
-    "You are an AI assistant configured by this business. Follow the business instructions below.",
-    "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
-    "If the user asks for a human or clearly needs escalation, say that you can hand the conversation to a human.",
-    compacted ? `BUSINESS INSTRUCTIONS:\n${compacted}` : "",
-    toolDescriptions ? `AVAILABLE TOOLS:\n${toolDescriptions}\nIf you must use exactly one tool, respond ONLY with JSON: {\"tool\":\"tool-name\",\"arguments\":{...}}. Otherwise answer normally.` : "",
-  ].filter(Boolean).join("\n\n");
+  const value = assembleAssistantContext({
+    businessInstructions: instructions,
+    memory: "",
+    knowledgeSnippets: [],
+    tools: "",
+    recentTurns: [],
+    currentTurn: { text: "" },
+  }).system;
   await putPromptCache({
     db: env.DB,
     cacheKey,
@@ -1606,6 +1789,7 @@ async function staticAssistantContext(env: AssistEnv, assistant: any, instructio
     sourceHash,
     ttlSeconds: 86400,
   });
+  await writeContextSnapshot(env.CONTEXT_CACHE, { ...cacheIdentity, value, ttlSeconds: 900 });
   return value;
 }
 
@@ -1620,6 +1804,7 @@ async function runAssistant(input: {
   mediaUsage: any[];
   senderId: string;
   providerMessageId: string;
+  replyJobId: string;
 }) {
   const { env, assistant, conversationId } = input;
   const automation = await resolveAutomationState(env.DB, assistant.customer_id, assistant.id, conversationId);
@@ -1634,40 +1819,51 @@ async function runAssistant(input: {
   if (!rate || !route) return { ok: false as const, userMessage: "This assistant’s model is temporarily unavailable." };
 
   const prompt = await env.DB.prepare(
-    "SELECT instructions FROM assistant_prompt_versions WHERE assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
-  ).bind(assistant.id).first<any>();
+    "SELECT version,instructions FROM assistant_prompt_versions WHERE customer_id=? AND assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
+  ).bind(assistant.customer_id, assistant.id).first<any>();
   const tools = assistant.tools_enabled
     ? await env.DB.prepare(
-        "SELECT id,name,description,endpoint_url,auth_header_ciphertext FROM assistant_tools WHERE assistant_id=? AND status='active' ORDER BY name LIMIT 12",
-      ).bind(assistant.id).all<any>()
+        "SELECT id,name,description,endpoint_url,auth_header_ciphertext,updated_at FROM assistant_tools WHERE customer_id=? AND assistant_id=? AND status='active' ORDER BY name LIMIT 12",
+      ).bind(assistant.customer_id, assistant.id).all<any>()
     : { results: [] as any[] };
 
   const toolDescriptions = (tools.results ?? []).map((t: any) => `- ${t.name}: ${t.description || "External action"}`).join("\n");
-  const staticContext = await staticAssistantContext(env, assistant, String(prompt?.instructions || ""), toolDescriptions);
-  const userCombined = input.mediaContext
-    ? [
-        "CUSTOMER MESSAGE (caption/question and attached media are one turn):",
-        input.userText || "(No caption or text was supplied.)",
-        "",
-        "ATTACHED MEDIA UNDERSTANDING FOR THAT SAME MESSAGE:",
-        input.mediaContext,
-        "",
-        "Answer the customer's message using the attached media understanding when relevant. Do not treat the media analysis as a separate customer message, and do not invent details that are not supported by it.",
-      ].join("\n")
-    : input.userText;
-  const conversationContext = await buildConversationContext(env.DB, assistant, conversationId, userCombined);
+  const toolVersion = (tools.results ?? []).map((tool: any) => `${tool.id}:${tool.updated_at}`).join(",");
+  const promptToolVersion = await resilienceSha256Text(`${Number(prompt?.version || 0)}:${toolVersion}`);
+  const staticContext = await staticAssistantContext(env, assistant, String(prompt?.instructions || ""), toolDescriptions, promptToolVersion);
+  const userCombined = assembleAssistantContext({
+    businessInstructions: String(prompt?.instructions || ""),
+    memory: "",
+    knowledgeSnippets: [],
+    tools: "",
+    recentTurns: [],
+    currentTurn: { text: input.userText, mediaContext: input.mediaContext },
+  }).userContent;
+  const conversationContext = await buildConversationContext(env, assistant, conversationId, userCombined);
   const history = conversationContext.history;
   const knowledgeBudget = Math.max(2000, Math.min(50000, Number(assistant.context_knowledge_char_budget || 12000)));
+  const knowledgeQuery = buildKnowledgeQuery(input.userText || input.mediaContext, history.map((m: any) => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: String(m.content || ""),
+  })));
   const knowledge = assistant.knowledge_enabled
-    ? await retrieveKnowledge(env.DB, assistant.customer_id, assistant.id, input.userText || input.mediaContext, knowledgeBudget)
+    ? await retrieveKnowledge(env, assistant.customer_id, assistant.id, knowledgeQuery, knowledgeBudget)
     : [];
-  const system = [
-    staticContext,
-    conversationContext.memory ? `CONVERSATION MEMORY (older context, compacted):\n${conversationContext.memory}` : "",
-    knowledge.length ? `RELEVANT BUSINESS KNOWLEDGE:\n${knowledge.join("\n\n")}` : "",
-  ].filter(Boolean).join("\n\n");
+  const assembledContext = assembleAssistantContext({
+    businessInstructions: String(prompt?.instructions || ""),
+    memory: conversationContext.memory,
+    knowledgeSnippets: knowledge,
+    tools: toolDescriptions,
+    recentTurns: history.map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || ""),
+    })),
+    currentTurn: { text: input.userText, mediaContext: input.mediaContext },
+    baseSystem: staticContext,
+  });
+  const system = assembledContext.system;
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
-  const maxOutputTokens = 1024;
+  const maxOutputTokens = selectCompletionBudget({ userText: input.userText });
 
   const commercial = await env.DB.prepare(
     `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
@@ -1686,13 +1882,15 @@ async function runAssistant(input: {
   const singleCallReserve = routeRates.reduce((sum: number, target: any) => {
     const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const outputRate = Math.ceil(Number(target?.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
-    return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * outputRate) / 1_000_000);
+    const reasoningRate = target?.reasoning_credits_per_million == null ? 0 : Math.ceil(Number(target.reasoning_credits_per_million) * multiplierBps / 10000);
+    return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * (outputRate + reasoningRate)) / 1_000_000);
   }, 0);
   const reserveAmount = Math.max(1, singleCallReserve * maxRoutedCalls);
 
   const singleCallProviderCostMicros = Math.max(0, routeRates.reduce((sum: number, target: any) => sum + Math.ceil(
     (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
-      + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+      + maxOutputTokens * (Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)
+        + Number(target?.provider_reasoning_cost_micros_per_million || 0))) / 1_000_000,
   ), 0));
   const estimatedProviderCostMicros = singleCallProviderCostMicros * maxRoutedCalls;
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
@@ -1704,27 +1902,36 @@ async function runAssistant(input: {
     return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
   }
 
-  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount);
+  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount, `reply-job:${input.replyJobId}`);
   if (!reservation) return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
+  if (reservation.status === "released") {
+    return { ok: false as const, userMessage: "This request’s prior credit reservation was released. Please send it again to start a new request." };
+  }
 
   const completedAttempts: any[] = [];
+  const journaledAttemptIds: string[] = [];
+  let latestSuccessfulResult: any = null;
+  let latestSuccessfulText = "";
   try {
     const aiInput = {
       messages: [
         { role: "system", content: system },
-        ...history.map((m: any) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "") })),
-        { role: "user", content: userCombined || "Please respond to the attached media." },
+        ...assembledContext.history,
+        { role: "user", content: assembledContext.userContent || "Please respond to the attached media." },
       ],
       max_tokens: maxOutputTokens,
       temperature: 0.4,
     };
-    let result = await invokeRoutedModel(env, route, aiInput, assistant.customer_id);
+    let result = await invokeJournaledProviderCall(env, route, aiInput, assistant.customer_id, assistant.id, input.replyJobId, reservation.id, 0, estimatedInputTokens, multiplierBps, journaledAttemptIds, normalizeReasoningMode(assistant.reasoning_mode) || "standard", normalizeReasoningFallbackPolicy(assistant.reasoning_fallback_policy) || "allow_lower_effort", conversationId);
     let text = extractAiText(result);
+    latestSuccessfulResult = result;
+    latestSuccessfulText = text;
 
     if (text && modelResponseWasTruncated(result)) {
       completedAttempts.push(...(Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : []));
       completedAttempts.push(routedResultAttempt(result, estimatedInputTokens, text));
-      const continuation = await invokeRoutedModel(env, route, {
+      latestSuccessfulResult = null;
+      const continuation = await invokeJournaledProviderCall(env, route, {
         messages: [
           ...aiInput.messages,
           { role: "assistant", content: text },
@@ -1732,8 +1939,10 @@ async function runAssistant(input: {
         ],
         max_tokens: maxOutputTokens,
         temperature: 0.2,
-      }, assistant.customer_id);
+      }, assistant.customer_id, assistant.id, input.replyJobId, reservation.id, 1, estimatedInputTokens, multiplierBps, journaledAttemptIds, normalizeReasoningMode(assistant.reasoning_mode) || "standard", normalizeReasoningFallbackPolicy(assistant.reasoning_fallback_policy) || "allow_lower_effort", conversationId);
       const continuationText = extractAiText(continuation);
+      latestSuccessfulResult = continuation;
+      latestSuccessfulText = continuationText;
       if (continuationText) {
         text = (text.trimEnd() + " " + continuationText.trimStart()).trim();
         result = continuation;
@@ -1746,8 +1955,9 @@ async function runAssistant(input: {
       if (tool) {
         completedAttempts.push(...(Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : []));
         completedAttempts.push(routedResultAttempt(result, estimatedInputTokens, text));
+        latestSuccessfulResult = null;
         const toolResult = await invokeTool(env, tool, toolCall.arguments);
-        result = await invokeRoutedModel(env, route, {
+        result = await invokeJournaledProviderCall(env, route, {
           messages: [
             ...aiInput.messages,
             { role: "assistant", content: text },
@@ -1755,8 +1965,10 @@ async function runAssistant(input: {
           ],
           max_tokens: maxOutputTokens,
           temperature: 0.3,
-        }, assistant.customer_id);
+        }, assistant.customer_id, assistant.id, input.replyJobId, reservation.id, 2, estimatedInputTokens, multiplierBps, journaledAttemptIds, normalizeReasoningMode(assistant.reasoning_mode) || "standard", normalizeReasoningFallbackPolicy(assistant.reasoning_fallback_policy) || "allow_lower_effort", conversationId);
         text = extractAiText(result);
+        latestSuccessfulResult = result;
+        latestSuccessfulText = text;
       }
     }
 
@@ -1765,10 +1977,12 @@ async function runAssistant(input: {
     const servedRate = result?.__mketyTargetRate || rate;
     const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
-    const primaryCredits = Math.max(0, Math.ceil((usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000));
+    const servedReasoningCredits = servedRate.reasoning_credits_per_million == null ? 0 : Math.ceil(Number(servedRate.reasoning_credits_per_million) * multiplierBps / 10000);
+    const primaryCredits = Math.max(1, Math.ceil((usage.input * servedInputCredits + usage.output * servedOutputCredits + usage.reasoning * servedReasoningCredits) / 1_000_000));
     const providerCostMicros = Math.max(0, Math.ceil(
       (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
-        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)
+        + usage.reasoning * Number(servedRate.provider_reasoning_cost_micros_per_million || 0)) / 1_000_000
     ));
     const priorAttempts = [
       ...completedAttempts,
@@ -1787,7 +2001,11 @@ async function runAssistant(input: {
       conversationId,
       inputUnits: usage.input,
       outputUnits: usage.output,
+      reasoningUnits: usage.reasoning,
+      requestedReasoningMode: String(result?.__mketyRequestedReasoningMode || "standard"),
+      appliedReasoningMode: String(result?.__mketyAppliedReasoningMode || "standard"),
       providerCostMicros,
+      providerAttemptId: String(result?.__mketyAttemptId || `reservation:${reservation.id}`),
       primaryCredits,
       additionalProviderCosts: priorEconomics.map((item: any) => ({
         modelAlias: assistant.model_alias,
@@ -1795,32 +2013,54 @@ async function runAssistant(input: {
         providerModel: item.attempt.providerModel,
         inputUnits: item.attempt.inputUnits,
         outputUnits: item.attempt.outputUnits,
+        reasoningUnits: Number(item.attempt.reasoningUnits || 0),
+        requestedReasoningMode: String(item.attempt.requestedReasoningMode || "standard"),
+        appliedReasoningMode: String(item.attempt.appliedReasoningMode || "standard"),
         costMicros: item.providerCostMicros,
+        providerAttemptId: String(item.attempt.providerAttemptId || ""),
         creditsCharged: item.credits,
       })),
     });
+    await Promise.all(journaledAttemptIds.map(async (attemptId) => {
+      await settlementJournalStub(env.SETTLEMENT_JOURNAL, assistant.customer_id, assistant.id)
+        .markAttemptSettled({ customerId: assistant.customer_id, assistantId: assistant.id, attemptId, settlementId: reservation.id });
+      await updateAttemptProjection(env.DB, { customerId: assistant.customer_id, assistantId: assistant.id, attemptId, status: "settled", resolved: true });
+    }));
     return { ok: true as const, text };
   } catch (error) {
     console.error("assistant inference failed", error);
+    if (error instanceof RetryableInferenceError && error.message === "provider_attempt_reconciliation_required") {
+      return {
+        ok: false as const,
+        retryable: true,
+        retryAfterSeconds: error.retryAfterSeconds,
+        error: error.message,
+        userMessage: "I’m still working on that request and will reply as soon as the provider result is reconciled.",
+      };
+    }
     const priorAttempts = [
       ...completedAttempts,
       ...(Array.isArray((error as any)?.__mketyPriorAttempts) ? (error as any).__mketyPriorAttempts : []),
+      ...(latestSuccessfulResult ? [routedResultAttempt(latestSuccessfulResult, estimatedInputTokens, latestSuccessfulText)] : []),
     ];
     const priorEconomics = priorAttempts.map((attempt: any) => ({
       attempt,
       ...modelAttemptEconomics(attempt, multiplierBps),
     }));
     const incurredCredits = priorEconomics.reduce((sum: number, item: any) => sum + item.credits, 0);
+    const classified = classifyRetryableError(error);
     if (incurredCredits > 0 || priorEconomics.some((item: any) => item.providerCostMicros > 0)) {
       const first = priorEconomics[0];
-      await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, Math.min(reserveAmount, incurredCredits), {
+        await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, Math.min(reserveAmount, Math.max(1, incurredCredits)), {
         modelAlias: assistant.model_alias,
         provider: String(first?.attempt?.provider || route.provider),
         providerModel: String(first?.attempt?.providerModel || route.provider_model),
         conversationId,
         inputUnits: Number(first?.attempt?.inputUnits || 0),
         outputUnits: Number(first?.attempt?.outputUnits || 0),
+        reasoningUnits: Number(first?.attempt?.reasoningUnits || 0),
         providerCostMicros: Number(first?.providerCostMicros || 0),
+        providerAttemptId: String(first?.attempt?.providerAttemptId || `reservation:${reservation.id}`),
         primaryCredits: Number(first?.credits || 0),
         additionalProviderCosts: priorEconomics.slice(1).map((item: any) => ({
           modelAlias: assistant.model_alias,
@@ -1828,14 +2068,22 @@ async function runAssistant(input: {
           providerModel: item.attempt.providerModel,
           inputUnits: item.attempt.inputUnits,
           outputUnits: item.attempt.outputUnits,
+          reasoningUnits: Number(item.attempt.reasoningUnits || 0),
+          requestedReasoningMode: String(item.attempt.requestedReasoningMode || "standard"),
+          appliedReasoningMode: String(item.attempt.appliedReasoningMode || "standard"),
           costMicros: item.providerCostMicros,
+          providerAttemptId: String(item.attempt.providerAttemptId || ""),
           creditsCharged: item.credits,
         })),
       });
-    } else {
+      await Promise.all(journaledAttemptIds.map((attemptId) => settlementJournalStub(env.SETTLEMENT_JOURNAL, assistant.customer_id, assistant.id)
+        .markAttemptSettled({ customerId: assistant.customer_id, assistantId: assistant.id, attemptId, settlementId: reservation.id }).catch(() => undefined)));
+      if (latestSuccessfulResult && latestSuccessfulText.trim()) {
+        return { ok: true as const, text: latestSuccessfulText };
+      }
+    } else if (!classified.retryable) {
       await releaseReservation(env.DB, reservation.id, assistant.customer_id, reserveAmount);
     }
-    const classified = classifyRetryableError(error);
     return {
       ok: false as const,
       retryable: classified.retryable,
@@ -1921,7 +2169,12 @@ export async function handleApiKeyInference(
   ];
   const inputChars = mergedMessages.reduce((n: number, m: any) => n + String(m.content || "").length, 0);
   const estimatedInputTokens = Math.max(1, Math.ceil(inputChars / 4));
-  const maxOutputTokens = Math.max(1, Math.min(4096, parseInt(String(body.max_tokens || body.max_completion_tokens || 1024), 10) || 1024));
+  const lastUserText = String([...messages].reverse().find((message: any) => message.role === "user")?.content || "");
+  const defaultOutputBudget = selectCompletionBudget({ userText: lastUserText });
+  const requestedOutputBudget = body.max_tokens ?? body.max_completion_tokens;
+  const maxOutputTokens = requestedOutputBudget == null
+    ? defaultOutputBudget
+    : Math.max(1, Math.min(2048, parseInt(String(requestedOutputBudget), 10) || defaultOutputBudget));
 
   const commercial = await env.DB.prepare(
     `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
@@ -1939,37 +2192,52 @@ export async function handleApiKeyInference(
   const reserveAmount = Math.max(1, routeRates.reduce((sum: number, target: any) => {
     const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const outputRate = Math.ceil(Number(target?.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
-    return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * outputRate) / 1_000_000);
+    const reasoningRate = target?.reasoning_credits_per_million == null ? 0 : Math.ceil(Number(target.reasoning_credits_per_million) * multiplierBps / 10000);
+    return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * (outputRate + reasoningRate)) / 1_000_000);
   }, 0));
   const estimatedProviderCostMicros = Math.max(0, routeRates.reduce((sum: number, target: any) => sum + Math.ceil(
     (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
-      + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+      + maxOutputTokens * (Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)
+        + Number(target?.provider_reasoning_cost_micros_per_million || 0))) / 1_000_000,
   ), 0));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
     return json({ error: { message: "usage_limit_reached" } }, 402);
   }
 
-  const reservation = await reserveCredits(env.DB, customer.customerId, assistantId, reserveAmount);
+  const suppliedIdempotencyKey = String(request.headers.get("idempotency-key") || "").trim().slice(0, 160);
+  const apiRequestId = suppliedIdempotencyKey ? `api:${key.id}:${suppliedIdempotencyKey}` : id("api");
+  const reservation = await reserveCredits(
+    env.DB, customer.customerId, assistantId, reserveAmount,
+    suppliedIdempotencyKey ? apiRequestId : undefined,
+  );
   if (!reservation) return json({ error: { message: "insufficient_credits" } }, 402);
+  if (reservation.status === "released") return json({ error: { message: "idempotent_request_reservation_released" } }, 409);
 
+  const apiJournaledAttemptIds: string[] = [];
+  let apiProviderResult: any = null;
+  let apiProviderText = "";
   try {
-    const result = await invokeRoutedModel(env, route, {
+    const result = await invokeJournaledProviderCall(env, route, {
       messages: mergedMessages,
       max_tokens: maxOutputTokens,
       temperature: typeof body.temperature === "number" ? body.temperature : 0.4,
-    }, customer.customerId);
+    }, customer.customerId, assistantId, apiRequestId, reservation.id, 0, estimatedInputTokens, multiplierBps, apiJournaledAttemptIds, normalizeReasoningMode(assistant.reasoning_mode) || "standard", normalizeReasoningFallbackPolicy(assistant.reasoning_fallback_policy) || "allow_lower_effort", `api:${key.id}`);
+    apiProviderResult = result;
     const text = extractAiText(result);
+    apiProviderText = text;
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
     const servedRate = result?.__mketyTargetRate || rate;
     const servedInputCredits = Math.ceil(Number(servedRate.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const servedOutputCredits = Math.ceil(Number(servedRate.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
-    const primaryCredits = Math.max(0, Math.ceil(
-      (usage.input * servedInputCredits + usage.output * servedOutputCredits) / 1_000_000,
+    const servedReasoningCredits = servedRate.reasoning_credits_per_million == null ? 0 : Math.ceil(Number(servedRate.reasoning_credits_per_million) * multiplierBps / 10000);
+    const primaryCredits = Math.max(1, Math.ceil(
+      (usage.input * servedInputCredits + usage.output * servedOutputCredits + usage.reasoning * servedReasoningCredits) / 1_000_000,
     ));
     const providerCostMicros = Math.max(0, Math.ceil(
       (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
-        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)
+        + usage.reasoning * Number(servedRate.provider_reasoning_cost_micros_per_million || 0)) / 1_000_000,
     ));
     const priorAttempts = Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : [];
     const priorEconomics = priorAttempts.map((attempt: any) => ({ attempt, ...modelAttemptEconomics(attempt, multiplierBps) }));
@@ -1981,7 +2249,11 @@ export async function handleApiKeyInference(
       conversationId: `api:${key.id}`,
       inputUnits: usage.input,
       outputUnits: usage.output,
+      reasoningUnits: usage.reasoning,
+      requestedReasoningMode: String(result?.__mketyRequestedReasoningMode || "standard"),
+      appliedReasoningMode: String(result?.__mketyAppliedReasoningMode || "standard"),
       providerCostMicros,
+      providerAttemptId: String(result?.__mketyAttemptId || `reservation:${reservation.id}`),
       primaryCredits,
       apiKeyId: key.id,
       additionalProviderCosts: priorEconomics.map((item: any) => ({
@@ -1990,10 +2262,19 @@ export async function handleApiKeyInference(
         providerModel: item.attempt.providerModel,
         inputUnits: item.attempt.inputUnits,
         outputUnits: item.attempt.outputUnits,
+        reasoningUnits: Number(item.attempt.reasoningUnits || 0),
+        requestedReasoningMode: String(item.attempt.requestedReasoningMode || "standard"),
+        appliedReasoningMode: String(item.attempt.appliedReasoningMode || "standard"),
         costMicros: item.providerCostMicros,
+        providerAttemptId: String(item.attempt.providerAttemptId || ""),
         creditsCharged: item.credits,
       })),
     });
+    await Promise.all(apiJournaledAttemptIds.map(async (attemptId) => {
+      await settlementJournalStub(env.SETTLEMENT_JOURNAL, customer.customerId, assistantId)
+        .markAttemptSettled({ customerId: customer.customerId, assistantId, attemptId, settlementId: reservation.id });
+      await updateAttemptProjection(env.DB, { customerId: customer.customerId, assistantId, attemptId, status: "settled", resolved: true });
+    }));
     await env.DB.prepare("UPDATE customer_api_keys SET last_used_at=? WHERE id=?").bind(now, key.id).run();
     return json({
       id: `chatcmpl_${crypto.randomUUID().replace(/-/g, "")}`,
@@ -2005,18 +2286,24 @@ export async function handleApiKeyInference(
       mkety: { credits_charged: actualCredits, assistant_id: assistantId },
     });
   } catch (error) {
+    if (error instanceof RetryableInferenceError && error.message === "provider_attempt_reconciliation_required") {
+      return json({ error: { message: error.message, retry_after_seconds: error.retryAfterSeconds } }, 503);
+    }
+    const classified = classifyRetryableError(error);
     const priorAttempts = Array.isArray((error as any)?.__mketyPriorAttempts) ? (error as any).__mketyPriorAttempts : [];
+    if (apiProviderResult) priorAttempts.push(routedResultAttempt(apiProviderResult, estimatedInputTokens, apiProviderText));
     const priorEconomics = priorAttempts.map((attempt: any) => ({ attempt, ...modelAttemptEconomics(attempt, multiplierBps) }));
     const incurredCredits = priorEconomics.reduce((sum: number, item: any) => sum + item.credits, 0);
     if (priorEconomics.length && (incurredCredits > 0 || priorEconomics.some((item: any) => item.providerCostMicros > 0))) {
       const first = priorEconomics[0];
-      await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, Math.min(reserveAmount, incurredCredits), {
+      await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, Math.min(reserveAmount, Math.max(1, incurredCredits)), {
         modelAlias: alias,
         provider: String(first?.attempt?.provider || route.provider),
         providerModel: String(first?.attempt?.providerModel || route.provider_model),
         conversationId: `api:${key.id}`,
         inputUnits: Number(first?.attempt?.inputUnits || 0),
         outputUnits: Number(first?.attempt?.outputUnits || 0),
+        reasoningUnits: Number(first?.attempt?.reasoningUnits || 0),
         providerCostMicros: Number(first?.providerCostMicros || 0),
         primaryCredits: Number(first?.credits || 0),
         apiKeyId: key.id,
@@ -2026,15 +2313,20 @@ export async function handleApiKeyInference(
           providerModel: item.attempt.providerModel,
           inputUnits: item.attempt.inputUnits,
           outputUnits: item.attempt.outputUnits,
+          reasoningUnits: Number(item.attempt.reasoningUnits || 0),
+          requestedReasoningMode: String(item.attempt.requestedReasoningMode || "standard"),
+          appliedReasoningMode: String(item.attempt.appliedReasoningMode || "standard"),
           costMicros: item.providerCostMicros,
+          providerAttemptId: String(item.attempt.providerAttemptId || ""),
           creditsCharged: item.credits,
         })),
       });
-    } else {
+      await Promise.all(apiJournaledAttemptIds.map((attemptId) => settlementJournalStub(env.SETTLEMENT_JOURNAL, customer.customerId, assistantId)
+        .markAttemptSettled({ customerId: customer.customerId, assistantId, attemptId, settlementId: reservation.id }).catch(() => undefined)));
+    } else if (!classified.retryable) {
       await releaseReservation(env.DB, reservation.id, customer.customerId, reserveAmount);
     }
     console.error("Assist API inference failed", error);
-    const classified = classifyRetryableError(error);
     if (classified.retryable) {
       return new Response(JSON.stringify({
         error: {
@@ -2068,7 +2360,8 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       imageCount = 1;
       const asset = await downloadTelegramFile(token, largest.file_id, env, assistant, conversationId, "image", "image/jpeg");
       mediaJson.push(asset.meta);
-      const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime, conversationId);
+      const mediaRequestId = `${conversationId}:telegram-message:${String(message.message_id || "unknown")}`;
+      const vision = await describeImage(env, assistant, asset.bytes, text, asset.meta.mime, conversationId, mediaRequestId);
       if (vision.text) {
         contexts.push(`Attached image analysis for this same customer message:\n${vision.text}`);
         await env.DB.prepare("UPDATE media_assets SET vision_text=? WHERE id=?").bind(vision.text, asset.id).run();
@@ -2085,7 +2378,8 @@ async function normalizeTelegramMessage(message: any, token: string, assistant: 
       audioSeconds = Math.max(0, parseFloat(String(voice.duration || 0)));
       const asset = await downloadTelegramFile(token, voice.file_id, env, assistant, conversationId, "audio", voice.mime_type || "audio/ogg");
       mediaJson.push(asset.meta);
-      const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime, audioSeconds, conversationId);
+      const mediaRequestId = `${conversationId}:telegram-message:${String(message.message_id || "unknown")}`;
+      const transcript = await transcribeAudio(env, assistant, asset.bytes, asset.meta.mime, audioSeconds, conversationId, mediaRequestId);
       if (transcript.text) {
         contexts.push(`Voice transcript for this same customer message:\n${transcript.text}`);
         await env.DB.prepare("UPDATE media_assets SET transcript=? WHERE id=?").bind(transcript.text, asset.id).run();
@@ -2126,7 +2420,21 @@ async function mediaRouteTargets(db: D1Database, customerId: string, alias: "mke
           ? [{ position: 1, provider: route.fallback_provider, provider_model: route.fallback_model, provider_connection_id: route.fallback_provider_connection_id }]
           : []),
       ];
-  return configured.filter((target: any) => target?.provider && target?.provider_model);
+  const usable: any[] = [];
+  for (const target of configured) {
+    if (!target?.provider || !target?.provider_model || !routeTargetMediaSupported(target, alias) || !routeTargetPricingConfigured(target, alias)) continue;
+    if (["workers-ai", "mkety-managed"].includes(String(target.provider))) {
+      usable.push(target);
+      continue;
+    }
+    const connection = target.provider_connection_id
+      ? await db.prepare("SELECT provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1").bind(target.provider_connection_id).first<any>()
+      : null;
+    if (!connection || connection.provider !== target.provider || connection.status !== "active" || !connection.validated_at) continue;
+    if (connection.ownership === "customer" && connection.customer_id !== customerId) continue;
+    usable.push(target);
+  }
+  return usable;
 }
 
 async function mediaProviderConnection(env: AssistEnv, target: any, customerId: string) {
@@ -2157,6 +2465,7 @@ function mediaTargetUsage(target: any, kind: "vision" | "speech", inputUnits: nu
   return {
     kind,
     modelAlias: kind === "vision" ? "mkety-media-vision" : "mkety-media-speech",
+    conversationId: "",
     provider: String(target.provider),
     providerModel: String(target.provider_model),
     inputUnits: Math.max(0, Math.ceil(Number(inputUnits || 0))),
@@ -2216,6 +2525,7 @@ async function reserveMediaUsage(
   assistant: any,
   conversationId: string,
   usage: any,
+  idempotencyKey: string,
 ) {
   const commercial = await mediaCommercialState(env.DB, assistant.customer_id);
   if (!commercial) return null;
@@ -2228,8 +2538,8 @@ async function reserveMediaUsage(
     commercial,
     economics.providerCostMicros,
   ))) return null;
-  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, economics.credits);
-  if (!reservation) return null;
+  const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, economics.credits, idempotencyKey);
+  if (!reservation || reservation.status === "released") return null;
   return { reservation, commercial, multiplierBps, economics, conversationId };
 }
 
@@ -2238,6 +2548,7 @@ async function settleMediaUsage(
   assistant: any,
   reserved: any,
   usage: any,
+  providerAttemptId: string,
 ) {
   const actual = mediaUsageEconomics(usage, reserved.multiplierBps);
   return settleReservation(
@@ -2255,8 +2566,93 @@ async function settleMediaUsage(
       inputUnits: Number(usage.inputUnits || 0),
       outputUnits: Number(usage.outputUnits || 0),
       providerCostMicros: actual.providerCostMicros,
+      providerAttemptId,
     },
   );
+}
+
+async function invokeJournaledMediaAttempt(
+  env: AssistEnv,
+  assistant: any,
+  target: any,
+  requestId: string,
+  reservationId: string,
+  sourceHash: string,
+  ordinal: number,
+  estimatedUsage: any,
+  multiplierBps: number,
+  invoke: (markSubmitted: () => void) => Promise<{ text: string; inputUnits: number; outputUnits: number }>,
+) {
+  const replyJobId = `media:${requestId}:${sourceHash}:${ordinal}`;
+  const attemptId = attemptIdFor(replyJobId, reservationId, 0);
+  const identity = { customerId: assistant.customer_id, assistantId: assistant.id, attemptId };
+  const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, assistant.customer_id, assistant.id);
+  const requestHash = await resilienceSha256Text(JSON.stringify({ sourceHash, target: target.provider_model, kind: estimatedUsage.kind }));
+  const rateSnapshot = Object.fromEntries([
+    "input_credits_per_million", "output_credits_per_million", "reasoning_credits_per_million",
+    "provider_input_cost_micros_per_million", "provider_output_cost_micros_per_million",
+    "provider_reasoning_cost_micros_per_million", "image_credits", "audio_credits_per_minute",
+    "provider_image_cost_micros", "provider_audio_cost_micros_per_minute", "rate_multiplier_bps",
+  ].filter((key) => target[key] != null).map((key) => [key, Number(target[key])]));
+  await recordAttemptProjection(env.DB, {
+    ...identity, reservationId, requestHash, modelAlias: String(estimatedUsage.alias || (estimatedUsage.kind === "vision" ? "mkety-media-vision" : "mkety-media-speech")),
+    replyJobId, conversationId: String(estimatedUsage.conversationId || ""), mediaKind: String(estimatedUsage.kind || "media"),
+    provider: String(target.provider || "unknown"), model: String(target.provider_model || "unknown"),
+    rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: multiplierBps },
+  });
+  const claim = await journal.claimAttempt({
+    ...identity, reservationId, requestHash,
+    provider: String(target.provider || "unknown"), model: String(target.provider_model || "unknown"),
+    idempotencyKey: attemptId, startedAt: unix(),
+  });
+  const existing = claim.attempt;
+  if (existing.status === "result_recorded" || existing.status === "settled") {
+    if (!existing.result) throw new Error("media_journal_result_missing");
+    let usage: any = estimatedUsage;
+    try { usage = { ...estimatedUsage, ...JSON.parse(String(existing.result.metadata?.usageJson || "{}")) }; } catch {}
+    await updateAttemptProjection(env.DB, {
+      ...identity, status: existing.status === "settled" ? "settled" : "result_recorded",
+      inputUnits: existing.result.inputUnits, outputUnits: existing.result.outputUnits,
+      imageUnits: estimatedUsage.kind === "vision" ? 1 : null, audioSeconds: estimatedUsage.kind === "speech" ? Number(usage.audioSeconds || 0) : null,
+      providerCostMicros: existing.result.providerCostMicros, rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: multiplierBps },
+    });
+    return { output: { text: existing.result.responseText, inputUnits: existing.result.inputUnits, outputUnits: existing.result.outputUnits }, usage, attemptId };
+  }
+  if (existing.status === "unknown_outcome") throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+  if (!claim.claimed) {
+    if (existing.status === "started" && Date.now() - existing.updatedAt > 5 * 60_000) await journal.markAttemptUnknown(identity);
+    throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+  }
+  let providerSubmitted = false;
+  try {
+    const output = await invoke(() => { providerSubmitted = true; });
+    const usage = { ...estimatedUsage, inputUnits: output.inputUnits, outputUnits: output.outputUnits };
+    const economics = mediaUsageEconomics(usage, multiplierBps);
+    await journal.recordAttemptResult(identity, {
+      responseText: output.text,
+      inputUnits: output.inputUnits,
+      outputUnits: output.outputUnits,
+      providerCostMicros: economics.providerCostMicros,
+      credits: economics.credits,
+      metadata: { usageJson: JSON.stringify(usage) },
+    });
+    await updateAttemptProjection(env.DB, {
+      ...identity, status: "result_recorded", inputUnits: output.inputUnits, outputUnits: output.outputUnits,
+      imageUnits: usage.kind === "vision" ? 1 : null, audioSeconds: usage.kind === "speech" ? Number(usage.audioSeconds || 0) : null,
+      providerCostMicros: economics.providerCostMicros, rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: multiplierBps },
+    });
+    return { output, usage, attemptId };
+  } catch (error) {
+    if (error instanceof RetryableInferenceError && error.message === "provider_attempt_reconciliation_required") throw error;
+    if (providerSubmitted || Boolean((error as any)?.__mketyProviderAttempted)) {
+      await journal.markAttemptUnknown(identity).catch(() => undefined);
+      await updateAttemptProjection(env.DB, { ...identity, status: "unknown_outcome" }).catch(() => undefined);
+      throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+    }
+    await journal.markAttemptNotSubmitted(identity).catch(() => undefined);
+    await updateAttemptProjection(env.DB, { ...identity, status: "not_submitted", resolved: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function invokeVisionTarget(
@@ -2266,6 +2662,7 @@ async function invokeVisionTarget(
   bytes: ArrayBuffer,
   mime: string,
   caption: string,
+  markSubmitted: () => void = () => undefined,
 ) {
   const provider = String(target.provider);
   const model = String(target.provider_model);
@@ -2281,6 +2678,7 @@ async function invokeVisionTarget(
   const estimatedInput = Math.max(1, Math.ceil(prompt.length / 4));
 
   if (provider === "workers-ai" || provider === "mkety-managed") {
+    markSubmitted();
     const result = await env.AI.run(model, {
       messages: [
         { role: "system", content: "Describe the attached image accurately and concisely for another assistant. Do not invent unreadable text." },
@@ -2304,6 +2702,7 @@ async function invokeVisionTarget(
     const projectId = String(connection.extra.projectId || service.projectId || "").trim();
     const location = String(connection.extra.location || "global").trim();
     const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    markSubmitted();
     const response = await fetch(
       `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
       {
@@ -2330,6 +2729,7 @@ async function invokeVisionTarget(
 
   if (provider === "gemini") {
     const base = String(connection.endpoint_url || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/,"");
+    markSubmitted();
     const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(connection.apiKey)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -2359,6 +2759,7 @@ async function invokeVisionTarget(
     const url = provider === "openai"
       ? `${base}/responses`
       : (/\/openai\/v1\/responses$/i.test(base) ? base : `${base}/openai/v1/responses`);
+    markSubmitted();
     const response = await fetch(url, {
       method: "POST",
       headers: provider === "openai"
@@ -2387,6 +2788,7 @@ async function invokeVisionTarget(
     const endpoint = String(connection.endpoint_url || "").replace(/\/$/,"");
     if (!endpoint) throw new Error("azure_openai_endpoint_missing");
     const apiVersion = String(connection.extra.apiVersion || "2024-10-21");
+    markSubmitted();
     const response = await fetch(
       `${endpoint}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`,
       {
@@ -2435,6 +2837,7 @@ async function invokeSpeechTarget(
   customerId: string,
   bytes: ArrayBuffer,
   mime: string,
+  markSubmitted: () => void = () => undefined,
 ) {
   const provider = String(target.provider);
   const model = String(target.provider_model);
@@ -2444,10 +2847,9 @@ async function invokeSpeechTarget(
     const workersInput = model === "@cf/openai/whisper"
       ? { audio: [...new Uint8Array(bytes)] }
       : { audio: b64 };
+    markSubmitted();
     const result = await env.AI.run(model, workersInput);
-    const text = audioResponseText(result);
-    if (!text) throw new Error("media_speech_empty_transcript");
-    return text;
+    return audioResponseText(result);
   }
 
   const connection = await mediaProviderConnection(env, target, customerId);
@@ -2457,6 +2859,7 @@ async function invokeSpeechTarget(
     const projectId = String(connection.extra.projectId || service.projectId || "").trim();
     const location = String(connection.extra.location || "global").trim();
     const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    markSubmitted();
     const response = await fetch(
       `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
       {
@@ -2474,12 +2877,12 @@ async function invokeSpeechTarget(
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
     const text = String(payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
-    if (!text) throw new Error("media_speech_empty_transcript");
     return text;
   }
 
   if (provider === "gemini") {
     const base = String(connection.endpoint_url || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/,"");
+    markSubmitted();
     const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(connection.apiKey)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -2494,7 +2897,6 @@ async function invokeSpeechTarget(
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
     const text = String(payload.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
-    if (!text) throw new Error("media_speech_empty_transcript");
     return text;
   }
 
@@ -2507,6 +2909,7 @@ async function invokeSpeechTarget(
       : String(connection.endpoint_url || "").replace(/\/$/,"");
     if (!base) throw new Error("media_frontier_endpoint_missing");
     const url = provider === "openai" ? `${base}/responses` : (/\/openai\/v1\/responses$/i.test(base) ? base : `${base}/openai/v1/responses`);
+    markSubmitted();
     const response = await fetch(url, {
       method: "POST",
       headers: provider === "openai"
@@ -2523,9 +2926,7 @@ async function invokeSpeechTarget(
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
-    const text = responseApiText(payload);
-    if (!text) throw new Error("media_speech_empty_transcript");
-    return text;
+    return responseApiText(payload);
   }
 
   throw new Error(`media_speech_provider_unsupported:${provider}`);
@@ -2538,6 +2939,7 @@ async function describeImage(
   caption: string,
   mime = "image/jpeg",
   conversationId = "",
+  requestId = conversationId,
 ) {
   const mediaHash = hex(await digestSha256(new Uint8Array(bytes)));
   const sourceHash = await resilienceSha256Text(mediaHash + ":" + String(caption || "").trim());
@@ -2546,28 +2948,44 @@ async function describeImage(
   if (cached) return { text: cached, usage: null };
 
   const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-vision");
-  for (const target of targets) {
+  for (const [ordinal, target] of targets.entries()) {
     const reserveEstimate = mediaTargetUsage(target, "vision", 65536, 500);
-    const reserved = await reserveMediaUsage(env, assistant, conversationId, reserveEstimate);
+    reserveEstimate.conversationId = conversationId;
+    const reservationKey = `media:${await resilienceSha256Text(`${requestId}:${sourceHash}:vision:${ordinal}:${target.provider}:${target.provider_model}`)}`;
+    const reserved = await reserveMediaUsage(env, assistant, conversationId, reserveEstimate, reservationKey);
     if (!reserved) {
       console.warn("vision target skipped because media budget or customer credits are unavailable", {
         provider: target.provider, model: target.provider_model,
       });
       continue;
     }
+    let journaled: any = null;
     try {
-      const output = await invokeVisionTarget(env, target, assistant.customer_id, bytes, mime, caption);
+      journaled = await invokeJournaledMediaAttempt(
+        env, assistant, target, requestId, reserved.reservation.id, sourceHash, ordinal,
+        reserveEstimate, reserved.multiplierBps,
+        (markSubmitted) => invokeVisionTarget(env, target, assistant.customer_id, bytes, mime, caption, markSubmitted),
+      );
+      const output = journaled.output;
       const text = String(output.text || "").trim();
-      if (!text) throw new Error("media_vision_empty_response");
-      const actualUsage = mediaTargetUsage(target, "vision", output.inputUnits, output.outputUnits);
-      const settled = await settleMediaUsage(env, assistant, reserved, actualUsage);
+      const actualUsage = { ...reserveEstimate, ...journaled.usage };
+      const settled = await settleMediaUsage(env, assistant, reserved, actualUsage, journaled.attemptId);
       if (!settled) throw new Error("media_vision_settlement_failed");
+      await settlementJournalStub(env.SETTLEMENT_JOURNAL, assistant.customer_id, assistant.id)
+        .markAttemptSettled({ customerId: assistant.customer_id, assistantId: assistant.id, attemptId: journaled.attemptId, settlementId: reserved.reservation.id });
+      await updateAttemptProjection(env.DB, { customerId: assistant.customer_id, assistantId: assistant.id, attemptId: journaled.attemptId, status: "settled", resolved: true });
+      if (!text) {
+        console.warn("vision provider returned an empty response; trying the next capability fallback");
+        continue;
+      }
       await putPromptCache({
         db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
         kind: "vision", value: text, sourceHash, ttlSeconds: 2592000,
       }).catch(() => undefined);
       return { text, usage: null };
     } catch (error) {
+      if (error instanceof RetryableInferenceError && error.message === "provider_attempt_reconciliation_required") throw error;
+      if (journaled) throw new RetryableInferenceError("provider_settlement_pending", 60);
       await releaseReservation(
         env.DB,
         reserved.reservation.id,
@@ -2591,6 +3009,7 @@ async function transcribeAudio(
   mime = "audio/ogg",
   audioSeconds = 0,
   conversationId = "",
+  requestId = conversationId,
 ) {
   const sourceHash = hex(await digestSha256(new Uint8Array(bytes)));
   const cacheKey = `audio:${assistant.id}:${sourceHash}`;
@@ -2598,27 +3017,43 @@ async function transcribeAudio(
   if (cached) return { text: cached, usage: null };
 
   const targets = await mediaRouteTargets(env.DB, assistant.customer_id, "mkety-media-speech");
-  for (const target of targets) {
+  for (const [ordinal, target] of targets.entries()) {
     const reserveEstimate = mediaTargetUsage(target, "speech", 0, 0, audioSeconds);
-    const reserved = await reserveMediaUsage(env, assistant, conversationId, reserveEstimate);
+    reserveEstimate.conversationId = conversationId;
+    const reservationKey = `media:${await resilienceSha256Text(`${requestId}:${sourceHash}:speech:${ordinal}:${target.provider}:${target.provider_model}`)}`;
+    const reserved = await reserveMediaUsage(env, assistant, conversationId, reserveEstimate, reservationKey);
     if (!reserved) {
       console.warn("speech target skipped because media budget or customer credits are unavailable", {
         provider: target.provider, model: target.provider_model,
       });
       continue;
     }
+    let journaled: any = null;
     try {
-      const text = String(await invokeSpeechTarget(env, target, assistant.customer_id, bytes, mime)).trim();
-      if (!text) throw new Error("media_speech_empty_transcript");
-      const actualUsage = mediaTargetUsage(target, "speech", 0, 0, audioSeconds);
-      const settled = await settleMediaUsage(env, assistant, reserved, actualUsage);
+      journaled = await invokeJournaledMediaAttempt(
+        env, assistant, target, requestId, reserved.reservation.id, sourceHash, ordinal,
+        reserveEstimate, reserved.multiplierBps,
+        async (markSubmitted) => ({ text: await invokeSpeechTarget(env, target, assistant.customer_id, bytes, mime, markSubmitted), inputUnits: 0, outputUnits: 0 }),
+      );
+      const text = String(journaled.output.text || "").trim();
+      const actualUsage = { ...reserveEstimate, ...journaled.usage };
+      const settled = await settleMediaUsage(env, assistant, reserved, actualUsage, journaled.attemptId);
       if (!settled) throw new Error("media_speech_settlement_failed");
+      await settlementJournalStub(env.SETTLEMENT_JOURNAL, assistant.customer_id, assistant.id)
+        .markAttemptSettled({ customerId: assistant.customer_id, assistantId: assistant.id, attemptId: journaled.attemptId, settlementId: reserved.reservation.id });
+      await updateAttemptProjection(env.DB, { customerId: assistant.customer_id, assistantId: assistant.id, attemptId: journaled.attemptId, status: "settled", resolved: true });
+      if (!text) {
+        console.warn("speech provider returned an empty transcript; trying the next capability fallback");
+        continue;
+      }
       await putPromptCache({
         db: env.DB, cacheKey, customerId: assistant.customer_id, assistantId: assistant.id,
         kind: "audio", value: text, sourceHash, ttlSeconds: 2592000,
       }).catch(() => undefined);
       return { text, usage: null };
     } catch (error) {
+      if (error instanceof RetryableInferenceError && error.message === "provider_attempt_reconciliation_required") throw error;
+      if (journaled) throw new RetryableInferenceError("provider_settlement_pending", 60);
       await releaseReservation(
         env.DB,
         reserved.reservation.id,
@@ -2636,17 +3071,45 @@ async function transcribeAudio(
 }
 
 async function retrieveKnowledge(
-  db: D1Database,
+  env: AssistEnv,
   customerId: string,
   assistantId: string,
   query: string,
   charBudget: number,
 ) {
+  const db = env.DB;
   const terms = Array.from(new Set(String(query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3))).slice(0, 10);
   if (!terms.length) return [];
   const normalizedQuery = terms.join(" ");
-  const sourceHash = await resilienceSha256Text(normalizedQuery + ":" + charBudget);
-  const cacheKey = `knowledge:${assistantId}:${sourceHash}`;
+  let manifest: any[];
+  try {
+    const versionRows = await db.prepare(
+      `SELECT ak.collection_id,ki.id AS item_id,ki.updated_at,ki.status
+       FROM assistant_knowledge ak
+       LEFT JOIN knowledge_items ki ON ki.collection_id=ak.collection_id AND ki.customer_id=?
+       WHERE ak.assistant_id=? ORDER BY ak.collection_id,ki.id`,
+    ).bind(customerId, assistantId).all<any>();
+    manifest = versionRows.results ?? [];
+  } catch {
+    // Without a live source version, no cached business facts can be trusted.
+    return [];
+  }
+  const sourceVersion = await resilienceSha256Text(JSON.stringify({ manifest, normalizedQuery, charBudget }));
+  const snapshotIdentity = {
+    customerId, assistantId, kind: "knowledge_retrieval" as const, sourceVersion,
+  };
+  const snapshotKey = contextCacheKey(snapshotIdentity);
+  const snapshot = await readContextSnapshot(env.CONTEXT_CACHE, snapshotKey, sourceVersion);
+  if (snapshot) {
+    try {
+      const parsed = JSON.parse(snapshot);
+      if (Array.isArray(parsed)) return capKnowledgeSnippets(parsed.map(String), charBudget);
+    } catch {
+      // Invalid optional cache data is ignored.
+    }
+  }
+  const sourceHash = sourceVersion;
+  const cacheKey = `knowledge:${customerId}:${assistantId}:${sourceHash}`;
   const cached = await getPromptCache(db, cacheKey, sourceHash);
   if (cached) {
     try {
@@ -2663,9 +3126,9 @@ async function retrieveKnowledge(
        FROM knowledge_chunks_fts
        JOIN knowledge_chunks kc ON kc.id=knowledge_chunks_fts.chunk_id
        JOIN assistant_knowledge ak ON ak.collection_id=kc.collection_id
-       WHERE ak.assistant_id=? AND knowledge_chunks_fts MATCH ?
+       WHERE ak.assistant_id=? AND kc.customer_id=? AND knowledge_chunks_fts MATCH ?
        ORDER BY rank ASC LIMIT 12`,
-    ).bind(assistantId, match).all<any>();
+    ).bind(assistantId, customerId, match).all<any>();
     let remaining = Math.max(1000, charBudget);
     for (const row of rows.results ?? []) {
       if (remaining <= 0) break;
@@ -2679,18 +3142,23 @@ async function retrieveKnowledge(
   }
 
   if (!values.length) {
-    const rows = await db.prepare(
-      `SELECT ki.title,ki.content_text FROM assistant_knowledge ak
-       JOIN knowledge_items ki ON ki.collection_id=ak.collection_id
-       WHERE ak.assistant_id=? AND ki.status='ready' AND ki.content_text IS NOT NULL
-       ORDER BY ki.updated_at DESC LIMIT 50`,
-    ).bind(assistantId).all<any>();
+    let rows: any;
+    try {
+      rows = await db.prepare(
+        `SELECT ki.title,ki.content_text FROM assistant_knowledge ak
+         JOIN knowledge_items ki ON ki.collection_id=ak.collection_id
+         WHERE ak.assistant_id=? AND ki.customer_id=? AND ki.status='ready' AND ki.content_text IS NOT NULL
+         ORDER BY ki.updated_at DESC LIMIT 50`,
+      ).bind(assistantId, customerId).all<any>();
+    } catch {
+      return [];
+    }
     const scored = (rows.results ?? []).map((r: any) => {
       const text = String(r.content_text || "");
       const lower = text.toLowerCase();
       const score = terms.reduce((n, term) => n + (lower.includes(term) ? 1 : 0), 0);
       return { score, title: String(r.title || "Knowledge"), text };
-    }).filter((r) => r.score > 0).sort((a,b) => b.score-a.score);
+    }).filter((r: { score: number }) => r.score > 0).sort((a: { score: number }, b: { score: number }) => b.score-a.score);
 
     let remaining = Math.max(1000, charBudget);
     for (const row of scored.slice(0, 6)) {
@@ -2700,6 +3168,8 @@ async function retrieveKnowledge(
       remaining -= value.length;
     }
   }
+
+  values = capKnowledgeSnippets(values, charBudget);
 
   await putPromptCache({
     db,
@@ -2711,103 +3181,15 @@ async function retrieveKnowledge(
     sourceHash,
     ttlSeconds: 600,
   }).catch(() => undefined);
+  await writeContextSnapshot(env.CONTEXT_CACHE, {
+    ...snapshotIdentity, value: JSON.stringify(values), ttlSeconds: 300,
+  });
   return values;
 }
 
-async function reserveCredits(db: D1Database, customerId: string, assistantId: string, credits: number) {
-  const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=? AND customer_id=?").bind(assistantId, customerId).first<any>();
-  if (limit?.monthly_credit_cap) {
-    const start = startOfMonthUnix();
-    const used = await db.prepare(
-      "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE customer_id=? AND assistant_id=? AND created_at>=?",
-    ).bind(customerId, assistantId, start).first<any>();
-    if (parseFloat(String(used?.used || 0)) + credits > parseFloat(String(limit.monthly_credit_cap))) return null;
-  }
-  const update = await db.prepare(
-    "UPDATE credit_accounts SET balance=balance-?,updated_at=? WHERE customer_id=? AND balance>=?",
-  ).bind(credits, unix(), customerId, credits).run();
-  if (!update.meta.changes) return null;
-  const reservationId = id("res");
-  const balance = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
-  await db.batch([
-    db.prepare(
-      "INSERT INTO credit_reservations (id,customer_id,assistant_id,reserved_credits,status,created_at) VALUES (?,?,?,?,?,?)",
-    ).bind(reservationId, customerId, assistantId, credits, "open", unix()),
-    db.prepare(
-      "INSERT INTO credit_ledger (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?,?)",
-    ).bind(id("led"), customerId, assistantId, -credits, "inference_reserve", reservationId, parseFloat(String(balance?.balance || 0)), unix()),
-  ]);
-  return { id: reservationId };
-}
-
-async function releaseReservation(db: D1Database, reservationId: string, customerId: string, reserved: number) {
-  const now = unix();
-  const claimed = await db.prepare(
-    "UPDATE credit_reservations SET status='released',settled_at=? WHERE id=? AND customer_id=? AND status='open' RETURNING reserved_credits",
-  ).bind(now, reservationId, customerId).first<any>();
-  if (!claimed) return false;
-  const release = Math.max(0, parseInt(String(claimed.reserved_credits ?? reserved), 10));
-  await db.prepare(
-    "UPDATE credit_accounts SET balance=balance+?,updated_at=? WHERE customer_id=?",
-  ).bind(release, now, customerId).run();
-  const account = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
-  await db.prepare(
-    "INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?)",
-  ).bind(id("led"), customerId, release, "inference_release", reservationId, parseInt(String(account?.balance || 0), 10), now).run();
-  return true;
-}
-
-async function settleReservation(
-  db: D1Database,
-  reservationId: string,
-  customerId: string,
-  assistantId: string,
-  reserved: number,
-  actual: number,
-  usage: { modelAlias: string; provider: string; providerModel: string; conversationId: string; inputUnits: number; outputUnits: number; providerCostMicros: number; primaryCredits?: number; apiKeyId?: string | null; additionalProviderCosts?: Array<{ modelAlias: string; provider: string; providerModel: string; inputUnits: number; outputUnits: number; costMicros: number; creditsCharged?: number }> },
-) {
-  const now = unix();
-  const safeActual = Math.max(0, Math.min(reserved, Math.trunc(actual)));
-  const claimed = await db.prepare(
-    "UPDATE credit_reservations SET status='settled',settled_credits=?,settled_at=? WHERE id=? AND customer_id=? AND assistant_id=? AND status='open' RETURNING reserved_credits",
-  ).bind(safeActual, now, reservationId, customerId, assistantId).first<any>();
-  if (!claimed) return false;
-
-  const originallyReserved = Math.max(0, parseInt(String(claimed.reserved_credits ?? reserved), 10));
-  const refund = Math.max(0, originallyReserved - safeActual);
-  await db.prepare(
-    "UPDATE credit_accounts SET balance=balance+?,lifetime_consumed=lifetime_consumed+?,updated_at=? WHERE customer_id=?",
-  ).bind(refund, safeActual, now, customerId).run();
-  const balance = await db.prepare("SELECT balance FROM credit_accounts WHERE customer_id=?").bind(customerId).first<any>();
-  const usageId = id("use");
-  const statements: D1PreparedStatement[] = [
-    db.prepare(
-      "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at,api_key_id,reservation_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(usageId, customerId, assistantId, usage.conversationId, usage.modelAlias, usage.provider, usage.providerModel, usage.inputUnits, usage.outputUnits, Math.max(0, Math.min(safeActual, Math.trunc(usage.primaryCredits ?? safeActual))), usage.providerCostMicros, now, usage.apiKeyId ?? null, reservationId),
-    db.prepare(
-      "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
-    ).bind(id("pce"), customerId, usageId, usage.provider, usage.providerModel, usage.providerCostMicros, "USD", now),
-  ];
-  for (const extra of usage.additionalProviderCosts ?? []) {
-    const extraUsageId = id("use");
-    statements.push(
-      db.prepare(
-        "INSERT INTO usage_events (id,customer_id,assistant_id,conversation_id,model_alias,provider,provider_model,input_units,output_units,credits_charged,provider_cost_micros,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-      ).bind(extraUsageId, customerId, assistantId, usage.conversationId, extra.modelAlias, extra.provider, extra.providerModel, extra.inputUnits, extra.outputUnits, Math.max(0, Math.trunc(extra.creditsCharged || 0)), extra.costMicros, now),
-      db.prepare(
-        "INSERT INTO provider_cost_events (id,customer_id,usage_event_id,provider,provider_model,cost_micros,currency,created_at) VALUES (?,?,?,?,?,?,?,?)",
-      ).bind(id("pce"), customerId, extraUsageId, extra.provider, extra.providerModel, extra.costMicros, "USD", now),
-    );
-  }
-  if (refund) {
-    statements.push(
-      db.prepare("INSERT INTO credit_ledger (id,customer_id,assistant_id,delta,kind,reference_id,balance_after,created_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id("led"), customerId, assistantId, refund, "inference_settlement_refund", reservationId, parseInt(String(balance?.balance || 0), 10), now),
-    );
-  }
-  await db.batch(statements);
-  return true;
-}
+const reserveCredits = reserveInference;
+const releaseReservation = releaseInferenceReservation;
+const settleReservation = settleInference;
 
 async function providerBudgetAllows(
   db: D1Database,
@@ -2827,6 +3209,145 @@ async function providerBudgetAllows(
     "SELECT COALESCE(SUM(cost_micros),0) AS spent FROM provider_cost_events WHERE customer_id=? AND created_at>=?",
   ).bind(customerId, startOfMonthUnix()).first<any>();
   return parseFloat(String(spent?.spent || 0)) + estimatedCostMicros <= usableProviderMicros;
+}
+
+async function invokeJournaledProviderCall(
+  env: AssistEnv,
+  route: any,
+  input: any,
+  customerId: string,
+  assistantId: string,
+  replyJobId: string,
+  reservationId: string,
+  ordinal: number,
+  estimatedInputTokens: number,
+  multiplierBps: number,
+  journaledAttemptIds: string[],
+  reasoningMode: ReasoningMode = "standard",
+  fallbackPolicy: ReasoningFallbackPolicy = "allow_lower_effort",
+  conversationId = "",
+) {
+  const attemptId = attemptIdFor(replyJobId, reservationId, ordinal);
+  const identity = { customerId, assistantId, attemptId };
+  const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, customerId, assistantId);
+  const requestHash = await resilienceSha256Text(JSON.stringify(input));
+  const configuredTarget = Array.isArray(route.__targets) && route.__targets.length ? route.__targets[0] : route;
+  const initialRateSnapshot = Object.fromEntries([
+    "input_credits_per_million", "output_credits_per_million", "reasoning_credits_per_million",
+    "provider_input_cost_micros_per_million", "provider_output_cost_micros_per_million",
+    "provider_reasoning_cost_micros_per_million", "rate_multiplier_bps",
+  ].filter((key) => configuredTarget[key] != null).map((key) => [key, Number(configuredTarget[key])]));
+  await recordAttemptProjection(env.DB, {
+    ...identity, reservationId, requestHash, modelAlias: String(route.alias || "unknown"), replyJobId,
+    conversationId: String(conversationId || input.conversationId || input.conversation_id || ""),
+    provider: String(configuredTarget.provider || route.provider || "routed"),
+    model: String(configuredTarget.provider_model || route.provider_model || route.alias || "unknown"),
+    rateSnapshot: initialRateSnapshot, requestedReasoningMode: reasoningMode, appliedReasoningMode: reasoningMode,
+  });
+  const claim = await journal.claimAttempt({
+    ...identity,
+    reservationId,
+    requestHash,
+    provider: String(route.provider || "routed"),
+    model: String(route.provider_model || route.alias || "unknown"),
+    idempotencyKey: attemptId,
+    startedAt: unix(),
+  });
+  const existing = claim.attempt;
+  if (existing?.status === "result_recorded" || existing?.status === "settled") {
+    if (!existing.result) throw new Error("journal_result_missing");
+    journaledAttemptIds.push(attemptId);
+    const metadata = existing.result.metadata || {};
+    let targetRate: any = {};
+    let priorAttempts: any[] = [];
+    try { targetRate = JSON.parse(String(metadata.targetRateJson || "{}")); } catch {}
+    try { priorAttempts = JSON.parse(String(metadata.priorAttemptsJson || "[]")); } catch {}
+    await updateAttemptProjection(env.DB, {
+      ...identity, status: existing.status, provider: String(metadata.provider || existing.provider),
+      model: String(metadata.providerModel || existing.model), inputUnits: existing.result.inputUnits,
+      outputUnits: existing.result.outputUnits, reasoningUnits: Number(metadata.reasoningUnits || 0),
+      providerCostMicros: existing.result.providerCostMicros, rateSnapshot: targetRate,
+      requestedReasoningMode: String(metadata.requestedReasoningMode || reasoningMode),
+      appliedReasoningMode: String(metadata.appliedReasoningMode || reasoningMode),
+    });
+    return {
+      response: existing.result.responseText,
+      usage: { input_tokens: existing.result.inputUnits, output_tokens: existing.result.outputUnits, reasoning_tokens: Number(metadata.reasoningUnits || 0) },
+      __mketyProvider: String(metadata.provider || existing.provider),
+      __mketyProviderModel: String(metadata.providerModel || existing.model),
+      __mketyTargetRate: targetRate,
+      __mketyRequestedReasoningMode: String(metadata.requestedReasoningMode || reasoningMode),
+      __mketyAppliedReasoningMode: String(metadata.appliedReasoningMode || reasoningMode),
+      __mketyPriorAttempts: priorAttempts,
+      __mketyAttemptId: attemptId,
+      finish_reason: metadata.finishReason || undefined,
+    };
+  }
+  if (existing?.status === "unknown_outcome") throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+  if (existing?.status === "started" && !claim.claimed) {
+    if (Date.now() - existing.updatedAt > 5 * 60_000) await journal.markAttemptUnknown(identity);
+    throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+  }
+  journaledAttemptIds.push(attemptId);
+  let journalResultRecorded = false;
+  try {
+    const result = await invokeRoutedModel(env, route, input, customerId, reasoningMode, fallbackPolicy);
+    const text = extractAiText(result);
+    const usage = extractUsage(result, estimatedInputTokens, text);
+    const rate = { ...(result?.__mketyTargetRate || {}), rate_multiplier_bps: multiplierBps };
+    const economics = modelAttemptEconomics({ inputUnits: usage.input, outputUnits: usage.output, reasoningUnits: usage.reasoning, targetRate: rate }, multiplierBps);
+    const metadata = {
+      provider: String(result?.__mketyProvider || route.provider || "unknown"),
+      providerModel: String(result?.__mketyProviderModel || route.provider_model || "unknown"),
+      targetRateJson: JSON.stringify(rate),
+      reasoningUnits: usage.reasoning,
+      requestedReasoningMode: result?.__mketyRequestedReasoningMode || reasoningMode,
+      appliedReasoningMode: result?.__mketyAppliedReasoningMode || reasoningMode,
+      priorAttemptsJson: JSON.stringify((Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : []).map((attempt: any, index: number) => ({
+        ...attempt,
+        targetRate: { ...(attempt.targetRate || {}), rate_multiplier_bps: multiplierBps },
+        providerAttemptId: String(attempt.providerAttemptId || `${attemptId}:fallback:${index}`),
+      }))),
+      finishReason: String(result?.finish_reason || result?.finishReason || ""),
+    };
+    result.__mketyAttemptId = attemptId;
+    result.__mketyPriorAttempts = JSON.parse(metadata.priorAttemptsJson);
+    await journal.recordAttemptResult(identity, {
+      responseText: text,
+      inputUnits: usage.input,
+      outputUnits: usage.output,
+      reasoningUnits: usage.reasoning,
+      providerCostMicros: economics.providerCostMicros,
+      credits: economics.credits,
+      metadata,
+    });
+    journalResultRecorded = true;
+    await updateAttemptProjection(env.DB, {
+      ...identity, status: "result_recorded", provider: metadata.provider, model: metadata.providerModel,
+      inputUnits: usage.input, outputUnits: usage.output, reasoningUnits: usage.reasoning,
+      providerCostMicros: economics.providerCostMicros, rateSnapshot: rate,
+      requestedReasoningMode: String(metadata.requestedReasoningMode),
+      appliedReasoningMode: String(metadata.appliedReasoningMode),
+    });
+    return result;
+  } catch (error) {
+    if (journalResultRecorded) {
+      await updateAttemptProjection(env.DB, {
+        ...identity, status: "result_recorded", provider: String(route.provider || "routed"),
+        model: String(route.provider_model || route.alias || "unknown"),
+      }).catch(() => undefined);
+      throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+    }
+    const providerAttempted = Boolean((error as any)?.__mketyProviderAttempted);
+    if (!providerAttempted) {
+      await journal.markAttemptNotSubmitted(identity).catch(() => undefined);
+      await updateAttemptProjection(env.DB, { ...identity, status: "not_submitted", resolved: true }).catch(() => undefined);
+      throw error;
+    }
+    await journal.markAttemptUnknown(identity).catch(() => undefined);
+    await updateAttemptProjection(env.DB, { ...identity, status: "unknown_outcome" }).catch(() => undefined);
+    throw new RetryableInferenceError("provider_attempt_reconciliation_required", 60);
+  }
 }
 
 async function resolveModelRoute(db: D1Database, customerId: string, alias: string) {
@@ -2851,7 +3372,10 @@ async function resolveModelRoute(db: D1Database, customerId: string, alias: stri
   return { ...route, __targets: targets.results ?? [] };
 }
 
-async function invokeRoutedModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
+async function invokeRoutedModel(
+  env: AssistEnv, route: any, input: any, customerId: string,
+  reasoningMode: ReasoningMode = "standard", fallbackPolicy: ReasoningFallbackPolicy = "allow_lower_effort",
+): Promise<any> {
   const inputChars = Array.isArray(input?.messages)
     ? input.messages.reduce((n: number, m: any) => n + String(m?.content || "").length, 0)
     : JSON.stringify(input || {}).length;
@@ -2867,11 +3391,25 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
           : []),
       ];
 
+  // Resolve a single applied tier before any paid provider request. An explicit
+  // lower-tier fallback happens only when the owner selected that policy and no
+  // enabled target supports their requested tier.
+  let reasoningPlan: ReturnType<typeof planReasoningTargets>;
+  try {
+    reasoningPlan = planReasoningTargets(configuredTargets, reasoningMode, fallbackPolicy);
+  } catch (error) {
+    (error as any).__mketyProviderAttempted = false;
+    throw error;
+  }
+  const eligibleTargetSet = new Set(reasoningPlan.targets);
+
   let lastError: unknown = null;
+  let providerAttempted = false;
   const billablePriorAttempts: any[] = [];
   for (let index = 0; index < configuredTargets.length; index++) {
     const target = configuredTargets[index];
     if (!target?.provider || !target?.provider_model) continue;
+    if (!eligibleTargetSet.has(target)) continue;
     if (target.provider_connection_id) {
       const ownership = await env.DB.prepare(
         "SELECT ownership,customer_id,status,validated_at FROM provider_connections WHERE id=? LIMIT 1",
@@ -2897,12 +3435,25 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     }
 
     try {
+      const requestInput = { ...(input && typeof input === "object" ? input : {}) };
+      // Effort is derived only from authenticated assistant settings, never the
+      // public inference request body.
+      delete requestInput.reasoning_effort;
+      let declaredCapabilities: string[] = [];
+      try { declaredCapabilities = JSON.parse(String(target.reasoning_capabilities_json || "[]")); } catch {}
+      const requestedOptions = providerReasoningOptions(String(target.provider), String(target.provider_model), reasoningPlan.appliedMode, declaredCapabilities);
+      if (reasoningPlan.appliedMode !== "standard" && !requestedOptions) continue;
+      requestInput.__mketyReasoningOptions = requestedOptions || {};
+      Object.assign(requestInput, requestedOptions || {});
+      providerAttempted = true;
       const result = annotateProviderResult(
-        await invokeProviderModel(env, target, input, customerId),
+        await invokeProviderModel(env, target, requestInput, customerId),
         String(target.provider),
         String(target.provider_model),
         target,
       );
+      result.__mketyRequestedReasoningMode = reasoningPlan.requestedMode;
+      result.__mketyAppliedReasoningMode = reasoningPlan.appliedMode;
       const text = extractAiText(result);
       if (!text) {
         const usage = extractUsage(result, estimatedInputTokens, "");
@@ -2911,7 +3462,10 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
           providerModel: String(target.provider_model),
           inputUnits: usage.input,
           outputUnits: usage.output,
+          reasoningUnits: usage.reasoning,
           targetRate: result?.__mketyTargetRate || target,
+          requestedReasoningMode: reasoningPlan.requestedMode,
+          appliedReasoningMode: reasoningPlan.appliedMode,
           reason: "empty_model_response",
         });
         throw new Error(`empty_model_response:${String(target.provider)}:${String(target.provider_model)}`);
@@ -2919,6 +3473,20 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
       return { ...result, __mketyPriorAttempts: billablePriorAttempts };
     } catch (error) {
       lastError = error;
+      if (providerAttempted && !String(error instanceof Error ? error.message : error).includes("empty_model_response")) {
+        // The provider accepted the attempt far enough to return an error; preserve the fact for reconciliation.
+        billablePriorAttempts.push({
+          provider: String(target.provider),
+          providerModel: String(target.provider_model),
+          inputUnits: estimatedInputTokens,
+          outputUnits: 0,
+          reasoningUnits: 0,
+          targetRate: target,
+          requestedReasoningMode: reasoningPlan.requestedMode,
+          appliedReasoningMode: reasoningPlan.appliedMode,
+          reason: "provider_error_outcome_unknown",
+        });
+      }
       const classified = classifyRetryableError(error);
       console.warn("model target failed; trying next ordered fallback", {
         alias,
@@ -2933,6 +3501,7 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
   if (lastError) {
     if (lastError && typeof lastError === "object") {
       (lastError as any).__mketyPriorAttempts = billablePriorAttempts;
+      (lastError as any).__mketyProviderAttempted = providerAttempted;
     }
     throw lastError;
   }
@@ -2951,6 +3520,8 @@ function annotateProviderResult(result: any, provider: string, model: string, ta
     provider_output_cost_micros_per_million: Number(target.provider_output_cost_micros_per_million || 0),
     provider_image_cost_micros: Number(target.provider_image_cost_micros || 0),
     provider_audio_cost_micros_per_minute: Number(target.provider_audio_cost_micros_per_minute || 0),
+    reasoning_credits_per_million: target.reasoning_credits_per_million == null ? null : Number(target.reasoning_credits_per_million),
+    provider_reasoning_cost_micros_per_million: target.provider_reasoning_cost_micros_per_million == null ? null : Number(target.provider_reasoning_cost_micros_per_million),
   } : null;
   if (result && typeof result === "object" && !Array.isArray(result)) {
     return { ...result, __mketyProvider: provider, __mketyProviderModel: model, __mketyTargetRate: targetRate };
@@ -2979,10 +3550,20 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   if (provider === "workers-ai" || provider === "mkety-managed") {
     const normalized: any = input && typeof input === "object" ? { ...input } : input;
     if (normalized && Array.isArray(normalized.messages)) {
-      const maxCompletion = Math.max(64, Number(normalized.max_completion_tokens || normalized.max_tokens || 1024));
+      const requestedCompletion = Number(normalized.max_completion_tokens || normalized.max_tokens || 1536);
+      const maxCompletion = Number.isFinite(requestedCompletion)
+        ? Math.max(1, Math.min(2048, Math.floor(requestedCompletion)))
+        : 1536;
       delete normalized.max_tokens;
       normalized.max_completion_tokens = maxCompletion;
-      if (normalized.reasoning_effort === undefined) normalized.reasoning_effort = "low";
+      if (normalized.reasoning_effort === undefined) {
+        const userText = String([...normalized.messages].reverse().find((message: any) => message.role === "user")?.content || "");
+        normalized.reasoning_effort = selectReasoningEffort({
+          provider,
+          model: String(route.provider_model || ""),
+          userText,
+        }) || "low";
+      }
     }
     return env.AI.run(String(route.provider_model), normalized);
   }
@@ -2998,7 +3579,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   const extra = connection.extra_json ? JSON.parse(connection.extra_json) : {};
   const model = String(route.provider_model);
   const messages = Array.isArray(input.messages) ? input.messages : [];
-  const maxTokens = parseInt(String(input.max_tokens || 1024), 10);
+  const maxTokens = Math.max(1, Math.min(2048, parseInt(String(input.max_tokens || 1536), 10) || 1536));
   const temperature = typeof input.temperature === "number" ? input.temperature : 0.4;
 
   if (provider === "openai") {
@@ -3012,6 +3593,8 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
         instructions: systemText || undefined,
         input: messages.filter((m: any) => m.role !== "system").map((m: any) => ({ role: m.role, content: String(m.content || "") })),
         max_output_tokens: maxTokens,
+        ...openAIReasoningOptions(model, messages),
+        ...(input.__mketyReasoningOptions || {}),
       }),
     });
     const payload = await response.json<any>();
@@ -3030,7 +3613,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     const response = await fetch(`${base}/chat/completions`, {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, ...(input.__mketyReasoningOptions || {}) }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
@@ -3051,7 +3634,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
         "anthropic-version": String(extra.anthropicVersion || "2023-06-01"),
         "content-type": "application/json",
       },
-      body: JSON.stringify({ model, system: String(systemMessage), messages: chatMessages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify({ model, system: String(systemMessage), messages: chatMessages, max_tokens: maxTokens, temperature, ...(input.__mketyReasoningOptions || {}) }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
@@ -3078,7 +3661,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       body: JSON.stringify({
         systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
         contents,
-        generationConfig: { maxOutputTokens: maxTokens, temperature },
+        generationConfig: { maxOutputTokens: maxTokens, temperature, ...((input.__mketyReasoningOptions || {}).generationConfig || {}) },
       }),
     });
     const payload = await response.json<any>();
@@ -3101,7 +3684,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature, ...(input.__mketyReasoningOptions || {}) }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
@@ -3120,7 +3703,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ model, instructions: systemText || undefined, input: inputItems, max_output_tokens: maxTokens }),
+      body: JSON.stringify({ model, instructions: systemText || undefined, input: inputItems, max_output_tokens: maxTokens, ...(input.__mketyReasoningOptions || {}) }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
@@ -3159,7 +3742,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
         body: JSON.stringify({
           systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
           contents,
-          generationConfig: { maxOutputTokens: maxTokens, temperature },
+          generationConfig: { maxOutputTokens: maxTokens, temperature, ...((input.__mketyReasoningOptions || {}).generationConfig || {}) },
         }),
       },
     );
@@ -3235,6 +3818,12 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   }
 
   throw new Error(`Unsupported provider: ${provider}`);
+}
+
+function openAIReasoningOptions(model: string, messages: any[]) {
+  const userText = String([...messages].reverse().find((message) => message?.role === "user")?.content || "");
+  const effort = selectReasoningEffort({ provider: "openai", model, userText });
+  return effort ? { reasoning: { effort } } : {};
 }
 
 async function invokeTool(env: AssistEnv, tool: any, args: unknown) {
@@ -3402,7 +3991,7 @@ function requireAdmin(session: Session) {
 
 async function markWebhook(db: D1Database, assistantId: string, eventId: string, status: string) {
   await db.prepare(
-    "UPDATE webhook_events SET status=?,processed_at=? WHERE source=? AND external_event_id=?",
+    "UPDATE webhook_events SET status=?,processed_at=?,processing_at=NULL WHERE source=? AND external_event_id=?",
   ).bind(status, unix(), `telegram:${assistantId}`, eventId).run();
 }
 
@@ -3568,10 +4157,14 @@ function extractAiText(result: any): string {
 function routedResultAttempt(result: any, estimatedInputTokens: number, text: string) {
   const usage = extractUsage(result, estimatedInputTokens, text);
   return {
+    providerAttemptId: String(result?.__mketyAttemptId || ""),
     provider: String(result?.__mketyProvider || "unknown"),
     providerModel: String(result?.__mketyProviderModel || "unknown"),
     inputUnits: usage.input,
     outputUnits: usage.output,
+    reasoningUnits: usage.reasoning,
+    requestedReasoningMode: String(result?.__mketyRequestedReasoningMode || "standard"),
+    appliedReasoningMode: String(result?.__mketyAppliedReasoningMode || "standard"),
     targetRate: result?.__mketyTargetRate || {},
     reason: "completed_intermediate_call",
   };
@@ -3581,14 +4174,20 @@ function modelAttemptEconomics(attempt: any, multiplierBps: number) {
   const rate = attempt?.targetRate || {};
   const inputRate = Math.ceil(Number(rate.input_credits_per_million || 0) * multiplierBps / 10000);
   const outputRate = Math.ceil(Number(rate.output_credits_per_million || 0) * multiplierBps / 10000);
-  const credits = Math.max(0, Math.ceil((
+  const reasoningRate = rate.reasoning_credits_per_million == null
+    ? 0
+    : Math.ceil(Number(rate.reasoning_credits_per_million || 0) * multiplierBps / 10000);
+  const rawCredits = Math.max(0, Math.ceil((
     Number(attempt?.inputUnits || 0) * inputRate
     + Number(attempt?.outputUnits || 0) * outputRate
+    + Number(attempt?.reasoningUnits || 0) * reasoningRate
   ) / 1_000_000));
   const providerCostMicros = Math.max(0, Math.ceil((
     Number(attempt?.inputUnits || 0) * Number(rate.provider_input_cost_micros_per_million || 0)
     + Number(attempt?.outputUnits || 0) * Number(rate.provider_output_cost_micros_per_million || 0)
+    + Number(attempt?.reasoningUnits || 0) * Number(rate.provider_reasoning_cost_micros_per_million || 0)
   ) / 1_000_000));
+  const credits = providerCostMicros > 0 ? Math.max(1, rawCredits) : rawCredits;
   return { credits, providerCostMicros };
 }
 
@@ -3615,6 +4214,10 @@ function extractUsage(result: any, estimatedInput: number, text: string) {
   return {
     input: parseFloat(String(usage.prompt_tokens || usage.input_tokens || usage.inputTokens || estimatedInput)),
     output: parseFloat(String(usage.completion_tokens || usage.output_tokens || usage.outputTokens || Math.max(1, Math.ceil(text.length / 4)))),
+    reasoning: Math.max(0, parseFloat(String(
+      usage.reasoning_tokens ?? usage.reasoningTokens ?? usage.output_tokens_details?.reasoning_tokens ??
+      usage.completion_tokens_details?.reasoning_tokens ?? usage.thoughts_token_count ?? usage.thoughtsTokenCount ?? 0,
+    )) || 0),
   };
 }
 

@@ -9,10 +9,12 @@
     "type-check": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "test:unit": "node --experimental-strip-types --test scripts/*.test.mjs",
     "check:operator-ui": "node scripts/check-operator-ui.mjs",
     "check:security-isolation": "node scripts/check-security-isolation.mjs",
     "check:production-acceptance": "node scripts/check-production-acceptance.mjs",
-    "check:all": "npm run check:operator-ui && npm run check:security-isolation && npm run check:production-acceptance"
+    "check:conversation-quality": "node scripts/check-conversation-quality.mjs",
+    "check:all": "npm run check:operator-ui && npm run check:security-isolation && npm run check:production-acceptance && npm run test:unit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261001.1",

@@ -1,14 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, processDueReminders, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, inspectStaleAttemptProjections, processDueReminders, processInboundQueue, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
 import { validateProviderConnection } from "./providers/validation";
+import { reasoningCapabilities } from "./providers/reasoning";
+import { evaluateMediaReadiness, evaluateRouteReadiness, routeTargetMediaSupported, routeTargetPricingConfigured, routeTargetValidated } from "./providers/route-readiness";
+import { runConversationQualityProbe } from "./conversation/quality-probe";
+import type { SettlementJournal } from "./billing/settlement-journal";
+import { listUnresolvedAttempts, resolveUnknownAttempt } from "./billing/reconciliation";
+export { SettlementJournal } from "./billing/settlement-journal";
 
 interface Env {
   DB: D1Database;
+  CONTEXT_CACHE: KVNamespace;
+  SETTLEMENT_JOURNAL: DurableObjectNamespace<SettlementJournal>;
   AI: {
     run(model: string, input: unknown): Promise<any>;
     toMarkdown(
@@ -50,6 +58,7 @@ interface Env {
   REPLY_QUEUE: {
     send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   };
+  INBOUND_QUEUE: { send(body: unknown): Promise<void> };
 }
 
 type CustomerContext = {
@@ -155,12 +164,14 @@ export default {
     await Promise.all([
       processDueReminders(env),
       recoverReplyJobs(env),
+      inspectStaleAttemptProjections(env),
       syncTelegramBusinessWebhookCapabilities(env),
     ]);
   },
 
   async queue(batch: any, env: Env): Promise<void> {
-    await processReplyQueue(batch, env);
+    if (batch.queue === "mkety-assist-inbound") await processInboundQueue(batch, env);
+    else await processReplyQueue(batch, env);
   },
 };
 
@@ -367,15 +378,57 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   }
 
   const targetRows = await env.DB.prepare(
-    "SELECT scope_key,alias,position,provider,provider_model,enabled FROM model_route_targets ORDER BY scope_key,position",
+    `SELECT scope_key,alias,position,provider,provider_model,enabled,
+            provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
+     FROM model_route_targets ORDER BY scope_key,position`,
   ).all<any>();
+  const selectedWorkerTarget = (targetRows.results ?? []).find((target: any) => target.provider === "workers-ai" && Number(target.enabled) === 1);
+  const qualityModel = String(selectedWorkerTarget?.provider_model || workerModels[0].model);
+  const qualityInputCost = Number(selectedWorkerTarget?.provider_input_cost_micros_per_million || 0);
+  const qualityOutputCost = Number(selectedWorkerTarget?.provider_output_cost_micros_per_million || 0);
+  const qualityCostRatesAvailable = Number.isFinite(qualityInputCost) && Number.isFinite(qualityOutputCost)
+    && (qualityInputCost > 0 || qualityOutputCost > 0);
+  const conversationQuality = qualityCostRatesAvailable
+    ? await runConversationQualityProbe({
+        generate: async (messages) => {
+          const inputChars = messages.reduce((sum, message) => sum + String(message.content || "").length, 0);
+          const estimatedInputTokens = Math.max(1, Math.ceil(inputChars / 4));
+          const estimatedMaximumCost = Math.ceil((estimatedInputTokens * qualityInputCost + 256 * qualityOutputCost) / 1_000_000);
+          try {
+            const output = await env.AI.run(qualityModel, {
+              messages,
+              max_completion_tokens: 256,
+              reasoning_effort: "low",
+            });
+            const usage = output?.usage || output?.result?.usage || {};
+            const reportedInputTokens = Number(usage.input_tokens ?? usage.inputTokens ?? usage.prompt_tokens);
+            const reportedOutputTokens = Number(usage.output_tokens ?? usage.outputTokens ?? usage.completion_tokens);
+            const inputTokens = Number.isFinite(reportedInputTokens) && reportedInputTokens > 0 ? reportedInputTokens : estimatedInputTokens;
+            const outputTokens = Number.isFinite(reportedOutputTokens) && reportedOutputTokens >= 0 ? reportedOutputTokens : 256;
+            const cost = Math.ceil((inputTokens * qualityInputCost + outputTokens * qualityOutputCost) / 1_000_000);
+            return { text: acceptanceText(output), providerCostMicros: Math.max(estimatedMaximumCost, cost), outputTokens };
+          } catch {
+            return { text: "", providerCostMicros: estimatedMaximumCost, outputTokens: 256 };
+          }
+        },
+      })
+    : {
+        ok: false,
+        cases: [{ name: "provider_cost_rate", ok: false, detail: "No configured Workers AI provider cost rates; synthetic probe skipped." }],
+        providerCostMicros: 0,
+      };
+  const conversationQualityResult = {
+    ...conversationQuality,
+    model: qualityModel,
+    costRatesAvailable: qualityCostRatesAvailable,
+  };
   const workersOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai" && item.model === worker.model && item.ok));
   const workersVisionOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai-vision" && item.model === worker.model && item.ok));
   const workersImageReplyOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai-image-reply" && item.model === worker.model && item.ok));
   const azureOk = results.some((item) => item.provider === "azure-foundry" && (item.ok || item.reachable));
   const vertexOk = results.some((item) => item.provider === "vertex" && (item.ok || item.reachable));
-  const ok = workersOk && workersVisionOk && workersImageReplyOk && azureOk && vertexOk;
-  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], workersVisionOk, workersImageReplyOk, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
+  const ok = workersOk && workersVisionOk && workersImageReplyOk && azureOk && vertexOk && conversationQualityResult.ok;
+  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], workersVisionOk, workersImageReplyOk, conversationQuality: conversationQualityResult, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
 }
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
@@ -437,6 +490,57 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   if (!operator) {
     if (url.pathname.startsWith("/api/ops/")) return json({ error: "unauthorized" }, 401);
     return operatorLoginPage();
+  }
+
+  if (url.pathname === "/api/ops/inference-attempts" && request.method === "GET") {
+    const customerId = requiredString(url.searchParams.get("customerId"), "customerId");
+    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || 50)));
+    const cursorValue = Number(url.searchParams.get("cursor") || 0);
+    const attempts = await listUnresolvedAttempts(env.DB, customerId, limit, cursorValue > 0 ? cursorValue : null);
+    return json({ attempts });
+  }
+
+  if (url.pathname.startsWith("/api/ops/inference-attempts/") && url.pathname.endsWith("/resolve") && request.method === "POST") {
+    const attemptId = decodeURIComponent(url.pathname.slice("/api/ops/inference-attempts/".length, -"/resolve".length));
+    const body = await readJson(request);
+    const customerId = requiredString(body.customerId, "customerId");
+    const assistantId = requiredString(body.assistantId, "assistantId");
+    const outcome = String(body.outcome || "");
+    if (!["confirmed_not_submitted", "recovered_result", "provider_charged_no_result", "mkety_absorbed_cost", "unresolved"].includes(outcome)) {
+      return json({ error: "invalid_resolution_outcome" }, 400);
+    }
+    const result = await resolveUnknownAttempt(env.DB, env.SETTLEMENT_JOURNAL, {
+      attemptId, customerId, assistantId, operatorUserId: operator.operatorUserId,
+      outcome: outcome as any, idempotencyKey: requiredString(body.idempotencyKey, "idempotencyKey"),
+      evidenceSummary: requiredString(body.evidenceSummary, "evidenceSummary"),
+      reason: requiredString(body.reason, "reason"),
+      usage: body.usage && typeof body.usage === "object" ? {
+        inputUnits: Number(body.usage.inputUnits), outputUnits: Number(body.usage.outputUnits),
+        reasoningUnits: body.usage.reasoningUnits == null ? 0 : Number(body.usage.reasoningUnits),
+        imageUnits: body.usage.imageUnits == null ? 0 : Number(body.usage.imageUnits),
+        audioSeconds: body.usage.audioSeconds == null ? 0 : Number(body.usage.audioSeconds),
+        providerCostMicros: Number(body.usage.providerCostMicros),
+        evidence: requiredString(body.usage.evidence, "usage.evidence"),
+      } : undefined,
+      absorbedProviderCost: body.absorbedProviderCost && typeof body.absorbedProviderCost === "object" ? {
+        providerCostMicros: Number(body.absorbedProviderCost.providerCostMicros),
+        evidence: requiredString(body.absorbedProviderCost.evidence, "absorbedProviderCost.evidence"),
+      } : undefined,
+    });
+    if (result.outcome === "recovered_result" && result.replyJobId && result.recoveredText) {
+      const now = unix();
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET response_text=?,status='retry',due_at=?,last_enqueued_at=NULL,locked_at=NULL,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=? AND status!='delivered'",
+      ).bind(result.recoveredText, now, now, result.replyJobId, customerId, assistantId).run();
+      await env.REPLY_QUEUE.send({ jobId: result.replyJobId });
+    } else if (["provider_charged_no_result", "mkety_absorbed_cost"].includes(result.outcome) && result.replyJobId) {
+      const now = unix();
+      await env.DB.prepare(
+        "UPDATE reply_jobs SET response_text=?,status='retry',due_at=?,last_enqueued_at=NULL,locked_at=NULL,updated_at=? WHERE id=? AND customer_id=? AND assistant_id=? AND status!='delivered'",
+      ).bind("I couldn’t recover the answer. Please send your message again.", now, now, result.replyJobId, customerId, assistantId).run();
+      await env.REPLY_QUEUE.send({ jobId: result.replyJobId });
+    }
+    return json({ outcome: result.outcome, released: result.released, settled: result.settled, idempotent: result.idempotent });
   }
 
   if (url.pathname === "/" && request.method === "GET") return opsPage([]);
@@ -894,16 +998,93 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
        ORDER BY r.alias`,
     ).all<any>();
     const targets = await env.DB.prepare(
-      "SELECT * FROM model_route_targets WHERE customer_id IS NULL ORDER BY alias,position",
+      `SELECT t.*,pc.status AS provider_connection_status,pc.validated_at AS provider_connection_validated_at
+       FROM model_route_targets t LEFT JOIN provider_connections pc ON pc.id=t.provider_connection_id
+       WHERE t.customer_id IS NULL ORDER BY t.alias,t.position`,
     ).all<any>();
     const byAlias = new Map<string, any[]>();
     for (const target of targets.results ?? []) {
       const key=String(target.alias);
       const list=byAlias.get(key) ?? [];
-      list.push(publicCreditFields(target));
+      let configuredCapabilities: string[] = [];
+      try { configuredCapabilities = JSON.parse(String(target.reasoning_capabilities_json || "[]")); } catch {}
+      list.push({
+        ...publicCreditFields(target),
+        validated: routeTargetValidated(target),
+        priced: routeTargetPricingConfigured(target, key),
+        supported: routeTargetMediaSupported(target, key),
+        reasoning_capabilities: reasoningCapabilities(String(target.provider), String(target.provider_model), configuredCapabilities),
+      });
       byAlias.set(key,list);
     }
-    return json({ models: (rows.results ?? []).map((row: any) => ({ ...publicCreditFields(row), targets: byAlias.get(String(row.alias)) ?? [] })) });
+    const models = (rows.results ?? []).map((row: any) => {
+      const modelTargets = byAlias.get(String(row.alias)) ?? [];
+      const targetsForReadiness = modelTargets.length ? modelTargets : [{
+        provider: row.provider, provider_model: row.provider_model, enabled: row.status === "active" ? 1 : 0,
+        validated: routeTargetValidated(row), priced: routeTargetPricingConfigured(row, String(row.alias)),
+        supported: routeTargetMediaSupported(row, String(row.alias)),
+        reasoning_capabilities: reasoningCapabilities(String(row.provider), String(row.provider_model), []),
+      }];
+      return {
+        ...publicCreditFields(row),
+        targets: modelTargets,
+        route_readiness: evaluateRouteReadiness(String(row.status || "disabled"), targetsForReadiness.map((target: any) => ({
+          enabled: target.enabled, validated: target.validated, priced: target.priced, supported: target.supported,
+          reasoningCapabilities: target.reasoning_capabilities,
+        }))),
+      };
+    });
+    const mediaFeatures = await env.DB.prepare(
+      `SELECT c.id AS customer_id,c.name AS customer_name,fp.vision_enabled,fp.voice_enabled
+       FROM customers c LEFT JOIN feature_policy fp ON fp.customer_id=c.id ORDER BY c.name`,
+    ).all<any>();
+    const mediaOverrides = await env.DB.prepare(
+      `SELECT r.customer_id AS override_customer_id,r.alias AS override_alias,r.status AS override_status,
+              t.*,pc.status AS provider_connection_status,pc.validated_at AS provider_connection_validated_at
+       FROM customer_model_routes r
+       LEFT JOIN model_route_targets t ON t.scope_key=('customer:' || r.customer_id || ':' || r.alias)
+       LEFT JOIN provider_connections pc ON pc.id=t.provider_connection_id
+       WHERE r.alias IN ('mkety-media-vision','mkety-media-speech') ORDER BY r.customer_id,t.position`,
+    ).all<any>();
+    const overrideByCustomer = new Map<string, any>();
+    for (const row of mediaOverrides.results ?? []) {
+      const key = `${row.override_customer_id}:${row.override_alias}`;
+      const entry = overrideByCustomer.get(key) ?? { status: row.override_status, targets: [] };
+      if (row.provider && row.provider_model) {
+        entry.targets.push({
+          ...row,
+          validated: routeTargetValidated(row),
+          priced: routeTargetPricingConfigured(row, String(row.alias)),
+          supported: routeTargetMediaSupported(row, String(row.alias)),
+        });
+      }
+      overrideByCustomer.set(key, entry);
+    }
+    const mediaReadiness = Object.fromEntries(["mkety-media-vision", "mkety-media-speech"].map((alias) => {
+      const model = models.find((item: any) => item.alias === alias);
+      const targetsForReadiness = model?.targets ?? [];
+      const aliasStatus = String(model?.status || "disabled");
+      const isVision = alias === "mkety-media-vision";
+      return [alias, {
+        ...evaluateRouteReadiness(aliasStatus, targetsForReadiness.map((target: any) => ({
+          enabled: target.enabled, validated: target.validated, priced: target.priced, supported: target.supported,
+        }))),
+        customers: (mediaFeatures.results ?? []).map((customer: any) => {
+          const override = overrideByCustomer.get(`${customer.customer_id}:${alias}`);
+          const scopedTargets = override?.targets?.some((target: any) => Number(target.enabled) === 1) ? override.targets : targetsForReadiness;
+          return {
+            customerId: String(customer.customer_id),
+            customerName: String(customer.customer_name),
+            ...evaluateMediaReadiness({
+              featureEnabled: Number(isVision ? customer.vision_enabled : customer.voice_enabled) === 1,
+              aliasStatus: String(override?.status || aliasStatus),
+              targets: scopedTargets,
+            }),
+          };
+        }),
+      }];
+    }));
+    return json({ models, media_readiness: mediaReadiness });
   }
 
   if (url.pathname.startsWith("/api/ops/models/") && request.method === "PATCH") {
@@ -932,6 +1113,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const fallbackProviderConnectionId = body.fallbackProviderConnectionId === undefined
       ? current.fallback_provider_connection_id
       : (body.fallbackProviderConnectionId || null);
+    const nextStatus = body.status === undefined ? String(current.status || "active") : String(body.status);
+    if (!["active", "paused", "disabled"].includes(nextStatus)) return json({ error: "invalid_model_route_status" }, 400);
     const byokPolicy = body.byokPolicy ?? current.byok_policy ?? "managed";
     if (!["managed","strict_byok","explicit_paid_fallback"].includes(String(byokPolicy))) {
       return json({ error: "invalid_byok_policy" }, 400);
@@ -967,6 +1150,106 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       }
     }
 
+    if (Array.isArray(body.targets)) {
+      const scopeKey = targetCustomerId ? `customer:${targetCustomerId}:${alias}` : `global:${alias}`;
+      const sanitizedTargets: any[] = body.targets.slice(0, 10).map((target: any, index: number) => ({
+        position: index,
+        provider: requiredString(target.provider, "target.provider"),
+        providerModel: requiredString(target.providerModel, "target.providerModel"),
+        providerConnectionId: target.providerConnectionId ? String(target.providerConnectionId) : null,
+        enabled: target.enabled === false ? 0 : 1,
+        inputCreditsPerMillion: creditAtomsFromMkredits(target.inputCreditsPerMillion),
+        outputCreditsPerMillion: creditAtomsFromMkredits(target.outputCreditsPerMillion),
+        imageCredits: creditAtomsFromMkredits(target.imageCredits),
+        audioCreditsPerMinute: creditAtomsFromMkredits(target.audioCreditsPerMinute),
+        providerInputCostMicrosPerMillion: positiveInt(target.providerInputCostMicrosPerMillion, 0),
+        providerOutputCostMicrosPerMillion: positiveInt(target.providerOutputCostMicrosPerMillion, 0),
+        reasoningCapabilities: Array.isArray(target.reasoningCapabilities)
+          ? [...new Set<string>((target.reasoningCapabilities as unknown[]).filter((mode: unknown): mode is string => mode === "standard" || mode === "high" || mode === "maximum"))]
+          : [],
+        reasoningCreditsPerMillion: target.reasoningCreditsPerMillion == null || target.reasoningCreditsPerMillion === ""
+          ? null : creditAtomsFromMkredits(target.reasoningCreditsPerMillion),
+        providerReasoningCostMicrosPerMillion: target.providerReasoningCostMicrosPerMillion == null || target.providerReasoningCostMicrosPerMillion === ""
+          ? null : positiveInt(target.providerReasoningCostMicrosPerMillion, 0),
+        providerImageCostMicros: positiveInt(target.providerImageCostMicros, 0),
+        providerAudioCostMicrosPerMinute: positiveInt(target.providerAudioCostMicrosPerMinute, 0),
+      }));
+      if (!sanitizedTargets.length) return json({ error: "model_target_required" }, 400);
+      for (const target of sanitizedTargets) {
+        const effectiveReasoningCapabilities = reasoningCapabilities(target.provider, target.providerModel, target.reasoningCapabilities);
+        if (target.reasoningCapabilities.some((mode: string) => !effectiveReasoningCapabilities.includes(mode as any))) {
+          return json({ error: "provider_model_reasoning_capability_unsupported", provider: target.provider, model: target.providerModel }, 400);
+        }
+        if (!["workers-ai","mkety-managed"].includes(target.provider)) {
+          if (!target.providerConnectionId) return json({ error: "target_provider_connection_required" }, 400);
+          const connection = await env.DB.prepare(
+            "SELECT provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
+          ).bind(target.providerConnectionId).first<any>();
+          if (!connection || connection.provider !== target.provider || connection.status !== "active" || !connection.validated_at) {
+            return json({ error: "target_provider_connection_unvalidated_or_mismatch" }, 400);
+          }
+          target.validated = true;
+          if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
+            return json({ error: "customer_target_requires_matching_tenant_route" }, 400);
+          }
+        }
+        if (["workers-ai", "mkety-managed"].includes(target.provider)) target.validated = true;
+      }
+      if (nextStatus === "active" && !evaluateRouteReadiness("active", sanitizedTargets.map((target: any) => ({
+        enabled: target.enabled,
+        validated: target.validated,
+        priced: routeTargetPricingConfigured({
+          input_credits_per_million: target.inputCreditsPerMillion,
+          output_credits_per_million: target.outputCreditsPerMillion,
+          image_credits: target.imageCredits,
+          audio_credits_per_minute: target.audioCreditsPerMinute,
+        }, alias),
+      }))).eligibleTargetCount) return json({ error: "active_route_requires_enabled_target" }, 400);
+      const statements: D1PreparedStatement[] = [
+        env.DB.prepare("DELETE FROM model_route_targets WHERE scope_key=?").bind(scopeKey),
+      ];
+      for (const target of sanitizedTargets) {
+        statements.push(env.DB.prepare(
+          `INSERT INTO model_route_targets
+           (scope_key,customer_id,alias,position,provider,provider_model,provider_connection_id,enabled,
+           input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,
+           provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,
+            provider_image_cost_micros,provider_audio_cost_micros_per_minute,reasoning_capabilities_json,
+            reasoning_credits_per_million,provider_reasoning_cost_micros_per_million,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ).bind(
+          scopeKey,targetCustomerId,alias,target.position,target.provider,target.providerModel,target.providerConnectionId,target.enabled,
+          target.inputCreditsPerMillion,target.outputCreditsPerMillion,target.imageCredits,target.audioCreditsPerMinute,
+          target.providerInputCostMicrosPerMillion,target.providerOutputCostMicrosPerMillion,
+          target.providerImageCostMicros,target.providerAudioCostMicrosPerMinute,
+          JSON.stringify(target.reasoningCapabilities),target.reasoningCreditsPerMillion,target.providerReasoningCostMicrosPerMillion,now,now,
+        ));
+      }
+      await env.DB.batch(statements);
+    }
+
+    if (nextStatus === "active" && !Array.isArray(body.targets)) {
+      const scopeKey = targetCustomerId ? `customer:${targetCustomerId}:${alias}` : `global:${alias}`;
+      const currentTargets = await env.DB.prepare(
+        `SELECT t.*,pc.status AS provider_connection_status,pc.validated_at AS provider_connection_validated_at
+         FROM model_route_targets t LEFT JOIN provider_connections pc ON pc.id=t.provider_connection_id
+         WHERE t.scope_key=? ORDER BY t.position`,
+      ).bind(scopeKey).all<any>();
+      let readinessTargets = currentTargets.results ?? [];
+      if (targetCustomerId && !readinessTargets.some((target: any) => Number(target.enabled) === 1)) {
+        const globalTargets = await env.DB.prepare(
+          `SELECT t.*,pc.status AS provider_connection_status,pc.validated_at AS provider_connection_validated_at
+           FROM model_route_targets t LEFT JOIN provider_connections pc ON pc.id=t.provider_connection_id
+           WHERE t.scope_key=? ORDER BY t.position`,
+        ).bind(`global:${alias}`).all<any>();
+        readinessTargets = globalTargets.results ?? [];
+      }
+      const eligibleCount = readinessTargets.filter((target: any) =>
+        Number(target.enabled) === 1 && routeTargetValidated(target) && routeTargetPricingConfigured(target, alias),
+      ).length;
+      if (!eligibleCount) return json({ error: "active_route_requires_enabled_target" }, 400);
+    }
+
     if (targetCustomerId) {
       await env.DB.prepare(
         `INSERT INTO customer_model_routes
@@ -982,7 +1265,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).bind(
         targetCustomerId, alias, provider, providerModel, providerConnectionId,
         fallbackProvider, fallbackModel, fallbackProviderConnectionId,
-        byokPolicy, body.status ?? current.status ?? "active", now, now,
+        byokPolicy, nextStatus, now, now,
       ).run();
     } else {
       await env.DB.prepare(
@@ -992,63 +1275,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).bind(
         provider, providerModel, providerConnectionId,
         fallbackProvider, fallbackModel, fallbackProviderConnectionId,
-        byokPolicy, body.status ?? null, now, alias,
+        byokPolicy, body.status === undefined ? null : nextStatus, now, alias,
       ).run();
-    }
-
-    if (Array.isArray(body.targets)) {
-      const scopeKey = targetCustomerId ? `customer:${targetCustomerId}:${alias}` : `global:${alias}`;
-      const sanitizedTargets = body.targets.slice(0, 10).map((target: any, index: number) => ({
-        position: index,
-        provider: requiredString(target.provider, "target.provider"),
-        providerModel: requiredString(target.providerModel, "target.providerModel"),
-        providerConnectionId: target.providerConnectionId ? String(target.providerConnectionId) : null,
-        enabled: target.enabled === false ? 0 : 1,
-        inputCreditsPerMillion: creditAtomsFromMkredits(target.inputCreditsPerMillion),
-        outputCreditsPerMillion: creditAtomsFromMkredits(target.outputCreditsPerMillion),
-        imageCredits: creditAtomsFromMkredits(target.imageCredits),
-        audioCreditsPerMinute: creditAtomsFromMkredits(target.audioCreditsPerMinute),
-        providerInputCostMicrosPerMillion: positiveInt(target.providerInputCostMicrosPerMillion, 0),
-        providerOutputCostMicrosPerMillion: positiveInt(target.providerOutputCostMicrosPerMillion, 0),
-        providerImageCostMicros: positiveInt(target.providerImageCostMicros, 0),
-        providerAudioCostMicrosPerMinute: positiveInt(target.providerAudioCostMicrosPerMinute, 0),
-      }));
-      if (!sanitizedTargets.length || !sanitizedTargets.some((target: any) => target.enabled)) {
-        return json({ error: "at_least_one_enabled_model_target_required" }, 400);
-      }
-      for (const target of sanitizedTargets) {
-        if (!["workers-ai","mkety-managed"].includes(target.provider)) {
-          if (!target.providerConnectionId) return json({ error: "target_provider_connection_required" }, 400);
-          const connection = await env.DB.prepare(
-            "SELECT provider,status,validated_at,ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
-          ).bind(target.providerConnectionId).first<any>();
-          if (!connection || connection.provider !== target.provider || connection.status !== "active" || !connection.validated_at) {
-            return json({ error: "target_provider_connection_unvalidated_or_mismatch" }, 400);
-          }
-          if (connection.ownership === "customer" && (!targetCustomerId || connection.customer_id !== targetCustomerId)) {
-            return json({ error: "customer_target_requires_matching_tenant_route" }, 400);
-          }
-        }
-      }
-      const statements: D1PreparedStatement[] = [
-        env.DB.prepare("DELETE FROM model_route_targets WHERE scope_key=?").bind(scopeKey),
-      ];
-      for (const target of sanitizedTargets) {
-        statements.push(env.DB.prepare(
-          `INSERT INTO model_route_targets
-           (scope_key,customer_id,alias,position,provider,provider_model,provider_connection_id,enabled,
-            input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute,
-            provider_input_cost_micros_per_million,provider_output_cost_micros_per_million,
-            provider_image_cost_micros,provider_audio_cost_micros_per_minute,created_at,updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ).bind(
-          scopeKey,targetCustomerId,alias,target.position,target.provider,target.providerModel,target.providerConnectionId,target.enabled,
-          target.inputCreditsPerMillion,target.outputCreditsPerMillion,target.imageCredits,target.audioCreditsPerMinute,
-          target.providerInputCostMicrosPerMillion,target.providerOutputCostMicrosPerMillion,
-          target.providerImageCostMicros,target.providerAudioCostMicrosPerMinute,now,now,
-        ));
-      }
-      await env.DB.batch(statements);
     }
 
     const runtimeLimitFields = [
@@ -3066,7 +3294,7 @@ function calculateCommercialPlan(input: {
 
 function publicCreditFields<T extends Record<string, any>>(row: T): T {
   const out: any = { ...row };
-  for (const key of ["input_credits_per_million","output_credits_per_million","image_credits","audio_credits_per_minute"]) {
+  for (const key of ["input_credits_per_million","output_credits_per_million","image_credits","audio_credits_per_minute","reasoning_credits_per_million"]) {
     if (key in out) out[key] = mkreditsFromCreditAtoms(out[key]);
   }
   return out;

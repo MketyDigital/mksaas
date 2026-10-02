@@ -21,6 +21,9 @@ const html = renderOperatorPortal([]);
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!match) throw new Error("Operator page script not found");
 const script = match[1];
+for (const marker of ["data-route-status", "Pause alias", "Resume alias", "Media readiness", "validated, priced target(s)"]) {
+  if (!script.includes(marker)) throw new Error(`Operator model route control missing: ${marker}`);
+}
 
 // Syntax check the exact JavaScript shipped to the browser.
 new Function(script);

@@ -156,7 +156,7 @@ describe('Flutterwave v3 shared payments', () => {
       meta: { source: 'media' },
     });
     expect(body.payload_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(body).not.toHaveProperty('payment_options');
+    expect(body.payment_options).toBe('card,account');
     expect(JSON.stringify(body)).not.toContain('FLWSECK_TEST-private');
   });
 

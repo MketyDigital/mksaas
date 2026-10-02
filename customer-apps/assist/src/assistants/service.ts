@@ -1,3 +1,14 @@
+export type AssistantReasoningMode = "standard" | "high" | "maximum";
+export type AssistantReasoningFallbackPolicy = "allow_lower_effort" | "strict";
+
+export function normalizeReasoningMode(value: unknown): AssistantReasoningMode | null {
+  return value === "standard" || value === "high" || value === "maximum" ? value : null;
+}
+
+export function normalizeReasoningFallbackPolicy(value: unknown): AssistantReasoningFallbackPolicy | null {
+  return value === "allow_lower_effort" || value === "strict" ? value : null;
+}
+
 export async function recordAssistantVersion(
   db: D1Database,
   customerId: string,
@@ -5,7 +16,7 @@ export async function recordAssistantVersion(
   userId: string | null,
 ) {
   const assistant = await db.prepare(
-    "SELECT name,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,current_version,human_delay_enabled,human_delay_min_seconds,human_delay_max_seconds,human_delay_per_char_ms,context_recent_message_limit,context_knowledge_char_budget,context_memory_char_budget FROM assistants WHERE id=? AND customer_id=? AND deleted_at IS NULL LIMIT 1",
+    "SELECT name,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,reasoning_mode,reasoning_fallback_policy,current_version,human_delay_enabled,human_delay_min_seconds,human_delay_max_seconds,human_delay_per_char_ms,context_recent_message_limit,context_knowledge_char_budget,context_memory_char_budget FROM assistants WHERE id=? AND customer_id=? AND deleted_at IS NULL LIMIT 1",
   ).bind(assistantId, customerId).first<any>();
   if (!assistant) throw new Error("assistant_not_found");
   const next = Math.max(1, Number(assistant.current_version || 0) + 1);
@@ -24,6 +35,8 @@ export async function recordAssistantVersion(
         timezone: assistant.timezone,
         memoryEnabled: Boolean(assistant.memory_enabled),
         monthlyCreditCap: assistant.monthly_credit_cap,
+        reasoningMode: assistant.reasoning_mode || "standard",
+        reasoningFallbackPolicy: assistant.reasoning_fallback_policy || "allow_lower_effort",
         automationPaused: Boolean(assistant.automation_paused),
         humanDelayEnabled: Boolean(assistant.human_delay_enabled),
         humanDelayMinSeconds: assistant.human_delay_min_seconds,
@@ -91,6 +104,7 @@ export async function rollbackAssistantVersion(
   const cfg = JSON.parse(row.config_json || "{}");
   await db.prepare(
     `UPDATE assistants SET name=?,status=?,model_alias=?,timezone=?,memory_enabled=?,monthly_credit_cap=?,automation_paused=?,
+       reasoning_mode=?,reasoning_fallback_policy=?,
        human_delay_enabled=?,human_delay_min_seconds=?,human_delay_max_seconds=?,human_delay_per_char_ms=?,
        context_recent_message_limit=?,context_knowledge_char_budget=?,context_memory_char_budget=?,updated_at=unixepoch()
      WHERE id=? AND customer_id=? AND deleted_at IS NULL`,
@@ -102,6 +116,8 @@ export async function rollbackAssistantVersion(
     cfg.memoryEnabled === false ? 0 : 1,
     cfg.monthlyCreditCap == null ? null : Number(cfg.monthlyCreditCap),
     cfg.automationPaused ? 1 : 0,
+    normalizeReasoningMode(cfg.reasoningMode) || "standard",
+    normalizeReasoningFallbackPolicy(cfg.reasoningFallbackPolicy) || "allow_lower_effort",
     cfg.humanDelayEnabled === false ? 0 : 1,
     Number(cfg.humanDelayMinSeconds ?? 3),
     Number(cfg.humanDelayMaxSeconds ?? 12),

@@ -8,8 +8,10 @@ export function ceilDiv(numerator: number, denominator: number) {
 export function calculateInferenceCredits(input: {
   inputUnits: number;
   outputUnits: number;
+  reasoningUnits?: number;
   inputCreditsPerMillion: number;
   outputCreditsPerMillion: number;
+  reasoningCreditsPerMillion?: number | null;
   imageCount?: number;
   imageCredits?: number;
   audioSeconds?: number;
@@ -17,11 +19,17 @@ export function calculateInferenceCredits(input: {
 }) {
   const inputCredits = ceilDiv(input.inputUnits * input.inputCreditsPerMillion, 1_000_000);
   const outputCredits = ceilDiv(input.outputUnits * input.outputCreditsPerMillion, 1_000_000);
+  const reasoningUnits = input.reasoningUnits ?? 0;
+  // Provider reasoning token counters are normally a subset of output tokens. Add
+  // a second charge only when an operator configured a distinct reasoning class.
+  const reasoningCredits = input.reasoningCreditsPerMillion == null
+    ? 0
+    : ceilDiv(reasoningUnits * input.reasoningCreditsPerMillion, 1_000_000);
   const images = (input.imageCount ?? 0) * (input.imageCredits ?? 0);
   const audio = input.audioSeconds
     ? ceilDiv(input.audioSeconds * (input.audioCreditsPerMinute ?? 0), 60)
     : 0;
-  return Math.max(1, inputCredits + outputCredits + images + audio);
+  return Math.max(1, inputCredits + outputCredits + reasoningCredits + images + audio);
 }
 
 export function customerUsageProjection(input: {
