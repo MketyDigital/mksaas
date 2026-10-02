@@ -39,8 +39,47 @@ export class SettlementJournal implements Rpc.DurableObjectBranded {
     this.state = state;
   }
 
-  async fetch(): Promise<Response> {
-    return new Response("not_found", { status: 404 });
+  async fetch(request: Request): Promise<Response> {
+    if (request.method !== "POST") return new Response("not_found", { status: 404 });
+    try {
+      const payload = await request.json() as { method?: string; args?: unknown[] };
+      const args = Array.isArray(payload.args) ? payload.args : [];
+      let result: unknown;
+      switch (String(payload.method || "")) {
+        case "recordAttemptStarted":
+          result = await this.recordAttemptStarted(args[0] as ProviderAttemptStarted);
+          break;
+        case "claimAttempt":
+          result = await this.claimAttempt(args[0] as ProviderAttemptStarted);
+          break;
+        case "recordAttemptResult":
+          result = await this.recordAttemptResult(args[0] as JournalIdentity & { attemptId: string }, args[1] as ProviderAttemptResult);
+          break;
+        case "markAttemptUnknown":
+          result = await this.markAttemptUnknown(args[0] as JournalIdentity & { attemptId: string });
+          break;
+        case "markAttemptNotSubmitted":
+          result = await this.markAttemptNotSubmitted(args[0] as JournalIdentity & { attemptId: string });
+          break;
+        case "getAttempt":
+          result = await this.getAttempt(args[0] as JournalIdentity & { attemptId: string });
+          break;
+        case "resolveAttempt":
+          result = await this.resolveAttempt(args[0] as JournalIdentity & { attemptId: string; outcome: "confirmed_not_submitted" });
+          break;
+        case "markAttemptSettled":
+          result = await this.markAttemptSettled(args[0] as JournalIdentity & { attemptId: string; settlementId: string });
+          break;
+        default:
+          return Response.json({ ok: false, error: "journal_method_not_found" }, { status: 404 });
+      }
+      return Response.json({ ok: true, result: result ?? null });
+    } catch (error) {
+      return Response.json({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }, { status: 500 });
+    }
   }
 
   async recordAttemptStarted(input: ProviderAttemptStarted): Promise<JournalAttempt> {
@@ -174,7 +213,37 @@ export function attemptIdFor(replyJobId: string, reservationId: string, ordinal:
   return `${replyJobId}:${reservationId}:${Math.max(0, Math.trunc(ordinal))}`;
 }
 
-export function settlementJournalStub(namespace: DurableObjectNamespace<SettlementJournal>, customerId: string, assistantId: string) {
+type SettlementJournalClient = Pick<
+  SettlementJournal,
+  "recordAttemptStarted" | "claimAttempt" | "recordAttemptResult" | "markAttemptUnknown" |
+  "markAttemptNotSubmitted" | "getAttempt" | "resolveAttempt" | "markAttemptSettled"
+>;
+
+export function settlementJournalStub(
+  namespace: DurableObjectNamespace<SettlementJournal>,
+  customerId: string,
+  assistantId: string,
+): SettlementJournalClient {
   const name = `${customerId}:${assistantId}`;
-  return namespace.get(namespace.idFromName(name)) as DurableObjectStub<SettlementJournal>;
+  const stub = namespace.get(namespace.idFromName(name));
+  const call = async <T>(method: string, ...args: unknown[]): Promise<T> => {
+    const response = await stub.fetch("https://settlement-journal.internal/rpc", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method, args }),
+    });
+    const payload = await response.json() as { ok?: boolean; result?: T; error?: string };
+    if (!response.ok || payload.ok !== true) throw new Error(String(payload.error || `settlement_journal_http_${response.status}`));
+    return payload.result as T;
+  };
+  return {
+    recordAttemptStarted: (input) => call("recordAttemptStarted", input),
+    claimAttempt: (input) => call("claimAttempt", input),
+    recordAttemptResult: (identity, result) => call("recordAttemptResult", identity, result),
+    markAttemptUnknown: (identity) => call("markAttemptUnknown", identity),
+    markAttemptNotSubmitted: (identity) => call("markAttemptNotSubmitted", identity),
+    getAttempt: (identity) => call("getAttempt", identity),
+    resolveAttempt: (identity) => call("resolveAttempt", identity),
+    markAttemptSettled: (identity) => call("markAttemptSettled", identity),
+  };
 }
