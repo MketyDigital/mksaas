@@ -2302,8 +2302,31 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   const maxTokens = parseInt(String(input.max_tokens || 1024), 10);
   const temperature = typeof input.temperature === "number" ? input.temperature : 0.4;
 
-  if (provider === "openai" || provider === "openai-compatible") {
-    const base = String(connection.endpoint_url || (provider === "openai" ? "https://api.openai.com/v1" : "")).replace(/\/$/, "");
+  if (provider === "openai") {
+    const base = String(connection.endpoint_url || "https://api.openai.com/v1").replace(/\/$/, "");
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const response = await fetch(`${base}/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        instructions: systemText || undefined,
+        input: messages.filter((m: any) => m.role !== "system").map((m: any) => ({ role: m.role, content: String(m.content || "") })),
+        max_output_tokens: maxTokens,
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    const output = Array.isArray(payload?.output) ? payload.output : [];
+    return {
+      response: typeof payload?.output_text === "string" ? payload.output_text : output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : []).map((part: any) => typeof part?.text === "string" ? part.text : "").join(""),
+      usage: payload?.usage,
+      raw: payload,
+    };
+  }
+
+  if (provider === "openai-compatible") {
+    const base = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!base) throw new Error("OpenAI-compatible endpoint is missing.");
     const response = await fetch(`${base}/chat/completions`, {
       method: "POST",
@@ -2390,14 +2413,15 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
     const endpoint = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
     const url = /\/openai\/v1\/responses$/i.test(endpoint) ? endpoint : `${endpoint}/openai/v1/responses`;
-    const inputItems = messages.map((m: any) => ({
-      role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
+    const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
+    const inputItems = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
       content: String(m.content || ""),
     }));
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ model, input: inputItems, max_output_tokens: maxTokens, temperature }),
+      body: JSON.stringify({ model, instructions: systemText || undefined, input: inputItems, max_output_tokens: maxTokens }),
     });
     const payload = await response.json<any>();
     if (!response.ok) throw providerHttpError(response, payload);
