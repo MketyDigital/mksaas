@@ -1597,10 +1597,9 @@ async function runAssistant(input: {
   }
 
   const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
-  const baseInputCredits = parseFloat(String(rate.input_credits_per_million || 0));
-  const baseOutputCredits = parseFloat(String(rate.output_credits_per_million || 0));
-  const effectiveInputCredits = Math.ceil(baseInputCredits * multiplierBps / 10000);
-  const effectiveOutputCredits = Math.ceil(baseOutputCredits * multiplierBps / 10000);
+  const envelopeRate = await resolveRouteCommercialEnvelope(env.DB, route, rate, multiplierBps);
+  const effectiveInputCredits = envelopeRate.inputCredits;
+  const effectiveOutputCredits = envelopeRate.outputCredits;
   const effectiveImageCredits = Math.ceil(parseFloat(String(rate.image_credits || 0)) * multiplierBps / 10000);
   const effectiveAudioCreditsPerMinute = Math.ceil(parseFloat(String(rate.audio_credits_per_minute || 0)) * multiplierBps / 10000);
   const mediaCredits = input.imageCount * effectiveImageCredits
@@ -1612,8 +1611,8 @@ async function runAssistant(input: {
   const mediaProviderCostMicros = input.imageCount * parseFloat(String(rate.provider_image_cost_micros || 0))
     + Math.ceil((input.audioSeconds / 60) * parseFloat(String(rate.provider_audio_cost_micros_per_minute || 0)));
   const estimatedProviderCostMicros = Math.max(0, Math.ceil(
-    (estimatedInputTokens * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-      + maxOutputTokens * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
+    (estimatedInputTokens * envelopeRate.providerInputCost
+      + maxOutputTokens * envelopeRate.providerOutputCost) / 1_000_000
       + mediaProviderCostMicros,
   ));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
@@ -1661,12 +1660,13 @@ async function runAssistant(input: {
 
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
+    const actualRate = resolveActualResultRates(result, rate, multiplierBps);
     const actualCredits = Math.max(1,
-      Math.ceil((usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000) + mediaCredits,
+      Math.ceil((usage.input * actualRate.inputCredits + usage.output * actualRate.outputCredits) / 1_000_000) + mediaCredits,
     );
     const providerCostMicros = Math.max(0, Math.ceil(
-      (usage.input * parseFloat(String(rate.provider_input_cost_micros_per_million || 0))
-        + usage.output * parseFloat(String(rate.provider_output_cost_micros_per_million || 0))) / 1_000_000
+      (usage.input * actualRate.providerInputCost
+        + usage.output * actualRate.providerOutputCost) / 1_000_000
         + mediaProviderCostMicros,
     ));
     await settleReservation(env.DB, reservation.id, assistant.customer_id, assistant.id, reserveAmount, actualCredits, {
@@ -1782,14 +1782,13 @@ export async function handleApiKeyInference(
   }
 
   const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
-  const effectiveInputCredits = Math.ceil(Number(rate.input_credits_per_million || 0) * multiplierBps / 10000);
-  const effectiveOutputCredits = Math.ceil(Number(rate.output_credits_per_million || 0) * multiplierBps / 10000);
+  const envelopeRate = await resolveRouteCommercialEnvelope(env.DB, route, rate, multiplierBps);
   const reserveAmount = Math.max(1, Math.ceil(
-    (estimatedInputTokens * effectiveInputCredits + maxOutputTokens * effectiveOutputCredits) / 1_000_000,
+    (estimatedInputTokens * envelopeRate.inputCredits + maxOutputTokens * envelopeRate.outputCredits) / 1_000_000,
   ));
   const estimatedProviderCostMicros = Math.max(0, Math.ceil(
-    (estimatedInputTokens * Number(rate.provider_input_cost_micros_per_million || 0)
-      + maxOutputTokens * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+    (estimatedInputTokens * envelopeRate.providerInputCost
+      + maxOutputTokens * envelopeRate.providerOutputCost) / 1_000_000,
   ));
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
     return json({ error: { message: "usage_limit_reached" } }, 402);
@@ -1807,12 +1806,13 @@ export async function handleApiKeyInference(
     const text = extractAiText(result);
     if (!text) throw new Error("empty model response");
     const usage = extractUsage(result, estimatedInputTokens, text);
+    const actualRate = resolveActualResultRates(result, rate, multiplierBps);
     const actualCredits = Math.max(1, Math.ceil(
-      (usage.input * effectiveInputCredits + usage.output * effectiveOutputCredits) / 1_000_000,
+      (usage.input * actualRate.inputCredits + usage.output * actualRate.outputCredits) / 1_000_000,
     ));
     const providerCostMicros = Math.max(0, Math.ceil(
-      (usage.input * Number(rate.provider_input_cost_micros_per_million || 0)
-        + usage.output * Number(rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
+      (usage.input * actualRate.providerInputCost
+        + usage.output * actualRate.providerOutputCost) / 1_000_000,
     ));
     await settleReservation(env.DB, reservation.id, customer.customerId, assistantId, reserveAmount, actualCredits, {
       modelAlias: alias,
@@ -2059,6 +2059,53 @@ async function retrieveKnowledge(
   return values;
 }
 
+async function resolveRouteCommercialEnvelope(
+  db: D1Database,
+  route: any,
+  aliasRate: any,
+  multiplierBps: number,
+) {
+  let inputCredits = Math.ceil(Number(aliasRate.input_credits_per_million || 0) * multiplierBps / 10000);
+  let outputCredits = Math.ceil(Number(aliasRate.output_credits_per_million || 0) * multiplierBps / 10000);
+  let providerInputCost = Number(aliasRate.provider_input_cost_micros_per_million || 0);
+  let providerOutputCost = Number(aliasRate.provider_output_cost_micros_per_million || 0);
+
+  const ids = [route?.provider_connection_id, route?.fallback_provider_connection_id].filter(Boolean).map(String);
+  const fallbackRows = await db.prepare(
+    `SELECT id,input_credits_per_million,output_credits_per_million,
+            provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
+     FROM provider_connections
+     WHERE (
+       (ownership='mkety' AND status='active' AND validated_at IS NOT NULL AND fallback_enabled=1)
+       OR id IN (?,?)
+     )`,
+  ).bind(ids[0] || "", ids[1] || "").all<any>();
+
+  for (const row of fallbackRows.results ?? []) {
+    const rowInput = Math.ceil(Number(row.input_credits_per_million || 0) * multiplierBps / 10000);
+    const rowOutput = Math.ceil(Number(row.output_credits_per_million || 0) * multiplierBps / 10000);
+    if (rowInput > 0) inputCredits = Math.max(inputCredits, rowInput);
+    if (rowOutput > 0) outputCredits = Math.max(outputCredits, rowOutput);
+    providerInputCost = Math.max(providerInputCost, Number(row.provider_input_cost_micros_per_million || 0));
+    providerOutputCost = Math.max(providerOutputCost, Number(row.provider_output_cost_micros_per_million || 0));
+  }
+
+  return { inputCredits, outputCredits, providerInputCost, providerOutputCost };
+}
+
+function resolveActualResultRates(result: any, aliasRate: any, multiplierBps: number) {
+  const routedInput = Number(result?.__mketyInputCreditsPerMillion || 0);
+  const routedOutput = Number(result?.__mketyOutputCreditsPerMillion || 0);
+  const routedProviderInput = Number(result?.__mketyProviderInputCostMicrosPerMillion || 0);
+  const routedProviderOutput = Number(result?.__mketyProviderOutputCostMicrosPerMillion || 0);
+  return {
+    inputCredits: Math.ceil((routedInput > 0 ? routedInput : Number(aliasRate.input_credits_per_million || 0)) * multiplierBps / 10000),
+    outputCredits: Math.ceil((routedOutput > 0 ? routedOutput : Number(aliasRate.output_credits_per_million || 0)) * multiplierBps / 10000),
+    providerInputCost: routedProviderInput > 0 ? routedProviderInput : Number(aliasRate.provider_input_cost_micros_per_million || 0),
+    providerOutputCost: routedProviderOutput > 0 ? routedProviderOutput : Number(aliasRate.provider_output_cost_micros_per_million || 0),
+  };
+}
+
 async function reserveCredits(db: D1Database, customerId: string, assistantId: string, credits: number) {
   const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=? AND customer_id=?").bind(assistantId, customerId).first<any>();
   if (limit?.monthly_credit_cap) {
@@ -2181,7 +2228,15 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
   const estimatedTokens = Math.max(1, Math.ceil(inputChars / 4) + Number(input?.max_tokens || 0));
   const alias = String(route.alias || route.provider_model || route.provider || "unknown");
 
-  const candidates: Array<{ provider: string; provider_model: string; provider_connection_id?: string | null }> = [{
+  const candidates: Array<{
+    provider: string;
+    provider_model: string;
+    provider_connection_id?: string | null;
+    input_credits_per_million?: number;
+    output_credits_per_million?: number;
+    provider_input_cost_micros_per_million?: number;
+    provider_output_cost_micros_per_million?: number;
+  }> = [{
     provider: String(route.provider),
     provider_model: String(route.provider_model),
     provider_connection_id: route.provider_connection_id ? String(route.provider_connection_id) : null,
@@ -2196,7 +2251,8 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
   }
 
   const managedFallbacks = await env.DB.prepare(
-    `SELECT id,provider,extra_json
+    `SELECT id,provider,extra_json,input_credits_per_million,output_credits_per_million,
+            provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
      FROM provider_connections
      WHERE ownership='mkety' AND status='active' AND validated_at IS NOT NULL
        AND fallback_enabled=1
@@ -2212,6 +2268,10 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
       provider: String(connection.provider),
       provider_model: model,
       provider_connection_id: String(connection.id),
+      input_credits_per_million: Number(connection.input_credits_per_million || 0),
+      output_credits_per_million: Number(connection.output_credits_per_million || 0),
+      provider_input_cost_micros_per_million: Number(connection.provider_input_cost_micros_per_million || 0),
+      provider_output_cost_micros_per_million: Number(connection.provider_output_cost_micros_per_million || 0),
     });
   }
 
@@ -2236,9 +2296,17 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
     const candidate = ordered[index];
     const ownership = candidate.provider_connection_id
       ? await env.DB.prepare(
-          "SELECT ownership,customer_id FROM provider_connections WHERE id=? LIMIT 1",
+          `SELECT ownership,customer_id,input_credits_per_million,output_credits_per_million,
+                  provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
+           FROM provider_connections WHERE id=? LIMIT 1`,
         ).bind(candidate.provider_connection_id).first<any>()
       : null;
+    if (ownership) {
+      candidate.input_credits_per_million = Number(ownership.input_credits_per_million || candidate.input_credits_per_million || 0);
+      candidate.output_credits_per_million = Number(ownership.output_credits_per_million || candidate.output_credits_per_million || 0);
+      candidate.provider_input_cost_micros_per_million = Number(ownership.provider_input_cost_micros_per_million || candidate.provider_input_cost_micros_per_million || 0);
+      candidate.provider_output_cost_micros_per_million = Number(ownership.provider_output_cost_micros_per_million || candidate.provider_output_cost_micros_per_million || 0);
+    }
 
     if (ownership?.ownership === "customer" && ownership.customer_id !== customerId) {
       const error = new Error("Customer BYOK provider scope mismatch.");
@@ -2279,7 +2347,7 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
           priorityIndex: index,
         });
       }
-      return annotateProviderResult(result, candidate.provider, candidate.provider_model);
+      return annotateProviderResult(result, candidate.provider, candidate.provider_model, candidate);
     } catch (error) {
       if (index === 0) firstError = error;
       lastError = error;
@@ -2297,11 +2365,29 @@ async function invokeRoutedModel(env: AssistEnv, route: any, input: any, custome
   throw lastError ?? firstError ?? new Error("No enabled provider route could serve this request.");
 }
 
-function annotateProviderResult(result: any, provider: string, model: string) {
+function annotateProviderResult(
+  result: any,
+  provider: string,
+  model: string,
+  rate?: {
+    input_credits_per_million?: number;
+    output_credits_per_million?: number;
+    provider_input_cost_micros_per_million?: number;
+    provider_output_cost_micros_per_million?: number;
+  },
+) {
+  const metadata = {
+    __mketyProvider: provider,
+    __mketyProviderModel: model,
+    __mketyInputCreditsPerMillion: Math.max(0, Number(rate?.input_credits_per_million || 0)),
+    __mketyOutputCreditsPerMillion: Math.max(0, Number(rate?.output_credits_per_million || 0)),
+    __mketyProviderInputCostMicrosPerMillion: Math.max(0, Number(rate?.provider_input_cost_micros_per_million || 0)),
+    __mketyProviderOutputCostMicrosPerMillion: Math.max(0, Number(rate?.provider_output_cost_micros_per_million || 0)),
+  };
   if (result && typeof result === "object" && !Array.isArray(result)) {
-    return { ...result, __mketyProvider: provider, __mketyProviderModel: model };
+    return { ...result, ...metadata };
   }
-  return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model };
+  return { response: String(result ?? ""), ...metadata };
 }
 
 function utf8(value: string | Uint8Array) {
