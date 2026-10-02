@@ -113,6 +113,27 @@ export async function quoteFlutterwaveCollection(input: {
   throw new Error(`Mkety checkout FX rate is not configured for ${input.collectionCurrency}.`);
 }
 
+export function getFlutterwavePaymentOptions(currency: string): string {
+  const code = currency.toUpperCase();
+  const map: Record<string,string> = {
+    NGN: "card,ussd,banktransfer,account,internetbanking,nqr,enaira,opay",
+    GHS: "card,mobilemoneyghana,banktransfer",
+    KES: "card,mpesa",
+    ZAR: "card,account",
+    UGX: "card,mobilemoneyuganda",
+    RWF: "card,mobilemoneyrwanda",
+    TZS: "card,mobilemoneytanzania",
+    MWK: "card,mobilemoneymalawi",
+    EGP: "card,fawrypay",
+    XAF: "card,mobilemoneyxaf",
+    XOF: "card,mobilemoneyxof",
+    GBP: "card,account",
+    EUR: "card,account",
+    USD: "card,account",
+  };
+  return map[code] || "card";
+}
+
 export async function createFlutterwaveInlinePayload(input: {
   reference: string;
   amountMinor: bigint;
@@ -143,6 +164,8 @@ export async function createFlutterwaveInlinePayload(input: {
     redirectPath: input.redirectPath,
     metadata: input.metadata,
     payloadHash,
+    paymentOptions: getFlutterwavePaymentOptions(input.currency),
+    bankTransferOptions: input.currency.toUpperCase() === "NGN" ? { expires: 3600 } : undefined,
   };
 }
 
@@ -176,6 +199,8 @@ export async function createFlutterwaveHostedCheckout(input: {
       currency: input.currency,
       payload_hash: payloadHash,
       redirect_url: input.redirectUrl,
+      payment_options: getFlutterwavePaymentOptions(input.currency),
+      ...(input.currency.toUpperCase() === "NGN" ? { bank_transfer_options: { expires: 3600 } } : {}),
       customer: { email: input.email, ...(input.customerName ? { name: input.customerName } : {}) },
       customizations: {
         title: input.source === 'media' ? 'Mkety Media' : input.source === 'assist' ? 'Mkety Assist' : 'Mkety',
