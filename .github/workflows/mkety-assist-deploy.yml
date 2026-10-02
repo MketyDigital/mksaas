@@ -271,15 +271,38 @@ jobs:
         id: context_kv
         env:
           ACCOUNT_ID: ${{ steps.cloudflare.outputs.account_id }}
-          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
         shell: bash
         run: |
           set -euo pipefail
-          token="$CLOUDFLARE_API_TOKEN"
-          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
-          namespaces="$(curl --fail-with-body --silent --show-error \
-            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/storage/kv/namespaces?per_page=1000" \
-            -H "Authorization: Bearer $token")"
+
+          probe_kv() {
+            local token="$1"
+            local output="$2"
+            curl --silent --show-error --output "$output" --write-out '%{http_code}' \
+              "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/storage/kv/namespaces?per_page=1000" \
+              -H "Authorization: Bearer $token" || true
+          }
+
+          token=""
+          namespaces=""
+          primary_code="$(probe_kv "$CLOUDFLARE_API_TOKEN" /tmp/assist-kv-primary.json)"
+          if [ "$primary_code" = "200" ]; then
+            token="$CLOUDFLARE_API_TOKEN"
+            namespaces="$(cat /tmp/assist-kv-primary.json)"
+          elif [ -n "${MKETY_ASSIST_CF_SAAS_TOKEN:-}" ]; then
+            saas_code="$(probe_kv "$MKETY_ASSIST_CF_SAAS_TOKEN" /tmp/assist-kv-saas.json)"
+            if [ "$saas_code" = "200" ]; then
+              token="$MKETY_ASSIST_CF_SAAS_TOKEN"
+              namespaces="$(cat /tmp/assist-kv-saas.json)"
+            else
+              echo "::error::Neither configured Cloudflare token can access Workers KV (primary HTTP $primary_code, Assist SaaS HTTP $saas_code)."
+              exit 1
+            fi
+          else
+            echo "::error::Configured Cloudflare token cannot access Workers KV (HTTP $primary_code), and no Assist SaaS token is available."
+            exit 1
+          fi
+
           namespace_id="$(NAMESPACES="$namespaces" node - <<'NODE'
           const v=JSON.parse(process.env.NAMESPACES||'{}');
           if(!v.success) throw new Error(JSON.stringify(v.errors||v));
