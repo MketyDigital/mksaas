@@ -2282,6 +2282,22 @@ function annotateProviderResult(result: any, provider: string, model: string, ta
   return { response: String(result ?? ""), __mketyProvider: provider, __mketyProviderModel: model, __mketyTargetRate: targetRate };
 }
 
+function utf8Bytes(value: string | Uint8Array) {
+  return typeof value === "string" ? encoder.encode(value) : value;
+}
+
+async function digestSha256(value: string | Uint8Array) {
+  const data = utf8Bytes(value);
+  return new Uint8Array(await crypto.subtle.digest(
+    "SHA-256",
+    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
+  ));
+}
+
+function hex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function invokeProviderModel(env: AssistEnv, route: any, input: any, customerId: string): Promise<any> {
   const provider = String(route.provider || "");
   if (provider === "workers-ai" || provider === "mkety-managed") {
