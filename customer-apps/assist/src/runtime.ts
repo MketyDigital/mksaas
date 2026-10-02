@@ -35,7 +35,7 @@ type AiBinding = {
 
 type AssistEnv = {
   DB: D1Database;
-  CONTEXT_CACHE: KVNamespace;
+  CONTEXT_CACHE?: KVNamespace;
   AI: AiBinding;
   MEDIA: R2Bucket;
   MKETY_ASSIST_SECRET_ENCRYPTION_KEY: string;

@@ -15,7 +15,7 @@ export { SettlementJournal } from "./billing/settlement-journal";
 
 interface Env {
   DB: D1Database;
-  CONTEXT_CACHE: KVNamespace;
+  CONTEXT_CACHE?: KVNamespace;
   SETTLEMENT_JOURNAL: DurableObjectNamespace<SettlementJournal>;
   AI: {
     run(model: string, input: unknown): Promise<any>;
