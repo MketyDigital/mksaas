@@ -1682,16 +1682,19 @@ async function runAssistant(input: {
 
   const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
   const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
-  const reserveAmount = Math.max(1, routeRates.reduce((sum: number, target: any) => {
+  const maxRoutedCalls = 3;
+  const singleCallReserve = routeRates.reduce((sum: number, target: any) => {
     const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
     const outputRate = Math.ceil(Number(target?.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
     return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * outputRate) / 1_000_000);
-  }, 0));
+  }, 0);
+  const reserveAmount = Math.max(1, singleCallReserve * maxRoutedCalls);
 
-  const estimatedProviderCostMicros = Math.max(0, routeRates.reduce((sum: number, target: any) => sum + Math.ceil(
+  const singleCallProviderCostMicros = Math.max(0, routeRates.reduce((sum: number, target: any) => sum + Math.ceil(
     (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
       + maxOutputTokens * Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000,
   ), 0));
+  const estimatedProviderCostMicros = singleCallProviderCostMicros * maxRoutedCalls;
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,
     assistant.customer_id,
@@ -1704,6 +1707,7 @@ async function runAssistant(input: {
   const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount);
   if (!reservation) return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
 
+  const completedAttempts: any[] = [];
   try {
     const aiInput = {
       messages: [
@@ -1718,6 +1722,8 @@ async function runAssistant(input: {
     let text = extractAiText(result);
 
     if (text && modelResponseWasTruncated(result)) {
+      completedAttempts.push(...(Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : []));
+      completedAttempts.push(routedResultAttempt(result, estimatedInputTokens, text));
       const continuation = await invokeRoutedModel(env, route, {
         messages: [
           ...aiInput.messages,
@@ -1738,6 +1744,8 @@ async function runAssistant(input: {
     if (toolCall) {
       const tool = (tools.results ?? []).find((t: any) => t.name === toolCall.tool);
       if (tool) {
+        completedAttempts.push(...(Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : []));
+        completedAttempts.push(routedResultAttempt(result, estimatedInputTokens, text));
         const toolResult = await invokeTool(env, tool, toolCall.arguments);
         result = await invokeRoutedModel(env, route, {
           messages: [
@@ -1762,7 +1770,10 @@ async function runAssistant(input: {
       (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
         + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)) / 1_000_000
     ));
-    const priorAttempts = Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : [];
+    const priorAttempts = [
+      ...completedAttempts,
+      ...(Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : []),
+    ];
     const priorEconomics = priorAttempts.map((attempt: any) => ({
       attempt,
       ...modelAttemptEconomics(attempt, multiplierBps),
@@ -1791,7 +1802,10 @@ async function runAssistant(input: {
     return { ok: true as const, text };
   } catch (error) {
     console.error("assistant inference failed", error);
-    const priorAttempts = Array.isArray((error as any)?.__mketyPriorAttempts) ? (error as any).__mketyPriorAttempts : [];
+    const priorAttempts = [
+      ...completedAttempts,
+      ...(Array.isArray((error as any)?.__mketyPriorAttempts) ? (error as any).__mketyPriorAttempts : []),
+    ];
     const priorEconomics = priorAttempts.map((attempt: any) => ({
       attempt,
       ...modelAttemptEconomics(attempt, multiplierBps),
@@ -3501,6 +3515,18 @@ function extractAiText(result: any) {
     if (nested) return nested;
   }
   return "";
+}
+
+function routedResultAttempt(result: any, estimatedInputTokens: number, text: string) {
+  const usage = extractUsage(result, estimatedInputTokens, text);
+  return {
+    provider: String(result?.__mketyProvider || "unknown"),
+    providerModel: String(result?.__mketyProviderModel || "unknown"),
+    inputUnits: usage.input,
+    outputUnits: usage.output,
+    targetRate: result?.__mketyTargetRate || {},
+    reason: "completed_intermediate_call",
+  };
 }
 
 function modelAttemptEconomics(attempt: any, multiplierBps: number) {
