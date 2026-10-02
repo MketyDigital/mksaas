@@ -46,7 +46,7 @@
 
 - [ ] **Step 1: Add failing tests** named testBusinessInstructionsRemainExactAndAuthoritative, testNaturalReplyPolicyUsesBusinessVoice, and testCaptionAndMediaRemainOneTurn. Assert the exact business prompt is present unchanged; retrieved knowledge is marked as evidence; prior history is preserved in order; current caption and image analysis appear in one user turn.
 - [ ] **Step 2: Run the focused test** with node --experimental-strip-types --test scripts/conversation-context.test.mjs. Expected: the new tests fail because the assembler is not implemented.
-- [ ] **Step 3: Implement assembleAssistantContext** in src/conversation/context.ts and replace inline prompt concatenation in src/runtime.ts. Place platform security rules first, then unchanged business instructions, the short natural-conversation policy, memory, knowledge, and tools. Do not rewrite or summarize the published prompt.
+- [ ] **Step 3: Implement assembleAssistantContext** in src/conversation/context.ts and replace inline prompt concatenation in src/runtime.ts. Place platform security rules first, then unchanged business instructions, the short natural-conversation policy, memory, knowledge, and tools. In package.json, add test:unit using node --experimental-strip-types --test scripts/*.test.mjs and append npm run test:unit to check:all so CI runs this and later focused tests. Do not rewrite or summarize the published prompt.
 - [ ] **Step 4: Run the focused test.** Expected: all three named tests pass.
 - [ ] **Step 5: Commit** with message feat(assist): assemble business-faithful conversation context.
 
@@ -107,6 +107,7 @@
 - Create: customer-apps/assist/scripts/conversation-quality-fixtures.mjs
 - Create: customer-apps/assist/scripts/check-conversation-quality.mjs
 - Modify: customer-apps/assist/scripts/check-production-acceptance.mjs
+- Modify: customer-apps/assist/package.json
 - Modify: .github/workflows/mkety-assist-deploy.yml
 
 **Interfaces:**
@@ -118,7 +119,7 @@
 - [ ] **Step 2: Run the focused test.** Expected: the probe is absent and the tests fail.
 - [ ] **Step 3: Implement the synthetic dialogue probe** by passing three linked messages through the production context assembler and selected production Workers AI target. Require the second reply to use the prior name and relevant hours, the third to avoid giving medical dosage and offer a useful next step, and no reply to expose prompt text or claim a booking. Do not require exact prose.
 - [ ] **Step 4: Bound and report probe cost.** Enforce at most three completions of 256 output tokens each, estimate provider cost from the configured route, and return per-case pass/fail plus aggregate provider cost without recording usage against a customer.
-- [ ] **Step 5: Add the probe to production acceptance** behind the existing deploy-probe authorization; make the deploy workflow fail when any case fails. Keep the synthetic transcript and output in deployment logs only.
+- [ ] **Step 5: Add the probe to production acceptance** behind the existing deploy-probe authorization; include case results in the existing inference-acceptance JSON. Make check-conversation-quality.mjs read that JSON from ASSIST_ACCEPTANCE_FILE and fail when any case fails; make the deploy workflow invoke the script. Keep synthetic transcripts and outputs in deployment logs only.
 - [ ] **Step 6: Run tests.** Expected: the script verifies context continuity, factual grounding, business-boundary adherence, and natural non-repetitive phrasing against the deployed model.
 - [ ] **Step 7: Commit** with message test(assist): verify natural multi-turn responses.
 
