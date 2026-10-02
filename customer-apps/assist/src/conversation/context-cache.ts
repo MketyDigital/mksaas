@@ -13,7 +13,8 @@ export type CacheWrite = CacheIdentity & {
   ttlSeconds: number;
 };
 
-type ContextKV = Pick<KVNamespace, "get" | "put">;\ntype OptionalContextKV = ContextKV | null | undefined;
+type ContextKV = Pick<KVNamespace, "get" | "put">;
+type OptionalContextKV = ContextKV | null | undefined;
 
 function keyPart(value: string): string {
   return encodeURIComponent(String(value || "").trim());
@@ -34,10 +35,11 @@ export function contextCacheKey(input: CacheIdentity): string {
 }
 
 export async function readContextSnapshot(
-  kv: ContextKV,
+  kv: OptionalContextKV,
   key: string,
   sourceVersion: string,
 ): Promise<string | null> {
+  if (!kv) return null;
   try {
     const serialized = await kv.get(key);
     if (!serialized) return null;
@@ -49,7 +51,8 @@ export async function readContextSnapshot(
   }
 }
 
-export async function writeContextSnapshot(kv: OptionalContextKV, input: CacheWrite): Promise<void> {\n  if (!kv) return;
+export async function writeContextSnapshot(kv: OptionalContextKV, input: CacheWrite): Promise<void> {
+  if (!kv) return;
   const maxTtl = input.kind === "published_prompt_tools" ? 900 : 300;
   const requestedTtl = Number(input.ttlSeconds);
   const expirationTtl = Number.isFinite(requestedTtl)
