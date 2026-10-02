@@ -400,6 +400,18 @@ export async function handleRuntimeApi(
     const body = await readJson(request);
     if (body.paused === false) {
       await returnToAi(env.DB, customer.customerId, conversation.assistant_id, parts[2]);
+      const resumedAt = unix();
+      await env.DB.prepare(
+        "UPDATE human_handoffs SET status='resolved',resolved_at=? WHERE conversation_id=? AND customer_id=? AND status='open'",
+      ).bind(resumedAt, parts[2], customer.customerId).run();
+      const queued = await env.DB.prepare(
+        "SELECT id FROM reply_jobs WHERE conversation_id=? AND customer_id=? AND status IN ('pending','retry') ORDER BY created_at DESC,CAST(provider_message_id AS INTEGER) DESC LIMIT 1",
+      ).bind(parts[2], customer.customerId).first<any>();
+      if (queued?.id) {
+        await env.DB.prepare("UPDATE reply_jobs SET due_at=?,last_enqueued_at=?,updated_at=? WHERE id=?")
+          .bind(resumedAt, resumedAt, resumedAt, queued.id).run();
+        await env.REPLY_QUEUE.send({ jobId: String(queued.id) }, { delaySeconds: 0 }).catch(() => undefined);
+      }
     } else {
       await takeOverConversation(env.DB, customer.customerId, conversation.assistant_id, parts[2], session.userId);
     }
@@ -538,9 +550,15 @@ export async function handleRuntimeApi(
     if (!token) return json({ error: "telegram_not_connected" }, 409);
     const sent = await telegramSend(token, handoff.external_conversation_id, text, handoff.business_connection_id ? String(handoff.business_connection_id) : null);
     if (!sent.ok) return json({ error: "telegram_send_failed" }, 502);
-    await env.DB.prepare(
-      "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
-    ).bind(id("msg"), customer.customerId, handoff.assistant_id, handoff.conversation_id, "human", text, unix()).run();
+    const repliedAt = unix();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
+      ).bind(id("msg"), customer.customerId, handoff.assistant_id, handoff.conversation_id, "human", text, repliedAt),
+      env.DB.prepare(
+        "UPDATE reply_jobs SET status='cancelled',last_error='human_manual_reply',completed_at=?,locked_at=NULL,delivery_started_at=NULL,updated_at=? WHERE conversation_id=? AND customer_id=? AND status IN ('pending','retry','processing')",
+      ).bind(repliedAt, repliedAt, handoff.conversation_id, customer.customerId),
+    ]);
     return json({ ok: true });
   }
 
