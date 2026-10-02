@@ -1,5 +1,5 @@
 import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, takeOverConversation } from "./handoff/service";
-import { mayUseFallback } from "./providers/validation";
+import { getVertexAccessToken, mayUseFallback } from "./providers/validation";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
 import {
@@ -2469,8 +2469,41 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   const maxTokens = parseInt(String(input.max_tokens || 1024), 10);
   const temperature = typeof input.temperature === "number" ? input.temperature : 0.4;
 
-  if (provider === "openai" || provider === "openai-compatible") {
-    const base = String(connection.endpoint_url || (provider === "openai" ? "https://api.openai.com/v1" : "")).replace(/\/$/, "");
+  if (provider === "openai") {
+    const base = String(connection.endpoint_url || "https://api.openai.com/v1").replace(/\/$/, "");
+    const response = await fetch(`${base}/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        input: messages.map((message: any) => ({
+          role: message.role === "assistant" ? "assistant" : message.role === "system" ? "system" : "user",
+          content: String(message.content || ""),
+        })),
+        max_output_tokens: maxTokens,
+      }),
+    });
+    const payload = await response.json<any>();
+    if (!response.ok) throw providerHttpError(response, payload);
+    const responseText =
+      String(payload.output_text || "") ||
+      (Array.isArray(payload.output)
+        ? payload.output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+            .map((item: any) => item?.text || item?.content || "")
+            .join("")
+        : "");
+    return {
+      response: responseText,
+      usage: {
+        input_tokens: payload.usage?.input_tokens,
+        output_tokens: payload.usage?.output_tokens,
+      },
+      raw: payload,
+    };
+  }
+
+  if (provider === "openai-compatible") {
+    const base = String(connection.endpoint_url || "").replace(/\/$/, "");
     if (!base) throw new Error("OpenAI-compatible endpoint is missing.");
     const response = await fetch(`${base}/chat/completions`, {
       method: "POST",
@@ -2591,9 +2624,14 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
   }
 
   if (provider === "vertex") {
-    const projectId = String(extra.projectId || "").trim();
+    let credentials: any;
+    try { credentials = JSON.parse(apiKey); } catch { throw new Error("Vertex service-account JSON is invalid."); }
+    const projectId = String(extra.projectId || credentials?.project_id || "").trim();
     const location = String(extra.location || "global").trim();
-    if (!projectId) throw new Error("Vertex projectId is missing.");
+    if (!projectId || !credentials?.client_email || !credentials?.private_key) {
+      throw new Error("Vertex service-account JSON is incomplete.");
+    }
+    const accessToken = await getVertexAccessToken(apiKey);
     const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
     const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
     const contents = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
@@ -2604,7 +2642,7 @@ async function invokeProviderModel(env: AssistEnv, route: any, input: any, custo
       `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
         body: JSON.stringify({
           systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
           contents,
