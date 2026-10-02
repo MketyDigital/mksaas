@@ -239,6 +239,38 @@ async function handleManagedProviderBootstrap(request: Request, env: Env) {
   return json({ ok: true, bootstrapped: results });
 }
 
+function acceptanceText(result: any): string {
+  const partText = (value: any): string => {
+    if (typeof value === "string") return value.trim();
+    if (!Array.isArray(value)) return "";
+    return value.map((part: any) =>
+      typeof part === "string" ? part
+      : typeof part?.text === "string" ? part.text
+      : typeof part?.output_text === "string" ? part.output_text
+      : typeof part?.content === "string" ? part.content
+      : ""
+    ).join("").trim();
+  };
+  if (typeof result?.response === "string" && result.response.trim()) return result.response.trim();
+  if (typeof result?.result?.response === "string" && result.result.response.trim()) return result.result.response.trim();
+  if (typeof result?.output_text === "string" && result.output_text.trim()) return result.output_text.trim();
+  if (typeof result?.text === "string" && result.text.trim()) return result.text.trim();
+  for (const choice of Array.isArray(result?.choices) ? result.choices : []) {
+    const value = partText(choice?.message?.content) || (typeof choice?.text === "string" ? choice.text.trim() : "");
+    if (value) return value;
+  }
+  const output = (Array.isArray(result?.output) ? result.output : [])
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .map((part: any) => typeof part?.text === "string" ? part.text : (typeof part?.output_text === "string" ? part.output_text : ""))
+    .join("").trim();
+  if (output) return output;
+  for (const candidate of Array.isArray(result?.candidates) ? result.candidates : []) {
+    const value = partText(candidate?.content?.parts);
+    if (value) return value;
+  }
+  return "";
+}
+
 async function handleInferenceAcceptance(request: Request, env: Env) {
   requireDeployProbe(request, env);
   const results: any[] = [];
@@ -252,8 +284,8 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
         messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
         max_tokens: 32,
       });
-      const raw = JSON.stringify(output ?? {});
-      results.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok: raw.length > 2 });
+      const text = acceptanceText(output);
+      results.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok: text.length > 0, returnedText: text.slice(0,80) });
     } catch (error) {
       results.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
     }
@@ -272,17 +304,40 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
         }],
         max_tokens: 32,
       });
-      const raw = JSON.stringify(output ?? {});
+      const text = acceptanceText(output);
       const usage = output?.usage || output?.result?.usage || null;
       results.push({
         provider: "workers-ai-vision",
         role: worker.role,
         model: worker.model,
-        ok: raw.length > 2,
+        ok: text.length > 0,
+        returnedText: text.slice(0,80),
         usageAvailable: Boolean(usage),
       });
     } catch (error) {
       results.push({ provider: "workers-ai-vision", role: worker.role, model: worker.model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+    }
+  }
+
+  for (const worker of workerModels) {
+    try {
+      const output = await env.AI.run(worker.model, {
+        messages: [
+          { role: "system", content: "You are a business assistant. Answer the customer's question using supplied image-analysis evidence." },
+          { role: "user", content: "CUSTOMER MESSAGE: What is shown here?\nATTACHED IMAGE ANALYSIS: A small solid red square is visible.\nReply in one short sentence." },
+        ],
+        max_tokens: 64,
+      });
+      const text = acceptanceText(output);
+      results.push({
+        provider: "workers-ai-image-reply",
+        role: worker.role,
+        model: worker.model,
+        ok: text.length > 0,
+        returnedText: text.slice(0,100),
+      });
+    } catch (error) {
+      results.push({ provider: "workers-ai-image-reply", role: worker.role, model: worker.model, ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
     }
   }
 
@@ -313,10 +368,11 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   ).all<any>();
   const workersOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai" && item.model === worker.model && item.ok));
   const workersVisionOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai-vision" && item.model === worker.model && item.ok));
+  const workersImageReplyOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai-image-reply" && item.model === worker.model && item.ok));
   const azureOk = results.some((item) => item.provider === "azure-foundry" && (item.ok || item.reachable));
   const vertexOk = results.some((item) => item.provider === "vertex" && (item.ok || item.reachable));
-  const ok = workersOk && workersVisionOk && azureOk && vertexOk;
-  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], workersVisionOk, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
+  const ok = workersOk && workersVisionOk && workersImageReplyOk && azureOk && vertexOk;
+  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], workersVisionOk, workersImageReplyOk, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
 }
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
