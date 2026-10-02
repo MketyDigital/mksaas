@@ -138,6 +138,8 @@ assert.match(runtime,/reserveCredits\(env\.DB/);
 assert.match(settlementJournal,/unknown_outcome/);
 assert.match(settlementJournal,/assertIdentity/);
 assert.match(settlementJournal,/async claimAttempt\(/);
+assert.match(settlementJournal,/stub\.fetch\("https:\/\/settlement-journal\.internal\/rpc"/);
+assert.doesNotMatch(settlementJournal,/as DurableObjectStub<SettlementJournal>/);
 assert.match(runtime,/async function invokeJournaledMediaAttempt/);
 assert.match(runtime,/media:\$\{await resilienceSha256Text\(/);
 assert.match(runtime,/providerAttemptId,/);
