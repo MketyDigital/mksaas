@@ -1798,8 +1798,11 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   if (url.pathname === "/api/assistants" && request.method === "GET") {
     const rows = await env.DB.prepare(
       "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,archived_at,current_version FROM assistants WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
-    ).bind(customer.customerId).all();
-    return json({ assistants: rows.results ?? [] });
+    ).bind(customer.customerId).all<any>();
+    return json({ assistants: (rows.results ?? []).map((row: any) => ({
+      ...row,
+      monthly_credit_cap: row.monthly_credit_cap == null ? null : mkreditsFromCreditAtoms(row.monthly_credit_cap),
+    })) });
   }
 
   if (url.pathname === "/api/assistants" && request.method === "POST") {
