@@ -282,7 +282,8 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
     try {
       const output = await env.AI.run(worker.model, {
         messages: [{ role: "user", content: "Reply only with MKETY_ASSIST_READY" }],
-        max_tokens: 32,
+        max_completion_tokens: 256,
+        reasoning_effort: "low",
       });
       const text = acceptanceText(output);
       results.push({ provider: "workers-ai", role: worker.role, model: worker.model, ok: text.length > 0, returnedText: text.slice(0,80) });
@@ -302,7 +303,8 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
             { type: "image_url", image_url: { url: `data:image/png;base64,${tinyPng}` } },
           ],
         }],
-        max_tokens: 32,
+        max_completion_tokens: 256,
+        reasoning_effort: "low",
       });
       const text = acceptanceText(output);
       const usage = output?.usage || output?.result?.usage || null;
@@ -326,7 +328,8 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
           { role: "system", content: "You are a business assistant. Answer the customer's question using supplied image-analysis evidence." },
           { role: "user", content: "CUSTOMER MESSAGE: What is shown here?\nATTACHED IMAGE ANALYSIS: A small solid red square is visible.\nReply in one short sentence." },
         ],
-        max_tokens: 64,
+        max_completion_tokens: 256,
+        reasoning_effort: "low",
       });
       const text = acceptanceText(output);
       results.push({
