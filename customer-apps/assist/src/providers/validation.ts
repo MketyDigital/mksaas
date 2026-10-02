@@ -68,9 +68,11 @@ export async function getVertexAccessToken(credentialsJson: string, fetchImpl: t
     exp: now + 3600,
   }));
   const signingInput = `${header}.${claims}`;
+  const pkcs8 = pemPkcs8Bytes(privateKey);
+  const pkcs8Buffer = pkcs8.buffer.slice(pkcs8.byteOffset, pkcs8.byteOffset + pkcs8.byteLength) as ArrayBuffer;
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    pemPkcs8Bytes(privateKey),
+    pkcs8Buffer,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"],
@@ -97,7 +99,8 @@ async function sha256Hex(value: string) {
 
 async function hmac(key: string | Uint8Array, value: string) {
   const bytes = typeof key === "string" ? validationEncoder.encode(key) : key;
-  const imported = await crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const keyData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const imported = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", imported, validationEncoder.encode(value)));
 }
 
