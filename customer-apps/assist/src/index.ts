@@ -1113,18 +1113,27 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       extra: current.extra_json ? JSON.parse(String(current.extra_json)) : {},
     });
     const now = unix();
+    const credentialAccepted = Boolean(result.credentialAccepted ?? result.ok);
+    const billingBlocked = Boolean(result.billingBlocked);
+    const validated = result.ok || (credentialAccepted && billingBlocked);
     await env.DB.prepare(
       "UPDATE provider_connections SET status=?,validated_at=?,validation_error=?,updated_at=? WHERE id=?",
-    ).bind(result.ok ? "active" : "disabled", result.ok ? now : null, result.ok ? null : String(result.error || "provider_validation_failed"), now, providerId).run();
+    ).bind(
+      validated ? "active" : "disabled",
+      validated ? now : null,
+      result.ok ? null : (billingBlocked ? "provider_billing_blocked" : String(result.error || "provider_validation_failed")),
+      now,
+      providerId,
+    ).run();
     return json({
       ok: result.ok,
       status: result.status,
       error: result.error ?? null,
-      credentialAccepted: result.credentialAccepted ?? result.ok,
-      billingBlocked: result.billingBlocked ?? false,
+      credentialAccepted,
+      billingBlocked,
       returnedText: result.returnedText ?? null,
       providerId,
-    }, result.ok || result.billingBlocked ? 200 : 422);
+    }, validated ? 200 : 422);
   }
 
   if (url.pathname.startsWith("/api/ops/providers/") && request.method === "PATCH") {
