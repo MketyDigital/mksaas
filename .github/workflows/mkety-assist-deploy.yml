@@ -463,10 +463,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          status="$(curl --silent --show-error --retry 3 --retry-delay 2             --output /tmp/assist-provider-bootstrap.json --write-out '%{http_code}'             -X POST https://mkety-assist.mkety.app/api/internal/provider-bootstrap             -H "Authorization: Bearer $MKETY_ASSIST_DEPLOY_PROBE_SECRET"             -H 'Content-Type: application/json' --data '{}')"
-          cat /tmp/assist-provider-bootstrap.json
-          test "$status" -ge 200
-          test "$status" -lt 300
+
+          bootstrap_ok=0
+          for attempt in 1 2 3 4 5 6; do
+            health_status="$(curl --silent --show-error --output /tmp/assist-bootstrap-health.json --write-out '%{http_code}' https://mkety-assist.mkety.app/health || true)"
+            status="$(curl --silent --show-error               --output /tmp/assist-provider-bootstrap.json --write-out '%{http_code}'               -X POST https://mkety-assist.mkety.app/api/internal/provider-bootstrap               -H "Authorization: Bearer $MKETY_ASSIST_DEPLOY_PROBE_SECRET"               -H 'Content-Type: application/json' --data '{}' || true)"
+
+            body="$(cat /tmp/assist-provider-bootstrap.json 2>/dev/null || true)"
+            if [ "$status" -ge 200 ] 2>/dev/null && [ "$status" -lt 300 ] 2>/dev/null; then
+              if BOOTSTRAP_BODY="$body" node <<'NODE'
+          const raw=process.env.BOOTSTRAP_BODY||'';
+          let payload;
+          try { payload=JSON.parse(raw); } catch { process.exit(1); }
+          if(payload?.ok!==true) process.exit(1);
+          NODE
+              then
+                bootstrap_ok=1
+                cat /tmp/assist-provider-bootstrap.json
+                break
+              fi
+            fi
+
+            echo "::warning::Assist provider bootstrap attempt $attempt failed (health HTTP $health_status, bootstrap HTTP $status)."
+            if [ -n "$body" ]; then printf '%s\n' "$body" | head -c 1000; echo; fi
+            sleep $((attempt * 3))
+          done
+
+          if [ "$bootstrap_ok" -ne 1 ]; then
+            echo "::error::Assist provider bootstrap did not become healthy after bounded retries."
+            exit 1
+          fi
 
       - name: Real production AI inference acceptance
         shell: bash
