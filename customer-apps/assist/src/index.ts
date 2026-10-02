@@ -1372,10 +1372,33 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       "SELECT email,display_name,telegram_user_id,telegram_username FROM users WHERE id=?",
     ).bind(session.userId).first();
     const features = await env.DB.prepare("SELECT * FROM feature_policy WHERE customer_id=?").bind(customer.customerId).first();
-    return json({ customer, session, user, features });
+    const account = await env.DB.prepare("SELECT status,billing_status,grace_until FROM customers WHERE id=? LIMIT 1").bind(customer.customerId).first<any>();
+    const userControl = await effectiveAccountControl(env.DB, customer.customerId, session.userId);
+    return json({
+      customer,
+      session,
+      user,
+      features,
+      accountStatus: String(account?.status || "active"),
+      billingStatus: String(account?.billing_status || "pending"),
+      graceUntil: account?.grace_until == null ? null : Number(account.grace_until),
+      userControl,
+    });
   }
 
   if (url.pathname === "/api/domains" && request.method === "GET") {
+    const currentHost = url.hostname.toLowerCase();
+    const currentDomain = await env.DB.prepare(
+      "SELECT hostname,kind,status,verified_at FROM customer_domains WHERE customer_id=? AND hostname=? LIMIT 1",
+    ).bind(customer.customerId,currentHost).first<any>();
+    if (currentDomain?.kind === "custom") {
+      const now = unix();
+      await env.DB.prepare(
+        `UPDATE customer_domains
+         SET status='active',verified_at=COALESCE(verified_at,?),public_dns_ok=1,public_tls_ok=1,ownership_ok=1,public_checked_at=?
+         WHERE customer_id=? AND hostname=?`,
+      ).bind(now,now,customer.customerId,currentHost).run();
+    }
     const rows = await env.DB.prepare(
       "SELECT hostname,kind,is_primary,status,ssl_status,validation_json,verified_at,public_dns_ok,public_tls_ok,ownership_ok,public_checked_at,provider_status FROM customer_domains WHERE customer_id=? ORDER BY is_primary DESC,created_at ASC",
     ).bind(customer.customerId).all<any>();
@@ -1607,6 +1630,38 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       minimumFundingMinor,
       minimumFundingCredits,
       topupEnabled: Boolean(policy.topup_enabled),
+    });
+  }
+
+  if (url.pathname === "/api/billing/funding-quote" && request.method === "POST") {
+    const body = await readJson(request);
+    const policy = await env.DB.prepare(
+      "SELECT subscription_amount_minor,included_credits,funding_mode,minimum_funding_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=? LIMIT 1",
+    ).bind(customer.customerId).first<any>();
+    if (!policy) return json({ error: "commercial_policy_unavailable" }, 404);
+    const recurringBase = Math.max(1, Number(policy.subscription_amount_minor || 0));
+    const setupFeeMinor = Math.max(0, Number(policy.setup_fee_minor || 0));
+    const minimumFundingMinor = Math.max(1, Number(policy.minimum_funding_minor || recurringBase));
+    let recurringPaid = recurringBase;
+    if (String(policy.funding_mode) === "prepaid_partial") {
+      recurringPaid = body.fundingAmountUsd == null || String(body.fundingAmountUsd).trim() === ""
+        ? recurringBase
+        : parsePaymentAmountMinor(body.fundingAmountUsd);
+      if (recurringPaid < minimumFundingMinor || recurringPaid > recurringBase) {
+        return json({ error: "invalid_funding_amount", minimumFundingMinor, maximumFundingMinor: recurringBase }, 400);
+      }
+    }
+    const credits = String(policy.funding_mode) === "prepaid_partial"
+      ? Math.max(1, Math.floor(Number(policy.included_credits || 0) * recurringPaid / recurringBase))
+      : Math.max(0, Number(policy.included_credits || 0));
+    return json({
+      recurringAmountMinor: recurringPaid,
+      setupFeeMinor,
+      totalAmountMinor: recurringPaid + setupFeeMinor,
+      credits,
+      minimumFundingMinor,
+      maximumFundingMinor: recurringBase,
+      fundingMode: String(policy.funding_mode || "full_period"),
     });
   }
 
