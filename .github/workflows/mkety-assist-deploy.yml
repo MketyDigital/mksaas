@@ -552,7 +552,11 @@ jobs:
             console.log('Synthetic conversation '+String(item.name)+': '+(item.ok?'PASS':'FAIL')+' — '+String(item.detail));
           }
           console.log('Synthetic conversation provider cost estimate: '+String(payload.conversationQuality?.providerCostMicros||0)+' micros');
-          console.log('Ordered route targets visible: '+String((payload.routeTargets||[]).length));
+          const routeTargets=payload.routeTargets||[];
+          console.log('Ordered route targets visible: '+String(routeTargets.length));
+          for(const target of routeTargets){
+            console.log('Route '+String(target.scope_key)+' #'+String(target.position)+': '+String(target.provider)+' / '+String(target.provider_model)+' enabled='+String(target.enabled));
+          }
           if(status<200||status>=300||payload.ok!==true){
             console.error(JSON.stringify(payload,null,2));
             process.exit(1);
