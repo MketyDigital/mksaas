@@ -40,9 +40,9 @@ export function normalizeFoundryResponsesEndpoint(endpoint: string) {
 }
 
 function billingBlocked(status: number, payload: any) {
-  if (status !== 402 && status !== 429) return false;
+  if (![402,403,429].includes(status)) return false;
   const raw = JSON.stringify(payload ?? {}).toLowerCase();
-  return /quota|billing|credit|balance|insufficient|payment|fund/i.test(raw);
+  return /billing|billing[_ -]?disabled|billingnotenabled|credit|balance|insufficient|payment|fund|quota exhausted|resource_exhausted/i.test(raw);
 }
 
 function textFromResponses(payload: any) {
