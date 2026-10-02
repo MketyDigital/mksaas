@@ -2104,9 +2104,11 @@ function mediaTargetUsage(target: any, kind: "vision" | "speech", inputUnits: nu
     rate: {
       inputCreditsPerMillion: Number(target.input_credits_per_million || 0),
       outputCreditsPerMillion: Number(target.output_credits_per_million || 0),
+      imageCredits: Number(target.image_credits || 0),
       audioCreditsPerMinute: Number(target.audio_credits_per_minute || 0),
       providerInputCostMicrosPerMillion: Number(target.provider_input_cost_micros_per_million || 0),
       providerOutputCostMicrosPerMillion: Number(target.provider_output_cost_micros_per_million || 0),
+      providerImageCostMicros: Number(target.provider_image_cost_micros || 0),
       providerAudioCostMicrosPerMinute: Number(target.provider_audio_cost_micros_per_minute || 0),
     },
   };
@@ -2121,10 +2123,11 @@ function mediaUsageCharge(usage: any, multiplierBps: number) {
   }
   const inputRate = Math.ceil(Number(r.inputCreditsPerMillion || 0) * multiplierBps / 10000);
   const outputRate = Math.ceil(Number(r.outputCreditsPerMillion || 0) * multiplierBps / 10000);
+  const fixedImage = Math.ceil(Number(r.imageCredits || 0) * multiplierBps / 10000);
   return Math.max(1, Math.ceil((
     Number(usage.inputUnits || 0) * inputRate +
     Number(usage.outputUnits || 0) * outputRate
-  ) / 1_000_000));
+  ) / 1_000_000) + fixedImage);
 }
 
 function mediaUsageProviderCostMicros(usage: any) {
@@ -2135,7 +2138,7 @@ function mediaUsageProviderCostMicros(usage: any) {
   return Math.max(0, Math.ceil((
     Number(usage.inputUnits || 0) * Number(r.providerInputCostMicrosPerMillion || 0) +
     Number(usage.outputUnits || 0) * Number(r.providerOutputCostMicrosPerMillion || 0)
-  ) / 1_000_000));
+  ) / 1_000_000) + Number(r.providerImageCostMicros || 0));
 }
 
 async function mediaCommercialPolicy(env: AssistEnv, customerId: string) {
@@ -2173,7 +2176,7 @@ async function reserveMediaProcessing(
     ));
   } else {
     // Conservative preauthorization. Actual settlement uses the serving target's returned usage.
-    const reserveInputTokens = 65536;
+    const reserveInputTokens = 262144;
     const reserveOutputTokens = 600;
     reserveAtoms = Math.max(1, ...targets.map((target: any) => {
       const inputRate = Math.ceil(Number(target.input_credits_per_million || 0) * multiplierBps / 10000);
