@@ -16,6 +16,7 @@
 - Paid inference must fail closed when credit, entitlement, rate, or policy state cannot be verified.
 - Reserve the maximum bounded provider cost before generation.
 - Record every billable primary, fallback, continuation, tool, vision, speech, and memory-summary attempt.
+- Use a 1,536-token normal reply budget and a 2,048-token multi-part hard cap from the conversation-quality plan.
 - Persist provider results before delivery; retries must resume from persisted results instead of generating again.
 - Apply customer credit and provider-cost ledger entries idempotently; D1 remains canonical.
 - Keep provider-supported idempotency keys stable across retries; do not claim atomic exactly-once behavior across an external provider and Cloudflare storage.
