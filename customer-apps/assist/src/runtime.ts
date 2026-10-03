@@ -4386,3 +4386,7 @@ class ApiError extends Error {
 }
 
 export function runtimeErrorResponse(error: unknown) {
+  if (error instanceof ApiError) return json({ error: error.message }, error.status);
+  console.error("Assist runtime error", error);
+  return json({ error: "internal_error" }, 500);
+}
