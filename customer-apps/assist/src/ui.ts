@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 31262)
-Total output lines: 827
-
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { moveRouteTarget } from "./route-order";
 
@@ -364,7 +361,56 @@ async function buyCredits(){
   topupAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshQuote,250)};await refreshQuote();
   topupStart.onclick=async()=>{try{
     if(!String(topupAmount.value||'').trim())throw new Error('Enter an amount first');
-    topupStart.disabled=true;topup…1262 tokens truncated…
+    topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
+    const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+      amountUsd:topupAmount.value,
+      paymentMethod:topupMethod.value,
+      ...(topupMethod.value==='flutterwave'?{paymentCurrency:topupCurrency.value}:{})
+    })});
+    topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
+  }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
+ }catch(e){toastMsg(e.message)}
+}
+async function loadCheckouts(){try{
+ const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
+ checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Funding</th><th>Credits</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type==='plan'?'Monthly credits':'Added credits')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No payments yet.';
+}catch(e){checkoutBox.textContent=e.message}}
+async function changePassword(){
+ openModal('<h2>Change password</h2><div class="field"><label>Current password</label><input class="input" id="currentPassword" type="password" autocomplete="current-password"></div><div class="field"><label>New password</label><input class="input" id="newPassword" type="password" minlength="12" autocomplete="new-password"></div><p id="passwordMsg" class="muted"></p><div class="row"><button class="btn primary" id="passwordSave">Update password</button><button class="btn" id="passwordCancel">Cancel</button></div>');
+ passwordCancel.onclick=closeModal;
+ passwordSave.onclick=async()=>{try{passwordSave.disabled=true;await api('/api/auth/password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({currentPassword:currentPassword.value,newPassword:newPassword.value})});toastMsg('Password updated');closeModal()}catch(e){passwordSave.disabled=false;passwordMsg.textContent=e.message}};
+}
+async function manageSessions(){
+ try{
+  const d=await api('/api/auth/sessions');
+  const rows=(d.sessions||[]).map(s=>'<tr><td>'+new Date(s.created_at*1000).toLocaleString()+'</td><td>'+new Date(s.last_seen_at*1000).toLocaleString()+'</td><td>'+(s.revoked_at?'Revoked':'Active')+'</td><td>'+(!s.revoked_at?'<button class="btn danger" data-revoke-session="'+esc(s.id)+'">Revoke</button>':'')+'</td></tr>').join('');
+  openModal('<h2>Signed-in sessions</h2><div class="card">'+(rows?'<table class="table"><thead><tr><th>Created</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>':'<div class="empty">No sessions.</div>')+'</div><div class="row" style="margin-top:12px"><button class="btn" id="sessionsClose">Close</button></div>');
+  sessionsClose.onclick=closeModal;
+  dialog.querySelectorAll('[data-revoke-session]').forEach(b=>b.onclick=async()=>{try{await api('/api/auth/sessions/'+encodeURIComponent(b.dataset.revokeSession),{method:'DELETE'});toastMsg('Session revoked');await manageSessions()}catch(e){toastMsg(e.message)}});
+ }catch(e){toastMsg(e.message)}
+}
+async function linkTelegram(){try{const d=await api('/api/auth/telegram/link/start',{method:'POST'});location.href=d.url}catch(e){toastMsg(e.message)}}
+refresh().catch(e=>{content.innerHTML='<div class="card"><h2>Could not load console</h2><p class="muted">'+esc(e.message)+'</p></div>'});
+</script>
+</body></html>`;
+}
+
+export function renderOperatorPortal(customers: any[]) {
+  const rows = JSON.stringify(customers).replace(/</g, "\\u003c");
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mkety Assist Operator</title>
+<style>
+:root{color-scheme:dark;--bg:#090a0f;--p:#12141c;--l:#292d3c;--m:#969bad;--b:#7c5cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f7f7fb;font:14px/1.45 system-ui}
+.wrap{max-width:1320px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+.card{background:var(--p);border:1px solid var(--l);border-radius:14px;padding:18px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.metric{font-size:24px;font-weight:800}.muted{color:var(--m)}
+.btn,.input{border:1px solid var(--l);background:#191c27;color:#fff;border-radius:9px;padding:9px 11px}.btn{cursor:pointer}.primary{background:var(--b);border-color:transparent}.danger{color:#ff9aab}
+.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:10px;border-bottom:1px solid var(--l);vertical-align:top}.table th{font-size:11px;color:var(--m);text-transform:uppercase}
 .field{display:grid;gap:5px;margin:10px 0}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:20}
 .modal.open{display:grid}.dialog{width:min(760px,94vw);max-height:90vh;overflow:auto;background:var(--p);border:1px solid var(--l);border-radius:14px;padding:20px}
 .pill{display:inline-flex;border:1px solid var(--l);border-radius:99px;padding:3px 8px;font-size:11px}.ok{color:#64d5a4}.warn{color:#ffc66f}
