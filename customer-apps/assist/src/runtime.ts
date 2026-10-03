@@ -2113,9 +2113,12 @@ async function handleHumanOpsGroupMessage(env: AssistEnv, deliveryAssistantId: s
     await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
     return json({ok:true,humanOperations:true,approvalAlreadyDecided:true});
   }
+  let replyEnqueued=true;
   try { await env.REPLY_QUEUE.send({jobId:replyJobId}); }
-  catch(error) { await env.DB.prepare("UPDATE reply_jobs SET last_error=?,updated_at=? WHERE id=?").bind(`queue_enqueue_failed:${String(error).slice(0,200)}`,now,replyJobId).run(); }
-  if (token) await telegramSend(token,chatId,"Your reply has been sent to the customer through their existing assistant channel.").catch(()=>undefined);
+  catch(error) { replyEnqueued=false; await env.DB.prepare("UPDATE reply_jobs SET last_error=?,updated_at=? WHERE id=?").bind(`queue_enqueue_failed:${String(error).slice(0,200)}`,now,replyJobId).run(); }
+  if (token) await telegramSend(token,chatId,replyEnqueued
+    ? "Your reply was queued for delivery through the customer’s existing assistant channel."
+    : "Your reply was recorded but could not be queued now. Assist will retry delivery.").catch(()=>undefined);
   await markWebhook(env.DB,deliveryAssistantId,updateId,"processed");
   return json({ok:true,humanOperations:true,humanReplyQueued:true});
 }
