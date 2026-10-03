@@ -566,6 +566,10 @@ export async function handleRuntimeApi(
     ).bind(customer.customerId, session.userId).all<any>();
     const preferences: Record<string, boolean> = { handoff: true, reminder_failure: true, channel_health: true };
     for (const row of rows.results ?? []) preferences[String(row.kind)] = Boolean(row.enabled);
+    const approvalPreference = await env.DB.prepare(
+      "SELECT enabled FROM human_approval_notification_preferences WHERE customer_id=? AND user_id=? LIMIT 1",
+    ).bind(customer.customerId, session.userId).first<any>();
+    preferences.human_approval = approvalPreference ? Boolean(approvalPreference.enabled) : true;
     return json({ preferences });
   }
 
@@ -581,6 +585,12 @@ export async function handleRuntimeApi(
          VALUES (?,?,?,?,?)
          ON CONFLICT(customer_id,user_id,kind) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`,
       ).bind(customer.customerId, session.userId, kind, body[kind] ? 1 : 0, now));
+    }
+    if (typeof body.human_approval === "boolean") {
+      statements.push(env.DB.prepare(
+        `INSERT INTO human_approval_notification_preferences(customer_id,user_id,enabled,updated_at)
+         VALUES (?,?,?,?) ON CONFLICT(customer_id,user_id) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`,
+      ).bind(customer.customerId, session.userId, body.human_approval ? 1 : 0, now));
     }
     if (statements.length) await env.DB.batch(statements);
     return json({ ok: true });
@@ -1735,8 +1745,10 @@ async function notifyHumanApprovalOwners(env: AssistEnv, input: {
      FROM customer_users cu JOIN users u ON u.id=cu.user_id
      JOIN assistants da ON da.id=u.telegram_recovery_assistant_id AND da.customer_id=cu.customer_id AND da.status='active'
      JOIN assistant_channels dc ON dc.customer_id=cu.customer_id AND dc.assistant_id=da.id AND dc.channel='telegram' AND dc.status='active'
+     LEFT JOIN human_approval_notification_preferences np ON np.customer_id=cu.customer_id AND np.user_id=u.id
      WHERE cu.customer_id=? AND cu.role IN ('owner','admin')
-       AND u.telegram_user_id IS NOT NULL AND u.telegram_recovery_assistant_id IS NOT NULL`,
+       AND u.telegram_user_id IS NOT NULL AND u.telegram_recovery_assistant_id IS NOT NULL
+       AND COALESCE(np.enabled,1)=1`,
   ).bind(input.customerId).all<any>();
   const text = `Human review requested (${input.kind})\n${input.question}${input.summary ? `\n\n${input.summary}` : ""}\n\nReview in the Mkety Assist portal for full conversation evidence.`;
   await Promise.all((recipients.results ?? []).map(async (recipient: any) => {

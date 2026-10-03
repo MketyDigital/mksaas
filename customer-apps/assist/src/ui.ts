@@ -252,7 +252,7 @@ async function revokeApiKey(id){
 async function loadNotificationPreferences(){
  try{
   const d=await api('/api/notifications/preferences'),p=d.preferences||{};
-  notificationPrefsBox.innerHTML='<label class="row"><input type="checkbox" data-notify-kind="handoff" '+(p.handoff!==false?'checked':'')+'> Human handoff alerts</label><label class="row"><input type="checkbox" data-notify-kind="reminder_failure" '+(p.reminder_failure!==false?'checked':'')+'> Reminder failure alerts</label><label class="row"><input type="checkbox" data-notify-kind="channel_health" '+(p.channel_health!==false?'checked':'')+'> Channel health alerts</label>';
+  notificationPrefsBox.innerHTML='<label class="row"><input type="checkbox" data-notify-kind="handoff" '+(p.handoff!==false?'checked':'')+'> Human handoff alerts</label><label class="row"><input type="checkbox" data-notify-kind="human_approval" '+(p.human_approval!==false?'checked':'')+'> Human approval requests</label><label class="row"><input type="checkbox" data-notify-kind="reminder_failure" '+(p.reminder_failure!==false?'checked':'')+'> Reminder failure alerts</label><label class="row"><input type="checkbox" data-notify-kind="channel_health" '+(p.channel_health!==false?'checked':'')+'> Channel health alerts</label>';
   notificationPrefsBox.querySelectorAll('[data-notify-kind]').forEach(x=>x.onchange=async()=>{try{await api('/api/notifications/preferences',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({[x.dataset.notifyKind]:x.checked})});toastMsg('Alert preference saved')}catch(e){toastMsg(e.message)}});
  }catch(e){notificationPrefsBox.textContent=e.message}
 }
