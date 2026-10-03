@@ -23,5 +23,7 @@ assert.match(contextCache,/input\.customerId/);
 assert.match(contextCache,/input\.assistantId/);
 assert.match(contextCache,/input\.conversationId/);
 assert.match(settlementJournal,/existing\.customerId !== identity\.customerId/);
-assert.match(settlementJournal,/existing\.assistantId !== identity\.assistantId/);
+assert.match(settlementJournal,/existing\.customerId !== identity\.customerId/);
+assert.match(settlementJournal,/attemptScopeKey\(existing\) !== attemptScopeKey\(identity\)/);
+assert.match(settlementJournal,/value\.workloadType === "api_key"/);
 console.log("security isolation contract: ok");

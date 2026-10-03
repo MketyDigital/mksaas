@@ -11,8 +11,10 @@ import { contextCacheKey, readContextSnapshot, writeContextSnapshot } from "./co
 import { enqueueInboundUpdate, replayInboundUpdate } from "./queues/inbound";
 import { attemptIdFor, settlementJournalStub } from "./billing/settlement-journal";
 import { reserveInference, releaseInferenceReservation, settleInference } from "./billing/inference-settlement";
-import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, normalizeApprovalRequest } from "./human-approvals";
+import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, normalizeApprovalRequest, parseHumanDecisionCall, recordHumanApprovalReply } from "./human-approvals";
 import { recordAttemptProjection, updateAttemptProjection } from "./billing/reconciliation";
+import { normalizeApiKeyMode, normalizeModelAllowlist, canUseRawModelApi } from "./api-key-policy";
+import { reserveRawModelCredits, releaseRawModelCredits, settleRawModelCredits } from "./billing/raw-model-settlement";
 import {
   RetryableInferenceError,
   claimModelCapacity,
@@ -74,10 +76,46 @@ export async function handleRuntimeApi(
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
 
+  if (url.pathname === "/api/raw-model-api" && request.method === "GET") {
+    const settings = await env.DB.prepare(
+      "SELECT enabled,allowed_models_json FROM raw_model_api_settings WHERE customer_id=? LIMIT 1",
+    ).bind(customer.customerId).first<any>();
+    const routes = await env.DB.prepare(
+      `SELECT alias FROM customer_model_routes WHERE customer_id=? AND status='active'
+       UNION SELECT alias FROM model_routes WHERE status='active' ORDER BY alias`,
+    ).bind(customer.customerId).all<any>();
+    let allowedAliases: string[] = [];
+    try { allowedAliases = normalizeModelAllowlist(settings?.allowed_models_json || "[]"); } catch { allowedAliases = []; }
+    return json({ enabled: Number(settings?.enabled || 0) === 1, allowedAliases, availableAliases: (routes.results ?? []).map((row: any) => String(row.alias)) });
+  }
+
+  if (url.pathname === "/api/raw-model-api" && request.method === "PUT") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const enabled = body.enabled === true ? 1 : 0;
+    let allowedAliases: string[];
+    try { allowedAliases = normalizeModelAllowlist(body.allowedAliases); }
+    catch { return json({ error: "model_allowlist_invalid" }, 400); }
+    const routes = await env.DB.prepare(
+      `SELECT alias FROM customer_model_routes WHERE customer_id=? AND status='active'
+       UNION SELECT alias FROM model_routes WHERE status='active'`,
+    ).bind(customer.customerId).all<any>();
+    const available = new Set((routes.results ?? []).map((row: any) => String(row.alias)));
+    if (allowedAliases.some((alias) => !available.has(alias))) return json({ error: "model_route_unavailable" }, 400);
+    if (enabled && !allowedAliases.length) return json({ error: "model_allowlist_required" }, 400);
+    const now = unix();
+    await env.DB.prepare(
+      `INSERT INTO raw_model_api_settings (customer_id,enabled,allowed_models_json,updated_at,updated_by_user_id)
+       VALUES (?,?,?,?,?) ON CONFLICT(customer_id) DO UPDATE SET enabled=excluded.enabled,
+       allowed_models_json=excluded.allowed_models_json,updated_at=excluded.updated_at,updated_by_user_id=excluded.updated_by_user_id`,
+    ).bind(customer.customerId, enabled, JSON.stringify(allowedAliases), now, session.userId).run();
+    return json({ ok: true, enabled: enabled === 1, allowedAliases });
+  }
+
   if (url.pathname === "/api/keys" && request.method === "GET") {
     requireAdmin(session);
     const rows = await env.DB.prepare(
-      `SELECT k.id,k.name,k.token_prefix,k.status,k.assistant_id,k.created_at,k.last_used_at,k.expires_at,
+      `SELECT k.id,k.name,k.token_prefix,k.status,k.assistant_id,k.mode,k.model_allowlist_json,k.created_at,k.last_used_at,k.expires_at,
               k.scopes_json,k.rate_limit_per_minute,a.name AS assistant_name
        FROM customer_api_keys k
        LEFT JOIN assistants a ON a.id=k.assistant_id
@@ -91,8 +129,23 @@ export async function handleRuntimeApi(
     requireAdmin(session);
     const body = await readJson(request);
     const name = required(body.name, "name").slice(0, 80);
-    const assistantId = body.assistantId ? required(body.assistantId, "assistantId") : null;
+    let mode: "assistant" | "raw_model";
+    try { mode = normalizeApiKeyMode(body.mode); } catch { return json({ error: "api_key_mode_invalid" }, 400); }
+    const assistantId = mode === "assistant" && body.assistantId ? required(body.assistantId, "assistantId") : null;
     if (assistantId) await assertAssistant(env.DB, customer.customerId, assistantId);
+    let keyModelAllowlist: string[] = [];
+    if (mode === "raw_model") {
+      if (body.assistantId) return json({ error: "raw_model_key_must_not_target_assistant" }, 400);
+      try { keyModelAllowlist = normalizeModelAllowlist(body.modelAllowlist); } catch { return json({ error: "model_allowlist_invalid" }, 400); }
+      if (!keyModelAllowlist.length) return json({ error: "model_allowlist_required" }, 400);
+      const rawSettings = await env.DB.prepare("SELECT enabled,allowed_models_json FROM raw_model_api_settings WHERE customer_id=? LIMIT 1")
+        .bind(customer.customerId).first<any>();
+      let customerAllowlist: string[] = [];
+      try { customerAllowlist = normalizeModelAllowlist(rawSettings?.allowed_models_json || "[]"); } catch {}
+      if (Number(rawSettings?.enabled || 0) !== 1 || keyModelAllowlist.some((alias) => !customerAllowlist.includes(alias))) {
+        return json({ error: "raw_model_api_not_enabled_for_models" }, 403);
+      }
+    }
     const raw = `mka_${randomToken(32)}`;
     const prefix = raw.slice(0, 12);
     const now = unix();
@@ -103,9 +156,9 @@ export async function handleRuntimeApi(
     if (!scopes.length) return json({ error: "api_key_scope_required" }, 400);
     const rateLimitPerMinute = Math.max(1, Math.min(10000, Number(body.rateLimitPerMinute || 60)));
     await env.DB.prepare(
-      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at,scopes_json,rate_limit_per_minute) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt, JSON.stringify(scopes), rateLimitPerMinute).run();
-    return json({ id: keyId, name, key: raw, prefix, assistantId, expiresAt, scopes, rateLimitPerMinute }, 201);
+      "INSERT INTO customer_api_keys (id,customer_id,assistant_id,name,token_prefix,token_hash,status,created_by_user_id,created_at,expires_at,scopes_json,rate_limit_per_minute,mode,model_allowlist_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).bind(keyId, customer.customerId, assistantId, name, prefix, await sha256Text(raw), "active", session.userId, now, expiresAt, JSON.stringify(scopes), rateLimitPerMinute, mode, JSON.stringify(keyModelAllowlist)).run();
+    return json({ id: keyId, name, key: raw, prefix, assistantId, mode, modelAllowlist: keyModelAllowlist, expiresAt, scopes, rateLimitPerMinute }, 201);
   }
 
   if (parts[0] === "api" && parts[1] === "keys" && parts[2] && request.method === "DELETE") {
@@ -119,11 +172,70 @@ export async function handleRuntimeApi(
 
   if (url.pathname === "/api/human-operations" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      `SELECT s.assistant_id,s.approvals_enabled,s.pause_conversation,s.allowed_kinds_json,s.updated_at,a.name AS assistant_name
+      `SELECT s.assistant_id,s.approvals_enabled,s.pause_conversation,s.allowed_kinds_json,s.human_acknowledgement,s.updated_at,a.name AS assistant_name
        FROM human_operations_settings s JOIN assistants a ON a.id=s.assistant_id
        WHERE s.customer_id=? ORDER BY a.name`,
     ).bind(customer.customerId).all<any>();
     return json({ settings: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/human-ops-destinations" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      `SELECT d.id,d.name,d.chat_id,d.message_thread_id,d.delivery_assistant_id,d.destination_type,d.status,
+              d.allowed_kinds_json,d.assistant_scope_json,d.created_at,a.name AS delivery_assistant_name
+       FROM human_ops_destinations d JOIN assistants a ON a.id=d.delivery_assistant_id
+       WHERE d.customer_id=? AND d.status!='revoked' ORDER BY d.created_at DESC`,
+    ).bind(customer.customerId).all<any>();
+    return json({ destinations: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/human-ops-destinations/link-challenges" && request.method === "POST") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const deliveryAssistantId = required(body.deliveryAssistantId, "deliveryAssistantId");
+    await assertAssistant(env.DB, customer.customerId, deliveryAssistantId);
+    if (!(await getAssistantSecret(env, deliveryAssistantId, "telegram_bot_token")) ||
+        !(await getAssistantSecret(env, deliveryAssistantId, "telegram_webhook_secret"))) return json({ error: "telegram_delivery_bot_unavailable" }, 409);
+    const channel = await env.DB.prepare(
+      "SELECT 1 FROM assistant_channels WHERE customer_id=? AND assistant_id=? AND channel='telegram' AND status='active' LIMIT 1",
+    ).bind(customer.customerId,deliveryAssistantId).first<any>();
+    if (!channel) return json({ error: "telegram_delivery_bot_unavailable" }, 409);
+    const assistantIds = [...new Set((Array.isArray(body.assistantIds) ? body.assistantIds : []).map(String).filter(Boolean))].slice(0, 20);
+    if (!assistantIds.length) return json({ error: "assistant_scope_required" }, 400);
+    const placeholders = assistantIds.map(() => "?").join(",");
+    const scoped = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM assistants WHERE customer_id=? AND id IN (${placeholders}) AND status='active'`,
+    ).bind(customer.customerId, ...assistantIds).first<any>();
+    if (Number(scoped?.n || 0) !== assistantIds.length) return json({ error: "assistant_scope_invalid" }, 400);
+    const token = randomToken(18);
+    const now = unix();
+    await env.DB.prepare(
+      `INSERT INTO human_ops_link_challenges (token_hash,customer_id,delivery_assistant_id,assistant_scope_json,created_by_user_id,expires_at,created_at)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).bind(await sha256Text(token), customer.customerId, deliveryAssistantId, JSON.stringify(assistantIds), session.userId, now + 600, now).run();
+    await env.DB.prepare(
+      `INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).bind(id("aud"), "customer_user", session.userId, customer.customerId, "human_ops_link_challenge_created", "telegram_bot", deliveryAssistantId,
+      JSON.stringify({ assistantIds }), now).run();
+    return json({ command: `/link ${token}`, expiresAt: now + 600 }, 201);
+  }
+
+  if (parts[0] === "api" && parts[1] === "human-ops-destinations" && parts[2] && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const status = String(body.status || "");
+    if (!(["active", "paused", "revoked"] as string[]).includes(status)) return json({ error: "invalid_destination_status" }, 400);
+    const now = unix();
+    const result = await env.DB.prepare(
+      "UPDATE human_ops_destinations SET status=?,updated_at=? WHERE id=? AND customer_id=? AND status!='revoked'",
+    ).bind(status, now, parts[2], customer.customerId).run();
+    if (!Number(result.meta?.changes || 0)) return json({ error: "destination_not_found" }, 404);
+    await env.DB.prepare(
+      `INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).bind(id("aud"), "customer_user", session.userId, customer.customerId, `human_ops_destination_${status}`, "telegram_destination", parts[2], "{}", now).run();
+    return json({ ok: true, status });
   }
 
   if (url.pathname === "/api/human-operations" && request.method === "PUT") {
@@ -133,15 +245,21 @@ export async function handleRuntimeApi(
     await assertAssistant(env.DB, customer.customerId, assistantId);
     const enabled = body.approvalsEnabled === true ? 1 : 0;
     const pause = body.pauseConversation === true ? 1 : 0;
+    const previous = await env.DB.prepare("SELECT human_acknowledgement FROM human_operations_settings WHERE customer_id=? AND assistant_id=? LIMIT 1")
+      .bind(customer.customerId, assistantId).first<any>();
+    const acknowledgement = typeof body.humanAcknowledgement === "string"
+      ? body.humanAcknowledgement.trim().slice(0, 600) || "Thanks, I have that. I’ll continue from here."
+      : String(previous?.human_acknowledgement || "Thanks, I have that. I’ll continue from here.");
     const now = unix();
     await env.DB.prepare(
       `INSERT INTO human_operations_settings
-       (customer_id,assistant_id,approvals_enabled,pause_conversation,updated_at,updated_by_user_id)
-       VALUES (?,?,?,?,?,?)
+       (customer_id,assistant_id,approvals_enabled,pause_conversation,human_acknowledgement,updated_at,updated_by_user_id)
+       VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(customer_id,assistant_id) DO UPDATE SET
        approvals_enabled=excluded.approvals_enabled,pause_conversation=excluded.pause_conversation,
+       human_acknowledgement=excluded.human_acknowledgement,
        updated_at=excluded.updated_at,updated_by_user_id=excluded.updated_by_user_id`,
-    ).bind(customer.customerId, assistantId, enabled, pause, now, session.userId).run();
+    ).bind(customer.customerId, assistantId, enabled, pause, acknowledgement, now, session.userId).run();
     return json({ ok: true, approvalsEnabled: enabled === 1, pauseConversation: pause === 1 });
   }
 
@@ -195,6 +313,8 @@ export async function handleRuntimeApi(
         kind: normalized.kind, question: normalized.question, summary: normalized.summary,
         expiresAt, now,
       }).catch(() => undefined);
+      await notifyHumanOpsDestinations(env, { customerId: customer.customerId, assistantId, approvalId: result.id, kind: normalized.kind,
+        question: normalized.question, summary: normalized.summary, expiresAt, now }).catch(() => undefined);
     }
     return json(result, result.created ? 201 : 200);
   }
@@ -1059,6 +1179,10 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   }
 
   const message = update.business_message ?? update.edited_business_message ?? update.message ?? update.edited_message;
+  if (["group", "supergroup"].includes(String(message?.chat?.type || ""))) {
+    const operationsResult = await handleHumanOpsGroupMessage(env, assistantId, assistant, updateId, message);
+    if (operationsResult) return operationsResult;
+  }
   if (!message?.chat?.id || !message?.message_id) {
     await markWebhook(env.DB, assistantId, updateId, "ignored");
     return json({ ok: true });
@@ -1335,12 +1459,19 @@ export async function inspectStaleAttemptProjections(env: AssistEnv): Promise<vo
      WHERE status IN ('started','unknown_outcome','result_recorded') AND updated_at<?
      ORDER BY updated_at ASC LIMIT 50`,
   ).bind(cutoff).all<any>();
-  for (const row of rows.results ?? []) {
-    const identity = {
-      attemptId: String(row.attempt_id), customerId: String(row.customer_id), assistantId: String(row.assistant_id),
-    };
+  const workloadRows = await env.DB.prepare(
+    `SELECT attempt_id,customer_id,workload_type,workload_id,status,updated_at
+     FROM workload_inference_attempt_index WHERE status IN ('started','unknown_outcome','result_recorded') AND updated_at<?
+     ORDER BY updated_at ASC LIMIT 50`,
+  ).bind(cutoff).all<any>();
+  for (const row of [...(rows.results ?? []), ...(workloadRows.results ?? [])]) {
+    const isWorkload = row.workload_type === "api_key";
+    const identity = isWorkload
+      ? { attemptId: String(row.attempt_id), customerId: String(row.customer_id), workloadType: "api_key" as const, workloadId: String(row.workload_id) }
+      : { attemptId: String(row.attempt_id), customerId: String(row.customer_id), assistantId: String(row.assistant_id) };
     try {
-      const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, identity.customerId, identity.assistantId);
+      const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, identity.customerId,
+        isWorkload ? String(row.workload_id) : String(row.assistant_id), isWorkload ? "api_key" : "assistant");
       let attempt = await journal.getAttempt(identity);
       if (!attempt) continue;
       if (attempt.status === "started" && Date.now() - attempt.updatedAt > 5 * 60_000) {
@@ -1377,6 +1508,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
      WHERE r.id=? LIMIT 1`,
   ).bind(jobId).first<any>();
   if (!job) return { retry: false, delaySeconds: 0 };
+  const isHumanReply = String(job.delivery_role || "assistant") === "human";
   if (["delivered","failed","superseded","cancelled"].includes(String(job.status))) return { retry: false, delaySeconds: 0 };
 
   if (Number(job.due_at || 0) > now) return { retry: true, delaySeconds: Math.max(1, Number(job.due_at) - now) };
@@ -1424,10 +1556,24 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
     return { retry: false, delaySeconds: 0 };
   }
 
+  const pendingHumanReview = !isHumanReply && await env.DB.prepare(
+    `SELECT 1 FROM human_operations_settings s
+     JOIN human_approval_requests r ON r.customer_id=s.customer_id AND r.assistant_id=s.assistant_id
+     WHERE s.customer_id=? AND s.assistant_id=? AND r.conversation_id=? AND s.pause_conversation=1
+       AND r.status='pending' AND r.expires_at>? LIMIT 1`,
+  ).bind(job.customer_id,job.assistant_id,job.conversation_id,now).first();
+  if (pendingHumanReview) {
+    const delaySeconds = 60;
+    await env.DB.prepare(
+      "UPDATE reply_jobs SET status='retry',last_error='human_approval_pending',due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
+    ).bind(now+delaySeconds,now,job.id).run();
+    return { retry: true, delaySeconds };
+  }
+
   const handoff = await env.DB.prepare(
     "SELECT id FROM human_handoffs WHERE conversation_id=? AND status='open' LIMIT 1",
   ).bind(job.conversation_id).first();
-  if (handoff) {
+  if (handoff && !isHumanReply) {
     const delaySeconds = 60;
     await env.DB.prepare(
       "UPDATE reply_jobs SET status='retry',last_error='human_handoff_open',due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
@@ -1436,7 +1582,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   }
 
   const automation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
-  if (automation.paused || job.assistant_status !== "active") {
+  if ((automation.paused && !isHumanReply) || job.assistant_status !== "active") {
     const delaySeconds = 60;
     await env.DB.prepare(
       "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,updated_at=? WHERE id=?",
@@ -1542,7 +1688,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   }
 
   const beforeDeliveryAutomation = await resolveAutomationState(env.DB, job.customer_id, job.assistant_id, job.conversation_id);
-  if (beforeDeliveryAutomation.paused || job.assistant_status !== "active") {
+  if ((beforeDeliveryAutomation.paused && !isHumanReply) || job.assistant_status !== "active") {
     const delaySeconds = 60;
     await env.DB.prepare(
       "UPDATE reply_jobs SET status='retry',last_error=?,due_at=?,locked_at=NULL,delivery_started_at=NULL,updated_at=? WHERE id=? AND status='processing'",
@@ -1581,7 +1727,7 @@ async function processReplyJob(env: AssistEnv, jobId: string): Promise<{ retry: 
   await env.DB.batch([
     env.DB.prepare(
       "INSERT OR IGNORE INTO messages (id,customer_id,assistant_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?,?)",
-    ).bind(assistantMessageId, job.customer_id, job.assistant_id, job.conversation_id, "assistant", responseText, unix()),
+      ).bind(assistantMessageId, job.customer_id, job.assistant_id, job.conversation_id, isHumanReply ? "human" : "assistant", responseText, unix()),
     env.DB.prepare("UPDATE conversations SET updated_at=? WHERE id=?").bind(unix(), job.conversation_id),
     env.DB.prepare(
       "UPDATE reply_jobs SET status='delivered',external_delivery_id=?,last_error=NULL,completed_at=?,locked_at=NULL,updated_at=? WHERE id=?",
@@ -1779,10 +1925,218 @@ async function notifyHumanApprovalOwners(env: AssistEnv, input: {
   }));
 }
 
+async function notifyHumanOpsDestinations(env: AssistEnv, input: {
+  customerId: string; assistantId: string; approvalId: string; kind: string; question: string; summary: string; expiresAt: number; now: number;
+}) {
+  const rows = await env.DB.prepare(
+    `SELECT d.id,d.chat_id,d.message_thread_id,d.delivery_assistant_id,d.allowed_kinds_json,d.assistant_scope_json
+     FROM human_ops_destinations d WHERE d.customer_id=? AND d.status='active'`,
+  ).bind(input.customerId).all<any>();
+  await Promise.all((rows.results ?? []).map(async (destination: any) => {
+    let kinds: string[] = []; let assistants: string[] = [];
+    try { kinds = JSON.parse(String(destination.allowed_kinds_json || "[]")); } catch {}
+    try { assistants = JSON.parse(String(destination.assistant_scope_json || "[]")); } catch {}
+    if (!kinds.includes(input.kind) || !assistants.includes(input.assistantId)) return;
+    const token = await getAssistantSecret(env, String(destination.delivery_assistant_id), "telegram_bot_token");
+    if (!token) return;
+    const actionTokens = { approved: randomToken(18), rejected: randomToken(18), reply: randomToken(18) };
+    await Promise.all(Object.entries(actionTokens).map(async ([action, opaque]) => env.DB.prepare(
+      `INSERT INTO human_ops_actions (token_hash,customer_id,approval_id,assistant_id,destination_id,delivery_assistant_id,action,expires_at,created_at)
+       SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS
+       (SELECT 1 FROM human_approval_requests WHERE id=? AND customer_id=? AND assistant_id=? AND status='pending')`,
+    ).bind(await sha256Text(opaque),input.customerId,input.approvalId,input.assistantId,destination.id,destination.delivery_assistant_id,
+      action,input.expiresAt,input.now,input.approvalId,input.customerId,input.assistantId).run()));
+    const card = `MKETY HUMAN REVIEW\n${input.kind.replace(/_/g," ")}\nRequest: ${input.approvalId}\n\nOpen the Assist portal to review customer details. This group card contains no conversation text; ordinary group messages remain internal.`;
+    const sent = await telegramSend(
+      token,
+      String(destination.chat_id),
+      card,
+      null,
+      null,
+      {
+        inline_keyboard: [
+          [
+            { text: "Approve", callback_data: `ho:${actionTokens.approved}` },
+            { text: "Reject", callback_data: `ho:${actionTokens.rejected}` },
+          ],
+          [{ text: "Reply", callback_data: `ho:${actionTokens.reply}` }],
+        ],
+      },
+    ).catch(() => ({ ok: false }));
+    if (sent?.ok && sent.result?.message_id) {
+      await env.DB.prepare("UPDATE human_approval_requests SET operations_destination_id=? WHERE id=? AND customer_id=? AND assistant_id=?")
+        .bind(destination.id,input.approvalId,input.customerId,input.assistantId).run();
+    } else console.error("Human Operations group notification failed",String(sent?.description||"telegram_send_failed").slice(0,180));
+  }));
+}
+
+async function handleHumanOpsGroupMessage(env: AssistEnv, deliveryAssistantId: string, assistant: any, updateId: string, message: any): Promise<Response | null> {
+  const chatId = String(message.chat.id);
+  const chatType = String(message.chat.type);
+  const text = String(message.text || message.caption || "").trim();
+  const token = await getAssistantSecret(env,deliveryAssistantId,"telegram_bot_token");
+  const link = text.match(/^\/link(?:@\w+)?\s+([A-Za-z0-9_-]{16,64})$/i);
+  if (link) {
+    const tokenHash = await sha256Text(link[1]);
+    const actorTelegramId = message.from?.id == null ? "" : String(message.from.id);
+    const challenge = await env.DB.prepare(
+      `SELECT x.customer_id,x.delivery_assistant_id,x.assistant_scope_json,x.created_by_user_id,x.expires_at
+       FROM human_ops_link_challenges x JOIN customer_users cu ON cu.customer_id=x.customer_id
+       JOIN users u ON u.id=cu.user_id
+       WHERE x.token_hash=? AND x.delivery_assistant_id=? AND x.expires_at>? AND x.consumed_at IS NULL
+         AND cu.role IN ('owner','admin') AND u.telegram_user_id=? LIMIT 1`,
+    ).bind(tokenHash,deliveryAssistantId,unix(),actorTelegramId).first<any>();
+    if (!challenge || !actorTelegramId || !["group","supergroup"].includes(chatType)) {
+      if (token) await telegramSend(token,chatId,"This Human Operations link is invalid, expired, or your linked account is not authorized.").catch(()=>undefined);
+      await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
+      return json({ok:true,operationsLink:false});
+    }
+    const destinationId = id("hod");
+    const now = unix();
+    try {
+      const result = await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE human_ops_link_challenges SET consumed_at=? WHERE token_hash=? AND customer_id=? AND delivery_assistant_id=?
+           AND expires_at>? AND consumed_at IS NULL AND EXISTS (SELECT 1 FROM customer_users cu JOIN users u ON u.id=cu.user_id
+             WHERE cu.customer_id=? AND cu.role IN ('owner','admin') AND u.telegram_user_id=?)`,
+        ).bind(now,tokenHash,challenge.customer_id,deliveryAssistantId,now,challenge.customer_id,actorTelegramId),
+        env.DB.prepare(
+          `INSERT INTO human_ops_destinations
+           (id,customer_id,name,chat_id,message_thread_id,delivery_assistant_id,destination_type,status,assistant_scope_json,created_by_user_id,created_at,updated_at)
+           SELECT ?,customer_id,?,?,NULL,?,?,'active',assistant_scope_json,?,?,? FROM human_ops_link_challenges
+           WHERE token_hash=? AND customer_id=? AND delivery_assistant_id=? AND consumed_at=?`,
+        ).bind(destinationId,`Telegram ${chatType}: ${String(message.chat.title||chatId).slice(0,80)}`,chatId,deliveryAssistantId,chatType,
+          challenge.created_by_user_id||null,now,now,tokenHash,challenge.customer_id,deliveryAssistantId,now),
+        env.DB.prepare(
+          `INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+           SELECT ?, 'telegram_user', ?, ?, 'human_ops_destination_linked', 'telegram_destination', ?, ?, ?
+           WHERE changes()>0 AND EXISTS (SELECT 1 FROM human_ops_destinations WHERE id=?)`,
+        ).bind(id("aud"),actorTelegramId,challenge.customer_id,destinationId,JSON.stringify({chatType}),now,destinationId),
+      ]);
+      if (!Number(result[0]?.meta?.changes||0)||!Number(result[1]?.meta?.changes||0)) throw new Error("operations_link_race");
+      if (token) await telegramSend(token,chatId,"This group is now linked as a Human Operations destination. Group messages remain internal to this group.").catch(()=>undefined);
+      await markWebhook(env.DB,deliveryAssistantId,updateId,"processed");
+      return json({ok:true,operationsDestinationLinked:true});
+    } catch (error) {
+      if (token) await telegramSend(token,chatId,"This group could not be linked. Check that it is not already linked and request a new portal code.").catch(()=>undefined);
+      await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
+      return json({ok:true,operationsDestinationLinked:false});
+    }
+  }
+
+  const destination = await env.DB.prepare(
+    `SELECT id,customer_id,status FROM human_ops_destinations WHERE customer_id=? AND delivery_assistant_id=? AND chat_id=? AND status!='revoked' LIMIT 1`,
+  ).bind(assistant.customer_id,deliveryAssistantId,chatId).first<any>();
+  if (!destination) return null;
+  if (destination.status !== "active" || message.from?.is_bot || !text || /^\/link\b/i.test(text)) {
+    await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
+    return json({ok:true,humanOperations:true,ignored:true});
+  }
+  const actorTelegramId = message.from?.id == null ? "" : String(message.from.id);
+  const capture = await env.DB.prepare(
+    `SELECT c.id,c.customer_id,c.user_id,c.approval_id,a.assistant_id,a.conversation_id,cv.external_conversation_id,cv.business_connection_id
+     FROM human_ops_reply_captures c JOIN human_ops_destinations d ON d.id=c.destination_id AND d.customer_id=c.customer_id
+     JOIN human_approval_requests a ON a.id=c.approval_id AND a.customer_id=c.customer_id AND a.status='pending'
+     JOIN conversations cv ON cv.id=a.conversation_id AND cv.customer_id=a.customer_id AND cv.assistant_id=a.assistant_id
+     JOIN customer_users cu ON cu.customer_id=c.customer_id AND cu.user_id=c.user_id AND cu.role IN ('owner','admin')
+     JOIN users u ON u.id=cu.user_id AND u.telegram_user_id=c.telegram_user_id
+     WHERE c.destination_id=? AND c.telegram_user_id=? AND c.status='pending' AND c.expires_at>? AND d.status='active' LIMIT 1`,
+  ).bind(destination.id,actorTelegramId,unix()).first<any>();
+  if (!capture) {
+    await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
+    return json({ok:true,humanOperations:true,internalNote:true});
+  }
+  const replyJobId = id("rpl");
+  const now = unix();
+  const replyText = text.slice(0,2000);
+  const replyQueued = await recordHumanApprovalReply(env.DB,{
+    customerId:String(capture.customer_id),assistantId:String(capture.assistant_id),approvalId:String(capture.approval_id),
+    captureId:String(capture.id),destinationId:String(destination.id),telegramUserId:actorTelegramId,actorUserId:String(capture.user_id),
+    replyText,conversationId:String(capture.conversation_id),externalConversationId:String(capture.external_conversation_id),
+    businessConnectionId:capture.business_connection_id==null?null:String(capture.business_connection_id),
+    replyJobId,auditId:id("aud"),now,
+  });
+  if (!replyQueued) {
+    await env.DB.prepare("UPDATE human_ops_reply_captures SET status='cancelled' WHERE id=? AND status IN ('pending','captured')")
+      .bind(capture.id).run();
+    await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
+    return json({ok:true,humanOperations:true,approvalAlreadyDecided:true});
+  }
+  try { await env.REPLY_QUEUE.send({jobId:replyJobId}); }
+  catch(error) { await env.DB.prepare("UPDATE reply_jobs SET last_error=?,updated_at=? WHERE id=?").bind(`queue_enqueue_failed:${String(error).slice(0,200)}`,now,replyJobId).run(); }
+  if (token) await telegramSend(token,chatId,"Your reply has been sent to the customer through their existing assistant channel.").catch(()=>undefined);
+  await markWebhook(env.DB,deliveryAssistantId,updateId,"processed");
+  return json({ok:true,humanOperations:true,humanReplyQueued:true});
+}
+
+async function processHumanOpsTelegramCallback(env: AssistEnv, deliveryAssistantId: string, callback: any) {
+  const token = await getAssistantSecret(env,deliveryAssistantId,"telegram_bot_token");
+  const callbackQueryId = String(callback?.id||"");
+  const data = String(callback?.data||"");
+  const opaque = data.slice(3);
+  let responseText = "This Human Operations action is unavailable.";
+  const chatId = callback?.message?.chat?.id == null ? "" : String(callback.message.chat.id);
+  const telegramUserId = callback?.from?.id == null ? "" : String(callback.from.id);
+  if (token && callbackQueryId && /^ho:[A-Za-z0-9_-]{16,64}$/.test(data) && chatId && telegramUserId) {
+    const tokenHash = await sha256Text(opaque);
+    const action = await env.DB.prepare(
+      `SELECT x.customer_id,x.approval_id,x.assistant_id,x.destination_id,x.action,x.expires_at,d.chat_id,d.status,d.allowed_kinds_json,d.assistant_scope_json,
+              r.kind,r.status AS approval_status
+       FROM human_ops_actions x JOIN human_ops_destinations d ON d.id=x.destination_id AND d.customer_id=x.customer_id
+       JOIN human_approval_requests r ON r.id=x.approval_id AND r.customer_id=x.customer_id AND r.assistant_id=x.assistant_id
+       WHERE x.token_hash=? AND x.delivery_assistant_id=? AND x.expires_at>? AND x.used_at IS NULL LIMIT 1`,
+    ).bind(tokenHash,deliveryAssistantId,unix()).first<any>();
+    let kinds:string[]=[];let assistants:string[]=[];
+    try{kinds=JSON.parse(String(action?.allowed_kinds_json||"[]"))}catch{}
+    try{assistants=JSON.parse(String(action?.assistant_scope_json||"[]"))}catch{}
+    const actor = action && String(action.chat_id)===chatId && action.status==="active" && action.approval_status==="pending" &&
+      kinds.includes(String(action.kind)) && assistants.includes(String(action.assistant_id))
+      ? await env.DB.prepare(
+        `SELECT cu.user_id,cu.role FROM customer_users cu JOIN users u ON u.id=cu.user_id
+         WHERE cu.customer_id=? AND u.telegram_user_id=? AND cu.role IN ('owner','admin') LIMIT 1`,
+      ).bind(action.customer_id,telegramUserId).first<any>() : null;
+    if (actor) {
+      const claimed = await env.DB.prepare("UPDATE human_ops_actions SET used_at=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?")
+        .bind(unix(),tokenHash,unix()).run();
+      if (Number(claimed.meta?.changes||0)) {
+        if (action.action === "reply") {
+          await env.DB.prepare(
+            `INSERT INTO human_ops_reply_captures (id,customer_id,destination_id,approval_id,user_id,telegram_user_id,status,expires_at,created_at)
+             SELECT ?,?,?,?,?,?,'pending',?,? WHERE EXISTS (SELECT 1 FROM human_approval_requests WHERE id=? AND customer_id=? AND status='pending')`,
+          ).bind(id("hor"),action.customer_id,action.destination_id,action.approval_id,actor.user_id,telegramUserId,unix()+300,unix(),action.approval_id,action.customer_id).run();
+          responseText = "Reply capture is active. Send one customer-bound reply in this group within five minutes.";
+        } else {
+          const decided = await decideHumanApproval(env.DB,{
+            customerId:String(action.customer_id),assistantId:String(action.assistant_id),approvalId:String(action.approval_id),
+            actorUserId:String(actor.user_id),decision:String(action.action) as "approved"|"rejected",decisionText:"",now:unix(),
+            telegramActorId:telegramUserId,destinationId:String(action.destination_id),
+          });
+          responseText = decided ? `Decision recorded: ${action.action}.` : "This request has already been decided or expired.";
+        }
+        await telegramEditMessage(token,chatId,String(callback.message?.message_id||""),responseText);
+      } else responseText = "This action was already used.";
+    } else responseText = "Your linked Mkety account is not authorized for this active request.";
+  }
+  if (token && callbackQueryId) await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`,{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({callback_query_id:callbackQueryId,text:responseText}),
+  }).catch(()=>undefined);
+}
+
+async function telegramEditMessage(token: string, chatId: string, messageId: string, text: string) {
+  if (!messageId) return;
+  await fetch(`https://api.telegram.org/bot${token}/editMessageText`,{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,message_id:Number(messageId),text,reply_markup:{inline_keyboard:[]}}),
+  }).catch(()=>undefined);
+}
+
 async function processHumanApprovalTelegramCallback(env: AssistEnv, deliveryAssistantId: string, callback: any) {
   const token = await getAssistantSecret(env, deliveryAssistantId, "telegram_bot_token");
   const callbackQueryId = String(callback?.id || "");
   const rawData = String(callback?.data || "");
+  if (rawData.startsWith("ho:")) {
+    await processHumanOpsTelegramCallback(env,deliveryAssistantId,callback);
+    return;
+  }
   let responseText = "This review action is unavailable.";
   if (token && callbackQueryId && /^ha:[A-Za-z0-9_-]{12,40}$/.test(rawData)) {
     const tokenHash = await sha256Text(rawData.slice(3));
@@ -2012,6 +2366,12 @@ async function runAssistant(input: {
   const prompt = await env.DB.prepare(
     "SELECT version,instructions FROM assistant_prompt_versions WHERE customer_id=? AND assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
   ).bind(assistant.customer_id, assistant.id).first<any>();
+  const humanOpsSetting = await env.DB.prepare(
+    "SELECT approvals_enabled,allowed_kinds_json,human_acknowledgement FROM human_operations_settings WHERE customer_id=? AND assistant_id=? LIMIT 1",
+  ).bind(assistant.customer_id,assistant.id).first<any>();
+  let humanOpsKinds: string[] = [];
+  try { humanOpsKinds = JSON.parse(String(humanOpsSetting?.allowed_kinds_json||"[]")); } catch {}
+  const humanOpsEnabled = Number(humanOpsSetting?.approvals_enabled||0)===1 && humanOpsKinds.length>0;
   const tools = assistant.tools_enabled
     ? await env.DB.prepare(
         "SELECT id,name,description,endpoint_url,auth_header_ciphertext,updated_at FROM assistant_tools WHERE customer_id=? AND assistant_id=? AND status='active' ORDER BY name LIMIT 12",
@@ -2052,7 +2412,9 @@ async function runAssistant(input: {
     currentTurn: { text: input.userText, mediaContext: input.mediaContext },
     baseSystem: staticContext,
   });
-  const system = assembledContext.system;
+  const system = assembledContext.system + (humanOpsEnabled
+    ? `\n\nHUMAN REVIEW CONTROL: You may request a human decision only with the internal request_human_decision JSON action and only for these kinds: ${humanOpsKinds.join(", ")}. Never claim that payment, identity, partner status, or a protected action is verified before approval. When review is requested, the runtime sends the configured neutral acknowledgement.`
+    : "");
   const estimatedInputTokens = Math.max(1, Math.ceil((system.length + history.reduce((n: number, m: any) => n + String(m.content || "").length, 0) + userCombined.length) / 4));
   const maxOutputTokens = selectCompletionBudget({ userText: input.userText });
 
@@ -2140,7 +2502,31 @@ async function runAssistant(input: {
       }
     }
 
-    const toolCall = parseToolCall(text, tools.results ?? []);
+    const humanRequest = humanOpsEnabled ? parseHumanDecisionCall(text,humanOpsKinds) : null;
+    if (humanRequest) {
+      const messageRows = await env.DB.prepare(
+        `SELECT id FROM messages WHERE customer_id=? AND assistant_id=? AND conversation_id=? AND role='user'
+         ORDER BY created_at DESC,id DESC LIMIT 10`,
+      ).bind(assistant.customer_id,assistant.id,conversationId).all<any>();
+      const evidenceMessageIds = (messageRows.results??[]).map((row:any)=>String(row.id));
+      const request = await createHumanApprovalRequest(env.DB,{
+        customerId:String(assistant.customer_id),assistantId:String(assistant.id),conversationId,
+        requestedBy:`assistant:${assistant.id}`,kind:humanRequest.kind,question:humanRequest.question,summary:humanRequest.summary,
+        proposedResponse:humanRequest.proposedResponse,evidenceMessageIds,
+        idempotencyKey:`assistant:${input.replyJobId}:human-review`,now:unix(),expiresAt:unix()+86400,
+      });
+      if (request?.created) {
+        await notifyHumanApprovalOwners(env,{customerId:String(assistant.customer_id),assistantId:String(assistant.id),approvalId:request.id,
+          kind:humanRequest.kind,question:humanRequest.question,summary:humanRequest.summary,expiresAt:unix()+86400,now:unix()}).catch(()=>undefined);
+        await notifyHumanOpsDestinations(env,{customerId:String(assistant.customer_id),assistantId:String(assistant.id),approvalId:request.id,
+          kind:humanRequest.kind,question:humanRequest.question,summary:humanRequest.summary,expiresAt:unix()+86400,now:unix()}).catch(()=>undefined);
+      }
+      text = request?.status === "pending"
+        ? String(humanOpsSetting?.human_acknowledgement||"Thanks, I have that. I’ll continue from here.").slice(0,600)
+        : "I can’t verify that right now. Please contact the business directly for help.";
+      latestSuccessfulText=text;
+    }
+    const toolCall = humanRequest ? null : parseToolCall(text, tools.results ?? []);
     if (toolCall) {
       const tool = (tools.results ?? []).find((t: any) => t.name === toolCall.tool);
       if (tool) {
@@ -2287,6 +2673,181 @@ async function runAssistant(input: {
   }
 }
 
+async function handleRawModelApiInference(
+  request: Request,
+  env: AssistEnv,
+  customer: Customer,
+  key: any,
+  body: any,
+  now: number,
+): Promise<Response> {
+  const setting = await env.DB.prepare(
+    "SELECT enabled,allowed_models_json FROM raw_model_api_settings WHERE customer_id=? LIMIT 1",
+  ).bind(customer.customerId).first<any>();
+  let customerAllowlist: string[] = [];
+  let keyAllowlist: string[] = [];
+  try { customerAllowlist = normalizeModelAllowlist(setting?.allowed_models_json || "[]"); } catch {}
+  try { keyAllowlist = normalizeModelAllowlist(key.model_allowlist_json || "[]"); } catch {}
+  const alias = typeof body.model === "string" ? body.model.trim() : "";
+  if (!canUseRawModelApi({ enabled: Number(setting?.enabled || 0) === 1, allowlist: customerAllowlist, alias }) || !keyAllowlist.includes(alias)) {
+    return json({ error: { message: "model_not_allowed_for_api_key" } }, 403);
+  }
+  const route = await resolveModelRoute(env.DB, customer.customerId, alias);
+  const rate = await env.DB.prepare(
+    "SELECT * FROM model_rates WHERE alias=? AND effective_at<=? ORDER BY version DESC LIMIT 1",
+  ).bind(alias, now).first<any>();
+  if (!route || !rate) return json({ error: { message: "model_unavailable" } }, 503);
+
+  const messages = Array.isArray(body.messages)
+    ? body.messages.slice(-40).map((message: any) => ({
+        role: ["system", "assistant", "user"].includes(String(message?.role)) ? String(message.role) : "user",
+        content: typeof message?.content === "string" ? message.content.slice(0, 30000) : JSON.stringify(message?.content ?? "").slice(0, 30000),
+      }))
+    : [];
+  if (!messages.length || !messages.some((message: any) => message.role === "user")) {
+    return json({ error: { message: "messages_required" } }, 400);
+  }
+  const modelMessages = [
+    { role: "system", content: "Do not disclose provider credentials, internal provider costs, private platform configuration, or other customers' information." },
+    ...messages,
+  ];
+  const reasoningInput = body.reasoning_effort ?? body.reasoning_mode;
+  const reasoningMode = reasoningInput == null ? "standard" : normalizeReasoningMode(reasoningInput);
+  if (!reasoningMode) return json({ error: { message: "invalid_reasoning_mode" } }, 400);
+  const inputChars = modelMessages.reduce((total: number, message: any) => total + String(message.content || "").length, 0);
+  const estimatedInputTokens = Math.max(1, Math.ceil(inputChars / 4));
+  const lastUserText = String([...messages].reverse().find((message: any) => message.role === "user")?.content || "");
+  const defaultOutputBudget = selectCompletionBudget({ userText: lastUserText });
+  const requestedOutputBudget = body.max_tokens ?? body.max_completion_tokens;
+  const maxOutputTokens = requestedOutputBudget == null
+    ? defaultOutputBudget
+    : Math.max(1, Math.min(2048, parseInt(String(requestedOutputBudget), 10) || defaultOutputBudget));
+  const commercial = await env.DB.prepare(
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
+            cp.hard_stop_enabled,c.billing_status,c.grace_until
+     FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id WHERE cp.customer_id=? LIMIT 1`,
+  ).bind(customer.customerId).first<any>();
+  if (!commercial) return json({ error: { message: "commercial_policy_unavailable" } }, 503);
+  if (commercial.billing_status === "past_due" && commercial.grace_until && now > Number(commercial.grace_until)) {
+    return json({ error: { message: "billing_past_due" } }, 402);
+  }
+  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
+  const reserveAmount = Math.max(1, routeRates.reduce((sum: number, target: any) => {
+    const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
+    const outputRate = Math.ceil(Number(target?.output_credits_per_million || rate.output_credits_per_million || 0) * multiplierBps / 10000);
+    const reasoningRate = target?.reasoning_credits_per_million == null ? 0 : Math.ceil(Number(target.reasoning_credits_per_million) * multiplierBps / 10000);
+    return sum + Math.ceil((estimatedInputTokens * inputRate + maxOutputTokens * (outputRate + reasoningRate)) / 1_000_000);
+  }, 0));
+  const estimatedProviderCostMicros = Math.max(0, routeRates.reduce((sum: number, target: any) => sum + Math.ceil(
+    (estimatedInputTokens * Number(target?.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+      + maxOutputTokens * (Number(target?.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)
+        + Number(target?.provider_reasoning_cost_micros_per_million || 0))) / 1_000_000,
+  ), 0));
+  if (commercial.hard_stop_enabled && !(await providerBudgetAllows(env.DB, customer.customerId, commercial, estimatedProviderCostMicros))) {
+    return json({ error: { message: "usage_limit_reached" } }, 402);
+  }
+  const suppliedKey = String(request.headers.get("idempotency-key") || "").trim().slice(0, 160);
+  const requestId = suppliedKey ? `api:${key.id}:${suppliedKey}` : id("api");
+  const reservation = await reserveRawModelCredits(env.DB, customer.customerId, String(key.id), reserveAmount, suppliedKey ? requestId : undefined);
+  if (!reservation) return json({ error: { message: "insufficient_credits" } }, 402);
+  if (reservation.status === "released") return json({ error: { message: "idempotent_request_reservation_released" } }, 409);
+
+  const attemptIds: string[] = [];
+  let providerResult: any = null;
+  let providerText = "";
+  const workload = { workloadType: "api_key" as const, workloadId: String(key.id) };
+  try {
+    const result = await invokeJournaledProviderCall(env, route, {
+      messages: modelMessages, max_tokens: maxOutputTokens,
+      temperature: typeof body.temperature === "number" ? Math.max(0, Math.min(2, body.temperature)) : 0.4,
+    }, customer.customerId, "", requestId, reservation.id, 0, estimatedInputTokens, multiplierBps, attemptIds,
+      reasoningMode, "allow_lower_effort", `api:${key.id}`, workload);
+    providerResult = result;
+    const text = extractAiText(result);
+    providerText = text;
+    if (!text) throw new Error("empty model response");
+    const usage = extractUsage(result, estimatedInputTokens, text);
+    const servedRate = result?.__mketyTargetRate || rate;
+    const primaryCredits = Math.max(1, modelAttemptEconomics({ inputUnits: usage.input, outputUnits: usage.output,
+      reasoningUnits: usage.reasoning, targetRate: { ...servedRate, rate_multiplier_bps: multiplierBps } }, multiplierBps).credits);
+    const providerCostMicros = Math.max(0, Math.ceil(
+      (usage.input * Number(servedRate.provider_input_cost_micros_per_million || rate.provider_input_cost_micros_per_million || 0)
+        + usage.output * Number(servedRate.provider_output_cost_micros_per_million || rate.provider_output_cost_micros_per_million || 0)
+        + usage.reasoning * Number(servedRate.provider_reasoning_cost_micros_per_million || 0)) / 1_000_000,
+    ));
+    const priorAttempts = Array.isArray(result?.__mketyPriorAttempts) ? result.__mketyPriorAttempts : [];
+    const priorEconomics = priorAttempts.map((attempt: any) => ({ attempt, ...modelAttemptEconomics(attempt, multiplierBps) }));
+    const actualCredits = Math.min(reserveAmount, Math.max(1, primaryCredits + priorEconomics.reduce((sum: number, item: any) => sum + item.credits, 0)));
+    const settled = await settleRawModelCredits(env.DB, reservation.id, customer.customerId, String(key.id), reserveAmount, actualCredits, {
+      modelAlias: alias, provider: String(result?.__mketyProvider || route.provider),
+      providerModel: String(result?.__mketyProviderModel || route.provider_model), conversationId: `api:${key.id}`,
+      inputUnits: usage.input, outputUnits: usage.output, reasoningUnits: usage.reasoning,
+      requestedReasoningMode: String(result?.__mketyRequestedReasoningMode || "standard"),
+      appliedReasoningMode: String(result?.__mketyAppliedReasoningMode || "standard"), providerCostMicros,
+      providerAttemptId: String(result?.__mketyAttemptId || `reservation:${reservation.id}`),
+      additionalProviderCosts: priorEconomics.map((item: any) => ({
+        provider: String(item.attempt.provider), providerModel: String(item.attempt.providerModel),
+        inputUnits: Number(item.attempt.inputUnits || 0), outputUnits: Number(item.attempt.outputUnits || 0),
+        reasoningUnits: Number(item.attempt.reasoningUnits || 0), providerCostMicros: item.providerCostMicros,
+        providerAttemptId: String(item.attempt.providerAttemptId || ""),
+      })),
+    });
+    if (!settled) throw new Error("raw_model_settlement_failed");
+    await Promise.all(attemptIds.map(async (attemptId) => {
+      const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, customer.customerId, String(key.id), "api_key");
+      const identity = { customerId: customer.customerId, ...workload, attemptId };
+      await journal.markAttemptSettled({ ...identity, settlementId: reservation.id });
+      await updateAttemptProjection(env.DB, { ...identity, status: "settled", resolved: true });
+    }));
+    await env.DB.prepare("UPDATE customer_api_keys SET last_used_at=? WHERE id=? AND customer_id=?")
+      .bind(now, key.id, customer.customerId).run();
+    return json({
+      id: `chatcmpl_${crypto.randomUUID().replace(/-/g, "")}`, object: "chat.completion", created: now, model: alias,
+      choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
+      usage: { prompt_tokens: usage.input, completion_tokens: usage.output, total_tokens: usage.input + usage.output },
+      mkety: { credits_charged: actualCredits, workload_type: "api_key" },
+    });
+  } catch (error) {
+    if (error instanceof RetryableInferenceError && error.message === "provider_attempt_reconciliation_required") {
+      return json({ error: { message: error.message, retry_after_seconds: error.retryAfterSeconds } }, 503);
+    }
+    const classified = classifyRetryableError(error);
+    const priorAttempts = Array.isArray((error as any)?.__mketyPriorAttempts) ? (error as any).__mketyPriorAttempts : [];
+    if (providerResult) priorAttempts.push(routedResultAttempt(providerResult, estimatedInputTokens, providerText));
+    const economics = priorAttempts.map((attempt: any) => ({ attempt, ...modelAttemptEconomics(attempt, multiplierBps) }));
+    const incurred = economics.reduce((sum: number, item: any) => sum + item.credits, 0);
+    if (economics.length && (incurred > 0 || economics.some((item: any) => item.providerCostMicros > 0))) {
+      const first = economics[0];
+      await settleRawModelCredits(env.DB, reservation.id, customer.customerId, String(key.id), reserveAmount,
+        Math.min(reserveAmount, Math.max(1, incurred)), {
+          modelAlias: alias, provider: String(first.attempt.provider || route.provider),
+          providerModel: String(first.attempt.providerModel || route.provider_model), conversationId: `api:${key.id}`,
+          inputUnits: Number(first.attempt.inputUnits || 0), outputUnits: Number(first.attempt.outputUnits || 0),
+          reasoningUnits: Number(first.attempt.reasoningUnits || 0), providerCostMicros: first.providerCostMicros,
+          providerAttemptId: String(first.attempt.providerAttemptId || `reservation:${reservation.id}`),
+          additionalProviderCosts: economics.slice(1).map((item: any) => ({
+            provider: String(item.attempt.provider), providerModel: String(item.attempt.providerModel),
+            inputUnits: Number(item.attempt.inputUnits || 0), outputUnits: Number(item.attempt.outputUnits || 0),
+            reasoningUnits: Number(item.attempt.reasoningUnits || 0), providerCostMicros: item.providerCostMicros,
+            providerAttemptId: String(item.attempt.providerAttemptId || ""),
+          })),
+        });
+      await Promise.all(attemptIds.map((attemptId) => {
+        const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, customer.customerId, String(key.id), "api_key");
+        return journal.markAttemptSettled({ customerId: customer.customerId, ...workload, attemptId, settlementId: reservation.id }).catch(() => undefined);
+      }));
+    } else if (!classified.retryable) {
+      await releaseRawModelCredits(env.DB, reservation.id, customer.customerId, String(key.id));
+    }
+    console.error("Assist raw model API inference failed", error);
+    if (classified.retryable) return new Response(JSON.stringify({ error: { message: "capacity_temporarily_unavailable", retry_after_seconds: classified.retryAfterSeconds } }), {
+      status: 429, headers: { "content-type": "application/json; charset=utf-8", "retry-after": String(classified.retryAfterSeconds) },
+    });
+    return json({ error: { message: "inference_failed" } }, 502);
+  }
+}
+
 export async function handleApiKeyInference(
   request: Request,
   env: AssistEnv,
@@ -2320,6 +2881,9 @@ export async function handleApiKeyInference(
   }
 
   const body = await readJson(request);
+  let keyMode: "assistant" | "raw_model";
+  try { keyMode = normalizeApiKeyMode(key.mode); } catch { return json({ error: { message: "invalid_api_key" } }, 401); }
+  if (keyMode === "raw_model") return handleRawModelApiInference(request, env, customer, key, body, now);
   const assistantId = String(key.assistant_id || body.assistant_id || "").trim();
   if (!assistantId) return json({ error: { message: "assistant_id_required" } }, 400);
   const assistant = await env.DB.prepare(
@@ -3417,10 +3981,17 @@ async function invokeJournaledProviderCall(
   reasoningMode: ReasoningMode = "standard",
   fallbackPolicy: ReasoningFallbackPolicy = "allow_lower_effort",
   conversationId = "",
+  workloadIdentity?: { workloadType: "api_key"; workloadId: string },
 ) {
   const attemptId = attemptIdFor(replyJobId, reservationId, ordinal);
-  const identity = { customerId, assistantId, attemptId };
-  const journal = settlementJournalStub(env.SETTLEMENT_JOURNAL, customerId, assistantId);
+  const identity = workloadIdentity
+    ? { customerId, attemptId, ...workloadIdentity }
+    : { customerId, assistantId, attemptId };
+  const journal = settlementJournalStub(
+    env.SETTLEMENT_JOURNAL, customerId,
+    workloadIdentity?.workloadId || assistantId,
+    workloadIdentity ? "api_key" : "assistant",
+  );
   const requestHash = await resilienceSha256Text(JSON.stringify(input));
   const configuredTarget = Array.isArray(route.__targets) && route.__targets.length ? route.__targets[0] : route;
   const initialRateSnapshot = Object.fromEntries([

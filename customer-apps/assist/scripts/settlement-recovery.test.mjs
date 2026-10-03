@@ -54,9 +54,17 @@ test("testHumanTakeoverStillBlocksPendingDelivery", () => {
   const delivery = runtime.slice(runtime.indexOf("async function processReplyJob"), runtime.indexOf("async function buildConversationContext"));
   assert.match(delivery,/resolveAutomationState\(env\.DB/);
   assert.match(delivery,/human_handoff_open/);
-  assert.match(delivery,/if \(beforeDeliveryAutomation\.paused/);
+  assert.match(delivery,/if \(\(beforeDeliveryAutomation\.paused && !isHumanReply\) \|\| job\.assistant_status !== "active"\)/);
   assert.match(index,/processInboundQueue/);
   assert.match(journal,/unknown_outcome/);
+});
+
+test("testConfiguredApprovalPauseDefersOnlyAssistantReplies", () => {
+  const delivery = runtime.slice(runtime.indexOf("async function processReplyJob"), runtime.indexOf("async function buildConversationContext"));
+  assert.match(delivery,/pause_conversation=1[\s\S]*status='pending'/);
+  assert.match(delivery,/const pendingHumanReview = !isHumanReply/);
+  assert.match(delivery,/if \(pendingHumanReview\)/);
+  assert.match(delivery,/automation\.paused && !isHumanReply/);
 });
 
 test("testReservationDatabaseFailurePreventsProviderCall", () => {

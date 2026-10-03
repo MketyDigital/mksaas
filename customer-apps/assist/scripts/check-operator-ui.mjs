@@ -177,6 +177,8 @@ try {
   if (typeof customerDocument.getElementById("logout").onclick !== "function") throw new Error("Customer logout handler was not bound");
   if (!customerHtml.includes("API Access")) throw new Error("Customer API Access section missing");
   if (!customerHtml.includes("Human Operations")) throw new Error("Customer Human Operations section missing");
+  if (!customerHtml.includes("data-pause-conversation")) throw new Error("Human Operations conversation pause control missing");
+  if (!customerHtml.includes("pauseConversation:pause?.checked===true")) throw new Error("Human Operations pause choice is not saved");
   if (!customerScript.includes("/api/human-approvals")) throw new Error("Human approval list and decision handlers missing");
   if (!customerScript.includes("/api/human-operations")) throw new Error("Per-assistant Human Operations opt-in missing");
   if (!customerScript.includes("does not send a message into the customer conversation")) throw new Error("Review creation must stay out of customer conversations");

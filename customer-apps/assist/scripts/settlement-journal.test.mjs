@@ -61,6 +61,17 @@ test("testAttemptIdsCannotCrossCustomerAssistant", async () => {
   await assert.rejects(() => journal.getAttempt({ ...started, customerId: "customer-b" }), /attempt_scope_mismatch/);
 });
 
+test("testAttemptIdsCannotCrossRawApiKeyIdentity", async () => {
+  const journal = makeJournal();
+  const raw = {
+    customerId: "customer-a", workloadType: "api_key", workloadId: "key-a", attemptId: "api:key-a:res:0",
+    reservationId: "res-raw", requestHash: "hash", provider: "openai", model: "model-a",
+    idempotencyKey: "api:key-a:0", startedAt: 1,
+  };
+  await journal.recordAttemptStarted(raw);
+  await assert.rejects(() => journal.getAttempt({ ...raw, workloadId: "key-b" }), /attempt_scope_mismatch/);
+});
+
 test("testUnknownOutcomeDoesNotBecomeRetryableGeneration", async () => {
   const journal = makeJournal();
   await journal.recordAttemptStarted(started);
