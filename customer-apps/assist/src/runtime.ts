@@ -11,7 +11,7 @@ import { contextCacheKey, readContextSnapshot, writeContextSnapshot } from "./co
 import { enqueueInboundUpdate, replayInboundUpdate } from "./queues/inbound";
 import { attemptIdFor, settlementJournalStub } from "./billing/settlement-journal";
 import { reserveInference, releaseInferenceReservation, settleInference } from "./billing/inference-settlement";
-import { createHumanApprovalRequest, decideHumanApproval, normalizeApprovalRequest } from "./human-approvals";
+import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, normalizeApprovalRequest } from "./human-approvals";
 import { recordAttemptProjection, updateAttemptProjection } from "./billing/reconciliation";
 import {
   RetryableInferenceError,
@@ -189,6 +189,13 @@ export async function handleRuntimeApi(
       throw error;
     }
     if (!result) return json({ error: "human_approvals_disabled_or_conversation_not_found" }, 409);
+    if (result.created) {
+      await notifyHumanApprovalOwners(env, {
+        customerId: customer.customerId, assistantId, approvalId: result.id,
+        kind: normalized.kind, question: normalized.question, summary: normalized.summary,
+        expiresAt, now,
+      }).catch(() => undefined);
+    }
     return json(result, result.created ? 201 : 200);
   }
 
@@ -981,6 +988,10 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
   const update = await readJson(request);
   const updateId = String(update.update_id ?? "");
   if (!updateId) return json({ ok: true });
+  if (update.callback_query) {
+    await processHumanApprovalTelegramCallback(env, assistantId, update.callback_query).catch(() => undefined);
+    return json({ ok: true, callback: true });
+  }
   if (!replayed) {
     try {
       await enqueueInboundUpdate(env.INBOUND_QUEUE, { assistantId, providerEventId: updateId, update });
@@ -1713,6 +1724,79 @@ async function notifyLinkedOwners(
   await Promise.all((rows.results ?? []).map((row: any) =>
     telegramSend(token, String(row.telegram_user_id), text).catch(() => ({ ok: false }))
   ));
+}
+
+async function notifyHumanApprovalOwners(env: AssistEnv, input: {
+  customerId: string; assistantId: string; approvalId: string; kind: string;
+  question: string; summary: string; expiresAt: number; now: number;
+}) {
+  const recipients = await env.DB.prepare(
+    `SELECT DISTINCT u.id AS user_id,u.telegram_user_id,u.telegram_recovery_assistant_id AS delivery_assistant_id
+     FROM customer_users cu JOIN users u ON u.id=cu.user_id
+     JOIN assistants da ON da.id=u.telegram_recovery_assistant_id AND da.customer_id=cu.customer_id AND da.status='active'
+     JOIN assistant_channels dc ON dc.customer_id=cu.customer_id AND dc.assistant_id=da.id AND dc.channel='telegram' AND dc.status='active'
+     WHERE cu.customer_id=? AND cu.role IN ('owner','admin')
+       AND u.telegram_user_id IS NOT NULL AND u.telegram_recovery_assistant_id IS NOT NULL`,
+  ).bind(input.customerId).all<any>();
+  const text = `Human review requested (${input.kind})\n${input.question}${input.summary ? `\n\n${input.summary}` : ""}\n\nReview in the Mkety Assist portal for full conversation evidence.`;
+  await Promise.all((recipients.results ?? []).map(async (recipient: any) => {
+    const deliveryAssistantId = String(recipient.delivery_assistant_id || "");
+    const token = await getAssistantSecret(env, deliveryAssistantId, "telegram_bot_token");
+    if (!token) return;
+    const approveToken = randomToken(18);
+    const rejectToken = randomToken(18);
+    await Promise.all([
+      createHumanApprovalAction(env.DB, {
+        token: approveToken, customerId: input.customerId, approvalId: input.approvalId,
+        assistantId: input.assistantId, deliveryAssistantId, userId: String(recipient.user_id),
+        decision: "approved", expiresAt: input.expiresAt, now: input.now,
+      }),
+      createHumanApprovalAction(env.DB, {
+        token: rejectToken, customerId: input.customerId, approvalId: input.approvalId,
+        assistantId: input.assistantId, deliveryAssistantId, userId: String(recipient.user_id),
+        decision: "rejected", expiresAt: input.expiresAt, now: input.now,
+      }),
+    ]);
+    const sent = await telegramSend(token, String(recipient.telegram_user_id), text, null, null, {
+      inline_keyboard: [[
+        { text: "Approve", callback_data: `ha:${approveToken}` },
+        { text: "Reject", callback_data: `ha:${rejectToken}` },
+      ]],
+    });
+    if (!sent?.ok) console.error("human approval Telegram notification failed", String(sent?.description || "telegram_send_failed").slice(0, 200));
+  }));
+}
+
+async function processHumanApprovalTelegramCallback(env: AssistEnv, deliveryAssistantId: string, callback: any) {
+  const token = await getAssistantSecret(env, deliveryAssistantId, "telegram_bot_token");
+  const callbackQueryId = String(callback?.id || "");
+  const rawData = String(callback?.data || "");
+  let responseText = "This review action is unavailable.";
+  if (token && callbackQueryId && /^ha:[A-Za-z0-9_-]{12,40}$/.test(rawData)) {
+    const tokenHash = await sha256Text(rawData.slice(3));
+    const action = await findHumanApprovalAction(env.DB, tokenHash, deliveryAssistantId, unix());
+    const telegramUserId = callback?.from?.id == null ? "" : String(callback.from.id);
+    if (action && telegramUserId) {
+      const member = await env.DB.prepare(
+        `SELECT cu.role FROM customer_users cu JOIN users u ON u.id=cu.user_id
+         WHERE cu.customer_id=? AND cu.user_id=? AND u.telegram_user_id=? AND cu.role IN ('owner','admin') LIMIT 1`,
+      ).bind(action.customer_id, action.user_id, telegramUserId).first<any>();
+      if (member) {
+        const decided = await decideHumanApproval(env.DB, {
+          customerId: String(action.customer_id), assistantId: String(action.assistant_id),
+          approvalId: String(action.approval_id), actorUserId: String(action.user_id),
+          decision: String(action.decision) as "approved" | "rejected", decisionText: "", now: unix(),
+        });
+        responseText = decided ? "Decision recorded." : "This request has already been decided or expired.";
+      } else {
+        responseText = "Your linked account is not authorized to decide this request.";
+      }
+    }
+    await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text: responseText }),
+    }).catch(() => undefined);
+  }
 }
 
 function isQuietHour(nowUnix: number, timezone: string, startValue: unknown, endValue: unknown) {
@@ -4152,6 +4236,7 @@ async function telegramSend(
   text: string,
   businessConnectionId: string | null = null,
   replyToMessageId: string | number | null = null,
+  replyMarkup: Record<string, unknown> | null = null,
 ) {
   const chunks = splitTelegram(text);
   let last: any = { ok: true };
@@ -4169,6 +4254,7 @@ async function telegramSend(
         text: chunk,
         disable_web_page_preview: true,
         ...(businessConnectionId ? { business_connection_id: businessConnectionId } : {}),
+        ...(index === 0 && replyMarkup ? { reply_markup: replyMarkup } : {}),
         ...replyParameters,
       }),
     }).then((r) => r.json<any>());

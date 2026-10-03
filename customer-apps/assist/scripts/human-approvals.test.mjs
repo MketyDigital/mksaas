@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHumanApprovalRequest, decideHumanApproval, normalizeApprovalRequest } from "../src/human-approvals.ts";
+import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, normalizeApprovalRequest } from "../src/human-approvals.ts";
 
 test("approval request accepts only bounded supported kinds and safe text", () => {
   assert.deepEqual(normalizeApprovalRequest({
@@ -57,4 +57,25 @@ test("approval decision is a conditional first-writer-wins transaction with audi
   assert.equal(batchStatements.length, 2);
   assert.match(batchStatements[0].sql, /customer_id=\? AND assistant_id=\? AND status='pending' AND expires_at>\?/);
   assert.match(batchStatements[1].sql, /INSERT INTO human_approval_audit[\s\S]*WHERE changes\(\)>0/);
+});
+
+test("Telegram action stores only an opaque token hash and binds it to owner and delivery bot", async () => {
+  let statement;
+  const db = { prepare(sql) { statement = { sql, values: [], bind(...values) { this.values = values; return this; }, async run() { return { meta: { changes: 1 } }; } }; return statement; } };
+  const token = "random-one-time-approval-token";
+  const tokenHash = await createHumanApprovalAction(db, {
+    token, customerId: "customer-a", approvalId: "approval-a", assistantId: "source-assistant",
+    deliveryAssistantId: "linked-bot-assistant", userId: "owner-a", decision: "approved", expiresAt: 2000, now: 1000,
+  });
+  assert.notEqual(tokenHash, token);
+  assert.match(statement.sql, /WHERE EXISTS[\s\S]*status='pending'/);
+  assert.deepEqual(statement.values.slice(0, 8), [tokenHash,"customer-a","approval-a","source-assistant","linked-bot-assistant","owner-a","approved",2000]);
+});
+
+test("Telegram action lookup is bound to its delivery bot and expiry", async () => {
+  let statement;
+  const db = { prepare(sql) { statement = { sql, values: [], bind(...values) { this.values = values; return this; }, async first() { return null; } }; return statement; } };
+  await findHumanApprovalAction(db, "opaque-hash", "linked-bot-assistant", 1000);
+  assert.match(statement.sql, /x\.token_hash=\? AND x\.delivery_assistant_id=\? AND x\.expires_at>\?/);
+  assert.deepEqual(statement.values, ["opaque-hash","linked-bot-assistant",1000]);
 });

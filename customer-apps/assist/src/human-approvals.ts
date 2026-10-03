@@ -87,3 +87,29 @@ export async function decideHumanApproval(db: D1Database, input: {
   ]);
   return Number(result[0]?.meta?.changes || 0) > 0;
 }
+
+export async function createHumanApprovalAction(db: D1Database, input: {
+  token: string; customerId: string; approvalId: string; assistantId: string;
+  deliveryAssistantId: string; userId: string; decision: "approved" | "rejected";
+  expiresAt: number; now: number;
+}) {
+  const tokenHash = await hash(input.token);
+  await db.prepare(
+    `INSERT INTO human_approval_actions
+     (token_hash,customer_id,approval_id,assistant_id,delivery_assistant_id,user_id,decision,expires_at,created_at)
+     SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS
+     (SELECT 1 FROM human_approval_requests WHERE id=? AND customer_id=? AND assistant_id=? AND status='pending')`,
+  ).bind(tokenHash, input.customerId, input.approvalId, input.assistantId, input.deliveryAssistantId,
+    input.userId, input.decision, input.expiresAt, input.now, input.approvalId, input.customerId, input.assistantId).run();
+  return tokenHash;
+}
+
+export async function findHumanApprovalAction(db: D1Database, tokenHash: string, deliveryAssistantId: string, now: number) {
+  return db.prepare(
+    `SELECT x.customer_id,x.approval_id,x.assistant_id,x.user_id,x.decision,x.expires_at,
+            r.status AS approval_status
+     FROM human_approval_actions x JOIN human_approval_requests r
+       ON r.id=x.approval_id AND r.customer_id=x.customer_id AND r.assistant_id=x.assistant_id
+     WHERE x.token_hash=? AND x.delivery_assistant_id=? AND x.expires_at>? LIMIT 1`,
+  ).bind(tokenHash, deliveryAssistantId, now).first<any>();
+}
