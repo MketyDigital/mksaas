@@ -11,6 +11,7 @@ import { contextCacheKey, readContextSnapshot, writeContextSnapshot } from "./co
 import { enqueueInboundUpdate, replayInboundUpdate } from "./queues/inbound";
 import { attemptIdFor, settlementJournalStub } from "./billing/settlement-journal";
 import { reserveInference, releaseInferenceReservation, settleInference } from "./billing/inference-settlement";
+import { createHumanApprovalRequest, decideHumanApproval, normalizeApprovalRequest } from "./human-approvals";
 import { recordAttemptProjection, updateAttemptProjection } from "./billing/reconciliation";
 import {
   RetryableInferenceError,
@@ -114,6 +115,96 @@ export async function handleRuntimeApi(
       "UPDATE customer_api_keys SET status='revoked',revoked_at=? WHERE id=? AND customer_id=? AND status='active'",
     ).bind(unix(), keyId, customer.customerId).run();
     return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/human-operations" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      `SELECT s.assistant_id,s.approvals_enabled,s.pause_conversation,s.allowed_kinds_json,s.updated_at,a.name AS assistant_name
+       FROM human_operations_settings s JOIN assistants a ON a.id=s.assistant_id
+       WHERE s.customer_id=? ORDER BY a.name`,
+    ).bind(customer.customerId).all<any>();
+    return json({ settings: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/human-operations" && request.method === "PUT") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const assistantId = required(body.assistantId, "assistantId");
+    await assertAssistant(env.DB, customer.customerId, assistantId);
+    const enabled = body.approvalsEnabled === true ? 1 : 0;
+    const pause = body.pauseConversation === true ? 1 : 0;
+    const now = unix();
+    await env.DB.prepare(
+      `INSERT INTO human_operations_settings
+       (customer_id,assistant_id,approvals_enabled,pause_conversation,updated_at,updated_by_user_id)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(customer_id,assistant_id) DO UPDATE SET
+       approvals_enabled=excluded.approvals_enabled,pause_conversation=excluded.pause_conversation,
+       updated_at=excluded.updated_at,updated_by_user_id=excluded.updated_by_user_id`,
+    ).bind(customer.customerId, assistantId, enabled, pause, now, session.userId).run();
+    return json({ ok: true, approvalsEnabled: enabled === 1, pauseConversation: pause === 1 });
+  }
+
+  if (url.pathname === "/api/human-approvals" && request.method === "GET") {
+    const status = url.searchParams.get("status");
+    const rows = await env.DB.prepare(
+      `SELECT r.id,r.assistant_id,a.name AS assistant_name,r.conversation_id,r.requested_by,r.kind,
+              r.question,r.summary,r.evidence_message_ids_json,r.status,r.decision_text,
+              r.created_at,r.decided_at,r.expires_at,r.version
+       FROM human_approval_requests r JOIN assistants a ON a.id=r.assistant_id
+       WHERE r.customer_id=? AND (? IS NULL OR r.status=?)
+       ORDER BY r.created_at DESC LIMIT 100`,
+    ).bind(customer.customerId, status, status).all<any>();
+    return json({ approvals: rows.results ?? [] });
+  }
+
+  if (url.pathname === "/api/human-approvals" && request.method === "POST") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const normalized = normalizeApprovalRequest(body);
+    if (!normalized) return json({ error: "invalid_approval_request" }, 400);
+    const assistantId = required(body.assistantId, "assistantId");
+    const conversationId = required(body.conversationId, "conversationId");
+    const rawEvidence = Array.isArray(body.evidenceMessageIds) ? body.evidenceMessageIds : [];
+    const evidenceMessageIds = [...new Set(rawEvidence.filter((value: unknown) => typeof value === "string").map(String))].slice(0, 20);
+    if (evidenceMessageIds.length) {
+      const placeholders = evidenceMessageIds.map(() => "?").join(",");
+      const evidence = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM messages WHERE customer_id=? AND assistant_id=? AND conversation_id=? AND id IN (${placeholders})`,
+      ).bind(customer.customerId, assistantId, conversationId, ...evidenceMessageIds).first<any>();
+      if (Number(evidence?.n || 0) !== evidenceMessageIds.length) return json({ error: "approval_evidence_not_found" }, 404);
+    }
+    const now = unix();
+    const expiresAt = Math.max(now + 60, Math.min(now + 30 * 86400, Number(body.expiresAt || now + 86400)));
+    let result;
+    try {
+      result = await createHumanApprovalRequest(env.DB, {
+        customerId: customer.customerId, assistantId, conversationId, requestedBy: session.userId,
+        ...normalized, summary: normalized.summary, evidenceMessageIds, now, expiresAt,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "approval_idempotency_conflict") return json({ error: error.message }, 409);
+      throw error;
+    }
+    if (!result) return json({ error: "human_approvals_disabled_or_conversation_not_found" }, 409);
+    return json(result, result.created ? 201 : 200);
+  }
+
+  if (parts[0] === "api" && parts[1] === "human-approvals" && parts[2] && request.method === "PATCH") {
+    requireAdmin(session);
+    const body = await readJson(request);
+    const decision = String(body.decision || "");
+    if (!["approved", "rejected", "answered"].includes(decision)) return json({ error: "invalid_approval_decision" }, 400);
+    const approval = await env.DB.prepare(
+      "SELECT id,assistant_id,status,expires_at FROM human_approval_requests WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2], customer.customerId).first<any>();
+    if (!approval) return json({ error: "approval_not_found" }, 404);
+    const decided = await decideHumanApproval(env.DB, {
+      customerId: customer.customerId, assistantId: String(approval.assistant_id), approvalId: String(approval.id),
+      actorUserId: session.userId, decision: decision as "approved" | "rejected" | "answered",
+      decisionText: typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "", now: unix(),
+    });
+    return decided ? json({ ok: true, decision }) : json({ error: Number(approval.expires_at) <= unix() ? "approval_expired" : "approval_already_decided" }, 409);
   }
 
   if (url.pathname === "/api/knowledge" && request.method === "GET") {

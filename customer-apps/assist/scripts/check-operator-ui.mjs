@@ -176,6 +176,10 @@ try {
   if (typeof customerDocument.getElementById("nav").onclick !== "function") throw new Error("Customer navigation handler was not bound");
   if (typeof customerDocument.getElementById("logout").onclick !== "function") throw new Error("Customer logout handler was not bound");
   if (!customerHtml.includes("API Access")) throw new Error("Customer API Access section missing");
+  if (!customerHtml.includes("Human Operations")) throw new Error("Customer Human Operations section missing");
+  if (!customerScript.includes("/api/human-approvals")) throw new Error("Human approval list and decision handlers missing");
+  if (!customerScript.includes("/api/human-operations")) throw new Error("Per-assistant Human Operations opt-in missing");
+  if (!customerScript.includes("does not send a message into the customer conversation")) throw new Error("Review creation must stay out of customer conversations");
   if (!customerHtml.includes("https://checkout.flutterwave.com/v3.js")) throw new Error("Flutterwave Inline SDK missing");
   if (!customerHtml.includes("/api/billing/plan/start")) throw new Error("Plan funding checkout missing");
   if (!customerHtml.includes("FlutterwaveCheckout")) throw new Error("Flutterwave Inline launcher missing");
