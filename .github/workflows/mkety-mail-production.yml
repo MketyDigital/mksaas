@@ -66,6 +66,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate required first-party Mail tenant binding
+        shell: bash
+        env:
+          MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MKETY_FIRST_PARTY_MAIL_TENANT_ID" ]; then
+            echo '::error::Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret'
+            exit 1
+          fi
+          echo '::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID'
+
       - name: Validate exact main SHA and release authorization
         id: release
         shell: bash

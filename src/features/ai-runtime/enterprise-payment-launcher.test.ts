@@ -18,7 +18,7 @@ describe('Enterprise AI payment launcher', () => {
     expect(page).toContain('apiKey: process.env.NOWPAYMENTS_API_KEY');
     expect(page).toContain('ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET');
     expect(page).toContain('brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET');
-    expect(page).toContain('collectionCurrencies: getEnabledMketyFlutterwaveCurrencies');
+    expect(page).toContain('getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates)');
     expect(page).not.toContain('FLUTTERWAVE_STANDARD_SECRET_KEY');
     expect(page).not.toContain('FLUTTERWAVE_STANDARD_WEBHOOK_HASH');
     expect(page).toContain('kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY }');

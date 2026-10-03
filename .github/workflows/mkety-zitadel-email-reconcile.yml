@@ -475,6 +475,10 @@ jobs:
             if [ "$legacy_current" = 200 ]; then provider_id="$(node -e "const x=require('/tmp/current-smtp.json');process.stdout.write(x.smtpConfig?.id||'')")"; fi
             node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-provider.json','utf8'));delete x.plain;fs.writeFileSync('/tmp/smtp-provider-legacy.json',JSON.stringify(x))"
             if [ -n "$provider_id" ]; then
+              if [ "$EMAIL_PROVIDER" = "mkety" ]; then
+                echo '::error::Legacy ZITADEL SMTP supports one provider; refusing to overwrite the active provider. Use the multi-provider email API or restore the existing provider.'
+                exit 1
+              fi
               echo "::add-mask::$provider_id"
               code="$(curl --silent --show-error -o /tmp/provider-write.json -w '%{http_code}' -X PUT "$issuer/admin/v1/smtp/$provider_id" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/smtp-provider-legacy.json)"
             else

@@ -1,8 +1,7 @@
 import Link from 'next/link';
 
 import { AdminEnterprisePaymentLinkForm } from '@/features/enterprise-checkout/components/AdminEnterprisePaymentLinkForm';
-import { getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
-import { getMketyPaymentProviderStatuses } from '@/features/payments/provider-availability';
+import { getMketyFlutterwaveProviderConfig, getMketyPaymentProviderStatuses } from '@/features/payments/provider-availability';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 
@@ -14,6 +13,7 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
   const { tenant } = await params;
   await requirePlatformControlAccess(tenant);
   const paymentSettings = await getMketyPaymentSettings();
+  const flutterwaveConfig = getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates);
   const statuses = getMketyPaymentProviderStatuses({
     nowpayments: {
       apiKey: process.env.NOWPAYMENTS_API_KEY,
@@ -21,8 +21,7 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
     },
     flutterwave: {
       brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
-      collectionCurrencies: getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates),
-      hasConfiguredCurrencyQuote: Object.keys(paymentSettings.flutterwave.fxRates).length > 0,
+      ...flutterwaveConfig,
     },
     kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
   });

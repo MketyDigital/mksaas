@@ -109,10 +109,19 @@ export async function createFirstPartySmtpCredential(
     secret,
     passwordHash,
   }, {
-    insert: async (record) => {
-      const [created] = await db.insert(mailAppPasswords).values(record).returning({ id: mailAppPasswords.id });
-      if (!created) throw new Error('Credential insert failed.');
-      return created;
+    replace: async (record) => {
+      return db.transaction(async (tx) => {
+        await tx.update(mailAppPasswords).set({ revokedAt: new Date() }).where(and(
+          eq(mailAppPasswords.tenantId, record.tenantId),
+          eq(mailAppPasswords.mailboxId, record.mailboxId),
+          eq(mailAppPasswords.name, 'Mkety platform SMTP'),
+          eq(mailAppPasswords.protocolScope, 'smtp'),
+          isNull(mailAppPasswords.revokedAt),
+        ));
+        const [created] = await tx.insert(mailAppPasswords).values(record).returning({ id: mailAppPasswords.id });
+        if (!created) throw new Error('Credential insert failed.');
+        return created;
+      });
     },
   });
   try {

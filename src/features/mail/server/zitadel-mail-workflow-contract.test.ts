@@ -19,6 +19,7 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(workflow).toContain('info@mkety.com');
     expect(workflow).toContain('Mkety First-Party Mail SMTP');
     expect(workflow).toContain('Mkety Brevo SMTP');
+    expect(workflow).toContain('Legacy ZITADEL SMTP supports one provider; refusing to overwrite the active provider');
     expect(workflow).toContain('steps.smtp_test.outcome == \'success\'');
   });
 
@@ -41,6 +42,7 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     const mailWorkflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-mail-production.yml'), 'utf8');
     expect(mailWorkflow).toContain('secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID');
     expect(mailWorkflow).toContain('Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret');
+    expect(mailWorkflow).toContain('Validate required first-party Mail tenant binding');
     expect(mailWorkflow).toContain('::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID');
     expect(mailWorkflow).toContain('put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
   });

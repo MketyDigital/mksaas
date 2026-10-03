@@ -19,7 +19,7 @@ describe('Enterprise AI customer payment journey', () => {
 
     expect(page).toContain('getAvailableMketyPaymentProviders');
     expect(page).toContain('brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET');
-    expect(page).toContain('collectionCurrencies: getEnabledMketyFlutterwaveCurrencies');
+    expect(page).toContain('getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates)');
     expect(page).not.toContain("process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET\n      ? [{ value: 'flutterwave'");
   });
 

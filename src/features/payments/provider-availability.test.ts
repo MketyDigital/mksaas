@@ -3,6 +3,7 @@ import {
   getMketyPaymentProviderStatuses,
   type MketyPaymentProviderInput,
 } from './provider-availability';
+import { getMketyFlutterwaveProviderConfig } from './provider-availability';
 
 const configured: MketyPaymentProviderInput = {
   nowpayments: { apiKey: 'np-api', ipnSecret: 'np-ipn' },
@@ -68,6 +69,21 @@ describe('Mkety payment provider availability', () => {
     });
 
     expect(statuses.find(({ provider }) => provider === 'flutterwave')?.ready).toBe(false);
+  });
+
+  it('requires at least one valid supported non-USD FX quote', () => {
+    expect(getMketyFlutterwaveProviderConfig({ NGN: 'not-a-rate' })).toEqual({
+      collectionCurrencies: ['USD'],
+      hasConfiguredCurrencyQuote: false,
+    });
+    expect(getMketyFlutterwaveProviderConfig({ NGN: '0', XYZ: '2' })).toEqual({
+      collectionCurrencies: ['USD'],
+      hasConfiguredCurrencyQuote: false,
+    });
+    expect(getMketyFlutterwaveProviderConfig({ NGN: '1500' })).toEqual({
+      collectionCurrencies: expect.arrayContaining(['USD', 'NGN']),
+      hasConfiguredCurrencyQuote: true,
+    });
   });
 
   it('returns generic ordered readiness for the operator dashboard', () => {

@@ -1,3 +1,8 @@
+import {
+  getConfiguredMketyFxRates,
+  getEnabledMketyFlutterwaveCurrencies,
+} from './flutterwave-standard';
+
 export type MketyCheckoutProvider = 'nowpayments' | 'flutterwave' | 'kora';
 
 export interface MketyPaymentProviderInput {
@@ -24,6 +29,14 @@ export interface MketyPaymentProviderStatus {
 }
 
 export type PaymentProviderOption = Omit<MketyPaymentProviderStatus, 'ready'>;
+
+export function getMketyFlutterwaveProviderConfig(fxRates: unknown) {
+  const configuredRates = getConfiguredMketyFxRates(fxRates);
+  return {
+    collectionCurrencies: getEnabledMketyFlutterwaveCurrencies(configuredRates),
+    hasConfiguredCurrencyQuote: Object.keys(configuredRates).length > 0,
+  };
+}
 
 const PROVIDER_DETAILS: Record<MketyCheckoutProvider, Omit<MketyPaymentProviderStatus, 'ready'>> = {
   nowpayments: {

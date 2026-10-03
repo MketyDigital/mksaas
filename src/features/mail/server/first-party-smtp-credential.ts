@@ -10,7 +10,7 @@ type FirstPartyCredentialInput = {
 
 export async function createFirstPartySmtpCredentialRecord(
   input: FirstPartyCredentialInput,
-  dependencies: { insert: (record: {
+  dependencies: { replace: (record: {
     tenantId: string;
     mailboxId: string;
     userId: string;
@@ -39,7 +39,7 @@ export async function createFirstPartySmtpCredentialRecord(
   ) {
     throw new Error('The active info@mkety.com mailbox is unavailable.');
   }
-  const credential = await dependencies.insert({
+  const credential = await dependencies.replace({
     tenantId: input.configuredTenantId,
     mailboxId: input.mailbox.id,
     userId: input.actorUserId,

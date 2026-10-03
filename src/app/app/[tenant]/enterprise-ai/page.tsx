@@ -14,8 +14,7 @@ import {
 import { getEnterpriseAiCustomerSummary } from '@/features/ai-runtime/server/customer-summary';
 import { getEnterpriseAiContractBillingState } from '@/features/ai-runtime/server/enterprise-contracts';
 import { resolveEnterpriseAiBrand } from '@/features/ai-runtime/server/white-label';
-import { getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
-import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
+import { getAvailableMketyPaymentProviders, getMketyFlutterwaveProviderConfig } from '@/features/payments/provider-availability';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getCreditBalance } from '@/features/usage-credits/server/service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
@@ -33,6 +32,7 @@ async function renderEnterpriseAiConsolePage({
   const { tenant: tenantSlug } = await params;
   await requireTenantMembership(tenantSlug);
   const paymentSettings = await getMketyPaymentSettings();
+  const flutterwaveConfig = getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates);
   const paymentProviders = getAvailableMketyPaymentProviders({
     nowpayments: {
       apiKey: process.env.NOWPAYMENTS_API_KEY,
@@ -40,8 +40,7 @@ async function renderEnterpriseAiConsolePage({
     },
     flutterwave: {
       brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
-      collectionCurrencies: getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates),
-      hasConfiguredCurrencyQuote: Object.keys(paymentSettings.flutterwave.fxRates).length > 0,
+      ...flutterwaveConfig,
     },
     kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
   }).map(({ provider }) => ({

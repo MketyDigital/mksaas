@@ -11,12 +11,11 @@ import {
 import { getActiveSelfServiceBillingQuote } from '@/features/billing/server/active-catalog';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';
+import { isMketyFlutterwaveCollectionCurrency, quoteFlutterwaveCollection } from '@/features/payments/flutterwave-standard';
 import {
-  getEnabledMketyFlutterwaveCurrencies,
-  isMketyFlutterwaveCollectionCurrency,
-  quoteFlutterwaveCollection,
-} from '@/features/payments/flutterwave-standard';
-import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
+  getAvailableMketyPaymentProviders,
+  getMketyFlutterwaveProviderConfig,
+} from '@/features/payments/provider-availability';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
@@ -69,7 +68,8 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
     : false;
   if (mailEntitled) redirect(`/app/${tenantSlug}/mail?payment=confirmed`);
   const paymentSettings = await getMketyPaymentSettings();
-  const flutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates);
+  const flutterwaveConfig = getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates);
+  const flutterwaveCurrencies = flutterwaveConfig.collectionCurrencies;
   const selectedCurrency = flutterwaveCurrencies.includes(
     query.currency as (typeof flutterwaveCurrencies)[number],
   )
@@ -78,7 +78,7 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
 
   let flutterwaveQuote: { amountMinor: bigint; currency: string } | null = null;
   const flutterwaveMethodLabels = getMketyFlutterwaveMethodLabelsForCurrency(selectedCurrency);
-  const hasConfiguredFlutterwaveQuote = Object.keys(paymentSettings.flutterwave.fxRates).length > 0;
+  const hasConfiguredFlutterwaveQuote = flutterwaveConfig.hasConfiguredCurrencyQuote;
   const flutterwaveBrokerReady = Boolean(
     process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET && hasConfiguredFlutterwaveQuote,
   );
