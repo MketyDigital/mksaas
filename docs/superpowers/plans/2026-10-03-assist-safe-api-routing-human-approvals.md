@@ -545,6 +545,592 @@ The runtime owns those.
 
 ---
 
+
+
+# 3A. Human Operations Hub — Telegram group / supergroup control room
+
+## Product idea
+
+In addition to private owner Telegram alerts, a customer can optionally connect one or more private Telegram groups or supergroups as a **Human Operations Hub**.
+
+This becomes the back-office control room for human-only work:
+
+- payment proof verification;
+- partner/signup verification;
+- approvals/rejections;
+- human-answer requests;
+- exception handling;
+- escalations;
+- sensitive-action authorization;
+- operational alerts.
+
+The end customer never joins or sees this group.
+
+The customer-facing conversation continues normally through the assistant's existing channel.
+
+The internal group is a separate private operations surface.
+
+## Natural customer experience
+
+The assistant should not announce internal mechanics such as:
+
+- "I am waiting for my owner";
+- "A human needs to approve this";
+- "I sent this to an admin";
+- "The AI cannot handle this."
+
+unless the business owner explicitly wants such wording.
+
+Instead, the assistant follows the owner's prompt/knowledge and remains natural.
+
+For example, if a customer submits payment proof, the assistant can respond with an owner-configured neutral acknowledgement such as:
+
+"Thanks, I have that. I’ll continue from here."
+
+Internally, the protected action enters `awaiting_human_decision`.
+
+The conversation can continue for ordinary questions while only the protected action is blocked.
+
+When approval arrives, the system resumes the protected workflow naturally.
+
+The external user does not need to know whether the decision came from AI policy, a staff member, an external verifier, or another authorized business process.
+
+The runtime must never falsely claim that a specific human personally reviewed something unless that is actually part of the configured customer-facing wording.
+
+## Group registration
+
+A group must never become trusted merely because the bot was added to it.
+
+Use an explicit linking flow.
+
+Recommended sequence:
+
+1. owner/admin signs into the Assist portal;
+2. chooses **Human Operations → Connect Telegram group**;
+3. Mkety creates a short-lived signed/hashed linking challenge;
+4. owner adds the selected Assist notification bot to a private group/supergroup;
+5. an authorized owner/admin runs a one-time command or taps a link button in that group;
+6. webhook verifies:
+   - challenge;
+   - Telegram user identity;
+   - Mkety customer membership;
+   - role authorization;
+   - Telegram group/chat ID;
+   - bot identity used;
+7. persist the group as an approved human-operations destination.
+
+The bot being present in a group is not sufficient authorization.
+
+## Proposed group table
+
+Add an additive table such as `human_ops_destinations`:
+
+- `id`
+- `customer_id`
+- `name`
+- `channel` = `telegram`
+- `chat_id`
+- `message_thread_id` nullable
+- `delivery_assistant_id` nullable
+- `destination_type`
+  - `private_user`
+  - `group`
+  - `supergroup`
+  - `forum_topic`
+- `status`
+  - `active`
+  - `paused`
+  - `revoked`
+- `allowed_kinds_json`
+- `assistant_scope_json`
+- `created_by_user_id`
+- `created_at`
+- `updated_at`
+
+Unique identity should include customer + Telegram chat + topic where applicable.
+
+## One group or several groups
+
+Support both.
+
+Examples:
+
+### One simple operations group
+
+**Company Human Ops**
+
+Everything requiring people goes there.
+
+Best for small businesses.
+
+### Several specialized groups
+
+- Payments & Verification
+- Sales Approvals
+- Support Escalations
+- Partner Verification
+
+Best for larger teams.
+
+### One supergroup with topics
+
+A Telegram forum-style supergroup can optionally separate work using topics, for example:
+
+- Payments
+- Partner Signups
+- Human Replies
+- Exceptions
+- VIP Customers
+
+Persist `message_thread_id` for the configured topic.
+
+This is optional organization only; approval authority still comes from Mkety identity and policy, not from Telegram topic membership alone.
+
+## Who may act inside the group
+
+Group membership alone must **not** grant approval authority.
+
+A button press/reply must resolve the Telegram sender to a verified Mkety identity.
+
+Allowed roles are configured by the owner.
+
+Recommended authority model:
+
+- Owner — full decision authority
+- Admin — owner-selectable approval authority
+- Member — owner-selectable kinds only, otherwise view/reply only or no action
+
+For example:
+
+- Member A can answer support escalations;
+- Finance Admin can approve payment verification;
+- Sales Admin can approve partner signup;
+- only Owner can authorize refunds.
+
+This can be represented by a scoped table such as `human_ops_actor_permissions`.
+
+A Telegram user who is in the group but has never been linked/approved in Mkety can see whatever the private group itself allows them to see, but Mkety rejects their action callbacks.
+
+For highly sensitive groups, the owner should only add approved staff at the Telegram level as well.
+
+## Group action card
+
+A pending request can appear like:
+
+```
+MKETY HUMAN REVIEW
+Payment verification
+
+Assistant: Sales Assistant
+Customer: John D.
+Claim: ₦250,000 payment completed
+Conversation: Telegram
+Evidence: payment screenshot
+AI summary: Customer says payment was made for Package X.
+
+[ Approve ] [ Reject ]
+[ Reply ]   [ Open details ]
+```
+
+The visible card can be updated after a decision:
+
+```
+APPROVED
+by Finance Admin
+11:42
+```
+
+or:
+
+```
+REJECTED
+by Owner
+11:45
+Reason: amount does not match
+```
+
+Do not expose internal provider/model details, hidden prompts, secrets, pricing or unnecessary customer data in the group.
+
+## Silent inline actions
+
+Approve/Reject should use Telegram inline callback buttons.
+
+The callback must carry only a short opaque token.
+
+It must not trust client-supplied:
+
+- customer ID;
+- assistant ID;
+- requested outcome;
+- user role;
+- conversation ID.
+
+Server-side state maps the opaque token to the pending approval.
+
+When pressed:
+
+1. verify Telegram webhook authenticity;
+2. identify the Telegram user who pressed it;
+3. resolve them to a Mkety user;
+4. verify current customer membership;
+5. verify current approval permission for this kind;
+6. verify destination is still active/authorized;
+7. load the pending request;
+8. atomically claim the decision;
+9. write immutable audit;
+10. update the Telegram card;
+11. enqueue continuation.
+
+Only the first valid terminal decision wins.
+
+## Reply from the operations group
+
+Human reply should be extremely simple.
+
+Two safe interaction modes:
+
+### Reply button
+
+Staff taps **Reply**.
+
+Mkety enters a short-lived reply-capture state for that Telegram user + approval request.
+
+Their next group reply/message is captured as the human response.
+
+The system then:
+
+- validates authorization again;
+- stores the human response against the approval;
+- sends it to the customer through the original assistant/channel;
+- records it as `role='human'` or an equivalent provenance field internally;
+- continues automation according to policy.
+
+### Telegram reply-to-card
+
+Where reliable, staff can reply directly to the approval card.
+
+Mkety maps the replied-to Telegram message ID to the approval request.
+
+This is convenient, but should still use a pending-action mapping and authorization check.
+
+Do not treat arbitrary messages in the group as instructions to customer assistants.
+
+## Natural outbound identity
+
+The customer should receive the response through the same assistant/channel identity they were already chatting with.
+
+Examples:
+
+- normal Telegram bot → same bot;
+- Telegram Business/Secretary → same business connection;
+- future WhatsApp/web/API channel → original channel adapter.
+
+The customer should not receive a message from the Human Operations group or from an admin's personal Telegram account.
+
+Internally preserve provenance:
+
+- generated by model;
+- approved by human;
+- authored by human;
+- system action.
+
+Externally, presentation follows the business assistant identity.
+
+This creates a seamless assistant experience without losing internal accountability.
+
+## Approval without stopping the conversation
+
+Default architecture should support **protected-action gating**, not mandatory full conversation pause.
+
+Example:
+
+Customer:
+"I've paid. Here is the receipt."
+
+Assistant:
+"Thanks, I have that. What email should I attach to your order?"
+
+Behind the scenes:
+
+- payment verification request = pending;
+- entitlement activation = blocked;
+- conversation remains active;
+- assistant can collect missing information;
+- assistant must not claim payment is verified.
+
+If the group later presses Approve:
+
+- approval becomes terminal;
+- protected action resumes;
+- assistant can naturally continue with the next owner-configured step.
+
+If Reject:
+
+- assistant follows the configured rejection handling policy, for example asking the customer to re-check the transfer or submit clearer evidence.
+
+## Human answer without customer-visible handoff
+
+If the assistant genuinely needs a person to supply knowledge rather than approve an action:
+
+1. create `human_answer` request;
+2. send to configured Human Operations destination;
+3. assistant continues only where safe;
+4. authorized staff replies in the group;
+5. reply is stored;
+6. runtime injects the human answer as trusted workflow context;
+7. assistant composes the customer-facing response in the business's normal tone, unless policy says send the human wording verbatim.
+
+This is preferable to exposing internal staff conversation.
+
+A setting can choose:
+
+- **Use staff reply verbatim**
+- **Let assistant naturally phrase staff answer**
+
+For professional consistency, "assistant naturally phrase staff answer" can be the default for non-sensitive informational replies.
+
+For legal/financial/contractual wording, owner policy may require verbatim delivery.
+
+## Staff notes vs customer replies
+
+The group needs a clear distinction so internal discussion is never accidentally sent to the customer.
+
+Recommended:
+
+- ordinary group messages = internal notes only;
+- **Reply** action / reply-capture mode = customer-bound;
+- **Approve/Reject** buttons = workflow decisions;
+- optional **Add note** action = internal audit/context.
+
+Never infer that a normal group message should be sent externally.
+
+## Multiple simultaneous approvals
+
+Each Human Operations card is independently addressable.
+
+Reply capture must be scoped to:
+
+- Telegram user;
+- destination;
+- approval ID;
+- short expiry.
+
+This prevents a staff member handling several customers at once from sending a response to the wrong conversation.
+
+## Group privacy and evidence
+
+Payment screenshots and sensitive material should be handled carefully.
+
+Configuration options:
+
+- summary only;
+- sanitized preview;
+- secure portal link;
+- full Telegram media copy when the owner explicitly enables it.
+
+Recommended default:
+
+- concise summary in Telegram;
+- minimal necessary evidence preview;
+- secure portal detail link for sensitive/full evidence.
+
+Do not leak credentials, full payment instrument data, hidden prompts, provider payloads, or unrelated conversation history.
+
+## Group notification routing
+
+Each assistant can be configured:
+
+- no human operations;
+- use customer default Human Ops destination;
+- use selected group/topic;
+- route different request kinds to different destinations.
+
+Examples:
+
+```
+Sales Assistant
+  payment_verification -> Payments topic
+  partner_signup       -> Partner Verification topic
+  human_answer         -> Support topic
+
+Support Assistant
+  human_answer         -> Support topic
+  sensitive_action     -> Owner Approval topic
+```
+
+The destination is internal routing only.
+
+## Owners who never use the portal after setup
+
+After initial identity/group setup, day-to-day operation can happen fully in Telegram:
+
+- approve;
+- reject;
+- reply;
+- add internal note;
+- open context;
+- mark resolved.
+
+The portal remains available for:
+
+- configuration;
+- audit/history;
+- membership/permissions;
+- destination setup;
+- policy changes;
+- recovery;
+- exceptional reconciliation.
+
+Telegram should not become a way to modify high-impact platform configuration such as billing policy, API keys, provider credentials or model routing.
+
+## Bot choice
+
+Do not require every customer-facing assistant bot to join every Human Operations group.
+
+Allow an explicit delivery bot.
+
+Preferred choices, in order:
+
+1. an existing securely linked customer assistant bot that the owner selected for operations;
+2. a dedicated customer Human Ops bot if productized later;
+3. the central Mkety notification/auth bot where tenancy and branding policy permit.
+
+The source assistant and operations-delivery bot remain separate identities.
+
+This also prevents a customer-facing bot's group membership from accidentally becoming operational authority.
+
+## Bot/group webhook separation
+
+The current customer-facing Telegram webhook processes inbound customer messages and deliberately ignores linked owner/admin senders.
+
+Do not simply let group operations messages fall through the customer-message pipeline.
+
+Add an explicit operations-event classifier before customer conversation handling.
+
+For an authorized Human Ops destination:
+
+- callback query -> Human Ops action handler;
+- reply-to-review-card -> Human Ops reply handler;
+- ordinary internal group message -> ignore for customer automation / optionally store as internal note only;
+- never create a customer conversation from the operations group.
+
+This separation is essential to avoid loops or an internal admin message being interpreted as an end customer.
+
+## Audit and provenance
+
+Every human action records:
+
+- customer;
+- source assistant;
+- conversation;
+- approval/request;
+- Telegram destination;
+- Telegram actor ID;
+- resolved Mkety user ID;
+- role/permission used;
+- action;
+- timestamp;
+- prior state;
+- resulting state.
+
+Customer-facing transcript does not need to expose this provenance.
+
+Internal audit must preserve it.
+
+## Failure behavior
+
+If Telegram is unavailable:
+
+- pending approval remains pending;
+- protected action remains blocked;
+- normal conversation can continue if configured;
+- delivery retries safely;
+- portal remains a fallback.
+
+If the bot is removed from the group:
+
+- destination health becomes degraded;
+- approvals remain durable;
+- route can fall back to another approved destination if configured;
+- never silently treat notification delivery as approval.
+
+If no authorized human responds before expiry:
+
+owner policy determines:
+
+- remain pending;
+- reject safely;
+- escalate to another group/owner;
+- convert to full human handoff.
+
+Do not let the model invent approval after timeout.
+
+## Recommended user-facing name
+
+**Human Operations**
+
+Subsections:
+
+- Destinations
+- Permissions
+- Review Rules
+- Pending
+- History
+
+Assistant editor:
+
+**Human Operations & Approvals**
+
+Options:
+
+- Enable
+- Default operations destination
+- Approval types
+- Staff roles allowed
+- Continue conversation while awaiting review
+- Customer-facing acknowledgement
+- Human answer mode: natural rewrite / verbatim
+- Timeout/escalation policy
+
+## Safe rollout extension
+
+Add to the earlier phased rollout:
+
+### Phase 4A — destination registration
+
+- additive destination tables;
+- portal-only linking;
+- no model-triggered messages;
+- test group ownership/permissions/health.
+
+### Phase 4B — operations group notifications
+
+- post read-only review cards;
+- no buttons initially;
+- no customer workflow mutation.
+
+### Phase 4C — Approve/Reject callbacks
+
+- authenticated callback handler;
+- atomic decision;
+- audit;
+- no free-text reply yet.
+
+### Phase 4D — controlled human reply
+
+- reply capture;
+- provenance;
+- original-channel delivery;
+- concurrency tests.
+
+### Phase 4E — assistant-triggered requests
+
+- constrained tool;
+- protected-action gating;
+- natural customer-facing continuation.
+
+Existing customers remain unchanged until Human Operations is explicitly enabled.
+
 # 4. Safe implementation sequence
 
 Do not ship all behavior in one unreviewable patch.
