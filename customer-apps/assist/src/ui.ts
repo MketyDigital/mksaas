@@ -1,4 +1,9 @@
+Warning: truncated output (original token count: 31262)
+Total output lines: 827
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { moveRouteTarget } from "./route-order";
+
 export function renderCustomerPortal(input: {
   customerName: string;
   hostname: string;
@@ -359,56 +364,7 @@ async function buyCredits(){
   topupAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshQuote,250)};await refreshQuote();
   topupStart.onclick=async()=>{try{
     if(!String(topupAmount.value||'').trim())throw new Error('Enter an amount first');
-    topupStart.disabled=true;topupMsg.textContent='Preparing secure checkout…';
-    const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
-      amountUsd:topupAmount.value,
-      paymentMethod:topupMethod.value,
-      ...(topupMethod.value==='flutterwave'?{paymentCurrency:topupCurrency.value}:{})
-    })});
-    topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
-  }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
- }catch(e){toastMsg(e.message)}
-}
-async function loadCheckouts(){try{
- const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
- checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Funding</th><th>Credits</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type==='plan'?'Monthly credits':'Added credits')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No payments yet.';
-}catch(e){checkoutBox.textContent=e.message}}
-async function changePassword(){
- openModal('<h2>Change password</h2><div class="field"><label>Current password</label><input class="input" id="currentPassword" type="password" autocomplete="current-password"></div><div class="field"><label>New password</label><input class="input" id="newPassword" type="password" minlength="12" autocomplete="new-password"></div><p id="passwordMsg" class="muted"></p><div class="row"><button class="btn primary" id="passwordSave">Update password</button><button class="btn" id="passwordCancel">Cancel</button></div>');
- passwordCancel.onclick=closeModal;
- passwordSave.onclick=async()=>{try{passwordSave.disabled=true;await api('/api/auth/password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({currentPassword:currentPassword.value,newPassword:newPassword.value})});toastMsg('Password updated');closeModal()}catch(e){passwordSave.disabled=false;passwordMsg.textContent=e.message}};
-}
-async function manageSessions(){
- try{
-  const d=await api('/api/auth/sessions');
-  const rows=(d.sessions||[]).map(s=>'<tr><td>'+new Date(s.created_at*1000).toLocaleString()+'</td><td>'+new Date(s.last_seen_at*1000).toLocaleString()+'</td><td>'+(s.revoked_at?'Revoked':'Active')+'</td><td>'+(!s.revoked_at?'<button class="btn danger" data-revoke-session="'+esc(s.id)+'">Revoke</button>':'')+'</td></tr>').join('');
-  openModal('<h2>Signed-in sessions</h2><div class="card">'+(rows?'<table class="table"><thead><tr><th>Created</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>':'<div class="empty">No sessions.</div>')+'</div><div class="row" style="margin-top:12px"><button class="btn" id="sessionsClose">Close</button></div>');
-  sessionsClose.onclick=closeModal;
-  dialog.querySelectorAll('[data-revoke-session]').forEach(b=>b.onclick=async()=>{try{await api('/api/auth/sessions/'+encodeURIComponent(b.dataset.revokeSession),{method:'DELETE'});toastMsg('Session revoked');await manageSessions()}catch(e){toastMsg(e.message)}});
- }catch(e){toastMsg(e.message)}
-}
-async function linkTelegram(){try{const d=await api('/api/auth/telegram/link/start',{method:'POST'});location.href=d.url}catch(e){toastMsg(e.message)}}
-refresh().catch(e=>{content.innerHTML='<div class="card"><h2>Could not load console</h2><p class="muted">'+esc(e.message)+'</p></div>'});
-</script>
-</body></html>`;
-}
-
-export function renderOperatorPortal(customers: any[]) {
-  const rows = JSON.stringify(customers).replace(/</g, "\\u003c");
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mkety Assist Operator</title>
-<style>
-:root{color-scheme:dark;--bg:#090a0f;--p:#12141c;--l:#292d3c;--m:#969bad;--b:#7c5cff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f7f7fb;font:14px/1.45 system-ui}
-.wrap{max-width:1320px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
-.card{background:var(--p);border:1px solid var(--l);border-radius:14px;padding:18px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.metric{font-size:24px;font-weight:800}.muted{color:var(--m)}
-.btn,.input{border:1px solid var(--l);background:#191c27;color:#fff;border-radius:9px;padding:9px 11px}.btn{cursor:pointer}.primary{background:var(--b);border-color:transparent}.danger{color:#ff9aab}
-.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:10px;border-bottom:1px solid var(--l);vertical-align:top}.table th{font-size:11px;color:var(--m);text-transform:uppercase}
+    topupStart.disabled=true;topup…1262 tokens truncated…
 .field{display:grid;gap:5px;margin:10px 0}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:20}
 .modal.open{display:grid}.dialog{width:min(760px,94vw);max-height:90vh;overflow:auto;background:var(--p);border:1px solid var(--l);border-radius:14px;padding:20px}
 .pill{display:inline-flex;border:1px solid var(--l);border-radius:99px;padding:3px 8px;font-size:11px}.ok{color:#64d5a4}.warn{color:#ffc66f}
@@ -442,6 +398,7 @@ export function renderOperatorPortal(customers: any[]) {
 </main>
 <div class="modal" id="modal"><div class="dialog" id="dialog"></div></div>
 <script>
+const moveRouteTarget = ${moveRouteTarget.toString()};
 let data=${rows};
 let providerData=[];
 const byId=id=>document.getElementById(id);
@@ -558,19 +515,41 @@ function editModel(alias,m){
     {provider:m.provider,provider_model:m.provider_model,provider_connection_id:m.provider_connection_id,enabled:1},
     ...(m.fallback_provider&&m.fallback_model?[{provider:m.fallback_provider,provider_model:m.fallback_model,provider_connection_id:m.fallback_provider_connection_id,enabled:1}]:[])
   ]).map(t=>({...t}));
-  const targetRow=(t,i)=>{let caps=[];try{caps=t.reasoning_capabilities_json?JSON.parse(t.reasoning_capabilities_json):(t.reasoning_capabilities||[])}catch{}return '<div class="card" data-target-row="'+i+'" style="margin:10px 0"><div class="spread"><strong>'+(i===0?'Primary':'Fallback '+i)+'</strong><label><input type="checkbox" data-target-enabled="'+i+'" '+(Number(t.enabled??1)?'checked':'')+'> enabled</label></div><div class="three"><div class="field"><label>Provider</label><select class="input" data-target-provider="'+i+'">'+providers.map(p=>'<option '+(p===t.provider?'selected':'')+'>'+p+'</option>').join('')+'</select></div><div class="field"><label>Connection</label><select class="input" data-target-connection="'+i+'">'+providerOptions(t.provider_connection_id,t.provider,null)+'</select></div><div class="field"><label>Actual model</label><input class="input" data-target-model="'+i+'" value="'+esc(t.provider_model||'')+'"></div></div><div class="two"><div class="field"><label>Input / output MKredit per 1M</label><div class="row"><input class="input" type="number" data-target-input="'+i+'" value="'+esc(t.input_credits_per_million??m.input_credits_per_million??0)+'"><input class="input" type="number" data-target-output="'+i+'" value="'+esc(t.output_credits_per_million??m.output_credits_per_million??0)+'"></div></div><div class="field"><label>Provider cost µUSD input / output per 1M</label><div class="row"><input class="input" type="number" data-target-cost-input="'+i+'" value="'+esc(t.provider_input_cost_micros_per_million??m.provider_input_cost_micros_per_million??0)+'"><input class="input" type="number" data-target-cost-output="'+i+'" value="'+esc(t.provider_output_cost_micros_per_million??m.provider_output_cost_micros_per_million??0)+'"></div></div></div><div class="two"><div class="field"><label>Reasoning support</label><div class="row"><label><input type="checkbox" data-target-reasoning-high="'+i+'" '+(caps.includes('high')?'checked':'')+'> High</label><label><input type="checkbox" data-target-reasoning-maximum="'+i+'" '+(caps.includes('maximum')?'checked':'')+'> Maximum</label></div><small class="muted">Declare only levels this exact provider model accepts.</small></div><div class="field"><label>Separate reasoning rates per 1M (optional)</label><div class="row"><input class="input" type="number" data-target-reasoning-credits="'+i+'" placeholder="Customer MKredits" value="'+esc(t.reasoning_credits_per_million??'')+'"><input class="input" type="number" data-target-reasoning-cost="'+i+'" placeholder="Provider µUSD" value="'+esc(t.provider_reasoning_cost_micros_per_million??'')+'"></div><small class="muted">Leave blank when reasoning tokens are included in output usage.</small></div></div>'+(i?'<button class="btn danger" data-target-remove="'+i+'">Remove fallback</button>':'')+'</div>'};
-  openModal('<h2>'+esc(alias)+'</h2><p class="muted">Targets are tried strictly top-to-bottom. Disabled targets are skipped. This is deterministic failover, not random rotation. Each target carries its own provider cost and MKredit rate so settlement charges the model that actually answered.</p><div class="two"><div class="field"><label>Route scope</label><select class="input" id="mScope"><option value="global">Global managed route</option><option value="customer">Customer override</option></select></div><div class="field"><label>Customer</label><select class="input" id="mCustomer" disabled>'+customers+'</select></div><div class="field"><label>Alias status</label><select class="input" id="mStatus"><option value="active">Active</option><option value="paused">Paused</option><option value="disabled">Disabled</option></select><small class="muted">Pausing an alias blocks all targets. Target pauses below preserve remaining fallbacks.</small></div><div class="field"><label>BYOK fallback policy</label><select class="input" id="mByokPolicy"><option value="managed">Managed</option><option value="strict_byok">Strict BYOK — no Mkety-funded fallback</option><option value="explicit_paid_fallback">Explicit paid fallback allowed</option></select></div></div><h3>Ordered provider chain</h3><div id="mTargets"></div><button class="btn" id="mAddTarget">Add fallback</button><div id="globalRateFields"><h3>Alias default rate / media economics</h3><div class="two"><div class="field"><label>Image provider cost µUSD / MKredit</label><div class="row"><input class="input" id="mCostImage" type="number" value="'+esc(m.provider_image_cost_micros||0)+'"><input class="input" id="mImage" type="number" value="'+esc(m.image_credits||0)+'"></div></div><div class="field"><label>Audio provider cost µUSD/min / MKredit/min</label><div class="row"><input class="input" id="mCostAudio" type="number" value="'+esc(m.provider_audio_cost_micros_per_minute||0)+'"><input class="input" id="mAudio" type="number" value="'+esc(m.audio_credits_per_minute||0)+'"></div></div></div><h3>Runtime limits</h3><div class="two"><div class="field"><label>Requests / second</label><input class="input" id="mRps" type="number" min="0" value="'+esc(m.requests_per_second??'')+'"></div><div class="field"><label>Requests / minute</label><input class="input" id="mRpm" type="number" min="0" value="'+esc(m.requests_per_minute??'')+'"></div><div class="field"><label>Tokens / minute</label><input class="input" id="mTpm" type="number" min="0" value="'+esc(m.tokens_per_minute??'')+'"></div><div class="field"><label>Retry base / max seconds</label><div class="row"><input class="input" id="mRetryBase" type="number" min="1" value="'+esc(m.retry_base_seconds??2)+'"><input class="input" id="mRetryMax" type="number" min="1" value="'+esc(m.retry_max_seconds??120)+'"></div></div></div></div><div class="row"><button class="btn primary" id="mSave">Publish ordered route</button></div>');
-  const mScope=byId('mScope'),mCustomer=byId('mCustomer'),mStatus=byId('mStatus'),mByokPolicy=byId('mByokPolicy'),mTargets=byId('mTargets'),mAddTarget=byId('mAddTarget'),mSave=byId('mSave'),globalRateFields=byId('globalRateFields'),
+  const originalTargets=targets.map(t=>({...t}));
+  const targetRow=(t,i)=>{let caps=[];try{caps=t.reasoning_capabilities_json?JSON.parse(t.reasoning_capabilities_json):(t.reasoning_capabilities||[])}catch{}return '<div class="card" data-target-row="'+i+'" style="margin:10px 0"><div class="spread"><strong>'+(i===0?'Primary':'Fallback '+i)+'</strong><div class="row"><button class="btn" type="button" data-target-make-primary="'+i+'" '+(i===0?'disabled':'')+'>Make primary</button><button class="btn" type="button" data-target-move-up="'+i+'" '+(i===0?'disabled':'')+'>Move up</button><button class="btn" type="button" data-target-move-down="'+i+'" '+(i===targets.length-1?'disabled':'')+'>Move down</button></div></div><label><input type="checkbox" data-target-enabled="'+i+'" '+(Number(t.enabled??1)?'checked':'')+'> enabled</label></div><div class="three"><div class="field"><label>Provider</label><select class="input" data-target-provider="'+i+'">'+providers.map(p=>'<option '+(p===t.provider?'selected':'')+'>'+p+'</option>').join('')+'</select></div><div class="field"><label>Connection</label><select class="input" data-target-connection="'+i+'">'+providerOptions(t.provider_connection_id,t.provider,null)+'</select></div><div class="field"><label>Actual model</label><input class="input" data-target-model="'+i+'" value="'+esc(t.provider_model||'')+'"></div></div><div class="two"><div class="field"><label>Input / output MKredit per 1M</label><div class="row"><input class="input" type="number" data-target-input="'+i+'" value="'+esc(t.input_credits_per_million??m.input_credits_per_million??0)+'"><input class="input" type="number" data-target-output="'+i+'" value="'+esc(t.output_credits_per_million??m.output_credits_per_million??0)+'"></div></div><div class="field"><label>Provider cost µUSD input / output per 1M</label><div class="row"><input class="input" type="number" data-target-cost-input="'+i+'" value="'+esc(t.provider_input_cost_micros_per_million??m.provider_input_cost_micros_per_million??0)+'"><input class="input" type="number" data-target-cost-output="'+i+'" value="'+esc(t.provider_output_cost_micros_per_million??m.provider_output_cost_micros_per_million??0)+'"></div></div></div><div class="two"><div class="field"><label>Reasoning support</label><div class="row"><label><input type="checkbox" data-target-reasoning-high="'+i+'" '+(caps.includes('high')?'checked':'')+'> High</label><label><input type="checkbox" data-target-reasoning-maximum="'+i+'" '+(caps.includes('maximum')?'checked':'')+'> Maximum</label></div><small class="muted">Declare only levels this exact provider model accepts.</small></div><div class="field"><label>Separate reasoning rates per 1M (optional)</label><div class="row"><input class="input" type="number" data-target-reasoning-credits="'+i+'" placeholder="Customer MKredits" value="'+esc(t.reasoning_credits_per_million??'')+'"><input class="input" type="number" data-target-reasoning-cost="'+i+'" placeholder="Provider µUSD" value="'+esc(t.provider_reasoning_cost_micros_per_million??'')+'"></div><small class="muted">Leave blank when reasoning tokens are included in output usage.</small></div></div>'+(i?'<button class="btn danger" data-target-remove="'+i+'">Remove fallback</button>':'')+'</div>'};
+  openModal('<h2>'+esc(alias)+'</h2><p class="muted">Targets are tried strictly top-to-bottom. Disabled targets are skipped. This is deterministic failover, not random rotation. Each target carries its own provider cost and MKredit rate so settlement charges the model that actually answered.</p><div class="two"><div class="field"><label>Route scope</label><select class="input" id="mScope"><option value="global">Global managed route</option><option value="customer">Customer override</option></select></div><div class="field"><label>Customer</label><select class="input" id="mCustomer" disabled>'+customers+'</select></div><div class="field"><label>Alias status</label><select class="input" id="mStatus"><option value="active">Active</option><option value="paused">Paused</option><option value="disabled">Disabled</option></select><small class="muted">Pausing an alias blocks all targets. Target pauses below preserve remaining fallbacks.</small></div><div class="field"><label>BYOK fallback policy</label><select class="input" id="mByokPolicy"><option value="managed">Managed</option><option value="strict_byok">Strict BYOK — no Mkety-funded fallback</option><option value="explicit_paid_fallback">Explicit paid fallback allowed</option></select></div></div><h3>Ordered provider chain</h3><div id="mTargets"></div><div class="card" id="mRouteOrderPreview"><strong>Review route order before publish</strong><div class="two"><div><strong>Current</strong><ol id="mRouteCurrent"></ol></div><div><strong>After publish</strong><ol id="mRouteNext"></ol></div></div></div><button class="btn" id="mAddTarget">Add fallback</button><div id="globalRateFields"><h3>Alias default rate / media economics</h3><div class="two"><div class="field"><label>Image provider cost µUSD / MKredit</label><div class="row"><input class="input" id="mCostImage" type="number" value="'+esc(m.provider_image_cost_micros||0)+'"><input class="input" id="mImage" type="number" value="'+esc(m.image_credits||0)+'"></div></div><div class="field"><label>Audio provider cost µUSD/min / MKredit/min</label><div class="row"><input class="input" id="mCostAudio" type="number" value="'+esc(m.provider_audio_cost_micros_per_minute||0)+'"><input class="input" id="mAudio" type="number" value="'+esc(m.audio_credits_per_minute||0)+'"></div></div></div><h3>Runtime limits</h3><div class="two"><div class="field"><label>Requests / second</label><input class="input" id="mRps" type="number" min="0" value="'+esc(m.requests_per_second??'')+'"></div><div class="field"><label>Requests / minute</label><input class="input" id="mRpm" type="number" min="0" value="'+esc(m.requests_per_minute??'')+'"></div><div class="field"><label>Tokens / minute</label><input class="input" id="mTpm" type="number" min="0" value="'+esc(m.tokens_per_minute??'')+'"></div><div class="field"><label>Retry base / max seconds</label><div class="row"><input class="input" id="mRetryBase" type="number" min="1" value="'+esc(m.retry_base_seconds??2)+'"><input class="input" id="mRetryMax" type="number" min="1" value="'+esc(m.retry_max_seconds??120)+'"></div></div></div></div><div class="row"><button class="btn primary" id="mSave">Publish ordered route</button></div>');
+  const mScope=byId('mScope'),mCustomer=byId('mCustomer'),mStatus=byId('mStatus'),mByokPolicy=byId('mByokPolicy'),mTargets=byId('mTargets'),mRouteCurrent=byId('mRouteCurrent'),mRouteNext=byId('mRouteNext'),mAddTarget=byId('mAddTarget'),mSave=byId('mSave'),globalRateFields=byId('globalRateFields'),
     mCostImage=byId('mCostImage'),mImage=byId('mImage'),mCostAudio=byId('mCostAudio'),mAudio=byId('mAudio'),mRps=byId('mRps'),mRpm=byId('mRpm'),mTpm=byId('mTpm'),mRetryBase=byId('mRetryBase'),mRetryMax=byId('mRetryMax');
   mByokPolicy.value=m.byok_policy||'managed';mStatus.value=m.status||'active';
   const renderTargets=()=>{
     mTargets.innerHTML=targets.map(targetRow).join('');
-    mTargets.querySelectorAll('[data-target-provider]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.targetProvider);targets[i].provider=el.value;const con=mTargets.querySelector('[data-target-connection="'+i+'"]');con.innerHTML=providerOptions('',el.value,mScope.value==='customer'?mCustomer.value:null)});
-    mTargets.querySelectorAll('[data-target-remove]').forEach(el=>el.onclick=()=>{targets.splice(Number(el.dataset.targetRemove),1);renderTargets()});
+    mTargets.querySelectorAll('[data-target-provider]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.targetProvider);targets[i].provider=el.value;const con=mTargets.querySelector('[data-target-connection="'+i+'"]');con.innerHTML=providerOptions('',el.value,mScope.value==='customer'?mCustomer.value:null);updateRoutePreview()});
+    mTargets.querySelectorAll('[data-target-remove]').forEach(el=>el.onclick=()=>{targets.splice(Number(el.dataset.targetRemove),1);renderTargets();updateRoutePreview()});
+    mTargets.querySelectorAll('[data-target-make-primary]').forEach(el=>el.onclick=()=>moveTarget(Number(el.dataset.targetMakePrimary),0));
+    mTargets.querySelectorAll('[data-target-move-up]').forEach(el=>el.onclick=()=>moveTarget(Number(el.dataset.targetMoveUp),Number(el.dataset.targetMoveUp)-1));
+    mTargets.querySelectorAll('[data-target-move-down]').forEach(el=>el.onclick=()=>moveTarget(Number(el.dataset.targetMoveDown),Number(el.dataset.targetMoveDown)+1));
+    mTargets.querySelectorAll('[data-target-model]').forEach(el=>el.oninput=()=>{targets[Number(el.dataset.targetModel)].provider_model=el.value;updateRoutePreview()});
   };
-  mAddTarget.onclick=()=>{targets.push({provider:'azure-foundry',provider_model:'',provider_connection_id:null,enabled:1,input_credits_per_million:0,output_credits_per_million:0,provider_input_cost_micros_per_million:0,provider_output_cost_micros_per_million:0});renderTargets()};
+  const renderOrder=list=>'<ol>'+list.map(t=>'<li>'+esc(t.provider||'Provider')+' / '+esc(t.provider_model||'(model not set)')+'</li>').join('')+'</ol>';
+  const updateRoutePreview=()=>{mRouteCurrent.innerHTML=renderOrder(originalTargets);mRouteNext.innerHTML=renderOrder(targets)};
+  const syncTargetInputs=()=>mTargets.querySelectorAll('[data-target-row]').forEach((row,i)=>{
+    const t=targets[i];
+    t.provider=row.querySelector('[data-target-provider]').value;
+    t.provider_connection_id=row.querySelector('[data-target-connection]').value||null;
+    t.provider_model=row.querySelector('[data-target-model]').value;
+    t.enabled=row.querySelector('[data-target-enabled]').checked?1:0;
+    t.input_credits_per_million=Number(row.querySelector('[data-target-input]').value||0);
+    t.output_credits_per_million=Number(row.querySelector('[data-target-output]').value||0);
+    t.provider_input_cost_micros_per_million=Number(row.querySelector('[data-target-cost-input]').value||0);
+    t.provider_output_cost_micros_per_million=Number(row.querySelector('[data-target-cost-output]').value||0);
+    t.reasoning_capabilities=['standard',...(row.querySelector('[data-target-reasoning-high]').checked?['high']:[]),...(row.querySelector('[data-target-reasoning-maximum]').checked?['maximum']:[])];
+    t.reasoning_credits_per_million=row.querySelector('[data-target-reasoning-credits]').value===''?null:Number(row.querySelector('[data-target-reasoning-credits]').value);
+    t.provider_reasoning_cost_micros_per_million=row.querySelector('[data-target-reasoning-cost]').value===''?null:Number(row.querySelector('[data-target-reasoning-cost]').value);
+  });
+  const moveTarget=(from,to)=>{syncTargetInputs();targets=moveRouteTarget(targets,from,to);renderTargets();updateRoutePreview();mSave.textContent='Publish new route order'};
+  mAddTarget.onclick=()=>{targets.push({provider:'azure-foundry',provider_model:'',provider_connection_id:null,enabled:1,input_credits_per_million:0,output_credits_per_million:0,provider_input_cost_micros_per_million:0,provider_output_cost_micros_per_million:0});renderTargets();updateRoutePreview()};
   mScope.onchange=()=>{const customer=mScope.value==='customer';mCustomer.disabled=!customer;globalRateFields.style.display=customer?'none':'';renderTargets()};
-  mCustomer.onchange=renderTargets;renderTargets();
+  mCustomer.onchange=renderTargets;renderTargets();updateRoutePreview();
   mSave.onclick=async()=>{try{
     const collected=[...mTargets.querySelectorAll('[data-target-row]')].map((row,i)=>({
       provider:row.querySelector('[data-target-provider]').value,

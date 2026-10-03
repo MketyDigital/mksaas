@@ -2,6 +2,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 import ts from "typescript";
+import { moveRouteTarget } from "../src/route-order.ts";
 
 const source = fs.readFileSync(new URL("../src/ui.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
@@ -12,7 +13,14 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 
 const commonJsModule = { exports: {} };
-vm.runInNewContext(compiled, { module: commonJsModule, exports: commonJsModule.exports, require: () => { throw new Error("Unexpected require"); } });
+vm.runInNewContext(compiled, {
+  module: commonJsModule,
+  exports: commonJsModule.exports,
+  require: (id) => {
+    if (id === "./route-order") return { moveRouteTarget };
+    throw new Error(`Unexpected require: ${id}`);
+  },
+});
 const { renderCustomerPortal, renderOperatorPortal } = commonJsModule.exports;
 if (typeof renderOperatorPortal !== "function") throw new Error("renderOperatorPortal export missing");
 if (typeof renderCustomerPortal !== "function") throw new Error("renderCustomerPortal export missing");
@@ -21,9 +29,18 @@ const html = renderOperatorPortal([]);
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!match) throw new Error("Operator page script not found");
 const script = match[1];
-for (const marker of ["data-route-status", "Pause alias", "Resume alias", "Media readiness", "validated, priced target(s)"]) {
+for (const marker of [
+  "data-route-status", "Pause alias", "Resume alias", "Media readiness", "validated, priced target(s)",
+  "data-target-make-primary", "data-target-move-up", "data-target-move-down",
+  "Review route order before publish", "mRouteCurrent", "mRouteNext", "Publish new route order",
+  "moveRouteTarget(targets,from,to)",
+]) {
   if (!script.includes(marker)) throw new Error(`Operator model route control missing: ${marker}`);
 }
+const reorderHandler = script.match(/const moveTarget=\(from,to\)=>\{([\s\S]*?)\};/);
+if (!reorderHandler) throw new Error("Local route reorder handler missing");
+if (reorderHandler[1].includes("api(")) throw new Error("Reordering a route must not publish before the explicit save action");
+if (!script.includes("mSave.onclick=async()=>")) throw new Error("Explicit route publish action missing");
 
 // Syntax check the exact JavaScript shipped to the browser.
 new Function(script);
