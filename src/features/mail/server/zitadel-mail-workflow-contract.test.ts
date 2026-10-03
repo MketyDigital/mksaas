@@ -22,6 +22,15 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(workflow).toContain('steps.smtp_test.outcome == \'success\'');
   });
 
+  it('does not use Brevo SMTP credentials or reply-to when Mkety SMTP is selected', () => {
+    expect(workflow).toContain('MKETY_SMTP_PASSWORD: ${{ secrets.MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD }}');
+    expect(workflow).toContain('BREVO_SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}');
+    expect(workflow).toContain('SMTP_REPLY_TO: ${{ inputs.email_provider == \'mkety\' && \'info@mkety.com\' || secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}');
+    expect(workflow).toContain('if [ "$EMAIL_PROVIDER" = "mkety" ]; then');
+    expect(workflow).toContain('SMTP_PASSWORD="$MKETY_SMTP_PASSWORD"');
+    expect(workflow).not.toContain("inputs.email_provider == 'mkety' && secrets.MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD || secrets.BREVO_SMTP_KEY");
+  });
+
   it('masks credentials and logs provider metadata without secret values', () => {
     expect(workflow).toContain('echo "::add-mask::${!n}"');
     expect(workflow).toContain('process.env.PASSWORD');

@@ -4,7 +4,7 @@ import { createEnterpriseAiContractCheckout } from '@/features/ai-runtime/server
 import { createFlutterwaveBillingAdapter } from '@/features/billing/gateways/flutterwave';
 import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
-import { getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
+import { getConfiguredMketyFxRates, getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
 import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
 import { buildTenantPaymentReturnPath } from '@/features/payments/return-path';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
@@ -54,7 +54,7 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
     flutterwave: {
       brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
       collectionCurrencies: enabledFlutterwaveCurrencies,
-      hasConfiguredCurrencyQuote: Object.keys(paymentSettings.flutterwave.fxRates).length > 0,
+      hasConfiguredCurrencyQuote: Object.keys(getConfiguredMketyFxRates(paymentSettings.flutterwave.fxRates)).length > 0,
     },
     kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
   });

@@ -38,11 +38,12 @@ jobs:
       EMAIL_PROVIDER: ${{ inputs.email_provider || 'brevo' }}
       SMTP_HOST: ${{ inputs.email_provider == 'mkety' && 'smtp.mkety.com:465' || secrets.BREVO_SMTP_HOST || secrets.BREVO_SMTP_SERVER || secrets.SMTP_HOST || secrets.SMTP_SERVER || 'smtp-relay.brevo.com:587' }}
       SMTP_USER: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_SMTP_LOGIN || secrets.BREVO_SMTP_USER || secrets.BREVO_SMTP_USERNAME || secrets.SMTP_USER || secrets.SMTP_USERNAME }}
-      SMTP_PASSWORD: ${{ inputs.email_provider == 'mkety' && secrets.MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD || secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}
+      MKETY_SMTP_PASSWORD: ${{ secrets.MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD }}
+      BREVO_SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}
       SMTP_SENDER_EMAIL: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_SENDER_EMAIL || secrets.BREVO_FROM_EMAIL || secrets.SMTP_SENDER_EMAIL || secrets.SMTP_FROM_EMAIL || secrets.EMAIL_FROM }}
       SMTP_DESCRIPTION: ${{ inputs.email_provider == 'mkety' && 'Mkety First-Party Mail SMTP' || 'Mkety Brevo SMTP' }}
-      SMTP_SENDER_NAME: ${{ secrets.BREVO_SENDER_NAME || secrets.SMTP_SENDER_NAME || secrets.EMAIL_FROM_NAME || 'Mkety' }}
-      SMTP_REPLY_TO: ${{ secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}
+      SMTP_SENDER_NAME: ${{ inputs.email_provider == 'mkety' && 'Mkety' || secrets.BREVO_SENDER_NAME || secrets.SMTP_SENDER_NAME || secrets.EMAIL_FROM_NAME || 'Mkety' }}
+      SMTP_REPLY_TO: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}
       PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS }}
 
     steps:
@@ -373,15 +374,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$EMAIL_PROVIDER" = "mkety" ]; then
+            SMTP_PASSWORD="$MKETY_SMTP_PASSWORD"
+          else
+            SMTP_PASSWORD="$BREVO_SMTP_PASSWORD"
+          fi
+          export SMTP_PASSWORD
           missing=()
           for n in SMTP_HOST SMTP_USER SMTP_PASSWORD SMTP_SENDER_EMAIL; do
             if [ -z "${!n:-}" ]; then missing+=("$n"); else echo "::add-mask::${!n}"; fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
+            if [ "$EMAIL_PROVIDER" = "mkety" ]; then
+              echo "::error::Mkety SMTP requires MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD; no other provider credential can be substituted."
+              exit 1
+            fi
             echo "::warning::Selected SMTP provider is not fully configured. Missing values for: ${missing[*]}"
             echo "ready=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "SMTP_PASSWORD=$SMTP_PASSWORD" >> "$GITHUB_ENV"
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Test selected SMTP provider through ZITADEL

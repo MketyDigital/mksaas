@@ -14,6 +14,7 @@ const makeDependencies = () => ({
   hasCapacity: jest.fn().mockResolvedValue(true),
   findByIdempotencyKey: jest.fn().mockResolvedValue(null),
   createMessage: jest.fn().mockResolvedValue({ id: 'message-1' }),
+  retryFailedMessage: jest.fn().mockResolvedValue(false),
   enqueue: jest.fn().mockResolvedValue(undefined),
   setMessageStatus: jest.fn().mockResolvedValue(undefined),
 });
@@ -68,6 +69,53 @@ describe('sendPlatformMailWithDependencies', () => {
     expect(result).toEqual({ ok: true, messageId: 'previous-message', status: 'duplicate' });
     expect(dependencies.createMessage).not.toHaveBeenCalled();
     expect(dependencies.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('requeues an existing failed message once when its idempotency key is retried', async () => {
+    const dependencies = makeDependencies();
+    dependencies.findByIdempotencyKey.mockResolvedValue({ id: 'previous-message', status: 'failed' });
+    dependencies.retryFailedMessage.mockResolvedValue(true);
+
+    const result = await sendPlatformMailWithDependencies(input, dependencies);
+
+    expect(result).toEqual({ ok: true, messageId: 'previous-message', status: 'queued' });
+    expect(dependencies.retryFailedMessage).toHaveBeenCalledWith('previous-message');
+    expect(dependencies.enqueue).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'previous-message' }));
+    expect(dependencies.createMessage).not.toHaveBeenCalled();
+  });
+
+  it('reports a claimed retry as a duplicate when another request already requeued it', async () => {
+    const dependencies = makeDependencies();
+    dependencies.findByIdempotencyKey.mockResolvedValue({ id: 'previous-message', status: 'failed' });
+
+    const result = await sendPlatformMailWithDependencies(input, dependencies);
+
+    expect(result).toEqual({ ok: true, messageId: 'previous-message', status: 'duplicate' });
+    expect(dependencies.retryFailedMessage).toHaveBeenCalledWith('previous-message');
+    expect(dependencies.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('marks an existing message failed again when retry queue submission fails', async () => {
+    const dependencies = makeDependencies();
+    dependencies.findByIdempotencyKey.mockResolvedValue({ id: 'previous-message', status: 'failed' });
+    dependencies.retryFailedMessage.mockResolvedValue(true);
+    dependencies.enqueue.mockRejectedValue(new Error('queue unavailable'));
+
+    const result = await sendPlatformMailWithDependencies(input, dependencies);
+
+    expect(result).toEqual({ ok: false, reason: 'queue_failed' });
+    expect(dependencies.setMessageStatus).toHaveBeenCalledWith('previous-message', 'failed');
+  });
+
+  it('requeues a failed message found through an insert uniqueness race', async () => {
+    const dependencies = makeDependencies();
+    dependencies.createMessage.mockResolvedValue({ id: 'previous-message', duplicate: true, status: 'failed' });
+    dependencies.retryFailedMessage.mockResolvedValue(true);
+
+    const result = await sendPlatformMailWithDependencies(input, dependencies);
+
+    expect(result).toEqual({ ok: true, messageId: 'previous-message', status: 'queued' });
+    expect(dependencies.enqueue).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'previous-message' }));
   });
 
   it('fails closed when the platform Mail path is not ready', async () => {

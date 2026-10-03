@@ -86,11 +86,22 @@ export async function sendPlatformMail(input: PlatformMailInput) {
         if (databaseErrorCode(error) !== '23505') throw error;
         const existing = await db.query.mailMessages.findFirst({
           where: and(eq(mailMessages.tenantId, message.tenantId), eq(mailMessages.platformIdempotencyKey, message.idempotencyKey)),
-          columns: { id: true },
+          columns: { id: true, status: true },
         });
-        if (existing) return { id: existing.id, duplicate: true };
+        if (existing) return { id: existing.id, duplicate: true, status: existing.status };
         throw error;
       }
+    },
+    retryFailedMessage: async (messageId) => {
+      const [claimed] = await db.update(mailMessages)
+        .set({ status: 'queued' })
+        .where(and(
+          eq(mailMessages.id, messageId),
+          eq(mailMessages.tenantId, process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID || ''),
+          eq(mailMessages.status, 'failed'),
+        ))
+        .returning({ id: mailMessages.id });
+      return Boolean(claimed);
     },
     enqueue: async (message) => {
       await pushMailQueueBatch([message]);

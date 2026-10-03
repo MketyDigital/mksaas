@@ -4,6 +4,7 @@ import { getMketyFlutterwaveMethodLabelsForCurrency } from './flutterwave-paymen
 import {
   createFlutterwaveHostedCheckout,
   createFlutterwaveInlinePayload,
+  getConfiguredMketyFxRates,
   getEnabledMketyFlutterwaveCurrencies,
   quoteFlutterwaveCollection,
   verifyFlutterwaveStandardTransaction,
@@ -79,6 +80,16 @@ describe('Flutterwave v3 shared payments', () => {
       'KES',
     ]);
     expect(getEnabledMketyFlutterwaveCurrencies({})).toEqual(['USD']);
+  });
+
+  it('counts only valid supported operator rates as configured FX quotes', () => {
+    expect(getConfiguredMketyFxRates({
+      USD: '1',
+      NGN: 'invalid',
+      KES: '-2',
+      GBP: '0.8',
+      UNSUPPORTED: '100',
+    })).toEqual({ GBP: '0.8' });
   });
 
   it('creates a server-hashed Inline payload without exposing the secret key', async () => {
