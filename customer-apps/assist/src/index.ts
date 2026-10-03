@@ -10,7 +10,7 @@ import { reasoningCapabilities } from "./providers/reasoning";
 import { evaluateMediaReadiness, evaluateRouteReadiness, routeTargetMediaSupported, routeTargetPricingConfigured, routeTargetValidated } from "./providers/route-readiness";
 import { runConversationQualityProbe } from "./conversation/quality-probe";
 import type { SettlementJournal } from "./billing/settlement-journal";
-import { listUnresolvedAttempts, resolveUnknownAttempt } from "./billing/reconciliation";
+import { listUnresolvedAttempts, resolveUnknownAttempt, resolveUnknownWorkloadAttempt } from "./billing/reconciliation";
 export { SettlementJournal } from "./billing/settlement-journal";
 
 interface Env {
@@ -625,11 +625,30 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const attemptId = decodeURIComponent(url.pathname.slice("/api/ops/inference-attempts/".length, -"/resolve".length));
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
-    const assistantId = requiredString(body.assistantId, "assistantId");
     const outcome = String(body.outcome || "");
     if (!["confirmed_not_submitted", "recovered_result", "provider_charged_no_result", "mkety_absorbed_cost", "unresolved"].includes(outcome)) {
       return json({ error: "invalid_resolution_outcome" }, 400);
     }
+    if (body.workloadType === "api_key") {
+      const workloadId = requiredString(body.workloadId, "workloadId");
+      const result = await resolveUnknownWorkloadAttempt(env.DB, env.SETTLEMENT_JOURNAL, {
+        attemptId, customerId, workloadType: "api_key", workloadId, operatorUserId: operator.operatorUserId,
+        outcome: outcome as any, idempotencyKey: requiredString(body.idempotencyKey, "idempotencyKey"),
+        evidenceSummary: requiredString(body.evidenceSummary, "evidenceSummary"),
+        reason: requiredString(body.reason, "reason"),
+        usage: body.usage && typeof body.usage === "object" ? {
+          inputUnits: Number(body.usage.inputUnits), outputUnits: Number(body.usage.outputUnits),
+          reasoningUnits: body.usage.reasoningUnits == null ? 0 : Number(body.usage.reasoningUnits),
+          providerCostMicros: Number(body.usage.providerCostMicros), evidence: requiredString(body.usage.evidence, "usage.evidence"),
+        } : undefined,
+        absorbedProviderCost: body.absorbedProviderCost && typeof body.absorbedProviderCost === "object" ? {
+          providerCostMicros: Number(body.absorbedProviderCost.providerCostMicros),
+          evidence: requiredString(body.absorbedProviderCost.evidence, "absorbedProviderCost.evidence"),
+        } : undefined,
+      });
+      return json({ outcome: result.outcome, idempotent: result.idempotent });
+    }
+    const assistantId = requiredString(body.assistantId, "assistantId");
     const result = await resolveUnknownAttempt(env.DB, env.SETTLEMENT_JOURNAL, {
       attemptId, customerId, assistantId, operatorUserId: operator.operatorUserId,
       outcome: outcome as any, idempotencyKey: requiredString(body.idempotencyKey, "idempotencyKey"),

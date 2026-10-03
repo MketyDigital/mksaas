@@ -1,8 +1,11 @@
 export type AttemptStatus = "started" | "not_submitted" | "result_recorded" | "settled" | "unknown_outcome";
 
+type AttemptScope =
+  | { assistantId: string; workloadType?: never; workloadId?: never }
+  | { assistantId?: never; workloadType: "api_key"; workloadId: string };
+
 export type ProviderAttemptStarted = {
   customerId: string;
-  assistantId: string;
   attemptId: string;
   reservationId: string;
   requestHash: string;
@@ -10,7 +13,7 @@ export type ProviderAttemptStarted = {
   model: string;
   idempotencyKey: string;
   startedAt: number;
-};
+} & AttemptScope;
 
 export type ProviderAttemptResult = {
   responseText: string;
@@ -29,7 +32,7 @@ export type JournalAttempt = ProviderAttemptStarted & {
   updatedAt: number;
 };
 
-type JournalIdentity = Pick<ProviderAttemptStarted, "customerId" | "assistantId">;
+type JournalIdentity = Pick<ProviderAttemptStarted, "customerId"> & Partial<Pick<ProviderAttemptStarted, "assistantId" | "workloadType" | "workloadId">>;
 
 export class SettlementJournal implements Rpc.DurableObjectBranded {
   declare [Rpc.__DURABLE_OBJECT_BRAND]: never;
@@ -184,9 +187,10 @@ export class SettlementJournal implements Rpc.DurableObjectBranded {
 }
 
 function validateStarted(input: ProviderAttemptStarted): ProviderAttemptStarted {
-  for (const value of [input.customerId, input.assistantId, input.attemptId, input.reservationId, input.requestHash, input.provider, input.model, input.idempotencyKey]) {
+  for (const value of [input.customerId, input.attemptId, input.reservationId, input.requestHash, input.provider, input.model, input.idempotencyKey]) {
     if (!String(value || "").trim()) throw new Error("invalid_attempt_identity");
   }
+  if (!attemptScopeKey(input)) throw new Error("invalid_attempt_identity");
   return { ...input, startedAt: Math.max(0, Math.trunc(input.startedAt)) };
 }
 
@@ -204,9 +208,17 @@ function validateResult(result: ProviderAttemptResult): ProviderAttemptResult {
 }
 
 function assertIdentity(existing: JournalAttempt, identity: JournalIdentity) {
-  if (existing.customerId !== identity.customerId || existing.assistantId !== identity.assistantId) {
+  if (existing.customerId !== identity.customerId || attemptScopeKey(existing) !== attemptScopeKey(identity)) {
     throw new Error("attempt_scope_mismatch");
   }
+}
+
+function attemptScopeKey(value: JournalIdentity) {
+  if (typeof value.assistantId === "string" && value.assistantId.trim()) return `assistant:${value.assistantId}`;
+  if (value.workloadType === "api_key" && typeof value.workloadId === "string" && value.workloadId.trim()) {
+    return `api_key:${value.workloadId}`;
+  }
+  return "";
 }
 
 export function attemptIdFor(replyJobId: string, reservationId: string, ordinal: number): string {
@@ -222,9 +234,10 @@ type SettlementJournalClient = Pick<
 export function settlementJournalStub(
   namespace: DurableObjectNamespace<SettlementJournal>,
   customerId: string,
-  assistantId: string,
+  identityId: string,
+  workloadType: "assistant" | "api_key" = "assistant",
 ): SettlementJournalClient {
-  const name = `${customerId}:${assistantId}`;
+  const name = workloadType === "assistant" ? `${customerId}:${identityId}` : `${customerId}:${workloadType}:${identityId}`;
   const stub = namespace.get(namespace.idFromName(name));
   const call = async <T>(method: string, ...args: unknown[]): Promise<T> => {
     const response = await stub.fetch("https://settlement-journal.internal/rpc", {

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 import ts from "typescript";
+import { moveRouteTarget } from "../src/route-order.ts";
 
 const source = fs.readFileSync(new URL("../src/ui.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
@@ -12,7 +13,14 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 
 const commonJsModule = { exports: {} };
-vm.runInNewContext(compiled, { module: commonJsModule, exports: commonJsModule.exports, require: () => { throw new Error("Unexpected require"); } });
+vm.runInNewContext(compiled, {
+  module: commonJsModule,
+  exports: commonJsModule.exports,
+  require: (id) => {
+    if (id === "./route-order") return { moveRouteTarget };
+    throw new Error(`Unexpected require: ${id}`);
+  },
+});
 const { renderCustomerPortal, renderOperatorPortal } = commonJsModule.exports;
 if (typeof renderOperatorPortal !== "function") throw new Error("renderOperatorPortal export missing");
 if (typeof renderCustomerPortal !== "function") throw new Error("renderCustomerPortal export missing");
@@ -21,9 +29,18 @@ const html = renderOperatorPortal([]);
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!match) throw new Error("Operator page script not found");
 const script = match[1];
-for (const marker of ["data-route-status", "Pause alias", "Resume alias", "Media readiness", "validated, priced target(s)"]) {
+for (const marker of [
+  "data-route-status", "Pause alias", "Resume alias", "Media readiness", "validated, priced target(s)",
+  "data-target-make-primary", "data-target-move-up", "data-target-move-down",
+  "Review route order before publish", "mRouteCurrent", "mRouteNext", "Publish new route order",
+  "moveRouteTarget(targets,from,to)",
+]) {
   if (!script.includes(marker)) throw new Error(`Operator model route control missing: ${marker}`);
 }
+const reorderHandler = script.match(/const moveTarget=\(from,to\)=>\{([\s\S]*?)\};/);
+if (!reorderHandler) throw new Error("Local route reorder handler missing");
+if (reorderHandler[1].includes("api(")) throw new Error("Reordering a route must not publish before the explicit save action");
+if (!script.includes("mSave.onclick=async()=>")) throw new Error("Explicit route publish action missing");
 
 // Syntax check the exact JavaScript shipped to the browser.
 new Function(script);
@@ -159,6 +176,14 @@ try {
   if (typeof customerDocument.getElementById("nav").onclick !== "function") throw new Error("Customer navigation handler was not bound");
   if (typeof customerDocument.getElementById("logout").onclick !== "function") throw new Error("Customer logout handler was not bound");
   if (!customerHtml.includes("API Access")) throw new Error("Customer API Access section missing");
+  if (!customerHtml.includes("Human Operations")) throw new Error("Customer Human Operations section missing");
+  if (!customerHtml.includes("data-pause-conversation")) throw new Error("Human Operations conversation pause control missing");
+  if (!customerHtml.includes("pauseConversation:pause?.checked===true")) throw new Error("Human Operations pause choice is not saved");
+  if (!customerHtml.includes("data-save-human-ops-permission")) throw new Error("Human Operations actor access controls missing");
+  if (!customerHtml.includes("Can send customer-bound replies")) throw new Error("Human Operations reply permission label missing");
+  if (!customerScript.includes("/api/human-approvals")) throw new Error("Human approval list and decision handlers missing");
+  if (!customerScript.includes("/api/human-operations")) throw new Error("Per-assistant Human Operations opt-in missing");
+  if (!customerScript.includes("does not send a message into the customer conversation")) throw new Error("Review creation must stay out of customer conversations");
   if (!customerHtml.includes("https://checkout.flutterwave.com/v3.js")) throw new Error("Flutterwave Inline SDK missing");
   if (!customerHtml.includes("/api/billing/plan/start")) throw new Error("Plan funding checkout missing");
   if (!customerHtml.includes("FlutterwaveCheckout")) throw new Error("Flutterwave Inline launcher missing");
