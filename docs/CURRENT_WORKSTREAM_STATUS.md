@@ -1,3 +1,24 @@
+# 2026-10-03 standalone Mkety Assist audit update
+
+This section is the current standalone Mkety Assist audit authority and does not supersede unrelated Mail/Platform workstreams below.
+
+- Audited production baseline: `main` at `65493225017a358ad5fcd9c8ffd58c57c73b9ca7` (PR #331, settlement-journal fetch transport).
+- Exact-head Assist CI on PR #331 passed TypeScript, production-acceptance contracts, Operator browser checks, all local D1 migrations, Wrangler dry-run, and 87/87 focused unit/resilience tests.
+- Production deploy run `37057870084` passed credential preflight, ZITADEL Operator OIDC setup, Cloudflare account/zone/D1 resolution, SaaS DNS topology, R2/Queues, remote D1 migrations, Worker deployment, custom domains, secret upload, managed-provider bootstrap, real production inference acceptance, conversation-quality verification, MKredit/provider-cost reconciliation, Telegram webhook registration, and final health smoke.
+- Current production reconciliation proved the public commercial invariant `$1 = 1000 MKredit` and `$0.03 = 30 MKredit`; successful current reply jobs report clean delivery state. Historical Durable Object RPC errors were the defect fixed by PR #331.
+- Unknown-outcome reconciliation is implemented: tenant-scoped attempt projections, Operator list/resolve endpoints/UI, immutable resolution audit, idempotent settlement/release, recovered-result delivery, explicit Mkety cost absorption, and no automatic replay of unknown provider outcomes.
+- The production line preserves owner-selected `standard | high | maximum` reasoning and the explicit `allow_lower_effort | strict` fallback policy; end users cannot override the owner selection.
+- Stale PR #285 was closed on 2026-10-03 after confirming all four substantive hotfixes already exist on current `main`.
+- Repository-wide MegaLinter on the same main SHA fails on historical whole-repository actionlint/ShellCheck/link-check debt outside `customer-apps/assist/`; dedicated Assist CI, repository Typecheck/Lint/Build/Tests/CodeQL, and Assist production deployment all pass on the same SHA.
+- GitHub currently reports `main` as unprotected. Add repository branch protection/rules enforcing PR review and required checks before treating release governance as fully hardened. The connected GitHub integration used for this audit cannot write that administration setting.
+- `customer-apps/assist` currently has no npm lockfile and CI/deploy use `npm install`. Runtime production is accepted, but reproducible dependency installation should be hardened separately with a reviewed lockfile/`npm ci` change.
+- No destructive live fault injection was performed against the live customer Worker. D1-after-provider-return recovery, duplicate-dispatch prevention, idempotent settlement, cross-tenant rejection, fallback accounting, and unknown-outcome no-replay behavior are covered by the focused suite. Production acceptance used real provider calls and non-destructive health/accounting checks.
+- Do not replay synthetic audit messages into live customer conversations merely to prove health. Use the existing deploy-probe/internal acceptance path and read-only diagnostics.
+
+See `docs/handoffs/2026-10-03-assist-full-audit.md` for the exact evidence and remaining controls.
+
+---
+
 # 2026-09-30 exact-main production promotion update
 
 Current main is `4508e116519e4950feeaaac4c0e41e6f401c7912` after PRs #223 and #224. App Host Repair `36738352148`, Mail Production `36738755076`, Mail Gateway Production `36739410624`, real synthetic IMAP/SMTP/revocation acceptance `36741052849`, and Enterprise AI Production `36746234704` all succeeded. Production migration `0036_platform_editorial_drafts` was applied. Enterprise AI promotion included exact-SHA authorization, production migration, application/delivery Worker deployment, domain attachment and fail-closed smoke. See `docs/handoffs/2026-09-30-production-promotion-progress.md` for scope and limits; it supersedes the older failed IMAP SELECT and unmerged-branch state below.
