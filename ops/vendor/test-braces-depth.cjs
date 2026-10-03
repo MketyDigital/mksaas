@@ -2,7 +2,12 @@
 
 /* eslint @typescript-eslint/no-require-imports: off */
 const assert = require('node:assert/strict');
-const braces = process.env.BRACES_IMPL ? require(process.env.BRACES_IMPL) : require('./braces');
+const path = require('node:path');
+const nextPlugin = require.resolve('@next/eslint-plugin-next');
+const fastGlob = require.resolve('fast-glob', { paths: [path.dirname(nextPlugin)] });
+const micromatch = require.resolve('micromatch', { paths: [path.dirname(fastGlob)] });
+const bracesPath = process.env.BRACES_IMPL || require.resolve('braces', { paths: [path.dirname(micromatch)] });
+const braces = require(bracesPath);
 
 const makeNestedPattern = (depth) => `${'{'.repeat(depth)}a,b${'}'.repeat(depth)}`;
 const makeNestedAst = (depth) => {
