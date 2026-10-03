@@ -1,6 +1,8 @@
 import Link from 'next/link';
 
 import { AdminEnterprisePaymentLinkForm } from '@/features/enterprise-checkout/components/AdminEnterprisePaymentLinkForm';
+import { getMketyFlutterwaveProviderConfig, getMketyPaymentProviderStatuses } from '@/features/payments/provider-availability';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 
 interface EnterprisePaymentsPageProps {
@@ -10,13 +12,20 @@ interface EnterprisePaymentsPageProps {
 export default async function EnterprisePaymentsPage({ params }: EnterprisePaymentsPageProps) {
   const { tenant } = await params;
   await requirePlatformControlAccess(tenant);
-  const providers = [
-    ...(process.env.NOWPAYMENTS_API_KEY ? ['nowpayments' as const] : []),
-    ...(process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
-      ? ['flutterwave' as const]
-      : []),
-    ...(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY ? ['kora' as const] : []),
-  ];
+  const paymentSettings = await getMketyPaymentSettings();
+  const flutterwaveConfig = getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates);
+  const statuses = getMketyPaymentProviderStatuses({
+    nowpayments: {
+      apiKey: process.env.NOWPAYMENTS_API_KEY,
+      ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+    },
+    flutterwave: {
+      brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+      ...flutterwaveConfig,
+    },
+    kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+  });
+  const providers = statuses.filter(({ ready }) => ready).map(({ provider }) => provider);
 
   return (
     <div className="space-y-8">
@@ -30,6 +39,17 @@ export default async function EnterprisePaymentsPage({ params }: EnterprisePayme
           Create hosted payment links for agreed Enterprise quotes, deposits, milestones, and balances. The amount is
           set by Mkety administration and is not customer-editable.
         </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {statuses.map(({ provider, ready, label }) => (
+          <div key={provider} className="rounded-xl border bg-card p-4">
+            <p className="font-semibold">{label}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {ready ? 'Ready for hosted payment links' : 'Unavailable · runtime configuration incomplete'}
+            </p>
+          </div>
+        ))}
       </div>
 
       <AdminEnterprisePaymentLinkForm tenant={tenant} providers={providers} />

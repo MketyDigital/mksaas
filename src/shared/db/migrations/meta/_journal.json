@@ -274,6 +274,20 @@
       "when": 1790832600000,
       "tag": "0038_enterprise_ai_default_multiplier_100",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790971200000,
+      "tag": "0039_mail_app_password_protocol_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790974800000,
+      "tag": "0040_mail_platform_idempotency",
+      "breakpoints": true
     }
   ]
 }

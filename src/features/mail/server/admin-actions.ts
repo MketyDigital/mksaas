@@ -3,10 +3,21 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
+import { createFirstPartySmtpCredentialRecord } from '@/features/mail/server/first-party-smtp-credential';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
 import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
-import { billingPlans, billingPlanVersionEntitlements, billingPlanVersions, mailDomains, mailWorkspaces } from '@/shared/db/schema';
+import {
+  billingPlans,
+  billingPlanVersionEntitlements,
+  billingPlanVersions,
+  mailAppPasswords,
+  mailDomains,
+  mailMailboxes,
+  mailWorkspaces,
+  tenants,
+} from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
@@ -21,6 +32,105 @@ async function requireMailOps(opsTenantSlug: string) {
 
 function bool(value: FormDataEntryValue | null) {
   return value === 'on' || value === 'true' || value === '1';
+}
+
+function randomBytes(length: number) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+function hex(bytes: Uint8Array) {
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashAppPassword(secret: string) {
+  const salt = randomBytes(16);
+  const encoded = new TextEncoder().encode(secret);
+  const input = new Uint8Array(encoded.length + salt.length);
+  input.set(encoded);
+  input.set(salt, encoded.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
+  const result = new Uint8Array(digest.length + salt.length);
+  result.set(digest);
+  result.set(salt, digest.length);
+  let binary = '';
+  for (const byte of result) binary += String.fromCharCode(byte);
+  return `{SSHA256}${btoa(binary)}`;
+}
+
+export async function createFirstPartySmtpCredential(
+  opsTenantSlug: string,
+  _state: { secret?: string; error?: string },
+  _formData: FormData,
+): Promise<{ secret?: string; error?: string }> {
+  const actor = await requireMailOps(opsTenantSlug);
+  const configuredTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID ?? '';
+  if (!configuredTenantId) return { error: 'First-party Mail tenant is not configured.' };
+
+  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, configuredTenantId) });
+  if (!tenant) return { error: 'Configured first-party Mail tenant was not found.' };
+  const workspace = await db.query.mailWorkspaces.findFirst({ where: eq(mailWorkspaces.tenantId, configuredTenantId) });
+  if (!workspace || workspace.status !== 'active') {
+    return { error: 'The first-party Mail workspace is not active and entitled.' };
+  }
+  const entitled = await hasEntitlement({ tenantId: configuredTenantId, entitlement: 'workspace.mail' });
+  const mailboxRows = await db
+    .select({ mailbox: mailMailboxes, domain: mailDomains })
+    .from(mailMailboxes)
+    .innerJoin(mailDomains, eq(mailMailboxes.domainId, mailDomains.id))
+    .where(and(
+      eq(mailMailboxes.tenantId, configuredTenantId),
+      eq(mailMailboxes.workspaceId, workspace.id),
+      eq(mailMailboxes.localPart, 'info'),
+      eq(mailDomains.domain, 'mkety.com'),
+    ))
+    .limit(1);
+  const { mailbox, domain } = mailboxRows[0] ?? { mailbox: null, domain: null };
+  if (
+    domain?.status !== 'verified' ||
+    !domain.sendingEnabled ||
+    domain.spfStatus !== 'verified' ||
+    domain.dkimStatus !== 'verified' ||
+    domain.dmarcStatus !== 'verified' ||
+    domain.mxStatus !== 'verified'
+  ) {
+    return { error: 'The info@mkety.com sending domain is not fully verified and enabled.' };
+  }
+
+  const secret = `mkmail-${hex(randomBytes(12))}`;
+  const passwordHash = await hashAppPassword(secret);
+  const credential = await createFirstPartySmtpCredentialRecord({
+    configuredTenantId,
+    requestedTenantId: configuredTenantId,
+    actorUserId: actor.userId,
+    workspace: workspace ? { tenantId: workspace.tenantId, status: workspace.status, hasMailEntitlement: entitled } : null,
+    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mkety.com', status: mailbox.status } : null,
+    secret,
+    passwordHash,
+  }, {
+    replace: async (record) => {
+      return db.transaction(async (tx) => {
+        await tx.update(mailAppPasswords).set({ revokedAt: new Date() }).where(and(
+          eq(mailAppPasswords.tenantId, record.tenantId),
+          eq(mailAppPasswords.mailboxId, record.mailboxId),
+          eq(mailAppPasswords.name, 'Mkety platform SMTP'),
+          eq(mailAppPasswords.protocolScope, 'smtp'),
+          isNull(mailAppPasswords.revokedAt),
+        ));
+        const [created] = await tx.insert(mailAppPasswords).values(record).returning({ id: mailAppPasswords.id });
+        if (!created) throw new Error('Credential insert failed.');
+        return created;
+      });
+    },
+  });
+  try {
+    await logAuditEvent({ actorId: actor.userId, action: 'mail.first_party_smtp_credential.created', entityType: 'mail_app_password', entityId: credential.id, metadata: { tenantId: configuredTenantId, mailboxId: mailbox?.id, protocolScope: 'smtp' } });
+    return { secret: credential.secret };
+  } catch {
+    await db.update(mailAppPasswords).set({ revokedAt: new Date() }).where(eq(mailAppPasswords.id, credential.id));
+    return { error: 'Could not create the first-party SMTP credential. Check workspace readiness and try again.' };
+  }
 }
 
 

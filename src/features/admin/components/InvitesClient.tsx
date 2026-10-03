@@ -159,7 +159,12 @@ export function InvitesClient({ tenantSlug }: InvitesClientProps) {
     };
     const result = await createInvite(tenantSlug, input);
 
-    if (result.success) {
+    if (result.success && result.data) {
+      if (result.data?.emailDeliveryStatus === 'pending') {
+        toast.warning('Invitation created, but its email is pending. Check Mkety Mail and resend when ready.');
+      } else if (result.data?.emailDeliveryStatus === 'queued') {
+        toast.success('Invitation email queued through Mkety Mail.');
+      }
       setDialogOpen(false);
       form.reset({
         email: '',
@@ -197,7 +202,12 @@ export function InvitesClient({ tenantSlug }: InvitesClientProps) {
   // Handle resend
   const handleResend = async (invite: InviteWithDetails) => {
     const result = await resendInvite(tenantSlug, invite.id);
-    if (result.success) {
+    if (result.success && result.data) {
+      if (result.data.emailDeliveryStatus === 'pending') {
+        toast.warning('Invitation remains pending because its email could not be queued.');
+      } else if (result.data.emailDeliveryStatus === 'queued') {
+        toast.success('Invitation email queued through Mkety Mail.');
+      }
       fetchInvites();
     } else {
       toast.error(result.error || 'Failed to resend invite');

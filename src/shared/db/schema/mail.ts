@@ -104,6 +104,7 @@ export const mailMessages = appSchema.table('mail_messages', {
   providerMessageId: text('provider_message_id'),
   internetMessageId: text('internet_message_id'),
   imapUid: bigint('imap_uid', { mode: 'number' }).notNull().default(sql`nextval('saas_template.mail_message_imap_uid_seq')`),
+  platformIdempotencyKey: varchar('platform_idempotency_key', { length: 255 }),
   fromAddress: varchar('from_address', { length: 320 }).notNull(),
   toJson: jsonb('to_json').$type<string[]>().notNull().default([]),
   ccJson: jsonb('cc_json').$type<string[]>().notNull().default([]),
@@ -125,6 +126,7 @@ export const mailMessages = appSchema.table('mail_messages', {
   index('mail_messages_thread_idx').on(table.threadId),
   index('mail_messages_created_idx').on(table.createdAt),
   uniqueIndex('mail_messages_mailbox_imap_uid_uidx').on(table.mailboxId, table.imapUid),
+  uniqueIndex('mail_messages_tenant_platform_idempotency_uidx').on(table.tenantId, table.platformIdempotencyKey),
 ]);
 
 
@@ -304,6 +306,7 @@ export const mailAppPasswords = appSchema.table('mail_app_passwords', {
   name: varchar('name', { length: 128 }).notNull(),
   passwordPrefix: varchar('password_prefix', { length: 32 }).notNull(),
   passwordHash: varchar('password_hash', { length: 128 }).notNull(),
+  protocolScope: varchar('protocol_scope', { length: 16 }).$type<'all' | 'smtp'>().notNull().default('all'),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

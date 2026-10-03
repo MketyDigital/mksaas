@@ -14,9 +14,14 @@ describe('Enterprise AI payment launcher', () => {
   it('only exposes payment gateways that are actually configured', async () => {
     const page = await readFile('src/app/app/[tenant]/enterprise-ai/page.tsx', 'utf8');
 
-    expect(page).toContain('process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET');
-    expect(page).toContain('process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET');
-    expect(page).toContain('process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY');
+    expect(page).toContain('getAvailableMketyPaymentProviders({');
+    expect(page).toContain('apiKey: process.env.NOWPAYMENTS_API_KEY');
+    expect(page).toContain('ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET');
+    expect(page).toContain('brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET');
+    expect(page).toContain('getMketyFlutterwaveProviderConfig(paymentSettings.flutterwave.fxRates)');
+    expect(page).not.toContain('FLUTTERWAVE_STANDARD_SECRET_KEY');
+    expect(page).not.toContain('FLUTTERWAVE_STANDARD_WEBHOOK_HASH');
+    expect(page).toContain('kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY }');
     expect(page).not.toContain('<option value="kora">Kora</option>');
     expect(page).not.toContain('<option value="kora">Card / bank · Kora</option>');
   });

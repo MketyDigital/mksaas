@@ -10,12 +10,14 @@ import { and, desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { randomBytes } from 'crypto';
 
+import { sendPlatformMail } from '@/features/mail/server/platform-sender';
 import { db } from '@/shared/db';
 import * as schema from '@/shared/db/schema';
 import type { TenantRole } from '@/shared/db/schema/auth';
 import { logger } from '@/shared/lib/logger';
 import { requireTenantAdmin } from '@/shared/lib/rbac';
 
+import { deliverTenantInvitation } from './invitation-mail';
 import type { AdminActionResult, PaginatedResult } from '../types';
 
 // ============================================================================
@@ -52,6 +54,7 @@ export interface InviteWithDetails {
     email: string | null;
   } | null;
   inviteUrl: string;
+  emailDeliveryStatus?: 'queued' | 'pending';
 }
 
 // ============================================================================
@@ -69,7 +72,7 @@ function generateToken(): string {
  * Build the invite URL
  */
 function buildInviteUrl(tenantSlug: string, token: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://app.mkety.com';
   return `${baseUrl.replace(/\/$/, '')}/app/${tenantSlug}/invite/${token}`;
 }
 
@@ -185,6 +188,17 @@ export async function createInvite(
       })
       .returning();
 
+    const inviteUrl = buildInviteUrl(tenantSlug, invite.token);
+    const emailDeliveryStatus = await deliverTenantInvitation(tenant.name, {
+      id: invite.id,
+      email: invite.email,
+      token: invite.token,
+      firstName: invite.firstName,
+      message: invite.message,
+      expiresAt: invite.expiresAt,
+      inviteUrl,
+    }, sendPlatformMail);
+
     revalidatePath(`/app/${tenantSlug}/admin/members`);
 
     return {
@@ -209,7 +223,8 @@ export async function createInvite(
               email: inviter.email,
             }
           : null,
-        inviteUrl: buildInviteUrl(tenantSlug, invite.token),
+        inviteUrl,
+        emailDeliveryStatus,
       },
     };
   } catch (error) {
@@ -392,6 +407,17 @@ export async function resendInvite(
       .where(eq(schema.tenantInvitations.id, inviteId))
       .returning();
 
+    const inviteUrl = buildInviteUrl(tenantSlug, updated.token);
+    const emailDeliveryStatus = await deliverTenantInvitation(tenant.name, {
+      id: updated.id,
+      email: updated.email,
+      token: updated.token,
+      firstName: updated.firstName,
+      message: updated.message,
+      expiresAt: updated.expiresAt,
+      inviteUrl,
+    }, sendPlatformMail);
+
     revalidatePath(`/app/${tenantSlug}/admin/members`);
 
     return {
@@ -416,7 +442,8 @@ export async function resendInvite(
               email: invite.invitedBy.email,
             }
           : null,
-        inviteUrl: buildInviteUrl(tenantSlug, updated.token),
+        inviteUrl,
+        emailDeliveryStatus,
       },
     };
   } catch (error) {

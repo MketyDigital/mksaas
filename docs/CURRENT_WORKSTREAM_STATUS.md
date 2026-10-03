@@ -1,3 +1,26 @@
+# 2026-10-03 first-party Mail and checkout — current resume authority
+
+This section supersedes the older platform-completion and production-promotion summaries below for the active Mkety Mail / checkout workstream. Historical entries remain useful context but describe earlier repository states.
+
+- Active PR: [#333](https://github.com/MketyDigital/mksaas/pull/333), branch `codex/mkety-first-party-mail-20261002`, current code head `5c1ee4b08e29617657d4c724f3d877f381a97f06`, based on production main `65493225017a358ad5fcd9c8ffd58c57c73b9ca7`.
+- Completed in code: account-bound checkout foundations, first-party SMTP-only credential creation and atomic rotation, platform invitation sending, normalized Flutterwave FX readiness, and a safe legacy ZITADEL SMTP overwrite guard. The production workflow now validates and correctly masks the reserved Mail tenant binding before release/deploy work.
+- Current-head verification: GitHub tests, typecheck, build, lint, MegaLinter, PR validation, migration baseline, Mail readiness, staging Content DB smoke, Cloudflare smoke, Public AI provider probe, and Platform Core workspace smoke succeeded. The dependency audit fails on high-severity GHSA-vfj7-8cjw-p6xm in `braces <=3.0.3`, reached through the dev-only Next ESLint toolchain. GitHub currently lists no patched version; the upstream fix remains unmerged. No dependency override or audit waiver was added. Do not merge while this required gate is failing without a reviewed remediation or explicit repository-owner risk decision.
+- The isolated Public Candidate Deploy is cancelled before its first step on the current head. No fresh candidate deployment is certified for this head.
+- No production deployment, DNS/MX/TXT change, or payment charge occurred in this workstream. Root DNS, reserved-tenant secret presence, active `info@mkety.com` mailbox/domain readiness, controlled SMTP delivery, and ZITADEL/account/support acceptance remain unverified.
+- Customer external Mail clients and production Enterprise AI inference remain disabled. Starpips is the first paid Enterprise Mail pilot. Only after Starpips accepts Mail should MKETY use its own internal system for Enterprise AI acceptance; that test does not enable production Enterprise AI inference.
+
+## Next exact sequence
+
+1. Resolve the upstream `braces` advisory with a reviewed, tested patch/release; keep the dependency-audit gate intact.
+2. Re-run all exact-head Actions, including the isolated Public Candidate Deploy, and require success.
+3. Complete read-only DNS/provider/tenant preflight. Verify the reserved Mail tenant binding and `info@mkety.com` readiness before any DNS or provider mutation.
+4. Perform guarded first-party SMTP delivery, ZITADEL, login, invitation, recovery, and support-path acceptance with controlled recipients.
+5. Complete Starpips' contracted Mail purchase, domain onboarding, send/receive, team, and billing acceptance; record the customer's acceptance and exact evidence.
+6. Only after Starpips Mail acceptance, run the isolated internal MKETY Enterprise AI acceptance and record cleanup evidence. Keep production Enterprise AI inference off.
+7. Update the active plans and this handoff with evidence before considering production promotion.
+
+---
+
 # 2026-09-30 exact-main production promotion update
 
 Current main is `4508e116519e4950feeaaac4c0e41e6f401c7912` after PRs #223 and #224. App Host Repair `36738352148`, Mail Production `36738755076`, Mail Gateway Production `36739410624`, real synthetic IMAP/SMTP/revocation acceptance `36741052849`, and Enterprise AI Production `36746234704` all succeeded. Production migration `0036_platform_editorial_drafts` was applied. Enterprise AI promotion included exact-SHA authorization, production migration, application/delivery Worker deployment, domain attachment and fail-closed smoke. See `docs/handoffs/2026-09-30-production-promotion-progress.md` for scope and limits; it supersedes the older failed IMAP SELECT and unmerged-branch state below.
@@ -424,7 +447,7 @@ Final reconciliation completed:
 - restored the five approved Mkety Academy hub photos to current `main` from the already-approved release blobs and restored local-first image rendering with a safe external fallback;
 - confirmed the public release branch already carries the approved Academy image set and the explicit sign-in/signup OIDC intent repair;
 - made the public Contact experience actionable using established Mkety-owned channels:
-  - product/support: `support@mkety.com`;
+  - product/support: `info@mkety.com`;
   - Enterprise/partnerships: `hello@mkety.com`;
   - Telegram: `https://t.me/mketyadmin`;
   - Academy: `https://academy.mkety.com`;

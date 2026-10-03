@@ -11,11 +11,12 @@ async function handlePost(request: Request) {
   const body = await request.json().catch(() => null) as {
     username?: string;
     password?: string;
+    protocol?: 'imap' | 'smtp';
   } | null;
-  if (!body?.username || !body.password) {
+  if (!body?.username || !body.password || !['imap','smtp'].includes(String(body.protocol))) {
     return NextResponse.json({ ok: false, error: 'invalid_request' }, { status: 400 });
   }
-  const session = await authenticateExternalMailClient(body.username, body.password);
+  const session = await authenticateExternalMailClient(body.username, body.password, body.protocol!);
   if (!session) return NextResponse.json({ ok: false, error: 'invalid_credentials' }, { status: 401 });
   return NextResponse.json({ ok: true, ...session }, {
     headers: { 'cache-control': 'no-store' },

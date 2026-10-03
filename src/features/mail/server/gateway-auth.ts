@@ -9,6 +9,23 @@ import {
   mailWorkspaces,
 } from '@/shared/db/schema';
 
+import { mailExternalClientsEnabled } from './external-clients';
+
+export type MailGatewayProtocol = 'imap' | 'smtp';
+export type MailAppPasswordProtocolScope = 'all' | 'smtp';
+
+export function isMailGatewayCredentialAllowed(input: {
+  protocolScope: MailAppPasswordProtocolScope;
+  protocol: MailGatewayProtocol;
+  isFirstPartyTenant: boolean;
+  externalClientsEnabled: boolean;
+}) {
+  if (input.isFirstPartyTenant) {
+    return input.protocolScope === 'smtp' && input.protocol === 'smtp';
+  }
+  return input.externalClientsEnabled && input.protocolScope === 'all';
+}
+
 export function requireMailGatewaySecret(request: Request) {
   const expected = process.env.MKETY_MAIL_GATEWAY_INTERNAL_SECRET || '';
   return Boolean(expected) && request.headers.get('authorization') === `Bearer ${expected}`;
@@ -45,7 +62,12 @@ export async function verifyMailAppPasswordHash(secret: string, encoded: string)
   return timingSafeEqual(actual, digest);
 }
 
-export async function authenticateExternalMailClient(username: string, password: string) {
+export async function authenticateExternalMailClient(
+  username: string,
+  password: string,
+  protocol: MailGatewayProtocol,
+) {
+  if (protocol !== 'imap' && protocol !== 'smtp') return null;
   const address = username.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return null;
   if (!password.startsWith('mkmail-') || password.length > 128) return null;
@@ -57,6 +79,10 @@ export async function authenticateExternalMailClient(username: string, password:
     where: eq(mailDomains.domain, domainName),
   });
   if (!domain) return null;
+  const platformTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() || '';
+  const isFirstPartyTenant = Boolean(platformTenantId && domain.tenantId === platformTenantId);
+  const externalClientsEnabled = mailExternalClientsEnabled();
+  if (!isFirstPartyTenant && !externalClientsEnabled) return null;
 
   const [workspace, entitled, mailbox] = await Promise.all([
     db.query.mailWorkspaces.findFirst({
@@ -92,6 +118,8 @@ export async function authenticateExternalMailClient(username: string, password:
   for (const credential of credentials) {
     if (!password.startsWith(credential.passwordPrefix)) continue;
     if (!(await verifyMailAppPasswordHash(password, credential.passwordHash))) continue;
+    const protocolScope = String(credential.protocolScope || 'all') as MailAppPasswordProtocolScope;
+    if (!isMailGatewayCredentialAllowed({ protocolScope, protocol, isFirstPartyTenant, externalClientsEnabled })) continue;
     await db.update(mailAppPasswords)
       .set({ lastUsedAt: new Date() })
       .where(eq(mailAppPasswords.id, credential.id));
@@ -103,6 +131,7 @@ export async function authenticateExternalMailClient(username: string, password:
       domainId: domain.id,
       sendingEnabled: domain.sendingEnabled,
       routingEnabled: domain.routingEnabled,
+      protocol,
     };
   }
 

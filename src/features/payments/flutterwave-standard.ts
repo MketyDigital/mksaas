@@ -199,7 +199,6 @@ export async function createFlutterwaveHostedCheckout(input: {
       currency: input.currency,
       payload_hash: payloadHash,
       redirect_url: input.redirectUrl,
-      payment_options: getFlutterwavePaymentOptions(input.currency),
       ...(input.currency.toUpperCase() === "NGN" ? { bank_transfer_options: { expires: 3600 } } : {}),
       customer: { email: input.email, ...(input.customerName ? { name: input.customerName } : {}) },
       customizations: {

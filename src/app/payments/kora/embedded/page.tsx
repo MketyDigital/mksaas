@@ -2,24 +2,13 @@ import { and, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { KoraEmbeddedLauncher } from '@/features/payments/components/KoraEmbeddedLauncher';
+import { normalizeTenantPaymentReturnPath } from '@/features/payments/return-path';
 import { db } from '@/shared/db';
 import { billingCheckouts, tenantMemberships, tenants } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
 
 interface PageProps {
   searchParams: Promise<{ checkout?: string; returnPath?: string }>;
-}
-
-function validReturnPath(value: string, tenantSlug: string): string | null {
-  try {
-    const parsed = new URL(value, 'https://mkety.invalid');
-    if (parsed.origin !== 'https://mkety.invalid') return null;
-    const allowedPaths = new Set([`/app/${tenantSlug}/billing/checkout`, `/app/${tenantSlug}/enterprise-ai`]);
-    if (!allowedPaths.has(parsed.pathname)) return null;
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return null;
-  }
 }
 
 export const metadata = {
@@ -54,7 +43,7 @@ export default async function KoraEmbeddedPage({ searchParams }: PageProps) {
   });
   if (!tenant) notFound();
 
-  const returnPath = validReturnPath(String(query.returnPath ?? ''), tenant.slug);
+  const returnPath = normalizeTenantPaymentReturnPath(String(query.returnPath ?? ''), tenant.slug);
   if (!returnPath) notFound();
 
   const publicKey = process.env.KORA_PUBLIC_KEY;

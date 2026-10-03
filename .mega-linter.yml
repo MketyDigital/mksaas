@@ -5,7 +5,7 @@
 
 # Ignore generated and third-party directories.
 FILTER_REGEX_EXCLUDE: >-
-  (\.git/|node_modules/|\.next/|dist/|build/|coverage/|megalinter-reports/|customer-apps/assist/|pnpm-lock\.yaml)
+  (\.git/|node_modules/|\.next/|dist/|build/|coverage/|megalinter-reports/|customer-apps/assist/|ops/vendor/braces/|pnpm-lock\.yaml)
 
 # ESLint plus tsc are the canonical TypeScript quality gates for this codebase.
 # GitHub Actions YAML is validated by actionlint, Prettier and schema validation;

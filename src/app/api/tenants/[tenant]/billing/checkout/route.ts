@@ -10,6 +10,10 @@ import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
 import { drizzleSelfServiceCheckoutRepository } from '@/features/billing/server/drizzle-self-service-checkout-repository';
 import { createSelfServiceCheckout } from '@/features/billing/server/self-service-checkout';
+import { getConfiguredMketyFxRates, getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
+import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
+import { buildTenantPaymentReturnPath } from '@/features/payments/return-path';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -58,37 +62,68 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const provider = String(body.provider ?? 'nowpayments');
-  const adapter =
-    provider === 'nowpayments'
-      ? process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
-        ? createNowPaymentsBillingAdapter({
-            apiKey: process.env.NOWPAYMENTS_API_KEY,
-            ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
-          })
-        : null
+  const paymentSettings = await getMketyPaymentSettings();
+  const enabledFlutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates);
+  const availableProviders = getAvailableMketyPaymentProviders({
+    nowpayments: {
+      apiKey: process.env.NOWPAYMENTS_API_KEY,
+      ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+    },
+    flutterwave: {
+      brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+      collectionCurrencies: enabledFlutterwaveCurrencies,
+      hasConfiguredCurrencyQuote: Object.keys(getConfiguredMketyFxRates(paymentSettings.flutterwave.fxRates)).length > 0,
+    },
+    kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+  });
+  const isAvailable = availableProviders.some((option) => option.provider === provider);
+  const adapter = isAvailable
+    ? provider === 'nowpayments'
+      ? createNowPaymentsBillingAdapter({
+          apiKey: process.env.NOWPAYMENTS_API_KEY!,
+          ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET!,
+        })
       : provider === 'flutterwave'
-        ? process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
-          ? createFlutterwaveBillingAdapter({
-              brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+        ? createFlutterwaveBillingAdapter({ brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET! })
+        : provider === 'kora'
+          ? createKoraBillingAdapter({
+              publicKey: process.env.KORA_PUBLIC_KEY!,
+              secretKey: process.env.KORA_SECRET_KEY!,
             })
           : null
-        : provider === 'kora'
-          ? process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY
-            ? createKoraBillingAdapter({
-                publicKey: process.env.KORA_PUBLIC_KEY,
-                secretKey: process.env.KORA_SECRET_KEY,
-              })
-            : null
-          : null;
+    : null;
   if (!adapter) {
     return json({ success: false, message: 'Selected payment method is not configured.' }, 503);
+  }
+  const collectionCurrency = String(body.collectionCurrency ?? 'USD');
+  if (provider === 'flutterwave' && !enabledFlutterwaveCurrencies.includes(collectionCurrency as (typeof enabledFlutterwaveCurrencies)[number])) {
+    return json({ success: false, message: 'Selected Flutterwave currency is not configured.' }, 400);
   }
 
   const plan = getSelfServiceBillingPlan(planKey);
   const requestOrigin = new URL(request.url).origin;
-  const encodedPlan = encodeURIComponent(plan.key);
-  const encodedTerm = encodeURIComponent(termKey);
-  const checkoutPage = `${requestOrigin}/t/${encodeURIComponent(tenantSlug)}/billing/checkout`;
+  const returnUrl = new URL(
+    buildTenantPaymentReturnPath({
+      tenantSlug,
+      surface: 'billing',
+      planKey: plan.key,
+      termKey,
+      currency: provider === 'flutterwave' ? collectionCurrency : undefined,
+      state: 'returned',
+    }),
+    requestOrigin,
+  ).toString();
+  const cancelUrl = new URL(
+    buildTenantPaymentReturnPath({
+      tenantSlug,
+      surface: 'billing',
+      planKey: plan.key,
+      termKey,
+      currency: provider === 'flutterwave' ? collectionCurrency : undefined,
+      state: 'cancelled',
+    }),
+    requestOrigin,
+  ).toString();
   try {
     const checkout = await createSelfServiceCheckout(
       drizzleSelfServiceCheckoutRepository,
@@ -97,12 +132,12 @@ export async function POST(request: Request, context: RouteContext) {
         tenantId: tenant.id,
         planKey,
         termKey,
-        returnUrl: `${checkoutPage}?plan=${encodedPlan}&term=${encodedTerm}&payment=returned`,
-        cancelUrl: `${checkoutPage}?plan=${encodedPlan}&term=${encodedTerm}&payment=cancelled`,
+        returnUrl,
+        cancelUrl,
         customer: session.user.email
           ? { email: session.user.email, name: session.user.name ?? undefined }
           : undefined,
-        collectionCurrency: provider === 'flutterwave' ? String(body.collectionCurrency ?? 'USD') : undefined,
+        collectionCurrency: provider === 'flutterwave' ? collectionCurrency : undefined,
       },
     );
 

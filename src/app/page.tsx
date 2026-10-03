@@ -30,7 +30,7 @@ export default async function Home() {
         name: 'Mkety',
         url: 'https://mkety.com/',
         logo: 'https://mkety.com/mkety-logo.png',
-        email: content.settings.contactEmail ?? 'support@mkety.com',
+        email: content.settings.contactEmail ?? 'info@mkety.com',
         description:
           'Mkety is a technology platform for AI, automation, deployment management, media delivery, business solutions, practical learning, and Enterprise delivery.',
       },

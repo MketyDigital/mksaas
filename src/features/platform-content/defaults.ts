@@ -26,7 +26,7 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoTitle: 'Mkety | AI-powered digital solutions for your business',
   defaultSeoDescription:
     'Put AI to work across your website, business email, workflows and daily operations. Mkety brings practical digital solutions together, with specialist Media and Trading products when you need them.',
-  contactEmail: 'support@mkety.com',
+  contactEmail: 'info@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
   telegramHref: 'https://t.me/mketyadmin',

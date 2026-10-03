@@ -4,6 +4,10 @@ import { createEnterpriseAiContractCheckout } from '@/features/ai-runtime/server
 import { createFlutterwaveBillingAdapter } from '@/features/billing/gateways/flutterwave';
 import { createKoraBillingAdapter } from '@/features/billing/gateways/kora';
 import { createNowPaymentsBillingAdapter } from '@/features/billing/gateways/nowpayments';
+import { getConfiguredMketyFxRates, getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
+import { getAvailableMketyPaymentProviders } from '@/features/payments/provider-availability';
+import { buildTenantPaymentReturnPath } from '@/features/payments/return-path';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { db } from '@/shared/db';
 import { tenantMemberships } from '@/shared/db/schema';
 import { auth } from '@/shared/lib/auth';
@@ -40,45 +44,62 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
     fundingAmountMinor = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
     if (fundingAmountMinor <= 0n) return Response.json({ success: false, message: 'Funding amount must be greater than zero.' }, { status: 400 });
   }
-  const adapter =
-    provider === 'nowpayments'
-      ? process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET
-        ? createNowPaymentsBillingAdapter({
-            apiKey: process.env.NOWPAYMENTS_API_KEY,
-            ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
-          })
-        : null
+  const paymentSettings = await getMketyPaymentSettings();
+  const enabledFlutterwaveCurrencies = getEnabledMketyFlutterwaveCurrencies(paymentSettings.flutterwave.fxRates);
+  const availableProviders = getAvailableMketyPaymentProviders({
+    nowpayments: {
+      apiKey: process.env.NOWPAYMENTS_API_KEY,
+      ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+    },
+    flutterwave: {
+      brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+      collectionCurrencies: enabledFlutterwaveCurrencies,
+      hasConfiguredCurrencyQuote: Object.keys(getConfiguredMketyFxRates(paymentSettings.flutterwave.fxRates)).length > 0,
+    },
+    kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+  });
+  const isAvailable = availableProviders.some((option) => option.provider === provider);
+  const adapter = isAvailable
+    ? provider === 'nowpayments'
+      ? createNowPaymentsBillingAdapter({
+          apiKey: process.env.NOWPAYMENTS_API_KEY!,
+          ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET!,
+        })
       : provider === 'flutterwave'
-        ? process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
-          ? createFlutterwaveBillingAdapter({
-              brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+        ? createFlutterwaveBillingAdapter({ brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET! })
+        : provider === 'kora'
+          ? createKoraBillingAdapter({
+              publicKey: process.env.KORA_PUBLIC_KEY!,
+              secretKey: process.env.KORA_SECRET_KEY!,
             })
           : null
-        : provider === 'kora'
-          ? process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY
-            ? createKoraBillingAdapter({
-                publicKey: process.env.KORA_PUBLIC_KEY,
-                secretKey: process.env.KORA_SECRET_KEY,
-              })
-            : null
-          : null;
+    : null;
   if (!adapter) {
     return Response.json({ success: false, message: 'Selected payment method is not configured.' }, { status: 503 });
   }
+  const collectionCurrency = String(body.collectionCurrency ?? 'USD');
+  if (provider === 'flutterwave' && !enabledFlutterwaveCurrencies.includes(collectionCurrency as (typeof enabledFlutterwaveCurrencies)[number])) {
+    return Response.json({ success: false, message: 'Selected Flutterwave currency is not configured.' }, { status: 400 });
+  }
 
   const origin = new URL(request.url).origin;
-  const page = `${origin}/app/${encodeURIComponent(tenantSlug)}/enterprise-ai`;
 
   try {
     const checkout = await createEnterpriseAiContractCheckout({
       tenantId: tenant.id,
       adapter,
-      returnUrl: `${page}?payment=returned`,
-      cancelUrl: `${page}?payment=cancelled`,
+      returnUrl: new URL(
+        buildTenantPaymentReturnPath({ tenantSlug, surface: 'enterprise-ai', state: 'returned' }),
+        origin,
+      ).toString(),
+      cancelUrl: new URL(
+        buildTenantPaymentReturnPath({ tenantSlug, surface: 'enterprise-ai', state: 'cancelled' }),
+        origin,
+      ).toString(),
       customer: session.user.email
         ? { email: session.user.email, name: session.user.name ?? undefined }
         : undefined,
-      collectionCurrency: provider === 'flutterwave' ? String(body.collectionCurrency ?? 'USD') : undefined,
+        collectionCurrency: provider === 'flutterwave' ? collectionCurrency : undefined,
       fundingAmountMinor,
     });
 

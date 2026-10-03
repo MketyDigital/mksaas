@@ -12,10 +12,12 @@ import { DeploymentApprovalQueue } from '@/features/deploy/components/Deployment
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
+import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
 import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
 import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
+import { getMketyFlutterwaveProviderConfig, getMketyPaymentProviderStatuses } from '@/features/payments/provider-availability';
 import { getMketyPaymentSettings } from '@/features/payments/settings';
 
 import { defaultAppExperience } from '@/features/platform-app-experience/defaults';
@@ -122,6 +124,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
   const isDomainsRouting = controlModule.key === 'domains-routing';
   let deploymentApprovalRows = null;
   let paymentSettings = null;
+  let paymentReadiness = { nowpayments: false, flutterwave: false, kora: false };
   let mailOperations = null;
   let aiCommercialOverview = null;
   let enterpriseAiContracts = null;
@@ -139,6 +142,20 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
   if (isPayments) {
     await requirePermission(tenant, 'platform:billing');
     paymentSettings = await withAdminTimeout(getMketyPaymentSettings(), null);
+    const statuses = getMketyPaymentProviderStatuses({
+      nowpayments: {
+        apiKey: process.env.NOWPAYMENTS_API_KEY,
+        ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+      },
+      flutterwave: {
+        brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+        ...getMketyFlutterwaveProviderConfig(paymentSettings?.flutterwave.fxRates),
+      },
+      kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+    });
+    paymentReadiness = Object.fromEntries(
+      statuses.map(({ provider, ready }) => [provider, ready]),
+    ) as typeof paymentReadiness;
   }
 
   if (isMailOperations) {
@@ -210,15 +227,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
         <PaymentSettingsForm
           tenant={tenant}
           settings={paymentSettings}
-          readiness={{
-            nowpayments: Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET),
-            flutterwave: Boolean(
-              process.env.FLUTTERWAVE_PUBLIC_KEY &&
-              process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
-              process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH
-            ),
-            kora: Boolean(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY),
-          }}
+          readiness={paymentReadiness}
         />
       ) : null}
 
@@ -559,6 +568,13 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
 
       {isMailOperations && mailOperations ? (
         <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Platform Mail identity</CardTitle>
+              <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services.</CardDescription>
+            </CardHeader>
+            <CardContent><FirstPartySmtpCredentialForm tenant={tenant} /></CardContent>
+          </Card>
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3">

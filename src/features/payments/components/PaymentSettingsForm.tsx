@@ -35,19 +35,21 @@ export function PaymentSettingsForm({ tenant, settings, readiness }: PaymentSett
           <div className="rounded-xl border p-4">
             <p className="font-semibold">NOWPayments</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {readiness.nowpayments ? 'Configured · primary crypto' : 'Not fully configured'}
+              {readiness.nowpayments ? 'Ready · primary crypto' : 'Incomplete · requires NOWPayments API and IPN credentials'}
             </p>
           </div>
           <div className="rounded-xl border p-4">
             <p className="font-semibold">Flutterwave</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {readiness.flutterwave ? 'Configured · v3 Inline' : 'Needs public key, secret key and webhook hash'}
+              {readiness.flutterwave
+                ? 'Ready · v3 Inline with an operator-priced collection currency'
+                : 'Incomplete · requires the central checkout broker and an operator-priced currency'}
             </p>
           </div>
           <div className="rounded-xl border p-4">
             <p className="font-semibold">Kora</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {readiness.kora ? 'Configured · embedded checkout' : 'Hidden until public + secret keys are configured'}
+              {readiness.kora ? 'Ready · embedded checkout' : 'Incomplete · requires public and secret keys'}
             </p>
           </div>
         </CardContent>

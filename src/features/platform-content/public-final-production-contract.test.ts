@@ -156,7 +156,7 @@ describe('final public production UX, support, docs and auth contract', () => {
     expect(workflow).toContain('https://mkety.com/terms');
     expect(workflow).toContain('https://mkety.com/privacy');
     expect(workflow).toContain('https://mkety.com/docs');
-    expect(workflow).toContain('mailto:support@mkety.com');
+    expect(workflow).toContain('mailto:info@mkety.com');
   });
 
   it('smokes the real Academy images and every rendered docs link before release', async () => {

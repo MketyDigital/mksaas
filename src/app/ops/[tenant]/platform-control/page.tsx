@@ -1,6 +1,9 @@
 import { BadgeCheck, Cloud, CreditCard, Globe2, KeyRound, LayoutDashboard, Mail, Route, Shield, Sparkles, Wallet } from 'lucide-react';
 import Link from 'next/link';
 
+import { getEnabledMketyFlutterwaveCurrencies } from '@/features/payments/flutterwave-standard';
+import { getMketyPaymentProviderStatuses } from '@/features/payments/provider-availability';
+import { getMketyPaymentSettings } from '@/features/payments/settings';
 import { getPublishedControlCenterModules } from '@/features/platform-app-experience/server/queries';
 import { listPlatformServiceConnections } from '@/features/platform-connections/server/service';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
@@ -32,9 +35,10 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
   const { tenant } = await params;
   await requirePlatformControlAccess(tenant);
 
-  const [modules, domainConnections] = await Promise.all([
+  const [modules, domainConnections, paymentSettings] = await Promise.all([
     getPublishedControlCenterModules(),
     listPlatformServiceConnections('domains').catch(() => []),
+    getMketyPaymentSettings().catch(() => null),
   ]);
   const domainRegistrarReady = domainConnections.some(
     (item) => item.providerKey === 'domainnameapi' && item.status === 'active',
@@ -42,16 +46,20 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
   const domainDnsReady = domainConnections.some(
     (item) => item.providerKey === 'cloudflare-saas' && item.status === 'active',
   );
-  const paymentReadiness = {
-    nowpayments: Boolean(process.env.NOWPAYMENTS_API_KEY && process.env.NOWPAYMENTS_IPN_SECRET),
-    flutterwave: Boolean(
-      process.env.FLUTTERWAVE_PUBLIC_KEY &&
-      process.env.FLUTTERWAVE_STANDARD_SECRET_KEY &&
-      process.env.FLUTTERWAVE_STANDARD_WEBHOOK_HASH &&
-      process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET
-    ),
-    kora: Boolean(process.env.KORA_PUBLIC_KEY && process.env.KORA_SECRET_KEY),
-  };
+  const paymentReadiness = Object.fromEntries(
+    getMketyPaymentProviderStatuses({
+      nowpayments: {
+        apiKey: process.env.NOWPAYMENTS_API_KEY,
+        ipnSecret: process.env.NOWPAYMENTS_IPN_SECRET,
+      },
+      flutterwave: {
+        brokerSecret: process.env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET,
+        collectionCurrencies: getEnabledMketyFlutterwaveCurrencies(paymentSettings?.flutterwave.fxRates),
+        hasConfiguredCurrencyQuote: Object.keys(paymentSettings?.flutterwave.fxRates ?? {}).length > 0,
+      },
+      kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
+    }).map(({ provider, ready }) => [provider, ready]),
+  ) as Record<'nowpayments' | 'flutterwave' | 'kora', boolean>;
 
   return (
     <div className="space-y-8">
@@ -81,7 +89,7 @@ export default async function PlatformControlPage({ params }: PlatformControlPag
           <Link href={`/ops/${tenant}/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
             <p className="font-semibold">Flutterwave</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {readinessLabel(paymentReadiness.flutterwave, 'Ready · v3 Inline + shared broker', 'Needs Standard/Inline runtime configuration')}
+              {readinessLabel(paymentReadiness.flutterwave, 'Ready · v3 Inline + priced currency', 'Needs central broker and saved currency rate')}
             </p>
           </Link>
           <Link href={`/ops/${tenant}/platform-control/payments`} className="rounded-xl border bg-background p-4 transition hover:border-primary/50">
