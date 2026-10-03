@@ -38,8 +38,8 @@ CREATE INDEX IF NOT EXISTS idx_human_approvals_conversation
 CREATE TABLE IF NOT EXISTS human_approval_audit (
   id TEXT PRIMARY KEY,
   customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  assistant_id TEXT NOT NULL REFERENCES assistants(id) ON DELETE CASCADE,
-  approval_id TEXT NOT NULL REFERENCES human_approval_requests(id) ON DELETE RESTRICT,
+  assistant_id TEXT NOT NULL,
+  approval_id TEXT NOT NULL,
   actor_user_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('approved','rejected','answered','expired','cancelled')),
   decision_text TEXT NOT NULL DEFAULT '',

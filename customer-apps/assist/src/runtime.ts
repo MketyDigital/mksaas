@@ -175,7 +175,9 @@ export async function handleRuntimeApi(
       if (Number(evidence?.n || 0) !== evidenceMessageIds.length) return json({ error: "approval_evidence_not_found" }, 404);
     }
     const now = unix();
-    const expiresAt = Math.max(now + 60, Math.min(now + 30 * 86400, Number(body.expiresAt || now + 86400)));
+    const requestedExpiry = body.expiresAt == null || body.expiresAt === "" ? now + 86400 : Number(body.expiresAt);
+    if (!Number.isFinite(requestedExpiry)) return json({ error: "invalid_approval_expiry" }, 400);
+    const expiresAt = Math.max(now + 60, Math.min(now + 30 * 86400, Math.trunc(requestedExpiry)));
     let result;
     try {
       result = await createHumanApprovalRequest(env.DB, {
@@ -195,6 +197,8 @@ export async function handleRuntimeApi(
     const body = await readJson(request);
     const decision = String(body.decision || "");
     if (!["approved", "rejected", "answered"].includes(decision)) return json({ error: "invalid_approval_decision" }, 400);
+    const decisionText = typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "";
+    if (decision === "answered" && !decisionText) return json({ error: "approval_answer_required" }, 400);
     const approval = await env.DB.prepare(
       "SELECT id,assistant_id,status,expires_at FROM human_approval_requests WHERE id=? AND customer_id=? LIMIT 1",
     ).bind(parts[2], customer.customerId).first<any>();
@@ -202,7 +206,7 @@ export async function handleRuntimeApi(
     const decided = await decideHumanApproval(env.DB, {
       customerId: customer.customerId, assistantId: String(approval.assistant_id), approvalId: String(approval.id),
       actorUserId: session.userId, decision: decision as "approved" | "rejected" | "answered",
-      decisionText: typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "", now: unix(),
+      decisionText, now: unix(),
     });
     return decided ? json({ ok: true, decision }) : json({ error: Number(approval.expires_at) <= unix() ? "approval_expired" : "approval_already_decided" }, 409);
   }
@@ -4382,7 +4386,3 @@ class ApiError extends Error {
 }
 
 export function runtimeErrorResponse(error: unknown) {
-  if (error instanceof ApiError) return json({ error: error.message }, error.status);
-  console.error("Assist runtime error", error);
-  return json({ error: "internal_error" }, 500);
-}
