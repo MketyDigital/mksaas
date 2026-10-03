@@ -2053,7 +2053,7 @@ async function handleHumanOpsGroupMessage(env: AssistEnv, deliveryAssistantId: s
           `INSERT INTO human_ops_destinations
            (id,customer_id,name,chat_id,message_thread_id,delivery_assistant_id,destination_type,status,assistant_scope_json,created_by_user_id,created_at,updated_at)
            SELECT ?,customer_id,?,?,NULL,?,?,'active',assistant_scope_json,?,?,? FROM human_ops_link_challenges
-           WHERE token_hash=? AND customer_id=? AND delivery_assistant_id=? AND consumed_at=?`,
+           WHERE token_hash=? AND customer_id=? AND delivery_assistant_id=? AND consumed_at=? AND changes()>0`,
         ).bind(destinationId,`Telegram ${chatType}: ${String(message.chat.title||chatId).slice(0,80)}`,chatId,deliveryAssistantId,chatType,
           challenge.created_by_user_id||null,now,now,tokenHash,challenge.customer_id,deliveryAssistantId,now),
         env.DB.prepare(
@@ -2159,8 +2159,28 @@ async function processHumanOpsTelegramCallback(env: AssistEnv, deliveryAssistant
       permission=permission?{allowedKinds:permissionKinds,canReply:Number(permission.can_reply)===1}:null;
     }
     if (actor && humanOpsActorCan(String(actor.role),permission,String(action.kind),String(action.action)==="reply"?"reply":"decision")) {
-      const claimed = await env.DB.prepare("UPDATE human_ops_actions SET used_at=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?")
-        .bind(unix(),tokenHash,unix()).run();
+      const claimed = await env.DB.prepare(
+        `UPDATE human_ops_actions SET used_at=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?
+         AND EXISTS (
+           SELECT 1 FROM human_ops_destinations d
+           JOIN human_approval_requests r ON r.id=human_ops_actions.approval_id AND r.customer_id=human_ops_actions.customer_id
+             AND r.assistant_id=human_ops_actions.assistant_id
+           JOIN customer_users cu ON cu.customer_id=human_ops_actions.customer_id
+           JOIN users u ON u.id=cu.user_id
+           WHERE d.id=human_ops_actions.destination_id AND d.customer_id=human_ops_actions.customer_id
+             AND d.delivery_assistant_id=human_ops_actions.delivery_assistant_id AND d.chat_id=? AND d.status='active'
+             AND r.status='pending' AND r.expires_at>? AND u.status='active' AND u.telegram_user_id=?
+             AND EXISTS (SELECT 1 FROM json_each(d.allowed_kinds_json) dk WHERE dk.value=r.kind)
+             AND EXISTS (SELECT 1 FROM json_each(d.assistant_scope_json) da WHERE da.value=r.assistant_id)
+             AND (cu.role='owner' OR EXISTS (
+               SELECT 1 FROM human_ops_actor_permissions p WHERE p.customer_id=cu.customer_id
+                 AND p.destination_id=d.id AND p.user_id=cu.user_id AND (
+                   (human_ops_actions.action='reply' AND p.can_reply=1) OR
+                   (human_ops_actions.action!='reply' AND EXISTS (SELECT 1 FROM json_each(p.allowed_kinds_json) pk WHERE pk.value=r.kind))
+                 )
+             ))
+         )`,
+      ).bind(unix(),tokenHash,unix(),chatId,unix(),telegramUserId).run();
       if (Number(claimed.meta?.changes||0)) {
         if (action.action === "reply") {
           await env.DB.prepare(

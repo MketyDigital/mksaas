@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { readFile } from "node:fs/promises";
 import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, humanOpsActorCan, normalizeHumanOpsPermission, normalizeApprovalRequest, parseHumanDecisionCall, recordHumanApprovalReply } from "../src/human-approvals.ts";
 
 test("approval request accepts only bounded supported kinds and safe text", () => {
@@ -37,6 +38,44 @@ test("group permissions are explicit for non-owners and bounded to supported req
   assert.equal(humanOpsActorCan("admin",null,"verify_payment","approved"),false);
   assert.equal(humanOpsActorCan("member",{allowedKinds:["verify_payment"],canReply:false},"verify_payment","approved"),true);
   assert.equal(humanOpsActorCan("member",{allowedKinds:["verify_payment"],canReply:false},"verify_payment","reply"),false);
+});
+
+test("Telegram group action claim rechecks current user, destination, scope, and delegated permission atomically", async () => {
+  const runtime=await readFile(new URL("../src/runtime.ts",import.meta.url),"utf8");
+  const callback=runtime.slice(runtime.indexOf("async function processHumanOpsTelegramCallback"),runtime.indexOf("async function telegramEditMessage"));
+  assert.match(callback,/UPDATE human_ops_actions SET used_at=\?[\s\S]*AND EXISTS \([\s\S]*d\.status='active'[\s\S]*u\.status='active'/);
+  assert.match(callback,/json_each\(d\.allowed_kinds_json\)/);
+  assert.match(callback,/json_each\(d\.assistant_scope_json\)/);
+  assert.match(callback,/human_ops_actor_permissions[\s\S]*p\.can_reply=1/);
+  const link=runtime.slice(runtime.indexOf("async function handleHumanOpsGroupMessage"),runtime.indexOf("async function processHumanOpsTelegramCallback"));
+  assert.match(link,/INSERT INTO human_ops_destinations[\s\S]*consumed_at=\? AND changes\(\)>0/);
+
+  const claimSql=callback.match(/env\.DB\.prepare\(\s*`(UPDATE human_ops_actions[\s\S]*?)`,\s*\)\.bind/)?.[1];
+  assert.ok(claimSql,"atomic group action claim SQL missing");
+  const sqlite=new DatabaseSync(":memory:");
+  sqlite.exec(`
+    CREATE TABLE human_ops_actions(token_hash TEXT PRIMARY KEY,used_at INTEGER,expires_at INTEGER,customer_id TEXT,approval_id TEXT,assistant_id TEXT,destination_id TEXT,delivery_assistant_id TEXT,action TEXT);
+    CREATE TABLE human_ops_destinations(id TEXT,customer_id TEXT,delivery_assistant_id TEXT,chat_id TEXT,status TEXT,allowed_kinds_json TEXT,assistant_scope_json TEXT);
+    CREATE TABLE human_approval_requests(id TEXT,customer_id TEXT,assistant_id TEXT,status TEXT,expires_at INTEGER,kind TEXT);
+    CREATE TABLE customer_users(customer_id TEXT,user_id TEXT,role TEXT);
+    CREATE TABLE users(id TEXT,status TEXT,telegram_user_id TEXT);
+    CREATE TABLE human_ops_actor_permissions(customer_id TEXT,destination_id TEXT,user_id TEXT,can_reply INTEGER,allowed_kinds_json TEXT);
+    INSERT INTO human_ops_actions VALUES ('hash-1',NULL,2000,'cus-1','approval-1','assistant-1','dest-1','bot-1','approved');
+    INSERT INTO human_ops_destinations VALUES ('dest-1','cus-1','bot-1','chat-1','active','["verify_payment"]','["assistant-1"]');
+    INSERT INTO human_approval_requests VALUES ('approval-1','cus-1','assistant-1','pending',2000,'verify_payment');
+    INSERT INTO customer_users VALUES ('cus-1','user-1','admin');
+    INSERT INTO users VALUES ('user-1','active','tg-1');
+    INSERT INTO human_ops_actor_permissions VALUES ('cus-1','dest-1','user-1',1,'["verify_payment"]');
+  `);
+  try {
+    const claim=sqlite.prepare(claimSql);
+    assert.equal(Number(claim.run(1500,"hash-1",1500,"chat-1",1500,"tg-1").changes),1);
+    sqlite.prepare("INSERT INTO human_ops_actions VALUES ('hash-2',NULL,2000,'cus-1','approval-1','assistant-1','dest-1','bot-1','approved')").run();
+    sqlite.prepare("UPDATE human_ops_actor_permissions SET allowed_kinds_json='[]' WHERE user_id='user-1'").run();
+    assert.equal(Number(claim.run(1500,"hash-2",1500,"chat-1",1500,"tg-1").changes),0);
+    sqlite.prepare("INSERT INTO human_ops_actions VALUES ('hash-3',NULL,2000,'cus-1','approval-1','assistant-1','dest-1','bot-1','reply')").run();
+    assert.equal(Number(claim.run(1500,"hash-3",1500,"chat-1",1500,"tg-1").changes),1);
+  } finally { sqlite.close(); }
 });
 
 test("approval creation scopes conversation and opt-in to the same customer and assistant", async () => {
