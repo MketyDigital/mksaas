@@ -1,7 +1,7 @@
 # Mkety Assist — Safe Control-Plane Extensions Plan
 
 Date: 2026-10-03  
-Status: design only — no runtime, database, routing, billing, or production behavior changed by this document.
+Status: implementation staged in draft PR #335; changes are additive and remain unmerged/undeployed. This plan document does not change runtime, database, routing, billing, or production behavior.
 
 ## Goal
 
