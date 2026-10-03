@@ -12,6 +12,7 @@
     "lint:a11y": "eslint . --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit",
     "prepare": "husky",
+    "test:braces-depth": "node ops/vendor/test-braces-depth.cjs",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --detectOpenHandles --passWithNoTests",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js -u --runInBand --verbose --watch --detectOpenHandles --passWithNoTests",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js -u --coverage --verbose --runInBand --detectOpenHandles --passWithNoTests",
@@ -177,6 +178,7 @@
   "type": "module",
   "pnpm": {
     "overrides": {
+      "braces": "file:ops/vendor/braces",
       "fast-xml-parser@>=5.0.0 <5.7.0": "^5.7.0",
       "ajv@>=8.0.0 <8.18.0": "^8.18.0",
       "picomatch@>=2.0.0 <2.3.2": "^2.3.2",
