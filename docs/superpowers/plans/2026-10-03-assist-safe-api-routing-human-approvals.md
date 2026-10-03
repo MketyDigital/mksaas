@@ -36,6 +36,64 @@ These should be extended rather than duplicated.
 
 ---
 
+
+# 0. Hard product boundary — standalone Assist only
+
+This plan is exclusively for the standalone Mkety Assist product.
+
+## Allowed implementation scope
+
+Primary implementation paths:
+
+- `customer-apps/assist/**`
+- Assist-specific migrations owned by `customer-apps/assist`
+- Assist-specific tests under `customer-apps/assist`
+- Assist-specific GitHub workflows such as `.github/workflows/mkety-assist-*.yml`
+- Assist-specific documentation, plans and handoffs
+
+## Out of scope
+
+Do **not** mix these features into the main MkSaaS / broader Mkety application, shared customer product flows, or unrelated services.
+
+Do not modify shared/core MkSaaS infrastructure merely for convenience.
+
+If a future implementation appears to require a shared component outside the standalone Assist boundary:
+
+1. stop;
+2. document the dependency and why Assist cannot contain it locally;
+3. assess impact on the main MkSaaS/Mkety system;
+4. require separate review/approval before changing that shared component;
+5. keep the Assist feature disabled until that dependency is safely resolved.
+
+A same-repository location does not mean the products should share runtime behavior.
+
+The standalone Assist deployment, data model, feature flags and customer behavior remain independently controlled.
+
+## Live-production protection rule
+
+The existing live Assist product is the baseline that must continue working.
+
+Every new capability in this plan is additive and opt-in.
+
+Existing customers must retain current behavior unless the specific new feature is explicitly enabled.
+
+Implementation must avoid:
+
+- destructive schema migrations;
+- renaming/removing current production fields during rollout;
+- replacing working routing, billing, Telegram, handoff or recovery paths;
+- silently converting existing API keys;
+- silently enabling Human Operations or approvals;
+- changing existing assistant prompts or customer-visible behavior as a migration side effect;
+- direct production experimentation in live customer conversations;
+- synthetic approval/handoff messages in real customer threads;
+- direct pushes to production for feature work.
+
+Changes should be developed on isolated branches, covered by focused regression tests, reviewed through PRs, and deployed through the existing Assist deployment workflow only after exact-head checks pass.
+
+Rollback should normally be accomplished by feature-disable/revert while preserving historical ledger, settlement, audit and approval records.
+
+
 # 1. Safe primary / fallback switching in Ops
 
 ## Current behavior
