@@ -5,6 +5,19 @@ export type ApprovalDecision = "approved" | "rejected" | "answered";
 
 const KINDS = new Set<ApprovalKind>(["verify_payment", "verify_partner_signup", "approve_action", "human_answer", "custom"]);
 
+export function normalizeHumanOpsPermission(input: any) {
+  const allowedKinds = Array.isArray(input?.allowedKinds)
+    ? [...new Set(input.allowedKinds.map(String).filter((kind: string) => KINDS.has(kind as ApprovalKind)))].slice(0, KINDS.size)
+    : [];
+  return { allowedKinds: allowedKinds as ApprovalKind[], canReply: input?.canReply === true };
+}
+
+export function humanOpsActorCan(role: string, permission: { allowedKinds: string[]; canReply: boolean } | null, kind: string, action: string) {
+  if (role === "owner") return true;
+  if (!permission || !KINDS.has(kind as ApprovalKind)) return false;
+  return action === "reply" ? permission.canReply : permission.allowedKinds.includes(kind);
+}
+
 export function normalizeApprovalRequest(input: any): {
   kind: ApprovalKind;
   question: string;
@@ -121,8 +134,13 @@ export async function recordHumanApprovalReply(db: D1Database, input: {
     db.prepare(
       `UPDATE human_ops_reply_captures SET status='captured',captured_at=?
        WHERE id=? AND customer_id=? AND destination_id=? AND telegram_user_id=? AND status='pending' AND expires_at>?
-         AND EXISTS (SELECT 1 FROM human_approval_requests WHERE id=? AND customer_id=? AND assistant_id=? AND status='pending' AND expires_at>?)`,
-    ).bind(input.now,input.captureId,input.customerId,input.destinationId,input.telegramUserId,input.now,input.approvalId,input.customerId,input.assistantId,input.now),
+         AND EXISTS (SELECT 1 FROM human_approval_requests WHERE id=? AND customer_id=? AND assistant_id=? AND status='pending' AND expires_at>?)
+         AND EXISTS (SELECT 1 FROM customer_users cu JOIN users u ON u.id=cu.user_id
+           WHERE cu.customer_id=? AND cu.user_id=? AND u.status='active' AND u.telegram_user_id=?
+             AND (cu.role='owner' OR EXISTS (SELECT 1 FROM human_ops_actor_permissions p WHERE p.customer_id=cu.customer_id
+               AND p.destination_id=? AND p.user_id=cu.user_id AND p.can_reply=1)))`,
+    ).bind(input.now,input.captureId,input.customerId,input.destinationId,input.telegramUserId,input.now,input.approvalId,input.customerId,input.assistantId,input.now,
+      input.customerId,input.actorUserId,input.telegramUserId,input.destinationId),
     db.prepare(
       `UPDATE human_approval_requests SET status='answered',decision_text=?,decided_by_user_id=?,decided_at=?,version=version+1
        WHERE id=? AND customer_id=? AND assistant_id=? AND status='pending' AND expires_at>?

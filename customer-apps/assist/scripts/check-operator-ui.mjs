@@ -179,6 +179,8 @@ try {
   if (!customerHtml.includes("Human Operations")) throw new Error("Customer Human Operations section missing");
   if (!customerHtml.includes("data-pause-conversation")) throw new Error("Human Operations conversation pause control missing");
   if (!customerHtml.includes("pauseConversation:pause?.checked===true")) throw new Error("Human Operations pause choice is not saved");
+  if (!customerHtml.includes("data-save-human-ops-permission")) throw new Error("Human Operations actor access controls missing");
+  if (!customerHtml.includes("Can send customer-bound replies")) throw new Error("Human Operations reply permission label missing");
   if (!customerScript.includes("/api/human-approvals")) throw new Error("Human approval list and decision handlers missing");
   if (!customerScript.includes("/api/human-operations")) throw new Error("Per-assistant Human Operations opt-in missing");
   if (!customerScript.includes("does not send a message into the customer conversation")) throw new Error("Review creation must stay out of customer conversations");

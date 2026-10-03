@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, normalizeApprovalRequest, parseHumanDecisionCall, recordHumanApprovalReply } from "../src/human-approvals.ts";
+import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, humanOpsActorCan, normalizeHumanOpsPermission, normalizeApprovalRequest, parseHumanDecisionCall, recordHumanApprovalReply } from "../src/human-approvals.ts";
 
 test("approval request accepts only bounded supported kinds and safe text", () => {
   assert.deepEqual(normalizeApprovalRequest({
@@ -27,6 +27,16 @@ test("assistant approval requests use only the constrained enabled action contra
   });
   assert.equal(parseHumanDecisionCall(JSON.stringify({tool:"request_human_decision",arguments:{kind:"approve_action",question:"Approve?"}}),["verify_payment"]),null);
   assert.equal(parseHumanDecisionCall(JSON.stringify({tool:"delete_payment",arguments:{}}),["verify_payment"]),null);
+});
+
+test("group permissions are explicit for non-owners and bounded to supported request kinds", () => {
+  assert.deepEqual(normalizeHumanOpsPermission({allowedKinds:["verify_payment","delete_customer"],canReply:true}),{
+    allowedKinds:["verify_payment"],canReply:true,
+  });
+  assert.equal(humanOpsActorCan("owner",null,"custom","approved"),true);
+  assert.equal(humanOpsActorCan("admin",null,"verify_payment","approved"),false);
+  assert.equal(humanOpsActorCan("member",{allowedKinds:["verify_payment"],canReply:false},"verify_payment","approved"),true);
+  assert.equal(humanOpsActorCan("member",{allowedKinds:["verify_payment"],canReply:false},"verify_payment","reply"),false);
 });
 
 test("approval creation scopes conversation and opt-in to the same customer and assistant", async () => {
@@ -94,10 +104,16 @@ test("human reply approval and customer delivery job commit atomically and only 
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     CREATE TABLE human_ops_reply_captures(id TEXT PRIMARY KEY,customer_id TEXT,destination_id TEXT,telegram_user_id TEXT,status TEXT,expires_at INTEGER,captured_at INTEGER);
+    CREATE TABLE customer_users(customer_id TEXT,user_id TEXT,role TEXT);
+    CREATE TABLE users(id TEXT PRIMARY KEY,status TEXT,telegram_user_id TEXT);
+    CREATE TABLE human_ops_actor_permissions(customer_id TEXT,destination_id TEXT,user_id TEXT,can_reply INTEGER);
     CREATE TABLE human_approval_requests(id TEXT PRIMARY KEY,customer_id TEXT,assistant_id TEXT,status TEXT,decision_text TEXT,decided_by_user_id TEXT,decided_at INTEGER,version INTEGER,expires_at INTEGER);
     CREATE TABLE human_approval_audit(id TEXT PRIMARY KEY,customer_id TEXT,assistant_id TEXT,approval_id TEXT,actor_user_id TEXT,action TEXT,decision_text TEXT,created_at INTEGER,actor_telegram_user_id TEXT,destination_id TEXT);
     CREATE TABLE reply_jobs(id TEXT PRIMARY KEY,customer_id TEXT,assistant_id TEXT,conversation_id TEXT,channel TEXT,external_conversation_id TEXT,provider_message_id TEXT,sender_id TEXT,user_message_id TEXT,user_text TEXT,media_context TEXT,media_usage_json TEXT,image_count INTEGER,audio_seconds INTEGER,business_connection_id TEXT,status TEXT,due_at INTEGER,attempts INTEGER,max_attempts INTEGER,last_enqueued_at INTEGER,created_at INTEGER,updated_at INTEGER,response_text TEXT,delivery_role TEXT,human_approval_id TEXT UNIQUE);
     INSERT INTO human_ops_reply_captures VALUES ('cap-1','cus-1','dest-1','tg-1','pending',2000,NULL);
+    INSERT INTO customer_users VALUES ('cus-1','user-1','admin');
+    INSERT INTO users VALUES ('user-1','active','tg-1');
+    INSERT INTO human_ops_actor_permissions VALUES ('cus-1','dest-1','user-1',1);
     INSERT INTO human_approval_requests VALUES ('approval-1','cus-1','assistant-1','pending',NULL,NULL,NULL,1,2000);
   `);
   const db={

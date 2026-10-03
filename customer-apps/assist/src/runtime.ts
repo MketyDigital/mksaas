@@ -11,7 +11,7 @@ import { contextCacheKey, readContextSnapshot, writeContextSnapshot } from "./co
 import { enqueueInboundUpdate, replayInboundUpdate } from "./queues/inbound";
 import { attemptIdFor, settlementJournalStub } from "./billing/settlement-journal";
 import { reserveInference, releaseInferenceReservation, settleInference } from "./billing/inference-settlement";
-import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, normalizeApprovalRequest, parseHumanDecisionCall, recordHumanApprovalReply } from "./human-approvals";
+import { createHumanApprovalAction, createHumanApprovalRequest, decideHumanApproval, findHumanApprovalAction, humanOpsActorCan, normalizeHumanOpsPermission, normalizeApprovalRequest, parseHumanDecisionCall, recordHumanApprovalReply } from "./human-approvals";
 import { recordAttemptProjection, updateAttemptProjection } from "./billing/reconciliation";
 import { normalizeApiKeyMode, normalizeModelAllowlist, canUseRawModelApi } from "./api-key-policy";
 import { reserveRawModelCredits, releaseRawModelCredits, settleRawModelCredits } from "./billing/raw-model-settlement";
@@ -186,7 +186,56 @@ export async function handleRuntimeApi(
        FROM human_ops_destinations d JOIN assistants a ON a.id=d.delivery_assistant_id
        WHERE d.customer_id=? AND d.status!='revoked' ORDER BY d.created_at DESC`,
     ).bind(customer.customerId).all<any>();
-    return json({ destinations: rows.results ?? [] });
+    const permissions: Record<string, any[]> = {};
+    for (const destination of rows.results ?? []) {
+      const actors = await env.DB.prepare(
+        `SELECT p.user_id,p.allowed_kinds_json,p.can_reply,u.display_name,u.email,cu.role
+         FROM human_ops_actor_permissions p JOIN customer_users cu ON cu.customer_id=p.customer_id AND cu.user_id=p.user_id
+         JOIN users u ON u.id=p.user_id AND u.telegram_user_id IS NOT NULL
+         WHERE p.customer_id=? AND p.destination_id=? ORDER BY u.email`,
+      ).bind(customer.customerId,destination.id).all<any>();
+      permissions[String(destination.id)] = actors.results ?? [];
+    }
+    const members = await env.DB.prepare(
+      `SELECT u.id,u.email,u.display_name,cu.role,u.telegram_user_id IS NOT NULL AS telegram_linked
+       FROM customer_users cu JOIN users u ON u.id=cu.user_id WHERE cu.customer_id=? ORDER BY cu.created_at`,
+    ).bind(customer.customerId).all<any>();
+    return json({ destinations: rows.results ?? [], members: members.results ?? [], permissions });
+  }
+
+  if (parts[0] === "api" && parts[1] === "human-ops-destinations" && parts[2] && parts[3] === "permissions" && request.method === "PUT") {
+    if (session.role !== "owner") return json({ error: "owner_required" },403);
+    const body = await readJson(request);
+    const userId = required(body.userId,"userId");
+    const permission = normalizeHumanOpsPermission(body);
+    const destination = await env.DB.prepare(
+      "SELECT id,status FROM human_ops_destinations WHERE id=? AND customer_id=? LIMIT 1",
+    ).bind(parts[2],customer.customerId).first<any>();
+    if (!destination || destination.status === "revoked") return json({ error: "destination_not_found" },404);
+    const member = await env.DB.prepare(
+      `SELECT cu.role,u.telegram_user_id,u.status FROM customer_users cu JOIN users u ON u.id=cu.user_id
+       WHERE cu.customer_id=? AND cu.user_id=? LIMIT 1`,
+    ).bind(customer.customerId,userId).first<any>();
+    if (!member || member.role === "owner" || member.status !== "active" || !member.telegram_user_id) return json({ error: "linked_non_owner_member_required" },400);
+    const now = unix();
+    if (!permission.allowedKinds.length && !permission.canReply) {
+      await env.DB.prepare("DELETE FROM human_ops_actor_permissions WHERE customer_id=? AND destination_id=? AND user_id=?")
+        .bind(customer.customerId,destination.id,userId).run();
+    } else {
+      await env.DB.prepare(
+        `INSERT INTO human_ops_actor_permissions
+         (customer_id,destination_id,user_id,allowed_kinds_json,can_reply,updated_by_user_id,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(destination_id,user_id) DO UPDATE SET
+         allowed_kinds_json=excluded.allowed_kinds_json,can_reply=excluded.can_reply,
+         updated_by_user_id=excluded.updated_by_user_id,updated_at=excluded.updated_at`,
+      ).bind(customer.customerId,destination.id,userId,JSON.stringify(permission.allowedKinds),permission.canReply?1:0,session.userId,now,now).run();
+    }
+    await env.DB.prepare(
+      `INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).bind(id("aud"),"customer_user",session.userId,customer.customerId,"human_ops_actor_permissions_updated","telegram_destination",destination.id,
+      JSON.stringify({userId,allowedKinds:permission.allowedKinds,canReply:permission.canReply}),now).run();
+    return json({ok:true,userId,...permission});
   }
 
   if (url.pathname === "/api/human-ops-destinations/link-challenges" && request.method === "POST") {
@@ -1984,7 +2033,7 @@ async function handleHumanOpsGroupMessage(env: AssistEnv, deliveryAssistantId: s
        FROM human_ops_link_challenges x JOIN customer_users cu ON cu.customer_id=x.customer_id
        JOIN users u ON u.id=cu.user_id
        WHERE x.token_hash=? AND x.delivery_assistant_id=? AND x.expires_at>? AND x.consumed_at IS NULL
-         AND cu.role IN ('owner','admin') AND u.telegram_user_id=? LIMIT 1`,
+       AND cu.role IN ('owner','admin') AND u.status='active' AND u.telegram_user_id=? LIMIT 1`,
     ).bind(tokenHash,deliveryAssistantId,unix(),actorTelegramId).first<any>();
     if (!challenge || !actorTelegramId || !["group","supergroup"].includes(chatType)) {
       if (token) await telegramSend(token,chatId,"This Human Operations link is invalid, expired, or your linked account is not authorized.").catch(()=>undefined);
@@ -1998,7 +2047,7 @@ async function handleHumanOpsGroupMessage(env: AssistEnv, deliveryAssistantId: s
         env.DB.prepare(
           `UPDATE human_ops_link_challenges SET consumed_at=? WHERE token_hash=? AND customer_id=? AND delivery_assistant_id=?
            AND expires_at>? AND consumed_at IS NULL AND EXISTS (SELECT 1 FROM customer_users cu JOIN users u ON u.id=cu.user_id
-             WHERE cu.customer_id=? AND cu.role IN ('owner','admin') AND u.telegram_user_id=?)`,
+             WHERE cu.customer_id=? AND cu.role IN ('owner','admin') AND u.status='active' AND u.telegram_user_id=?)`,
         ).bind(now,tokenHash,challenge.customer_id,deliveryAssistantId,now,challenge.customer_id,actorTelegramId),
         env.DB.prepare(
           `INSERT INTO human_ops_destinations
@@ -2038,9 +2087,11 @@ async function handleHumanOpsGroupMessage(env: AssistEnv, deliveryAssistantId: s
      FROM human_ops_reply_captures c JOIN human_ops_destinations d ON d.id=c.destination_id AND d.customer_id=c.customer_id
      JOIN human_approval_requests a ON a.id=c.approval_id AND a.customer_id=c.customer_id AND a.status='pending'
      JOIN conversations cv ON cv.id=a.conversation_id AND cv.customer_id=a.customer_id AND cv.assistant_id=a.assistant_id
-     JOIN customer_users cu ON cu.customer_id=c.customer_id AND cu.user_id=c.user_id AND cu.role IN ('owner','admin')
-     JOIN users u ON u.id=cu.user_id AND u.telegram_user_id=c.telegram_user_id
-     WHERE c.destination_id=? AND c.telegram_user_id=? AND c.status='pending' AND c.expires_at>? AND d.status='active' LIMIT 1`,
+     JOIN customer_users cu ON cu.customer_id=c.customer_id AND cu.user_id=c.user_id
+     JOIN users u ON u.id=cu.user_id AND u.status='active' AND u.telegram_user_id=c.telegram_user_id
+     WHERE c.destination_id=? AND c.telegram_user_id=? AND c.status='pending' AND c.expires_at>? AND d.status='active'
+       AND (cu.role='owner' OR EXISTS (SELECT 1 FROM human_ops_actor_permissions p WHERE p.customer_id=c.customer_id
+         AND p.destination_id=c.destination_id AND p.user_id=c.user_id AND p.can_reply=1)) LIMIT 1`,
   ).bind(destination.id,actorTelegramId,unix()).first<any>();
   if (!capture) {
     await markWebhook(env.DB,deliveryAssistantId,updateId,"ignored");
@@ -2093,9 +2144,18 @@ async function processHumanOpsTelegramCallback(env: AssistEnv, deliveryAssistant
       kinds.includes(String(action.kind)) && assistants.includes(String(action.assistant_id))
       ? await env.DB.prepare(
         `SELECT cu.user_id,cu.role FROM customer_users cu JOIN users u ON u.id=cu.user_id
-         WHERE cu.customer_id=? AND u.telegram_user_id=? AND cu.role IN ('owner','admin') LIMIT 1`,
+         WHERE cu.customer_id=? AND u.status='active' AND u.telegram_user_id=? LIMIT 1`,
       ).bind(action.customer_id,telegramUserId).first<any>() : null;
-    if (actor) {
+    let permission:any=null;
+    if (actor && actor.role!=="owner") {
+      permission=await env.DB.prepare(
+        "SELECT allowed_kinds_json,can_reply FROM human_ops_actor_permissions WHERE customer_id=? AND destination_id=? AND user_id=? LIMIT 1",
+      ).bind(action.customer_id,action.destination_id,actor.user_id).first<any>();
+      let permissionKinds:string[]=[];
+      try{permissionKinds=JSON.parse(String(permission?.allowed_kinds_json||"[]"))}catch{}
+      permission=permission?{allowedKinds:permissionKinds,canReply:Number(permission.can_reply)===1}:null;
+    }
+    if (actor && humanOpsActorCan(String(actor.role),permission,String(action.kind),String(action.action)==="reply"?"reply":"decision")) {
       const claimed = await env.DB.prepare("UPDATE human_ops_actions SET used_at=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?")
         .bind(unix(),tokenHash,unix()).run();
       if (Number(claimed.meta?.changes||0)) {
