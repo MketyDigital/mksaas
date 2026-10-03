@@ -409,6 +409,33 @@ The customer-facing business conversation can continue to use its existing `busi
 
 The approval control path should not depend on Business Mode existing.
 
+## Source assistant vs notification delivery bot
+
+This distinction is required for "all or any assistants" to notify the same owner safely.
+
+Current owner-alert delivery is intentionally strict: it only selects a linked owner when that user's `telegram_recovery_assistant_id` equals the assistant producing the alert. That should remain unchanged until the new routing model is implemented.
+
+The approval extension should separate:
+
+- **source assistant** — the assistant/conversation that requested verification;
+- **decision recipient** — the owner/admin allowed to approve;
+- **notification delivery bot** — a Telegram bot that the recipient has already securely linked/started and that can legally send that Telegram user a private message.
+
+An approval created by Assistant B must not require the owner to re-link Telegram through Assistant B when the owner is already securely linked through Assistant A.
+
+Safe delivery selection:
+
+1. load eligible owner/admin recipients for the same customer;
+2. use each recipient's verified Telegram user ID;
+3. select that recipient's existing `telegram_recovery_assistant_id` as the preferred delivery bot;
+4. if product policy later supports multiple verified notification bots, select only from explicitly linked/verified routes;
+5. optionally use the central Mkety auth/notification bot only when it is already an established verified delivery route;
+6. never borrow an arbitrary customer assistant token merely because it exists.
+
+The Telegram callback authorization still checks the approval's actual `customer_id`, `assistant_id`, recipient membership and role. The delivery bot does not become the authority for the approval.
+
+This makes one verified Telegram link capable of receiving approval requests from all assistants the owner explicitly enables, while ordinary Telegram bot rules are respected.
+
 ## Telegram action security
 
 Never encode a decision directly as a trusted plaintext callback.
