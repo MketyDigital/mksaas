@@ -32,7 +32,7 @@ describe('public assistant production POST diagnostic', () => {
         answer: 'Please email our support team for help.',
         conversationId: 'd9428888-122b-4c09-b2db-8f5f2ca5c9ec',
       }),
-      'HTTP/1.1 200 OK\r\nX-Mkety-AI-Result: fallback\\r\\n',
+      'HTTP/1.1 200 OK\r\nX-Mkety-AI-Result: fallback\r\n',
     )).toEqual({
       ok: false,
       httpCode: 200,
