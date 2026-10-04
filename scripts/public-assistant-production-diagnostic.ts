@@ -18,7 +18,7 @@ export type PublicAssistantPostEvaluation = {
 
 export function evaluateHttpProbe(rawHttpCode: string): HttpProbeEvaluation {
   const trimmed = rawHttpCode.trim();
-  if (!/^\\d{3}$/.test(trimmed)) {
+  if (trimmed.length !== 3 || [...trimmed].some((digit) => digit < '0' || digit > '9')) {
     return { ok: false, httpCode: null };
   }
 
