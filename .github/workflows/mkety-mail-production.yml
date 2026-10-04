@@ -20,6 +20,9 @@ on:
       - 'src/features/admin/services/webhook-admin-service.ts'
       - 'src/proxy.ts'
       - 'workers/mail-*/**'
+      - 'ops/coolify-migration/run.sh'
+      - 'scripts/normalize-platform-control-tenant-slug.ts'
+      - 'scripts/report-first-party-mail-readiness.ts'
       - 'docs/MKETY_MAIL_*.md'
   workflow_dispatch:
     inputs:
