@@ -38,12 +38,18 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(workflow).toContain('ZITADEL_ACTIVE_EMAIL_PROVIDER_SAFE');
   });
 
-  it('fails closed when production Mail has no reserved tenant binding and never prints it', () => {
+  it('resolves the reserved tenant from the masked Platform Control slug without printing the slug', () => {
     const mailWorkflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-mail-production.yml'), 'utf8');
-    expect(mailWorkflow).toContain('secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID');
-    expect(mailWorkflow).toContain('Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret');
-    expect(mailWorkflow).toContain('Validate required first-party Mail tenant binding');
-    expect(mailWorkflow).toContain('::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID');
+    const dbWorkflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-coolify-production-db-executor.yml'), 'utf8');
+    const migrationRunner = fs.readFileSync(path.join(process.cwd(), 'ops/coolify-migration/run.sh'), 'utf8');
+    expect(mailWorkflow).toContain('secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG');
+    expect(mailWorkflow).toContain('Validate required Platform Control tenant slug');
+    expect(mailWorkflow).toContain('::add-mask::$MKETY_PLATFORM_CONTROL_TENANT_SLUG');
+    expect(mailWorkflow).toContain('needs.production-db.outputs.first_party_mail_tenant_id');
+    expect(mailWorkflow).not.toContain('secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID');
+    expect(migrationRunner).toContain('scripts/report-first-party-mail-readiness.ts');
+    expect(dbWorkflow).toContain('MKETY_FIRST_PARTY_MAIL_TENANT_ID=');
+    expect(dbWorkflow).toContain('::add-mask::$CONTROL_TENANT_SLUG');
     expect(mailWorkflow).toContain('put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
   });
 });

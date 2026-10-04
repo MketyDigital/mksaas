@@ -17,6 +17,11 @@ run_stage content-seed tsx scripts/seed-mkety-platform-content.ts
 run_stage billing-seed tsx scripts/seed-mkety-billing-catalog.ts
 run_stage content-smoke tsx scripts/smoke-mkety-platform-content.ts
 run_stage billing-smoke tsx scripts/smoke-mkety-billing-catalog.ts
+if [ -n "${MKETY_PLATFORM_CONTROL_TENANT_SLUG:-}" ]; then
+  run_stage first-party-mail-readiness env MKETY_PLATFORM_CONTROL_TENANT_SLUG="$MKETY_PLATFORM_CONTROL_TENANT_SLUG" tsx scripts/report-first-party-mail-readiness.ts
+else
+  echo 'MKETY_FIRST_PARTY_MAIL_READINESS_SKIPPED=true'
+fi
 
 echo 'MKETY_DB_RELEASE_SEQUENCE_OK=true'
 exec node -e "require('http').createServer((req,res)=>{res.statusCode=200;res.setHeader('content-type','text/plain');res.end('ok')}).listen(3000,'0.0.0.0')"

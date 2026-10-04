@@ -23,9 +23,18 @@ on:
         required: false
         default: feat/mkety-public-site-production
         type: string
+    outputs:
+      first_party_mail_tenant_id:
+        description: Tenant UUID resolved from the configured Platform Control slug
+        value: ${{ jobs.migrate.outputs.first_party_mail_tenant_id }}
+      first_party_mail_readiness:
+        description: Read-only Mail workspace, domain, and info mailbox readiness summary
+        value: ${{ jobs.migrate.outputs.first_party_mail_readiness }}
     secrets:
       COOLIFY_TOKEN:
         required: true
+      MKETY_PLATFORM_CONTROL_TENANT_SLUG:
+        required: false
 
 permissions:
   contents: read
@@ -34,6 +43,9 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      first_party_mail_tenant_id: ${{ steps.readiness.outputs.first_party_mail_tenant_id }}
+      first_party_mail_readiness: ${{ steps.readiness.outputs.first_party_mail_readiness }}
     env:
       COOLIFY_URL: https://deploy.mkety.com
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
@@ -215,10 +227,62 @@ jobs:
 
           verify_database_env || exit 3
 
-      - name: Deploy exact SHA and verify migration success
+      - name: Inject Platform Control tenant slug
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
+          CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CONTROL_TENANT_SLUG" ]; then
+            echo 'No Platform Control slug supplied; skipping the optional first-party Mail lookup.'
+            exit 0
+          fi
+          echo "::add-mask::$CONTROL_TENANT_SLUG"
+          base="${COOLIFY_URL%/}/api/v1"
+          endpoint="$base/applications/$APP_UUID/envs"
+          SLUG="$CONTROL_TENANT_SLUG" node <<'NODE' >/tmp/control-tenant-env.json
+          process.stdout.write(JSON.stringify({
+            key:'MKETY_PLATFORM_CONTROL_TENANT_SLUG',
+            value:process.env.SLUG,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:true
+          }));
+          NODE
+
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" -o /tmp/env-list.json
+          CONTROL_ENV_EXISTS="$(node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/env-list.json','utf8'));
+          if(!Array.isArray(rows)) process.exit(2);
+          process.stdout.write(rows.some((row)=>row?.key==='MKETY_PLATFORM_CONTROL_TENANT_SLUG')?'yes':'no');
+          NODE
+          )"
+          method='POST'
+          [ "$CONTROL_ENV_EXISTS" = 'yes' ] && method='PATCH'
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/control-env-response.json -w '%{http_code}' \
+            -X "$method" -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/control-tenant-env.json "$endpoint")"
+          [ "$code" = '201' ] || { echo "Control tenant slug injection failed with HTTP $code."; exit 3; }
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$endpoint" -o /tmp/env-list.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/env-list.json','utf8'));
+          if(!Array.isArray(rows)||!rows.some((row)=>row?.key==='MKETY_PLATFORM_CONTROL_TENANT_SLUG')) {
+            throw new Error('Control tenant slug environment binding was not confirmed.');
+          }
+          NODE
+
+      - name: Deploy exact SHA and verify migration success
+        id: readiness
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.app_uuid }}
+          CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG }}
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
@@ -320,6 +384,7 @@ jobs:
             'MKETY_DB_STAGE_OK=billing-smoke',
             'MKETY_DB_RELEASE_SEQUENCE_OK=true'
           ];
+          if (process.env.CONTROL_TENANT_SLUG) required.splice(6, 0, 'MKETY_DB_STAGE_OK=first-party-mail-readiness');
           process.exit(required.every((marker)=>logs.includes(marker)) ? 0 : 1);
           NODE
             then
@@ -343,7 +408,22 @@ jobs:
             echo 'Migration container became healthy before the full release sequence completed.'
             exit 10
           fi
-          echo "Production DB migration, content/Billing seed, and smoke succeeded for exact SHA $TARGET_SHA."
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs=require('node:fs');
+          const response=JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8'));
+          const logs=String(response.logs||'');
+          const lines=logs.split(/\r?\n/);
+          const uuidLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_TENANT_ID='));
+          const readinessLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_READINESS '));
+          const tenantId=uuidLine?.split('MKETY_FIRST_PARTY_MAIL_TENANT_ID=')[1]?.trim()||'';
+          const readiness=readinessLine?.split('MKETY_FIRST_PARTY_MAIL_READINESS ')[1]?.trim()||'not_requested';
+          if(tenantId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
+            throw new Error('Private DB executor returned an invalid first-party Mail tenant UUID.');
+          }
+          if(!/^[a-z0-9_=-]+(?: [a-z0-9_=-]+)*$/i.test(readiness)) throw new Error('Invalid readiness summary.');
+          process.stdout.write('first_party_mail_tenant_id='+tenantId+'\nfirst_party_mail_readiness='+readiness+'\n');
+          NODE
+          echo "Production DB migration and read-only first-party Mail lookup succeeded for exact SHA $TARGET_SHA."
 
       - name: Delete ephemeral migration host
         if: always() && steps.app.outputs.app_uuid != ''

@@ -20,6 +20,9 @@ on:
       - 'src/features/admin/services/webhook-admin-service.ts'
       - 'src/proxy.ts'
       - 'workers/mail-*/**'
+      - 'ops/coolify-migration/run.sh'
+      - 'scripts/normalize-platform-control-tenant-slug.ts'
+      - 'scripts/report-first-party-mail-readiness.ts'
       - 'docs/MKETY_MAIL_*.md'
   workflow_dispatch:
     inputs:
@@ -66,17 +69,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate required first-party Mail tenant binding
+      - name: Validate required Platform Control tenant slug
         shell: bash
         env:
-          MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID }}
+          MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG }}
         run: |
           set -euo pipefail
-          if [ -z "$MKETY_FIRST_PARTY_MAIL_TENANT_ID" ]; then
-            echo '::error::Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret'
+          if [ -z "$MKETY_PLATFORM_CONTROL_TENANT_SLUG" ]; then
+            echo '::error::Missing required MKETY_PLATFORM_CONTROL_TENANT_SLUG GitHub secret'
             exit 1
           fi
-          echo "::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
+          echo "::add-mask::$MKETY_PLATFORM_CONTROL_TENANT_SLUG"
 
       - name: Validate exact main SHA and release authorization
         id: release
@@ -212,6 +215,7 @@ jobs:
       release_branch: main
     secrets:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      MKETY_PLATFORM_CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG }}
 
   deploy-mail:
     needs: [authorize, production-db]
@@ -221,6 +225,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       VERIFIED_SHA: ${{ needs.authorize.outputs.verified_sha }}
+      MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ needs.production-db.outputs.first_party_mail_tenant_id }}
+      MKETY_FIRST_PARTY_MAIL_READINESS: ${{ needs.production-db.outputs.first_party_mail_readiness }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -372,11 +378,15 @@ jobs:
         env:
           SEND_QUEUE_ID: ${{ steps.infra.outputs.send_queue_id }}
           EVENT_QUEUE_ID: ${{ steps.infra.outputs.event_queue_id }}
-          MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ secrets.MKETY_FIRST_PARTY_MAIL_TENANT_ID }}
+          MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ needs.production-db.outputs.first_party_mail_tenant_id }}
         run: |
           set -euo pipefail
-          : "${MKETY_FIRST_PARTY_MAIL_TENANT_ID:?Missing required MKETY_FIRST_PARTY_MAIL_TENANT_ID GitHub secret}"
+          [[ "$MKETY_FIRST_PARTY_MAIL_TENANT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || {
+            echo '::error::Private DB executor did not return a valid first-party Mail tenant UUID.'
+            exit 1
+          }
           echo "::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
+          echo "First-party Mail readiness preflight: ${MKETY_FIRST_PARTY_MAIL_READINESS:-unknown}"
           internal_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$internal_secret"
 
