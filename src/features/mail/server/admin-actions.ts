@@ -1,6 +1,6 @@
 'use server';
 
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
@@ -16,12 +16,13 @@ import {
   mailDomains,
   mailMailboxes,
   mailWorkspaces,
+  tenantEntitlementOverrides,
   tenants,
 } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
-import { resolveTenantMailPlanKey } from './commercial';
+import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
 import { isMailPlanKey } from '../commercial/plans';
 
 async function requireMailOps(opsTenantSlug: string) {
@@ -29,6 +30,103 @@ async function requireMailOps(opsTenantSlug: string) {
   await requirePermission(opsTenantSlug, 'platform:plans');
   return actor;
 }
+
+async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
+  const actor = await requireMailOps(opsTenantSlug);
+  const configuredTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() ?? '';
+  if (!configuredTenantId) throw new Error('First-party Mail tenant is not configured.');
+
+  const workspace = await db.transaction(async (tx) => {
+    const [tenant] = await tx
+      .select({ id: tenants.id, slug: tenants.slug })
+      .from(tenants)
+      .where(eq(tenants.id, configuredTenantId))
+      .for('update')
+      .limit(1);
+    if (!tenant || tenant.slug !== 'mkety-ops') {
+      throw new Error('The configured first-party Mail tenant must be the reserved /mkety-ops tenant.');
+    }
+
+    const now = new Date();
+    const activeOverride = or(
+      isNull(tenantEntitlementOverrides.expiresAt),
+      gt(tenantEntitlementOverrides.expiresAt, now),
+    );
+    const [deny] = await tx
+      .select({ id: tenantEntitlementOverrides.id })
+      .from(tenantEntitlementOverrides)
+      .where(and(
+        eq(tenantEntitlementOverrides.tenantId, tenant.id),
+        eq(tenantEntitlementOverrides.entitlementKey, 'workspace.mail'),
+        eq(tenantEntitlementOverrides.effect, 'deny'),
+        activeOverride,
+      ))
+      .limit(1);
+    if (deny) throw new Error('Mail is explicitly denied for the reserved tenant; remove that deny before provisioning.');
+
+    const [grant] = await tx
+      .select({ id: tenantEntitlementOverrides.id })
+      .from(tenantEntitlementOverrides)
+      .where(and(
+        eq(tenantEntitlementOverrides.tenantId, tenant.id),
+        eq(tenantEntitlementOverrides.entitlementKey, 'workspace.mail'),
+        eq(tenantEntitlementOverrides.effect, 'grant'),
+        activeOverride,
+      ))
+      .limit(1);
+    if (!grant) {
+      await tx.insert(tenantEntitlementOverrides).values({
+        tenantId: tenant.id,
+        entitlementKey: 'workspace.mail',
+        effect: 'grant',
+        reason: 'First-party Mkety Mail internal custom workspace profile.',
+        source: 'mail:first-party-internal',
+        expiresAt: null,
+        actorUserId: actor.userId,
+      });
+    }
+
+    const [existing] = await tx
+      .select()
+      .from(mailWorkspaces)
+      .where(eq(mailWorkspaces.tenantId, tenant.id))
+      .for('update')
+      .limit(1);
+    if (existing?.status === 'suspended') {
+      throw new Error('The reserved tenant Mail workspace is suspended; review it before provisioning.');
+    }
+
+    const [created] = existing
+      ? await tx
+          .update(mailWorkspaces)
+          .set({ planKey: MAIL_INTERNAL_CUSTOM_PROFILE_KEY, updatedAt: now })
+          .where(eq(mailWorkspaces.id, existing.id))
+          .returning()
+      : await tx
+          .insert(mailWorkspaces)
+          .values({
+            tenantId: tenant.id,
+            status: 'active',
+            planKey: MAIL_INTERNAL_CUSTOM_PROFILE_KEY,
+            onboardingStep: 'domain',
+            enabledByUserId: actor.userId,
+          })
+          .returning();
+
+    if (!created) throw new Error('Could not provision the first-party Mail workspace.');
+    return created;
+  });
+
+  await logAuditEvent({
+    actorId: actor.userId,
+    action: 'mail.first_party_workspace.bootstrapped',
+    entityType: 'mail_workspace',
+    entityId: workspace.id,
+    changes: { profile: MAIL_INTERNAL_CUSTOM_PROFILE_KEY },
+    metadata: { tenantId: configuredTenantId, tenantSlug: 'mkety-ops' },
+  });
+}
+
 
 function bool(value: FormDataEntryValue | null) {
   return value === 'on' || value === 'true' || value === '1';
@@ -325,6 +423,14 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
     entityId: domainId,
     changes: { status, spfStatus, dkimStatus, dmarcStatus, mxStatus, sendingEnabled, routingEnabled },
     metadata: { targetTenantId },
+  });
+}
+
+export async function bootstrapFirstPartyMailWorkspace(opsTenantSlug: string) {
+  return runPlatformControlMutation({
+    path: `/ops/${opsTenantSlug}/platform-control/mail-operations`,
+    action: 'bootstrapFirstPartyMailWorkspace',
+    work: () => bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug),
   });
 }
 
