@@ -262,7 +262,7 @@ jobs:
           NODE
 
           # Diagnostic-only route: created in the runner before the Vinext build and never committed
-          # as a product endpoint. It returns only safe stage booleans and sanitized error identity.
+          # as product endpoints. The config route emits only its allowlisted boolean/provider summary.
           mkdir -p src/app/api/runtime-db-diagnostic
           cat >src/app/api/runtime-db-diagnostic/route.ts <<'TS'
           import { env } from 'cloudflare:workers';
@@ -347,6 +347,37 @@ jobs:
           }
           TS
 
+          mkdir -p src/app/api/public-ai-config-diagnostic
+          cat >src/app/api/public-ai-config-diagnostic/route.ts <<'TS'
+          import { env } from 'cloudflare:workers';
+          import { eq } from 'drizzle-orm';
+          import { summarizePublicAiConfig } from '@/features/public-assistant/server/public-ai-config-diagnostic';
+          import { db } from '@/shared/db/cloudflare';
+          import { platformAppControlCenterModules } from '@/shared/db/schema/platform-app-experience';
+
+          export async function GET(request: Request) {
+            const diagnosticToken = (
+              env as unknown as { MKETY_PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN?: string }
+            ).MKETY_PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN;
+            if (
+              !diagnosticToken ||
+              request.headers.get('authorization') !== 'Bearer ' + diagnosticToken
+            ) {
+              return Response.json({ error: 'not_found' }, { status: 404 });
+            }
+
+            try {
+              const row = await db.query.platformAppControlCenterModules.findFirst({
+                where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
+                columns: { metadataJson: true },
+              });
+              return Response.json(summarizePublicAiConfig(row?.metadataJson));
+            } catch {
+              return Response.json({ error: 'public_ai_config_diagnostic_failed' }, { status: 500 });
+            }
+          }
+          TS
+
           pnpm build
           CANDIDATE_WORKER_NAME="$APP_WORKER_NAME" MKETY_HYPERDRIVE_ID="$MKETY_HYPERDRIVE_ID" pnpm run deploy 2>&1 | tee /tmp/app-deploy.log
           url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/app-deploy.log | tail -n 1 || true)"
@@ -364,6 +395,10 @@ jobs:
           if [ -n "${MKETY_PUBLIC_AI_VISITOR_SECRET:-}" ]; then
             printf '%s' "$MKETY_PUBLIC_AI_VISITOR_SECRET" | pnpm exec wrangler secret put MKETY_PUBLIC_AI_VISITOR_SECRET --name "$APP_WORKER_NAME" >/dev/null
           fi
+          diagnostic_token="$(openssl rand -hex 32)"
+          echo "::add-mask::$diagnostic_token"
+          echo "PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN=$diagnostic_token" >> "$GITHUB_ENV"
+          printf '%s' "$diagnostic_token" | pnpm exec wrangler secret put MKETY_PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN --name "$APP_WORKER_NAME" >/dev/null
           echo 'PASS current Mkety app deployed route-free with production Hyperdrive'
 
       - name: Capture app evidence and enforce Public AI health
@@ -386,15 +421,21 @@ jobs:
           timeout 50s pnpm exec wrangler tail "$APP_WORKER_NAME" --format json > /tmp/app-tail.raw 2>&1 &
           tail_pid=$!
           sleep 7
-          routes=(/robots.txt /sitemap.xml /api/runtime-db-diagnostic /api/health / /platform /api/public/assistant)
+          routes=(/robots.txt /sitemap.xml /api/runtime-db-diagnostic /api/public-ai-config-diagnostic /api/health / /platform /api/public/assistant)
           assistant_code='000'
           runtime_code='000'
+          config_code='000'
           for route in "${routes[@]}"; do
             safe="$(printf '%s' "$route" | tr '/?' '__')"
-            code="$(curl -sS -L --connect-timeout 10 --max-time 25 -D "/tmp/${safe}.headers" -o "/tmp/${safe}.body" -w '%{http_code}' "$APP_URL$route" || true)"
+            request_auth=()
+            if [ "$route" = '/api/public-ai-config-diagnostic' ]; then
+              request_auth=(-H "Authorization: Bearer $PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN")
+            fi
+            code="$(curl -sS -L --connect-timeout 10 --max-time 25 "${request_auth[@]}" -D "/tmp/${safe}.headers" -o "/tmp/${safe}.body" -w '%{http_code}' "$APP_URL$route" || true)"
             printf 'route %s HTTP %s\n' "$route" "$code" | tee -a "$report"
             if [ "$route" = '/api/public/assistant' ]; then assistant_code="$code"; fi
             if [ "$route" = '/api/runtime-db-diagnostic' ]; then runtime_code="$code"; fi
+            if [ "$route" = '/api/public-ai-config-diagnostic' ]; then config_code="$code"; fi
           done
           sleep 10
           kill "$tail_pid" 2>/dev/null || true
@@ -426,6 +467,7 @@ jobs:
           console.log('mkety-tail '+JSON.stringify(events.slice(0,20)));
           const outputs = [
             ['/tmp/_api_runtime-db-diagnostic.body','RUNTIME_DB_DIAGNOSTIC '],
+            ['/tmp/_api_public-ai-config-diagnostic.body','PUBLIC_AI_CONFIG_BODY '],
             ['/tmp/_api_health.body','MKETY_HEALTH_BODY '],
             ['/tmp/_.body','mkety-root-body '],
             ['/tmp/_api_public_assistant.body','mkety-assistant-body '],
@@ -439,6 +481,7 @@ jobs:
           NODE
 
           RUNTIME_HTTP_CODE="$runtime_code" ASSISTANT_HTTP_CODE="$assistant_code" pnpm exec tsx -e "import { evaluateHttpProbe } from './scripts/public-assistant-production-diagnostic.ts'; const runtime=evaluateHttpProbe(process.env.RUNTIME_HTTP_CODE ?? ''); const assistant=evaluateHttpProbe(process.env.ASSISTANT_HTTP_CODE ?? ''); console.log('ROUTE_RUNTIME_DB_HEALTH '+JSON.stringify(runtime)); console.log('ROUTE_PUBLIC_ASSISTANT_HEALTH '+JSON.stringify(assistant)); if(!runtime.ok || !assistant.ok) process.exit(1);"
+          CONFIG_HTTP_CODE="$config_code" pnpm exec tsx -e "import fs from 'node:fs'; import { evaluatePublicAiConfigDiagnostic } from './src/features/public-assistant/server/public-ai-config-diagnostic.ts'; let body=''; try { body=fs.readFileSync('/tmp/_api_public-ai-config-diagnostic.body','utf8'); } catch {} const result=evaluatePublicAiConfigDiagnostic(process.env.CONFIG_HTTP_CODE ?? '',body); console.log('PUBLIC_AI_CONFIG_DIAGNOSTIC '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
 
       - name: Cleanup diagnostic Workers
         if: ${{ always() }}
