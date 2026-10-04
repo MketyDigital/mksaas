@@ -404,23 +404,22 @@ jobs:
             echo 'Migration container became healthy before the full release sequence completed.'
             exit 10
           fi
-          logs="$(node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8'));process.stdout.write(String(x.logs||''))")"
-          LOGS="$logs" node <<'NODE' >> "$GITHUB_OUTPUT"
+          node <<'NODE' >> "$GITHUB_OUTPUT"
           const fs=require('node:fs');
-          const logs=process.env.LOGS||'';
-          const uuidLine=logs.split(/\\r?\\n/).find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_TENANT_ID='));
-          const readinessLine=logs.split(/\\r?\\n/).find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_READINESS '));
+          const response=JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8'));
+          const logs=String(response.logs||'');
+          const lines=logs.split(/\r?\n/);
+          const uuidLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_TENANT_ID='));
+          const readinessLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_READINESS '));
           const tenantId=uuidLine?.split('MKETY_FIRST_PARTY_MAIL_TENANT_ID=')[1]?.trim()||'';
           const readiness=readinessLine?.split('MKETY_FIRST_PARTY_MAIL_READINESS ')[1]?.trim()||'unknown';
           if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
             throw new Error('Private DB executor did not return a valid first-party Mail tenant UUID.');
           }
-          if(!readiness||/\\r|\\n/.test(readiness)) throw new Error('Invalid readiness summary.');
-          process.stdout.write(`first_party_mail_tenant_id=${tenantId}\\nfirst_party_mail_readiness=${readiness}\\n`);
+          if(!readiness||/[\r\n]/.test(readiness)) throw new Error('Invalid readiness summary.');
+          process.stdout.write('first_party_mail_tenant_id='+tenantId+'\nfirst_party_mail_readiness='+readiness+'\n');
           NODE
-          readiness_summary="$(READINESS="$(grep '^first_party_mail_readiness=' "$GITHUB_OUTPUT" | cut -d= -f2-)" node -e 'process.stdout.write(process.env.READINESS)')"
           echo "Production DB migration and read-only first-party Mail lookup succeeded for exact SHA $TARGET_SHA."
-          echo "First-party Mail readiness: $readiness_summary"
 
       - name: Delete ephemeral migration host
         if: always() && steps.app.outputs.app_uuid != ''
