@@ -359,7 +359,18 @@ async function updateMailWorkspaceOperationsImpl(opsTenantSlug: string, formData
     throw new Error('Invalid Mail workspace operations update.');
   }
 
-  const planKey = await resolveTenantMailPlanKey(targetTenantId);
+  const [tenant, workspace] = await Promise.all([
+    db.query.tenants.findFirst({
+      where: eq(tenants.id, targetTenantId),
+      columns: { slug: true },
+    }),
+    db.query.mailWorkspaces.findFirst({
+      where: and(eq(mailWorkspaces.id, workspaceId), eq(mailWorkspaces.tenantId, targetTenantId)),
+      columns: { planKey: true },
+    }),
+  ]);
+  if (!tenant || !workspace) throw new Error('Mail workspace not found.');
+  const planKey = await resolveTenantMailPlanKey(targetTenantId, workspace.planKey, tenant.slug);
   await db
     .update(mailWorkspaces)
     .set({ status, onboardingStep, planKey, updatedAt: new Date() })
