@@ -34,6 +34,7 @@ button,input,textarea,select{font:inherit}button{cursor:pointer}.shell{min-heigh
 <script>
 const bindIds=root=>root.querySelectorAll('[id]').forEach(el=>{try{globalThis[el.id]=el}catch{}});
 bindIds(document);
+const byId=id=>document.getElementById(id);
 const brand=document.getElementById('brand'),who=document.getElementById('who'),host=document.getElementById('host'),
   nav=document.getElementById('nav'),logout=document.getElementById('logout'),modal=document.getElementById('modal'),
   dialog=document.getElementById('dialog'),toast=document.getElementById('toast'),content=document.getElementById('content'),
