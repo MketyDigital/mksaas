@@ -13,7 +13,7 @@ import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-que
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
-import { createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
+import { bootstrapFirstPartyMailWorkspace, createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
 import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
 import { PaymentSettingsForm } from '@/features/payments/components/PaymentSettingsForm';
@@ -570,6 +570,21 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
         <div className="space-y-6">
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>
+              <CardTitle>Internal Mail workspace</CardTitle>
+              <CardDescription>
+                Provision the reserved /mkety-ops tenant with an internal custom profile and no commercial monthly quotas. Platform daily caps and domain safety checks remain active; this does not create a domain or mailbox or enable external clients.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={bootstrapFirstPartyMailWorkspace.bind(null, tenant)}>
+                <button className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+                  Provision internal Mail workspace
+                </button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
               <CardTitle>Platform Mail identity</CardTitle>
               <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services.</CardDescription>
             </CardHeader>
@@ -659,7 +674,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
                     <div>
                       <CardTitle>{workspace.tenantName}</CardTitle>
                       <CardDescription>
-                        {workspace.tenantSlug} · paid plan {workspace.paidPlanKey} · {workspace.domains.length} domain{workspace.domains.length === 1 ? '' : 's'}
+                        {workspace.tenantSlug} · {workspace.paidPlanKey === 'mail-internal-custom' ? 'internal custom profile' : `paid plan ${workspace.paidPlanKey}`} · {workspace.domains.length} domain{workspace.domains.length === 1 ? '' : 's'}
                       </CardDescription>
                     </div>
                     <a className="text-sm font-semibold text-primary" href={'/t/' + workspace.tenantSlug + '/mail'}>
