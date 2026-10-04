@@ -233,6 +233,21 @@ jobs:
           ref: ${{ needs.authorize.outputs.verified_sha }}
           fetch-depth: 1
 
+      - name: Validate tenant binding before deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MKETY_FIRST_PARTY_MAIL_TENANT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || {
+            echo '::error::Private DB executor did not return a valid first-party Mail tenant UUID.'
+            exit 1
+          }
+          [ -n "$MKETY_FIRST_PARTY_MAIL_READINESS" ] || {
+            echo '::error::Private DB executor did not return Mail readiness status.'
+            exit 1
+          }
+          echo "::add-mask::$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
+          echo "First-party Mail readiness preflight: $MKETY_FIRST_PARTY_MAIL_READINESS"
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
