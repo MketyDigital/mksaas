@@ -349,12 +349,23 @@ jobs:
 
           mkdir -p src/app/api/public-ai-config-diagnostic
           cat >src/app/api/public-ai-config-diagnostic/route.ts <<'TS'
+          import { env } from 'cloudflare:workers';
           import { eq } from 'drizzle-orm';
           import { summarizePublicAiConfig } from '@/features/public-assistant/server/public-ai-config-diagnostic';
           import { db } from '@/shared/db/cloudflare';
           import { platformAppControlCenterModules } from '@/shared/db/schema/platform-app-experience';
 
-          export async function GET() {
+          export async function GET(request: Request) {
+            const diagnosticToken = (
+              env as unknown as { MKETY_PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN?: string }
+            ).MKETY_PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN;
+            if (
+              !diagnosticToken ||
+              request.headers.get('authorization') !== 'Bearer ' + diagnosticToken
+            ) {
+              return Response.json({ error: 'not_found' }, { status: 404 });
+            }
+
             try {
               const row = await db.query.platformAppControlCenterModules.findFirst({
                 where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
@@ -384,6 +395,10 @@ jobs:
           if [ -n "${MKETY_PUBLIC_AI_VISITOR_SECRET:-}" ]; then
             printf '%s' "$MKETY_PUBLIC_AI_VISITOR_SECRET" | pnpm exec wrangler secret put MKETY_PUBLIC_AI_VISITOR_SECRET --name "$APP_WORKER_NAME" >/dev/null
           fi
+          diagnostic_token="$(openssl rand -hex 32)"
+          echo "::add-mask::$diagnostic_token"
+          echo "PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN=$diagnostic_token" >> "$GITHUB_ENV"
+          printf '%s' "$diagnostic_token" | pnpm exec wrangler secret put MKETY_PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN --name "$APP_WORKER_NAME" >/dev/null
           echo 'PASS current Mkety app deployed route-free with production Hyperdrive'
 
       - name: Capture app evidence and enforce Public AI health
@@ -412,7 +427,11 @@ jobs:
           config_code='000'
           for route in "${routes[@]}"; do
             safe="$(printf '%s' "$route" | tr '/?' '__')"
-            code="$(curl -sS -L --connect-timeout 10 --max-time 25 -D "/tmp/${safe}.headers" -o "/tmp/${safe}.body" -w '%{http_code}' "$APP_URL$route" || true)"
+            request_auth=()
+            if [ "$route" = '/api/public-ai-config-diagnostic' ]; then
+              request_auth=(-H "Authorization: Bearer $PUBLIC_AI_CONFIG_DIAGNOSTIC_TOKEN")
+            fi
+            code="$(curl -sS -L --connect-timeout 10 --max-time 25 "${request_auth[@]}" -D "/tmp/${safe}.headers" -o "/tmp/${safe}.body" -w '%{http_code}' "$APP_URL$route" || true)"
             printf 'route %s HTTP %s\n' "$route" "$code" | tee -a "$report"
             if [ "$route" = '/api/public/assistant' ]; then assistant_code="$code"; fi
             if [ "$route" = '/api/runtime-db-diagnostic' ]; then runtime_code="$code"; fi
