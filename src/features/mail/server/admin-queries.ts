@@ -42,7 +42,7 @@ export async function getMailOperationsOverview(limit = 100) {
         .from(mailDomains)
         .where(eq(mailDomains.tenantId, workspace.tenantId))
         .orderBy(asc(mailDomains.domain)),
-      resolveTenantMailPlanKey(workspace.tenantId, workspace.mirroredPlanKey),
+      resolveTenantMailPlanKey(workspace.tenantId, workspace.mirroredPlanKey, workspace.tenantSlug),
     ]);
 
     return {

@@ -10,7 +10,7 @@ import {
   mailWorkspaces,
 } from '@/shared/db/schema';
 
-import { resolveTenantMailPlanKey } from './commercial';
+import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function startOfUtcMonth(now = new Date()) {
@@ -24,8 +24,9 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
   });
   if (!workspace) return null;
 
-  const planKey = await resolveTenantMailPlanKey(tenant.id, workspace.planKey);
-  const plan = getMailCommercialPlan(planKey);
+  const planKey = await resolveTenantMailPlanKey(tenant.id, workspace.planKey, tenant.slug);
+  const internalCustom = planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY;
+  const plan = internalCustom ? null : getMailCommercialPlan(planKey);
   const periodStart = startOfUtcMonth(now);
 
   const [domainRows, mailboxRows, sharedRows, outboundRows, updateRows] = await Promise.all([
@@ -46,11 +47,22 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
     )),
   ]);
 
+  const internalLimits = {
+    domains: null,
+    mailboxes: null,
+    teamSeats: null,
+    sharedInboxes: null,
+    storageGb: null,
+    outboundMessagesPerMonth: null,
+    customerUpdateDeliveriesPerMonth: null,
+    maxRecipientsPerCustomerUpdate: 3000,
+  };
+
   return {
     planKey,
-    planName: plan.name,
-    priceMinor: plan.amountMinor,
-    currency: plan.currency,
+    planName: internalCustom ? 'Internal Custom' : plan!.name,
+    priceMinor: internalCustom ? null : plan!.amountMinor,
+    currency: 'USD' as const,
     periodStart,
     storageBytesUsed: workspace.storageBytesUsed,
     usage: {
@@ -60,6 +72,6 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
       outboundMessages: Number(outboundRows[0]?.value ?? 0),
       customerUpdateDeliveries: Number(updateRows[0]?.value ?? 0),
     },
-    limits: plan.limits,
+    limits: internalCustom ? internalLimits : plan!.limits,
   };
 }
