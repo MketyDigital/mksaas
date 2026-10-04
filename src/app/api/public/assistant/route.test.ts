@@ -2,6 +2,7 @@
 
 const mockLoggerError = jest.fn();
 const mockEnsurePublicAIVisitor = jest.fn();
+const mockRunMketyPublicAssistant = jest.fn();
 
 jest.mock('@/shared/lib/logger', () => ({
   createLogger: () => ({ error: mockLoggerError }),
@@ -34,7 +35,7 @@ jest.mock('@/features/public-assistant/server/runtime', () => {
 
   return {
     PublicAssistantRuntimeError,
-    runMketyPublicAssistant: jest.fn(),
+    runMketyPublicAssistant: mockRunMketyPublicAssistant,
   };
 });
 
@@ -50,6 +51,28 @@ describe('Mkety public assistant route diagnostics', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.MKETY_PUBLIC_AI_VISITOR_SECRET = 'x'.repeat(32);
+  });
+
+  it('marks a deterministic fallback in a response header without changing the public body', async () => {
+    mockRunMketyPublicAssistant.mockResolvedValueOnce({
+      answer: 'Please email our support team for help.',
+      conversationId: 'd9428888-122b-4c09-b2db-8f5f2ca5c9ec',
+      deterministicFallback: true,
+    });
+
+    const response = await POST(
+      new Request('https://mkety.example/api/public/assistant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'Where can I find docs and support?' }),
+      }),
+    );
+
+    expect(response.headers.get('x-mkety-ai-result')).toBe('fallback');
+    expect(await response.json()).toEqual({
+      answer: 'Please email our support team for help.',
+      conversationId: 'd9428888-122b-4c09-b2db-8f5f2ca5c9ec',
+    });
   });
 
   it('logs the nested database driver cause without exposing query parameters', async () => {

@@ -261,7 +261,7 @@ async function returnDeterministicFallback(input: {
     content: answer,
     metadata: { deterministicFallback: true },
   });
-  return { answer, conversationId: input.conversationId };
+  return { answer, conversationId: input.conversationId, deterministicFallback: true as const };
 }
 
 export async function runMketyPublicAssistant(input: {

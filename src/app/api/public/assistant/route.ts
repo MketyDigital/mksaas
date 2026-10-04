@@ -176,8 +176,12 @@ export async function POST(request: Request) {
         conversationId: input.conversationId,
         environment: process.env,
       });
+      const response = json({ answer: result.answer, conversationId: result.conversationId });
+      if ('deterministicFallback' in result && result.deterministicFallback) {
+        response.headers.set('X-Mkety-AI-Result', 'fallback');
+      }
 
-      return withVisitorCookie(json(result), visitor.setCookie, request);
+      return withVisitorCookie(response, visitor.setCookie, request);
     });
   } catch (error) {
     return safeError(error);
