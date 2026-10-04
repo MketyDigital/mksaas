@@ -47,7 +47,7 @@ describe('Coolify production DB executor', () => {
     expect(workflow).not.toContain('PRODUCTION_DATABASE_URL is required.');
     expect(workflow).toContain('MKETY_DB_RELEASE_SEQUENCE_OK=true');
     expect(workflow).toContain('MKETY_PLATFORM_CONTROL_TENANT_SLUG:\n        required: false');
-    expect(workflow).toContain('first_party_mail_tenant_id: ${{ jobs.migrate.outputs.first_party_mail_tenant_id }}');
+    expect(workflow).toContain('value: ${{ jobs.migrate.outputs.first_party_mail_tenant_id }}');
     expect(workflow).toContain('MKETY_FIRST_PARTY_MAIL_TENANT_ID=');
     expect(workflow).toContain('Migration container became healthy before the full release sequence completed.');
     const runner = await read('ops/coolify-migration/run.sh');
