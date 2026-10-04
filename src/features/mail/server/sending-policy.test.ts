@@ -38,6 +38,7 @@ jest.mock('@/shared/db/schema', () => ({
 }));
 
 jest.mock('./commercial', () => ({
+  MAIL_INTERNAL_CUSTOM_PROFILE_KEY: 'mail-internal-custom',
   resolveTenantMailPlanKey: (...args: unknown[]) => mockResolveTenantMailPlanKey(...args),
 }));
 
