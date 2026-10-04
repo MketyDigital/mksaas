@@ -155,6 +155,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Inspect production Worker AI binding metadata
+        shell: bash
+        run: pnpm exec tsx scripts/check-public-ai-worker-bindings.ts
+
       - name: Deploy Hyperdrive SELECT 1 probe matching Public AI postgres options
         id: probe
         shell: bash
