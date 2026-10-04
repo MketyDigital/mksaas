@@ -34,6 +34,7 @@ for (const marker of [
   "data-target-make-primary", "data-target-move-up", "data-target-move-down",
   "Review route order before publish", "mRouteCurrent", "mRouteNext", "Publish new route order",
   "moveRouteTarget(targets,from,to)",
+  "To reorder provider priority",
 ]) {
   if (!script.includes(marker)) throw new Error(`Operator model route control missing: ${marker}`);
 }
@@ -129,6 +130,7 @@ const customerMatch = customerHtml.match(/<script>([\s\S]*?)<\/script>/);
 if (!customerMatch) throw new Error("Customer page script not found");
 const customerScript = customerMatch[1];
 new Function(customerScript);
+if (!customerScript.includes("const byId=id=>document.getElementById(id);")) throw new Error("Customer API settings lookup helper missing");
 
 const customerIds = ["brand","who","host","nav","logout","modal","dialog","toast","content","topTitle"];
 const customerElements = new Map(customerIds.map((id) => [id, new FakeElement(id)]));
