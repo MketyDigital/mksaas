@@ -32,6 +32,7 @@ export function evaluateHttpProbe(rawHttpCode: string): HttpProbeEvaluation {
 export function evaluatePublicAssistantPost(
   rawHttpCode: string,
   rawBody: string,
+  rawHeaders = '',
 ): PublicAssistantPostEvaluation {
   const { httpCode } = evaluateHttpProbe(rawHttpCode);
   if (httpCode !== 200) {
@@ -59,7 +60,13 @@ export function evaluatePublicAssistantPost(
     return { ok: false, httpCode, reason: 'invalid_response' };
   }
 
-  if (/temporarily unavailable|currently unavailable|deterministic fallback/i.test(record.answer)) {
+  const isFallbackResponse = rawHeaders
+    .split(String.fromCharCode(10))
+    .some((line) => line.trim().toLowerCase() === 'x-mkety-ai-result: fallback');
+  if (
+    isFallbackResponse ||
+    /temporarily unavailable|currently unavailable|deterministic fallback/i.test(record.answer)
+  ) {
     return { ok: false, httpCode, reason: 'deterministic_fallback' };
   }
 
