@@ -57,4 +57,14 @@ describe('resolveTenantMailPlanKey', () => {
     expect(mockQuery.where).toHaveBeenCalledTimes(1);
     expect(mockQuery.limit).toHaveBeenCalledWith(1);
   });
+
+  it('does not silently convert the private internal custom marker into a paid Starter plan', async () => {
+    mockGetCurrentPlanVersionIds.mockResolvedValue([]);
+
+    await expect(resolveTenantMailPlanKey('tenant-1', 'mail-internal-custom')).rejects.toThrow(
+      'Internal custom Mail profiles must use the reserved-tenant profile resolver.',
+    );
+
+    expect(db.select).not.toHaveBeenCalled();
+  });
 });
