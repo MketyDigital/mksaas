@@ -417,9 +417,13 @@ jobs:
           const readinessLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_READINESS '));
           const tenantId=uuidLine?.split('MKETY_FIRST_PARTY_MAIL_TENANT_ID=')[1]?.trim()||'';
           const readiness=readinessLine?.split('MKETY_FIRST_PARTY_MAIL_READINESS ')[1]?.trim()||'not_requested';
+          if(process.env.CONTROL_TENANT_SLUG&&!tenantId) {
+            throw new Error('Private DB executor did not return the requested first-party Mail tenant UUID.');
+          }
           if(tenantId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
             throw new Error('Private DB executor returned an invalid first-party Mail tenant UUID.');
           }
+          if(process.env.CONTROL_TENANT_SLUG&&readiness==='not_requested') throw new Error('Mail readiness lookup was requested but did not run.');
           if(!/^[a-z0-9_=-]+(?: [a-z0-9_=-]+)*$/i.test(readiness)) throw new Error('Invalid readiness summary.');
           process.stdout.write('first_party_mail_tenant_id='+tenantId+'\nfirst_party_mail_readiness='+readiness+'\n');
           NODE
