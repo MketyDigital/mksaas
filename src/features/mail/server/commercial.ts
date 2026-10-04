@@ -7,11 +7,26 @@ import { billingPlans, billingPlanVersions, billingSubscriptions } from '@/share
 
 import { isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 
+export const MAIL_INTERNAL_CUSTOM_PROFILE_KEY = 'mail-internal-custom' as const;
+
+export type MailWorkspacePlanKey = MailPlanKey | typeof MAIL_INTERNAL_CUSTOM_PROFILE_KEY;
 
 export async function resolveTenantMailPlanKey(
   tenantId: string,
   fallbackPlanKey?: string | null,
-): Promise<MailPlanKey> {
+  tenantSlug?: string | null,
+): Promise<MailWorkspacePlanKey> {
+  if (fallbackPlanKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY) {
+    const configuredTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() ?? '';
+    if (!tenantSlug) {
+      throw new Error('Internal custom Mail profiles must use the reserved-tenant profile resolver.');
+    }
+    if (tenantId !== configuredTenantId || tenantSlug !== 'mkety-ops') {
+      throw new Error('Internal custom Mail profile is restricted to the configured /mkety-ops tenant.');
+    }
+    return MAIL_INTERNAL_CUSTOM_PROFILE_KEY;
+  }
+
   const currentPlanVersionIds = await drizzleEntitlementSource.getCurrentPlanVersionIds(tenantId);
   if (!currentPlanVersionIds.length) return normalizeMailPlanKey(fallbackPlanKey);
 
