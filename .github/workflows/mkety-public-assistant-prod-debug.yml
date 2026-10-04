@@ -17,7 +17,7 @@ env:
 
 jobs:
   diagnose:
-    name: Capture and enforce Public AI production health
+    name: Exercise Public AI and capture sanitized health
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -25,7 +25,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Validate read-only diagnostic credentials
+      - name: Validate diagnostic credentials
         shell: bash
         run: |
           set -euo pipefail
@@ -56,22 +56,27 @@ jobs:
           subdomain="$(ACCOUNT="$response" node -e "const p=JSON.parse(process.env.ACCOUNT||'{}');if(!p.success||!p.result?.subdomain)process.exit(1);process.stdout.write(p.result.subdomain)")"
           echo "url=https://${PRODUCTION_WORKER_NAME}.${subdomain}.workers.dev" >> "$GITHUB_OUTPUT"
 
-      - name: Reproduce assistant GET while tailing Worker
+      - name: POST a benign public docs and support question
         shell: bash
         env:
           BASE: ${{ steps.worker.outputs.url }}
         run: |
           set -euo pipefail
           : >/tmp/tail.raw
-          timeout 45s pnpm exec wrangler tail "$PRODUCTION_WORKER_NAME" --format json > /tmp/tail.raw 2>&1 &
+          timeout 60s pnpm exec wrangler tail "$PRODUCTION_WORKER_NAME" --format json > /tmp/tail.raw 2>&1 &
           tail_pid=$!
           sleep 7
-          code="$(curl -sS --connect-timeout 10 --max-time 25 -D /tmp/assistant.headers -o /tmp/assistant.body -w '%{http_code}' "$BASE/api/public/assistant" || true)"
-          echo "assistant GET HTTP $code"
-          sleep 10
+          code="$(curl -sS --connect-timeout 10 --max-time 40 \
+            -H 'Content-Type: application/json' \
+            -H "Origin: $BASE" \
+            -X POST \
+            --data '{"message":"Where can I find Mkety documentation and contact support?"}' \
+            -o /tmp/assistant.body -w '%{http_code}' "$BASE/api/public/assistant" || true)"
+          echo "assistant POST HTTP $code"
+          sleep 8
           kill "$tail_pid" 2>/dev/null || true
           wait "$tail_pid" 2>/dev/null || true
-          HTTP_CODE="$code" node <<'NODE'
+          node <<'NODE'
           const fs=require('node:fs');
           const redact=(value)=>String(value??'')
             .replace(/postgres(?:ql)?:\/\/\S+/gi,'[redacted-db-url]')
@@ -91,9 +96,7 @@ jobs:
             if(logs.length) event.logs=logs.slice(0,8).map(l=>({level:redact(l?.level),message:redact(Array.isArray(l?.message)?l.message.join(' '):l?.message)}));
             if(event.outcome||event.exceptions||event.logs) events.push(event);
           }
-          let body=''; try{body=fs.readFileSync('/tmp/assistant.body','utf8')}catch{}
-          console.log('SANITIZED_ASSISTANT_BODY '+redact(body));
           console.log('SANITIZED_WORKER_EVENTS '+JSON.stringify(events.slice(0,20)));
           NODE
 
-          HTTP_CODE="$code" pnpm exec tsx -e "import { evaluateHttpProbe } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluateHttpProbe(process.env.HTTP_CODE ?? ''); console.log('PUBLIC_ASSISTANT_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
+          HTTP_CODE="$code" pnpm exec tsx -e "import { readFileSync } from 'node:fs'; import { evaluatePublicAssistantPost } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluatePublicAssistantPost(process.env.HTTP_CODE ?? '', readFileSync('/tmp/assistant.body','utf8')); console.log('PUBLIC_ASSISTANT_POST_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
