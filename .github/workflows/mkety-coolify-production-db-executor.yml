@@ -34,7 +34,7 @@ on:
       COOLIFY_TOKEN:
         required: true
       MKETY_PLATFORM_CONTROL_TENANT_SLUG:
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -234,7 +234,10 @@ jobs:
           CONTROL_TENANT_SLUG: ${{ secrets.MKETY_PLATFORM_CONTROL_TENANT_SLUG }}
         run: |
           set -euo pipefail
-          [ -n "$CONTROL_TENANT_SLUG" ] || { echo 'MKETY_PLATFORM_CONTROL_TENANT_SLUG is required.'; exit 3; }
+          if [ -z "$CONTROL_TENANT_SLUG" ]; then
+            echo 'No Platform Control slug supplied; skipping the optional first-party Mail lookup.'
+            exit 0
+          fi
           echo "::add-mask::$CONTROL_TENANT_SLUG"
           base="${COOLIFY_URL%/}/api/v1"
           endpoint="$base/applications/$APP_UUID/envs"
@@ -412,11 +415,11 @@ jobs:
           const uuidLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_TENANT_ID='));
           const readinessLine=lines.find((line)=>line.includes('MKETY_FIRST_PARTY_MAIL_READINESS '));
           const tenantId=uuidLine?.split('MKETY_FIRST_PARTY_MAIL_TENANT_ID=')[1]?.trim()||'';
-          const readiness=readinessLine?.split('MKETY_FIRST_PARTY_MAIL_READINESS ')[1]?.trim()||'unknown';
-          if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
-            throw new Error('Private DB executor did not return a valid first-party Mail tenant UUID.');
+          const readiness=readinessLine?.split('MKETY_FIRST_PARTY_MAIL_READINESS ')[1]?.trim()||'not_requested';
+          if(tenantId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
+            throw new Error('Private DB executor returned an invalid first-party Mail tenant UUID.');
           }
-          if(!readiness||/[\r\n]/.test(readiness)) throw new Error('Invalid readiness summary.');
+          if(!/^[a-z0-9_=-]+(?: [a-z0-9_=-]+)*$/i.test(readiness)) throw new Error('Invalid readiness summary.');
           process.stdout.write('first_party_mail_tenant_id='+tenantId+'\nfirst_party_mail_readiness='+readiness+'\n');
           NODE
           echo "Production DB migration and read-only first-party Mail lookup succeeded for exact SHA $TARGET_SHA."
