@@ -48,7 +48,11 @@ export function summarizePublicAiConfig(metadata: unknown): PublicAiConfigDiagno
     ? publicConfig.primaryProvider
     : null;
   const fallbackProviders = Array.isArray(publicConfig.fallbackProviders)
-    ? publicConfig.fallbackProviders.filter(isSafeProvider).filter((provider, index, all) => all.indexOf(provider) === index)
+    ? publicConfig.fallbackProviders
+        .filter(isSafeProvider)
+        .filter(
+          (provider, index, all) => provider !== primaryProvider && all.indexOf(provider) === index,
+        )
     : [];
 
   return {
