@@ -71,32 +71,33 @@ jobs:
             -H "Origin: $BASE" \
             -X POST \
             --data '{"message":"Where can I find Mkety documentation and contact support?"}' \
-            -o /tmp/assistant.body -w '%{http_code}' "$BASE/api/public/assistant" || true)"
+            -D /tmp/assistant.headers -o /tmp/assistant.body -w '%{http_code}' "$BASE/api/public/assistant" || true)"
           echo "assistant POST HTTP $code"
           sleep 8
           kill "$tail_pid" 2>/dev/null || true
           wait "$tail_pid" 2>/dev/null || true
           node <<'NODE'
           const fs=require('node:fs');
-          const redact=(value)=>String(value??'')
-            .replace(/postgres(?:ql)?:\/\/\S+/gi,'[redacted-db-url]')
-            .replace(/https?:\/\/\S+/gi,'[redacted-url]')
-            .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g,'[redacted-ip]')
-            .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted-email]')
-            .replace(/(password|secret|token|authorization|connectionstring)\s*[:=]\s*[^\s,;]+/gi,'$1=[redacted]')
-            .slice(0,700);
+          const safeIdentifier=(value)=>{
+            const text=String(value??'');
+            return /^[A-Za-z0-9_.-]{1,64}$/.test(text)?text:'other';
+          };
           const raw=fs.existsSync('/tmp/tail.raw')?fs.readFileSync('/tmp/tail.raw','utf8'):'';
           const events=[];
           for(const line of raw.split(/\r?\n/)){
             let x; try{x=JSON.parse(line)}catch{continue}
-            const event={outcome:typeof x.outcome==='string'?x.outcome:undefined};
+            const event={};
+            if(typeof x.outcome==='string') event.outcome=safeIdentifier(x.outcome);
             const exceptions=Array.isArray(x.exceptions)?x.exceptions:[];
             const logs=Array.isArray(x.logs)?x.logs:[];
-            if(exceptions.length) event.exceptions=exceptions.slice(0,4).map(e=>({name:redact(e?.name),message:redact(e?.message)}));
-            if(logs.length) event.logs=logs.slice(0,8).map(l=>({level:redact(l?.level),message:redact(Array.isArray(l?.message)?l.message.join(' '):l?.message)}));
-            if(event.outcome||event.exceptions||event.logs) events.push(event);
+            if(exceptions.length) event.exceptions=exceptions.slice(0,4).map(e=>({
+              name:safeIdentifier(e?.name),
+              ...(typeof e?.code==='string'?{code:safeIdentifier(e.code)}:{}),
+            }));
+            if(logs.length) event.logLevels=[...new Set(logs.slice(0,8).map(l=>safeIdentifier(l?.level)))];
+            if(Object.keys(event).length) events.push(event);
           }
           console.log('SANITIZED_WORKER_EVENTS '+JSON.stringify(events.slice(0,20)));
           NODE
 
-          HTTP_CODE="$code" pnpm exec tsx -e "import { readFileSync } from 'node:fs'; import { evaluatePublicAssistantPost } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluatePublicAssistantPost(process.env.HTTP_CODE ?? '', readFileSync('/tmp/assistant.body','utf8')); console.log('PUBLIC_ASSISTANT_POST_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
+          HTTP_CODE="$code" pnpm exec tsx -e "import { readFileSync } from 'node:fs'; import { evaluatePublicAssistantPost } from './scripts/public-assistant-production-diagnostic.ts'; const result=evaluatePublicAssistantPost(process.env.HTTP_CODE ?? '', readFileSync('/tmp/assistant.body','utf8'), readFileSync('/tmp/assistant.headers','utf8')); console.log('PUBLIC_ASSISTANT_POST_HEALTH '+JSON.stringify(result)); if(!result.ok) process.exit(1);"
