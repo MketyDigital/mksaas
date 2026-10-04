@@ -51,5 +51,10 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(dbWorkflow).toContain('MKETY_FIRST_PARTY_MAIL_TENANT_ID=');
     expect(dbWorkflow).toContain('::add-mask::$CONTROL_TENANT_SLUG');
     expect(mailWorkflow).toContain('put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
+    expect(mailWorkflow).toContain('Validate tenant binding before deployment');
+    expect(mailWorkflow.indexOf('Validate tenant binding before deployment')).toBeLessThan(
+      mailWorkflow.indexOf('Verify Cloudflare credentials'),
+    );
+    expect(dbWorkflow).toContain('process.env.CONTROL_TENANT_SLUG&&!tenantId');
   });
 });
