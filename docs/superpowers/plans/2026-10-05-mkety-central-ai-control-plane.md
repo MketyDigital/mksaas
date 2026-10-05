@@ -61,6 +61,7 @@ Do not create a second provider or credential system. Reuse existing `ai_provide
 - Create: `src/shared/db/migrations/0041_ai_route_profiles.sql`
 - Create: `src/features/ai-runtime/server/route-profiles.ts`
 - Create: `src/features/ai-runtime/server/route-profiles.test.ts`
+- Create: `src/features/ai-runtime/server/model-routing.test.ts`
 - Modify: `src/shared/db/schema/ai-runtime.ts`
 - Modify: `src/features/ai-runtime/server/model-routing.ts`
 
