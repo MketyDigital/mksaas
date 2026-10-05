@@ -108,6 +108,7 @@ Add focused consumer contract tests if a path does not have an existing suite. D
 - Modify: `src/features/ai/lib/knowledge-ingestion.ts`
 - Modify: `src/features/ai-runtime/providers/central-runtime.ts`
 - Add: `src/features/ai/lib/knowledge-provider.test.ts`
+- Add or extend focused tests for `knowledge-context.ts` and `knowledge-ingestion.ts`
 
 **Interfaces:**
 - Produces: `embedCentralAi(input: { consumerKey: 'workspace-knowledge'; tenantId: string; projectId: string; model: string; text: string }): Promise<{ provider: string; nativeModel: string; vector: number[]; source: 'managed' | 'byok' }>`.
@@ -117,7 +118,7 @@ Add focused consumer contract tests if a path does not have an existing suite. D
 - [ ] **Step 1: Write failing tests** that knowledge query embedding and ingestion pass the right tenant/project and `workspace-knowledge` consumer key; empty text and non-embedding models fail without a provider call.
 - [ ] **Step 2: Run** `pnpm test -- src/features/ai/lib/knowledge-provider.test.ts`. Confirm these cases fail.
 - [ ] **Step 3: Implement** central embedding route resolution and pass explicit workspace/knowledge context from both query and ingestion paths. Preserve the current vector shape and stored dimension contract.
-- [ ] **Step 4: Run** the test plus the existing knowledge context/ingestion suites. Expected: vector results remain compatible with stored knowledge and cross-tenant context is never used.
+- [ ] **Step 4: Run** the new test plus focused knowledge context/ingestion tests. Expected: vector results remain compatible with stored knowledge and cross-tenant context is never used.
 - [ ] **Step 5: Commit** as `feat: route workspace knowledge embeddings centrally`.
 
 ### Task 5: Harden Enterprise API integration without enabling managed production inference
