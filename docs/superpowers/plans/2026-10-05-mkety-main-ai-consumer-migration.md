@@ -16,6 +16,7 @@
 - Public AI uses managed central routes only and retains its public trust/data policy.
 - Workspace/Enterprise BYOK is optional, explicitly selected, and fail-closed on provider failure.
 - Enterprise managed inference stays disabled in production.
+- Workers AI uses standard billing; no Cloudflare Unified Billing or prepaid frontier-model credits.
 - Preserve product-owned usage/credit ledgers and request idempotency.
 - No consumer receives provider credentials or bypasses the central model/route policy.
 
