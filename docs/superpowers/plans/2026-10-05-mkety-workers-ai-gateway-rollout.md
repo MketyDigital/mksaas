@@ -104,6 +104,6 @@ No provider secret or model route is changed by this rollout plan.
 
 ---
 
-## Completion gate## Completion gate
+## Completion gate
 
 Do not treat a configured gateway ID as proof of billing mode. Verify the gateway’s `workers_ai_billing_mode` value from Cloudflare before every production release using it. Cloudflare documents `postpaid` as standard account billing and `unified` as prepaid AI Gateway credits in the [gateway API](https://developers.cloudflare.com/api/resources/ai_gateway/methods/create/) and [Gateway management guide](https://developers.cloudflare.com/ai-gateway/configuration/manage-gateway/).
