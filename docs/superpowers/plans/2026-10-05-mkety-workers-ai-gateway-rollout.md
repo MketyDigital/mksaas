@@ -34,6 +34,7 @@
 Modify:
 
 - `.github/workflows/mkety-ai-production.yml`
+- `.github/workflows/mkety-cloudflare-preview.yml`
 - `scripts/deploy-vinext-cloudflare.sh` only if the deployment config assertion cannot be tested in the workflow
 - `scripts/verify-cloudflare-deploy-candidate.ts` only if the current candidate gate needs a non-billable gateway-config check
 - `src/features/ai-runtime/providers/runtime.cloudflare.ts` only if the binding contract or diagnostics need a clear standard-billing error
@@ -51,12 +52,12 @@ No provider secret or model route is changed by this rollout plan.
 
 **Interfaces:**
 - Consumes: existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
-- Produces: workflow output `gateway_id`, resolved to one named gateway in that exact account.
+- Produces: environment-specific workflow outputs `preview_gateway_id` and `production_gateway_id`, resolved to exactly one named gateway in that Cloudflare account.
 
-- [ ] **Step 1: Write failing tests** for absent gateway, one exact match, duplicate match, bad API response, and gateway with `workers_ai_billing_mode: "unified"`.
+- [ ] **Step 1: Write failing tests** for absent preview/production gateways, one exact match, duplicate match, bad API response, and either gateway with `workers_ai_billing_mode: "unified"`.
 - [ ] **Step 2: Run** the gateway config tests. Confirm missing/duplicate/unified cases fail.
-- [ ] **Step 3: Implement** idempotent list/get/create/update logic for the chosen stable gateway ID. Set `workers_ai_billing_mode: "postpaid"`; verify the account ID and returned gateway setting before exposing the output.
-- [ ] **Step 4: Run** the tests. Expected: one gateway ID is emitted only after standard billing is confirmed; credentials and response secrets are never printed.
+- [ ] **Step 3: Implement** idempotent list/get/create/update logic for stable preview and production gateway IDs. Set each gateway’s `workers_ai_billing_mode: "postpaid"`; verify account identity and both returned settings before exposing the outputs.
+- [ ] **Step 4: Run** the tests. Expected: each environment receives one gateway ID only after standard billing is confirmed; credentials and response secrets are never printed.
 - [ ] **Step 5: Commit** as `ci: ensure mkety workers ai gateway uses standard billing`.
 
 ### Task 2: Inject gateway ID into the exact generated Worker config
@@ -65,33 +66,44 @@ No provider secret or model route is changed by this rollout plan.
 - Modify: `.github/workflows/mkety-ai-production.yml`
 - Modify: `scripts/deploy-vinext-cloudflare.sh` or add a config-contract test as needed.
 
-- [ ] **Step 1: Write a failing config test** asserting the generated production config contains the `AI` binding and `vars.MKETY_AI_GATEWAY_ID` equal to Task 1 output.
+- [ ] **Step 1: Write a failing config test** asserting the generated production config contains the `AI` binding and `vars.MKETY_AI_GATEWAY_ID` equal to `production_gateway_id`.
 - [ ] **Step 2: Run** the config test. Confirm the current config does not contain the required gateway ID.
 - [ ] **Step 3: Inject** the gateway ID into the generated config `vars` before build/deploy; do not store it as a secret if only the opaque gateway identifier is needed.
 - [ ] **Step 4: Run** the config test and `pnpm run deploy --dry-run`. Expected: exactly one Gateway ID and the existing `AI` binding are preserved in the deployment artifact.
 - [ ] **Step 5: Commit** as `ci: bind mkety platform worker to ai gateway`.
 
-### Task 3: Validate with a controlled Workers AI acceptance request
+### Task 3: Bind and verify the non-production Worker
+
+**Files:**
+- Modify: `.github/workflows/mkety-cloudflare-preview.yml`
+- Modify: preview config assertion test
+
+- [ ] **Step 1: Write a failing config test** asserting preview uses only `preview_gateway_id` and that generated preview Worker config includes the `AI` binding.
+- [ ] **Step 2: Run** the config test and confirm preview has no gateway ID.
+- [ ] **Step 3: Inject** the preview gateway ID into the candidate/preview Worker config; keep it separate from production and keep its billing mode `postpaid`.
+- [ ] **Step 4: Run** the candidate build/deploy dry run. Expected: the exact preview ID and Workers AI binding appear in the generated config without changing Enterprise inference settings.
+- [ ] **Step 5: Commit** as `ci: bind mkety preview worker to standard ai gateway`.
+
+### Task 4: Validate with a controlled Workers AI acceptance request
 
 **Files:**
 - Add or extend: non-production AI runtime smoke workflow and run evidence
-- Modify: production workflow only for release validation, not for inference enablement
 
 - [ ] **Step 1: Add** a non-production smoke that calls one approved Workers AI model with a tiny fixed prompt, captures request ID/usage metadata, and reports only sanitized results.
 - [ ] **Step 2: Run** the smoke in the candidate environment and verify Cloudflare account billing/usage records show standard Workers AI usage and no AI Gateway prepaid credit deduction.
 - [ ] **Step 3: Verify** the request cannot select a third-party frontier provider through the gateway and does not alter Enterprise entitlement or `customerInferenceEnabled`.
 - [ ] **Step 4: Commit** as `test: verify standard billing workers ai gateway route`.
 
-### Task 4: Roll out the production binding with rollback evidence
+### Task 5: Roll out the production binding with rollback evidence
 
 - [ ] **Step 1: Re-read** current `.github/workflows/mkety-ai-production.yml`, Cloudflare Gateway state, production Worker state, and the exact candidate SHA after code verification.
-- [ ] **Step 2: Confirm** the gateway reports `postpaid`, the Worker `AI` binding exists, the generated config contains the exact Gateway ID, and Enterprise managed inference is still disabled.
+- [ ] **Step 2: Confirm** the production gateway reports `postpaid`, the Worker `AI` binding exists, the generated config contains the exact production Gateway ID, and Enterprise managed inference is still disabled.
 - [ ] **Step 3: Deploy** through the workflow’s existing verified-SHA and confirmation gates only; do not bypass its exact-SHA checks.
 - [ ] **Step 4: Verify** deployed Worker config/diagnostics report the gateway binding and standard billing; verify no Unified Billing credits were loaded or used.
 - [ ] **Step 5: Document** prior Worker configuration and the rollback command/workflow path before closing the rollout.
 
 ---
 
-## Completion gate
+## Completion gate## Completion gate
 
 Do not treat a configured gateway ID as proof of billing mode. Verify the gateway’s `workers_ai_billing_mode` value from Cloudflare before every production release using it. Cloudflare documents `postpaid` as standard account billing and `unified` as prepaid AI Gateway credits in the [gateway API](https://developers.cloudflare.com/api/resources/ai_gateway/methods/create/) and [Gateway management guide](https://developers.cloudflare.com/ai-gateway/configuration/manage-gateway/).
