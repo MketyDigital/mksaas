@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Do not change or route traffic through standalone Assist.
+- Do not change `customer-apps/assist` or route traffic through standalone Assist.
 - Never allow arbitrary customer URLs, private IPs, redirects, or DNS changes to become unrestricted Worker egress.
 - Bind only reviewed VPC Services; isolate each provider connection to its configured service.
 - Keep credentials encrypted and scoped; redact connection secrets and prompts from logs.
