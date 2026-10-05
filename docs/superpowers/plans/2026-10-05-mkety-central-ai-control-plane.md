@@ -107,7 +107,7 @@ Do not create a second provider or credential system. Reuse existing `ai_provide
 - Consumes: existing `saveSystemAiProviderConnection`, `listSystemAiProviderConnections`, `resolveSystemAiProviderConnection`, and `disableSystemAiProviderConnection`.
 - Preserves separate `platform`, `public`, and `byok` ownership modes.
 
-- [ ] **Step 1: Write failing tests** that prove only a system connection in the requested mode can be resolved; disabled/missing connections fail closed; list/action responses omit secret references and plaintext credentials; BYOK resolution remains tenant/project scoped.
+- [ ] **Step 1: Write failing tests** that prove only a system connection in the requested mode can be resolved; disabled/missing connections fail closed; list/action responses omit secret references and plaintext credentials; BYOK resolution remains tenant/project scoped; the system adapter resolves OpenAI, Azure AI Foundry/Azure OpenAI, AWS Bedrock, Gemini, Vertex, and custom OpenAI-compatible connections, while Workers AI uses only the Workers binding.
 - [ ] **Step 2: Run** `pnpm test -- src/features/ai-runtime/server/provider-connections.test.ts src/features/ai-runtime/server/byok-secrets.test.ts`. Confirm the new cases fail.
 - [ ] **Step 3: Implement** only the guards or redaction fixes demonstrated by those tests. Keep encrypted secret storage in the shared connection-secrets helper.
 - [ ] **Step 4: Run** the targeted tests. Expected: all connection ownership and no-secret assertions pass.
