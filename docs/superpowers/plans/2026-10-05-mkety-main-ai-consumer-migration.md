@@ -100,7 +100,27 @@ Add focused consumer contract tests if a path does not have an existing suite. D
 - [ ] **Step 4: Run** the targeted suite and existing agent/tool/knowledge tests. Expected: tool-disabled automation remains tool-disabled, and user-invoked agents preserve enabled tool behavior only where supported by the central capability contract.
 - [ ] **Step 5: Commit** as `feat: complete workspace ai central runtime migration`.
 
-### Task 4: Harden Enterprise API integration without enabling managed production inference
+### Task 4: Route Workspace knowledge embeddings through the central runtime
+
+**Files:**
+- Modify: `src/features/ai/lib/knowledge-provider.ts`
+- Modify: `src/features/ai/lib/knowledge-context.ts`
+- Modify: `src/features/ai/lib/knowledge-ingestion.ts`
+- Modify: `src/features/ai-runtime/providers/central-runtime.ts`
+- Add: `src/features/ai/lib/knowledge-provider.test.ts`
+
+**Interfaces:**
+- Produces: `embedCentralAi(input: { consumerKey: 'workspace-knowledge'; tenantId: string; projectId: string; model: string; text: string }): Promise<{ provider: string; nativeModel: string; vector: number[]; source: 'managed' | 'byok' }>`.
+- Changes `embedKnowledgeText` to require tenant/project context from indexing or retrieval callsites.
+- Uses only centrally routed models whose catalog capabilities include embeddings; a model without embedding support fails before provider invocation.
+
+- [ ] **Step 1: Write failing tests** that knowledge query embedding and ingestion pass the right tenant/project and `workspace-knowledge` consumer key; empty text and non-embedding models fail without a provider call.
+- [ ] **Step 2: Run** `pnpm test -- src/features/ai/lib/knowledge-provider.test.ts`. Confirm these cases fail.
+- [ ] **Step 3: Implement** central embedding route resolution and pass explicit workspace/knowledge context from both query and ingestion paths. Preserve the current vector shape and stored dimension contract.
+- [ ] **Step 4: Run** the test plus the existing knowledge context/ingestion suites. Expected: vector results remain compatible with stored knowledge and cross-tenant context is never used.
+- [ ] **Step 5: Commit** as `feat: route workspace knowledge embeddings centrally`.
+
+### Task 5: Harden Enterprise API integration without enabling managed production inference
 
 **Files:**
 - Modify: `src/app/api/v1/ai/chat/completions/route.ts`
@@ -116,7 +136,7 @@ Add focused consumer contract tests if a path does not have an existing suite. D
 - [ ] **Step 4: Run** the route suite plus `pnpm test -- src/features/ai-runtime/server/commercial-admission.test.ts src/features/ai-runtime/server/budget-reservation-service.test.ts`. Expected: existing commercial reservation/settlement behavior is unchanged.
 - [ ] **Step 5: Commit** as `feat: enforce enterprise ai central route contract`.
 
-### Task 5: Consumer parity and boundary verification
+### Task 6: Consumer parity and boundary verification
 
 - [ ] **Step 1: Run** targeted channel, Public AI, Workspace AI, Enterprise API, and central-runtime suites.
 - [ ] **Step 2: Run** `pnpm type-check` and `pnpm test -- src/features/public-assistant src/features/ai src/features/ai-runtime`.
