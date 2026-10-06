@@ -836,7 +836,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Nueva conversaci\u00f3n'"
+          "default": "'Nueva conversación'"
         },
         "messages": {
           "name": "messages",
@@ -18480,6 +18480,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mail_enterprise_offers_tenant_open_uidx": {
+          "name": "mail_enterprise_offers_tenant_open_uidx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {},
+          "where": "\"status\" in ('draft', 'awaiting_payment', 'active')"
         }
       },
       "foreignKeys": {
