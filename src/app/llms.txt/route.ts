@@ -1,6 +1,6 @@
 const body = `# Mkety
 
-> Mkety helps businesses, organizations and individuals launch and run digital solutions from one connected ecosystem. Customers can start with websites, business email and AI assistance, then add automation, applications and tailored Enterprise delivery. The underlying infrastructure is managed behind the Mkety experience.
+> Mkety Platform is an AI-powered software platform for building applications, AI agents, automations and digital business systems. Self-service AI, Automation and Deploy Workspaces connect projects, teams, APIs, usage, credits and billing. Mkety One bundles the standard Workspaces. SolutionHub provides reusable starting points; Mail, Media and Academy are additional products, while Enterprise & Custom extends Mkety for specialized requirements.
 
 ## Find the right next step
 - Explore public capabilities and straightforward self-service plans at https://mkety.com/pricing; ready customers can choose a plan and complete checkout there.

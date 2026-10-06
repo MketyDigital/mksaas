@@ -23,9 +23,9 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   primaryColor: '#6D5DF6',
   secondaryColor: '#A855F7',
   accentColor: '#22D3EE',
-  defaultSeoTitle: 'Mkety | AI-powered digital solutions for your business',
+  defaultSeoTitle: 'Mkety | Build, automate and deploy',
   defaultSeoDescription:
-    'Put AI to work across your website, business email, workflows and daily operations. Mkety brings practical digital solutions together, with specialist Media and Trading products when you need them.',
+    'Build applications, AI agents, automations and digital business systems with Mkety Platform. Choose self-service Workspaces with team access, usage, credits and billing in one connected platform.',
   contactEmail: 'info@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
@@ -54,23 +54,23 @@ export const defaultPlatformNavigation: PlatformNavigationItemInput[] = [
 ];
 
 export const defaultHeroSection: PlatformHeroSectionInput = {
-  badge: 'AI and digital solutions, working together',
-  headline: 'Everything your business needs to work, grow, and move faster.',
+  badge: 'Mkety Platform · AI Agents · Automation · App Deployment · Cloud Infrastructure',
+  headline: 'Build, automate and deploy with Mkety.',
   subheadline:
-    'Bring AI, websites, business email, automation, applications, domains and everyday operations into one connected system, with specialist Media, Trading and Enterprise solutions when you need them.',
-  primaryCta: { label: 'See plans', href: '/pricing' },
-  secondaryCta: { label: 'Ask Mkety AI', href: '/contact#mkety-ai' },
+    'An AI-powered platform for building applications, AI agents, automations and digital business systems — all from one workspace.',
+  primaryCta: { label: 'Explore Platform', href: '/platform' },
+  secondaryCta: { label: 'Start Building', href: '/signup' },
   previewItems: [
     { label: 'AI', description: 'Agents, knowledge, tools, models, runs, versions, and publishing.' },
     { label: 'Automation', description: 'Triggers, workflows, actions, conditions, webhooks, and run history.' },
-    { label: 'Deploy', description: 'Lightweight web apps, APIs, portals, managed edge/serverless deployment, status, and history.' },
+    { label: 'Deploy', description: 'Lightweight web apps, APIs, portals, serverless and edge application deployment, status, and history.' },
     { label: 'SolutionHub', description: 'Ready-made solutions, templates, blueprints, and enterprise options.' },
   ],
 };
 
 export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
   eyebrow: 'Platform',
-  title: 'Everything your digital work needs, connected.',
+  title: 'One platform for building and operating digital systems.',
   description:
     'Projects, teams, AI, automation, deployments, SolutionHub, usage, credits, billing, and administration share one coordinated system.',
   items: [
@@ -96,7 +96,7 @@ export const defaultPlatformOverviewSection: PlatformOverviewSectionInput = {
 
 export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
   eyebrow: 'Workspaces',
-  title: 'One platform, multiple operating spaces',
+  title: 'Self-service Workspaces for AI, automation and deployment',
   description:
     'Choose the workspace that fits what you want to build, or use Mkety One for the complete self-service workspace bundle.',
   items: [
@@ -117,7 +117,7 @@ export const defaultWorkspaceSection: PlatformWorkspaceSectionInput = {
       key: 'deploy',
       title: 'Deploy Workspace',
       description:
-        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety managed edge/serverless deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
+        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety’s serverless and edge application deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
       href: '/app',
     },
     {
@@ -139,7 +139,7 @@ export const defaultSolutionHubSection: PlatformSolutionHubSectionInput = {
   items: [
     {
       key: 'shared',
-      title: 'Managed shared-platform solutions',
+      title: 'Reusable platform solutions',
       description: 'Reusable AI, automation, websites, portals, dashboards, lightweight apps, and APIs designed for Mkety shared/serverless infrastructure.',
     },
     {
@@ -188,10 +188,10 @@ export const defaultAcademySection: PlatformAcademySectionInput = {
 };
 
 export const defaultEnterpriseSection: PlatformEnterpriseSectionInput = {
-  eyebrow: 'Enterprise',
-  title: 'Practical solutions for work that needs a closer fit.',
+  eyebrow: 'Enterprise & Custom',
+  title: 'Extend the Mkety platform for specialized requirements.',
   description:
-    'Mkety works with organizations on tailored AI, integrations, Mail, Media, Trading and digital systems, with the delivery and support agreed around the work.',
+    'Extend Mkety with tailored AI, integrations, Mail, Media, Trading and digital systems. Enterprise capabilities, infrastructure and support are scoped to your organization’s requirements.',
   items: [
     {
       key: 'trading',
@@ -315,7 +315,7 @@ export const defaultPricingPlans: PlatformPricingPlanInput[] = [
     name: 'Deploy Workspace',
     priceLabel: '$9.99',
     billingLabel: '/ month',
-    description: 'For lightweight web apps, APIs, portals, and serverless application deployment through a managed edge runtime.',
+    description: 'For lightweight web apps, APIs, portals, and serverless application deployment on Mkety’s managed runtime.',
     highlighted: false,
     ctaLabel: 'Get Started',
     ctaHref: '/signup?plan=deploy-workspace',
@@ -369,7 +369,7 @@ export const defaultFaqItems: PlatformFaqItemInput[] = [
   {
     question: 'Is Mkety only an AI product?',
     answer:
-      'No. Mkety includes AI, automation, deployment, media storage and delivery, integrations, business solutions, practical learning, and Enterprise implementation support.',
+      'Mkety Platform combines AI agents, workflow automation, application deployment and integrations in self-service Workspaces, with projects, teams, usage, credits and billing. Mail, Media and Academy are additional products, and Enterprise extends the platform for specialized requirements.',
   },
   {
     question: 'Can I register domains and manage DNS through Mkety?',
@@ -516,7 +516,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Projects and workspaces',
     excerpt: 'How Mkety organizes work around focused spaces.',
     bodyMarkdown:
-      '# Projects and workspaces\n\nProjects organize the work you are building. AI Workspace focuses on agents, knowledge, tools and supported AI channels. Automation Workspace focuses on visual workflows, triggers, actions, integrations and execution history. Deploy Workspace focuses on lightweight web apps, APIs, portals and managed edge/serverless deployment. Mkety One combines Starter with all three self-service Workspaces.',
+      '# Projects and workspaces\n\nProjects organize the work you are building. AI Workspace focuses on agents, knowledge, tools and supported AI channels. Automation Workspace focuses on visual workflows, triggers, actions, integrations and execution history. Deploy Workspace focuses on lightweight web apps, APIs, portals and serverless and edge application deployment. Mkety One combines Starter with all three self-service Workspaces.',
     sortOrder: 10,
   },
   {
@@ -552,7 +552,7 @@ export const defaultDocsArticles: PlatformDocsArticleInput[] = [
     title: 'Deploy Workspace',
     excerpt: 'Deploy lightweight web apps, APIs, portals, and managed serverless workloads.',
     bodyMarkdown:
-      '# Deploy Workspace\n\nDeploy Workspace is for lightweight web applications, APIs, portals, and serverless workloads using Mkety managed edge/serverless deployment. It includes environment configuration, secrets, supported custom domains and SSL, deployment history, logs/status where available, and project/application usage visibility.',
+      '# Deploy Workspace\n\nDeploy Workspace is for lightweight web applications, APIs, portals, and serverless workloads using Mkety’s serverless and edge application deployment. It includes environment configuration, secrets, supported custom domains and SSL, deployment history, logs/status where available, and project/application usage visibility.',
     sortOrder: 30,
   },
   {

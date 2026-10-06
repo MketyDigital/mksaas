@@ -238,6 +238,57 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
 
       <MketyProductShowcase groups={showcaseGroups} />
 
+      <div id="platform">
+        <PublicContentSection section={platformOverview} />
+      </div>
+
+      <section id="workspaces" className="px-4 py-12 md:py-16">
+        <div className="container mx-auto overflow-hidden rounded-[2rem] border bg-muted/20 p-6 md:p-10">
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">{workspaces.eyebrow}</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">{workspaces.title}</h2>
+            {workspaces.description && <p className="mt-4 text-muted-foreground">{workspaces.description}</p>}
+          </div>
+          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {workspaces.items.map((item, index) => {
+              const Icon = workspaceIcons[index] ?? Layers3;
+              return (
+                <Card
+                  key={item.key}
+                  className="rounded-3xl border-primary/10 bg-background/80 transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
+                >
+                  <CardHeader>
+                    <div className="mb-6 flex items-center justify-between">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      {item.badge && (
+                        <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                    <CardTitle>{item.title}</CardTitle>
+                    <CardDescription className="leading-6">{item.description}</CardDescription>
+                  </CardHeader>
+                  {item.href && (
+                    <CardContent>
+                      <Link href={item.href} className="text-sm font-medium text-primary hover:underline">
+                        Explore {item.title} →
+                      </Link>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <div id="solutions">
+        <PublicContentSection section={solutionHub} />
+      </div>
+
       <section className="px-4 py-10 md:py-12">
         <div className="container mx-auto">
           <div className="grid gap-6 overflow-hidden rounded-[2rem] border border-primary/15 bg-gradient-to-br from-primary/[0.08] via-card/70 to-background p-6 shadow-sm md:p-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
@@ -245,7 +296,7 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Mkety Media</p>
               <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Store once. Deliver everywhere.</h2>
               <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
-                Mkety Media is managed media storage and delivery for businesses. Upload images, videos and files,
+                Mkety Media is a media storage and delivery product for businesses. Upload images, videos and files,
                 organize them into buckets, and use permanent cached Mkety links across websites, landing pages, apps,
                 campaigns and content systems.
               </p>
@@ -259,9 +310,9 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
               <Card className="rounded-3xl border-primary/10 bg-background/80">
                 <CardHeader>
-                  <CardTitle className="text-base">Simple, managed media infrastructure</CardTitle>
+                  <CardTitle className="text-base">Media storage and delivery in one product</CardTitle>
                   <CardDescription className="leading-6">
-                    Managed storage, secure direct uploads, cached delivery, usage monitoring, team access and
+                    Media storage, secure direct uploads, cached delivery, usage monitoring, team access and
                     full-library export without managing storage credentials or CDN configuration.
                   </CardDescription>
                 </CardHeader>
@@ -331,56 +382,6 @@ export function MketyHomePage({ content }: MketyHomePageProps) {
         </div>
       </section>
 
-      <div id="platform">
-        <PublicContentSection section={platformOverview} />
-      </div>
-
-      <section id="workspaces" className="px-4 py-12 md:py-16">
-        <div className="container mx-auto overflow-hidden rounded-[2rem] border bg-muted/20 p-6 md:p-10">
-          <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">{workspaces.eyebrow}</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">{workspaces.title}</h2>
-            {workspaces.description && <p className="mt-4 text-muted-foreground">{workspaces.description}</p>}
-          </div>
-          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {workspaces.items.map((item, index) => {
-              const Icon = workspaceIcons[index] ?? Layers3;
-              return (
-                <Card
-                  key={item.key}
-                  className="rounded-3xl border-primary/10 bg-background/80 transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
-                >
-                  <CardHeader>
-                    <div className="mb-6 flex items-center justify-between">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                        <Icon className="h-5 w-5" />
-                      </span>
-                      {item.badge && (
-                        <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-primary">
-                          {item.badge}
-                        </span>
-                      )}
-                    </div>
-                    <CardTitle>{item.title}</CardTitle>
-                    <CardDescription className="leading-6">{item.description}</CardDescription>
-                  </CardHeader>
-                  {item.href && (
-                    <CardContent>
-                      <Link href={item.href} className="text-sm font-medium text-primary hover:underline">
-                        Explore {item.title} →
-                      </Link>
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <div id="solutions">
-        <PublicContentSection section={solutionHub} />
-      </div>
       <div id="academy">
         <PublicContentSection section={academy} muted />
       </div>
