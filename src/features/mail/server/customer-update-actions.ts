@@ -4,7 +4,6 @@ import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { getMailCommercialPlan } from '@/features/mail/commercial/plans';
 import { db } from '@/shared/db/cloudflare';
 import {
   mailContacts,
@@ -16,7 +15,7 @@ import {
 } from '@/shared/db/schema';
 
 import { pushMailQueueBatch } from './cloudflare';
-import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
+import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 import { getMailSendCapacity } from './sending-policy';
 import { getMailWorkspace, requireMailWorkspaceAccess } from './workspace';
 
@@ -53,7 +52,7 @@ export async function createCustomerUpdate(tenantSlug: string, formData: FormDat
   const planKey = await resolveTenantMailPlanKey(tenant.id, workspace.planKey, tenant.slug);
   const recipientLimit = planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY
     ? 3000
-    : getMailCommercialPlan(planKey).limits.maxRecipientsPerCustomerUpdate;
+    : (await resolveTenantMailPlanLimits(tenant.id, planKey))!.maxRecipientsPerCustomerUpdate;
 
   const [contacts, suppressions] = await Promise.all([
     db.query.mailContacts.findMany({ where: and(eq(mailContacts.tenantId, tenant.id), eq(mailContacts.status, 'active')), limit: recipientLimit }),

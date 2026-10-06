@@ -1,6 +1,5 @@
 import { and, count, eq, gte } from 'drizzle-orm';
 
-import { getMailCommercialPlan } from '@/features/mail/commercial/plans';
 import { db } from '@/shared/db/cloudflare';
 import {
   mailCustomerUpdateRecipients,
@@ -10,7 +9,7 @@ import {
   tenants,
 } from '@/shared/db/schema';
 
-import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
+import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
 export type MailCapacity = {
   allowed: boolean;
@@ -63,7 +62,7 @@ export async function getMailSendCapacity(
   }
 
   const planKey = await resolveTenantMailPlanKey(tenantId, workspace.planKey, tenant.slug);
-  const plan = planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY ? null : getMailCommercialPlan(planKey);
+  const limits = planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY ? null : await resolveTenantMailPlanLimits(tenantId, planKey);
   const sinceDay = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const sinceMonth = startOfUtcMonth();
 
@@ -102,7 +101,7 @@ export async function getMailSendCapacity(
     };
   }
 
-  if (!plan) {
+  if (!limits) {
     return {
       allowed: true,
       limit: dailyLimit,
@@ -116,8 +115,8 @@ export async function getMailSendCapacity(
     ? Number(monthUpdates[0]?.value || 0)
     : Number(monthMessages[0]?.value || 0);
   const monthlyLimit = category === 'customer_update'
-    ? plan.limits.customerUpdateDeliveriesPerMonth
-    : plan.limits.outboundMessagesPerMonth;
+    ? limits.customerUpdateDeliveriesPerMonth
+    : limits.outboundMessagesPerMonth;
   const monthlyRemaining = Math.max(0, monthlyLimit - monthlyUsed);
   if (requested > monthlyRemaining) {
     return {

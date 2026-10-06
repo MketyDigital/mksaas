@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -15,6 +15,7 @@ import {
   getCloudflareEmailRouting,
 } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
+import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
 function normalizeDomain(value:string){
   return value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/\.$/,'');
@@ -24,6 +25,13 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
   if(!workspace) redirect(`/app/${tenantSlug}/mail`);
+
+  const planKey=await resolveTenantMailPlanKey(tenant.id,workspace.planKey,tenant.slug);
+  const limits=await resolveTenantMailPlanLimits(tenant.id,planKey);
+  if(limits){
+    const [countRow]=await db.select({value:count()}).from(mailDomains).where(eq(mailDomains.tenantId,tenant.id));
+    if(Number(countRow?.value??0)>=limits.domains) redirect(`/app/${tenantSlug}/mail/domains?error=plan-limit`);
+  }
 
   const domain=normalizeDomain(String(formData.get('domain')||''));
   if(!/^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)){
