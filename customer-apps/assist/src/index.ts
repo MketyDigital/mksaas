@@ -1005,19 +1005,39 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const next = parseInt(String(account.balance || 0), 10) + delta;
     if (next < 0) return json({ error: "credit_adjustment_would_go_negative" }, 409);
     const now = unix();
-    await env.DB.batch([
+    const ledgerId = id("led");
+    const auditId = id("aud");
+    const adjustmentResults = await env.DB.batch([
       env.DB.prepare(
-        `UPDATE credit_accounts SET balance=?,lifetime_granted=lifetime_granted+CASE WHEN ?>0 THEN ? ELSE 0 END,
-         updated_at=? WHERE customer_id=?`,
-      ).bind(next, delta, delta, now, customerId),
+        `UPDATE credit_accounts
+         SET balance=balance+?,
+             lifetime_granted=lifetime_granted+CASE WHEN ?>0 THEN ? ELSE 0 END,
+             lifetime_consumed=lifetime_consumed+CASE WHEN ?>0 THEN 0 ELSE -? END,
+             updated_at=?
+         WHERE customer_id=? AND balance+?>=0`,
+      ).bind(delta, delta, delta, delta, delta, now, customerId, delta),
       env.DB.prepare(
-        "INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
-      ).bind(id("led"), customerId, delta, "operator_adjustment", null, next, JSON.stringify({ reason }), now),
+        `INSERT INTO credit_ledger (id,customer_id,delta,kind,reference_id,balance_after,metadata_json,created_at)
+         SELECT ?,customer_id,?,?,NULL,balance,?,? FROM credit_accounts
+         WHERE customer_id=? AND changes()=1`,
+      ).bind(ledgerId, delta, "operator_adjustment", JSON.stringify({ reason }), now, customerId),
       env.DB.prepare(
-        "INSERT INTO audit_events (id,actor_type,customer_id,action,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
-      ).bind(id("aud"), "operator", customerId, "credits.adjusted", "customer", customerId, JSON.stringify({ delta, reason, balanceAfter: next }), now),
+        `INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+         SELECT ?, 'operator', ?, ?, 'credits.adjusted', 'customer', ?,
+           json_object('delta',?,'reason',?,'balanceAfter',(SELECT balance FROM credit_accounts WHERE customer_id=?)), ?
+         WHERE changes()=1`,
+      ).bind(auditId, operator.operatorUserId, customerId, customerId, delta, reason, customerId, now),
     ]);
-    return json({ ok: true, balance: mkreditsFromCreditAtoms(next) });
+    if (!Number(adjustmentResults[0]?.meta?.changes || 0)) {
+      return json({ error: "credit_adjustment_would_go_negative" }, 409);
+    }
+    const updated = await env.DB.prepare("SELECT balance,lifetime_consumed FROM credit_accounts WHERE customer_id=? LIMIT 1")
+      .bind(customerId).first<any>();
+    return json({
+      ok: true,
+      balance: mkreditsFromCreditAtoms(Number(updated?.balance || 0)),
+      used: mkreditsFromCreditAtoms(Number(updated?.lifetime_consumed || 0)),
+    });
   }
 
   if (url.pathname === "/api/ops/ledger" && request.method === "GET") {

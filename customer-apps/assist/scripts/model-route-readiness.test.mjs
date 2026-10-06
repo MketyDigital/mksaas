@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { routeTargetMediaSupported } from "../src/providers/route-readiness.ts";
+import { routeTargetMediaSupported, routeTargetPricingConfigured } from "../src/providers/route-readiness.ts";
 
 const api = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const ui = await readFile(new URL("../src/ui.ts", import.meta.url), "utf8");
@@ -54,4 +54,22 @@ test("testVisionAndSpeechReadinessUseValidatedPricedTargets", () => {
   assert.equal(routeTargetMediaSupported({ provider: "bedrock" }, "mkety-media-vision"), false);
   assert.equal(routeTargetMediaSupported({ provider: "gemini" }, "mkety-media-speech"), true);
   assert.match(runtime, /routeTargetPricingConfigured\(target, alias\)/);
+});
+
+test("testSpeechRouteRequiresCustomerAudioRateEvenWhenTokenRatesExist", () => {
+  assert.equal(routeTargetPricingConfigured({
+    input_credits_per_million: 500,
+    output_credits_per_million: 500,
+    audio_credits_per_minute: 0,
+  }, "mkety-media-speech"), false);
+  assert.equal(routeTargetPricingConfigured({ audio_credits_per_minute: 2 }, "mkety-media-speech"), true);
+});
+
+test("testVisionRouteRequiresCustomerImageRate", () => {
+  assert.equal(routeTargetPricingConfigured({
+    input_credits_per_million: 500,
+    output_credits_per_million: 500,
+    image_credits: 0,
+  }, "mkety-media-vision"), false);
+  assert.equal(routeTargetPricingConfigured({ image_credits: 3 }, "mkety-media-vision"), true);
 });
