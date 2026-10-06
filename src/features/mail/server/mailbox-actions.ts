@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq } from 'drizzle-orm';
+import { and, count, countDistinct, eq, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -9,6 +9,7 @@ import { mailDomains, mailMailboxes, mailMailboxMembers, mailWorkspaces } from '
 
 import { createCloudflareEmailWorkerRule, setCloudflareEmailCatchAll } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
+import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
 function cleanLocalPart(value:string){
   return value.trim().toLowerCase().replace(/[^a-z0-9._+-]/g,'').slice(0,128);
@@ -41,6 +42,30 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     where:and(eq(mailDomains.id,domainId),eq(mailDomains.tenantId,tenant.id)),
   });
   if(!domain) redirect(`/app/${tenantSlug}/mail/mailboxes?error=domain`);
+
+  const planKey=await resolveTenantMailPlanKey(tenant.id,workspace.planKey,tenant.slug);
+  const limits=await resolveTenantMailPlanLimits(tenant.id,planKey);
+  if(limits && type!=='alias'){
+    const [mailboxCount]=await db.select({value:count()}).from(mailMailboxes).where(and(
+      eq(mailMailboxes.tenantId,tenant.id),ne(mailMailboxes.type,'alias'),
+    ));
+    if(Number(mailboxCount?.value??0)>=limits.mailboxes) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
+  }
+  if(limits && type==='shared'){
+    const [sharedCount]=await db.select({value:count()}).from(mailMailboxes).where(and(
+      eq(mailMailboxes.tenantId,tenant.id),eq(mailMailboxes.type,'shared'),
+    ));
+    if(Number(sharedCount?.value??0)>=limits.sharedInboxes) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
+  }
+  if(limits){
+    const [seats]=await db.select({value:countDistinct(mailMailboxMembers.userId)})
+      .from(mailMailboxMembers).where(eq(mailMailboxMembers.tenantId,tenant.id));
+    const existingSeat=await db.query.mailMailboxMembers.findFirst({
+      where:and(eq(mailMailboxMembers.tenantId,tenant.id),eq(mailMailboxMembers.userId,actor.userId)),
+      columns:{userId:true},
+    });
+    if(!existingSeat && Number(seats?.value??0)>=limits.teamSeats) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
+  }
 
   if(catchAll){
     await db.update(mailMailboxes).set({catchAll:false,updatedAt:new Date()}).where(and(eq(mailMailboxes.tenantId,tenant.id),eq(mailMailboxes.domainId,domain.id),eq(mailMailboxes.catchAll,true)));

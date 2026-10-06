@@ -7,6 +7,8 @@ import type { EnterpriseCheckoutProviderAdapter } from '../providers/types';
 
 interface EnterpriseCheckoutRequestContext {
   idempotencyKey: string;
+  mailEnterpriseOfferId?: string;
+  mailEnterpriseTenantId?: string;
 }
 
 interface EnterpriseCheckoutServiceDependencies {
@@ -15,13 +17,19 @@ interface EnterpriseCheckoutServiceDependencies {
   createOrderId?: () => string;
 }
 
-function createRequestFingerprint(input: ReturnType<typeof parseEnterpriseCheckoutInput>): string {
+function createRequestFingerprint(
+  input: ReturnType<typeof parseEnterpriseCheckoutInput>,
+  mailEnterpriseOfferId?: string,
+  mailEnterpriseTenantId?: string,
+): string {
   return JSON.stringify({
     customer: input.customer,
     project: input.project,
     amountMinor: input.amountMinor.toString(),
     currency: input.currency,
     provider: input.provider,
+    mailEnterpriseOfferId: mailEnterpriseOfferId ?? null,
+    mailEnterpriseTenantId: mailEnterpriseTenantId ?? null,
   });
 }
 
@@ -55,7 +63,11 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
       }
 
       const input = parseEnterpriseCheckoutInput(rawInput);
-      const requestFingerprint = createRequestFingerprint(input);
+      const requestFingerprint = createRequestFingerprint(
+        input,
+        context.mailEnterpriseOfferId,
+        context.mailEnterpriseTenantId,
+      );
       const existing = await repository.findByIdempotencyKey(context.idempotencyKey);
 
       if (existing) {
@@ -83,7 +95,11 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
         checkoutStatus: 'created',
         paymentStatus: 'pending',
         idempotencyKey: context.idempotencyKey,
-        metadata: { requestFingerprint },
+        metadata: {
+          requestFingerprint,
+          ...(context.mailEnterpriseOfferId ? { mailEnterpriseOfferId: context.mailEnterpriseOfferId } : {}),
+          ...(context.mailEnterpriseTenantId ? { mailEnterpriseTenantId: context.mailEnterpriseTenantId } : {}),
+        },
       });
 
       try {

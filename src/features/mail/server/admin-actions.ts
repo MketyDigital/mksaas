@@ -1,11 +1,16 @@
 'use server';
 
-import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
+import { enterpriseCheckoutService } from '@/features/enterprise-checkout/server/service';
+import { formatUsdMinorUnits, parseUsdAmountToMinorUnits } from '@/features/enterprise-checkout/domain';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { createFirstPartySmtpCredentialRecord } from '@/features/mail/server/first-party-smtp-credential';
+import { sendPlatformMail } from '@/features/mail/server/platform-sender';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { withServerActionDatabase } from '@/shared/db/server-action';
+import { revalidatePath } from 'next/cache';
 import { db } from '@/shared/db';
 import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import {
@@ -14,10 +19,13 @@ import {
   billingPlanVersions,
   mailAppPasswords,
   mailDomains,
+  mailEnterpriseOffers,
   mailMailboxes,
   mailWorkspaces,
   tenantEntitlementOverrides,
+  tenantMemberships,
   tenants,
+  users,
 } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
@@ -25,6 +33,7 @@ import { logAuditEvent } from '@/shared/services/audit-service';
 import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
 import { getFirstPartyMailTenantId } from './runtime-config';
 import { isMailPlanKey } from '../commercial/plans';
+import { parseMailEnterpriseOfferInput } from '../commercial/enterprise-offers';
 
 async function requireMailOps(opsTenantSlug: string) {
   const actor = await requirePlatformControlAccess(opsTenantSlug);
@@ -230,6 +239,165 @@ export async function createFirstPartySmtpCredential(
     await db.update(mailAppPasswords).set({ revokedAt: new Date() }).where(eq(mailAppPasswords.id, credential.id));
     return { error: 'Could not create the first-party SMTP credential. Check workspace readiness and try again.' };
   }
+}
+
+export interface MailEnterpriseOfferPaymentLink {
+  offerId: string;
+  orderId: string;
+  provider: 'flutterwave' | 'kora';
+  redirectUrl: string;
+  status: 'checkout_created' | 'awaiting_confirmation';
+  notificationQueued: boolean;
+}
+
+async function createMailEnterpriseOfferPaymentLinkImpl(
+  opsTenantSlug: string,
+  formData: FormData,
+): Promise<MailEnterpriseOfferPaymentLink> {
+  const actor = await requireMailOps(opsTenantSlug);
+  const targetTenantId = String(formData.get('targetTenantId') ?? '').trim();
+  const name = String(formData.get('offerName') ?? '').trim();
+  const amountMinor = parseUsdAmountToMinorUnits(String(formData.get('amountUsd') ?? ''));
+  const termValue = String(formData.get('termDays') ?? '').trim();
+  const termDays = termValue === 'unlimited' ? null : Number(termValue);
+  const provider = String(formData.get('provider') ?? '');
+  if (provider !== 'flutterwave' && provider !== 'kora') {
+    throw new Error('Mail Enterprise checkout supports Flutterwave or Kora only.');
+  }
+  const tenant = await db.query.tenants.findFirst({
+    where: eq(tenants.id, targetTenantId),
+    columns: { id: true, slug: true, name: true },
+  });
+  if (!tenant || tenant.id === getFirstPartyMailTenantId() || tenant.slug === 'mkety-ops') {
+    throw new Error('Select an eligible customer workspace for the Mail offer.');
+  }
+  const existingOffer = await db.query.mailEnterpriseOffers.findFirst({
+    where: and(
+      eq(mailEnterpriseOffers.tenantId, tenant.id),
+      or(
+        eq(mailEnterpriseOffers.status, 'awaiting_payment'),
+        and(
+          eq(mailEnterpriseOffers.status, 'active'),
+          or(isNull(mailEnterpriseOffers.endsAt), gt(mailEnterpriseOffers.endsAt, new Date())),
+        ),
+      ),
+    ),
+  });
+  if (existingOffer) {
+    throw new Error('This workspace already has an active Mail Enterprise offer or a payment awaiting settlement.');
+  }
+  const workspace = await db.query.mailWorkspaces.findFirst({
+    where: eq(mailWorkspaces.tenantId, tenant.id),
+    columns: { status: true },
+  });
+  if (workspace?.status === 'suspended') throw new Error('A suspended Mail workspace cannot receive a new offer.');
+
+  const limits = {
+    domains: Number(formData.get('domains')),
+    mailboxes: Number(formData.get('mailboxes')),
+    teamSeats: Number(formData.get('teamSeats')),
+    sharedInboxes: Number(formData.get('sharedInboxes')),
+    storageGb: Number(formData.get('storageGb')),
+    outboundMessagesPerMonth: Number(formData.get('outboundMessagesPerMonth')),
+    customerUpdateDeliveriesPerMonth: Number(formData.get('customerUpdateDeliveriesPerMonth')),
+    maxRecipientsPerCustomerUpdate: Number(formData.get('maxRecipientsPerCustomerUpdate')),
+  };
+  const offerInput = parseMailEnterpriseOfferInput({
+    tenantId: tenant.id,
+    name,
+    description: String(formData.get('description') ?? ''),
+    amountMinor,
+    termDays,
+    limits,
+  });
+  const fullName = String(formData.get('customerName') ?? '').trim();
+  const email = String(formData.get('customerEmail') ?? '').trim().toLowerCase();
+  const companyName = String(formData.get('companyName') ?? '').trim() || tenant.name;
+  if (fullName.length < 2 || fullName.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Enter the customer billing contact name and a valid email address.');
+  }
+  const [customerMember] = await db.select({ userId: users.id })
+    .from(tenantMemberships)
+    .innerJoin(users, eq(users.id, tenantMemberships.userId))
+    .where(and(
+      eq(tenantMemberships.tenantId, tenant.id),
+      sql`lower(${users.email}) = ${email}`,
+      isNotNull(users.emailVerified),
+    ))
+    .limit(1);
+  if (!customerMember) {
+    throw new Error('The billing contact must have a verified account in this workspace. Invite them first, then issue the payment link.');
+  }
+
+  const [offer] = await db.insert(mailEnterpriseOffers).values({
+    tenantId: tenant.id,
+    name: offerInput.name,
+    description: offerInput.description,
+    amountMinor: offerInput.amountMinor,
+    currency: 'USD',
+    termDays: offerInput.termDays,
+    limits: offerInput.limits,
+    status: 'draft',
+    createdByUserId: actor.userId,
+  }).returning({ id: mailEnterpriseOffers.id });
+  if (!offer) throw new Error('Mail Enterprise offer could not be created.');
+
+  try {
+    const checkout = await enterpriseCheckoutService.createEnterpriseCheckout({
+      fullName,
+      companyName,
+      email,
+      scopeId: 'mail',
+      projectName: offerInput.name,
+      projectDescription: offerInput.description ?? `Mkety Mail Enterprise offer for ${tenant.name}.`,
+      amount: formatUsdMinorUnits(offerInput.amountMinor),
+      currency: 'USD',
+      provider,
+    }, {
+      idempotencyKey: `mail-offer-${offer.id}`,
+      mailEnterpriseOfferId: offer.id,
+      mailEnterpriseTenantId: tenant.id,
+    });
+    await db.update(mailEnterpriseOffers).set({
+      orderId: checkout.orderId,
+      status: 'awaiting_payment',
+      updatedAt: new Date(),
+    }).where(eq(mailEnterpriseOffers.id, offer.id));
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'mail.enterprise_offer.payment_link_created',
+      entityType: 'mail_enterprise_offer',
+      entityId: offer.id,
+      changes: { status: 'awaiting_payment', amountMinor: offerInput.amountMinor.toString(), currency: 'USD', termDays: offerInput.termDays },
+      metadata: { targetTenantId: tenant.id, orderId: checkout.orderId, provider },
+    });
+    const notification = await sendPlatformMail({
+      category: 'billing',
+      to: email,
+      subject: `Your ${offerInput.name} payment link is ready`,
+      text: [
+        `Review the agreed Mkety Mail Enterprise offer: ${offerInput.name}.`,
+        `Amount: USD ${formatUsdMinorUnits(offerInput.amountMinor)}.`,
+        `Payment provider: ${provider}.`,
+        `Complete payment securely here: ${checkout.redirectUrl}`,
+        'Mail access and included limits activate after verified payment settles.',
+      ].join('\n\n'),
+      idempotencyKey: `mail-enterprise-offer-payment-link:${offer.id}`,
+    }).catch(() => ({ ok: false as const }));
+    revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
+    return { offerId: offer.id, ...checkout, notificationQueued: notification.ok };
+  } catch (error) {
+    await db.update(mailEnterpriseOffers).set({ status: 'cancelled', updatedAt: new Date() })
+      .where(eq(mailEnterpriseOffers.id, offer.id));
+    throw error;
+  }
+}
+
+export async function createMailEnterpriseOfferPaymentLink(
+  opsTenantSlug: string,
+  formData: FormData,
+): Promise<MailEnterpriseOfferPaymentLink> {
+  return withServerActionDatabase(() => createMailEnterpriseOfferPaymentLinkImpl(opsTenantSlug, formData));
 }
 
 
