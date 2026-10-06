@@ -21,7 +21,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     eyebrow: 'Platform',
     headline: 'One connected platform for modern digital systems.',
     intro:
-      'Mkety brings focused workspaces, projects, teams, solutions, usage and commercial controls together in one product ecosystem.',
+      'Build applications, AI agents and automations with Mkety Platform. Focused Workspaces connect projects, teams, deployments, usage, credits and billing in one software platform.',
     sections: [
       {
         eyebrow: 'Core model',
@@ -295,15 +295,15 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
       },
       {
         eyebrow: 'Deploy Workspace',
-        title: 'Mkety-managed edge and application delivery.',
+        title: 'Serverless and edge application deployment.',
         description:
-          'Deploy is presented as a Mkety product. Mkety combines managed edge/serverless delivery with persistent backend infrastructure so lightweight application traffic, routing and delivery can remain separate from workloads that require durable compute or data services.',
+          'Deploy is presented as a Mkety product. Mkety combines serverless and edge application delivery with persistent backend infrastructure so lightweight application traffic, routing and delivery can remain separate from workloads that require durable compute or data services.',
         items: [
           {
             key: 'edge-runtime',
             title: 'Edge/serverless runtime',
             description:
-              'Deploy lightweight web applications, APIs, routing logic and supported serverless workloads through Mkety-managed edge deployment.',
+              'Deploy lightweight web applications, APIs, routing logic and supported serverless workloads through Mkety’s edge application runtime.',
           },
           {
             key: 'preview-production',
@@ -501,13 +501,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
   {
     slug: 'enterprise',
     title: 'Mkety Enterprise',
-    seoTitle: 'Mkety Enterprise | Custom systems and implementations',
+    seoTitle: 'Mkety Enterprise | Platform extensions and custom infrastructure',
     seoDescription:
-      'Mkety Enterprise delivers Enterprise AI, Enterprise Mail, Trading, custom systems, managed implementations, private or dedicated infrastructure, specialized integrations and contractable service levels.',
-    eyebrow: 'Enterprise',
-    headline: 'Custom delivery for requirements beyond standard self-service.',
+      'Extend Mkety Platform with Enterprise AI, Enterprise Mail, Trading, specialized integrations, private or dedicated infrastructure and agreed service levels.',
+    eyebrow: 'Enterprise & Custom',
+    headline: 'Extend the Mkety platform for specialized requirements.',
     intro:
-      'Use Mkety Enterprise for Enterprise AI, Enterprise Mail, specialized systems, private or dedicated infrastructure, managed delivery, trading infrastructure, migration, data-residency requirements and organization-specific service commitments.',
+      'Build on Mkety’s software platform with Enterprise AI, Enterprise Mail, specialized integrations and systems. Private or dedicated infrastructure, Trading, migration, data-residency requirements and organization-specific service commitments are scoped under separate Enterprise terms.',
     sections: [
       {
         eyebrow: 'Custom delivery',
@@ -632,7 +632,7 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
     title: 'Mkety Infrastructure',
     seoTitle: 'Mkety Infrastructure | Edge, cloud, deployment and provider architecture',
     seoDescription:
-      'See how Mkety combines managed edge/serverless delivery, persistent cloud infrastructure, customer deployment domains, storage, databases and provider abstractions.',
+      'See how Mkety combines serverless and edge application delivery, persistent cloud infrastructure, customer deployment domains, storage, databases and provider abstractions.',
     eyebrow: 'Infrastructure',
     headline: 'Mkety operates as one platform across selected edge and cloud infrastructure.',
     intro:
@@ -747,13 +747,13 @@ export const MKETY_PUBLIC_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
   {
     slug: 'about',
     title: 'About Mkety',
-    seoTitle: 'About Mkety | Technology platform and solutions company',
+    seoTitle: 'About Mkety | Software platform for building, automation and deployment',
     seoDescription:
       'Learn how Mkety combines Platform software, Academy learning, ready-made solutions and enterprise delivery.',
     eyebrow: 'About',
     headline: 'Technology designed around building useful systems and valuable skills.',
     intro:
-      'Mkety brings software, practical learning, reusable solutions and enterprise delivery together in one product ecosystem.',
+      'Mkety is a software platform for building and operating applications, AI agents and automations. Self-service Workspaces and Mkety One connect teams, projects, usage and billing, with Academy learning, reusable SolutionHub blueprints and Enterprise extensions supporting the platform.',
     sections: [
       {
         eyebrow: 'What Mkety is',
