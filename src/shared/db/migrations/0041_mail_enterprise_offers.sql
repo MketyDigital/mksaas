@@ -18,3 +18,4 @@ CREATE TABLE "saas_template"."mail_enterprise_offers" (
 );
 CREATE UNIQUE INDEX "mail_enterprise_offers_order_uidx" ON "saas_template"."mail_enterprise_offers" USING btree ("order_id");
 CREATE INDEX "mail_enterprise_offers_tenant_status_idx" ON "saas_template"."mail_enterprise_offers" USING btree ("tenant_id", "status");
+CREATE UNIQUE INDEX "mail_enterprise_offers_tenant_open_uidx" ON "saas_template"."mail_enterprise_offers" USING btree ("tenant_id") WHERE "status" IN ('draft', 'awaiting_payment', 'active');
