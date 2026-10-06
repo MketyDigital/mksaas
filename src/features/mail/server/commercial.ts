@@ -5,6 +5,7 @@ import { drizzleEntitlementSource } from '@/features/entitlements/server/drizzle
 import { db } from '@/shared/db/cloudflare';
 import { billingPlans, billingPlanVersions, billingSubscriptions } from '@/shared/db/schema';
 
+import { getFirstPartyMailTenantId } from './runtime-config';
 import { isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 
 export const MAIL_INTERNAL_CUSTOM_PROFILE_KEY = 'mail-internal-custom' as const;
@@ -17,7 +18,7 @@ export async function resolveTenantMailPlanKey(
   tenantSlug?: string | null,
 ): Promise<MailWorkspacePlanKey> {
   if (fallbackPlanKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY) {
-    const configuredTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() ?? '';
+    const configuredTenantId = getFirstPartyMailTenantId().trim();
     if (!tenantSlug) {
       throw new Error('Internal custom Mail profiles must use the reserved-tenant profile resolver.');
     }

@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
+import { getMailInternalSecret } from '@/features/mail/server/runtime-config';
 import { db } from '@/shared/db/cloudflare';
 import { mailCustomerUpdateRecipients ,
   mailCustomerUpdates,
@@ -34,7 +35,7 @@ function eventName(type:string){
 }
 
 export async function POST(request:Request){
-  const expected=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  const expected=getMailInternalSecret();
   if(!expected||request.headers.get('authorization')!==`Bearer ${expected}`) return NextResponse.json({ok:false},{status:401});
 
   const event=await request.json().catch(()=>null) as MailEventBody|null;

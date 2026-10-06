@@ -23,6 +23,7 @@ import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
 import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
+import { getFirstPartyMailTenantId } from './runtime-config';
 import { isMailPlanKey } from '../commercial/plans';
 
 async function requireMailOps(opsTenantSlug: string) {
@@ -33,7 +34,7 @@ async function requireMailOps(opsTenantSlug: string) {
 
 async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
   const actor = await requireMailOps(opsTenantSlug);
-  const configuredTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() ?? '';
+  const configuredTenantId = getFirstPartyMailTenantId().trim();
   if (!configuredTenantId) throw new Error('First-party Mail tenant is not configured.');
 
   const workspace = await db.transaction(async (tx) => {
@@ -163,7 +164,7 @@ export async function createFirstPartySmtpCredential(
   _formData: FormData,
 ): Promise<{ secret?: string; error?: string }> {
   const actor = await requireMailOps(opsTenantSlug);
-  const configuredTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID ?? '';
+  const configuredTenantId = getFirstPartyMailTenantId();
   if (!configuredTenantId) return { error: 'First-party Mail tenant is not configured.' };
 
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, configuredTenantId) });

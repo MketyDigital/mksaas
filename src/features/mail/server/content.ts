@@ -1,6 +1,8 @@
+import { getMailInternalSecret } from './runtime-config';
+
 export async function fetchMailContent(key:string){
   const url=process.env.MKETY_MAIL_CONTENT_URL||'';
-  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  const secret=getMailInternalSecret();
   if(!url||!secret||!key) return null;
   const response=await fetch(url,{
     method:'POST',
@@ -52,7 +54,7 @@ export async function storeMailContent(
   contentType='application/octet-stream',
 ){
   const url=process.env.MKETY_MAIL_CONTENT_URL||'';
-  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  const secret=getMailInternalSecret();
   if(!url||!secret||!key.startsWith('mail/')||key.includes('..')) {
     throw new Error('Mkety Mail content storage is not configured.');
   }
