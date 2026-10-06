@@ -9,6 +9,7 @@ interface EnterpriseCheckoutRequestContext {
   idempotencyKey: string;
   mailEnterpriseOfferId?: string;
   mailEnterpriseTenantId?: string;
+  onOrderCreated?: (orderId: string) => Promise<void>;
 }
 
 interface EnterpriseCheckoutServiceDependencies {
@@ -103,6 +104,7 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
       });
 
       try {
+        if (context.onOrderCreated) await context.onOrderCreated(orderId);
         const provider = getProvider(input.provider);
         const providerResult = await provider.createCheckout({ ...input, orderId });
         await repository.updateCheckout({
