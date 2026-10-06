@@ -1,6 +1,6 @@
 'use server';
 
-import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
 import { enterpriseCheckoutService } from '@/features/enterprise-checkout/server/service';
@@ -271,26 +271,6 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
   if (!tenant || tenant.id === getFirstPartyMailTenantId() || tenant.slug === 'mkety-ops') {
     throw new Error('Select an eligible customer workspace for the Mail offer.');
   }
-  const existingOffer = await db.query.mailEnterpriseOffers.findFirst({
-    where: and(
-      eq(mailEnterpriseOffers.tenantId, tenant.id),
-      or(
-        eq(mailEnterpriseOffers.status, 'awaiting_payment'),
-        and(
-          eq(mailEnterpriseOffers.status, 'active'),
-          or(isNull(mailEnterpriseOffers.endsAt), gt(mailEnterpriseOffers.endsAt, new Date())),
-        ),
-      ),
-    ),
-  });
-  if (existingOffer) {
-    throw new Error('This workspace already has an active Mail Enterprise offer or a payment awaiting settlement.');
-  }
-  const workspace = await db.query.mailWorkspaces.findFirst({
-    where: eq(mailWorkspaces.tenantId, tenant.id),
-    columns: { status: true },
-  });
-  if (workspace?.status === 'suspended') throw new Error('A suspended Mail workspace cannot receive a new offer.');
 
   const limits = {
     domains: Number(formData.get('domains')),
@@ -329,18 +309,57 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
     throw new Error('The billing contact must have a verified account in this workspace. Invite them first, then issue the payment link.');
   }
 
-  const [offer] = await db.insert(mailEnterpriseOffers).values({
-    tenantId: tenant.id,
-    name: offerInput.name,
-    description: offerInput.description,
-    amountMinor: offerInput.amountMinor,
-    currency: 'USD',
-    termDays: offerInput.termDays,
-    limits: offerInput.limits,
-    status: 'draft',
-    createdByUserId: actor.userId,
-  }).returning({ id: mailEnterpriseOffers.id });
-  if (!offer) throw new Error('Mail Enterprise offer could not be created.');
+  const now = new Date();
+  const offer = await db.transaction(async (tx) => {
+    const [lockedTenant] = await tx.select({ id: tenants.id })
+      .from(tenants)
+      .where(eq(tenants.id, tenant.id))
+      .for('update')
+      .limit(1);
+    if (!lockedTenant) throw new Error('Select an eligible customer workspace for the Mail offer.');
+
+    await tx.update(mailEnterpriseOffers).set({ status: 'expired', updatedAt: now }).where(and(
+      eq(mailEnterpriseOffers.tenantId, tenant.id),
+      eq(mailEnterpriseOffers.status, 'active'),
+      isNotNull(mailEnterpriseOffers.endsAt),
+      lte(mailEnterpriseOffers.endsAt, now),
+    ));
+
+    const [existingOffer] = await tx.select({ id: mailEnterpriseOffers.id })
+      .from(mailEnterpriseOffers)
+      .where(and(
+        eq(mailEnterpriseOffers.tenantId, tenant.id),
+        or(
+          eq(mailEnterpriseOffers.status, 'draft'),
+          eq(mailEnterpriseOffers.status, 'awaiting_payment'),
+          eq(mailEnterpriseOffers.status, 'active'),
+        ),
+      ))
+      .limit(1);
+    if (existingOffer) {
+      throw new Error('This workspace already has an active Mail Enterprise offer or a payment awaiting settlement.');
+    }
+
+    const [workspace] = await tx.select({ status: mailWorkspaces.status })
+      .from(mailWorkspaces)
+      .where(eq(mailWorkspaces.tenantId, tenant.id))
+      .limit(1);
+    if (workspace?.status === 'suspended') throw new Error('A suspended Mail workspace cannot receive a new offer.');
+
+    const [created] = await tx.insert(mailEnterpriseOffers).values({
+      tenantId: tenant.id,
+      name: offerInput.name,
+      description: offerInput.description,
+      amountMinor: offerInput.amountMinor,
+      currency: 'USD',
+      termDays: offerInput.termDays,
+      limits: offerInput.limits,
+      status: 'draft',
+      createdByUserId: actor.userId,
+    }).returning({ id: mailEnterpriseOffers.id });
+    if (!created) throw new Error('Mail Enterprise offer could not be created.');
+    return created;
+  });
 
   try {
     const checkout = await enterpriseCheckoutService.createEnterpriseCheckout({
@@ -357,12 +376,19 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
       idempotencyKey: `mail-offer-${offer.id}`,
       mailEnterpriseOfferId: offer.id,
       mailEnterpriseTenantId: tenant.id,
+      onOrderCreated: async (orderId) => {
+        const [associated] = await db.update(mailEnterpriseOffers).set({
+          orderId,
+          status: 'awaiting_payment',
+          updatedAt: new Date(),
+        }).where(and(
+          eq(mailEnterpriseOffers.id, offer.id),
+          eq(mailEnterpriseOffers.status, 'draft'),
+          isNull(mailEnterpriseOffers.orderId),
+        )).returning({ id: mailEnterpriseOffers.id });
+        if (!associated) throw new Error('Mail Enterprise offer could not be linked to its payment order.');
+      },
     });
-    await db.update(mailEnterpriseOffers).set({
-      orderId: checkout.orderId,
-      status: 'awaiting_payment',
-      updatedAt: new Date(),
-    }).where(eq(mailEnterpriseOffers.id, offer.id));
     await logAuditEvent({
       actorId: actor.userId,
       action: 'mail.enterprise_offer.payment_link_created',
@@ -395,7 +421,11 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
     };
   } catch (error) {
     await db.update(mailEnterpriseOffers).set({ status: 'cancelled', updatedAt: new Date() })
-      .where(eq(mailEnterpriseOffers.id, offer.id));
+      .where(and(
+        eq(mailEnterpriseOffers.id, offer.id),
+        eq(mailEnterpriseOffers.status, 'draft'),
+        isNull(mailEnterpriseOffers.orderId),
+      ));
     throw error;
   }
 }
