@@ -288,6 +288,13 @@
       "when": 1790974800000,
       "tag": "0040_mail_platform_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790978400000,
+      "tag": "0041_mail_enterprise_offers",
+      "breakpoints": true
     }
   ]
 }

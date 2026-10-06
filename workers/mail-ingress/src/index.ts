@@ -21,6 +21,7 @@ type MailBucket={
     httpMetadata?:{contentType?:string};
     customMetadata?:Record<string,string>;
   }):Promise<unknown>;
+  delete(keys:string|string[]):Promise<void>;
 };
 
 type Env={
@@ -58,10 +59,6 @@ export default {
       return;
     }
 
-    if(resolved.forwardingAddress){
-      await message.forward(resolved.forwardingAddress);
-    }
-
     const messageObjectId=crypto.randomUUID();
     const baseKey=`mail/${resolved.tenantId}/${resolved.mailboxId}/${messageObjectId}`;
     const rawKey=`${baseKey}/raw.eml`;
@@ -92,9 +89,17 @@ export default {
       await env.MAIL_STORAGE.put(attachmentKey,attachment.bytes,{httpMetadata:{contentType:attachment.contentType}});
       attachmentManifest.push({filename:attachment.filename,contentType:attachment.contentType,r2Key:attachmentKey,size:attachment.bytes.byteLength});
     }
+    const manifestText=attachmentManifest.length?JSON.stringify(attachmentManifest):'';
     if(attachmentManifest.length){
-      await env.MAIL_STORAGE.put(`${baseKey}/attachments.json`,JSON.stringify(attachmentManifest),{httpMetadata:{contentType:'application/json'}});
+      await env.MAIL_STORAGE.put(`${baseKey}/attachments.json`,manifestText,{httpMetadata:{contentType:'application/json'}});
     }
+
+    const storedKeys=[rawKey,htmlR2Key,textR2Key,...attachmentManifest.map((item)=>item.r2Key),attachmentManifest.length?`${baseKey}/attachments.json`:undefined].filter((key):key is string=>Boolean(key));
+    const storageBytes=rawBytes.byteLength+
+      new TextEncoder().encode(parsed.html).byteLength+
+      new TextEncoder().encode(parsed.text).byteLength+
+      attachmentManifest.reduce((total,item)=>total+item.size,0)+
+      new TextEncoder().encode(manifestText).byteLength;
 
     const preview=(parsed.text||parsed.html.replace(/<[^>]+>/g,' ')).replace(/\s+/g,' ').trim().slice(0,240);
     const ingest=await internal(env,env.MKETY_MAIL_INGEST_URL,{
@@ -110,8 +115,17 @@ export default {
       preview,
       attachmentCount:attachmentManifest.length,
       rawSize:message.rawSize,
+      storageBytes,
       automated:Boolean(message.headers.get('x-mkety-auto-reply')||message.headers.get('auto-submitted')),
     });
-    if(!ingest.ok) throw new Error('Mkety Mail ingest failed.');
+    if(!ingest.ok){
+      await env.MAIL_STORAGE.delete(storedKeys).catch(()=>undefined);
+      if(ingest.status===507){
+        message.setReject('Mailbox storage limit reached');
+        return;
+      }
+      throw new Error('Mkety Mail ingest failed.');
+    }
+    if(resolved.forwardingAddress) await message.forward(resolved.forwardingAddress).catch(()=>undefined);
   },
 };

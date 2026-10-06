@@ -45,12 +45,14 @@ function makeOrder(overrides: Partial<PlatformEnterpriseOrder> = {}): PlatformEn
 describe('enterprise checkout service', () => {
   it('creates the auditable order before invoking the provider', async () => {
     const calls: string[] = [];
+    let createdMetadata: Record<string, unknown> | undefined;
     const repository: EnterpriseOrderRepository = {
       async findByIdempotencyKey() {
         return null;
       },
-      async createOrder() {
+      async createOrder(input) {
         calls.push('order');
+        createdMetadata = input.metadata;
         return makeOrder();
       },
       async updateCheckout() {
@@ -81,8 +83,13 @@ describe('enterprise checkout service', () => {
       getProvider: () => adapter,
       createOrderId: () => 'MKETY-ENT-1',
     });
-    await service.createEnterpriseCheckout(request, { idempotencyKey: 'aaaaaaaa' });
+    await service.createEnterpriseCheckout(request, {
+      idempotencyKey: 'aaaaaaaa',
+      mailEnterpriseOfferId: 'offer-1',
+      mailEnterpriseTenantId: 'tenant-1',
+    });
     expect(calls).toEqual(['order', 'provider', 'update']);
+    expect(createdMetadata).toMatchObject({ mailEnterpriseOfferId: 'offer-1', mailEnterpriseTenantId: 'tenant-1' });
   });
 
   it('replays the same idempotent checkout without calling the provider again', async () => {

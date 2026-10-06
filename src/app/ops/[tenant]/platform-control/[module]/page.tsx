@@ -13,6 +13,7 @@ import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-que
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
+import { MailEnterpriseOffersPanel } from '@/features/mail/components/MailEnterpriseOffersPanel';
 import { bootstrapFirstPartyMailWorkspace, createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
 import { listMediaTenantLinks, saveMediaTenantLink } from '@/features/media/server/links';
@@ -568,6 +569,15 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
 
       {isMailOperations && mailOperations ? (
         <div className="space-y-6">
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Enterprise and custom Mail offers</CardTitle>
+              <CardDescription>Create a customer-specific offer with explicit limits and a payment-provider checkout. Access and limits are activated only after a verified matching payment.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MailEnterpriseOffersPanel tenantSlug={tenant} customers={mailOperations.customers} offers={mailOperations.offers} />
+            </CardContent>
+          </Card>
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>
               <CardTitle>Internal Mail workspace</CardTitle>
