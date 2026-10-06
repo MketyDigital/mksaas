@@ -83,12 +83,17 @@ describe('enterprise checkout service', () => {
       getProvider: () => adapter,
       createOrderId: () => 'MKETY-ENT-1',
     });
-    await service.createEnterpriseCheckout(request, {
+    const onOrderCreated = async (orderId: string) => {
+      calls.push(`offer:${orderId}`);
+    };
+    const context = {
       idempotencyKey: 'aaaaaaaa',
       mailEnterpriseOfferId: 'offer-1',
       mailEnterpriseTenantId: 'tenant-1',
-    });
-    expect(calls).toEqual(['order', 'provider', 'update']);
+      onOrderCreated,
+    } as Parameters<typeof service.createEnterpriseCheckout>[1];
+    await service.createEnterpriseCheckout(request, context);
+    expect(calls).toEqual(['order', 'offer:MKETY-ENT-1', 'provider', 'update']);
     expect(createdMetadata).toMatchObject({ mailEnterpriseOfferId: 'offer-1', mailEnterpriseTenantId: 'tenant-1' });
   });
 
