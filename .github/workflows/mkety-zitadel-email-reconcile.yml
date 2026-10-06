@@ -420,7 +420,7 @@ jobs:
           if [ "$active_matches" = true ]; then
             [ -n "$active_id" ] || { echo "::error::Active SMTP provider id is missing."; exit 1; }
             echo "::add-mask::$active_id"
-            node -e "process.stdout.write(JSON.stringify({receiverAddress:process.env.RECEIVER}))" RECEIVER="$receiver" > /tmp/smtp-test-by-id.json
+            RECEIVER="$receiver" node -e "process.stdout.write(JSON.stringify({receiverAddress:process.env.RECEIVER}))" > /tmp/smtp-test-by-id.json
             code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}' \
               -X POST "$issuer/admin/v1/email/smtp/$active_id/_test" \
               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' \
