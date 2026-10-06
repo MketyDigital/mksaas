@@ -27,10 +27,10 @@ export function routeTargetPricingConfigured(target: Record<string, unknown>, al
   const input = Number(target.input_credits_per_million || 0);
   const output = Number(target.output_credits_per_million || 0);
   if (alias === "mkety-media-vision") {
-    return input > 0 || output > 0 || Number(target.image_credits || 0) > 0;
+    return Number(target.image_credits || 0) > 0;
   }
   if (alias === "mkety-media-speech") {
-    return input > 0 || output > 0 || Number(target.audio_credits_per_minute || 0) > 0;
+    return Number(target.audio_credits_per_minute || 0) > 0;
   }
   return input > 0 && output > 0;
 }
