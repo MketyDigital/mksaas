@@ -1,11 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
+import { getMailInternalSecret } from '@/features/mail/server/runtime-config';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes } from '@/shared/db/schema';
 
 function authorized(request:Request){
-  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  const secret=getMailInternalSecret();
   return Boolean(secret)&&request.headers.get('authorization')===`Bearer ${secret}`;
 }
 

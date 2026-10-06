@@ -6,6 +6,7 @@ import { mailDomains, mailMailboxes, mailMessages, mailSuppressions, mailWorkspa
 
 import { pushMailQueueBatch } from './cloudflare';
 import { type PlatformMailInput, sendPlatformMailWithDependencies } from './platform-sender-core';
+import { getFirstPartyMailTenantId } from './runtime-config';
 import { getMailSendCapacity } from './sending-policy';
 
 export { PLATFORM_MAIL_CATEGORIES, type PlatformMailCategory } from './platform-sender-core';
@@ -18,7 +19,7 @@ function databaseErrorCode(error: unknown) {
 export async function sendPlatformMail(input: PlatformMailInput) {
   return sendPlatformMailWithDependencies(input, {
     resolve: async () => {
-      const tenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() || '';
+      const tenantId = getFirstPartyMailTenantId().trim();
       if (!tenantId) return null;
       const [workspace, entitled, domain] = await Promise.all([
         db.query.mailWorkspaces.findFirst({ where: and(eq(mailWorkspaces.tenantId, tenantId), eq(mailWorkspaces.status, 'active')) }),
@@ -97,7 +98,7 @@ export async function sendPlatformMail(input: PlatformMailInput) {
         .set({ status: 'queued' })
         .where(and(
           eq(mailMessages.id, messageId),
-          eq(mailMessages.tenantId, process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID || ''),
+          eq(mailMessages.tenantId, getFirstPartyMailTenantId()),
           eq(mailMessages.status, 'failed'),
         ))
         .returning({ id: mailMessages.id });
@@ -109,7 +110,7 @@ export async function sendPlatformMail(input: PlatformMailInput) {
     setMessageStatus: async (messageId, status) => {
       await db.update(mailMessages)
         .set({ status })
-        .where(and(eq(mailMessages.id, messageId), eq(mailMessages.tenantId, process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID || '')));
+        .where(and(eq(mailMessages.id, messageId), eq(mailMessages.tenantId, getFirstPartyMailTenantId())));
     },
   });
 }

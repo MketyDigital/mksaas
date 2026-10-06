@@ -9,6 +9,7 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 import { resolveTenantMailPlanKey } from './commercial';
 import { getMailWorkspaceAccessMode } from './mail-access-policy';
+import { getFirstPartyMailTenantId } from './runtime-config';
 
 export async function getMailWorkspace(tenantSlug:string){
   const tenant=await getTenantBySlug(tenantSlug);
@@ -19,7 +20,7 @@ export async function getMailWorkspace(tenantSlug:string){
 export async function requireMailWorkspaceAccess(tenantSlug:string){
   const tenant=await getTenantBySlug(tenantSlug);
   if(!tenant) throw new Error('Tenant not found');
-  const reservedTenantId=process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim()||'';
+  const reservedTenantId=getFirstPartyMailTenantId().trim();
   if(getMailWorkspaceAccessMode(tenant.id,reservedTenantId)==='platform-operator'){
     const opsTenantSlug=process.env.MKETY_PLATFORM_CONTROL_TENANT_SLUG?.trim()||'';
     const actor=await requirePlatformControlAccess(opsTenantSlug);

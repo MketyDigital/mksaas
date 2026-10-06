@@ -2,11 +2,12 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { applyInboundMailAutomation } from '@/features/mail/server/automation-actions';
+import { getMailInternalSecret } from '@/features/mail/server/runtime-config';
 import { db } from '@/shared/db/cloudflare';
 import { mailMailboxes, mailMessages, mailThreads } from '@/shared/db/schema';
 
 export async function POST(request:Request){
-  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  const secret=getMailInternalSecret();
   if(!secret||request.headers.get('authorization')!==`Bearer ${secret}`) return NextResponse.json({ok:false},{status:401});
   const body=await request.json().catch(()=>null) as {
     tenantId?:string;mailboxId?:string;from?:string;to?:string;subject?:string;

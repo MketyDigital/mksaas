@@ -10,6 +10,7 @@ import {
 } from '@/shared/db/schema';
 
 import { mailExternalClientsEnabled } from './external-clients';
+import { getFirstPartyMailTenantId, getMailGatewayInternalSecret } from './runtime-config';
 
 export type MailGatewayProtocol = 'imap' | 'smtp';
 export type MailAppPasswordProtocolScope = 'all' | 'smtp';
@@ -27,7 +28,7 @@ export function isMailGatewayCredentialAllowed(input: {
 }
 
 export function requireMailGatewaySecret(request: Request) {
-  const expected = process.env.MKETY_MAIL_GATEWAY_INTERNAL_SECRET || '';
+  const expected = getMailGatewayInternalSecret();
   return Boolean(expected) && request.headers.get('authorization') === `Bearer ${expected}`;
 }
 
@@ -79,7 +80,7 @@ export async function authenticateExternalMailClient(
     where: eq(mailDomains.domain, domainName),
   });
   if (!domain) return null;
-  const platformTenantId = process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID?.trim() || '';
+  const platformTenantId = getFirstPartyMailTenantId().trim();
   const isFirstPartyTenant = Boolean(platformTenantId && domain.tenantId === platformTenantId);
   const externalClientsEnabled = mailExternalClientsEnabled();
   if (!isFirstPartyTenant && !externalClientsEnabled) return null;
