@@ -9,7 +9,7 @@ import {
   mailWorkspaces,
 } from '@/shared/db/schema';
 
-import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey, resolveTenantMailPlanDisplay, resolveTenantMailPlanLimits } from './commercial';
+import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanDisplay, resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function startOfUtcMonth(now = new Date()) {

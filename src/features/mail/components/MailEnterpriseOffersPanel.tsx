@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, type FormEvent } from 'react';
+import { type FormEvent, useState, useTransition } from 'react';
 
 import { createMailEnterpriseOfferPaymentLink } from '@/features/mail/server/admin-actions';
 

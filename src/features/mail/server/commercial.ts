@@ -6,8 +6,8 @@ import { db } from '@/shared/db/cloudflare';
 import { billingPlans, billingPlanVersions, billingSubscriptions, mailEnterpriseOffers } from '@/shared/db/schema';
 
 import { getFirstPartyMailTenantId } from './runtime-config';
-import { getMailCommercialPlan, isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 import { parseMailPlanLimits } from '../commercial/enterprise-offers';
+import { getMailCommercialPlan, isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 
 export const MAIL_INTERNAL_CUSTOM_PROFILE_KEY = 'mail-internal-custom' as const;
 export const MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY = 'mail-enterprise-custom' as const;

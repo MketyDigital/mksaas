@@ -385,7 +385,14 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
       idempotencyKey: `mail-enterprise-offer-payment-link:${offer.id}`,
     }).catch(() => ({ ok: false as const }));
     revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
-    return { offerId: offer.id, ...checkout, notificationQueued: notification.ok };
+    return {
+      offerId: offer.id,
+      orderId: checkout.orderId,
+      provider,
+      redirectUrl: checkout.redirectUrl,
+      status: checkout.status,
+      notificationQueued: notification.ok,
+    };
   } catch (error) {
     await db.update(mailEnterpriseOffers).set({ status: 'cancelled', updatedAt: new Date() })
       .where(eq(mailEnterpriseOffers.id, offer.id));

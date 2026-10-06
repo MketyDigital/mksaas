@@ -86,10 +86,10 @@ export default async function MailHome({ params }: { params: Promise<{ tenant: s
       <CardContent>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ['Outbound this month', usage.usage.outboundMessages, usage.limits.outboundMessagesPerMonth],
-            ['Customer Updates', usage.usage.customerUpdateDeliveries, usage.limits.customerUpdateDeliveriesPerMonth],
-            ['Mailboxes', usage.usage.mailboxes, usage.limits.mailboxes],
-            ['Domains', usage.usage.domains, usage.limits.domains],
+            ['Outbound this month', usage.usage.outboundMessages, usage.limits?.outboundMessagesPerMonth ?? null],
+            ['Customer Updates', usage.usage.customerUpdateDeliveries, usage.limits?.customerUpdateDeliveriesPerMonth ?? null],
+            ['Mailboxes', usage.usage.mailboxes, usage.limits?.mailboxes ?? null],
+            ['Domains', usage.usage.domains, usage.limits?.domains ?? null],
           ].map(([label, used, limit]) => <div className="rounded-xl border p-4" key={String(label)}>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
             <p className="mt-2 text-xl font-semibold">{Number(used).toLocaleString()} <span className="text-sm font-normal text-muted-foreground">/ {limit === null ? 'Uncapped' : Number(limit).toLocaleString()}</span></p>
