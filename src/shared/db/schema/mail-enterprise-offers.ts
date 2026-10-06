@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { bigint, index, integer, jsonb, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import type { MailPlanLimits } from '@/features/mail/commercial/plans';
@@ -27,6 +28,8 @@ export const mailEnterpriseOffers = appSchema.table(
   },
   (table) => [
     uniqueIndex('mail_enterprise_offers_order_uidx').on(table.orderId),
+    uniqueIndex('mail_enterprise_offers_tenant_open_uidx').on(table.tenantId)
+      .where(sql`${table.status} in ('draft', 'awaiting_payment', 'active')`),
     index('mail_enterprise_offers_tenant_status_idx').on(table.tenantId, table.status),
   ],
 );
