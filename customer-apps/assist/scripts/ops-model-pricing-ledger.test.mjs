@@ -59,6 +59,8 @@ test("model rates UI explains customer charge separately from provider cost and 
   assert.ok(ui.includes("data-target-cost-audio"));
   assert.ok(ui.includes("primary.audio_credits_per_minute??m.audio_credits_per_minute??0"));
   assert.ok(ui.includes("<th>Media customer rate</th>"));
+  assert.ok(ui.includes("image tokens billed at input rate"));
+  assert.ok(ui.includes("Token pricing requires both customer rates and both provider costs"));
   assert.match(ui, /audio_credits_per_minute/);
   assert.match(ui, /!paused&&targets\.find\(t=>Number\(t\.enabled\?\?1\)===1&&t\.validated===true&&t\.priced===true&&t\.supported!==false\)/);
   assert.match(ui, /Effective target/);
