@@ -2,10 +2,13 @@
 
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import { db } from '@/shared/db/cloudflare';
-import { mailThreadNotes, mailThreads, tenantMemberships } from '@/shared/db/schema';
+import { mailThreadNotes, mailThreads, mailWorkspaces, tenantMemberships } from '@/shared/db/schema';
 
+import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
+import { canAssignMailTeamSeat } from './mail-team-seats';
 import { requireMailWorkspaceAccess } from './workspace';
 
 export async function updateSharedThread(tenantSlug:string,formData:FormData){
@@ -18,7 +21,16 @@ export async function updateSharedThread(tenantSlug:string,formData:FormData){
   let assignee:string|null=null;
   if(assignedUserId){
     const member=await db.query.tenantMemberships.findFirst({where:and(eq(tenantMemberships.tenantId,tenant.id),eq(tenantMemberships.userId,assignedUserId))});
-    if(member) assignee=assignedUserId;
+    if(member){
+      const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
+      if(!workspace) return;
+      const planKey=await resolveTenantMailPlanKey(tenant.id,workspace.planKey,tenant.slug);
+      const limits=await resolveTenantMailPlanLimits(tenant.id,planKey);
+      if(!(await canAssignMailTeamSeat(tenant.id,assignedUserId,limits?.teamSeats??null,thread.id))){
+        redirect(`/app/${tenantSlug}/mail/shared?error=plan-limit`);
+      }
+      assignee=assignedUserId;
+    }
   }
   await db.update(mailThreads).set({
     status:['open','pending','resolved'].includes(status)?status:thread.status,
