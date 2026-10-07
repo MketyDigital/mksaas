@@ -41,8 +41,8 @@ jobs:
             "$api/zones/$zone_id/dns_records?per_page=100&page=1")"
           pages="$(printf '%s' "$first_page" | jq -er '.result_info.total_pages // 1')"
           : > /tmp/mail-dns-records.ndjson
-          routing_code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -sS -o /tmp/email-routing.json -w '%{http_code}' \\
-            -H "Authorization: Bearer $CF_TOKEN" \\
+          routing_code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -sS -o /tmp/email-routing.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CF_TOKEN" \
             "$api/zones/$zone_id/email/routing" || true)"
           page=1
           while [ "$page" -le "$pages" ]; do
@@ -58,6 +58,7 @@ jobs:
           done
           CF_EMAIL_ROUTING_HTTP="$routing_code" node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
           const fs = require('node:fs');
+          let routing = {}; try { routing = JSON.parse(fs.readFileSync('/tmp/email-routing.json', 'utf8') || '{}'); } catch {}
           const lines = fs.readFileSync('/tmp/mail-dns-records.ndjson', 'utf8').trim().split('\n').filter(Boolean);
           const records = lines.map((line) => JSON.parse(line)).filter((r) => {
             const name = String(r.name || '').toLowerCase();
