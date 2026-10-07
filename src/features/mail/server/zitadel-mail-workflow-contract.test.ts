@@ -71,6 +71,22 @@ describe('ZITADEL SMTP request payload contract', () => {
     expect(workflow).not.toContain('if [ "$SMTP_ACTIVE_CONFIG" = "true" ]; then');
   });
 
+  it('keeps internal Enterprise AI acceptance off automatic candidate deployments', () => {
+    const candidate = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-public-candidate-deploy.yml'), 'utf8');
+    const manualGate = "github.event_name == 'workflow_dispatch' && inputs.run_enterprise_ai_acceptance == true";
+    expect(candidate).toContain('run_enterprise_ai_acceptance:');
+    expect(candidate).toContain('default: false');
+    expect(candidate).toContain(manualGate);
+
+    for (const [start, end] of [
+      ['Prepare ephemeral managed-AI commercial acceptance fixture', 'Run real managed-AI commercial accounting acceptance'],
+      ['Run real managed-AI commercial accounting acceptance', 'Restore staging AI policy and remove commercial fixture'],
+    ]) {
+      const step = candidate.split(`- name: ${start}`)[1]?.split(`- name: ${end}`)[0] ?? '';
+      expect(step).toContain(manualGate);
+    }
+  });
+
   it('places SMTP authentication fields inside the plain request variant', () => {
     expect(workflow).toContain('plain:{');
     expect(workflow).toContain('senderAddress:process.env.SENDER');
