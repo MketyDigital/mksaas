@@ -1,0 +1,82 @@
+name: Read-only Mkety Mail DNS inventory
+
+on:
+  push:
+    branches:
+      - codex/mail-dns-audit-20261007
+    paths:
+      - .github/workflows/mkety-mail-dns-inventory-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  mail-dns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Inventory current Mkety mail DNS records (GET only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CF_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+          : "${CF_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
+          echo "::add-mask::$CF_TOKEN"
+          echo "::add-mask::$CF_ACCOUNT_ID"
+          api='https://api.cloudflare.com/client/v4'
+          zones="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            "$api/zones?name=mkety.com&status=active&per_page=50")"
+          zone_id="$(printf '%s' "$zones" | jq -er --arg account "$CF_ACCOUNT_ID" \
+            '[.result[] | select(.account.id == $account)] | if length == 1 then .[0].id else error("expected exactly one mkety.com zone in configured account") end')"
+          printf '[]' > /tmp/mail-dns-records.json
+          page=1
+          pages="$(printf '%s' "$zones" | jq -er '.result_info.total_pages // 1')"
+          while [ "$page" -le "$pages" ]; do
+            response="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+              -H "Authorization: Bearer $CF_TOKEN" \
+              "$api/zones/$zone_id/dns_records?per_page=100&page=$page")"
+            printf '%s' "$response" | jq -c '.result[]' >> /tmp/mail-dns-records.ndjson
+            page=$((page + 1))
+          done
+          node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const fs = require('node:fs');
+          const lines = fs.existsSync('/tmp/mail-dns-records.ndjson')
+            ? fs.readFileSync('/tmp/mail-dns-records.ndjson', 'utf8').trim().split('\n').filter(Boolean)
+            : [];
+          const records = lines.map((line) => JSON.parse(line)).filter((r) => {
+            const name = String(r.name || '').toLowerCase();
+            if (r.type === 'MX') return true;
+            if (r.type === 'TXT' && name === 'mkety.com' && /^v=spf1\b/i.test(r.content || '')) return true;
+            if (r.type === 'TXT' && name === '_dmarc.mkety.com') return true;
+            if (r.type === 'TXT' && name.endsWith('._domainkey.mkety.com')) return true;
+            return /^(mail|smtp|imap|autoconfig|autodiscover)\.mkety\.com$/.test(name)
+              && ['A', 'AAAA', 'CNAME'].includes(r.type);
+          }).map((r) => ({
+            name: r.name,
+            type: r.type,
+            priority: r.priority ?? null,
+            ttl: r.ttl,
+            content: r.type === 'TXT' && String(r.name).toLowerCase().endsWith('._domainkey.mkety.com')
+              ? '[DKIM key omitted; record presence shown]'
+              : r.content,
+          }));
+          console.log('## Read-only Cloudflare mail DNS inventory for mkety.com');
+          console.log('');
+          console.log('Fetched through Cloudflare API GET requests only. No DNS records were created, updated, or deleted.');
+          console.log('');
+          if (!records.length) {
+            console.log('No matching MX, SPF, DKIM, DMARC, or mail-host records were found.');
+          } else {
+            console.log('| Name | Type | Priority | Content |');
+            console.log('| --- | --- | ---: | --- |');
+            for (const r of records) {
+              const content = String(r.content ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ');
+              console.log(`| ${r.name} | ${r.type} | ${r.priority ?? ''} | ${content} |`);
+            }
+          }
+          NODE
+          echo 'Cloudflare DNS inventory complete. Only GET requests were issued; no changes were made.'
