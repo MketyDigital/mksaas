@@ -50,7 +50,7 @@ jest.mock('../commercial/enterprise-offers', () => ({ parseMailEnterpriseOfferIn
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
-import { tenantEntitlementOverrides, mailWorkspaces, tenants } from '@/shared/db/schema';
+import { mailWorkspaces, tenantEntitlementOverrides, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
