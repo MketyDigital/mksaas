@@ -14,6 +14,25 @@ export const MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY = 'mail-enterprise-custom' as co
 
 export type MailWorkspacePlanKey = MailPlanKey | typeof MAIL_INTERNAL_CUSTOM_PROFILE_KEY | typeof MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY;
 
+export function formatMailPlanPrice(
+  amountMinor: bigint,
+  planKey: MailWorkspacePlanKey,
+  termDays?: number | null,
+) {
+  const price = `${(Number(amountMinor) / 100).toFixed(2)}`;
+  if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) {
+    return termDays == null ? `${price} · one-time, no fixed end date` : `${price} / ${termDays}-day term`;
+  }
+  return `${price} / month before prepaid-term discounts`;
+}
+
+export function getMailPlanManagementDestination(tenantSlug: string, planKey: MailWorkspacePlanKey) {
+  const tenantPath = `/app/${encodeURIComponent(tenantSlug)}`;
+  return planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY
+    ? { href: `${tenantPath}/billing`, label: 'View billing →' }
+    : { href: `${tenantPath}/billing/checkout?plan=${encodeURIComponent(planKey)}`, label: 'Manage plan →' };
+}
+
 export async function resolveTenantMailPlanKey(
   tenantId: string,
   fallbackPlanKey?: string | null,
@@ -88,7 +107,7 @@ export async function resolveTenantMailPlanDisplay(tenantId: string, planKey: Ma
       ),
     });
     if (!offer) throw new Error('Active Mail Enterprise offer is missing.');
-    return { name: offer.name, amountMinor: offer.amountMinor, currency: offer.currency };
+    return { name: offer.name, amountMinor: offer.amountMinor, currency: offer.currency, termDays: offer.termDays };
   }
   if (planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY) {
     return { name: 'Internal Custom', amountMinor: null, currency: 'USD' } as const;
