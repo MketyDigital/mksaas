@@ -1,10 +1,12 @@
 const mockMemberFindMany = jest.fn();
 const mockThreadFindMany = jest.fn();
+const mockNe = jest.fn((...args: unknown[]) => args);
 
 jest.mock('drizzle-orm', () => ({
   and: jest.fn((...args: unknown[]) => args),
   eq: jest.fn((...args: unknown[]) => args),
   isNotNull: jest.fn((value: unknown) => value),
+  ne: (...args: unknown[]) => mockNe(...args),
 }));
 
 jest.mock('@/shared/db/cloudflare', () => ({
@@ -62,6 +64,14 @@ describe('Mail shared inbox seat policy', () => {
     mockThreadFindMany.mockResolvedValue([{ assignedUserId: 'agent-1' }]);
 
     await expect(canAssignMailTeamSeat('tenant-1', 'agent-2', 3)).resolves.toBe(true);
+  });
+
+  it('frees the replaced thread assignment while checking a reassignment', async () => {
+    mockMemberFindMany.mockResolvedValue([{ userId: 'owner' }]);
+    mockThreadFindMany.mockResolvedValue([]);
+
+    await expect(canAssignMailTeamSeat('tenant-1', 'agent-2', 2, 'thread-1')).resolves.toBe(true);
+    expect(mockNe).toHaveBeenCalledWith('thread-id', 'thread-1');
   });
 
   it('does not impose public plan seat limits on the internal custom profile', async () => {
