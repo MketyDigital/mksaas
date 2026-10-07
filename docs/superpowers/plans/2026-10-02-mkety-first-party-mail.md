@@ -41,13 +41,17 @@
 **Interfaces:**
 - Produces: recorded, non-secret readiness facts for the reserved tenant, workspace, `info@mkety.com` domain/mailbox, SMTP gateway and current ZITADEL provider; DNS inventory for MX, SPF, DKIM, DMARC and Cloudflare Email Routing; a producer inventory with any explicit exceptions.
 
-- [ ] **Step 1: Capture read-only DNS and provider state**
+- [x] **Step 1: Capture read-only DNS and provider state**
 
 Run approved read-only DNS/provider diagnostics. Record current MX and routing ownership and whether required sending/authentication records are already valid. Do not mutate DNS or print secret values.
+
+Evidence (2026-10-07): read-only Cloudflare/ZITADEL preflight run `37682717115` succeeded. Cloudflare DNS: apex SPF absent; MX remains Zoho (`mx.zoho.com` priority 10, `mx2.zoho.com` 20, `mx3.zoho.com` 50); DMARC is `p=none`; `resend._domainkey` exists; `imap` and `smtp` A records are DNS-only at `89.168.70.209`; `mail`, `autoconfig`, and `autodiscover` each have proxied AAAA `100::`. Cloudflare Email Routing settings returned HTTP 403, so its enabled state remains unknown. ZITADEL's active provider is Brevo SMTP at `smtp-relay.brevo.com:587`, sender `hello@mkety.com`, TLS on; the API did not return a password. No DNS or provider changes were made. This closes the inventory step with the 403 explicitly recorded; it does not establish Mail sender readiness.
 
 - [ ] **Step 2: Capture reserved workspace and live ZITADEL state**
 
 Use the configured operator/production diagnostics to record whether the reserved tenant, Mail workspace, entitlement, domain, mailbox and app credential exist, and whether ZITADEL currently uses the legacy SMTP provider. Store identifiers and status only; never dump credentials.
+
+Current result: ZITADEL provider/login state is captured by run `37682717115`; the reserved tenant, workspace, entitlement, `mkety.com` Mail-domain row, `info@mkety.com` mailbox and SMTP-only app credential still lack read-only production evidence. Keep this step open.
 
 - [ ] **Step 3: Inventory application email producers**
 
@@ -279,6 +283,8 @@ Local evidence on 2026-10-02: 11 focused suites / 52 tests passed, migration bas
 - [ ] **Step 2: Verify DNS and reserved sender readiness**
 
 Repeat read-only DNS and Mail provider diagnostics. Stop before any DNS mutation if MX ownership conflicts or required Mail readiness is absent.
+
+Evidence: run `37682717115` completed the read-only inventory and confirmed Zoho owns the current MX. Apex SPF is absent, Cloudflare Email Routing state is unreadable with the current token (HTTP 403), and no Mail-domain/mailbox readiness record was captured. No DNS write was attempted; reserved sender readiness remains unverified, so keep this step open.
 
 - [ ] **Step 3: Test actual controlled recipient delivery**
 
