@@ -1,4 +1,4 @@
-name: Read-only Mkety Mail DNS inventory
+name: Read-only Mkety Mail and ZITADEL preflight
 
 on:
   push:
@@ -11,12 +11,16 @@ permissions:
   contents: read
 
 jobs:
-  mail-dns:
+  mail-preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    environment: production
     env:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ZITADEL_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_PAT }}
+      ZITADEL_URL: ${{ vars.ZITADEL_URL || secrets.ZITADEL_URL }}
+      ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
     steps:
       - name: Inventory current Mkety mail DNS records (GET only)
         shell: bash
@@ -51,9 +55,7 @@ jobs:
           done
           node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
           const fs = require('node:fs');
-          const lines = fs.existsSync('/tmp/mail-dns-records.ndjson')
-            ? fs.readFileSync('/tmp/mail-dns-records.ndjson', 'utf8').trim().split('\n').filter(Boolean)
-            : [];
+          const lines = fs.readFileSync('/tmp/mail-dns-records.ndjson', 'utf8').trim().split('\n').filter(Boolean);
           const records = lines.map((line) => JSON.parse(line)).filter((r) => {
             const name = String(r.name || '').toLowerCase();
             if (r.type === 'MX') return true;
@@ -66,25 +68,92 @@ jobs:
             name: r.name,
             type: r.type,
             priority: r.priority ?? null,
-            ttl: r.ttl,
+            proxied: r.proxied ?? null,
             content: r.type === 'TXT' && String(r.name).toLowerCase().endsWith('._domainkey.mkety.com')
               ? '[DKIM key omitted; record presence shown]'
               : r.content,
           }));
+          const apexSpf = records.some((r) => r.name === 'mkety.com' && r.type === 'TXT' && /^v=spf1\b/i.test(r.content || ''));
           console.log('## Read-only Cloudflare mail DNS inventory for mkety.com');
           console.log('');
           console.log('Fetched through Cloudflare API GET requests only. No DNS records were created, updated, or deleted.');
           console.log('');
+          console.log(`Apex SPF present: ${apexSpf ? 'yes' : 'no'}`);
+          console.log('');
           if (!records.length) {
             console.log('No matching MX, SPF, DKIM, DMARC, or mail-host records were found.');
           } else {
-            console.log('| Name | Type | Priority | Content |');
-            console.log('| --- | --- | ---: | --- |');
+            console.log('| Name | Type | Priority | Proxied | Content |');
+            console.log('| --- | --- | ---: | --- | --- |');
             for (const r of records) {
               const content = String(r.content ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ');
-              console.log(`| ${r.name} | ${r.type} | ${r.priority ?? ''} | ${content} |`);
+              console.log(`| ${r.name} | ${r.type} | ${r.priority ?? ''} | ${r.proxied ?? ''} | ${content} |`);
             }
           }
           NODE
           cat "$GITHUB_STEP_SUMMARY"
           echo 'Cloudflare DNS inventory complete. Only GET requests were issued; no changes were made.'
+
+      - name: Inspect live ZITADEL login and SMTP provider state (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ZITADEL_TOKEN ZITADEL_URL ZITADEL_PROJECT_ID; do
+            [ -n "${!name:-}" ] || { echo "::error::Missing $name"; exit 1; }
+          done
+          echo "::add-mask::$ZITADEL_TOKEN"
+          echo "::add-mask::$ZITADEL_PROJECT_ID"
+          issuer="${ZITADEL_URL%/}"
+          project="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+            -X POST "$issuer/zitadel.project.v2.ProjectService/GetProject" \
+            -H "Authorization: Bearer $ZITADEL_TOKEN" \
+            -H 'Connect-Protocol-Version: 1' -H 'Content-Type: application/json' \
+            --data "{\"projectId\":\"$ZITADEL_PROJECT_ID\"}")"
+          org_id="$(PROJECT="$project" node -e "const x=JSON.parse(process.env.PROJECT||'{}');if(!x.project?.organizationId)process.exit(1);process.stdout.write(x.project.organizationId)")"
+          echo "::add-mask::$org_id"
+          login="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+            "$issuer/v2/settings/login?ctx.orgId=$org_id" -H "Authorization: Bearer $ZITADEL_TOKEN")"
+          policy="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+            "$issuer/management/v1/policies/login" -H "Authorization: Bearer $ZITADEL_TOKEN" -H "x-zitadel-orgid: $org_id")"
+          email_code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -sS -o /tmp/zitadel-email.json -w '%{http_code}' \
+            "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_TOKEN" -H 'Accept: application/json' || true)"
+          smtp_code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -sS -o /tmp/zitadel-smtp.json -w '%{http_code}' \
+            "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_TOKEN" -H 'Accept: application/json' || true)"
+          LOGIN="$login" POLICY="$policy" EMAIL_CODE="$email_code" SMTP_CODE="$smtp_code" node <<'NODE' | tee -a "$GITHUB_STEP_SUMMARY"
+          const fs = require('node:fs');
+          const login = JSON.parse(process.env.LOGIN || '{}').settings || {};
+          const policyResponse = JSON.parse(process.env.POLICY || '{}');
+          const policy = policyResponse.policy || {};
+          let email = {}; let legacy = {};
+          try { email = JSON.parse(fs.readFileSync('/tmp/zitadel-email.json', 'utf8') || '{}'); } catch {}
+          try { legacy = JSON.parse(fs.readFileSync('/tmp/zitadel-smtp.json', 'utf8') || '{}'); } catch {}
+          const cfg = email.config || {};
+          const smtp = cfg.smtp || legacy.smtpConfig || {};
+          const safe = {
+            login: {
+              allowRegister: policy.allowRegister ?? login.allowRegister ?? null,
+              allowUsernamePassword: policy.allowUsernamePassword ?? login.allowUsernamePassword ?? null,
+              allowLocalAuthentication: login.allowLocalAuthentication ?? null,
+            },
+            emailProvider: {
+              modernEndpointHttp: process.env.EMAIL_CODE,
+              legacyEndpointHttp: process.env.SMTP_CODE,
+              state: cfg.state || smtp.state || null,
+              kind: cfg.smtp ? 'smtp' : cfg.http ? 'http' : legacy.smtpConfig ? 'legacy-smtp' : 'unknown',
+              description: cfg.description || smtp.description || null,
+              host: smtp.host || null,
+              senderAddress: smtp.senderAddress || null,
+              tls: typeof smtp.tls === 'boolean' ? smtp.tls : null,
+              userConfigured: Boolean(smtp.user),
+              passwordReturned: Boolean(smtp.password),
+            },
+          };
+          console.log('');
+          console.log('## Read-only ZITADEL Mail provider state');
+          console.log('');
+          console.log('Only read operations were issued. SMTP passwords are never output.');
+          console.log('');
+          console.log('```json');
+          console.log(JSON.stringify(safe, null, 2));
+          console.log('```');
+          NODE
