@@ -18,8 +18,9 @@ export function formatMailPlanPrice(
   amountMinor: bigint,
   planKey: MailWorkspacePlanKey,
   termDays?: number | null,
+  currency = 'USD',
 ) {
-  const price = `${(Number(amountMinor) / 100).toFixed(2)}`;
+  const price = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(amountMinor) / 100);
   if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) {
     return termDays == null ? `${price} · one-time, no fixed end date` : `${price} / ${termDays}-day term`;
   }
@@ -27,10 +28,9 @@ export function formatMailPlanPrice(
 }
 
 export function getMailPlanManagementDestination(tenantSlug: string, planKey: MailWorkspacePlanKey) {
+  if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) return null;
   const tenantPath = `/app/${encodeURIComponent(tenantSlug)}`;
-  return planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY
-    ? { href: `${tenantPath}/billing`, label: 'View billing →' }
-    : { href: `${tenantPath}/billing/checkout?plan=${encodeURIComponent(planKey)}`, label: 'Manage plan →' };
+  return { href: `${tenantPath}/billing/checkout?plan=${encodeURIComponent(planKey)}`, label: 'Manage plan →' };
 }
 
 export async function resolveTenantMailPlanKey(
