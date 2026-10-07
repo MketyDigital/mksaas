@@ -81,7 +81,7 @@ export default async function MailHome({ params }: { params: Promise<{ tenant: s
             <CardDescription>
               {usage.priceMinor === null
                 ? 'Internal Custom · no monthly charge; platform safety limits still apply'
-                : `${usage.planName} · ${formatMailPlanPrice(usage.priceMinor, usage.planKey, usage.termDays)}`}
+                : `${usage.planName} · ${formatMailPlanPrice(usage.priceMinor, usage.planKey, usage.termDays, usage.currency)}`}
             </CardDescription>
           </div>
           {planManagement && <a className="text-sm font-semibold text-primary" href={planManagement.href}>{planManagement.label}</a>}
