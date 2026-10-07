@@ -46,20 +46,26 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
 
   const planKey=await resolveTenantMailPlanKey(tenant.id,workspace.planKey,tenant.slug);
   const limits=await resolveTenantMailPlanLimits(tenant.id,planKey);
-  if(limits && type!=='alias'){
-    const [mailboxCount]=await db.select({value:count()}).from(mailMailboxes).where(and(
-      eq(mailMailboxes.tenantId,tenant.id),ne(mailMailboxes.type,'alias'),
-    ));
-    if(Number(mailboxCount?.value??0)>=limits.mailboxes) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
-  }
-  if(limits && type==='shared'){
-    const [sharedCount]=await db.select({value:count()}).from(mailMailboxes).where(and(
-      eq(mailMailboxes.tenantId,tenant.id),eq(mailMailboxes.type,'shared'),
-    ));
-    if(Number(sharedCount?.value??0)>=limits.sharedInboxes) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
-  }
   const [mailbox]=await db.transaction(async(tx)=>{
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${tenant.id}, 0))`);
+    if(limits && type!=='alias'){
+      const [mailboxCount]=await tx.select({value:count()}).from(mailMailboxes).where(and(
+        eq(mailMailboxes.tenantId,tenant.id),
+        ne(mailMailboxes.type,'alias'),
+      ));
+      if(Number(mailboxCount?.value??0)>=limits.mailboxes){
+        redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
+      }
+    }
+    if(limits && type==='shared'){
+      const [sharedCount]=await tx.select({value:count()}).from(mailMailboxes).where(and(
+        eq(mailMailboxes.tenantId,tenant.id),
+        eq(mailMailboxes.type,'shared'),
+      ));
+      if(Number(sharedCount?.value??0)>=limits.sharedInboxes){
+        redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
+      }
+    }
     if(limits){
       const members=await tx.select({userId:mailMailboxMembers.userId})
         .from(mailMailboxMembers).where(eq(mailMailboxMembers.tenantId,tenant.id));
