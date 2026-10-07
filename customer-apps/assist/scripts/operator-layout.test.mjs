@@ -28,3 +28,9 @@ test("Models & Rates panel is not constrained to one column of the dashboard gri
   }
   assert.ok(found, "models panel must remain present");
 });
+
+test("long inference attempt IDs stay inside the attempts panel", () => {
+  const start = ui.indexOf("export function renderOperatorPortal");
+  const operatorPortal = ui.slice(start);
+  assert.match(operatorPortal, /#attemptsBox\{max-width:100%;overflow-x:auto\}/);
+});
