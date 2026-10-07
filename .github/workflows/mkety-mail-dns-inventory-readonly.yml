@@ -32,13 +32,20 @@ jobs:
             "$api/zones?name=mkety.com&status=active&per_page=50")"
           zone_id="$(printf '%s' "$zones" | jq -er --arg account "$CF_ACCOUNT_ID" \
             '[.result[] | select(.account.id == $account)] | if length == 1 then .[0].id else error("expected exactly one mkety.com zone in configured account") end')"
-          printf '[]' > /tmp/mail-dns-records.json
+          first_page="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            "$api/zones/$zone_id/dns_records?per_page=100&page=1")"
+          pages="$(printf '%s' "$first_page" | jq -er '.result_info.total_pages // 1')"
+          : > /tmp/mail-dns-records.ndjson
           page=1
-          pages="$(printf '%s' "$zones" | jq -er '.result_info.total_pages // 1')"
           while [ "$page" -le "$pages" ]; do
-            response="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
-              -H "Authorization: Bearer $CF_TOKEN" \
-              "$api/zones/$zone_id/dns_records?per_page=100&page=$page")"
+            if [ "$page" -eq 1 ]; then
+              response="$first_page"
+            else
+              response="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -fsS \
+                -H "Authorization: Bearer $CF_TOKEN" \
+                "$api/zones/$zone_id/dns_records?per_page=100&page=$page")"
+            fi
             printf '%s' "$response" | jq -c '.result[]' >> /tmp/mail-dns-records.ndjson
             page=$((page + 1))
           done
@@ -79,4 +86,5 @@ jobs:
             }
           }
           NODE
+          cat "$GITHUB_STEP_SUMMARY"
           echo 'Cloudflare DNS inventory complete. Only GET requests were issued; no changes were made.'
