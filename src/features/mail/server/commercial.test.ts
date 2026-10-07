@@ -26,9 +26,12 @@ jest.mock('@/shared/db/cloudflare', () => ({
   },
 }));
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { db } from '@/shared/db/cloudflare';
 
-import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
+import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits, resolveTenantMailPlanDisplay } from './commercial';
 
 const resolveTenantMailProfileKey = resolveTenantMailPlanKey as unknown as (
   tenantId: string,
@@ -120,5 +123,25 @@ describe('resolveTenantMailPlanKey', () => {
       if (previousTenantId === undefined) delete process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID;
       else process.env.MKETY_FIRST_PARTY_MAIL_TENANT_ID = previousTenantId;
     }
+  });
+});
+
+
+describe('Mail Enterprise billing presentation', () => {
+  beforeEach(() => {
+    mockFindMailEnterpriseOffer.mockResolvedValue({
+      id: 'paid-offer', name: 'Starpips Mail Enterprise', amountMinor: 250000n, currency: 'USD', termDays: 365, status: 'active',
+    });
+  });
+
+  it('returns the paid offer term and avoids monthly self-service checkout for Enterprise Mail', async () => {
+    await expect(resolveTenantMailPlanDisplay('tenant-1', 'mail-enterprise-custom')).resolves.toEqual({
+      name: 'Starpips Mail Enterprise', amountMinor: 250000n, currency: 'USD', termDays: 365,
+    });
+
+    const page = fs.readFileSync(path.join(process.cwd(), 'src/app/app/[tenant]/mail/page.tsx'), 'utf8');
+    expect(page).toContain('usage.termDays');
+    expect(page).toContain('/app/\u0024{tenant}/billing');
+    expect(page).not.toContain('billing/checkout?plan=\u0024{usage.planKey}');
   });
 });
