@@ -31,7 +31,7 @@ import path from 'node:path';
 
 import { db } from '@/shared/db/cloudflare';
 
-import { formatMailPlanPrice, getMailPlanManagementDestination, resolveTenantMailPlanKey, resolveTenantMailPlanLimits, resolveTenantMailPlanDisplay } from './commercial';
+import { formatMailPlanPrice, getMailPlanManagementDestination, resolveTenantMailPlanDisplay, resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
 const resolveTenantMailProfileKey = resolveTenantMailPlanKey as unknown as (
   tenantId: string,
