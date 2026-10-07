@@ -388,6 +388,17 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
         )).returning({ id: mailEnterpriseOffers.id });
         if (!associated) throw new Error('Mail Enterprise offer could not be linked to its payment order.');
       },
+      onCheckoutFailed: async (orderId) => {
+        const [cancelled] = await db.update(mailEnterpriseOffers).set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        }).where(and(
+          eq(mailEnterpriseOffers.id, offer.id),
+          eq(mailEnterpriseOffers.status, 'awaiting_payment'),
+          eq(mailEnterpriseOffers.orderId, orderId),
+        )).returning({ id: mailEnterpriseOffers.id });
+        if (!cancelled) throw new Error('Failed Mail Enterprise offer could not be cancelled for retry.');
+      },
     });
     await logAuditEvent({
       actorId: actor.userId,
@@ -426,6 +437,7 @@ async function createMailEnterpriseOfferPaymentLinkImpl(
         eq(mailEnterpriseOffers.status, 'draft'),
         isNull(mailEnterpriseOffers.orderId),
       ));
+    revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
     throw error;
   }
 }
