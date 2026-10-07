@@ -10,6 +10,7 @@ interface EnterpriseCheckoutRequestContext {
   mailEnterpriseOfferId?: string;
   mailEnterpriseTenantId?: string;
   onOrderCreated?: (orderId: string) => Promise<void>;
+  onCheckoutFailed?: (orderId: string) => Promise<void>;
 }
 
 interface EnterpriseCheckoutServiceDependencies {
@@ -128,6 +129,15 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
             metadata: { providerInitiationFailed: true },
           })
           .catch(() => undefined);
+        let cleanupFailed = false;
+        try {
+          await context.onCheckoutFailed?.(orderId);
+        } catch {
+          cleanupFailed = true;
+        }
+        if (cleanupFailed) {
+          throw new Error('Enterprise checkout failed and requires operator review.');
+        }
         throw new Error('Enterprise checkout is temporarily unavailable.');
       }
     },
