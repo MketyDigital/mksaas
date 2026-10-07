@@ -463,9 +463,12 @@ export function renderOperatorPortal(customers: any[]) {
     <table class="table"><thead><tr><th>Customer</th><th>Portal</th><th>Credits</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table>
   </div>
 
-  <div class="two" style="margin-top:16px">
-    <div class="card"><div class="top" style="margin:0 0 10px"><h2 style="margin:0">Models & Rates</h2><button class="btn" id="refreshModels">Refresh</button></div><div id="modelsBox" class="muted">Authenticate to load models.</div></div>
-    <div class="card"><div class="top" style="margin:0 0 10px"><h2 style="margin:0">Providers</h2><div><button class="btn" id="refreshProviders">Refresh</button> <button class="btn primary" id="newProvider">Add</button></div></div><div id="providersBox" class="muted">Authenticate to load providers.</div></div>
+  <div class="card" style="margin-top:16px">
+    <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Models & Rates</h2><button class="btn" id="refreshModels">Refresh</button></div><div id="modelsBox" class="muted">Authenticate to load models.</div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Providers</h2><div><button class="btn" id="refreshProviders">Refresh</button> <button class="btn primary" id="newProvider">Add</button></div></div><div id="providersBox" class="muted">Authenticate to load providers.</div>
   </div>
 
   <div class="card" style="margin-top:16px">
