@@ -328,7 +328,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          safe_secret="$(printf '%s' "$MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET" | sha256sum | awk '{print $1}')"
+          safe_secret="$(printf '%s:%s:%s' "$MKETY_ASSIST_TELEGRAM_AUTH_WEBHOOK_SECRET" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | sha256sum | awk '{print $1}')"
+          echo "::add-mask::$safe_secret"
           echo "EFFECTIVE_TELEGRAM_AUTH_WEBHOOK_SECRET=$safe_secret" >> "$GITHUB_ENV"
 
       - name: Deploy isolated Assist Worker
