@@ -65,6 +65,7 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
     planName: display.name,
     priceMinor: display.amountMinor,
     currency: display.currency,
+    termDays: 'termDays' in display ? display.termDays : null,
     periodStart,
     storageBytesUsed: workspace.storageBytesUsed,
     usage: {
