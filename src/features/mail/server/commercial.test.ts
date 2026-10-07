@@ -134,14 +134,27 @@ describe('Mail Enterprise billing presentation', () => {
     });
   });
 
-  it('returns the paid offer term and avoids monthly self-service checkout for Enterprise Mail', async () => {
+  it('returns and formats the paid term without routing Enterprise Mail into self-service checkout', async () => {
     await expect(resolveTenantMailPlanDisplay('tenant-1', 'mail-enterprise-custom')).resolves.toEqual({
       name: 'Starpips Mail Enterprise', amountMinor: 250000n, currency: 'USD', termDays: 365,
     });
 
+    expect(formatMailPlanPrice(250000n, 'mail-enterprise-custom', 365, 'USD')).toBe('$2,500.00 / 365-day term');
+    expect(formatMailPlanPrice(250000n, 'mail-enterprise-custom', null, 'USD')).toBe(
+      '$2,500.00 · one-time, no fixed end date',
+    );
+    expect(formatMailPlanPrice(499n, 'mail-starter', null, 'USD')).toBe(
+      '$4.99 / month before prepaid-term discounts',
+    );
+    expect(getMailPlanManagementDestination('customer', 'mail-enterprise-custom')).toBeNull();
+    expect(getMailPlanManagementDestination('customer', 'mail-starter')).toEqual({
+      href: '/app/customer/billing/checkout?plan=mail-starter',
+      label: 'Manage plan →',
+    });
+
     const page = fs.readFileSync(path.join(process.cwd(), 'src/app/app/[tenant]/mail/page.tsx'), 'utf8');
     expect(page).toContain('usage.termDays');
-    expect(page).toContain('/app/\u0024{tenant}/billing');
+    expect(page).toContain('usage.currency');
     expect(page).not.toContain('billing/checkout?plan=\u0024{usage.planKey}');
   });
 });
