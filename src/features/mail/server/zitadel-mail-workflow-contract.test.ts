@@ -58,3 +58,26 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(dbWorkflow).toContain('process.env.CONTROL_TENANT_SLUG&&!tenantId');
   });
 });
+
+
+describe('ZITADEL SMTP request payload contract', () => {
+  const workflow = fs.readFileSync(path.join(process.cwd(), '.github/workflows/mkety-zitadel-email-reconcile.yml'), 'utf8');
+
+  it('always tests the submitted SMTP credentials and cannot skip a secret rotation', () => {
+    expect(workflow).toContain('password:process.env.PASSWORD');
+    expect(workflow).toContain('admin/v1/email/smtp/_test');
+    expect(workflow).not.toContain('admin/v1/email/smtp/$active_id/_test');
+    expect(workflow).not.toContain('Selected SMTP configuration was tested while already active; no provider mutation required.');
+    expect(workflow).not.toContain('if [ "$SMTP_ACTIVE_CONFIG" = "true" ]; then');
+  });
+
+  it('places SMTP authentication fields inside the plain request variant', () => {
+    expect(workflow).toContain('plain:{');
+    expect(workflow).toContain('senderAddress:process.env.SENDER');
+    expect(workflow).toContain('receiverAddress:process.env.RECEIVER');
+    expect(workflow).toContain('password:process.env.PASSWORD');
+    expect(workflow).not.toContain('admin/v1/email/smtp/$active_id/_test');
+    expect(workflow).not.toContain('plain:{}');
+    expect(workflow).not.toContain('skipping a test-provider switch.');
+  });
+});

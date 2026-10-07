@@ -45,12 +45,14 @@ function makeOrder(overrides: Partial<PlatformEnterpriseOrder> = {}): PlatformEn
 describe('enterprise checkout service', () => {
   it('creates the auditable order before invoking the provider', async () => {
     const calls: string[] = [];
+    let createdMetadata: Record<string, unknown> | undefined;
     const repository: EnterpriseOrderRepository = {
       async findByIdempotencyKey() {
         return null;
       },
-      async createOrder() {
+      async createOrder(input) {
         calls.push('order');
+        createdMetadata = input.metadata;
         return makeOrder();
       },
       async updateCheckout() {
@@ -81,8 +83,18 @@ describe('enterprise checkout service', () => {
       getProvider: () => adapter,
       createOrderId: () => 'MKETY-ENT-1',
     });
-    await service.createEnterpriseCheckout(request, { idempotencyKey: 'aaaaaaaa' });
-    expect(calls).toEqual(['order', 'provider', 'update']);
+    const onOrderCreated = async (orderId: string) => {
+      calls.push(`offer:${orderId}`);
+    };
+    const context = {
+      idempotencyKey: 'aaaaaaaa',
+      mailEnterpriseOfferId: 'offer-1',
+      mailEnterpriseTenantId: 'tenant-1',
+      onOrderCreated,
+    } as Parameters<typeof service.createEnterpriseCheckout>[1];
+    await service.createEnterpriseCheckout(request, context);
+    expect(calls).toEqual(['order', 'offer:MKETY-ENT-1', 'provider', 'update']);
+    expect(createdMetadata).toMatchObject({ mailEnterpriseOfferId: 'offer-1', mailEnterpriseTenantId: 'tenant-1' });
   });
 
   it('replays the same idempotent checkout without calling the provider again', async () => {
@@ -126,8 +138,10 @@ describe('enterprise checkout service', () => {
     expect(providerCalls).toBe(0);
   });
 
-  it('keeps the order auditable when the provider fails', async () => {
+  it('keeps the order auditable and runs failure cleanup when the provider fails', async () => {
     let created = false;
+    let orderMarkedFailed = false;
+    const failureCalls: string[] = [];
     const repository: EnterpriseOrderRepository = {
       async findByIdempotencyKey() {
         return null;
@@ -136,7 +150,7 @@ describe('enterprise checkout service', () => {
         created = true;
         return makeOrder({ id: 'MKETY-ENT-2', idempotencyKey: 'bbbbbbbb' });
       },
-      async updateCheckout() {},
+      async updateCheckout() { orderMarkedFailed = true; },
       async applyPaymentState() {
         return makeOrder();
       },
@@ -155,9 +169,17 @@ describe('enterprise checkout service', () => {
       getProvider: () => adapter,
       createOrderId: () => 'MKETY-ENT-2',
     });
-    await expect(service.createEnterpriseCheckout(request, { idempotencyKey: 'bbbbbbbb' })).rejects.toThrow(
+    const failureContext = {
+      idempotencyKey: 'bbbbbbbb',
+      onCheckoutFailed: async (orderId: string) => {
+        expect(orderMarkedFailed).toBe(true);
+        failureCalls.push(orderId);
+      },
+    } as unknown as Parameters<typeof service.createEnterpriseCheckout>[1];
+    await expect(service.createEnterpriseCheckout(request, failureContext)).rejects.toThrow(
       'Enterprise checkout is temporarily unavailable.',
     );
     expect(created).toBe(true);
+    expect(failureCalls).toEqual(['MKETY-ENT-2']);
   });
 });

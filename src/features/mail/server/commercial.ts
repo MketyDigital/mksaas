@@ -1,16 +1,37 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 
 import { drizzleEntitlementSource } from '@/features/entitlements/server/drizzle-source';
 
 import { db } from '@/shared/db/cloudflare';
-import { billingPlans, billingPlanVersions, billingSubscriptions } from '@/shared/db/schema';
+import { billingPlans, billingPlanVersions, billingSubscriptions, mailEnterpriseOffers } from '@/shared/db/schema';
 
 import { getFirstPartyMailTenantId } from './runtime-config';
-import { isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
+import { parseMailPlanLimits } from '../commercial/enterprise-offers';
+import { getMailCommercialPlan, isMailPlanKey, type MailPlanKey, normalizeMailPlanKey } from '../commercial/plans';
 
 export const MAIL_INTERNAL_CUSTOM_PROFILE_KEY = 'mail-internal-custom' as const;
+export const MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY = 'mail-enterprise-custom' as const;
 
-export type MailWorkspacePlanKey = MailPlanKey | typeof MAIL_INTERNAL_CUSTOM_PROFILE_KEY;
+export type MailWorkspacePlanKey = MailPlanKey | typeof MAIL_INTERNAL_CUSTOM_PROFILE_KEY | typeof MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY;
+
+export function formatMailPlanPrice(
+  amountMinor: bigint,
+  planKey: MailWorkspacePlanKey,
+  termDays?: number | null,
+  currency = 'USD',
+) {
+  const price = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(amountMinor) / 100);
+  if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) {
+    return termDays == null ? `${price} · one-time, no fixed end date` : `${price} / ${termDays}-day term`;
+  }
+  return `${price} / month before prepaid-term discounts`;
+}
+
+export function getMailPlanManagementDestination(tenantSlug: string, planKey: MailWorkspacePlanKey) {
+  if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) return null;
+  const tenantPath = `/app/${encodeURIComponent(tenantSlug)}`;
+  return { href: `${tenantPath}/billing/checkout?plan=${encodeURIComponent(planKey)}`, label: 'Manage plan →' };
+}
 
 export async function resolveTenantMailPlanKey(
   tenantId: string,
@@ -27,6 +48,16 @@ export async function resolveTenantMailPlanKey(
     }
     return MAIL_INTERNAL_CUSTOM_PROFILE_KEY;
   }
+
+  const activeMailOffer = await db.query.mailEnterpriseOffers.findFirst({
+    where: and(
+      eq(mailEnterpriseOffers.tenantId, tenantId),
+      eq(mailEnterpriseOffers.status, 'active'),
+      or(isNull(mailEnterpriseOffers.endsAt), gt(mailEnterpriseOffers.endsAt, new Date())),
+    ),
+  });
+  if (activeMailOffer) return MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY;
+  if (fallbackPlanKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) return MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY;
 
   const currentPlanVersionIds = await drizzleEntitlementSource.getCurrentPlanVersionIds(tenantId);
   if (!currentPlanVersionIds.length) return normalizeMailPlanKey(fallbackPlanKey);
@@ -48,4 +79,39 @@ export async function resolveTenantMailPlanKey(
 
   if (subscription?.planKey && isMailPlanKey(subscription.planKey)) return subscription.planKey;
   return normalizeMailPlanKey(fallbackPlanKey);
+}
+
+export async function resolveTenantMailPlanLimits(tenantId: string, planKey: MailWorkspacePlanKey) {
+  if (planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY) return null;
+  if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) {
+    const offer = await db.query.mailEnterpriseOffers.findFirst({
+      where: and(
+        eq(mailEnterpriseOffers.tenantId, tenantId),
+        eq(mailEnterpriseOffers.status, 'active'),
+        or(isNull(mailEnterpriseOffers.endsAt), gt(mailEnterpriseOffers.endsAt, new Date())),
+      ),
+    });
+    if (!offer) throw new Error('Active Mail Enterprise offer is missing; Mail limits are unavailable.');
+    return parseMailPlanLimits(offer.limits);
+  }
+  return getMailCommercialPlan(planKey).limits;
+}
+
+export async function resolveTenantMailPlanDisplay(tenantId: string, planKey: MailWorkspacePlanKey) {
+  if (planKey === MAIL_ENTERPRISE_CUSTOM_PROFILE_KEY) {
+    const offer = await db.query.mailEnterpriseOffers.findFirst({
+      where: and(
+        eq(mailEnterpriseOffers.tenantId, tenantId),
+        eq(mailEnterpriseOffers.status, 'active'),
+        or(isNull(mailEnterpriseOffers.endsAt), gt(mailEnterpriseOffers.endsAt, new Date())),
+      ),
+    });
+    if (!offer) throw new Error('Active Mail Enterprise offer is missing.');
+    return { name: offer.name, amountMinor: offer.amountMinor, currency: offer.currency, termDays: offer.termDays };
+  }
+  if (planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY) {
+    return { name: 'Internal Custom', amountMinor: null, currency: 'USD' } as const;
+  }
+  const plan = getMailCommercialPlan(planKey);
+  return { name: plan.name, amountMinor: plan.amountMinor, currency: plan.currency };
 }

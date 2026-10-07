@@ -402,20 +402,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          email_state="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.state||''))")"
-          active_description="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.description||''))")"
-          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ] && [ "$active_description" = "$SMTP_DESCRIPTION" ]; then
-            echo 'Selected SMTP provider is already active in ZITADEL; skipping a test-provider switch.'
-            exit 0
-          fi
-          sender_name="${SMTP_SENDER_NAME:-Mkety}"
-          reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
           receiver="${PLATFORM_ADMIN_EMAILS%%,*}"
           [ -n "$receiver" ] || receiver="$SMTP_SENDER_EMAIL"
           echo "::add-mask::$receiver"
-
+          sender_name="${SMTP_SENDER_NAME:-Mkety}"
+          reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
           HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" RECEIVER="$receiver" DESCRIPTION="$SMTP_DESCRIPTION" node <<'NODE' >/tmp/smtp-test.json
-          process.stdout.write(JSON.stringify({
+          const plain={
             senderAddress:process.env.SENDER,
             senderName:process.env.SENDER_NAME,
             tls:true,
@@ -425,17 +418,23 @@ jobs:
             replyToAddress:process.env.REPLY,
             receiverAddress:process.env.RECEIVER,
             description:process.env.DESCRIPTION,
-            plain:{}
-          }));
+          };
+          process.stdout.write(JSON.stringify({plain}));
           NODE
           issuer="${MKETY_AUTH_ISSUER%/}"
-          code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}'             -X POST "$issuer/admin/v1/email/smtp/_test"             -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'             --data-binary @/tmp/smtp-test.json)"
+          code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}' \
+            -X POST "$issuer/admin/v1/email/smtp/_test" \
+            -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/smtp-test.json)"
           if [ "$code" = 404 ]; then
-            node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-test.json','utf8'));delete x.plain;fs.writeFileSync('/tmp/smtp-test-legacy.json',JSON.stringify(x))"
-            code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}'               -X POST "$issuer/admin/v1/smtp/_test"               -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json'               --data-binary @/tmp/smtp-test-legacy.json)"
+            node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-test.json','utf8'));fs.writeFileSync('/tmp/smtp-test-legacy.json',JSON.stringify(x.plain))"
+            code="$(curl --silent --show-error -o /tmp/smtp-test-response.json -w '%{http_code}' \
+              -X POST "$issuer/admin/v1/smtp/_test" \
+              -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/smtp-test-legacy.json)"
           fi
           if [ "$code" != 200 ]; then
-            node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/smtp-test-response.json','utf8'))}catch{};console.log('BREVO_SMTP_TEST_SAFE '+JSON.stringify({http:process.env.CODE||'',code:x.code||null,message:String(x.message||'').slice(0,240)}))" CODE="$code"
+            CODE="$code" node -e "const fs=require('node:fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/smtp-test-response.json','utf8'))}catch{};console.log('ZITADEL_SMTP_TEST_SAFE '+JSON.stringify({http:process.env.CODE||'',code:x.code||null,message:String(x.message||'').slice(0,240)}))"
             echo "::error::Selected SMTP test through ZITADEL failed HTTP $code."
             exit 1
           fi
@@ -446,16 +445,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          email_state="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.state||''))")"
-          active_description="$(node -e "const x=require('/tmp/zitadel-safe.json');process.stdout.write(String(x.emailProvider?.description||''))")"
-          if [ "$email_state" = "EMAIL_PROVIDER_ACTIVE" ] && [ "$active_description" = "$SMTP_DESCRIPTION" ]; then
-            echo 'Selected SMTP provider is already active in ZITADEL; no provider mutation required.'
-            exit 0
-          fi
           sender_name="${SMTP_SENDER_NAME:-Mkety}"
           reply="${SMTP_REPLY_TO:-$SMTP_SENDER_EMAIL}"
           HOST="$SMTP_HOST" USER="$SMTP_USER" PASSWORD="$SMTP_PASSWORD" SENDER="$SMTP_SENDER_EMAIL" SENDER_NAME="$sender_name" REPLY="$reply" DESCRIPTION="$SMTP_DESCRIPTION" node <<'NODE' >/tmp/smtp-provider.json
-          process.stdout.write(JSON.stringify({
+          process.stdout.write(JSON.stringify({plain:{
             senderAddress:process.env.SENDER,
             senderName:process.env.SENDER_NAME,
             tls:true,
@@ -464,8 +457,7 @@ jobs:
             password:process.env.PASSWORD,
             replyToAddress:process.env.REPLY,
             description:process.env.DESCRIPTION,
-            plain:{}
-          }));
+          }}));
           NODE
           issuer="${MKETY_AUTH_ISSUER%/}"
           email_probe="$(curl --silent --show-error -o /tmp/current-email.json -w '%{http_code}' "$issuer/admin/v1/email" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" || true)"
@@ -473,7 +465,7 @@ jobs:
             legacy_current="$(curl --silent --show-error -o /tmp/current-smtp.json -w '%{http_code}' "$issuer/admin/v1/smtp" -H "Authorization: Bearer $ZITADEL_MANAGEMENT_TOKEN" || true)"
             provider_id=""
             if [ "$legacy_current" = 200 ]; then provider_id="$(node -e "const x=require('/tmp/current-smtp.json');process.stdout.write(x.smtpConfig?.id||'')")"; fi
-            node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-provider.json','utf8'));delete x.plain;fs.writeFileSync('/tmp/smtp-provider-legacy.json',JSON.stringify(x))"
+            node -e "const fs=require('node:fs');const x=JSON.parse(fs.readFileSync('/tmp/smtp-provider.json','utf8'));fs.writeFileSync('/tmp/smtp-provider-legacy.json',JSON.stringify(x.plain))"
             if [ -n "$provider_id" ]; then
               if [ "$EMAIL_PROVIDER" = "mkety" ]; then
                 echo '::error::Legacy ZITADEL SMTP supports one provider; refusing to overwrite the active provider. Use the multi-provider email API or restore the existing provider.'

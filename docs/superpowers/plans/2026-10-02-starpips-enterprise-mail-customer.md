@@ -29,6 +29,17 @@
 - Starpips Mail data and the later ephemeral Enterprise AI fixture must remain tenant-isolated; cover in Mail authorization and Enterprise AI acceptance tests.
 - A failed domain, delivery, suppression or capacity check must remain visible and must not count as successful customer acceptance; cover in gateway and sending-policy tests.
 
+## Implementation review follow-up — Mail quota concurrency
+
+A review identified that concurrent mailbox creation and shared-thread assignment could both observe available seats or mailbox capacity and over-allocate. The fix is complete in PR #348 at code head `d23edfae53fbf7d085bdb8ad3584f8691211d232`:
+
+- Mailbox creation and shared-thread assignment acquire a tenant-scoped PostgreSQL transaction lock and recheck limits under that lock; the relevant write is committed in the same transaction.
+- Seat usage counts distinct users across mailbox members and shared-inbox assignees. Existing members/assignees reuse their seat; unchanged assignments are not rejected at capacity.
+- Focused pure-helper tests cover seat reuse, cap enforcement, deduplication across roles, open capacity, and uncapped internal plans. The exact code-head CI/tests/typecheck/lint/build/migration and candidate runs are recorded in `docs/CURRENT_WORKSTREAM_STATUS.md`.
+- Independent follow-up review found no remaining actionable issue in the quota paths.
+
+This completes the repository implementation follow-up only. It does not complete Starpips' approved terms, payment, domain onboarding, delivery, or customer acceptance; those remain open below.
+
 ---
 
 ### Task 1: Read-only Starpips Mail and commercial preflight

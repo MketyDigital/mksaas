@@ -1,6 +1,5 @@
 import { and, count, eq, gte } from 'drizzle-orm';
 
-import { getMailCommercialPlan } from '@/features/mail/commercial/plans';
 import { db } from '@/shared/db/cloudflare';
 import {
   mailCustomerUpdateRecipients,
@@ -10,7 +9,7 @@ import {
   mailWorkspaces,
 } from '@/shared/db/schema';
 
-import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
+import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanDisplay, resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function startOfUtcMonth(now = new Date()) {
@@ -26,7 +25,10 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
 
   const planKey = await resolveTenantMailPlanKey(tenant.id, workspace.planKey, tenant.slug);
   const internalCustom = planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY;
-  const plan = internalCustom ? null : getMailCommercialPlan(planKey);
+  const [display, limits] = await Promise.all([
+    resolveTenantMailPlanDisplay(tenant.id, planKey),
+    resolveTenantMailPlanLimits(tenant.id, planKey),
+  ]);
   const periodStart = startOfUtcMonth(now);
 
   const [domainRows, mailboxRows, sharedRows, outboundRows, updateRows] = await Promise.all([
@@ -60,9 +62,10 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
 
   return {
     planKey,
-    planName: internalCustom ? 'Internal Custom' : plan!.name,
-    priceMinor: internalCustom ? null : plan!.amountMinor,
-    currency: 'USD' as const,
+    planName: display.name,
+    priceMinor: display.amountMinor,
+    currency: display.currency,
+    termDays: 'termDays' in display ? display.termDays : null,
     periodStart,
     storageBytesUsed: workspace.storageBytesUsed,
     usage: {
@@ -72,6 +75,6 @@ export async function getCustomerMailUsageSummary(tenantSlug: string, now = new 
       outboundMessages: Number(outboundRows[0]?.value ?? 0),
       customerUpdateDeliveries: Number(updateRows[0]?.value ?? 0),
     },
-    limits: internalCustom ? internalLimits : plan!.limits,
+    limits: internalCustom ? internalLimits : limits,
   };
 }

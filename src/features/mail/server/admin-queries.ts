@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, isNull, like } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, like, ne } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
-import { billingPlans, billingPlanVersions, mailDomains, mailWorkspaces, tenants } from '@/shared/db/schema';
+import { billingPlans, billingPlanVersions, mailDomains, mailEnterpriseOffers, mailWorkspaces, platformEnterpriseOrders, tenants } from '@/shared/db/schema';
 
 import { resolveTenantMailPlanKey } from './commercial';
 
@@ -75,8 +75,40 @@ export async function getMailOperationsOverview(limit = 100) {
     )
     .orderBy(asc(billingPlans.key));
 
+  const [customers, offers] = await Promise.all([
+    db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
+      .from(tenants)
+      .where(ne(tenants.slug, 'mkety-ops'))
+      .orderBy(asc(tenants.name))
+      .limit(250),
+    db.select({
+      id: mailEnterpriseOffers.id,
+      tenantId: mailEnterpriseOffers.tenantId,
+      tenantName: tenants.name,
+      tenantSlug: tenants.slug,
+      name: mailEnterpriseOffers.name,
+      amountMinor: mailEnterpriseOffers.amountMinor,
+      currency: mailEnterpriseOffers.currency,
+      termDays: mailEnterpriseOffers.termDays,
+      status: mailEnterpriseOffers.status,
+      orderId: mailEnterpriseOffers.orderId,
+      createdAt: mailEnterpriseOffers.createdAt,
+      redirectUrl: platformEnterpriseOrders.metadata,
+    }).from(mailEnterpriseOffers)
+      .innerJoin(tenants, eq(tenants.id, mailEnterpriseOffers.tenantId))
+      .leftJoin(platformEnterpriseOrders, eq(platformEnterpriseOrders.id, mailEnterpriseOffers.orderId))
+      .orderBy(desc(mailEnterpriseOffers.createdAt))
+      .limit(50),
+  ]);
+
   return {
     catalog,
     workspaces: rows,
+    customers,
+    offers: offers.map((offer) => ({
+      ...offer,
+      paymentUrl: typeof offer.redirectUrl?.redirectUrl === 'string' ? offer.redirectUrl.redirectUrl : null,
+      redirectUrl: undefined,
+    })),
   };
 }

@@ -2,6 +2,7 @@ import { Code2, Globe2, Inbox, Mail, Megaphone, Send, Smartphone, Users } from '
 
 import { enableMketyMail } from '@/features/mail/server/actions';
 import { mailExternalClientsEnabled } from '@/features/mail/server/external-clients';
+import { formatMailPlanPrice, getMailPlanManagementDestination } from '@/features/mail/server/commercial';
 import { getCustomerMailUsageSummary } from '@/features/mail/server/usage';
 import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
@@ -15,6 +16,9 @@ export default async function MailHome({ params }: { params: Promise<{ tenant: s
   const workspace = await getMailWorkspace(tenant);
   const externalClientsEnabled = mailExternalClientsEnabled();
   const usage = workspace ? await getCustomerMailUsageSummary(tenant) : null;
+  const planManagement = usage?.priceMinor !== null && usage
+    ? getMailPlanManagementDestination(tenant, usage.planKey)
+    : null;
 
   if (!workspace) {
     const action = enableMketyMail.bind(null, tenant);
@@ -77,19 +81,19 @@ export default async function MailHome({ params }: { params: Promise<{ tenant: s
             <CardDescription>
               {usage.priceMinor === null
                 ? 'Internal Custom · no monthly charge; platform safety limits still apply'
-                : `${usage.planName} · $${(Number(usage.priceMinor) / 100).toFixed(2)} / month before prepaid-term discounts`}
+                : `${usage.planName} · ${formatMailPlanPrice(usage.priceMinor, usage.planKey, usage.termDays, usage.currency)}`}
             </CardDescription>
           </div>
-          {usage.priceMinor !== null && <a className="text-sm font-semibold text-primary" href={`/app/${tenant}/billing/checkout?plan=${usage.planKey}`}>Manage plan →</a>}
+          {planManagement && <a className="text-sm font-semibold text-primary" href={planManagement.href}>{planManagement.label}</a>}
         </div>
       </CardHeader>
       <CardContent>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ['Outbound this month', usage.usage.outboundMessages, usage.limits.outboundMessagesPerMonth],
-            ['Customer Updates', usage.usage.customerUpdateDeliveries, usage.limits.customerUpdateDeliveriesPerMonth],
-            ['Mailboxes', usage.usage.mailboxes, usage.limits.mailboxes],
-            ['Domains', usage.usage.domains, usage.limits.domains],
+            ['Outbound this month', usage.usage.outboundMessages, usage.limits?.outboundMessagesPerMonth ?? null],
+            ['Customer Updates', usage.usage.customerUpdateDeliveries, usage.limits?.customerUpdateDeliveriesPerMonth ?? null],
+            ['Mailboxes', usage.usage.mailboxes, usage.limits?.mailboxes ?? null],
+            ['Domains', usage.usage.domains, usage.limits?.domains ?? null],
           ].map(([label, used, limit]) => <div className="rounded-xl border p-4" key={String(label)}>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
             <p className="mt-2 text-xl font-semibold">{Number(used).toLocaleString()} <span className="text-sm font-normal text-muted-foreground">/ {limit === null ? 'Uncapped' : Number(limit).toLocaleString()}</span></p>
