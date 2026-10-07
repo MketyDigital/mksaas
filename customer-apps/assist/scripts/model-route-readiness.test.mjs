@@ -27,6 +27,9 @@ test("testPausingAliasIsExplicit", () => {
 test("testActiveAliasCannotAccidentallyLoseAllTargets", () => {
   assert.match(api, /active_route_requires_enabled_target/);
   assert.match(api, /nextStatus === "active" && !evaluateRouteReadiness/);
+  assert.match(api, /provider_input_cost_micros_per_million:\s*target\.providerInputCostMicrosPerMillion/);
+  assert.match(api, /provider_output_cost_micros_per_million:\s*target\.providerOutputCostMicrosPerMillion/);
+  assert.match(api, /provider_image_cost_micros:\s*target\.providerImageCostMicros/);
 });
 
 test("testMediaPolicyDisabledDiffersFromRouteUnavailable", () => {

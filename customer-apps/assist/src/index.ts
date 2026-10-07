@@ -1362,6 +1362,9 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
           input_credits_per_million: target.inputCreditsPerMillion,
           output_credits_per_million: target.outputCreditsPerMillion,
           image_credits: target.imageCredits,
+          provider_input_cost_micros_per_million: target.providerInputCostMicrosPerMillion,
+          provider_output_cost_micros_per_million: target.providerOutputCostMicrosPerMillion,
+          provider_image_cost_micros: target.providerImageCostMicros,
           audio_credits_per_minute: target.audioCreditsPerMinute,
         }, alias),
       }))).eligibleTargetCount) return json({ error: "active_route_requires_enabled_target" }, 400);
