@@ -1,6 +1,6 @@
 'use server';
 
-import { and, count, countDistinct, eq, ne } from 'drizzle-orm';
+import { and, count, eq, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -10,6 +10,7 @@ import { mailDomains, mailMailboxes, mailMailboxMembers, mailWorkspaces } from '
 import { createCloudflareEmailWorkerRule, setCloudflareEmailCatchAll } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
+import { canAssignMailTeamSeat } from './mail-team-seats';
 
 function cleanLocalPart(value:string){
   return value.trim().toLowerCase().replace(/[^a-z0-9._+-]/g,'').slice(0,128);
@@ -57,14 +58,8 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     ));
     if(Number(sharedCount?.value??0)>=limits.sharedInboxes) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
   }
-  if(limits){
-    const [seats]=await db.select({value:countDistinct(mailMailboxMembers.userId)})
-      .from(mailMailboxMembers).where(eq(mailMailboxMembers.tenantId,tenant.id));
-    const existingSeat=await db.query.mailMailboxMembers.findFirst({
-      where:and(eq(mailMailboxMembers.tenantId,tenant.id),eq(mailMailboxMembers.userId,actor.userId)),
-      columns:{userId:true},
-    });
-    if(!existingSeat && Number(seats?.value??0)>=limits.teamSeats) redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
+  if(limits && !(await canAssignMailTeamSeat(tenant.id,actor.userId,limits.teamSeats))){
+    redirect(`/app/${tenantSlug}/mail/mailboxes?error=plan-limit`);
   }
 
   if(catchAll){
