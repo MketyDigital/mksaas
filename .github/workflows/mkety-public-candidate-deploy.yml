@@ -2,6 +2,12 @@ name: Mkety Public Candidate Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      run_enterprise_ai_acceptance:
+        description: Run internal Enterprise AI staging acceptance only after the Mail customer gate passes
+        type: boolean
+        default: false
+        required: false
   pull_request:
     branches:
       - main
@@ -317,6 +323,7 @@ jobs:
 
       - name: Prepare ephemeral managed-AI commercial acceptance fixture
         id: ai-commercial-fixture
+        if: github.event_name == 'workflow_dispatch' && inputs.run_enterprise_ai_acceptance == true
         shell: bash
         env:
           AI_ACCEPTANCE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
@@ -332,6 +339,7 @@ jobs:
           echo "model=$model" >> "$GITHUB_OUTPUT"
 
       - name: Run real managed-AI commercial accounting acceptance
+        if: github.event_name == 'workflow_dispatch' && inputs.run_enterprise_ai_acceptance == true
         shell: bash
         env:
           AI_ACCEPTANCE_BASE_URL: ${{ steps.deploy.outputs.url }}
