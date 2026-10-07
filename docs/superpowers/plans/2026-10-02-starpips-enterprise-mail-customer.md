@@ -31,7 +31,7 @@
 
 ## Implementation review follow-up — Mail quota concurrency
 
-A review identified that concurrent mailbox creation and shared-thread assignment could both observe available seats or mailbox capacity and over-allocate. The fix is complete in PR #348 at code head `d23edfae53fbf7d085bdb8ad3584f8691211d232`:
+A review identified that concurrent mailbox creation and shared-thread assignment could both observe available seats or mailbox capacity and over-allocate. The fix is implemented and merged in PR #348 as merge commit `403b8cf7ea65d5795ba21c8127022259b66774d7` (reviewed code head `d23edfae53fbf7d085bdb8ad3584f8691211d232`):
 
 - Mailbox creation and shared-thread assignment acquire a tenant-scoped PostgreSQL transaction lock and recheck limits under that lock; the relevant write is committed in the same transaction.
 - Seat usage counts distinct users across mailbox members and shared-inbox assignees. Existing members/assignees reuse their seat; unchanged assignments are not rejected at capacity.
