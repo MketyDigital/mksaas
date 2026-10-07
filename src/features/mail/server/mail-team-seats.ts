@@ -1,37 +1,19 @@
-import { and, eq, isNotNull, ne } from 'drizzle-orm';
+export interface MailTeamSeatMember {
+  userId: string | null;
+}
 
-import { db } from '@/shared/db/cloudflare';
-import { mailMailboxMembers, mailThreads } from '@/shared/db/schema';
+export interface MailTeamSeatAssignment {
+  assignedUserId: string | null;
+}
 
-/**
- * Mail seats are distinct mailbox members plus distinct shared-inbox assignees.
- * Tenant membership alone does not consume a Mail seat. Passing the current
- * thread excludes its previous assignee while checking a reassignment.
- */
-export async function canAssignMailTeamSeat(
-  tenantId: string,
+/** Mail seats are distinct mailbox members plus distinct shared-inbox assignees. */
+export function canAssignMailTeamSeat(
   userId: string,
   seatLimit: number | null,
-  excludingThreadId?: string,
-): Promise<boolean> {
+  members: readonly MailTeamSeatMember[],
+  assignments: readonly MailTeamSeatAssignment[],
+): boolean {
   if (seatLimit == null) return true;
-
-  const threadConditions = [
-    eq(mailThreads.tenantId, tenantId),
-    isNotNull(mailThreads.assignedUserId),
-  ];
-  if (excludingThreadId) threadConditions.push(ne(mailThreads.id, excludingThreadId));
-
-  const [members, assignments] = await Promise.all([
-    db.query.mailMailboxMembers.findMany({
-      where: eq(mailMailboxMembers.tenantId, tenantId),
-      columns: { userId: true },
-    }),
-    db.query.mailThreads.findMany({
-      where: and(...threadConditions),
-      columns: { assignedUserId: true },
-    }),
-  ]);
 
   const usedSeats = new Set<string>();
   for (const member of members) {
