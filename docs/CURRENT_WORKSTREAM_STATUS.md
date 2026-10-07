@@ -8,9 +8,9 @@ This section supersedes earlier Mail status summaries below where they describe 
 - First-party implementation plan: Tasks 2–7 (SMTP-only reserved credential, queued first-party sender, invitations, operator-only support inbox, producer wiring and guarded ZITADEL reconciliation) are checked complete in `docs/superpowers/plans/2026-10-02-mkety-first-party-mail.md`. Those checks describe code implementation, not live delivery acceptance.
 - First-party work still open: Task 1 DNS/provider/workspace preflight; Task 8 reserved sender readiness, controlled delivery, complete signup/recovery/invitation/support flows, exact evidence and integration.
 - PR #333 is merged. Older status sections below that call it active or cite its historical head, base, or dependency blocker are not current release status.
-- PR #348 is open at code head `49d7872a9b214d102cfb1e41827ba5489a783caa`. Its review findings are fixed: the ZITADEL workflow always tests and applies the submitted SMTP credentials; Enterprise Mail shows currency and the contracted term, while no misleading generic Billing CTA is offered for the custom contract plan; provider-initiation failure marks the order failed and cancels only the matching awaiting offer, with cleanup failure surfaced for operator review.
+- PR #348 is open at PR head `b4fe6556f95db4298eb775cd6ec10c8dd0974802`; last code commit is `49d7872a9b214d102cfb1e41827ba5489a783caa`. Its review findings are fixed: the ZITADEL workflow always tests and applies the submitted SMTP credentials; Enterprise Mail shows currency and the contracted term, while no misleading generic Billing CTA is offered for the custom contract plan; provider-initiation failure marks the order failed and cancels only the matching awaiting offer, with cleanup failure surfaced for operator review.
 - The candidate workflow’s internal Enterprise AI fixture now runs only for a manual dispatch with `run_enterprise_ai_acceptance=true`; its default is false, and fixture cleanup remains unconditional. Automatic PR candidate validation cannot start internal Enterprise AI acceptance before Starpips Mail.
-- TDD evidence: pre-fix run `37583062404` on intermediate head `2dfaf8dc173ee97be1edb8c0df42b949d529e3b0` confirmed the Enterprise formatter signature and acceptance-order guard were missing; the same run exposed a test import-order error. The corrected implementation and isolated acceptance-order test are now on `49d7872a9b214d102cfb1e41827ba5489a783caa`. Exact-head verification is pending; earlier-head results do not certify this one.
+- TDD evidence: pre-fix run `37583062404` on intermediate head `2dfaf8dc173ee97be1edb8c0df42b949d529e3b0` confirmed the Enterprise formatter signature and acceptance-order guard were missing; the same run exposed a test import-order error. The corrected implementation and isolated acceptance-order test are now on code commit `49d7872a9b214d102cfb1e41827ba5489a783caa`. Exact-head verification is pending; earlier-head results do not certify this one.
 - Production readiness evidence remains limited to health/host/API checks and TLS reachability. It does not prove reserved-mailbox credential readiness or delivery through ZITADEL signup/recovery. Customer external Mail clients remain disabled.
 - Starpips plan: all tasks remain open. This audit has not established the approved customer identity, contract price/currency/term/limits, verified billing contact, customer-owned domain, verified settlement, or customer acceptance. Do not create a checkout or entitlement until those commercial facts are confirmed and payment settles through the provider.
 - Enterprise AI sequence: internal Mkety acceptance follows completed Starpips Mail acceptance. Production customer inference remains disabled.
@@ -23,6 +23,32 @@ This section supersedes earlier Mail status summaries below where they describe 
 4. Inspect Starpips' approved agreement/account using read-only controls. Stop without checkout if customer, approved price, currency, term, limits, verified contact, domain or payment route is missing.
 5. After provider-verified settlement, configure Starpips' customer-owned domain and verify login, mailbox/team, send, reply/inbound, quotas, suppressions, billing and tenant isolation. Record exact release SHA, run IDs and settlement reference without unnecessary personal data.
 6. Only after Starpips acceptance is recorded, manually run the isolated internal Mkety Enterprise AI acceptance; record accounting and fixture-cleanup evidence and keep production inference disabled.
+
+
+<!-- Historical checkpoint; superseded by the Oct 7 section above. Its PR, branch, and blocker details describe the Oct 3 state only. -->
+
+# 2026-10-03 first-party Mail and checkout — current resume authority
+
+This section supersedes the older platform-completion and production-promotion summaries below for the active Mkety Mail / checkout workstream. Historical entries remain useful context but describe earlier repository states.
+
+- Active PR: [#333](https://github.com/MketyDigital/mksaas/pull/333), branch `codex/mkety-first-party-mail-20261002`, current code head `5c1ee4b08e29617657d4c724f3d877f381a97f06`, based on production main `65493225017a358ad5fcd9c8ffd58c57c73b9ca7`.
+- Completed in code: account-bound checkout foundations, first-party SMTP-only credential creation and atomic rotation, platform invitation sending, normalized Flutterwave FX readiness, and a safe legacy ZITADEL SMTP overwrite guard. The production workflow now validates and correctly masks the reserved Mail tenant binding before release/deploy work.
+- Current-head verification: GitHub tests, typecheck, build, lint, MegaLinter, PR validation, migration baseline, Mail readiness, staging Content DB smoke, Cloudflare smoke, Public AI provider probe, and Platform Core workspace smoke succeeded. The dependency audit fails on high-severity GHSA-vfj7-8cjw-p6xm in `braces <=3.0.3`, reached through the dev-only Next ESLint toolchain. GitHub currently lists no patched version; the upstream fix remains unmerged. No dependency override or audit waiver was added. Do not merge while this required gate is failing without a reviewed remediation or explicit repository-owner risk decision.
+- The isolated Public Candidate Deploy is cancelled before its first step on the current head. No fresh candidate deployment is certified for this head.
+- No production deployment, DNS/MX/TXT change, or payment charge occurred in this workstream. Root DNS, reserved-tenant secret presence, active `info@mkety.com` mailbox/domain readiness, controlled SMTP delivery, and ZITADEL/account/support acceptance remain unverified.
+- Customer external Mail clients and production Enterprise AI inference remain disabled. Starpips is the first paid Enterprise Mail pilot. Only after Starpips accepts Mail should MKETY use its own internal system for Enterprise AI acceptance; that test does not enable production Enterprise AI inference.
+
+## Next exact sequence
+
+1. Resolve the upstream `braces` advisory with a reviewed, tested patch/release; keep the dependency-audit gate intact.
+2. Re-run all exact-head Actions, including the isolated Public Candidate Deploy, and require success.
+3. Complete read-only DNS/provider/tenant preflight. Verify the reserved Mail tenant binding and `info@mkety.com` readiness before any DNS or provider mutation.
+4. Perform guarded first-party SMTP delivery, ZITADEL, login, invitation, recovery, and support-path acceptance with controlled recipients.
+5. Complete Starpips' contracted Mail purchase, domain onboarding, send/receive, team, and billing acceptance; record the customer's acceptance and exact evidence.
+6. Only after Starpips Mail acceptance, run the isolated internal MKETY Enterprise AI acceptance and record cleanup evidence. Keep production Enterprise AI inference off.
+7. Update the active plans and this handoff with evidence before considering production promotion.
+
+---
 
 # 2026-09-30 exact-main production promotion update
 
