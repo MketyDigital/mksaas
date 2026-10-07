@@ -32,7 +32,7 @@ export default async function Home() {
         logo: 'https://mkety.com/mkety-logo.png',
         email: content.settings.contactEmail ?? 'info@mkety.com',
         description:
-          'Mkety is a technology platform for AI, automation, deployment management, media delivery, business solutions, practical learning, and Enterprise delivery.',
+          'Mkety builds software for applications, AI agents, workflow automation and serverless deployment, with self-service Workspaces, usage, credits and billing in one platform.',
       },
       {
         '@type': 'WebSite',
@@ -50,11 +50,11 @@ export default async function Home() {
         operatingSystem: 'Web',
         publisher: { '@id': 'https://mkety.com/#organization' },
         description:
-          'A connected platform for AI agents, workflow automation, application deployment, media delivery, business solutions, and Enterprise systems.',
+          'An AI-powered software platform for building applications, AI agents, automations and digital business systems, with self-service Workspaces and team, usage and billing controls.',
         featureList: [
           'AI agents and knowledge-powered experiences',
           'Workflow automation and integrations',
-          'Managed web, API and serverless deployment',
+          'Serverless and edge application deployment',
           'Media storage and delivery',
           'Usage, team and operational controls',
           'Custom Enterprise delivery',

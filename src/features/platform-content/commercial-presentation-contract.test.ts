@@ -68,7 +68,7 @@ describe('Mkety documented public commercial presentation', () => {
     expect(presentation).not.toMatch(/African edition/i);
     expect(presentation).not.toMatch(/academy.*\$|trading.*\$/i);
     expect(pricingByKey.get('starter')?.description).toMatch(/Pages-first website and publishing/i);
-    expect(pricingByKey.get('deploy-workspace')?.description).toMatch(/serverless application deployment|managed edge runtime/i);
+    expect(pricingByKey.get('deploy-workspace')?.description).toMatch(/serverless application deployment|managed runtime/i);
 
     expect(pricingByKey.get('starter')?.features).toEqual([
       'Published websites and pages',
@@ -159,7 +159,7 @@ describe('Mkety documented public commercial presentation', () => {
     expect(workspaceByKey.get('deploy')).toMatchObject({
       title: 'Deploy Workspace',
       description:
-        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety managed edge/serverless deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
+        'Deploy lightweight web applications, APIs, portals, and serverless workloads through Mkety’s serverless and edge application deployment with environment variables, secrets, supported domains, logs, status, history, and usage visibility.',
     });
     expect(workspaceByKey.get('trading')).toMatchObject({
       title: 'Trading Workspace',
