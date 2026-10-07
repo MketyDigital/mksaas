@@ -41,6 +41,9 @@ jobs:
             "$api/zones/$zone_id/dns_records?per_page=100&page=1")"
           pages="$(printf '%s' "$first_page" | jq -er '.result_info.total_pages // 1')"
           : > /tmp/mail-dns-records.ndjson
+          routing_code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 20 -sS -o /tmp/email-routing.json -w '%{http_code}' \\
+            -H "Authorization: Bearer $CF_TOKEN" \\
+            "$api/zones/$zone_id/email/routing" || true)"
           page=1
           while [ "$page" -le "$pages" ]; do
             if [ "$page" -eq 1 ]; then
@@ -53,7 +56,7 @@ jobs:
             printf '%s' "$response" | jq -c '.result[]' >> /tmp/mail-dns-records.ndjson
             page=$((page + 1))
           done
-          node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          CF_EMAIL_ROUTING_HTTP="$routing_code" node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
           const fs = require('node:fs');
           const lines = fs.readFileSync('/tmp/mail-dns-records.ndjson', 'utf8').trim().split('\n').filter(Boolean);
           const records = lines.map((line) => JSON.parse(line)).filter((r) => {
@@ -77,6 +80,8 @@ jobs:
           console.log('## Read-only Cloudflare mail DNS inventory for mkety.com');
           console.log('');
           console.log('Fetched through Cloudflare API GET requests only. No DNS records were created, updated, or deleted.');
+          console.log('');
+          console.log(`Cloudflare Email Routing settings: HTTP ${process.env.CF_EMAIL_ROUTING_HTTP}; enabled=${routing.result?.enabled ?? 'unknown'}; status=${routing.result?.status ?? 'unknown'}`);
           console.log('');
           console.log(`Apex SPF present: ${apexSpf ? 'yes' : 'no'}`);
           console.log('');
