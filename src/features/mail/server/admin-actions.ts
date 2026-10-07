@@ -46,7 +46,8 @@ async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
   const configuredTenantId = getFirstPartyMailTenantId().trim();
   if (!configuredTenantId) throw new Error('First-party Mail tenant is not configured.');
 
-  const workspace = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
+    let changed = false;
     const [tenant] = await tx
       .select({ id: tenants.id, slug: tenants.slug })
       .from(tenants)
@@ -94,6 +95,7 @@ async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
         expiresAt: null,
         actorUserId: actor.userId,
       });
+      changed = true;
     }
 
     const [existing] = await tx
@@ -106,37 +108,45 @@ async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
       throw new Error('The reserved tenant Mail workspace is suspended; review it before provisioning.');
     }
 
-    const [created] = existing
-      ? await tx
-          .update(mailWorkspaces)
-          .set({ planKey: MAIL_INTERNAL_CUSTOM_PROFILE_KEY, updatedAt: now })
-          .where(eq(mailWorkspaces.id, existing.id))
-          .returning()
-      : await tx
-          .insert(mailWorkspaces)
-          .values({
-            tenantId: tenant.id,
-            status: 'active',
-            planKey: MAIL_INTERNAL_CUSTOM_PROFILE_KEY,
-            onboardingStep: 'domain',
-            enabledByUserId: actor.userId,
-          })
-          .returning();
+    let workspace;
+    if (existing?.planKey === MAIL_INTERNAL_CUSTOM_PROFILE_KEY) {
+      workspace = existing;
+    } else if (existing) {
+      [workspace] = await tx
+        .update(mailWorkspaces)
+        .set({ planKey: MAIL_INTERNAL_CUSTOM_PROFILE_KEY, updatedAt: now })
+        .where(eq(mailWorkspaces.id, existing.id))
+        .returning();
+      changed = true;
+    } else {
+      [workspace] = await tx
+        .insert(mailWorkspaces)
+        .values({
+          tenantId: tenant.id,
+          status: 'active',
+          planKey: MAIL_INTERNAL_CUSTOM_PROFILE_KEY,
+          onboardingStep: 'domain',
+          enabledByUserId: actor.userId,
+        })
+        .returning();
+      changed = true;
+    }
 
-    if (!created) throw new Error('Could not provision the first-party Mail workspace.');
-    return created;
+    if (!workspace) throw new Error('Could not provision the first-party Mail workspace.');
+    return { workspace, changed };
   });
 
-  await logAuditEvent({
-    actorId: actor.userId,
-    action: 'mail.first_party_workspace.bootstrapped',
-    entityType: 'mail_workspace',
-    entityId: workspace.id,
-    changes: { profile: MAIL_INTERNAL_CUSTOM_PROFILE_KEY },
-    metadata: { tenantId: configuredTenantId, tenantSlug: 'mkety-ops' },
-  });
+  if (result.changed) {
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'mail.first_party_workspace.bootstrapped',
+      entityType: 'mail_workspace',
+      entityId: result.workspace.id,
+      changes: { profile: MAIL_INTERNAL_CUSTOM_PROFILE_KEY },
+      metadata: { tenantId: configuredTenantId, tenantSlug: 'mkety-ops' },
+    });
+  }
 }
-
 
 function bool(value: FormDataEntryValue | null) {
   return value === 'on' || value === 'true' || value === '1';
