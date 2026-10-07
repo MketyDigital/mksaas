@@ -302,6 +302,8 @@ Update the handoff with exact SHA, workflow/run identifiers, outcomes and remain
 
 Run: `pnpm test`, `pnpm type-check`, `pnpm lint`, `pnpm build`, `pnpm db:check:migrations`, and applicable Cloudflare/vinext acceptance. Expected: all required gates pass on the same candidate SHA.
 
-- [ ] **Step 7: Integrate without dropping Mkety changes**
+- [x] **Step 7: Integrate without dropping Mkety changes**
 
 Before publishing, inspect the latest GitHub `main` and replay only Mkety changes onto it using a non-force update. Confirm payment-fix commits are still present and no `customer-apps/assist` files or standalone Assist history are included. Open a reviewable PR and require exact-head checks.
+
+Evidence: PR #348 was merged into `main` as `403b8cf7ea65d5795ba21c8127022259b66774d7`. It preserved the main merge base, had no Assist paths in its 41-file diff, and passed exact-head checks and candidate validation at `a8ad556fb46c3ed3adfe34e5e139fb47247d0857`. This closes repository integration only; Task 8 live readiness and customer delivery acceptance remain open.
