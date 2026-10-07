@@ -27,7 +27,21 @@ export function routeTargetPricingConfigured(target: Record<string, unknown>, al
   const input = Number(target.input_credits_per_million || 0);
   const output = Number(target.output_credits_per_million || 0);
   if (alias === "mkety-media-vision") {
-    return Number(target.image_credits || 0) > 0;
+    const providerInput = Number(target.provider_input_cost_micros_per_million || 0);
+    const providerOutput = Number(target.provider_output_cost_micros_per_million || 0);
+    const imageCredits = Number(target.image_credits || 0);
+    const providerImageCost = Number(target.provider_image_cost_micros || 0);
+    const hasTokenCosts = providerInput > 0 || providerOutput > 0;
+    const imageCostCovered = providerImageCost === 0
+      || (imageCredits > 0 && imageCredits >= providerImageCost * 10);
+    const tokenMetered = input > 0 && output > 0
+      && providerInput > 0 && providerOutput > 0
+      && input >= providerInput * 10
+      && output >= providerOutput * 10
+      && imageCostCovered;
+    const flatImageRate = !hasTokenCosts && imageCredits > 0 && providerImageCost > 0
+      && imageCredits >= providerImageCost * 10;
+    return tokenMetered || flatImageRate;
   }
   if (alias === "mkety-media-speech") {
     return Number(target.audio_credits_per_minute || 0) > 0;
