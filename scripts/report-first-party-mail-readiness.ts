@@ -32,10 +32,9 @@ async function main() {
       spfStatus: mailDomains.spfStatus,
       dkimStatus: mailDomains.dkimStatus,
       dmarcStatus: mailDomains.dmarcStatus,
-      mxStatus: mailDomains.mxStatus,
     })
     .from(mailDomains)
-    .where(and(eq(mailDomains.tenantId, tenantId), eq(mailDomains.domain, 'mkety.com')))
+    .where(and(eq(mailDomains.tenantId, tenantId), eq(mailDomains.domain, 'mail.mkety.com')))
     .limit(1);
 
   const [mailbox] = domain
@@ -59,7 +58,6 @@ async function main() {
     `spf=${domain?.spfStatus ?? 'missing'}`,
     `dkim=${domain?.dkimStatus ?? 'missing'}`,
     `dmarc=${domain?.dmarcStatus ?? 'missing'}`,
-    `mx=${domain?.mxStatus ?? 'missing'}`,
     `info_mailbox=${mailbox ? mailbox.status : 'missing'}`,
   ].join(' '));
 }
