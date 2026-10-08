@@ -14,7 +14,10 @@ import {
   findCloudflareZone,
   getCloudflareEmailRouting,
   getCloudflareEmailSending,
+  getCloudflareEmailSendingDns,
+  getPublicCloudflareSendingDns,
 } from './cloudflare';
+import { areCloudflareEmailAuthRecordsPublished, getMailDomainProvisioningPolicy } from './domain-provisioning-policy';
 import { requireMailWorkspaceAccess } from './workspace';
 import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
@@ -39,6 +42,9 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     redirect(`/app/${tenantSlug}/mail/domains?error=domain`);
   }
 
+  const provisioning=getMailDomainProvisioningPolicy(domain);
+  if(!provisioning.allowed) redirect(`/app/${tenantSlug}/mail/domains?error=reserved-domain`);
+
   const duplicate=await db.query.mailDomains.findFirst({where:eq(mailDomains.domain,domain)});
   if(duplicate&&duplicate.tenantId!==tenant.id) redirect(`/app/${tenantSlug}/mail/domains?error=claimed`);
   if(duplicate) redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
@@ -46,19 +52,27 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
   let zoneId:string|null=null;
   let routingEnabled=false;
   let sendingEnabled=false;
+  let sendingAuthVerified=false;
   try{
     const zone=await findCloudflareZone(domain);
     if(zone){
       zoneId=zone.id;
-      if(domain!=='mail.mkety.com'){
+      if(provisioning.configureRouting){
         await enableCloudflareEmailRouting(zone.id,domain);
         const routing=await getCloudflareEmailRouting(zone.id);
         routingEnabled=Boolean(routing?.enabled);
       }
-      const configuredSending=await getCloudflareEmailSending(zone.id,domain);
-      const sending=configuredSending||await enableCloudflareEmailSending(zone.id,domain);
-      sendingEnabled=Boolean(sending?.enabled);
-      if(sendingEnabled) await ensureCloudflareEmailEventSubscription(zone.id,domain);
+      if(provisioning.configureSending){
+        const configuredSending=await getCloudflareEmailSending(zone.id,domain);
+        const sending=configuredSending||await enableCloudflareEmailSending(zone.id,domain);
+        sendingEnabled=Boolean(sending?.enabled);
+        if(sendingEnabled&&typeof sending?.tag==='string'){
+          const expectedRecords=await getCloudflareEmailSendingDns(zone.id,sending.tag);
+          const publicRecords=await getPublicCloudflareSendingDns(expectedRecords);
+          sendingAuthVerified=areCloudflareEmailAuthRecordsPublished(domain,sendingEnabled,expectedRecords,publicRecords);
+        }
+        if(sendingEnabled) await ensureCloudflareEmailEventSubscription(zone.id,domain);
+      }
     }
   }catch{
     // A customer domain outside Mkety's Cloudflare account remains in guided setup.
@@ -68,14 +82,14 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     tenantId:tenant.id,
     workspaceId:workspace.id,
     domain,
-    status:routingEnabled&&sendingEnabled?'ready':routingEnabled?'routing_ready':sendingEnabled?'sending_ready':'pending',
+    status:routingEnabled&&sendingAuthVerified?'ready':routingEnabled?'routing_ready':sendingAuthVerified?'sending_ready':'pending',
     cloudflareZoneId:zoneId,
     routingEnabled,
     sendingEnabled,
     mxStatus:routingEnabled?'verified':'pending',
-    spfStatus:routingEnabled||sendingEnabled?'verified':'pending',
-    dkimStatus:sendingEnabled?'verified':'pending',
-    dmarcStatus:sendingEnabled?'verified':'pending',
+    spfStatus:sendingAuthVerified?'verified':'pending',
+    dkimStatus:sendingAuthVerified?'verified':'pending',
+    dmarcStatus:sendingAuthVerified?'verified':'pending',
   }).returning();
 
   if(routingEnabled&&created){
