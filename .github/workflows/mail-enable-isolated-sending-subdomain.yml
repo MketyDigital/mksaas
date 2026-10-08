@@ -1,0 +1,88 @@
+name: Enable Isolated Mkety Mail Sending Domain
+
+on:
+  push:
+    branches:
+      - codex/mail-cloudflare-sending-readonly-audit
+    paths:
+      - .github/workflows/mail-enable-isolated-sending-subdomain.yml
+
+permissions:
+  contents: read
+
+jobs:
+  enable-sending:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable Email Sending only on mail.mkety.com and preserve Zoho DNS
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.MKETY_DEPLOY_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_TOKEN:-}" ]; then
+            echo "::error::No supported Cloudflare API token secret is configured."
+            exit 1
+          fi
+          export CF_TOKEN
+          node <<'NODE'
+          const api = 'https://api.cloudflare.com/client/v4';
+          const headers = { Authorization: `Bearer ${process.env.CF_TOKEN}`, 'Content-Type': 'application/json' };
+          async function call(path, options = {}) {
+            const response = await fetch(api + path, { ...options, headers });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.success === false) {
+              const messages = (body.errors || []).map((item) => item.message).filter(Boolean);
+              throw new Error(`${options.method || 'GET'} ${path.split('?')[0]} HTTP ${response.status}: ${messages.join('; ') || 'request failed'}`);
+            }
+            return body.result;
+          }
+          const records = async (zoneId, type, name) => {
+            const rows = await call(`/zones/${encodeURIComponent(zoneId)}/dns_records?type=${type}&name=${encodeURIComponent(name)}&per_page=100`);
+            return Array.isArray(rows) ? rows : [];
+          };
+          const normalizeContent = (value) => String(value || '').replace(/^"(.*)"$/, '$1').replace(/\.$/, '').toLowerCase();
+          const mxSnapshot = (rows) => rows.map((row) => ({ id: row.id, type: row.type, name: row.name, content: normalizeContent(row.content), priority: row.priority ?? null })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+          const dmarcSnapshot = (rows) => rows.map((row) => ({ id: row.id, type: row.type, name: row.name, content: normalizeContent(row.content) })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+          const zoneRows = await call('/zones?name=mkety.com&status=active&per_page=10');
+          const zones = Array.isArray(zoneRows) ? zoneRows.filter((row) => row.name === 'mkety.com') : [];
+          if (zones.length !== 1 || !zones[0].id) throw new Error('Expected exactly one active mkety.com zone.');
+          const zoneId = zones[0].id;
+          const zohoBeforeRows = await records(zoneId, 'MX', 'mkety.com');
+          const zohoBefore = mxSnapshot(zohoBeforeRows);
+          const expectedZoho = ['mx.zoho.com', 'mx2.zoho.com', 'mx3.zoho.com'].sort();
+          const actualZoho = zohoBefore.map((row) => row.content).sort();
+          if (JSON.stringify(actualZoho) !== JSON.stringify(expectedZoho)) throw new Error('Root MX precondition failed; expected the three existing Zoho MX records. No mutation performed.');
+          const rootDmarcBeforeRows = await records(zoneId, 'TXT', '_dmarc.mkety.com');
+          const rootDmarcBefore = dmarcSnapshot(rootDmarcBeforeRows);
+          if (rootDmarcBefore.length !== 1 || !rootDmarcBefore[0].content.startsWith('v=dmarc1; p=none;')) throw new Error('Root DMARC precondition failed; expected the current single p=none policy. No mutation performed.');
+          const protectedMailNames = [
+            ['MX', 'mail.mkety.com'], ['TXT', 'mail.mkety.com'], ['TXT', '_dmarc.mail.mkety.com'],
+            ['MX', 'cf-bounce.mail.mkety.com'], ['TXT', 'cf-bounce.mail.mkety.com'],
+            ['TXT', 'cf-bounce._domainkey.mail.mkety.com'],
+          ];
+          for (const [type, name] of protectedMailNames) {
+            if ((await records(zoneId, type, name)).length) throw new Error(`Unexpected existing ${type} record at ${name}; refusing to change it.`);
+          }
+          const sendingRows = await call(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains?per_page=100`);
+          const existing = (Array.isArray(sendingRows) ? sendingRows : []).filter((row) => row.name === 'mail.mkety.com');
+          if (existing.length) throw new Error('mail.mkety.com already has an Email Sending configuration; refusing to modify it.');
+          console.log('Preflight passed: root MX targets are Zoho; root DMARC is unchanged p=none; mail.mkety.com has no conflicting mail records.');
+          const created = await call(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains`, {
+            method: 'POST',
+            body: JSON.stringify({ name: 'mail.mkety.com' }),
+          });
+          if (!created?.id || created.name !== 'mail.mkety.com' || created.enabled !== true) throw new Error('Cloudflare did not confirm an enabled mail.mkety.com Email Sending domain.');
+          const zohoAfter = mxSnapshot(await records(zoneId, 'MX', 'mkety.com'));
+          const rootDmarcAfter = dmarcSnapshot(await records(zoneId, 'TXT', '_dmarc.mkety.com'));
+          if (JSON.stringify(zohoAfter) !== JSON.stringify(zohoBefore)) throw new Error('Postcondition failed: root Zoho MX changed. No automatic corrective DNS changes were made.');
+          if (JSON.stringify(rootDmarcAfter) !== JSON.stringify(rootDmarcBefore)) throw new Error('Postcondition failed: root DMARC changed. No automatic corrective DNS changes were made.');
+          const dns = await call(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains/${encodeURIComponent(created.id)}/dns`);
+          const statusRows = Array.isArray(dns) ? dns.map(({ type, name, status, content, value }) => ({
+            type, name, status,
+            value: type === 'TXT' && (String(name || '').includes('_domainkey')) ? '[DKIM public key withheld]' : (content || value || ''),
+          })) : dns;
+          console.log('Cloudflare Email Sending enabled for mail.mkety.com; Zoho root MX and DMARC verified unchanged.');
+          console.log('Cloudflare sending DNS status: ' + JSON.stringify(statusRows));
+          NODE
