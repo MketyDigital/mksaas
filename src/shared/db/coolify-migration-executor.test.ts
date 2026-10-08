@@ -53,6 +53,10 @@ describe('Coolify production DB executor', () => {
     const runner = await read('ops/coolify-migration/run.sh');
     expect(runner).toContain('scripts/report-first-party-mail-readiness.ts');
     expect(runner).toContain('MKETY_FIRST_PARTY_MAIL_READINESS_SKIPPED=true');
+    const readiness = await read('scripts/report-first-party-mail-readiness.ts');
+    expect(readiness).toContain("eq(mailDomains.domain, 'mail.mkety.com')");
+    expect(readiness).toContain("eq(mailMailboxes.localPart, 'info')");
+    expect(readiness).not.toContain("eq(mailDomains.domain, 'mkety.com')");
   });
 
   it('retains enough Coolify runtime logs to verify all migration release markers together', async () => {
