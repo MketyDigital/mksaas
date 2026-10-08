@@ -5,7 +5,7 @@ import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMessages, mailSuppressions, mailWorkspaces } from '@/shared/db/schema';
 
 import { pushMailQueueBatch } from './cloudflare';
-import { type PlatformMailInput, sendPlatformMailWithDependencies } from './platform-sender-core';
+import { isFirstPartyMailSendingDomainReady, type PlatformMailInput, sendPlatformMailWithDependencies } from './platform-sender-core';
 import { getFirstPartyMailTenantId } from './runtime-config';
 import { getMailSendCapacity } from './sending-policy';
 
@@ -24,7 +24,7 @@ export async function sendPlatformMail(input: PlatformMailInput) {
       const [workspace, entitled, domain] = await Promise.all([
         db.query.mailWorkspaces.findFirst({ where: and(eq(mailWorkspaces.tenantId, tenantId), eq(mailWorkspaces.status, 'active')) }),
         hasEntitlement({ tenantId, entitlement: 'workspace.mail' }),
-        db.query.mailDomains.findFirst({ where: and(eq(mailDomains.tenantId, tenantId), eq(mailDomains.domain, 'mkety.com')) }),
+        db.query.mailDomains.findFirst({ where: and(eq(mailDomains.tenantId, tenantId), eq(mailDomains.domain, 'mail.mkety.com')) }),
       ]);
       if (!workspace || !domain) return null;
       const mailbox = await db.query.mailMailboxes.findFirst({
@@ -44,13 +44,7 @@ export async function sendPlatformMail(input: PlatformMailInput) {
         from: `${mailbox.localPart}@${domain.domain}`.toLowerCase(),
         workspaceActive: workspace.status === 'active',
         entitled,
-        domainReady:
-          domain.status === 'verified' &&
-          domain.sendingEnabled &&
-          domain.spfStatus === 'verified' &&
-          domain.dkimStatus === 'verified' &&
-          domain.dmarcStatus === 'verified' &&
-          domain.mxStatus === 'verified',
+        domainReady: isFirstPartyMailSendingDomainReady(domain),
       };
     },
     isSuppressed: async (tenantId, email) => {
