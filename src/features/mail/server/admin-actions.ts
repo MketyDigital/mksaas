@@ -206,7 +206,7 @@ export async function createFirstPartySmtpCredential(
     .limit(1);
   const { mailbox, domain } = mailboxRows[0] ?? { mailbox: null, domain: null };
   if (
-    !['sending_ready', 'verified'].includes(domain?.status || '') ||
+    !domain || !['sending_ready', 'verified'].includes(domain.status) ||
     !domain.sendingEnabled ||
     domain.spfStatus !== 'verified' ||
     domain.dkimStatus !== 'verified' ||
