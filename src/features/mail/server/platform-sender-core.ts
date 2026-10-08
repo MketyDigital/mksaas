@@ -15,7 +15,7 @@ export const FIRST_PARTY_MAIL_FROM = 'info@mail.mkety.com';
 export const FIRST_PARTY_MAIL_REPLY_TO = 'hello@mkety.com';
 
 export function isFirstPartyMailSendingDomainReady(input: { status: string; sendingEnabled: boolean; spfStatus: string; dkimStatus: string; dmarcStatus: string; }) {
-  return ['sending_ready', 'verified'].includes(input.status) && input.sendingEnabled && input.spfStatus === 'verified' && input.dkimStatus === 'verified' && input.dmarcStatus === 'verified';
+  return input.status === 'sending_ready' && input.sendingEnabled && input.spfStatus === 'verified' && input.dkimStatus === 'verified' && input.dmarcStatus === 'verified';
 }
 
 export type PlatformMailInput = {
