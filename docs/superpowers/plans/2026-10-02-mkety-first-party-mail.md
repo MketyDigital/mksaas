@@ -284,7 +284,7 @@ Local evidence on 2026-10-02: 11 focused suites / 52 tests passed, migration bas
 
 Repeat read-only DNS and Mail provider diagnostics. Never alter root Zoho MX/DMARC. Stop if the isolated sending domain records do not verify.
 
-Evidence: run `37682717115` completed the read-only inventory and confirmed Zoho owns the current MX. Apex SPF is absent, Cloudflare Email Routing state is unreadable with the current token (HTTP 403), and no Mail-domain/mailbox readiness record was captured. No DNS write was attempted; reserved sender readiness remains unverified, so keep this step open.
+Evidence: Cloudflare Email Sending setup run `37742125709` enabled only `mail.mkety.com`, creating Cloudflare bounce MX/SPF/DKIM and `_dmarc.mail.mkety.com` (`p=reject`). The workflow verified apex Zoho MX and apex DMARC unchanged. A controlled test in run `37742278847` passed the provider's SPF/DKIM/DMARC gate and was accepted into the queue for `hello@mkety.com`; inbox/server delivery remains unconfirmed. This verifies isolated sending DNS, not the reserved Mail tenant/workspace/domain/mailbox or the SMTP gateway sender binding. Do not require apex MX for outbound sender readiness: root MX remains an inbound Zoho requirement only. Keep this step open until the reserved sender and mailbox diagnostics pass.
 
 - [ ] **Step 3: Test actual controlled recipient delivery**
 
