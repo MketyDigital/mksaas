@@ -15,14 +15,16 @@ function normalizeContent(type: string, value: string) {
   return content.replace(/\\s+/g, ' ');
 }
 
-export function getMailDomainProvisioningPolicy(domain: string): MailDomainProvisioningPolicy {
+export function getMailDomainProvisioningPolicy(domain: string, isFirstPartyTenant = false): MailDomainProvisioningPolicy {
   const normalized = normalizeName(domain);
   if (normalized === 'mkety.com') {
     return { allowed: false, configureRouting: false, configureSending: false };
   }
 
   if (normalized === 'mail.mkety.com') {
-    return { allowed: true, configureRouting: false, configureSending: true };
+    return isFirstPartyTenant
+      ? { allowed: true, configureRouting: false, configureSending: true }
+      : { allowed: false, configureRouting: false, configureSending: false };
   }
 
   return { allowed: true, configureRouting: true, configureSending: true };
