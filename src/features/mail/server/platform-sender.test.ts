@@ -34,6 +34,7 @@ describe('first-party outbound domain readiness', () => {
   it('fails closed while sending or any authentication record is unverified', () => {
     expect(isFirstPartyMailSendingDomainReady({ status: 'pending', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
     expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: false, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+    expect(isFirstPartyMailSendingDomainReady({ status: 'verified', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
     expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: true, spfStatus: 'pending', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
   });
 });
