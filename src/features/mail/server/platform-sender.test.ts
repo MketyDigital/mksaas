@@ -1,4 +1,4 @@
-import { sendPlatformMailWithDependencies } from './platform-sender-core';
+import { isFirstPartyMailSendingDomainReady, sendPlatformMailWithDependencies } from './platform-sender-core';
 
 const makeDependencies = () => ({
   resolve: jest.fn().mockResolvedValue({
@@ -27,6 +27,17 @@ const input = {
   idempotencyKey: 'user-1:password-changed:attempt-1',
 };
 
+describe('first-party outbound domain readiness', () => {
+  it('allows outbound-only readiness when authentication passes without root MX routing', () => {
+    expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(true);
+  });
+  it('fails closed while sending or any authentication record is unverified', () => {
+    expect(isFirstPartyMailSendingDomainReady({ status: 'pending', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+    expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: false, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+    expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: true, spfStatus: 'pending', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+  });
+});
+
 describe('sendPlatformMailWithDependencies', () => {
   it('queues through Mkety Mail with the fixed first-party sender', async () => {
     const dependencies = makeDependencies();
@@ -45,6 +56,7 @@ describe('sendPlatformMailWithDependencies', () => {
       kind: 'transactional',
       from: { email: 'info@mail.mkety.com' },
       to: { email: 'customer@example.com' },
+      replyTo: { email: 'hello@mkety.com' },
       replyTo: { email: 'hello@mkety.com' },
     }));
   });
