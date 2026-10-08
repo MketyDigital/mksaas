@@ -213,7 +213,7 @@ export async function createFirstPartySmtpCredential(
     .limit(1);
   const { mailbox, domain } = mailboxRows[0] ?? { mailbox: null, domain: null };
   if (
-    !domain || !['sending_ready', 'verified'].includes(domain.status) ||
+    !domain || domain.status !== 'sending_ready' ||
     !domain.sendingEnabled ||
     domain.spfStatus !== 'verified' ||
     domain.dkimStatus !== 'verified' ||
@@ -652,7 +652,11 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
     .limit(1);
   if (!domain) throw new Error('Mail domain not found.');
 
-  if (isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId()) && status === 'sending_ready') {
+  const firstPartyDomain = isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId());
+  if (firstPartyDomain && status === 'verified') {
+    throw new Error('First-party outbound Mail must use sending_ready after live DNS verification.');
+  }
+  if (firstPartyDomain && status === 'sending_ready') {
     if (!sendingEnabled || spfStatus !== 'verified' || dkimStatus !== 'verified' || dmarcStatus !== 'verified') {
       throw new Error('First-party sending readiness requires verified SPF, DKIM, and DMARC.');
     }
