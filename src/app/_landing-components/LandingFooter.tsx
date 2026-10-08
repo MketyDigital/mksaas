@@ -48,7 +48,7 @@ export function LandingFooter() {
           <p className="text-xs text-muted-foreground">
             © {new Date().getUTCFullYear()} Mkety. All rights reserved.
           </p>
-          <p className="text-xs text-muted-foreground">info@mkety.com</p>
+          <p className="text-xs text-muted-foreground">hello@mkety.com</p>
         </div>
       </div>
     </footer>
