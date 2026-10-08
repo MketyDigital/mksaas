@@ -17,7 +17,8 @@
 - Use the existing Mail message, queue, delivery-event and suppression path; do not add a provider bypass.
 - Keep the current ZITADEL provider available for rollback until Mail-backed auth acceptance passes on the exact candidate SHA.
 - Do not log SMTP credentials, passwords, reset tokens, invitation tokens or message bodies containing secrets.
-- Inspect current `mkety.com` mail DNS and routing state before any DNS mutation; keep the root Zoho MX and DMARC unchanged; configure outbound sending on `mail.mkety.com` only.
+- Inspect current `mkety.com` mail DNS and routing state before any DNS mutation; keep the root Zoho MX and DMARC unchanged; never enable Cloudflare Email Routing or Email Sending on the `mkety.com` apex; reserve `mail.mkety.com` for the configured first-party tenant.
+- Do not treat Cloudflare Email Sending's `enabled` flag as SPF/DKIM/DMARC verification. Require exact public DNS matches for all three before marking first-party sender authentication verified; the Ops status update must repeat that live check.
 - Do not modify files under `customer-apps/assist` or rewrite the standalone Assist branch.
 
 ## Review Focus
@@ -285,6 +286,8 @@ Local evidence on 2026-10-02: 11 focused suites / 52 tests passed, migration bas
 Repeat read-only DNS and Mail provider diagnostics. Never alter root Zoho MX/DMARC. Stop if the isolated sending domain records do not verify.
 
 Evidence: Cloudflare Email Sending setup run `37742125709` enabled only `mail.mkety.com`, creating Cloudflare bounce MX/SPF/DKIM and `_dmarc.mail.mkety.com` (`p=reject`). The workflow verified apex Zoho MX and apex DMARC unchanged. A controlled test in run `37742278847` passed the provider's SPF/DKIM/DMARC gate and was accepted into the queue for `hello@mkety.com`; inbox/server delivery remains unconfirmed. This verifies isolated sending DNS, not the reserved Mail tenant/workspace/domain/mailbox or the SMTP gateway sender binding. Do not require apex MX for outbound sender readiness: root MX remains an inbound Zoho requirement only. Keep this step open until the reserved sender and mailbox diagnostics pass.
+
+Code safeguard added in PR #355: public SPF, DKIM, and DMARC answers must match Cloudflare's expected records before the platform domain enters `sending_ready`; the Ops update path performs the same check. The `mkety.com` apex is rejected before Cloudflare provisioning, and `mail.mkety.com` is reserved for the configured platform tenant. These safeguards do not substitute for reserved mailbox, credential, or actual recipient-delivery evidence.
 
 - [ ] **Step 3: Test actual controlled recipient delivery**
 
