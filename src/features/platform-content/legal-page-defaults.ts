@@ -119,7 +119,7 @@ export const MKETY_LEGAL_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
             key: 'contact',
             title: 'Privacy contact',
             description:
-              'Use the Mkety contact page or email info@mkety.com for privacy and account-data enquiries.',
+              'Use the Mkety contact page or email hello@mkety.com for privacy and account-data enquiries.',
             href: '/contact#mkety-ai',
           },
         ],
@@ -289,7 +289,7 @@ export const MKETY_LEGAL_PAGE_DEFAULTS: readonly MketyPublicPageDefault[] = [
           {
             key: 'contact',
             title: 'Contact',
-            description: 'Use the Mkety contact page or email info@mkety.com for Terms, billing or account questions.',
+            description: 'Use the Mkety contact page or email hello@mkety.com for Terms, billing or account questions.',
             href: '/contact#mkety-ai',
           },
         ],
