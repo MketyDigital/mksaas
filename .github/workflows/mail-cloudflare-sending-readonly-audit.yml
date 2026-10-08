@@ -1,0 +1,71 @@
+name: Mail Cloudflare Sending Readonly Audit
+
+on:
+  push:
+    branches:
+      - codex/mail-cloudflare-sending-readonly-audit
+    paths:
+      - .github/workflows/mail-cloudflare-sending-readonly-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read Cloudflare Mail Sending and DNS state
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.MKETY_DEPLOY_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_TOKEN:-}" ]; then
+            echo "::error::No supported Cloudflare API token secret is configured."
+            exit 1
+          fi
+          export CF_TOKEN
+          node <<'NODE'
+          const api = 'https://api.cloudflare.com/client/v4';
+          const headers = { Authorization: `Bearer ${process.env.CF_TOKEN}` };
+          async function get(path) {
+            const response = await fetch(api + path, { headers });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.success === false) {
+              const messages = (body.errors || []).map((item) => item.message).filter(Boolean);
+              throw new Error(`GET ${path.split('?')[0]} HTTP ${response.status}: ${messages.join('; ') || 'request failed'}`);
+            }
+            return body.result;
+          }
+          const zoneRows = await get('/zones?name=mkety.com&status=active&per_page=10');
+          const zones = Array.isArray(zoneRows) ? zoneRows.filter((row) => row.name === 'mkety.com') : [];
+          if (zones.length !== 1 || !zones[0].id) throw new Error('Expected exactly one active mkety.com zone.');
+          const zoneId = zones[0].id;
+          console.log('Cloudflare zone: mkety.com (active)');
+          const sendingRows = await get(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains?per_page=100`);
+          const sending = Array.isArray(sendingRows) ? sendingRows.filter((row) => row.name === 'mkety.com' || row.name?.endsWith('.mkety.com')) : [];
+          console.log('Email Sending domains: ' + (sending.length ? JSON.stringify(sending.map(({ id, name, enabled, tag, dkim_selector, return_path_domain }) => ({ id, name, enabled, tag, dkim_selector, return_path_domain }))) : 'none'));
+          const wanted = [
+            ['MX', 'mkety.com'],
+            ['TXT', 'mkety.com'],
+            ['TXT', '_dmarc.mkety.com'],
+            ['MX', 'cf-bounce.mkety.com'],
+            ['TXT', 'cf-bounce.mkety.com'],
+            ['TXT', 'cf-bounce._domainkey.mkety.com'],
+          ];
+          for (const [type, name] of wanted) {
+            const rows = await get(`/zones/${encodeURIComponent(zoneId)}/dns_records?type=${type}&name=${encodeURIComponent(name)}&per_page=100`);
+            const records = Array.isArray(rows) ? rows : [];
+            const safe = records.map(({ type: recordType, name: recordName, content, priority }) => {
+              let value = content || '';
+              if (recordType === 'TXT' && recordName.toLowerCase().includes('_domainkey')) value = '[DKIM public key present; value withheld]';
+              return { type: recordType, name: recordName, value, ...(priority == null ? {} : { priority }) };
+            });
+            console.log(`${type} ${name}: ${JSON.stringify(safe)}`);
+          }
+          for (const domain of sending.filter((row) => row.id && row.name === 'mkety.com')) {
+            const dns = await get(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains/${encodeURIComponent(domain.id)}/dns`);
+            console.log('Email Sending DNS status: ' + JSON.stringify(dns, (key, value) => key.toLowerCase().includes('content') && typeof value === 'string' && value.includes('p=') ? value : key.toLowerCase().includes('dkim') && typeof value === 'string' ? '[DKIM public key withheld]' : value));
+          }
+          NODE
