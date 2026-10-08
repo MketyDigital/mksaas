@@ -53,14 +53,19 @@ test("route editor keeps editable controls inside the row that handlers query", 
   }
 });
 
-test("model rates UI explains customer charge separately from provider cost and shows speech pricing", () => {
-  assert.ok(ui.includes("Customer charges (MKredit)"));
+test("model rates UI shows provider-derived base rates and a single multiplier for speech and token pricing", () => {
+  assert.ok(ui.includes("Calculated base rates (MKredit)"));
   assert.ok(ui.includes("data-target-audio"));
   assert.ok(ui.includes("data-target-cost-audio"));
   assert.ok(ui.includes("primary.audio_credits_per_minute??m.audio_credits_per_minute??0"));
   assert.ok(ui.includes("<th>Media customer rate</th>"));
-  assert.ok(ui.includes("image tokens billed at input rate"));
-  assert.ok(ui.includes("Token pricing requires both customer rates and both provider costs"));
+  assert.ok(ui.includes("Image tokens are also billed at the input-token rate."));
+  assert.ok(ui.includes("100% is provider-cost pass-through; 120% adds 20%"));
+  assert.match(ui, /data-target-input="'\+i\+'" readonly/);
+  assert.match(ui, /data-target-output="'\+i\+'" readonly/);
+  assert.match(ui, /data-target-image="'\+i\+'" readonly/);
+  assert.match(ui, /data-target-audio="'\+i\+'" readonly/);
+  assert.ok(ui.includes("These base rates are calculated directly from provider cost and cannot be overridden here."));
   assert.match(ui, /audio_credits_per_minute/);
   assert.match(ui, /!paused&&targets\.find\(t=>Number\(t\.enabled\?\?1\)===1&&t\.validated===true&&t\.priced===true&&t\.supported!==false\)/);
   assert.match(ui, /Effective target/);

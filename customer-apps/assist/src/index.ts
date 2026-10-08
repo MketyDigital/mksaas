@@ -3,6 +3,7 @@ import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
+import { deriveCustomerBaseRates } from "./billing/provider-derived-pricing";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
 import { validateProviderConnection } from "./providers/validation";
@@ -3456,7 +3457,7 @@ function calculateCommercialPlan(input: {
 }
 
 function publicCreditFields<T extends Record<string, any>>(row: T): T {
-  const out: any = { ...row };
+  const out: any = deriveCustomerBaseRates({ ...row });
   for (const key of ["input_credits_per_million","output_credits_per_million","image_credits","audio_credits_per_minute","reasoning_credits_per_million"]) {
     if (key in out) out[key] = mkreditsFromCreditAtoms(out[key]);
   }

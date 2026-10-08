@@ -16,6 +16,8 @@ import { recordAttemptProjection, updateAttemptProjection } from "./billing/reco
 import { normalizeApiKeyMode, normalizeModelAllowlist, canUseRawModelApi } from "./api-key-policy";
 import { reserveRawModelCredits, releaseRawModelCredits, settleRawModelCredits } from "./billing/raw-model-settlement";
 import { mediaUsageEconomics } from "./billing/media-economics";
+import { deriveCustomerBaseRates } from "./billing/provider-derived-pricing";
+import { prepareUsageLimitFollowup } from "./handoff/usage-limit-followup";
 import {
   RetryableInferenceError,
   claimModelCapacity,
@@ -2446,6 +2448,7 @@ async function runAssistant(input: {
   ).bind(assistant.model_alias, unix()).first<any>();
   const route = await resolveModelRoute(env.DB, assistant.customer_id, assistant.model_alias);
   if (!rate || !route) return { ok: false as const, userMessage: "This assistant’s model is temporarily unavailable." };
+  Object.assign(rate, deriveCustomerBaseRates(rate));
 
   const prompt = await env.DB.prepare(
     "SELECT version,instructions FROM assistant_prompt_versions WHERE customer_id=? AND assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
@@ -2536,11 +2539,11 @@ async function runAssistant(input: {
     commercial,
     estimatedProviderCostMicros,
   ))) {
-    return { ok: false as const, userMessage: "Sorry, I’m tied up right now and can’t reply properly. Please try again in a little while." };
+    return await usageLimitResponse(env, assistant, conversationId, "monthly_provider_budget");
   }
 
   const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount, `reply-job:${input.replyJobId}`);
-  if (!reservation) return { ok: false as const, userMessage: "Sorry, I’m tied up right now and can’t reply properly. Please try again in a little while." };
+  if (!reservation) return await usageLimitResponse(env, assistant, conversationId, "available_credits");
   if (reservation.status === "released") {
     return { ok: false as const, userMessage: "This request’s prior credit reservation was released. Please send it again to start a new request." };
   }
@@ -2781,6 +2784,7 @@ async function handleRawModelApiInference(
     "SELECT * FROM model_rates WHERE alias=? AND effective_at<=? ORDER BY version DESC LIMIT 1",
   ).bind(alias, now).first<any>();
   if (!route || !rate) return json({ error: { message: "model_unavailable" } }, 503);
+  Object.assign(rate, deriveCustomerBaseRates(rate));
 
   const messages = Array.isArray(body.messages)
     ? body.messages.slice(-40).map((message: any) => ({
@@ -2985,6 +2989,7 @@ export async function handleApiKeyInference(
     "SELECT * FROM model_rates WHERE alias=? AND effective_at<=? ORDER BY version DESC LIMIT 1",
   ).bind(alias, now).first<any>();
   if (!route || !rate) return json({ error: { message: "model_unavailable" } }, 503);
+  Object.assign(rate, deriveCustomerBaseRates(rate));
 
   const messages = Array.isArray(body.messages)
     ? body.messages.slice(-40).map((m: any) => ({
@@ -3260,7 +3265,8 @@ async function mediaRouteTargets(db: D1Database, customerId: string, alias: "mke
           : []),
       ];
   const usable: any[] = [];
-  for (const target of configured) {
+  for (const storedTarget of configured) {
+    const target = deriveCustomerBaseRates(storedTarget);
     if (!target?.provider || !target?.provider_model || !routeTargetMediaSupported(target, alias) || !routeTargetPricingConfigured(target, alias)) continue;
     if (["workers-ai", "mkety-managed"].includes(String(target.provider))) {
       usable.push(target);
@@ -3300,7 +3306,8 @@ function responseApiText(payload: any) {
     .trim();
 }
 
-function mediaTargetUsage(target: any, kind: "vision" | "speech", inputUnits: number, outputUnits: number, audioSeconds = 0) {
+function mediaTargetUsage(storedTarget: any, kind: "vision" | "speech", inputUnits: number, outputUnits: number, audioSeconds = 0) {
+  const target = deriveCustomerBaseRates(storedTarget);
   return {
     kind,
     modelAlias: kind === "vision" ? "mkety-media-vision" : "mkety-media-speech",
@@ -4189,7 +4196,7 @@ async function resolveModelRoute(db: D1Database, customerId: string, alias: stri
       "SELECT * FROM model_route_targets WHERE scope_key=? AND enabled=1 ORDER BY position ASC",
     ).bind(globalScope).all<any>();
   }
-  return { ...route, __targets: targets.results ?? [] };
+  return { ...deriveCustomerBaseRates(route), __targets: (targets.results ?? []).map((target: any) => deriveCustomerBaseRates(target)) };
 }
 
 async function invokeRoutedModel(
@@ -4772,6 +4779,36 @@ async function openHandoff(db: D1Database, customerId: string, assistantId: stri
   await db.prepare(
     "INSERT INTO human_handoffs (id,customer_id,assistant_id,conversation_id,status,reason,created_at) VALUES (?,?,?,?,?,?,?)",
   ).bind(id("hof"), customerId, assistantId, conversationId, "open", reason.slice(0, 1000), unix()).run();
+}
+
+async function usageLimitResponse(env: AssistEnv, assistant: any, conversationId: string, reason: string) {
+  const identity = {
+    customerId: String(assistant.customer_id),
+    assistantId: String(assistant.id),
+    conversationId,
+  };
+  try {
+    const userMessage = await prepareUsageLimitFollowup(identity, {
+      ensureOpenHandoff: async (item) => {
+        await openHandoff(env.DB, item.customerId, item.assistantId, item.conversationId, `usage_limit:${reason}`);
+        const row = await env.DB.prepare(
+          "SELECT id FROM human_handoffs WHERE customer_id=? AND assistant_id=? AND conversation_id=? AND status='open' LIMIT 1",
+        ).bind(item.customerId, item.assistantId, item.conversationId).first<any>();
+        return Boolean(row?.id);
+      },
+      notifyOwners: async (item) => notifyLinkedOwners(
+        env,
+        item.customerId,
+        item.assistantId,
+        "handoff",
+        "A conversation reached its Assist usage limit. Please review the open handoff in the Assist portal and follow up with the customer.",
+      ),
+    });
+    return { ok: false as const, userMessage };
+  } catch (error) {
+    console.error("usage-limit handoff could not be recorded", String(error).slice(0, 180));
+    return { ok: false as const, userMessage: "Sorry, I can’t help with that properly right now." };
+  }
 }
 
 function shouldRequestHuman(text: string) {
