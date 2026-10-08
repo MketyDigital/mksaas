@@ -201,19 +201,18 @@ export async function createFirstPartySmtpCredential(
       eq(mailMailboxes.tenantId, configuredTenantId),
       eq(mailMailboxes.workspaceId, workspace.id),
       eq(mailMailboxes.localPart, 'info'),
-      eq(mailDomains.domain, 'mkety.com'),
+      eq(mailDomains.domain, 'mail.mkety.com'),
     ))
     .limit(1);
   const { mailbox, domain } = mailboxRows[0] ?? { mailbox: null, domain: null };
   if (
-    domain?.status !== 'verified' ||
+    !['sending_ready', 'verified'].includes(domain?.status || '') ||
     !domain.sendingEnabled ||
     domain.spfStatus !== 'verified' ||
     domain.dkimStatus !== 'verified' ||
-    domain.dmarcStatus !== 'verified' ||
-    domain.mxStatus !== 'verified'
+    domain.dmarcStatus !== 'verified'
   ) {
-    return { error: 'The info@mkety.com sending domain is not fully verified and enabled.' };
+    return { error: 'The info@mail.mkety.com sending domain is not fully verified and enabled.' };
   }
 
   const secret = `mkmail-${hex(randomBytes(12))}`;
@@ -223,7 +222,7 @@ export async function createFirstPartySmtpCredential(
     requestedTenantId: configuredTenantId,
     actorUserId: actor.userId,
     workspace: workspace ? { tenantId: workspace.tenantId, status: workspace.status, hasMailEntitlement: entitled } : null,
-    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mkety.com', status: mailbox.status } : null,
+    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mail.mkety.com', status: mailbox.status } : null,
     secret,
     passwordHash,
   }, {
@@ -624,10 +623,11 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
   const dmarcStatus = String(formData.get('dmarcStatus') || '');
   const mxStatus = String(formData.get('mxStatus') || '');
   const readiness = ['pending','verified','failed','disabled'];
+  const domainReadiness = [...readiness, 'sending_ready'];
   if (
     !domainId ||
     !targetTenantId ||
-    !readiness.includes(status) ||
+    !domainReadiness.includes(status) ||
     !readiness.includes(spfStatus) ||
     !readiness.includes(dkimStatus) ||
     !readiness.includes(dmarcStatus) ||
@@ -638,7 +638,7 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
 
   const sendingEnabled = bool(formData.get('sendingEnabled'));
   const routingEnabled = bool(formData.get('routingEnabled'));
-  const verified = status === 'verified' && spfStatus === 'verified' && dkimStatus === 'verified' && dmarcStatus === 'verified' && mxStatus === 'verified';
+  const verified = (status === 'verified' && spfStatus === 'verified' && dkimStatus === 'verified' && dmarcStatus === 'verified' && mxStatus === 'verified') || (status === 'sending_ready' && sendingEnabled && spfStatus === 'verified' && dkimStatus === 'verified' && dmarcStatus === 'verified');
 
   await db
     .update(mailDomains)
