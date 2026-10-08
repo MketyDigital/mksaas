@@ -97,7 +97,7 @@ export async function getCloudflareEmailSendingDns(zoneId:string,subdomainId:str
 export async function getPublicCloudflareSendingDns(records:CloudflareSendingDnsRecord[]){
   const authenticationRecords=records.filter((record)=>{
     const type=String(record.type||'').toUpperCase();
-    const name=String(record.name||'').toLowerCase().replace(/\\.$/,'');
+    const name=String(record.name||'').toLowerCase().replace(/\.$/,'');
     const content=String(record.content||'').replaceAll('"','').trim().toLowerCase();
     return (type==='TXT'&&(content.startsWith('v=spf1')||name.startsWith('_dmarc.')))||name.includes('._domainkey.')&&['TXT','CNAME'].includes(type);
   });
