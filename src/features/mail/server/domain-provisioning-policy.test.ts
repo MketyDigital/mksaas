@@ -1,4 +1,8 @@
-import { areCloudflareEmailAuthRecordsPublished, getMailDomainProvisioningPolicy } from './domain-provisioning-policy';
+import {
+  areCloudflareEmailAuthRecordsPublished,
+  getMailDomainProvisioningPolicy,
+  isFirstPartyMailDomain,
+} from './domain-provisioning-policy';
 
 describe('mail domain provisioning safety', () => {
   it('blocks the Zoho-hosted root domain from Cloudflare provisioning', () => {
@@ -9,6 +13,12 @@ describe('mail domain provisioning safety', () => {
   it('reserves the mail subdomain for the first-party tenant and keeps it outbound-only', () => {
     expect(getMailDomainProvisioningPolicy('mail.mkety.com')).toEqual({ allowed: false, configureRouting: false, configureSending: false });
     expect(getMailDomainProvisioningPolicy('mail.mkety.com', true)).toEqual({ allowed: true, configureRouting: false, configureSending: true });
+  });
+
+  it('only recognizes the reserved sender under the configured first-party tenant', () => {
+    expect(isFirstPartyMailDomain('mail.mkety.com', 'reserved-tenant', 'reserved-tenant')).toBe(true);
+    expect(isFirstPartyMailDomain('mail.mkety.com', 'customer-tenant', 'reserved-tenant')).toBe(false);
+    expect(isFirstPartyMailDomain('other.example', 'reserved-tenant', 'reserved-tenant')).toBe(false);
   });
 
   it('allows customer domains to use the normal routing and sending setup', () => {
@@ -36,5 +46,15 @@ describe('Cloudflare Email Sending DNS verification', () => {
     )).toBe(true);
     expect(areCloudflareEmailAuthRecordsPublished('mail.mkety.com', false, expected, expected)).toBe(false);
     expect(areCloudflareEmailAuthRecordsPublished('mail.mkety.com', true, expected, expected.slice(0, 2))).toBe(false);
+    expect(areCloudflareEmailAuthRecordsPublished(
+      'mail.mkety.com',
+      true,
+      expected,
+      [
+        { ...expected[0], name: 'mail.mkety.com.', content: '"v=spf1  include:_spf.mx.cloudflare.net ~all"' },
+        { ...expected[1], name: 'selector._domainkey.mail.mkety.com.', content: '"v=DKIM1; k=rsa; p=public-key"' },
+        { ...expected[2], name: '_dmarc.mail.mkety.com.', content: '"v=DMARC1;  p=reject"' },
+      ],
+    )).toBe(true);
   });
 });
