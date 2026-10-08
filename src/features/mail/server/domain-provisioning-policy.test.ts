@@ -3,6 +3,7 @@ import { areCloudflareEmailAuthRecordsPublished, getMailDomainProvisioningPolicy
 describe('mail domain provisioning safety', () => {
   it('blocks the Zoho-hosted root domain from Cloudflare provisioning', () => {
     expect(getMailDomainProvisioningPolicy('mkety.com')).toEqual({ allowed: false, configureRouting: false, configureSending: false });
+    expect(getMailDomainProvisioningPolicy(' MKETY.COM. ')).toEqual({ allowed: false, configureRouting: false, configureSending: false });
   });
 
   it('keeps the first-party mail subdomain outbound-only', () => {
@@ -26,7 +27,12 @@ describe('Cloudflare Email Sending DNS verification', () => {
   });
 
   it('requires matching SPF, DKIM, and DMARC records at their expected names', () => {
-    expect(areCloudflareEmailAuthRecordsPublished('mail.mkety.com', true, expected, expected)).toBe(true);
+    expect(areCloudflareEmailAuthRecordsPublished(
+      'mail.mkety.com',
+      true,
+      expected,
+      expected.map((record) => ({ ...record, name: `${record.name}.` })),
+    )).toBe(true);
     expect(areCloudflareEmailAuthRecordsPublished('mail.mkety.com', false, expected, expected)).toBe(false);
     expect(areCloudflareEmailAuthRecordsPublished('mail.mkety.com', true, expected, expected.slice(0, 2))).toBe(false);
   });
