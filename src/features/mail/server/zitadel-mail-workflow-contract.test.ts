@@ -17,6 +17,7 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(workflow).toContain('MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD');
     expect(workflow).toContain('smtp.mkety.com:465');
     expect(workflow).toContain('info@mail.mkety.com');
+    expect(workflow).toContain('hello@mkety.com');
     expect(workflow).toContain('Mkety First-Party Mail SMTP');
     expect(workflow).toContain('Mkety Brevo SMTP');
     expect(workflow).toContain('Legacy ZITADEL SMTP supports one provider; refusing to overwrite the active provider');
