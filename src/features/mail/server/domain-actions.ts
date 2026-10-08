@@ -13,6 +13,7 @@ import {
   ensureCloudflareEmailEventSubscription,
   findCloudflareZone,
   getCloudflareEmailRouting,
+  getCloudflareEmailSending,
 } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
@@ -49,10 +50,13 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     const zone=await findCloudflareZone(domain);
     if(zone){
       zoneId=zone.id;
-      await enableCloudflareEmailRouting(zone.id,domain);
-      const routing=await getCloudflareEmailRouting(zone.id);
-      routingEnabled=Boolean(routing?.enabled);
-      const sending=await enableCloudflareEmailSending(zone.id,domain);
+      if(domain!=='mail.mkety.com'){
+        await enableCloudflareEmailRouting(zone.id,domain);
+        const routing=await getCloudflareEmailRouting(zone.id);
+        routingEnabled=Boolean(routing?.enabled);
+      }
+      const configuredSending=await getCloudflareEmailSending(zone.id,domain);
+      const sending=configuredSending||await enableCloudflareEmailSending(zone.id,domain);
       sendingEnabled=Boolean(sending?.enabled);
       if(sendingEnabled) await ensureCloudflareEmailEventSubscription(zone.id,domain);
     }
@@ -64,7 +68,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     tenantId:tenant.id,
     workspaceId:workspace.id,
     domain,
-    status:routingEnabled&&sendingEnabled?'ready':routingEnabled?'routing_ready':'pending',
+    status:routingEnabled&&sendingEnabled?'ready':routingEnabled?'routing_ready':sendingEnabled?'sending_ready':'pending',
     cloudflareZoneId:zoneId,
     routingEnabled,
     sendingEnabled,
