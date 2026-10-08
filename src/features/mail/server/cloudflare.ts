@@ -67,6 +67,12 @@ export async function enableCloudflareEmailRouting(zoneId:string,domain:string){
 }
 
 
+export async function getCloudflareEmailSending(zoneId:string,domain:string){
+  const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains?per_page=100`);
+  const rows=Array.isArray(payload?.result)?payload.result as Array<Record<string,unknown>>:[];
+  return rows.find((row)=>row.name===domain)||null;
+}
+
 export async function enableCloudflareEmailSending(zoneId:string,domain:string){
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains`,{
     method:'POST',
