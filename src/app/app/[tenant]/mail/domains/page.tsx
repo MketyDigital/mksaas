@@ -26,6 +26,7 @@ export default async function MailDomainsPage({params,searchParams}:{params:Prom
       <CardHeader><CardTitle>Connect a domain</CardTitle><CardDescription>Enter only your domain name. If it is already managed in Mkety DNS, setup is automatic. Otherwise we’ll guide the connection.</CardDescription></CardHeader>
       <CardContent className="space-y-4">
         {query.error==="domain"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">Enter a valid domain such as company.com.</div>}
+        {query.error==="reserved-domain"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">The mkety.com root is reserved for Zoho inbound mail. Use mail.mkety.com for first-party outbound sending.</div>}
         {query.error==="claimed"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">This domain is already connected to another Mkety Mail workspace.</div>}
         <form action={action} className="flex flex-col gap-3 sm:flex-row">
           <input className="min-w-0 flex-1 rounded-xl border bg-background px-4 py-3 outline-none focus:border-primary" name="domain" placeholder="company.com" required/>
