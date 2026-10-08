@@ -1,0 +1,108 @@
+name: Mkety Mail Isolated Sending Smoke
+
+on:
+  push:
+    branches:
+      - codex/mail-cloudflare-sending-readonly-audit
+    paths:
+      - .github/workflows/mail-isolated-sending-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  send-controlled-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify isolated sender DNS and send one controlled message to Zoho
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.MKETY_DEPLOY_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.MKETY_DEPLOY_CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_TOKEN:-}" ] || [ -z "${CF_ACCOUNT_ID:-}" ]; then
+            echo "::error::Required Cloudflare repository secret is unavailable."
+            exit 1
+          fi
+          export CF_TOKEN CF_ACCOUNT_ID
+          node <<'NODE'
+          const api = 'https://api.cloudflare.com/client/v4';
+          const headers = { Authorization: `Bearer ${process.env.CF_TOKEN}`, 'Content-Type': 'application/json' };
+          async function cf(path, options = {}) {
+            const response = await fetch(api + path, { ...options, headers });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.success === false) {
+              const messages = (body.errors || []).map((item) => item.message).filter(Boolean);
+              throw new Error(`${options.method || 'GET'} ${path.split('?')[0]} HTTP ${response.status}: ${messages.join('; ') || 'request failed'}`);
+            }
+            return body.result;
+          }
+          async function publicDns(name, type) {
+            const url = new URL('https://cloudflare-dns.com/dns-query');
+            url.searchParams.set('name', name);
+            url.searchParams.set('type', type);
+            const response = await fetch(url, { headers: { accept: 'application/dns-json' } });
+            if (!response.ok) throw new Error(`Public DNS lookup failed for ${name} ${type}.`);
+            const body = await response.json();
+            return Array.isArray(body.Answer) ? body.Answer.map((row) => String(row.data || '').replace(/^"|"$/g, '')) : [];
+          }
+          const zones = await cf('/zones?name=mkety.com&status=active&per_page=10');
+          const zone = (Array.isArray(zones) ? zones : []).find((row) => row.name === 'mkety.com');
+          if (!zone?.id) throw new Error('No active mkety.com Cloudflare zone.');
+          const dnsRows = async (type, name) => {
+            const result = await cf(`/zones/${encodeURIComponent(zone.id)}/dns_records?type=${type}&name=${encodeURIComponent(name)}&per_page=100`);
+            return Array.isArray(result) ? result : [];
+          };
+          const mxCanonical = (rows) => rows.map((row) => String(row.content).replace(/\.$/, '').toLowerCase()).sort();
+          const zohoBefore = await dnsRows('MX', 'mkety.com');
+          const expectedZoho = ['mx.zoho.com', 'mx2.zoho.com', 'mx3.zoho.com'].sort();
+          if (JSON.stringify(mxCanonical(zohoBefore)) !== JSON.stringify(expectedZoho)) throw new Error('Zoho root MX records differ from the verified baseline; no email was sent.');
+          const dmarcBefore = await dnsRows('TXT', '_dmarc.mkety.com');
+          if (dmarcBefore.length !== 1 || !String(dmarcBefore[0].content).includes('p=none')) throw new Error('Root DMARC differs from the verified baseline; no email was sent.');
+          const sendingRows = await cf(`/zones/${encodeURIComponent(zone.id)}/email/sending/subdomains?per_page=100`);
+          const sender = (Array.isArray(sendingRows) ? sendingRows : []).find((row) => row.name === 'mail.mkety.com' && row.enabled === true);
+          if (!sender) throw new Error('mail.mkety.com Email Sending is not enabled; no email was sent.');
+          const expectedDns = [
+            ['MX', 'cf-bounce.mail.mkety.com'],
+            ['TXT', 'cf-bounce.mail.mkety.com'],
+            ['TXT', 'cf-bounce._domainkey.mail.mkety.com'],
+            ['TXT', '_dmarc.mail.mkety.com'],
+          ];
+          let verified = false;
+          for (let attempt = 1; attempt <= 10; attempt++) {
+            const [mx, spf, dkim, dmarc] = await Promise.all(expectedDns.map(([type, name]) => publicDns(name, type)));
+            const good = mx.length >= 3 && mx.every((value) => /route[123]\.mx\.cloudflare\.net/i.test(value))
+              && spf.some((value) => value.includes('include:_spf.mx.cloudflare.net'))
+              && dkim.some((value) => value.includes('v=DKIM1') && value.includes('p='))
+              && dmarc.some((value) => value.toLowerCase().includes('v=dmarc1') && value.toLowerCase().includes('p=reject'));
+            if (good) { verified = true; break; }
+            console.log(`Public sending DNS not yet fully visible (attempt ${attempt}/10); checking again.`);
+            await new Promise((resolve) => setTimeout(resolve, 10000));
+          }
+          if (!verified) throw new Error('Cloudflare sending DNS has not fully propagated; no email was sent.');
+          const secondZoho = await dnsRows('MX', 'mkety.com');
+          const secondDmarc = await dnsRows('TXT', '_dmarc.mkety.com');
+          if (JSON.stringify(mxCanonical(secondZoho)) !== JSON.stringify(mxCanonical(zohoBefore))) throw new Error('Zoho root MX changed during preflight; no email was sent.');
+          if (JSON.stringify(dmarcSnapshot(secondDmarc)) !== JSON.stringify(dmarcSnapshot(dmarcBefore))) throw new Error('Root DMARC changed during preflight; no email was sent.');
+          function dmarcSnapshot(rows) {
+            return rows.map((row) => ({ id: row.id, content: String(row.content || '') })).sort((a, b) => a.id.localeCompare(b.id));
+          }
+          const issuedAt = new Date().toISOString();
+          const response = await cf(`/accounts/${encodeURIComponent(process.env.CF_ACCOUNT_ID)}/email/sending/send`, {
+            method: 'POST',
+            body: JSON.stringify({
+              from: 'Mkety Mail <info@mail.mkety.com>',
+              to: ['hello@mkety.com'],
+              reply_to: 'hello@mkety.com',
+              subject: 'Mkety Mail controlled delivery check',
+              text: `This is a one-time controlled delivery check for Mkety Mail at ${issuedAt}. No action is required. Replies should reach hello@mkety.com.`,
+            }),
+          });
+          const delivered = Array.isArray(response?.delivered) ? response.delivered : [];
+          const queued = Array.isArray(response?.queued) ? response.queued : [];
+          if (!delivered.includes('hello@mkety.com') && !queued.includes('hello@mkety.com')) throw new Error('Cloudflare accepted the API call without reporting delivery or queueing for the controlled recipient.');
+          console.log('Controlled message submitted from info@mail.mkety.com to hello@mkety.com with Reply-To hello@mkety.com.');
+          console.log(JSON.stringify({ delivered, queued, permanentBounces: response.permanent_bounces || [], messageIdPresent: Boolean(response.message_id), rootZohoMxPreserved: true, rootDmarcPreserved: true }));
+          NODE
