@@ -1,0 +1,75 @@
+name: Mail Cloudflare Send Status Readonly
+
+on:
+  push:
+    branches:
+      - codex/mail-zoho-safe-sending-domain
+    paths:
+      - .github/workflows/mail-cloudflare-send-status-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read Cloudflare delivery events for the controlled message
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.MKETY_DEPLOY_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_TOKEN:-}" ]; then
+            echo "::error::No supported Cloudflare API token secret is configured."
+            exit 1
+          fi
+          export CF_TOKEN
+          node <<'NODE'
+          const headers = { Authorization: `Bearer ${process.env.CF_TOKEN}`, 'Content-Type': 'application/json' };
+          async function post(url, body) {
+            const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.errors?.length) {
+              const messages = (payload.errors || []).map((item) => item.message).filter(Boolean);
+              throw new Error(`Cloudflare GraphQL HTTP ${response.status}: ${messages.join('; ') || 'request failed'}`);
+            }
+            return payload.data;
+          }
+          const zoneResponse = await fetch('https://api.cloudflare.com/client/v4/zones?name=mkety.com&status=active&per_page=10', { headers });
+          const zonePayload = await zoneResponse.json();
+          if (!zoneResponse.ok || zonePayload.success === false) throw new Error('Could not read the Cloudflare zone for analytics.');
+          const zone = (zonePayload.result || []).find((item) => item.name === 'mkety.com');
+          if (!zone?.id) throw new Error('No active mkety.com zone was found.');
+          const query = `query RecentEmailEvents($zoneTag: string!, $start: Time!, $end: Time!) {
+            viewer { zones(filter: { zoneTag: $zoneTag }) {
+              emailSendingAdaptive(filter: { datetime_geq: $start, datetime_leq: $end }, limit: 100, orderBy: [datetime_DESC]) {
+                datetime from to subject status errorCause dkim dmarc spf
+              }
+            }}
+          }`;
+          const end = new Date();
+          const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+          const result = await post('https://api.cloudflare.com/client/v4/graphql', {
+            query,
+            variables: { zoneTag: zone.id, start: start.toISOString(), end: end.toISOString() },
+          });
+          const rows = result?.viewer?.zones?.flatMap((item) => item.emailSendingAdaptive || []) || [];
+          const target = rows.filter((row) => String(row.from || '').toLowerCase().includes('info@mail.mkety.com')
+            && JSON.stringify(row.to || '').toLowerCase().includes('hello@mkety.com')
+            && String(row.subject || '').includes('Mkety Mail controlled delivery check'));
+          if (!target.length) {
+            console.log('No matching event is visible yet. The controlled message remains queued; delivery is not claimed.');
+            process.exit(0);
+          }
+          const latest = target[0];
+          console.log(JSON.stringify({
+            datetime: latest.datetime,
+            status: latest.status,
+            spf: latest.spf,
+            dkim: latest.dkim,
+            dmarc: latest.dmarc,
+            errorCause: latest.errorCause || null,
+          }));
+          NODE
