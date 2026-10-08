@@ -24,7 +24,7 @@ Host Mkety's platform email addresses on Mkety Mail at the root domain, includin
 Cloudflare Email Routing owns the root-domain MX after a controlled cutover and dispatches inbound mail to a dedicated, recipient-aware Email Worker. The Worker handles exact approved addresses only:
 
 1. `info@mkety.com`, `support@mkety.com`, and explicitly provisioned Mkety addresses are ingested into their tenant-isolated Mkety Mail mailbox through the authenticated internal ingress path. The Worker acknowledges delivery only after durable acceptance.
-2. `hello@mkety.com` is relayed to the existing Zoho mailbox using Zoho's authenticated SMTP submission endpoint over implicit TLS. The relay is restricted to this exact destination and uses a dedicated mailbox-scoped app password stored only as a Cloudflare Worker secret. It must preserve the original message content and sender/reply information in a safe forwarded-message representation. It must not send through the public root MX, which will point back to Cloudflare.
+2. `hello@mkety.com` is relayed to the existing Zoho mailbox using Zoho's authenticated SMTP submission endpoint over implicit TLS. The relay is restricted to this exact destination and uses a dedicated SMTP credential for the hello mailbox (prefer an app-specific password if the account supports one), stored only as a Cloudflare Worker secret. It must preserve the original message content and sender/reply information in a safe forwarded-message representation. It must not send through the public root MX, which will point back to Cloudflare.
 3. Unknown recipients are rejected with a permanent recipient error. They are never silently discarded, caught into an unmonitored mailbox, or forwarded to an arbitrary address.
 
 Zoho documents SMTP submission for Free Organization users, requires authentication, and notes that the correct server endpoint may depend on the account's data center. The implementation must confirm the exact endpoint shown for this mailbox; it must not assume a region-specific hostname. Cloudflare Email Workers can receive and process messages, while Workers cannot open outbound SMTP connections on port 25. The chosen Zoho path therefore uses authenticated SMTP submission on the account-supported TLS submission port rather than forwarding `hello@mkety.com` back through root MX.
@@ -55,7 +55,7 @@ For a reviewed cutover:
 
 - The Worker accepts only exact configured recipients and enforces message-size limits, rate limits, abuse controls, and idempotent handling.
 - For Mkety mailbox delivery, validate the recipient-to-tenant/mailbox mapping, authenticate internal Worker-to-app callbacks, persist the raw message and metadata, and acknowledge only on durable success.
-- For Zoho relay, use a least-privilege mailbox app password. Keep it in a Worker secret, rotate it, redact it from diagnostics, and limit the relay function to `hello@mkety.com`.
+- For Zoho relay, use a dedicated app-specific credential for the hello mailbox if Zoho supports it for this account. Treat it as mailbox-level access, not an SMTP-only permission. Keep it in a Worker secret, rotate it, redact it from diagnostics, and limit the relay function to `hello@mkety.com`.
 - If either destination is temporarily unavailable, return a retryable SMTP failure so the sender can retry; never return success while losing the message.
 - Reject unknown recipients and unsafe/oversized messages without exposing mailbox existence beyond normal SMTP behavior.
 - Ensure retries cannot create duplicate inbox messages. Use a stable message identifier plus recipient as the idempotency key.
@@ -64,7 +64,7 @@ For a reviewed cutover:
 ## Staged rollout and acceptance
 
 1. **Code and design review:** update the previous root-domain guard and first-party readiness paths only on a reviewed PR. Add tests for exact address routing, Zoho relay restriction, spoof/tampering, duplicate delivery, retry/failure handling, unknown recipients, SPF/DKIM/DMARC checks, and tenant isolation.
-2. **Credential readiness:** obtain the mailbox-scoped Zoho SMTP app password through the mailbox owner's supported account controls. Add it only to the Worker secret store; never put it in GitHub source or workflow output.
+2. **Credential readiness:** obtain a dedicated Zoho SMTP credential through the mailbox owner's supported account controls, preferring an app-specific password and never using the primary account password. Add it only to the Worker secret store; never put it in GitHub source or workflow output.
 3. **Non-root route test:** deploy and test the Worker using a controlled test domain/address without touching root MX. Verify both the Mkety Mail ingest path and Zoho mailbox delivery using external test senders.
 4. **Production preflight:** verify reserved tenant/workspace/entitlement, active root-domain mailboxes, outbound sender authentication, Cloudflare Email Routing permission, Zoho relay authentication, and the complete root DNS snapshot. The current production readiness report says the reserved workspace/domain/mailbox are missing; those gates must pass first.
 5. **Root cutover:** in one guarded change, route root MX to Cloudflare and install exact recipient rules. Immediately test incoming `hello@` to Zoho and `info@`/`support@` to Mkety Mail from independent external accounts. Verify replies and operational notifications.
@@ -76,7 +76,7 @@ For a reviewed cutover:
 Stop before root DNS changes if any of the following is true:
 
 - The Worker cannot use the account's authenticated Zoho SMTP endpoint securely.
-- No mailbox-scoped credential can be created or safely stored.
+- No dedicated credential can be created or safely stored without exposing the primary account password.
 - The exact Zoho mailbox fails the SMTP self-delivery test.
 - The app has no durable, authenticated inbound-ingest path for the reserved workspace/mailboxes.
 - The root SPF/DKIM/DMARC changes cannot preserve both Zoho and Cloudflare send/forward authentication.
