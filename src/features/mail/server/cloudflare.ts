@@ -23,10 +23,15 @@ async function cfFetch(path:string,init:RequestInit={}){
 }
 
 export async function findCloudflareZone(domain:string){
-  const payload=await cfFetch('/zones?name='+encodeURIComponent(domain)+'&status=active&per_page=10');
-  const result=Array.isArray(payload?.result)?payload.result as Array<{id?:string;name?:string}>:[];
-  const zone=result[0]||null;
-  return zone?{id:String(zone.id),name:String(zone.name)}:null;
+  const labels=domain.split('.').filter(Boolean);
+  for(let index=0;index<=labels.length-2;index+=1){
+    const candidate=labels.slice(index).join('.');
+    const payload=await cfFetch('/zones?name='+encodeURIComponent(candidate)+'&status=active&per_page=10');
+    const result=Array.isArray(payload?.result)?payload.result as Array<{id?:string;name?:string}>:[];
+    const zone=result.find((item)=>item.name===candidate&&item.id);
+    if(zone) return {id:String(zone.id),name:String(zone.name)};
+  }
+  return null;
 }
 
 
