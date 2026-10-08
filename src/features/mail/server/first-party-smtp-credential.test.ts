@@ -6,7 +6,7 @@ describe('createFirstPartySmtpCredentialRecord', () => {
     requestedTenantId: 'reserved-tenant',
     actorUserId: 'ops-user',
     workspace: { tenantId: 'reserved-tenant', status: 'active', hasMailEntitlement: true },
-    mailbox: { id: 'mailbox-1', tenantId: 'reserved-tenant', address: 'info@mkety.com', status: 'active' },
+    mailbox: { id: 'mailbox-1', tenantId: 'reserved-tenant', address: 'info@mail.mkety.com', status: 'active' },
     secret: 'mkmail-secret',
     passwordHash: '{SSHA256}hash',
   };
@@ -32,7 +32,7 @@ describe('createFirstPartySmtpCredentialRecord', () => {
     ['inactive workspace', { workspace: { ...baseInput.workspace, status: 'suspended' } }],
     ['missing Mail entitlement', { workspace: { ...baseInput.workspace, hasMailEntitlement: false } }],
     ['inactive mailbox', { mailbox: { ...baseInput.mailbox, status: 'disabled' } }],
-    ['wrong mailbox address', { mailbox: { ...baseInput.mailbox, address: 'support@mkety.com' } }],
+    ['wrong mailbox address', { mailbox: { ...baseInput.mailbox, address: 'support@mail.mkety.com' } }],
     ['mailbox belonging to another tenant', { mailbox: { ...baseInput.mailbox, tenantId: 'customer-tenant' } }],
   ])('fails closed for %s', async (_label, override) => {
     const replace = jest.fn();
