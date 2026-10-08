@@ -86,6 +86,36 @@ export async function enableCloudflareEmailSending(zoneId:string,domain:string){
   return (payload?.result as Record<string,unknown>|undefined)||null;
 }
 
+type CloudflareSendingDnsRecord={type?:string;name?:string;content?:string};
+
+export async function getCloudflareEmailSendingDns(zoneId:string,subdomainId:string){
+  if(!subdomainId) return [];
+  const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains/${encodeURIComponent(subdomainId)}/dns`);
+  return Array.isArray(payload?.result)?payload.result as CloudflareSendingDnsRecord[]:[];
+}
+
+export async function getPublicCloudflareSendingDns(records:CloudflareSendingDnsRecord[]){
+  const authenticationRecords=records.filter((record)=>{
+    const type=String(record.type||'').toUpperCase();
+    const name=String(record.name||'').toLowerCase().replace(/\\.$/,'');
+    const content=String(record.content||'').replaceAll('"','').trim().toLowerCase();
+    return (type==='TXT'&&((name===name.split('.').slice(1).join('.')&&content.startsWith('v=spf1'))||name.startsWith('_dmarc.')))||name.includes('._domainkey.')&&['TXT','CNAME'].includes(type);
+  });
+  const unique=[...new Map(authenticationRecords.map((record)=>[`${record.type}|${record.name}`,record])).values()];
+  const typeCodes:Record<number,string>={1:'A',5:'CNAME',15:'MX',16:'TXT',28:'AAAA'};
+  const answers=await Promise.all(unique.map(async(record)=>{
+    const type=String(record.type||'').toUpperCase();
+    const name=String(record.name||'');
+    const response=await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`,{headers:{accept:'application/dns-json'}});
+    if(!response.ok) throw new Error('Public DNS verification is unavailable.');
+    const payload=await response.json() as {Answer?:Array<{name?:string;type?:number;data?:string}>};
+    return (payload.Answer||[]).flatMap((answer)=>answer.type&&answer.name&&answer.data&&typeCodes[answer.type]?[
+      {type:typeCodes[answer.type],name:answer.name,content:answer.data},
+    ]:[]);
+  }));
+  return answers.flat();
+}
+
 export async function getCloudflareEmailRouting(zoneId:string){
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing`);
   return (payload?.result as Record<string,unknown>|undefined)||null;
