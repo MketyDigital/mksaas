@@ -3,7 +3,7 @@ name: Mail Cloudflare Send Status Readonly
 on:
   push:
     branches:
-      - codex/mail-zoho-safe-sending-domain
+      - codex/mail-cloudflare-sending-readonly-audit
     paths:
       - .github/workflows/mail-cloudflare-send-status-readonly.yml
 
