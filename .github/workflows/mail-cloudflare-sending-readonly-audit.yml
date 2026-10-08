@@ -44,28 +44,25 @@ jobs:
           const zoneId = zones[0].id;
           console.log('Cloudflare zone: mkety.com (active)');
           const sendingRows = await get(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains?per_page=100`);
-          const sending = Array.isArray(sendingRows) ? sendingRows.filter((row) => row.name === 'mkety.com' || row.name?.endsWith('.mkety.com')) : [];
+          const sending = Array.isArray(sendingRows) ? sendingRows.filter((row) => row.name === 'mkety.com' || row.name === 'mail.mkety.com') : [];
           console.log('Email Sending domains: ' + (sending.length ? JSON.stringify(sending.map(({ id, name, enabled, tag, dkim_selector, return_path_domain }) => ({ id, name, enabled, tag, dkim_selector, return_path_domain }))) : 'none'));
           const wanted = [
-            ['MX', 'mkety.com'],
-            ['TXT', 'mkety.com'],
-            ['TXT', '_dmarc.mkety.com'],
-            ['MX', 'cf-bounce.mkety.com'],
-            ['TXT', 'cf-bounce.mkety.com'],
-            ['TXT', 'cf-bounce._domainkey.mkety.com'],
+            ['MX', 'mkety.com'], ['TXT', 'mkety.com'], ['TXT', '_dmarc.mkety.com'],
+            ['MX', 'mail.mkety.com'], ['TXT', 'mail.mkety.com'], ['TXT', '_dmarc.mail.mkety.com'],
+            ['MX', 'cf-bounce.mkety.com'], ['TXT', 'cf-bounce.mkety.com'], ['TXT', 'cf-bounce._domainkey.mkety.com'],
+            ['MX', 'cf-bounce.mail.mkety.com'], ['TXT', 'cf-bounce.mail.mkety.com'], ['TXT', 'cf-bounce._domainkey.mail.mkety.com'],
           ];
           for (const [type, name] of wanted) {
             const rows = await get(`/zones/${encodeURIComponent(zoneId)}/dns_records?type=${type}&name=${encodeURIComponent(name)}&per_page=100`);
-            const records = Array.isArray(rows) ? rows : [];
-            const safe = records.map(({ type: recordType, name: recordName, content, priority }) => {
+            const safe = (Array.isArray(rows) ? rows : []).map(({ type: recordType, name: recordName, content, priority }) => {
               let value = content || '';
               if (recordType === 'TXT' && recordName.toLowerCase().includes('_domainkey')) value = '[DKIM public key present; value withheld]';
               return { type: recordType, name: recordName, value, ...(priority == null ? {} : { priority }) };
             });
             console.log(`${type} ${name}: ${JSON.stringify(safe)}`);
           }
-          for (const domain of sending.filter((row) => row.id && row.name === 'mkety.com')) {
+          for (const domain of sending.filter((row) => row.id)) {
             const dns = await get(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains/${encodeURIComponent(domain.id)}/dns`);
-            console.log('Email Sending DNS status: ' + JSON.stringify(dns, (key, value) => key.toLowerCase().includes('content') && typeof value === 'string' && value.includes('p=') ? value : key.toLowerCase().includes('dkim') && typeof value === 'string' ? '[DKIM public key withheld]' : value));
+            console.log(`Email Sending DNS status for ${domain.name}: ` + JSON.stringify(dns, (key, value) => key.toLowerCase().includes('dkim') && typeof value === 'string' ? '[DKIM public key withheld]' : value));
           }
           NODE
