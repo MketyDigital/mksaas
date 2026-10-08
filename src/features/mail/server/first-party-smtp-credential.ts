@@ -35,9 +35,9 @@ export async function createFirstPartySmtpCredentialRecord(
     !input.mailbox ||
     input.mailbox.tenantId !== input.configuredTenantId ||
     input.mailbox.status !== 'active' ||
-    input.mailbox.address.toLowerCase() !== 'info@mkety.com'
+    input.mailbox.address.toLowerCase() !== 'info@mail.mkety.com'
   ) {
-    throw new Error('The active info@mkety.com mailbox is unavailable.');
+    throw new Error('The active info@mail.mkety.com mailbox is unavailable.');
   }
   const credential = await dependencies.replace({
     tenantId: input.configuredTenantId,
