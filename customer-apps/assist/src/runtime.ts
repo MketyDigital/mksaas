@@ -2536,11 +2536,11 @@ async function runAssistant(input: {
     commercial,
     estimatedProviderCostMicros,
   ))) {
-    return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
+    return { ok: false as const, userMessage: "Sorry, I’m tied up right now and can’t reply properly. Please try again in a little while." };
   }
 
   const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, reserveAmount, `reply-job:${input.replyJobId}`);
-  if (!reservation) return { ok: false as const, userMessage: "This assistant has reached its current usage limit. Please contact the account administrator." };
+  if (!reservation) return { ok: false as const, userMessage: "Sorry, I’m tied up right now and can’t reply properly. Please try again in a little while." };
   if (reservation.status === "released") {
     return { ok: false as const, userMessage: "This request’s prior credit reservation was released. Please send it again to start a new request." };
   }
