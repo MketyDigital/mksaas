@@ -99,7 +99,7 @@ export async function getPublicCloudflareSendingDns(records:CloudflareSendingDns
     const type=String(record.type||'').toUpperCase();
     const name=String(record.name||'').toLowerCase().replace(/\\.$/,'');
     const content=String(record.content||'').replaceAll('"','').trim().toLowerCase();
-    return (type==='TXT'&&((name===name.split('.').slice(1).join('.')&&content.startsWith('v=spf1'))||name.startsWith('_dmarc.')))||name.includes('._domainkey.')&&['TXT','CNAME'].includes(type);
+    return (type==='TXT'&&(content.startsWith('v=spf1')||name.startsWith('_dmarc.')))||name.includes('._domainkey.')&&['TXT','CNAME'].includes(type);
   });
   const unique=[...new Map(authenticationRecords.map((record)=>[`${record.type}|${record.name}`,record])).values()];
   const typeCodes:Record<number,string>={1:'A',5:'CNAME',15:'MX',16:'TXT',28:'AAAA'};
