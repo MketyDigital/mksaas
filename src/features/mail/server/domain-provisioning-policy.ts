@@ -7,11 +7,11 @@ export type MailDomainProvisioningPolicy = {
 };
 
 function normalizeName(value: string) {
-  return value.trim().toLowerCase().replace(/\\.$/, '');
+  return value.trim().toLowerCase().replace(/\.$/, '');
 }
 
 function normalizeContent(type: string, value: string) {
-  const content = type.toUpperCase() === 'TXT' ? value.replaceAll('"', '').trim() : value.trim().replace(/\\.$/, '').toLowerCase();
+  const content = type.toUpperCase() === 'TXT' ? value.replaceAll('"', '').trim() : value.trim().replace(/\.$/, '').toLowerCase();
   return content.replace(/\\s+/g, ' ');
 }
 
