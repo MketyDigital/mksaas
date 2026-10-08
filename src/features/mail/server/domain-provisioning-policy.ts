@@ -12,7 +12,13 @@ function normalizeName(value: string) {
 
 function normalizeContent(type: string, value: string) {
   const content = type.toUpperCase() === 'TXT' ? value.replaceAll('"', '').trim() : value.trim().replace(/\.$/, '').toLowerCase();
-  return content.replace(/\\s+/g, ' ');
+  return content.replace(/\s+/g, ' ');
+}
+
+export function isFirstPartyMailDomain(domain: string, tenantId: string, configuredTenantId: string) {
+  return normalizeName(domain) === 'mail.mkety.com' &&
+    Boolean(configuredTenantId.trim()) &&
+    tenantId === configuredTenantId.trim();
 }
 
 export function getMailDomainProvisioningPolicy(domain: string, isFirstPartyTenant = false): MailDomainProvisioningPolicy {
