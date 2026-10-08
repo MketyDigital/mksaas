@@ -18,6 +18,7 @@ import {
   getPublicCloudflareSendingDns,
 } from './cloudflare';
 import { areCloudflareEmailAuthRecordsPublished, getMailDomainProvisioningPolicy } from './domain-provisioning-policy';
+import { getFirstPartyMailTenantId } from './runtime-config';
 import { requireMailWorkspaceAccess } from './workspace';
 import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
@@ -42,7 +43,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     redirect(`/app/${tenantSlug}/mail/domains?error=domain`);
   }
 
-  const provisioning=getMailDomainProvisioningPolicy(domain);
+  const provisioning=getMailDomainProvisioningPolicy(domain,tenant.id===getFirstPartyMailTenantId().trim());
   if(!provisioning.allowed) redirect(`/app/${tenantSlug}/mail/domains?error=reserved-domain`);
 
   const duplicate=await db.query.mailDomains.findFirst({where:eq(mailDomains.domain,domain)});
