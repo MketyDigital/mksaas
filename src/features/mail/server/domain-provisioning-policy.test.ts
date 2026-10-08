@@ -6,8 +6,9 @@ describe('mail domain provisioning safety', () => {
     expect(getMailDomainProvisioningPolicy(' MKETY.COM. ')).toEqual({ allowed: false, configureRouting: false, configureSending: false });
   });
 
-  it('keeps the first-party mail subdomain outbound-only', () => {
-    expect(getMailDomainProvisioningPolicy('mail.mkety.com')).toEqual({ allowed: true, configureRouting: false, configureSending: true });
+  it('reserves the mail subdomain for the first-party tenant and keeps it outbound-only', () => {
+    expect(getMailDomainProvisioningPolicy('mail.mkety.com')).toEqual({ allowed: false, configureRouting: false, configureSending: false });
+    expect(getMailDomainProvisioningPolicy('mail.mkety.com', true)).toEqual({ allowed: true, configureRouting: false, configureSending: true });
   });
 
   it('allows customer domains to use the normal routing and sending setup', () => {
