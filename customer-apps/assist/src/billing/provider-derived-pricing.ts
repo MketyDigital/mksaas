@@ -15,12 +15,12 @@ const RATE_FIELDS = [
 ] as const;
 
 export function deriveCustomerBaseRates<T extends Record<string, unknown>>(target: T): T {
-  const derived = { ...target };
+  const derived: Record<string, unknown> = { ...target };
   for (const [providerField, customerField] of RATE_FIELDS) {
     const providerCostMicros = Number(target[providerField] ?? 0);
     if (Number.isFinite(providerCostMicros) && providerCostMicros > 0) {
-      derived[customerField] = Math.ceil(providerCostMicros * CREDIT_ATOMS_PER_MICRO_USD) as T[typeof customerField];
+      derived[customerField] = Math.ceil(providerCostMicros * CREDIT_ATOMS_PER_MICRO_USD);
     }
   }
-  return derived;
+  return derived as T;
 }
