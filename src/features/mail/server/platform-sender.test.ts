@@ -48,7 +48,7 @@ describe('sendPlatformMailWithDependencies', () => {
     expect(dependencies.createMessage).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: 'reserved-tenant',
       mailboxId: 'platform-mailbox',
-      from: 'info@mkety.com',
+      from: 'info@mail.mkety.com',
       to: 'customer@example.com',
       status: 'queued',
     }));
@@ -56,7 +56,6 @@ describe('sendPlatformMailWithDependencies', () => {
       kind: 'transactional',
       from: { email: 'info@mail.mkety.com' },
       to: { email: 'customer@example.com' },
-      replyTo: { email: 'hello@mkety.com' },
       replyTo: { email: 'hello@mkety.com' },
     }));
   });
