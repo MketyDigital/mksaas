@@ -57,6 +57,8 @@ describe('Coolify production DB executor', () => {
     expect(readiness).toContain("eq(mailDomains.domain, 'mail.mkety.com')");
     expect(readiness).toContain("eq(mailMailboxes.localPart, 'info')");
     expect(readiness).not.toContain("eq(mailDomains.domain, 'mkety.com')");
+    expect(readiness).not.toContain('mxStatus');
+    expect(readiness).not.toContain('`mx=');
   });
 
   it('retains enough Coolify runtime logs to verify all migration release markers together', async () => {
