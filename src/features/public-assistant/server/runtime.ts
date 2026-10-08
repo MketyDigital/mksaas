@@ -173,7 +173,7 @@ async function getPublicSupportSettings(database: Database) {
     where: eq(platformSiteSettings.environment, 'production'),
   });
   return {
-    supportEmail: row?.contactEmail ?? 'info@mkety.com',
+    supportEmail: row?.contactEmail ?? 'hello@mkety.com',
     salesEmail: row?.salesEmail ?? 'hello@mkety.com',
     telegramHref: row?.telegramHref ?? 'https://t.me/mketyadmin',
     promptExtension: row?.publicAiPrompt ?? undefined,
