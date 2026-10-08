@@ -739,6 +739,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
                               {label}
                               <select name={String(name)} defaultValue={String(value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-sm">
                                 <option value="pending">Pending</option>
+                                {name === "status" ? <option value="sending_ready">Outbound ready</option> : null}
                                 <option value="verified">Verified</option>
                                 <option value="failed">Failed</option>
                                 <option value="disabled">Disabled</option>

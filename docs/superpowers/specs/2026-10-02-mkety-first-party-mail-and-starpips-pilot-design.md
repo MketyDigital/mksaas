@@ -7,7 +7,7 @@
 
 ## Goal
 
-Use Mkety Mail as the first-party email service for the Mkety Platform itself. Signup verification, password recovery and other ZITADEL account emails, platform invitations and transactional account notices should be sent through Mkety Mail. Use `info@mkety.com` as the initial platform sender and support inbox. Starpips is Mkety Mail's first paid enterprise customer, not an Enterprise AI customer. After Mail is working end to end for Starpips, use Mkety's own internal system to verify that Enterprise AI works.
+Use Mkety Mail as the first-party email service for the Mkety Platform itself. Signup verification, password recovery and other ZITADEL account emails, platform invitations and transactional account notices should be sent through Mkety Mail. Use `info@mail.mkety.com` as the first-party transactional sender, and set `hello@mkety.com` as Reply-To and the human support address. Keep Zoho Free Mail and all root-domain Zoho MX records for `hello@mkety.com`; do not enable root Email Routing or move root inbound mail. Starpips is Mkety Mail's first paid enterprise customer, not an Enterprise AI customer. After Mail is working end to end for Starpips, use Mkety's own internal system to verify that Enterprise AI works.
 
 All behavior must remain tenant-isolated, auditable, rate-limited and fail-closed. Customer mailbox access and Enterprise inference must retain their existing entitlement and production acceptance gates.
 
@@ -26,13 +26,13 @@ All behavior must remain tenant-isolated, auditable, rate-limited and fail-close
 
 ### First-Party Mail Identity
 
-Create a Mkety-owned Mail workspace and shared mailbox for `info@mkety.com` under a reserved platform-owned tenant. The domain must have verified outbound sending and a reviewed inbound-routing configuration. The reserved workspace must use an explicitly approved, bounded internal Mail entitlement through the existing operator controls; no customer tenant is borrowed and no customer entitlement check is bypassed.
+Create a Mkety-owned Mail workspace and mailbox for `info@mail.mkety.com` under a reserved platform-owned tenant. Verify outbound sending for the `mail.mkety.com` subdomain and its SPF/DKIM/DMARC records. Do not require or change root `mkety.com` MX for outbound readiness. The reserved workspace must use an explicitly approved, bounded internal Mail entitlement through the existing operator controls; no customer tenant is borrowed and no customer entitlement check is bypassed.
 
-Use `info@mkety.com` as the initial sender and reply address, as requested. Authentication email replies can reach the same support inbox. Keep system traffic recorded as ordinary Mail messages and delivered through the existing queue, event and suppression path. Do not create a second provider transport.
+Use `info@mail.mkety.com` as sender and `hello@mkety.com` as Reply-To. This keeps replies in the existing Zoho Free Mail inbox while transactional messages use the isolated Cloudflare Email Sending subdomain. Keep system traffic recorded as ordinary Mail messages and delivered through the existing queue, event and suppression path. Do not create a second provider transport.
 
 ### ZITADEL Authentication Email
 
-Configure ZITADEL’s active SMTP provider to submit through `smtp.mkety.com` over implicit TLS. Authenticate it with a dedicated, rotatable SMTP-only credential for the reserved platform mailbox. Provisioning that credential must be restricted to the platform operator and must not require enabling external IMAP/SMTP access for all tenants. It must not grant IMAP reading of the support inbox.
+Configure ZITADEL’s active SMTP provider to submit through `smtp.mkety.com` over implicit TLS. Authenticate it with a dedicated, rotatable SMTP-only credential for the reserved platform mailbox. Provisioning that credential must be restricted to the platform operator and must not require enabling external IMAP/SMTP access for all tenants. It must not grant IMAP access. The `hello@mkety.com` support inbox remains with Zoho.
 
 Use the same Mail SMTP path for ZITADEL verification, password reset and other ZITADEL-generated account security messages. Preserve the current provider configuration as an inactive rollback option until Mail-backed signup and recovery have passed on the exact release SHA. ZITADEL supports configurable SMTP providers and an explicit provider test operation ([ZITADEL notification-provider docs](https://zitadel.com/docs/guides/manage/customize/notification-providers), [SMTP provider API](https://zitadel.com/docs/reference/api/admin/zitadel.admin.v1.AdminService.AddEmailProviderSMTP)).
 
@@ -52,9 +52,9 @@ The service contract must restrict allowed message categories and sender identit
 
 ### Support Inbox
 
-Route inbound `info@mkety.com` messages to the reserved Mail mailbox and make the inbox available only to approved platform operators. Use existing Mail message and shared-inbox controls where they satisfy the access model. Customer and tenant members must not gain access to Mkety’s system inbox through ordinary Mail workspace membership.
+Keep root inbound `hello@mkety.com` on Zoho. Do not route root email to Cloudflare Email Routing. Replies to Mail-sent messages must target `hello@mkety.com`. Any later move of inbound support into Mkety Mail needs a separate DNS cutover plan.
 
-Before changing DNS, inspect the current `mkety.com` MX, SPF, DKIM, DMARC and Cloudflare Email Routing state. Preserve existing mail service records unless a reviewed cutover explicitly replaces them. If the root MX is already serving another provider, stop before mutation and design a safe coexistence/cutover path; do not overwrite records just to complete the pilot.
+Before changing DNS, inspect the current `mkety.com` MX, SPF, DKIM, DMARC and Cloudflare Email Routing state. Preserve existing mail service records unless a reviewed cutover explicitly replaces them. Keep the root Zoho MX and DMARC records byte-for-byte unchanged. Configure outbound sending only on `mail.mkety.com`, with Cloudflare bounce/authentication records below that subdomain.
 
 Cloudflare documents that authenticated SMTP submissions enter the same delivery pipeline as its REST API and Workers binding, so the gateway remains part of Mkety Mail rather than a direct provider bypass ([Cloudflare SMTP docs](https://developers.cloudflare.com/email-service/api/send-emails/smtp/)).
 
@@ -72,18 +72,18 @@ Only after the Starpips Mail customer acceptance passes, use a Mkety-owned non-p
 
 1. **Source and branch integrity:** preserve the payment branch and its commits. Build this work on the isolated Mail branch. The local GitHub remote-tracking reference is stale; GitHub `main` has newer Assist-only commits. Before publishing, replay the Mkety-only changes onto the latest `main` with a non-force update. Do not check out, edit, cherry-pick from, or rewrite the standalone Assist branch. Do not include files under `customer-apps/assist`.
 2. **Code-level Mail gate:** add regression tests for the first-party sender authorization, the complete outbound email inventory, invitations, SMTP-only credential lifecycle, message queueing, recipient validation, suppression/limits, operator-only support access and fail-closed behavior. Run focused tests, then repository CI checks on the exact candidate SHA.
-3. **DNS and Mail preflight:** read existing domain/provider state without mutation. Verify the reserved Mail workspace/domain/mailbox, outbound provider readiness, SPF/DKIM/DMARC and inbound routing. Stop on an unresolved MX conflict.
+3. **DNS and Mail preflight:** read existing domain/provider state without mutation. Verify the reserved Mail workspace/domain/mailbox and outbound SPF/DKIM/DMARC readiness on `mail.mkety.com`. Confirm root Zoho MX and DMARC are unchanged; inbound Zoho routing is outside the Mail setup.
 4. **First-party delivery test:** use the configured platform-operator email as the controlled test recipient. Run the provider’s SMTP test and actual Mail gateway delivery. Verify delivery events without exposing the recipient or secret in logs. Confirm external-client access remains disabled for customer tenants.
-5. **Auth and app acceptance:** on the candidate release, exercise a controlled new-account signup, verification, password reset, invitation, account/billing notice, and a support send/receive/reply round trip. Confirm ZITADEL uses Mail and that failed Mail delivery is visible and recoverable. Keep the old ZITADEL provider as rollback until this succeeds.
+5. **Auth and app acceptance:** on the candidate release, exercise a controlled new-account signup, verification, password reset, invitation, account/billing notice, and a support notification/reply round trip through `hello@mkety.com`. Confirm ZITADEL uses Mail and that failed Mail delivery is visible and recoverable. Keep the old ZITADEL provider as rollback until this succeeds.
 6. **Starpips Mail customer acceptance:** confirm tenant identity and explicit Mail contract terms; run customer checkout; require provider webhook/API settlement; verify one entitlement activation, idempotent replay behavior, tenant isolation and the complete customer Mail journey.
 7. **Internal Enterprise AI acceptance:** only after Starpips passes, run the guarded non-production Enterprise AI commercial/runtime acceptance with an ephemeral Mkety-owned fixture. Verify model execution, accounting, idempotency and cleanup; leave production inference disabled.
 8. **Promotion and records:** create a reviewable PR against current GitHub `main`, run exact-head checks, then use the guarded Mail release workflows only for an accepted SHA. Record workflow IDs, SHA, enabled flags and test outcomes in the current handoff/runbook. Do not publish customer readiness based on local tests alone.
 
 ## Success Criteria
 
-- ZITADEL signup verification and password recovery mail is delivered through Mkety Mail from `info@mkety.com`.
+- ZITADEL signup verification and password recovery mail is delivered through Mkety Mail from `info@mail.mkety.com` with Reply-To `hello@mkety.com`.
 - Invitation and supported platform account notifications use the same first-party Mail sender contract and queue.
-- `info@mkety.com` receives and replies to support mail in an operator-only Mail inbox.
+- `hello@mkety.com` remains the support inbox in Zoho; replies to platform mail reach that address.
 - Existing customer Mail entitlements, suppression, rate limits, tenant isolation and external-client feature gate remain effective.
 - Starpips Mail access becomes active only after verified payment settlement; the customer Mail workspace and usage are isolated and auditable.
 - After Starpips Mail acceptance, the Mkety-owned non-production system completes Enterprise AI runtime and commercial-accounting acceptance; the staging fixture is cleaned up and production inference remains disabled.
@@ -101,7 +101,7 @@ Only after the Starpips Mail customer acceptance passes, use a Mkety-owned non-p
 
 ## Open Preflight Facts (Read Before Mutation)
 
-- Current `mkety.com` MX and inbound-routing ownership.
-- Whether the reserved platform tenant, Mail entitlement, `info@mkety.com` mailbox and app-password credential already exist.
+- Current root Zoho MX and DMARC state, plus `mail.mkety.com` sending DNS readiness.
+- Whether the reserved platform tenant, Mail entitlement, `info@mail.mkety.com` mailbox and app-password credential already exist.
 - The exact Starpips tenant/contact, approved Mail plan or custom terms, currency/price and customer-controlled Mail domain.
 - The current GitHub `main` head at the time the implementation PR is prepared.

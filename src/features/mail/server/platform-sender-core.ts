@@ -11,6 +11,13 @@ export const PLATFORM_MAIL_CATEGORIES = [
 
 export type PlatformMailCategory = (typeof PLATFORM_MAIL_CATEGORIES)[number];
 
+export const FIRST_PARTY_MAIL_FROM = 'info@mail.mkety.com';
+export const FIRST_PARTY_MAIL_REPLY_TO = 'hello@mkety.com';
+
+export function isFirstPartyMailSendingDomainReady(input: { status: string; sendingEnabled: boolean; spfStatus: string; dkimStatus: string; dmarcStatus: string; }) {
+  return input.status === 'sending_ready' && input.sendingEnabled && input.spfStatus === 'verified' && input.dkimStatus === 'verified' && input.dmarcStatus === 'verified';
+}
+
 export type PlatformMailInput = {
   category: unknown;
   to: unknown;
@@ -58,6 +65,7 @@ export type PlatformMailSenderDependencies = {
     mailboxId: string;
     from: { email: string };
     to: { email: string };
+    replyTo: { email: string };
     subject: string;
     text: string;
     html?: string;
@@ -89,7 +97,7 @@ export async function sendPlatformMailWithDependencies(
   }
 
   const sender = await dependencies.resolve();
-  if (!sender?.workspaceActive || !sender.entitled || !sender.domainReady || sender.from !== 'info@mkety.com') {
+  if (!sender?.workspaceActive || !sender.entitled || !sender.domainReady || sender.from !== FIRST_PARTY_MAIL_FROM) {
     return { ok: false as const, reason: 'not_ready' as const };
   }
 
@@ -111,6 +119,7 @@ export async function sendPlatformMailWithDependencies(
         mailboxId: sender.mailboxId,
         from: { email: sender.from },
         to: { email: to },
+        replyTo: { email: FIRST_PARTY_MAIL_REPLY_TO },
         subject,
         text,
         ...(html ? { html } : {}),

@@ -2,7 +2,7 @@ import { evaluatePublicAssistantPost } from '../../../../scripts/public-assistan
 
 describe('public assistant production POST diagnostic', () => {
   const validBody = JSON.stringify({
-    answer: 'Read the public documentation at https://mkety.com/docs and contact support at info@mkety.com.',
+    answer: 'Read the public documentation at https://mkety.com/docs and contact support at hello@mkety.com.',
     conversationId: 'd9428888-122b-4c09-b2db-8f5f2ca5c9ec',
   });
 

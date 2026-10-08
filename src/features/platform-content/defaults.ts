@@ -26,7 +26,7 @@ export const defaultPlatformSiteSettings: PlatformSiteSettingsInput = {
   defaultSeoTitle: 'Mkety | Build, automate and deploy',
   defaultSeoDescription:
     'Build applications, AI agents, automations and digital business systems with Mkety Platform. Choose self-service Workspaces with team access, usage, credits and billing in one connected platform.',
-  contactEmail: 'info@mkety.com',
+  contactEmail: 'hello@mkety.com',
   contactHref: '/contact#mkety-ai',
   salesEmail: 'hello@mkety.com',
   telegramHref: 'https://t.me/mketyadmin',

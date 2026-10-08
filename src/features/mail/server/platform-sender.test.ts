@@ -1,11 +1,11 @@
-import { sendPlatformMailWithDependencies } from './platform-sender-core';
+import { isFirstPartyMailSendingDomainReady, sendPlatformMailWithDependencies } from './platform-sender-core';
 
 const makeDependencies = () => ({
   resolve: jest.fn().mockResolvedValue({
     tenantId: 'reserved-tenant',
     mailboxId: 'platform-mailbox',
     domainId: 'mkety-domain',
-    from: 'info@mkety.com',
+    from: 'info@mail.mkety.com',
     workspaceActive: true,
     entitled: true,
     domainReady: true,
@@ -27,6 +27,18 @@ const input = {
   idempotencyKey: 'user-1:password-changed:attempt-1',
 };
 
+describe('first-party outbound domain readiness', () => {
+  it('allows outbound-only readiness when authentication passes without root MX routing', () => {
+    expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(true);
+  });
+  it('fails closed while sending or any authentication record is unverified', () => {
+    expect(isFirstPartyMailSendingDomainReady({ status: 'pending', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+    expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: false, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+    expect(isFirstPartyMailSendingDomainReady({ status: 'verified', sendingEnabled: true, spfStatus: 'verified', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+    expect(isFirstPartyMailSendingDomainReady({ status: 'sending_ready', sendingEnabled: true, spfStatus: 'pending', dkimStatus: 'verified', dmarcStatus: 'verified' })).toBe(false);
+  });
+});
+
 describe('sendPlatformMailWithDependencies', () => {
   it('queues through Mkety Mail with the fixed first-party sender', async () => {
     const dependencies = makeDependencies();
@@ -37,14 +49,15 @@ describe('sendPlatformMailWithDependencies', () => {
     expect(dependencies.createMessage).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: 'reserved-tenant',
       mailboxId: 'platform-mailbox',
-      from: 'info@mkety.com',
+      from: 'info@mail.mkety.com',
       to: 'customer@example.com',
       status: 'queued',
     }));
     expect(dependencies.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'transactional',
-      from: { email: 'info@mkety.com' },
+      from: { email: 'info@mail.mkety.com' },
       to: { email: 'customer@example.com' },
+      replyTo: { email: 'hello@mkety.com' },
     }));
   });
 
