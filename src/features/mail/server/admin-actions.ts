@@ -8,6 +8,13 @@ import { formatUsdMinorUnits, parseUsdAmountToMinorUnits } from '@/features/ente
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { createFirstPartySmtpCredentialRecord } from '@/features/mail/server/first-party-smtp-credential';
 import { sendPlatformMail } from '@/features/mail/server/platform-sender';
+import {
+  findCloudflareZone,
+  getCloudflareEmailSending,
+  getCloudflareEmailSendingDns,
+  getPublicCloudflareSendingDns,
+} from './cloudflare';
+import { areCloudflareEmailAuthRecordsPublished, isFirstPartyMailDomain } from './domain-provisioning-policy';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { withServerActionDatabase } from '@/shared/db/server-action';
 import { revalidatePath } from 'next/cache';
@@ -638,6 +645,28 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
 
   const sendingEnabled = bool(formData.get('sendingEnabled'));
   const routingEnabled = bool(formData.get('routingEnabled'));
+  const [domain] = await db
+    .select({ domain: mailDomains.domain, tenantId: mailDomains.tenantId })
+    .from(mailDomains)
+    .where(and(eq(mailDomains.id, domainId), eq(mailDomains.tenantId, targetTenantId)))
+    .limit(1);
+  if (!domain) throw new Error('Mail domain not found.');
+
+  if (isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId()) && status === 'sending_ready') {
+    if (!sendingEnabled || spfStatus !== 'verified' || dkimStatus !== 'verified' || dmarcStatus !== 'verified') {
+      throw new Error('First-party sending readiness requires verified SPF, DKIM, and DMARC.');
+    }
+    const zone = await findCloudflareZone(domain.domain);
+    const sending = zone ? await getCloudflareEmailSending(zone.id, domain.domain) : null;
+    const expectedRecords = zone && typeof sending?.tag === 'string'
+      ? await getCloudflareEmailSendingDns(zone.id, sending.tag)
+      : [];
+    const publicRecords = await getPublicCloudflareSendingDns(expectedRecords);
+    if (!areCloudflareEmailAuthRecordsPublished(domain.domain, Boolean(sending?.enabled), expectedRecords, publicRecords)) {
+      throw new Error('Public SPF, DKIM, and DMARC records do not match Cloudflare Email Sending.');
+    }
+  }
+
   const verified = (status === 'verified' && spfStatus === 'verified' && dkimStatus === 'verified' && dmarcStatus === 'verified' && mxStatus === 'verified') || (status === 'sending_ready' && sendingEnabled && spfStatus === 'verified' && dkimStatus === 'verified' && dmarcStatus === 'verified');
 
   await db
