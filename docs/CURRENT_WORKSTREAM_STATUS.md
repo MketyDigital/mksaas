@@ -1,4 +1,12 @@
-# 2026-10-08 Mkety Mail rollout — current audit authority
+# 2026-10-09 Mkety first-party mail address split — current authority
+
+This amendment supersedes the address-routing decision in the 2026-10-08 section below. The intended split is `hello@mkety.com` in Zoho and `info@mkety.com`, `support@mkety.com`, and other explicitly provisioned root mailboxes in Mkety Mail. Root Zoho MX and DMARC remain unchanged. Cloudflare Email Routing stays off at the apex; root Cloudflare Email Sending is allowed only for the reserved first-party tenant after DNS verification. Zoho selectively forwards Mkety root mailboxes to exact `mail.mkety.com` Worker routes, which map to canonical root mailboxes.
+
+Implementation branch `feat/mkety-root-mail-address-split` is based on current `main` commit `5a537a6f7066bd513394b386b257e20a5bb82690`; it contains no `customer-apps/assist` changes. The branch adds root-only sender policy, exact ingress alias records/resolution, Ops route setup, no-catch-all protections, and updates the ZITADEL sender and Reply-To. Local evidence: 66 focused Mail tests pass; type-check, ESLint (0 errors; existing warnings), Vinext build, migration baseline, and `git diff --check` pass. Full Jest reports 289 suites passed, 1 skipped, and 2 unrelated child-process suites failing 7 tests (`vite-runtime-alias` resolver outputs and timezone utility subprocesses blocked with `EPERM`); rerun exact-head CI before merge. The production deployment remains PR #355 at `c78a127b183ac9c775e3a480ff59a922be1de6d6` until this branch is reviewed, certified, merged, and deployed.
+
+Still open: fresh CI on this candidate, production root sending authentication, reserved root mailboxes and SMTP credential, Cloudflare `mail.mkety.com` inbound route, Zoho verified forwards, actual app queue/gateway and ZITADEL tests, and a support receive/reply round trip. No DNS, production database, Zoho, Cloudflare, or ZITADEL configuration was changed by this branch.
+
+# 2026-10-08 Mkety Mail rollout — production evidence
 
 This section supersedes earlier Mail status summaries below where they describe a stale branch, PR, or production state. First-party Mkety Mail, the Starpips customer pilot, and later internal Enterprise AI acceptance are separate gates.
 

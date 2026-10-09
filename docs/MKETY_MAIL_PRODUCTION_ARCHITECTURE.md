@@ -18,6 +18,7 @@ Authoritative records live in Mkety's existing PostgreSQL database:
 - Mail workspace
 - domains
 - mailboxes
+- Mailbox ingress aliases that map exact Cloudflare subdomain recipients to canonical tenant mailboxes
 - mailbox members
 - threads
 - message metadata
@@ -80,6 +81,15 @@ Cloudflare Email Routing is the inbound transport.
 Cloudflare Email Sending is the transactional/operational outbound transport.
 
 Customers never receive Mkety's Cloudflare credentials.
+
+#### Mkety first-party address split
+
+- Root MX remains on Zoho. `hello@mkety.com` continues to be received and managed in Zoho.
+- First-party `info@mkety.com`, `support@mkety.com`, and other explicitly provisioned root mailboxes live in the reserved Mkety Mail workspace.
+- Cloudflare Email Sending may be configured for `mkety.com` only for the reserved first-party tenant after SPF/DKIM verification. Preserve the existing root DMARC record and all Zoho MX records. Never enable Cloudflare Email Routing or a catch-all on the root domain.
+- Zoho selectively forwards the root Mkety Mail addresses to exact recipient routes on `mail.mkety.com`. Cloudflare routes those messages to `mkety-mail-ingress`, which resolves each alias to the canonical root Mail mailbox. `hello@` is excluded.
+- Transactional platform mail uses `info@mkety.com` as From and `support@mkety.com` as Reply-To. Public contact paths that use `hello@mkety.com` remain Zoho-owned.
+- Setup requires exact, verified Zoho forward destinations and controlled receive/reply tests. A queued or direct Cloudflare send is not proof of this inbound path.
 
 ## Runtime components
 
@@ -261,6 +271,7 @@ The production workflow fails before application deployment if R2/Queues/Event S
 - [ ] mail.mkety.com attached and smoke tested
 - [ ] autoconfig/autodiscover hosts attached and smoke tested
 - [ ] inbound domain routing smoke test
+- [ ] Zoho-to-Cloudflare exact alias routing test with `hello@` excluded
 - [ ] outbound transactional smoke test
 - [ ] Customer Update queue smoke test
 - [ ] suppression smoke test

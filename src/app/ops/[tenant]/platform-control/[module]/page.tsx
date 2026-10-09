@@ -13,6 +13,7 @@ import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-que
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
+import { FirstPartyMailIngressAliasesForm } from '@/features/mail/components/FirstPartyMailIngressAliasesForm';
 import { MailEnterpriseOffersPanel } from '@/features/mail/components/MailEnterpriseOffersPanel';
 import { bootstrapFirstPartyMailWorkspace, createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
@@ -596,9 +597,16 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>
               <CardTitle>Platform Mail identity</CardTitle>
-              <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services.</CardDescription>
+              <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services. Zoho remains the root MX provider; Cloudflare sending is authenticated separately.</CardDescription>
             </CardHeader>
             <CardContent><FirstPartySmtpCredentialForm tenant={tenant} /></CardContent>
+          </Card>
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>First-party inbound routing</CardTitle>
+              <CardDescription>Route copies of Mkety root mailboxes into their Mail inboxes through Cloudflare on mail.mkety.com. hello@mkety.com remains in Zoho.</CardDescription>
+            </CardHeader>
+            <CardContent><FirstPartyMailIngressAliasesForm tenant={tenant} /></CardContent>
           </Card>
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>

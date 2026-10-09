@@ -7,6 +7,7 @@ import {
   mailDomains,
   mailMailboxes,
   mailWorkspaces,
+  tenants,
 } from '@/shared/db/schema';
 
 import { mailExternalClientsEnabled } from './external-clients';
@@ -81,7 +82,10 @@ export async function authenticateExternalMailClient(
   });
   if (!domain) return null;
   const platformTenantId = getFirstPartyMailTenantId().trim();
-  const isFirstPartyTenant = Boolean(platformTenantId && domain.tenantId === platformTenantId);
+  const tenant = platformTenantId && domain.tenantId === platformTenantId
+    ? await db.query.tenants.findFirst({ where: eq(tenants.id, domain.tenantId), columns: { slug: true } })
+    : null;
+  const isFirstPartyTenant = Boolean(tenant?.slug === 'mkety-ops');
   const externalClientsEnabled = mailExternalClientsEnabled();
   if (!isFirstPartyTenant && !externalClientsEnabled) return null;
 

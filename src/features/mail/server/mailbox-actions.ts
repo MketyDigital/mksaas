@@ -10,6 +10,7 @@ import { mailDomains, mailMailboxes, mailMailboxMembers, mailThreads, mailWorksp
 import { createCloudflareEmailWorkerRule, setCloudflareEmailCatchAll } from './cloudflare';
 import { requireMailWorkspaceAccess } from './workspace';
 import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
+import { getFirstPartyMailTenantId } from './runtime-config';
 import { canAssignMailTeamSeat } from './mail-team-seats';
 
 function cleanLocalPart(value:string){
@@ -43,6 +44,9 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     where:and(eq(mailDomains.id,domainId),eq(mailDomains.tenantId,tenant.id)),
   });
   if(!domain) redirect(`/app/${tenantSlug}/mail/mailboxes?error=domain`);
+  if(domain.domain==='mail.mkety.com'&&tenant.id===getFirstPartyMailTenantId().trim()&&tenant.slug==='mkety-ops'&&catchAll){
+    redirect(`/app/${tenantSlug}/mail/mailboxes?error=first-party-ingress-catch-all`);
+  }
 
   const planKey=await resolveTenantMailPlanKey(tenant.id,workspace.planKey,tenant.slug);
   const limits=await resolveTenantMailPlanLimits(tenant.id,planKey);

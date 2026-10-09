@@ -1,5 +1,18 @@
 # Mkety First-Party Mail and Starpips Mail Customer Design
 
+## Address split amendment — 2026-10-09
+
+This amendment supersedes the earlier `info@mail.mkety.com` sender and Zoho-only support clauses below. The user-confirmed first-party address split is:
+
+- `hello@mkety.com` remains hosted in Zoho and is never routed into Mkety Mail.
+- `info@mkety.com`, `support@mkety.com`, and other explicitly created Mkety root mailboxes are stored in the reserved Mkety Mail workspace.
+- Preserve the root Zoho MX and existing root DMARC records. Cloudflare Email Routing must not be enabled on the `mkety.com` apex.
+- Cloudflare Email Sending may be enabled for the apex only for the reserved first-party tenant after exact public SPF/DKIM verification. Keep existing root DMARC unchanged; a published valid root DMARC policy is sufficient. The sending setup must not add or replace apex MX records.
+- Zoho remains the root inbound MX and selectively forwards non-`hello` Mkety mailboxes to exact Cloudflare Email Routing addresses on `mail.mkety.com`. The ingress Worker maps those forwarding addresses to the canonical root-domain Mail mailbox. Do not add a catch-all route.
+- Platform transactional mail is sent from `info@mkety.com` with `support@mkety.com` as Reply-To. Public contact and help destinations that explicitly use `hello@mkety.com` continue to resolve to Zoho.
+
+This preserves the Zoho account without making Zoho the stored inbox for `info@`, `support@`, or other configured Mkety mailboxes. Production readiness still requires confirmed Zoho forwarding, Cloudflare subdomain routing, root sending authentication, and a real Mail gateway delivery test.
+
 **Date:** 2026-10-02
 **Status:** Design approved by the user on 2026-10-02; customer and internal-test sequence confirmed on 2026-10-02
 **Repository:** `mksaas`

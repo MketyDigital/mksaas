@@ -5,7 +5,7 @@ const makeDependencies = () => ({
     tenantId: 'reserved-tenant',
     mailboxId: 'platform-mailbox',
     domainId: 'mkety-domain',
-    from: 'info@mail.mkety.com',
+    from: 'info@mkety.com',
     workspaceActive: true,
     entitled: true,
     domainReady: true,
@@ -49,15 +49,15 @@ describe('sendPlatformMailWithDependencies', () => {
     expect(dependencies.createMessage).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: 'reserved-tenant',
       mailboxId: 'platform-mailbox',
-      from: 'info@mail.mkety.com',
+      from: 'info@mkety.com',
       to: 'customer@example.com',
       status: 'queued',
     }));
     expect(dependencies.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'transactional',
-      from: { email: 'info@mail.mkety.com' },
+      from: { email: 'info@mkety.com' },
       to: { email: 'customer@example.com' },
-      replyTo: { email: 'hello@mkety.com' },
+      replyTo: { email: 'support@mkety.com' },
     }));
   });
 

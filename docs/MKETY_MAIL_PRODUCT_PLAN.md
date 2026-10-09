@@ -27,6 +27,15 @@ A nontechnical business owner should be able to:
 
 Only Marketing Campaigns remain “Coming Soon”.
 
+## Mkety's first-party address split
+
+Mkety's platform mail follows an explicit split while the root domain uses Zoho for inbound MX:
+
+- `hello@mkety.com` remains hosted in Zoho.
+- `info@mkety.com`, `support@mkety.com`, and other configured Mkety root mailboxes are stored in the reserved Mkety Mail workspace.
+- Cloudflare Email Sending may authenticate the root sender addresses after DNS verification, while root Zoho MX and DMARC stay unchanged.
+- Zoho selectively forwards Mkety Mail recipients to exact Cloudflare ingress routes on `mail.mkety.com`; Mkety maps each route back to the root mailbox. No apex Email Routing or catch-all is enabled.
+
 ---
 
 ## Product scope

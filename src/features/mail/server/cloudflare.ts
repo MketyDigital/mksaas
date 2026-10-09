@@ -51,6 +51,20 @@ export async function setCloudflareEmailCatchAll(zoneId:string,workerName='mkety
 }
 
 export async function createCloudflareEmailWorkerRule(zoneId:string,address:string,workerName='mkety-mail-ingress'){
+  const list=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing/rules?per_page=100`);
+  const existingRows=Array.isArray(list?.result)?list.result as Array<{
+    id?:string;
+    matchers?:Array<{type?:string;field?:string;value?:string}>;
+    actions?:Array<{type?:string;value?:string[]}>;
+  }> : [];
+  const existing=existingRows.find((rule)=>rule.matchers?.some((matcher)=>
+    matcher.type==='literal'&&matcher.field==='to'&&matcher.value?.toLowerCase()===address.toLowerCase(),
+  ));
+  if(existing){
+    const pointsToWorker=existing.actions?.some((action)=>action.type==='worker'&&action.value?.includes(workerName));
+    if(!pointsToWorker) throw new Error('The Cloudflare recipient route is already owned by another destination.');
+    return {id:existing.id};
+  }
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/routing/rules`,{
     method:'POST',
     body:JSON.stringify({
@@ -94,13 +108,16 @@ export async function getCloudflareEmailSendingDns(zoneId:string,subdomainId:str
   return Array.isArray(payload?.result)?payload.result as CloudflareSendingDnsRecord[]:[];
 }
 
-export async function getPublicCloudflareSendingDns(records:CloudflareSendingDnsRecord[]){
+export async function getPublicCloudflareSendingDns(records:CloudflareSendingDnsRecord[],domain?:string){
   const authenticationRecords=records.filter((record)=>{
     const type=String(record.type||'').toUpperCase();
     const name=String(record.name||'').toLowerCase().replace(/\.$/,'');
     const content=String(record.content||'').replaceAll('"','').trim().toLowerCase();
     return (type==='TXT'&&(content.startsWith('v=spf1')||name.startsWith('_dmarc.')))||name.includes('._domainkey.')&&['TXT','CNAME'].includes(type);
   });
+  if(domain){
+    authenticationRecords.push({type:'TXT',name:`_dmarc.${domain}`});
+  }
   const unique=[...new Map(authenticationRecords.map((record)=>[`${record.type}|${record.name}`,record])).values()];
   const typeCodes:Record<number,string>={1:'A',5:'CNAME',15:'MX',16:'TXT',28:'AAAA'};
   const answers=await Promise.all(unique.map(async(record)=>{

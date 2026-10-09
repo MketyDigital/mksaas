@@ -11,7 +11,7 @@ export function FirstPartySmtpCredentialForm({ tenant }: { tenant: string }) {
     <form action={action} className="space-y-4 rounded-xl border p-4">
       <div>
         <h3 className="font-semibold">First-party SMTP credential</h3>
-        <p className="mt-1 text-sm text-muted-foreground">Creates or rotates the SMTP-only password for the verified info@mail.mkety.com mailbox. Rotating revokes the previous first-party SMTP password. The new password appears once. Customer external mail clients stay disabled.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Creates or rotates the SMTP-only password for the verified info@mkety.com mailbox. Rotating revokes the previous first-party SMTP password. The new password appears once. Customer external mail clients stay disabled.</p>
       </div>
       <button className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" disabled={pending}>
         {pending ? 'Saving…' : 'Create or rotate SMTP password'}

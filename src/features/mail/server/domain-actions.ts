@@ -43,7 +43,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
     redirect(`/app/${tenantSlug}/mail/domains?error=domain`);
   }
 
-  const provisioning=getMailDomainProvisioningPolicy(domain,tenant.id===getFirstPartyMailTenantId().trim());
+  const provisioning=getMailDomainProvisioningPolicy(domain,tenant.id===getFirstPartyMailTenantId().trim()&&tenant.slug==='mkety-ops');
   if(!provisioning.allowed) redirect(`/app/${tenantSlug}/mail/domains?error=reserved-domain`);
 
   const duplicate=await db.query.mailDomains.findFirst({where:eq(mailDomains.domain,domain)});
@@ -69,7 +69,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
         sendingEnabled=Boolean(sending?.enabled);
         if(sendingEnabled&&typeof sending?.tag==='string'){
           const expectedRecords=await getCloudflareEmailSendingDns(zone.id,sending.tag);
-          const publicRecords=await getPublicCloudflareSendingDns(expectedRecords);
+          const publicRecords=await getPublicCloudflareSendingDns(expectedRecords,domain);
           sendingAuthVerified=areCloudflareEmailAuthRecordsPublished(domain,sendingEnabled,expectedRecords,publicRecords);
         }
         if(sendingEnabled) await ensureCloudflareEmailEventSubscription(zone.id,domain);
