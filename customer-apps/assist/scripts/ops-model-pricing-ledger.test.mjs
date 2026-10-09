@@ -78,7 +78,7 @@ test("operator text and media multipliers permit reductions down to one percent"
   assert.match(ui, /id="pMediaMultiplier" type="number" min="1" max="1000"/);
   assert.match(api, /customerRateMultiplierPercent,\s*100,\s*1,\s*1000/);
   assert.match(api, /customerMediaRateMultiplierPercent,\s*[^,]+,\s*1,\s*1000/);
-  assert.match(api, /parsed < 100 \\|\\| parsed > 100000/);
+  assert.match(api, /parsed < 100 \|\| parsed > 100000/);
 });
 
 test("operator deductions add to the customer's lifetime used total", () => {
