@@ -17,10 +17,10 @@ test("image input and output tokens charge the configured customer rates and tra
     },
   }, 12_000);
 
-  assert.deepEqual(result, { credits: 5_280_000, providerCostMicros: 440_000 });
+  assert.deepEqual(result, { credits: 5_520_000, providerCostMicros: 440_000 });
 });
 
-test("vision token metering removes a legacy flat image amount with no provider image price", () => {
+test("vision token metering adds the configured fallback when provider image pricing is missing", () => {
   const result = mediaUsageEconomics({
     kind: "vision",
     inputUnits: 1_000_000,
@@ -35,7 +35,7 @@ test("vision token metering removes a legacy flat image amount with no provider 
     },
   }, 12_000);
 
-  assert.deepEqual(result, { credits: 1_200_000, providerCostMicros: 100_000 });
+  assert.deepEqual(result, { credits: 1_200_024, providerCostMicros: 100_000 });
 });
 
 test("Whisper provider rate replaces a stale customer rate before the multiplier", () => {
