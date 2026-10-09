@@ -9,7 +9,7 @@ function knownCapabilities(provider: string, model: string): ReasoningMode[] {
   if ((p === "workers-ai" || p === "mkety-managed") && /(?:^|\/)glm-5(?:\.3)?-flash/.test(m)) {
     return ["standard", "high", "maximum"];
   }
-  if (["openai", "azure-foundry"].includes(p) && /(?:^|\/)gpt-5(?:[.-]|$)/.test(m)) {
+  if (["openai", "azure-foundry"].includes(p) && /(?:^|\/)gpt-[56](?:[.-]|$)/.test(m)) {
     return ["standard", "high", "maximum"];
   }
   if (p === "azure-openai" && /(?:^|\/)gpt-5(?:[.-]|$)/.test(m)) return ["standard", "high"];
@@ -37,7 +37,7 @@ function adapterCapabilities(provider: string, model: string): Set<ReasoningMode
   const p = provider.toLowerCase();
   const m = model.toLowerCase();
   if ((p === "workers-ai" || p === "mkety-managed") && /(?:^|\/)glm-5(?:\.3)?-flash/.test(m)) return new Set(["standard", "high", "maximum"]);
-  if (["openai", "azure-foundry"].includes(p) && /(?:^|\/)gpt-5(?:[.-]|$)/.test(m)) return new Set(["standard", "high", "maximum"]);
+  if (["openai", "azure-foundry"].includes(p) && /(?:^|\/)gpt-[56](?:[.-]|$)/.test(m)) return new Set(["standard", "high", "maximum"]);
   if (p === "azure-openai" && /(?:^|\/)gpt-5(?:[.-]|$)/.test(m)) return new Set(["standard", "high"]);
   if (p === "anthropic" && /claude-(?:3-7|4|sonnet-4|opus-4)/.test(m)) return new Set(["standard", "high", "maximum"]);
   if (["gemini", "vertex"].includes(p) && /gemini-3/.test(m)) return new Set(["standard", "high"]);

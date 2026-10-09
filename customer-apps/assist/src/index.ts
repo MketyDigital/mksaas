@@ -228,6 +228,7 @@ async function upsertManagedProvider(env: Env, input: {
 const AZURE_PRIMARY_PROMOTION_KEY = "assist.azure_primary.v1";
 
 async function promoteManagedAzurePrimaryOnce(env: Env, azureModel: string) {
+  if (azureModel !== "gpt-6-luna-1") return { applied: false, reason: "luna_deployment_required", aliases: [] as string[] };
   const prior = await env.DB.prepare("SELECT value_json FROM system_settings WHERE key=? LIMIT 1")
     .bind(AZURE_PRIMARY_PROMOTION_KEY).first<any>();
   if (prior) return { applied: false, reason: "already_recorded", aliases: [] as string[] };
@@ -253,11 +254,9 @@ async function promoteManagedAzurePrimaryOnce(env: Env, azureModel: string) {
 
     const currentPrimary = existing.find((row: any) => Number(row.enabled) === 1) ?? existing[0];
     const pricingBase = currentPrimary;
-    const reasoningBase = existing.find((row: any) =>
-      row.reasoning_credits_per_million != null || row.provider_reasoning_cost_micros_per_million != null
-    ) ?? pricingBase;
     const remaining = existing.filter((row: any) =>
-      !(String(row.provider) === "azure-foundry" && String(row.provider_connection_id || "") === "prv_managed_azure_foundry")
+      !String(row.provider_model || "").toLowerCase().includes("gpt-5.6-sol")
+      && !(String(row.provider) === "azure-foundry" && String(row.provider_connection_id || "") === "prv_managed_azure_foundry")
     );
 
     const azureTarget = {
@@ -270,13 +269,21 @@ async function promoteManagedAzurePrimaryOnce(env: Env, azureModel: string) {
       provider_model: azureModel,
       provider_connection_id: "prv_managed_azure_foundry",
       enabled: 1,
+      input_credits_per_million: 20000000,
+      output_credits_per_million: 100000000,
+      image_credits: alias === "mkety-media-vision" ? 200000 : 0,
+      audio_credits_per_minute: 0,
+      provider_input_cost_micros_per_million: 0,
+      provider_output_cost_micros_per_million: 0,
+      provider_image_cost_micros: 0,
+      provider_audio_cost_micros_per_minute: 0,
       created_at: now,
       updated_at: now,
-      reasoning_capabilities_json: null,
-      reasoning_credits_per_million: reasoningBase.reasoning_credits_per_million ?? null,
-      provider_reasoning_cost_micros_per_million: reasoningBase.provider_reasoning_cost_micros_per_million ?? null,
+      reasoning_capabilities_json: '["standard","high","maximum"]',
+      reasoning_credits_per_million: null,
+      provider_reasoning_cost_micros_per_million: null,
     };
-    const ordered = [azureTarget, ...remaining].slice(0, 10).map((row: any, index: number) => ({ ...row, position: index }));
+    const ordered = [azureTarget, ...remaining].map((row: any, index: number) => ({ ...row, position: index }));
 
     const statements: D1PreparedStatement[] = [
       env.DB.prepare("DELETE FROM model_route_targets WHERE scope_key=?").bind(scopeKey),
@@ -328,7 +335,7 @@ async function promoteManagedAzurePrimaryOnce(env: Env, azureModel: string) {
   return { applied: true, reason: "promoted", aliases: promoted };
 }
 
-async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ role: "system" | "user" | "assistant"; content: string }>) {
+async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ role: "system" | "user" | "assistant"; content: any }>) {
   return invokeProviderModel(
     env,
     target,
@@ -340,7 +347,7 @@ async function generateAcceptanceReply(env: Env, target: any, messages: Array<{ 
 async function handleManagedProviderBootstrap(request: Request, env: Env) {
   requireDeployProbe(request, env);
   const results: any[] = [];
-  if (env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) {
+  if (env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY && env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT && env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL === "gpt-6-luna-1") {
     results.push(await upsertManagedProvider(env, {
       id: "prv_managed_azure_foundry",
       name: "Mkety Managed Azure Foundry",
@@ -349,6 +356,8 @@ async function handleManagedProviderBootstrap(request: Request, env: Env) {
       apiKey: env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY,
       model: env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL,
     }));
+  } else if (env.MKETY_ASSIST_AZURE_FOUNDRY_MODEL) {
+    results.push({ provider: "azure-foundry", skipped: "primary_deployment_is_gpt-6-luna-1" });
   }
   if (env.MKETY_ASSIST_OPENAI_API_KEY && env.MKETY_ASSIST_OPENAI_MODEL) {
     results.push(await upsertManagedProvider(env, {
@@ -496,10 +505,49 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   }
 
   const targetRows = await env.DB.prepare(
-    `SELECT scope_key,alias,position,provider,provider_model,provider_connection_id,enabled,
-            provider_input_cost_micros_per_million,provider_output_cost_micros_per_million
-     FROM model_route_targets ORDER BY scope_key,position`,
+    `SELECT t.scope_key,t.alias,t.position,t.provider,t.provider_model,t.provider_connection_id,t.enabled,
+            t.provider_input_cost_micros_per_million,t.provider_output_cost_micros_per_million,
+            pc.status AS provider_connection_status,pc.validated_at AS provider_connection_validated_at
+     FROM model_route_targets t LEFT JOIN provider_connections pc ON pc.id=t.provider_connection_id
+     ORDER BY t.scope_key,t.position`,
   ).all<any>();
+  const routeTargets = targetRows.results ?? [];
+  const lunaTarget = routeTargets.find((target: any) =>
+    String(target.scope_key).startsWith("global:")
+    && ["mkety-fast","mkety-smart","mkety-reasoning","mkety-vision"].includes(String(target.alias))
+    && Number(target.position) === 0 && Number(target.enabled) === 1
+    && target.provider === "azure-foundry" && target.provider_model === "gpt-6-luna-1"
+    && target.provider_connection_status === "active" && Boolean(target.provider_connection_validated_at)
+  );
+  let azureLunaTextOk = false;
+  try {
+    if (!lunaTarget) throw new Error("validated_luna_text_primary_missing");
+    const output = await generateAcceptanceReply(env, lunaTarget, [{ role: "user", content: "Reply only with MKETY_LUNA_TEXT_READY" }]);
+    const text = acceptanceText(output);
+    azureLunaTextOk = text.length > 0;
+    results.push({ provider: "azure-foundry-luna-text", model: lunaTarget.provider_model, ok: azureLunaTextOk, usageAvailable: Boolean(output?.usage) });
+  } catch (error) {
+    results.push({ provider: "azure-foundry-luna-text", model: "gpt-6-luna-1", ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+  }
+
+  const lunaVisionTarget = routeTargets.find((target: any) =>
+    target.scope_key === "global:mkety-media-vision" && Number(target.position) === 0 && Number(target.enabled) === 1
+    && target.provider === "azure-foundry" && target.provider_model === "gpt-6-luna-1"
+    && target.provider_connection_status === "active" && Boolean(target.provider_connection_validated_at)
+  );
+  let azureLunaVisionOk = false;
+  try {
+    if (!lunaVisionTarget) throw new Error("validated_luna_vision_primary_missing");
+    const output = await generateAcceptanceReply(env, lunaVisionTarget, [{ role: "user", content: [
+      { type: "input_text", text: "A small image is attached. Reply only with MKETY_LUNA_IMAGE_READY." },
+      { type: "input_image", image_url: `data:image/png;base64,${tinyPng}`, detail: "low" },
+    ] }]);
+    const text = acceptanceText(output);
+    azureLunaVisionOk = text.length > 0;
+    results.push({ provider: "azure-foundry-luna-vision", model: lunaVisionTarget.provider_model, ok: azureLunaVisionOk, usageAvailable: Boolean(output?.usage) });
+  } catch (error) {
+    results.push({ provider: "azure-foundry-luna-vision", model: "gpt-6-luna-1", ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
+  }
   const qualityTarget = (targetRows.results ?? []).find((target: any) =>
     target.scope_key === "global:mkety-smart" && Number(target.position) === 0 && Number(target.enabled) === 1
   ) ?? (targetRows.results ?? []).find((target: any) =>
@@ -549,8 +597,8 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   const workersImageReplyOk = workerModels.every((worker) => results.some((item) => item.provider === "workers-ai-image-reply" && item.model === worker.model && item.ok));
   const azureOk = results.some((item) => item.provider === "azure-foundry" && (item.ok || item.reachable));
   const vertexOk = results.some((item) => item.provider === "vertex" && (item.ok || item.reachable));
-  const ok = workersOk && workersVisionOk && workersImageReplyOk && azureOk && vertexOk && conversationQualityResult.ok;
-  return json({ ok, providers: results, routeTargets: targetRows.results ?? [], workersVisionOk, workersImageReplyOk, conversationQuality: conversationQualityResult, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
+  const ok = workersOk && workersVisionOk && workersImageReplyOk && azureOk && vertexOk && azureLunaTextOk && azureLunaVisionOk && conversationQualityResult.ok;
+  return json({ ok, providers: results, routeTargets, workersVisionOk, workersImageReplyOk, azureLunaTextOk, azureLunaVisionOk, conversationQuality: conversationQualityResult, frontier: { azureFoundry: azureOk, vertex: vertexOk } }, ok ? 200 : 503);
 }
 
 async function handleOps(request: Request, env: Env): Promise<Response> {
@@ -709,8 +757,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const setupFeeMinor = parseUsdMinorValue(body.setupFeeUsd ?? "0", "setup fee", true);
     const providerEnvelopeBps = parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100);
     const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
-    const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
-    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 100, 1000);
+    const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 1, 1000);
+    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 1, 1000);
     const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
     let includedCredits = creditAtomsFromMkredits(body.includedCredits);
     if (autoIncludedCredits && monthlyPrice > 0) {
@@ -1056,7 +1104,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       monthlyAmountMinor: parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
       providerEnvelopeBps: parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
       operationsReserveBps: parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
-      rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
+      rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 1, 1000),
     });
     return json({ ...result, includedCredits: result.includedMkredits, mkreditsPerUsd: MKREDITS_PER_USD, creditUnit: "MKredit" });
   }
@@ -1065,6 +1113,12 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
     const now = unix();
+    const textMultiplierUpdate = body.customerRateMultiplierPercent !== undefined
+      ? parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 1, 1000)
+      : body.rateMultiplierBps === undefined ? null : parseRateMultiplierBps(body.rateMultiplierBps, "rate_multiplier_invalid");
+    const mediaMultiplierUpdate = body.customerMediaRateMultiplierPercent !== undefined
+      ? parsePercentBpsValue(body.customerMediaRateMultiplierPercent, 100, 1, 1000)
+      : body.mediaRateMultiplierBps === undefined ? null : parseRateMultiplierBps(body.mediaRateMultiplierBps, "media_rate_multiplier_invalid");
     let includedCreditsValue = body.includedCredits === undefined || body.includedCredits === null || body.includedCredits === "" ? null : creditAtomsFromMkredits(body.includedCredits);
     if (body.autoCalculateCredits === true) {
       const current = await env.DB.prepare("SELECT * FROM commercial_policy WHERE customer_id=? LIMIT 1").bind(customerId).first<any>();
@@ -1079,9 +1133,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         operationsReserveBps: body.operationsReservePercent === undefined
           ? (body.operationsReserveBps === undefined ? Number(current.operations_reserve_bps) : positiveInt(body.operationsReserveBps, 0))
           : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
-        rateMultiplierBps: body.customerRateMultiplierPercent === undefined
-          ? (body.rateMultiplierBps === undefined ? Number(current.rate_multiplier_bps) : positiveInt(body.rateMultiplierBps, 10000))
-          : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
+        rateMultiplierBps: textMultiplierUpdate ?? Number(current.rate_multiplier_bps),
       }).includedCredits;
     }
     await env.DB.batch([
@@ -1103,8 +1155,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
           body.monthlyPriceUsd === undefined ? nullableInt(body.subscriptionAmountMinor) : parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"), includedCreditsValue,
           body.managedCostSharePercent === undefined ? nullableInt(body.providerEnvelopeBps) : parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
           body.operationsReservePercent === undefined ? nullableInt(body.operationsReserveBps) : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
-          body.customerRateMultiplierPercent === undefined ? nullableInt(body.rateMultiplierBps) : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-          body.customerMediaRateMultiplierPercent === undefined ? nullableInt(body.mediaRateMultiplierBps) : parsePercentBpsValue(body.customerMediaRateMultiplierPercent, 100, 100, 1000),
+          textMultiplierUpdate,
+          mediaMultiplierUpdate,
           body.fundingMode === undefined ? null : (String(body.fundingMode) === "prepaid_partial" ? "prepaid_partial" : "full_period"),
           body.minimumFundingUsd === undefined ? null : parseUsdMinorValue(body.minimumFundingUsd, "minimum funding"),
           body.setupFeeUsd === undefined ? null : parseUsdMinorValue(body.setupFeeUsd, "setup fee", true),
@@ -3450,7 +3502,7 @@ function calculateCommercialPlan(input: {
   if (input.monthlyAmountMinor <= 0) throw new HttpError(400, "monthly_amount_must_be_positive");
   if (input.providerEnvelopeBps < 1 || input.providerEnvelopeBps > 10000) throw new HttpError(400, "provider_envelope_invalid");
   if (input.operationsReserveBps < 0 || input.operationsReserveBps >= 10000) throw new HttpError(400, "operations_reserve_invalid");
-  if (input.rateMultiplierBps < 10000 || input.rateMultiplierBps > 100000) throw new HttpError(400, "rate_multiplier_invalid");
+  if (input.rateMultiplierBps < 100 || input.rateMultiplierBps > 100000) throw new HttpError(400, "rate_multiplier_invalid");
   const monthlyUsdMicros = input.monthlyAmountMinor * 10000;
   const providerEnvelopeUsdMicros = Math.floor(monthlyUsdMicros * input.providerEnvelopeBps / 10000);
   const usableProviderUsdMicros = Math.floor(providerEnvelopeUsdMicros * (10000 - input.operationsReserveBps) / 10000);
@@ -3529,6 +3581,12 @@ function parsePercentBpsValue(value: unknown, fallbackPercent: number, minPercen
   const number = Number(text);
   if (!Number.isFinite(number) || number < minPercent || number > maxPercent) throw new HttpError(400, "invalid_percentage");
   return Math.round(number * 100);
+}
+
+function parseRateMultiplierBps(value: unknown, errorCode: string) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 100 || parsed > 100000) throw new HttpError(400, errorCode);
+  return parsed;
 }
 
 function positiveInt(value: unknown, fallback: number) {

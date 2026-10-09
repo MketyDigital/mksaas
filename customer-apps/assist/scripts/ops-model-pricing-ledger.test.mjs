@@ -71,6 +71,15 @@ test("model rates UI shows provider-derived base rates and separate text/media m
   assert.match(ui, /Effective target/);
 });
 
+test("operator text and media multipliers permit reductions down to one percent", () => {
+  assert.match(ui, /id="pMultiplier" type="number" min="1" max="1000"/);
+  assert.match(ui, /id="pMediaMultiplier" type="number" min="1" max="1000"/);
+  assert.match(api, /customerRateMultiplierPercent,\s*100,\s*1,\s*1000/);
+  assert.match(api, /customerMediaRateMultiplierPercent,\s*[^,]+,\s*1,\s*1000/);
+  assert.match(api, /rateMultiplierBps < 100/);
+  assert.match(api, /rateMultiplierBps > 100000/);
+});
+
 test("operator deductions add to the customer's lifetime used total", () => {
   const start = api.indexOf('if (url.pathname === "/api/ops/credits"');
   const end = api.indexOf('if (url.pathname === "/api/ops/ledger"', start);

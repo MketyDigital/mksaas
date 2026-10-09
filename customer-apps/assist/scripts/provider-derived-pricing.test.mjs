@@ -17,7 +17,7 @@ test("provider micro-dollar costs derive exact MKredit atom rates across token, 
     reasoning: result.reasoning_credits_per_million,
     image: result.image_credits,
     audio: result.audio_credits_per_minute,
-  }, { input: 50_000_000, output: 300_000_000, reasoning: 300_000_000, image: 2_500_000, audio: 4_530 });
+  }, { input: 50_000_000, output: 300_000_000, reasoning: 300_000_000, image: 2_500_000, audio: 200_000 });
 });
 
 test("zero or missing provider prices never replace existing rates", () => {
@@ -33,7 +33,7 @@ test("zero or missing provider prices never replace existing rates", () => {
     input: result.input_credits_per_million,
     output: result.output_credits_per_million,
     audio: result.audio_credits_per_minute,
-  }, { input: 12_345, output: 67_890, audio: 55 });
+  }, { input: 20_000_000, output: 100_000_000, audio: 200_000 });
 });
 
 test("the existing customer percentage is applied to provider-derived rates at settlement", async () => {
@@ -64,20 +64,35 @@ test("the existing customer percentage is applied to provider-derived rates at s
   }, 12_000);
 
   assert.deepEqual(vision, { credits: 6_240_000, providerCostMicros: 500_000 });
-  assert.deepEqual(speech, { credits: 5_436, providerCostMicros: 453 });
+  assert.deepEqual(speech, { credits: 240_000, providerCostMicros: 453 });
 });
 
 
-test("known Luna public price is ready for OpenAI and Azure Foundry routes", () => {
-  for (const provider of ["openai", "azure-foundry"]) {
-    const result = deriveCustomerBaseRates({ provider, provider_model: "gpt-5.6-luna" });
-    assert.deepEqual({
-      inputCost: result.provider_input_cost_micros_per_million,
-      outputCost: result.provider_output_cost_micros_per_million,
-      input: result.input_credits_per_million,
-      output: result.output_credits_per_million,
-    }, { inputCost: 200_000, outputCost: 1_200_000, input: 2_000_000, output: 12_000_000 });
-  }
+test("known Luna public price applies only to direct OpenAI routes", () => {
+  const direct = deriveCustomerBaseRates({ provider: "openai", provider_model: "gpt-5.6-luna" });
+  assert.deepEqual({
+    inputCost: direct.provider_input_cost_micros_per_million,
+    outputCost: direct.provider_output_cost_micros_per_million,
+    input: direct.input_credits_per_million,
+    output: direct.output_credits_per_million,
+  }, { inputCost: 200_000, outputCost: 1_200_000, input: 20_000_000, output: 100_000_000 });
+  const azure = deriveCustomerBaseRates({ provider: "azure-foundry", provider_model: "gpt-5.6-luna" });
+  assert.equal(azure.provider_input_cost_micros_per_million, undefined);
+  assert.equal(azure.provider_output_cost_micros_per_million, undefined);
+  assert.equal(azure.input_credits_per_million, 20_000_000);
+  assert.equal(azure.output_credits_per_million, 100_000_000);
+});
+
+test("Azure Luna receives a clearly labeled public offer estimate while customer minima remain authoritative", () => {
+  const azure = deriveCustomerBaseRates({ provider: "azure-foundry", provider_model: "gpt-6-luna-1" });
+  assert.equal(azure.provider_input_cost_micros_per_million, 100_000);
+  assert.equal(azure.provider_output_cost_micros_per_million, 500_000);
+  assert.equal(azure.provider_pricing_source, "public_offer_estimate");
+  assert.equal(azure.provider_pricing_tier, "Microsoft Foundry Global Standard, short context; public offer estimate");
+  assert.equal(azure.provider_pricing_verified_at, "2026-10-09");
+  assert.match(azure.provider_pricing_source_url, /^https:\/\/azure\.microsoft\.com\//);
+  assert.equal(azure.input_credits_per_million, 20_000_000);
+  assert.equal(azure.output_credits_per_million, 100_000_000);
 });
 
 test("vision ignores legacy image surcharge when image provider cost is unknown", () => {
@@ -87,7 +102,7 @@ test("vision ignores legacy image surcharge when image provider cost is unknown"
     provider_image_cost_micros: 0,
     image_credits: 3_000,
   });
-  assert.equal(result.image_credits, 0);
+  assert.equal(result.image_credits, 200_000);
 });
 
 
@@ -98,9 +113,9 @@ test("unknown image and voice prices use a 20 MKredit per-unit baseline", () => 
   assert.equal(voice.audio_credits_per_minute, 200_000);
 });
 
-test("known provider media prices override the fallback baseline", () => {
+test("known provider media prices below the floor remain at the fallback baseline", () => {
   const image = deriveCustomerMediaBaseRates({ provider_image_cost_micros: 2 }, "vision");
   const voice = deriveCustomerMediaBaseRates({ provider_audio_cost_micros_per_minute: 453 }, "speech");
-  assert.equal(image.image_credits, 20);
-  assert.equal(voice.audio_credits_per_minute, 4_530);
+  assert.equal(image.image_credits, 200_000);
+  assert.equal(voice.audio_credits_per_minute, 200_000);
 });
