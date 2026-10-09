@@ -65,7 +65,7 @@ test("model rates UI shows provider-derived base rates and separate text/media m
   assert.match(ui, /data-target-output="'\+i\+'" readonly/);
   assert.match(ui, /data-target-image="'\+i\+'" readonly/);
   assert.match(ui, /data-target-audio="'\+i\+'" readonly/);
-  assert.ok(ui.includes("These base rates are calculated directly from provider cost and cannot be overridden here."));
+  assert.ok(ui.includes("Base MKredit rates are calculated from each target’s provider cost."));
   assert.match(ui, /audio_credits_per_minute/);
   assert.match(ui, /!paused&&targets\.find\(t=>Number\(t\.enabled\?\?1\)===1&&t\.validated===true&&t\.priced===true&&t\.supported!==false\)/);
   assert.match(ui, /Effective target/);
