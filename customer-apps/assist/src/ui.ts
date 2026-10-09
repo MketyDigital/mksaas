@@ -719,8 +719,8 @@ function newCustomerDialog(){
     '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary>'+
       '<div class="two" style="margin-top:10px">'+
         '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="nReserve" type="number" min="0" max="99.99" step="0.01" value="10"></div>'+
-        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="100" max="1000" step="0.01" value="100"></div>
-        <div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="nMediaMultiplier" type="number" min="100" max="1000" step="0.01" value="100"><small class="muted">Missing image/voice provider prices use 20 MKredit per image/minute before this multiplier.</small></div>'+
+        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="100" max="1000" step="0.01" value="100"></div>'+'+
+'  '      <div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="nMediaMultiplier" type="number" min="100" max="1000" step="0.01" value="100"><small class="muted">Missing image/voice provider prices use 20 MKredit per image/minute before this multiplier.</small></div>'+
       '</div>'+
       '<p class="muted">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion stay internal. Customers see only price/top-ups, credits, usage and enabled features.</p>'+
     '</details>'+
