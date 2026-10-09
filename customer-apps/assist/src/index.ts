@@ -511,7 +511,10 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
      FROM model_route_targets t LEFT JOIN provider_connections pc ON pc.id=t.provider_connection_id
      ORDER BY t.scope_key,t.position`,
   ).all<any>();
-  const routeTargets = targetRows.results ?? [];
+  // Acceptance must use the same provider-derived estimates and modality floors
+  // as runtime billing; the stored columns can be empty when a public offer is
+  // the source of the effective rate.
+  const routeTargets = (targetRows.results ?? []).map((target: any) => deriveCustomerBaseRates(target));
   const lunaTarget = routeTargets.find((target: any) =>
     String(target.scope_key).startsWith("global:")
     && ["mkety-fast","mkety-smart","mkety-reasoning","mkety-vision"].includes(String(target.alias))
