@@ -122,3 +122,23 @@ test("vision flat per-image rates require a covered provider image cost", () => 
   }, "mkety-media-vision"), false);
   assert.equal(routeTargetPricingConfigured({ image_credits: 3 }, "mkety-media-vision"), false);
 });
+
+
+test("vision provider remains available at the explicit fallback rate when no provider price exists", () => {
+  assert.equal(routeTargetPricingConfigured({
+    input_credits_per_million: 0,
+    output_credits_per_million: 0,
+    image_credits: 200_000,
+    provider_input_cost_micros_per_million: 0,
+    provider_output_cost_micros_per_million: 0,
+    provider_image_cost_micros: 0,
+  }, "mkety-media-vision"), true);
+});
+
+
+test("media and voice billing reads its own operator multiplier", () => {
+  assert.match(runtime, /media_rate_multiplier_bps/);
+  assert.match(api, /media_rate_multiplier_bps/);
+  assert.match(ui, /Media\/voice rate multiplier %/);
+  assert.match(ui, /customerMediaRateMultiplierPercent/);
+});
