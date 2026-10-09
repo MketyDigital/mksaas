@@ -9,6 +9,7 @@ import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { createFirstPartySmtpCredentialRecord } from '@/features/mail/server/first-party-smtp-credential';
 import { sendPlatformMail } from '@/features/mail/server/platform-sender';
 import {
+  createCloudflareEmailWorkerRule,
   findCloudflareZone,
   getCloudflareEmailSending,
   getCloudflareEmailSendingDns,
@@ -28,6 +29,7 @@ import {
   mailDomains,
   mailEnterpriseOffers,
   mailMailboxes,
+  mailMailboxIngressAliases,
   mailWorkspaces,
   tenantEntitlementOverrides,
   tenantMemberships,
@@ -38,6 +40,7 @@ import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
 import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
+import { resolveFirstPartyIngressAlias } from './ingress-aliases';
 import { getFirstPartyMailTenantId } from './runtime-config';
 import { isMailPlanKey } from '../commercial/plans';
 import { parseMailEnterpriseOfferInput } from '../commercial/enterprise-offers';
@@ -194,7 +197,7 @@ export async function createFirstPartySmtpCredential(
   if (!configuredTenantId) return { error: 'First-party Mail tenant is not configured.' };
 
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, configuredTenantId) });
-  if (!tenant) return { error: 'Configured first-party Mail tenant was not found.' };
+  if (!tenant || tenant.slug !== 'mkety-ops') return { error: 'Configured first-party Mail tenant was not found.' };
   const workspace = await db.query.mailWorkspaces.findFirst({ where: eq(mailWorkspaces.tenantId, configuredTenantId) });
   if (!workspace || workspace.status !== 'active') {
     return { error: 'The first-party Mail workspace is not active and entitled.' };
@@ -208,7 +211,7 @@ export async function createFirstPartySmtpCredential(
       eq(mailMailboxes.tenantId, configuredTenantId),
       eq(mailMailboxes.workspaceId, workspace.id),
       eq(mailMailboxes.localPart, 'info'),
-      eq(mailDomains.domain, 'mail.mkety.com'),
+      eq(mailDomains.domain, 'mkety.com'),
     ))
     .limit(1);
   const { mailbox, domain } = mailboxRows[0] ?? { mailbox: null, domain: null };
@@ -219,7 +222,7 @@ export async function createFirstPartySmtpCredential(
     domain.dkimStatus !== 'verified' ||
     domain.dmarcStatus !== 'verified'
   ) {
-    return { error: 'The info@mail.mkety.com sending domain is not fully verified and enabled.' };
+    return { error: 'The info@mkety.com sending domain is not fully verified and enabled.' };
   }
 
   const secret = `mkmail-${hex(randomBytes(12))}`;
@@ -229,7 +232,7 @@ export async function createFirstPartySmtpCredential(
     requestedTenantId: configuredTenantId,
     actorUserId: actor.userId,
     workspace: workspace ? { tenantId: workspace.tenantId, status: workspace.status, hasMailEntitlement: entitled } : null,
-    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mail.mkety.com', status: mailbox.status } : null,
+    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mkety.com', status: mailbox.status } : null,
     secret,
     passwordHash,
   }, {
@@ -255,6 +258,109 @@ export async function createFirstPartySmtpCredential(
     await db.update(mailAppPasswords).set({ revokedAt: new Date() }).where(eq(mailAppPasswords.id, credential.id));
     return { error: 'Could not create the first-party SMTP credential. Check workspace readiness and try again.' };
   }
+}
+
+export async function configureFirstPartyMailIngressAliases(
+  opsTenantSlug: string,
+  _state: { configuredAddresses?: string[]; error?: string },
+  _formData: FormData,
+): Promise<{ configuredAddresses?: string[]; error?: string }> {
+  const actor = await requireMailOps(opsTenantSlug);
+  const configuredTenantId = getFirstPartyMailTenantId().trim();
+  if (!configuredTenantId) return { error: 'First-party Mail tenant is not configured.' };
+
+  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, configuredTenantId) });
+  if (!tenant || tenant.slug !== 'mkety-ops') return { error: 'The configured first-party Mail tenant is unavailable.' };
+  const [rootDomain, ingressDomain] = await Promise.all([
+    db.query.mailDomains.findFirst({ where: and(eq(mailDomains.tenantId, configuredTenantId), eq(mailDomains.domain, 'mkety.com')) }),
+    db.query.mailDomains.findFirst({ where: and(eq(mailDomains.tenantId, configuredTenantId), eq(mailDomains.domain, 'mail.mkety.com')) }),
+  ]);
+  if (!rootDomain || !rootDomain.sendingEnabled || rootDomain.status !== 'sending_ready') {
+    return { error: 'Verify root-domain sending and authentication before configuring mailbox aliases.' };
+  }
+  if (!ingressDomain || !ingressDomain.routingEnabled || !ingressDomain.cloudflareZoneId) {
+    return { error: 'Enable Cloudflare Email Routing on mail.mkety.com before configuring inbound aliases.' };
+  }
+
+  const mailboxes = await db.select({
+    id: mailMailboxes.id,
+    tenantId: mailMailboxes.tenantId,
+    localPart: mailMailboxes.localPart,
+    displayName: mailMailboxes.displayName,
+  }).from(mailMailboxes).where(and(
+    eq(mailMailboxes.tenantId, configuredTenantId),
+    eq(mailMailboxes.domainId, rootDomain.id),
+    eq(mailMailboxes.status, 'active'),
+  ));
+  const configuredAddresses: string[] = [];
+  const errors: string[] = [];
+
+  for (const mailbox of mailboxes) {
+    const primaryAddress = `${mailbox.localPart}@mkety.com`;
+    const alias = resolveFirstPartyIngressAlias({
+      configuredTenantId,
+      targetTenantId: mailbox.tenantId,
+      mailboxAddress: primaryAddress,
+      ingressDomain: ingressDomain.domain,
+    });
+    if (!alias) continue;
+
+    const ingressMailbox = await db.query.mailMailboxes.findFirst({
+      where: and(
+        eq(mailMailboxes.tenantId, configuredTenantId),
+        eq(mailMailboxes.domainId, ingressDomain.id),
+        eq(mailMailboxes.localPart, alias.ingressAddress.slice(0, alias.ingressAddress.lastIndexOf('@'))),
+      ),
+    });
+    if (ingressMailbox) {
+      errors.push(`${alias.ingressAddress} already belongs to a subdomain mailbox; remove that mailbox before routing the root address.`);
+      continue;
+    }
+
+    const [created] = await db.insert(mailMailboxIngressAliases).values({
+      tenantId: mailbox.tenantId,
+      mailboxId: mailbox.id,
+      domainId: ingressDomain.id,
+      localPart: alias.ingressAddress.slice(0, alias.ingressAddress.lastIndexOf('@')),
+      status: 'pending',
+      createdByUserId: actor.userId,
+    }).onConflictDoNothing({ target: [mailMailboxIngressAliases.domainId, mailMailboxIngressAliases.localPart] }).returning();
+    const record = created || await db.query.mailMailboxIngressAliases.findFirst({
+      where: and(
+        eq(mailMailboxIngressAliases.tenantId, configuredTenantId),
+        eq(mailMailboxIngressAliases.domainId, ingressDomain.id),
+        eq(mailMailboxIngressAliases.localPart, alias.ingressAddress.slice(0, alias.ingressAddress.lastIndexOf('@'))),
+      ),
+    });
+    if (!record || record.mailboxId !== mailbox.id) {
+      errors.push(`${alias.ingressAddress} is already mapped to another mailbox.`);
+      continue;
+    }
+
+    try {
+      await createCloudflareEmailWorkerRule(ingressDomain.cloudflareZoneId, alias.ingressAddress);
+      await db.update(mailMailboxIngressAliases).set({ status: 'active', updatedAt: new Date() }).where(eq(mailMailboxIngressAliases.id, record.id));
+      configuredAddresses.push(alias.ingressAddress);
+    } catch {
+      await db.update(mailMailboxIngressAliases).set({ status: 'pending', updatedAt: new Date() }).where(eq(mailMailboxIngressAliases.id, record.id));
+      errors.push(`${alias.ingressAddress} is pending Cloudflare route setup.`);
+    }
+  }
+
+  if (configuredAddresses.length) {
+    await logAuditEvent({
+      actorId: actor.userId,
+      action: 'mail.first_party_ingress_aliases.configured',
+      entityType: 'mail_domain',
+      entityId: ingressDomain.id,
+      metadata: { tenantId: configuredTenantId, count: configuredAddresses.length },
+    });
+    revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
+  }
+
+  if (!configuredAddresses.length && !errors.length) return { error: 'No eligible root mailboxes were found. Add info@mkety.com or another non-hello mailbox first.' };
+  if (!configuredAddresses.length && errors.length) return { error: errors.join(' ') };
+  return { configuredAddresses, ...(errors.length ? { error: errors.join(' ') } : {}) };
 }
 
 export interface MailEnterpriseOfferPaymentLink {
@@ -646,13 +752,14 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
   const sendingEnabled = bool(formData.get('sendingEnabled'));
   const routingEnabled = bool(formData.get('routingEnabled'));
   const [domain] = await db
-    .select({ domain: mailDomains.domain, tenantId: mailDomains.tenantId })
+    .select({ domain: mailDomains.domain, tenantId: mailDomains.tenantId, tenantSlug: tenants.slug })
     .from(mailDomains)
+    .innerJoin(tenants, eq(tenants.id, mailDomains.tenantId))
     .where(and(eq(mailDomains.id, domainId), eq(mailDomains.tenantId, targetTenantId)))
     .limit(1);
   if (!domain) throw new Error('Mail domain not found.');
 
-  const firstPartyDomain = isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId());
+  const firstPartyDomain = domain.tenantSlug === 'mkety-ops' && isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId());
   if (firstPartyDomain && status === 'verified') {
     throw new Error('First-party outbound Mail must use sending_ready after live DNS verification.');
   }
@@ -665,7 +772,7 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
     const expectedRecords = zone && typeof sending?.tag === 'string'
       ? await getCloudflareEmailSendingDns(zone.id, sending.tag)
       : [];
-    const publicRecords = await getPublicCloudflareSendingDns(expectedRecords);
+    const publicRecords = await getPublicCloudflareSendingDns(expectedRecords, domain.domain);
     if (!areCloudflareEmailAuthRecordsPublished(domain.domain, Boolean(sending?.enabled), expectedRecords, publicRecords)) {
       throw new Error('Public SPF, DKIM, and DMARC records do not match Cloudflare Email Sending.');
     }

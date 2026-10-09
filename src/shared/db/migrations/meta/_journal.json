@@ -295,6 +295,13 @@
       "when": 1790978400000,
       "tag": "0041_mail_enterprise_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791534084905,
+      "tag": "0042_mail_mailbox_ingress_aliases",
+      "breakpoints": true
     }
   ]
 }

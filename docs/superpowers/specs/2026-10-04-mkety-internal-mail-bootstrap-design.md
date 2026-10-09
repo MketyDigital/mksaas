@@ -1,5 +1,9 @@
 # Mkety Internal Mail Bootstrap and Custom Capacity
 
+## Address split amendment — 2026-10-09
+
+The internal workspace creates the root-domain `info@mkety.com` and `support@mkety.com` mailboxes in Mkety Mail. `hello@mkety.com` stays in Zoho and is excluded from every ingress alias. Preserve root Zoho MX and DMARC. Configure Cloudflare Email Sending for the apex only after DNS authentication checks, and use exact Cloudflare Email Routing aliases on `mail.mkety.com` for Zoho-forwarded root mailboxes. Never enable Cloudflare Email Routing on the apex or create a catch-all alias.
+
 **Status:** Draft for review  
 **Date:** 2026-10-04  
 **Scope:** Provision first-party Mail for the existing reserved `/mkety-ops` tenant without a customer purchase.

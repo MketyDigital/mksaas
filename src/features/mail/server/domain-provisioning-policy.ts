@@ -16,7 +16,7 @@ function normalizeContent(type: string, value: string) {
 }
 
 export function isFirstPartyMailDomain(domain: string, tenantId: string, configuredTenantId: string) {
-  return normalizeName(domain) === 'mail.mkety.com' &&
+  return ['mkety.com', 'mail.mkety.com'].includes(normalizeName(domain)) &&
     Boolean(configuredTenantId.trim()) &&
     tenantId === configuredTenantId.trim();
 }
@@ -24,12 +24,14 @@ export function isFirstPartyMailDomain(domain: string, tenantId: string, configu
 export function getMailDomainProvisioningPolicy(domain: string, isFirstPartyTenant = false): MailDomainProvisioningPolicy {
   const normalized = normalizeName(domain);
   if (normalized === 'mkety.com') {
-    return { allowed: false, configureRouting: false, configureSending: false };
+    return isFirstPartyTenant
+      ? { allowed: true, configureRouting: false, configureSending: true }
+      : { allowed: false, configureRouting: false, configureSending: false };
   }
 
   if (normalized === 'mail.mkety.com') {
     return isFirstPartyTenant
-      ? { allowed: true, configureRouting: false, configureSending: true }
+      ? { allowed: true, configureRouting: true, configureSending: true }
       : { allowed: false, configureRouting: false, configureSending: false };
   }
 
@@ -57,19 +59,19 @@ export function areCloudflareEmailAuthRecordsPublished(
 
   const spf = expected.find((record) =>
     record.type === 'TXT' &&
-    record.name === normalizedDomain &&
+    (record.name === normalizedDomain || record.name === `cf-bounce.${normalizedDomain}`) &&
     record.content.toLowerCase().startsWith('v=spf1'),
   );
   const dkim = expected.find((record) =>
     ['TXT', 'CNAME'].includes(record.type) &&
     record.name.includes('._domainkey.'),
   );
-  const dmarc = expected.find((record) =>
+  const expectedDmarc = expected.find((record) =>
     record.type === 'TXT' &&
     record.name === `_dmarc.${normalizedDomain}` &&
     record.content.toLowerCase().startsWith('v=dmarc1'),
   );
-  if (!spf || !dkim || !dmarc) return false;
+  if (!spf || !dkim) return false;
 
   const published = publishedRecords
     .filter((record): record is { type: string; name: string; content: string } =>
@@ -81,7 +83,16 @@ export function areCloudflareEmailAuthRecordsPublished(
       content: normalizeContent(record.type, record.content),
     }));
 
-  return [spf, dkim, dmarc].every((required) =>
+  const dmarc = published.find((record) =>
+    record.type === 'TXT' &&
+    record.name === `_dmarc.${normalizedDomain}` &&
+    record.content.toLowerCase().startsWith('v=dmarc1'),
+  );
+  if (!dmarc) return false;
+  if (expectedDmarc && normalizedDomain !== 'mkety.com' &&
+    dmarc.content !== expectedDmarc.content) return false;
+
+  return [spf, dkim].every((required) =>
     published.some((actual) =>
       actual.type === required.type &&
       actual.name === required.name &&
