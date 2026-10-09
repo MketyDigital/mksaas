@@ -2,6 +2,8 @@ import { pauseAssistant, pauseCustomer, resolveAutomationState, returnToAi, take
 import { mayUseFallback } from "./providers/validation";
 import { planReasoningTargets, providerReasoningOptions, reasoningCapabilities, type ReasoningFallbackPolicy, type ReasoningMode } from "./providers/reasoning";
 import { routeTargetMediaSupported, routeTargetPricingConfigured } from "./providers/route-readiness";
+import { normalizeRateMultiplierBps } from "./billing/rate-multiplier.ts";
+import { azureFoundryInputItems } from "./providers/azure-foundry.ts";
 import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./providers/structured-credentials";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, normalizeReasoningFallbackPolicy, normalizeReasoningMode, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
@@ -2516,7 +2518,7 @@ async function runAssistant(input: {
     return { ok: false as const, userMessage: "This account’s subscription needs attention before the assistant can continue." };
   }
 
-  const multiplierBps = Math.max(10000, parseInt(String(commercial.rate_multiplier_bps || 10000), 10));
+  const multiplierBps = normalizeRateMultiplierBps(commercial.rate_multiplier_bps);
   const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
   const maxRoutedCalls = 3;
   const singleCallReserve = routeRates.reduce((sum: number, target: any) => {
@@ -2819,7 +2821,7 @@ async function handleRawModelApiInference(
   if (commercial.billing_status === "past_due" && commercial.grace_until && now > Number(commercial.grace_until)) {
     return json({ error: { message: "billing_past_due" } }, 402);
   }
-  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  const multiplierBps = normalizeRateMultiplierBps(commercial.rate_multiplier_bps);
   const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
   const reserveAmount = Math.max(1, routeRates.reduce((sum: number, target: any) => {
     const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
@@ -3031,7 +3033,7 @@ export async function handleApiKeyInference(
     return json({ error: { message: "billing_past_due" } }, 402);
   }
 
-  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  const multiplierBps = normalizeRateMultiplierBps(commercial.rate_multiplier_bps);
   const routeRates = Array.isArray(route.__targets) && route.__targets.length ? route.__targets : [rate];
   const reserveAmount = Math.max(1, routeRates.reduce((sum: number, target: any) => {
     const inputRate = Math.ceil(Number(target?.input_credits_per_million || rate.input_credits_per_million || 0) * multiplierBps / 10000);
@@ -3336,7 +3338,7 @@ function mediaTargetUsage(storedTarget: any, kind: "vision" | "speech", inputUni
 
 async function mediaCommercialState(db: D1Database, customerId: string) {
   return db.prepare(
-    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,cp.media_rate_multiplier_bps,
             cp.hard_stop_enabled,c.billing_status,c.grace_until
      FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id
      WHERE cp.customer_id=? LIMIT 1`,
@@ -3353,8 +3355,11 @@ async function reserveMediaUsage(
   const commercial = await mediaCommercialState(env.DB, assistant.customer_id);
   if (!commercial) return null;
   if (commercial.billing_status === "past_due" && commercial.grace_until && unix() > Number(commercial.grace_until)) return null;
-  const multiplierBps = Math.max(10000, Number(commercial.media_rate_multiplier_bps || commercial.rate_multiplier_bps || 10000));
-  const economics = mediaUsageEconomics(usage, multiplierBps);
+  const textMultiplierBps = normalizeRateMultiplierBps(commercial.rate_multiplier_bps);
+  const mediaMultiplierBps = normalizeRateMultiplierBps(commercial.media_rate_multiplier_bps || commercial.rate_multiplier_bps);
+  usage.textMultiplierBps = textMultiplierBps;
+  usage.mediaMultiplierBps = mediaMultiplierBps;
+  const economics = mediaUsageEconomics(usage, textMultiplierBps, mediaMultiplierBps);
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,
     assistant.customer_id,
@@ -3363,7 +3368,7 @@ async function reserveMediaUsage(
   ))) return null;
   const reservation = await reserveCredits(env.DB, assistant.customer_id, assistant.id, economics.credits, idempotencyKey);
   if (!reservation || reservation.status === "released") return null;
-  return { reservation, commercial, multiplierBps, economics, conversationId };
+  return { reservation, commercial, textMultiplierBps, mediaMultiplierBps, economics, conversationId };
 }
 
 async function settleMediaUsage(
@@ -3373,7 +3378,11 @@ async function settleMediaUsage(
   usage: any,
   providerAttemptId: string,
 ) {
-  const actual = mediaUsageEconomics(usage, reserved.multiplierBps);
+  const actual = mediaUsageEconomics(
+    usage,
+    Number(usage.textMultiplierBps || reserved.textMultiplierBps),
+    Number(usage.mediaMultiplierBps || reserved.mediaMultiplierBps),
+  );
   return settleReservation(
     env.DB,
     reserved.reservation.id,
@@ -3403,7 +3412,8 @@ async function invokeJournaledMediaAttempt(
   sourceHash: string,
   ordinal: number,
   estimatedUsage: any,
-  multiplierBps: number,
+  textMultiplierBps: number,
+  mediaMultiplierBps: number,
   invoke: (markSubmitted: () => void) => Promise<{ text: string; inputUnits: number; outputUnits: number }>,
 ) {
   const replyJobId = `media:${requestId}:${sourceHash}:${ordinal}`;
@@ -3415,13 +3425,13 @@ async function invokeJournaledMediaAttempt(
     "input_credits_per_million", "output_credits_per_million", "reasoning_credits_per_million",
     "provider_input_cost_micros_per_million", "provider_output_cost_micros_per_million",
     "provider_reasoning_cost_micros_per_million", "image_credits", "audio_credits_per_minute",
-    "provider_image_cost_micros", "provider_audio_cost_micros_per_minute", "rate_multiplier_bps",
+    "provider_image_cost_micros", "provider_audio_cost_micros_per_minute",
   ].filter((key) => target[key] != null).map((key) => [key, Number(target[key])]));
   await recordAttemptProjection(env.DB, {
     ...identity, reservationId, requestHash, modelAlias: String(estimatedUsage.alias || (estimatedUsage.kind === "vision" ? "mkety-media-vision" : "mkety-media-speech")),
     replyJobId, conversationId: String(estimatedUsage.conversationId || ""), mediaKind: String(estimatedUsage.kind || "media"),
     provider: String(target.provider || "unknown"), model: String(target.provider_model || "unknown"),
-    rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: multiplierBps },
+    rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: textMultiplierBps, media_rate_multiplier_bps: mediaMultiplierBps },
   });
   const claim = await journal.claimAttempt({
     ...identity, reservationId, requestHash,
@@ -3437,7 +3447,7 @@ async function invokeJournaledMediaAttempt(
       ...identity, status: existing.status === "settled" ? "settled" : "result_recorded",
       inputUnits: existing.result.inputUnits, outputUnits: existing.result.outputUnits,
       imageUnits: estimatedUsage.kind === "vision" ? 1 : null, audioSeconds: estimatedUsage.kind === "speech" ? Number(usage.audioSeconds || 0) : null,
-      providerCostMicros: existing.result.providerCostMicros, rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: multiplierBps },
+      providerCostMicros: existing.result.providerCostMicros, rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: textMultiplierBps, media_rate_multiplier_bps: mediaMultiplierBps },
     });
     return { output: { text: existing.result.responseText, inputUnits: existing.result.inputUnits, outputUnits: existing.result.outputUnits }, usage, attemptId };
   }
@@ -3450,7 +3460,9 @@ async function invokeJournaledMediaAttempt(
   try {
     const output = await invoke(() => { providerSubmitted = true; });
     const usage = { ...estimatedUsage, inputUnits: output.inputUnits, outputUnits: output.outputUnits };
-    const economics = mediaUsageEconomics(usage, multiplierBps);
+    usage.textMultiplierBps = textMultiplierBps;
+    usage.mediaMultiplierBps = mediaMultiplierBps;
+    const economics = mediaUsageEconomics(usage, textMultiplierBps, mediaMultiplierBps);
     await journal.recordAttemptResult(identity, {
       responseText: output.text,
       inputUnits: output.inputUnits,
@@ -3462,7 +3474,7 @@ async function invokeJournaledMediaAttempt(
     await updateAttemptProjection(env.DB, {
       ...identity, status: "result_recorded", inputUnits: output.inputUnits, outputUnits: output.outputUnits,
       imageUnits: usage.kind === "vision" ? 1 : null, audioSeconds: usage.kind === "speech" ? Number(usage.audioSeconds || 0) : null,
-      providerCostMicros: economics.providerCostMicros, rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: multiplierBps },
+      providerCostMicros: economics.providerCostMicros, rateSnapshot: { ...rateSnapshot, rate_multiplier_bps: textMultiplierBps, media_rate_multiplier_bps: mediaMultiplierBps },
     });
     return { output, usage, attemptId };
   } catch (error) {
@@ -3786,7 +3798,7 @@ async function describeImage(
     try {
       journaled = await invokeJournaledMediaAttempt(
         env, assistant, target, requestId, reserved.reservation.id, sourceHash, ordinal,
-        reserveEstimate, reserved.multiplierBps,
+        reserveEstimate, reserved.textMultiplierBps, reserved.mediaMultiplierBps,
         (markSubmitted) => invokeVisionTarget(env, target, assistant.customer_id, bytes, mime, caption, markSubmitted),
       );
       const output = journaled.output;
@@ -3855,7 +3867,7 @@ async function transcribeAudio(
     try {
       journaled = await invokeJournaledMediaAttempt(
         env, assistant, target, requestId, reserved.reservation.id, sourceHash, ordinal,
-        reserveEstimate, reserved.multiplierBps,
+        reserveEstimate, reserved.textMultiplierBps, reserved.mediaMultiplierBps,
         async (markSubmitted) => ({ text: await invokeSpeechTarget(env, target, assistant.customer_id, bytes, mime, markSubmitted), inputUnits: 0, outputUnits: 0 }),
       );
       const text = String(journaled.output.text || "").trim();
@@ -4526,10 +4538,7 @@ export async function invokeProviderModel(env: AssistEnv, route: any, input: any
     if (!endpoint) throw new Error("Azure AI Foundry endpoint is missing.");
     const url = /\/openai\/v1\/responses$/i.test(endpoint) ? endpoint : `${endpoint}/openai/v1/responses`;
     const systemText = messages.filter((m: any) => m.role === "system").map((m: any) => String(m.content || "")).join("\n\n");
-    const inputItems = messages.filter((m: any) => m.role !== "system").map((m: any) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content || ""),
-    }));
+    const inputItems = azureFoundryInputItems(messages);
     const response = await fetch(url, {
       method: "POST",
       headers: { "api-key": apiKey, "content-type": "application/json" },

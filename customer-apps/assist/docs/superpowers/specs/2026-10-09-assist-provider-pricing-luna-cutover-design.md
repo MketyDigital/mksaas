@@ -1,6 +1,6 @@
 # Assist provider pricing and GPT-6 Luna cutover
 
-**Status:** Draft for review
+**Status:** Approved for implementation and release
 **Scope:** Mkety Assist only (`customer-apps/assist`).
 
 ## Goals
@@ -54,9 +54,30 @@ Follow customer-apps/assist/OPERATIONS.md release gates: npm run check:all, npm 
 
 ## Provider capability and pricing references
 
-- Azure GPT-6 Luna model capability documentation: accepts text and image input with text output (official Azure model documentation; retrieved 2026-10-09).
+- Azure Foundry GPT-6 Luna supports text and image input, text output, Responses and Chat Completions APIs, streaming, structured outputs, and function/tool calling. Azure documents a 1,050,000-token context window, up to 922,000 input tokens, and up to 128,000 output tokens. Assist uses Responses and its existing prompt-driven action format; native tool-call payloads and provider streaming are not required by current Assist routes.
+- Azure documents the supported reasoning effort levels used by Assist, including maximum. The Azure adapter maps Assist maximum to `xhigh`; no OpenAI direct endpoint behavior is assumed.
+- The official Azure GPT-6 launch pricing table lists Luna Global Standard short-context at $0.10 input and $0.50 output per million tokens, and long-context at $0.20/$0.75. US and EU Data Zone rates differ. Assist records the Global Standard short-context figure as a labeled public-offer estimate, not an actual per-deployment invoice rate; exact deployment tier and context pricing can only be confirmed from the Azure account.
+- Azure GPT-6 model/capability documentation: https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure
+- Azure Responses image input format (base64 `input_image` data URI): https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses
+- Azure GPT-6 reasoning support: https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning
+- Azure published GPT-6 model pricing (retrieved 2026-10-09): https://azure.microsoft.com/en-us/blog/gpt-6-astra-sol-and-luna-for-production-agents-in-microsoft-foundry/
 - OpenAI direct API pricing is not Azure Foundry pricing and must not be substituted for the configured Azure deployment.
 - Cloudflare Workers AI Whisper published price: $0.000453 per minute (official Cloudflare pricing; retrieved 2026-10-09).
+
+### Verified Assist parity mapping
+
+| Existing Assist behavior | Luna route behavior | Verification |
+|---|---|---|
+| Text prompts and replies | Azure Foundry Responses API | Provider acceptance probe plus post-migration Luna text smoke test |
+| Image analysis | Responses API `input_image` data URL with text prompt | Image target eligibility, preserved multimodal payload, post-migration Luna image smoke test |
+| Standard/high/maximum reasoning | Standard sends no extra effort; high sends `high`; maximum sends `xhigh` | Reasoning declaration and request-encoding tests; Azure documentation |
+| Assistant actions | Existing prompt-described JSON action handling | Same Assist parser and route request path; native function calls are not used by current app actions |
+| Structured output | Existing Assist output/parser contracts | Same text response normalizer and contract tests |
+| Streaming | Assist currently returns completed responses; it does not stream provider tokens | No route behavior changes |
+| Usage settlement | Responses `input_tokens`, `output_tokens`, and reasoning detail fields | Existing usage normalizer and settlement tests |
+| Context/output limits | Azure supports more than the current Assist request budget; runtime continues to cap output at 2,048 tokens | Preserve existing application safety/cost cap |
+
+The production deploy acceptance endpoint now requires an actual text reply and an actual image-input reply from the exact Luna primary targets. It also checks that their Azure connection is active and validated. If either probe fails, the deploy gate fails rather than treating a generic Azure connection check as Luna parity.
 
 ## Alternatives considered
 

@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET FLUTTERWAVE_CHECKOUT_BROKER_SECRET MKETY_ASSIST_AZURE_FOUNDRY_API_KEY MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT MKETY_ASSIST_AZURE_FOUNDRY_MODEL)
+          required=(CLOUDFLARE_API_TOKEN MKETY_ASSIST_CF_SAAS_TOKEN ZITADEL_MANAGEMENT_TOKEN ZITADEL_PROJECT_ID MKETY_ASSIST_OPS_AUTH_ISSUER NOWPAYMENTS_API_KEY NOWPAYMENTS_IPN_SECRET FLUTTERWAVE_CHECKOUT_BROKER_SECRET MKETY_ASSIST_AZURE_FOUNDRY_API_KEY MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: $name"
@@ -298,6 +298,50 @@ jobs:
           fs.writeFileSync('wrangler.deploy.jsonc', configured);
           NODE
 
+      - name: Preflight validated Luna deployment and current Sol routes
+        id: luna_preflight
+        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$CLOUDFLARE_API_TOKEN"
+          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
+          CLOUDFLARE_API_TOKEN="$token" npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc \
+            --command "SELECT (SELECT COUNT(*) FROM provider_connections WHERE provider='azure-foundry' AND default_model='gpt-6-luna-1' AND status='active' AND validated_at IS NOT NULL AND ownership='mkety') AS luna_connections, (SELECT GROUP_CONCAT(DISTINCT RTRIM(endpoint_url,'/')) FROM provider_connections WHERE provider='azure-foundry' AND default_model='gpt-6-luna-1' AND status='active' AND validated_at IS NOT NULL AND ownership='mkety') AS luna_endpoints, (SELECT COUNT(*) FROM model_route_targets WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' AND alias<>'mkety-media-speech') AS sol_targets;" \
+            > /tmp/assist-luna-preflight.json
+          cat /tmp/assist-luna-preflight.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const result=JSON.parse(fs.readFileSync('/tmp/assist-luna-preflight.json','utf8'));
+          const row=result?.[0]?.results?.[0];
+          const connections=Number(row?.luna_connections||0);
+          const solTargets=Number(row?.sol_targets||0);
+          if(connections<1) throw new Error('No active, validated Azure Foundry gpt-6-luna-1 deployment; refusing route migration.');
+          if(solTargets<1) throw new Error('Expected Sol-backed Assist routes were not found; refusing an ambiguous cutover.');
+          const normalize=(value)=>String(value||'').replace(/\/+$/,'').replace(/\/openai\/v1(?:\/responses)?$/i,'').toLowerCase();
+          const endpoints=String(row?.luna_endpoints||'').split(',').map(normalize).filter(Boolean);
+          const configuredEndpoint=normalize(process.env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT);
+          if(endpoints.length!==1) throw new Error('Multiple Azure Luna endpoints are configured; refusing an ambiguous cutover.');
+          if(!configuredEndpoint || !endpoints.includes(configuredEndpoint)) throw new Error('The deployment endpoint configured for release does not match the validated Luna provider connection.');
+
+          const endpoint=configuredEndpoint+'/openai/v1/responses';
+          const headers={'api-key':process.env.MKETY_ASSIST_AZURE_FOUNDRY_API_KEY,'content-type':'application/json'};
+          const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGP8z0AaYCJR/aiGUQ1DSAMAQC4BH2bjRnMAAAAASUVORK5CYII=';
+          async function probe(input,label){
+            const response=await fetch(endpoint,{method:'POST',headers,signal:AbortSignal.timeout(60000),body:JSON.stringify({model:'gpt-6-luna-1',input,max_output_tokens:64})});
+            if(!response.ok) throw new Error(`GPT-6 Luna ${label} preflight failed HTTP ${response.status}.`);
+            const payload=await response.json();
+            const text=String(payload.output_text||(payload.output||[]).flatMap(item=>item.content||[]).map(part=>part.text||'').join('')).trim();
+            if(!text) throw new Error(`GPT-6 Luna ${label} preflight returned no text.`);
+          }
+          await probe([{role:'user',content:'Reply only with MKETY_LUNA_TEXT_READY.'}],'text');
+          await probe([{role:'user',content:[{type:'input_text',text:'Reply only with MKETY_LUNA_IMAGE_READY.'},{type:'input_image',image_url:`data:image/png;base64,${tinyPng}`,detail:'low'}]}],'image');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`sol_targets=${solTargets}\n`);
+          console.log(`Validated Luna endpoint passed text and image probes; ${solTargets} Sol-backed targets are ready for replacement.`);
+          NODE
+
       - name: Apply Assist D1 migrations
         working-directory: customer-apps/assist
         env:
@@ -308,6 +352,32 @@ jobs:
           token="$CLOUDFLARE_API_TOKEN"
           if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
           CLOUDFLARE_API_TOKEN="$token" npx wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
+
+      - name: Verify Sol removal and Luna route creation before Worker deploy
+        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
+          EXPECTED_SOL_TARGETS: ${{ steps.luna_preflight.outputs.sol_targets }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$CLOUDFLARE_API_TOKEN"
+          if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
+          CLOUDFLARE_API_TOKEN="$token" npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc \
+            --command "SELECT ((SELECT COUNT(*) FROM model_route_targets WHERE lower(provider_model) LIKE '%gpt-5.6-sol%') + (SELECT COUNT(*) FROM model_routes WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' OR lower(COALESCE(fallback_model,'')) LIKE '%gpt-5.6-sol%') + (SELECT COUNT(*) FROM customer_model_routes WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' OR lower(COALESCE(fallback_model,'')) LIKE '%gpt-5.6-sol%')) AS sol_references, (SELECT COUNT(*) FROM model_route_targets WHERE provider='azure-foundry' AND provider_model='gpt-6-luna-1' AND position=0 AND enabled=1 AND alias<>'mkety-media-speech') AS luna_primaries;" \
+            > /tmp/assist-luna-route-check.json
+          cat /tmp/assist-luna-route-check.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const result=JSON.parse(fs.readFileSync('/tmp/assist-luna-route-check.json','utf8'));
+          const row=result?.[0]?.results?.[0];
+          const solRefs=Number(row?.sol_references??-1);
+          const lunaPrimaries=Number(row?.luna_primaries||0);
+          const expected=Number(process.env.EXPECTED_SOL_TARGETS||0);
+          if(solRefs!==0) throw new Error(`GPT-5.6 Sol route references remain: ${solRefs}`);
+          if(lunaPrimaries<1 || lunaPrimaries>expected) throw new Error(`Unexpected Luna primary count ${lunaPrimaries} for ${expected} prior Sol targets.`);
+          console.log(`Route migration verified: ${lunaPrimaries} Luna primaries; no Sol route references.`);
+          NODE
 
       - name: Resolve Telegram recovery bot identity
         if: env.MKETY_ASSIST_TELEGRAM_AUTH_BOT_TOKEN != ''

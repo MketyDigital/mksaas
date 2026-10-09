@@ -521,16 +521,18 @@ function hasBillableUsage(mediaKind: unknown, usage: NonNullable<ResolutionInput
 }
 
 function mediaAttemptEconomics(mediaKind: string, usage: NonNullable<ResolutionInput["usage"]>, rate: any, multiplierBps: number) {
+  const textMultiplierBps = Number(rate.rate_multiplier_bps || multiplierBps);
+  const mediaMultiplierBps = Number(rate.media_rate_multiplier_bps || multiplierBps);
   if (mediaKind === "speech") {
     const seconds = Number(usage.audioSeconds || 0);
-    const creditsPerMinute = Math.ceil(Number(rate.audio_credits_per_minute || 0) * multiplierBps / 10000);
+    const creditsPerMinute = Math.ceil(Number(rate.audio_credits_per_minute || 0) * mediaMultiplierBps / 10000);
     return { credits: Math.max(1, Math.ceil(seconds / 60 * creditsPerMinute)) };
   }
   const imageUnits = Number(usage.imageUnits || 0);
-  const inputRate = Math.ceil(Number(rate.input_credits_per_million || 0) * multiplierBps / 10000);
-  const outputRate = Math.ceil(Number(rate.output_credits_per_million || 0) * multiplierBps / 10000);
-  const reasoningRate = Math.ceil(Number(rate.reasoning_credits_per_million || 0) * multiplierBps / 10000);
-  const imageRate = Math.ceil(Number(rate.image_credits || 0) * multiplierBps / 10000);
+  const inputRate = Math.ceil(Number(rate.input_credits_per_million || 0) * textMultiplierBps / 10000);
+  const outputRate = Math.ceil(Number(rate.output_credits_per_million || 0) * textMultiplierBps / 10000);
+  const reasoningRate = Math.ceil(Number(rate.reasoning_credits_per_million || 0) * textMultiplierBps / 10000);
+  const imageRate = Math.ceil(Number(rate.image_credits || 0) * mediaMultiplierBps / 10000);
   return { credits: Math.max(1, imageUnits * imageRate + Math.ceil((
     usage.inputUnits * inputRate + usage.outputUnits * outputRate + (usage.reasoningUnits || 0) * reasoningRate
   ) / 1_000_000)) };
