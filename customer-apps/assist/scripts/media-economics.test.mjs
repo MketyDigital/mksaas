@@ -45,3 +45,20 @@ test("Whisper provider rate replaces a stale customer rate before the multiplier
   }, 12_000);
   assert.deepEqual(result, { credits: 5_436, providerCostMicros: 453 });
 });
+
+
+test("two provider-unpriced images use 20 MKredit each with the media multiplier", () => {
+  const result = mediaUsageEconomics({
+    kind: "vision", imageCount: 2, inputUnits: 0, outputUnits: 0,
+    rate: { imageCredits: 0, providerImageCostMicros: 0 },
+  }, 12_000);
+  assert.deepEqual(result, { credits: 480_000, providerCostMicros: 0 });
+});
+
+test("unpriced voice uses 20 MKredit per minute and prorates elapsed audio", () => {
+  const result = mediaUsageEconomics({
+    kind: "speech", audioSeconds: 30,
+    rate: { audioCreditsPerMinute: 0, providerAudioCostMicrosPerMinute: 0 },
+  }, 12_000);
+  assert.deepEqual(result, { credits: 120_000, providerCostMicros: 0 });
+});
