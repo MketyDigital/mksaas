@@ -309,7 +309,7 @@ jobs:
           token="$CLOUDFLARE_API_TOKEN"
           if [ "$D1_TOKEN_SOURCE" = "saas" ]; then token="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
           CLOUDFLARE_API_TOKEN="$token" npx wrangler d1 execute DB --remote --json --config wrangler.deploy.jsonc \
-            --command "SELECT (SELECT COUNT(*) FROM provider_connections WHERE provider='azure-foundry' AND default_model='gpt-6-luna-1' AND status='active' AND validated_at IS NOT NULL AND ownership='mkety') AS luna_connections, (SELECT GROUP_CONCAT(DISTINCT RTRIM(endpoint_url,'/')) FROM provider_connections WHERE provider='azure-foundry' AND default_model='gpt-6-luna-1' AND status='active' AND validated_at IS NOT NULL AND ownership='mkety') AS luna_endpoints, (SELECT COUNT(*) FROM model_route_targets WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' AND alias<>'mkety-media-speech') AS sol_targets;" \
+            --command "SELECT (SELECT COUNT(*) FROM provider_connections WHERE provider='azure-foundry' AND default_model='gpt-6-luna-1' AND status='active' AND validated_at IS NOT NULL AND ownership='mkety') AS luna_connections, (SELECT GROUP_CONCAT(DISTINCT RTRIM(endpoint_url,'/')) FROM provider_connections WHERE provider='azure-foundry' AND default_model='gpt-6-luna-1' AND status='active' AND validated_at IS NOT NULL AND ownership='mkety') AS luna_endpoints, (SELECT COUNT(*) FROM model_route_targets WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' AND alias<>'mkety-media-speech') AS sol_targets, (SELECT COUNT(*) FROM model_route_targets WHERE provider='azure-foundry' AND provider_model='gpt-6-luna-1' AND position=0 AND enabled=1 AND alias<>'mkety-media-speech') AS luna_primaries, (SELECT COUNT(*) FROM model_route_targets luna WHERE luna.provider='azure-foundry' AND luna.provider_model='gpt-6-luna-1' AND luna.position=0 AND luna.enabled=1 AND luna.alias<>'mkety-media-speech' AND NOT EXISTS (SELECT 1 FROM model_route_targets sol WHERE sol.scope_key=luna.scope_key AND lower(sol.provider_model) LIKE '%gpt-5.6-sol%')) AS existing_luna_primaries, ((SELECT COUNT(*) FROM model_route_targets WHERE lower(provider_model) LIKE '%gpt-5.6-sol%') + (SELECT COUNT(*) FROM model_routes WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' OR lower(COALESCE(fallback_model,'')) LIKE '%gpt-5.6-sol%') + (SELECT COUNT(*) FROM customer_model_routes WHERE lower(provider_model) LIKE '%gpt-5.6-sol%' OR lower(COALESCE(fallback_model,'')) LIKE '%gpt-5.6-sol%')) AS sol_references;" \
             > /tmp/assist-luna-preflight.json
           cat /tmp/assist-luna-preflight.json
           node <<'NODE'
@@ -318,8 +318,12 @@ jobs:
           const row=result?.[0]?.results?.[0];
           const connections=Number(row?.luna_connections||0);
           const solTargets=Number(row?.sol_targets||0);
+          const existingLunaPrimaries=Number(row?.existing_luna_primaries||0);
+          const solReferences=Number(row?.sol_references||0);
           if(connections<1) throw new Error('No active, validated Azure Foundry gpt-6-luna-1 deployment; refusing route migration.');
-          if(solTargets<1) throw new Error('Expected Sol-backed Assist routes were not found; refusing an ambiguous cutover.');
+          if(solTargets<1 && (solReferences!==0 || existingLunaPrimaries<1)) throw new Error('No fresh Sol targets or verified completed Luna cutover; refusing an ambiguous migration retry.');
+          const expectedLunaPrimaries=solTargets+existingLunaPrimaries;
+          if(expectedLunaPrimaries<1) throw new Error('No Luna routes are expected after migration; refusing an ambiguous cutover.');
           const normalize=(value)=>String(value||'').replace(/\/+$/,'').replace(/\/openai\/v1(?:\/responses)?$/i,'').toLowerCase();
           const endpoints=String(row?.luna_endpoints||'').split(',').map(normalize).filter(Boolean);
           const configuredEndpoint=normalize(process.env.MKETY_ASSIST_AZURE_FOUNDRY_ENDPOINT);
@@ -338,8 +342,8 @@ jobs:
           }
           await probe([{role:'user',content:'Reply only with MKETY_LUNA_TEXT_READY.'}],'text');
           await probe([{role:'user',content:[{type:'input_text',text:'Reply only with MKETY_LUNA_IMAGE_READY.'},{type:'input_image',image_url:`data:image/png;base64,${tinyPng}`,detail:'low'}]}],'image');
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,`sol_targets=${solTargets}\n`);
-          console.log(`Validated Luna endpoint passed text and image probes; ${solTargets} Sol-backed targets are ready for replacement.`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`expected_luna_primaries=${expectedLunaPrimaries}\n`);
+          console.log(`Validated Luna endpoint passed text and image probes; expected Luna primary count after migration is ${expectedLunaPrimaries}.`);
           NODE
 
       - name: Apply Assist D1 migrations
@@ -357,7 +361,7 @@ jobs:
         working-directory: customer-apps/assist
         env:
           D1_TOKEN_SOURCE: ${{ steps.cloudflare.outputs.d1_token_source }}
-          EXPECTED_SOL_TARGETS: ${{ steps.luna_preflight.outputs.sol_targets }}
+          EXPECTED_LUNA_PRIMARIES: ${{ steps.luna_preflight.outputs.expected_luna_primaries }}
         shell: bash
         run: |
           set -euo pipefail
@@ -373,9 +377,9 @@ jobs:
           const row=result?.[0]?.results?.[0];
           const solRefs=Number(row?.sol_references??-1);
           const lunaPrimaries=Number(row?.luna_primaries||0);
-          const expected=Number(process.env.EXPECTED_SOL_TARGETS||0);
+          const expected=Number(process.env.EXPECTED_LUNA_PRIMARIES||0);
           if(solRefs!==0) throw new Error(`GPT-5.6 Sol route references remain: ${solRefs}`);
-          if(lunaPrimaries<1 || lunaPrimaries>expected) throw new Error(`Unexpected Luna primary count ${lunaPrimaries} for ${expected} prior Sol targets.`);
+          if(expected<1 || lunaPrimaries!==expected) throw new Error(`Unexpected Luna primary count ${lunaPrimaries}; expected exactly ${expected}.`);
           console.log(`Route migration verified: ${lunaPrimaries} Luna primaries; no Sol route references.`);
           NODE
 
