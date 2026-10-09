@@ -313,7 +313,7 @@ jobs:
             > /tmp/assist-luna-preflight.json
           cat /tmp/assist-luna-preflight.json
           node <<'NODE'
-          const fs=require('node:fs');
+          import fs from 'node:fs';
           const result=JSON.parse(fs.readFileSync('/tmp/assist-luna-preflight.json','utf8'));
           const row=result?.[0]?.results?.[0];
           const connections=Number(row?.luna_connections||0);
