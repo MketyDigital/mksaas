@@ -710,7 +710,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const providerEnvelopeBps = parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100);
     const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
     const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
-    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 100, 1000);
+    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 1, 1000);
     const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
     let includedCredits = creditAtomsFromMkredits(body.includedCredits);
     if (autoIncludedCredits && monthlyPrice > 0) {
@@ -1104,7 +1104,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
           body.managedCostSharePercent === undefined ? nullableInt(body.providerEnvelopeBps) : parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
           body.operationsReservePercent === undefined ? nullableInt(body.operationsReserveBps) : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
           body.customerRateMultiplierPercent === undefined ? nullableInt(body.rateMultiplierBps) : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
-          body.customerMediaRateMultiplierPercent === undefined ? nullableInt(body.mediaRateMultiplierBps) : parsePercentBpsValue(body.customerMediaRateMultiplierPercent, 100, 100, 1000),
+          body.customerMediaRateMultiplierPercent === undefined ? nullableInt(body.mediaRateMultiplierBps) : parsePercentBpsValue(body.customerMediaRateMultiplierPercent, 100, 1, 1000),
           body.fundingMode === undefined ? null : (String(body.fundingMode) === "prepaid_partial" ? "prepaid_partial" : "full_period"),
           body.minimumFundingUsd === undefined ? null : parseUsdMinorValue(body.minimumFundingUsd, "minimum funding"),
           body.setupFeeUsd === undefined ? null : parseUsdMinorValue(body.setupFeeUsd, "setup fee", true),
