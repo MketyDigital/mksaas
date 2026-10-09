@@ -1489,7 +1489,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).bind(alias).first<any>();
       const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?")
         .bind(alias).first<any>();
-      const known = withKnownProviderCosts({ provider, providerModel });
+      const known: Record<string, unknown> = withKnownProviderCosts({ provider, providerModel } as Record<string, unknown>);
       const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || Number(known.providerInputCostMicrosPerMillion || 0));
       const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || Number(known.providerOutputCostMicrosPerMillion || 0));
       const imageCost = positiveInt(body.providerImageCostMicros, previous?.provider_image_cost_micros || 0);
