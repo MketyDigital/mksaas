@@ -3314,7 +3314,8 @@ function mediaTargetUsage(storedTarget: any, kind: "vision" | "speech", inputUni
     conversationId: "",
     provider: String(target.provider),
     providerModel: String(target.provider_model),
-    imageCount: kind === "vision" ? 1 : 0,\n    inputUnits: Math.max(0, Math.ceil(Number(inputUnits || 0))),
+    imageCount: kind === "vision" ? 1 : 0,
+    inputUnits: Math.max(0, Math.ceil(Number(inputUnits || 0))),
     outputUnits: Math.max(0, Math.ceil(Number(outputUnits || 0))),
     audioSeconds: Math.max(0, Number(audioSeconds || 0)),
     rate: {
