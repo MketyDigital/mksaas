@@ -60,7 +60,9 @@ test("model rates UI shows provider-derived base rates and separate text/media m
   assert.ok(ui.includes("primary.audio_credits_per_minute??m.audio_credits_per_minute??0"));
   assert.ok(ui.includes("<th>Media customer rate</th>"));
   assert.ok(ui.includes("Image input tokens are also billed at the input-token rate."));
-  assert.ok(ui.includes("Applies to text and token charges."));
+  assert.ok(ui.includes("Changes text usage charges only."));
+  assert.ok(ui.includes("Automatic included MKredit uses the plan price, cost envelope and reserve."));
+  assert.ok(ui.includes("Automatic allocation uses the plan price, cost envelope and reserve. Rate multipliers affect charges only."));
   assert.match(ui, /data-target-input="'\+i\+'" readonly/);
   assert.match(ui, /data-target-output="'\+i\+'" readonly/);
   assert.match(ui, /data-target-image="'\+i\+'" readonly/);
@@ -76,8 +78,7 @@ test("operator text and media multipliers permit reductions down to one percent"
   assert.match(ui, /id="pMediaMultiplier" type="number" min="1" max="1000"/);
   assert.match(api, /customerRateMultiplierPercent,\s*100,\s*1,\s*1000/);
   assert.match(api, /customerMediaRateMultiplierPercent,\s*[^,]+,\s*1,\s*1000/);
-  assert.match(api, /rateMultiplierBps < 100/);
-  assert.match(api, /rateMultiplierBps > 100000/);
+  assert.match(api, /parsed < 100 \\|\\| parsed > 100000/);
 });
 
 test("operator deductions add to the customer's lifetime used total", () => {
