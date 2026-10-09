@@ -59,7 +59,7 @@ test("model rates UI shows provider-derived base rates and a single multiplier f
   assert.ok(ui.includes("data-target-cost-audio"));
   assert.ok(ui.includes("primary.audio_credits_per_minute??m.audio_credits_per_minute??0"));
   assert.ok(ui.includes("<th>Media customer rate</th>"));
-  assert.ok(ui.includes("Image tokens are also billed at the input-token rate."));
+  assert.ok(ui.includes("Image input tokens are also billed at the input-token rate."));
   assert.ok(ui.includes("100% is provider-cost pass-through; 120% adds 20%"));
   assert.match(ui, /data-target-input="'\+i\+'" readonly/);
   assert.match(ui, /data-target-output="'\+i\+'" readonly/);
