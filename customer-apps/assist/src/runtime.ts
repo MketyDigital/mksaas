@@ -16,7 +16,7 @@ import { recordAttemptProjection, updateAttemptProjection } from "./billing/reco
 import { normalizeApiKeyMode, normalizeModelAllowlist, canUseRawModelApi } from "./api-key-policy";
 import { reserveRawModelCredits, releaseRawModelCredits, settleRawModelCredits } from "./billing/raw-model-settlement";
 import { mediaUsageEconomics } from "./billing/media-economics";
-import { deriveCustomerBaseRates } from "./billing/provider-derived-pricing";
+import { deriveCustomerBaseRates, deriveCustomerMediaBaseRates } from "./billing/provider-derived-pricing";
 import { prepareUsageLimitFollowup } from "./handoff/usage-limit-followup";
 import {
   RetryableInferenceError,
@@ -2506,7 +2506,7 @@ async function runAssistant(input: {
   const maxOutputTokens = selectCompletionBudget({ userText: input.userText });
 
   const commercial = await env.DB.prepare(
-    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,
+    `SELECT cp.subscription_amount_minor,cp.provider_envelope_bps,cp.operations_reserve_bps,cp.rate_multiplier_bps,cp.media_rate_multiplier_bps,
             cp.hard_stop_enabled,c.billing_status,c.grace_until
      FROM commercial_policy cp JOIN customers c ON c.id=cp.customer_id
      WHERE cp.customer_id=? LIMIT 1`,
@@ -3266,7 +3266,7 @@ async function mediaRouteTargets(db: D1Database, customerId: string, alias: "mke
       ];
   const usable: any[] = [];
   for (const storedTarget of configured) {
-    const target = deriveCustomerBaseRates(storedTarget);
+    const target = deriveCustomerMediaBaseRates(storedTarget, alias === "mkety-media-vision" ? "vision" : "speech");
     if (!target?.provider || !target?.provider_model || !routeTargetMediaSupported(target, alias) || !routeTargetPricingConfigured(target, alias)) continue;
     if (["workers-ai", "mkety-managed"].includes(String(target.provider))) {
       usable.push(target);
@@ -3307,13 +3307,14 @@ function responseApiText(payload: any) {
 }
 
 function mediaTargetUsage(storedTarget: any, kind: "vision" | "speech", inputUnits: number, outputUnits: number, audioSeconds = 0) {
-  const target = deriveCustomerBaseRates(storedTarget);
+  const target = deriveCustomerMediaBaseRates(storedTarget, kind);
   return {
     kind,
     modelAlias: kind === "vision" ? "mkety-media-vision" : "mkety-media-speech",
     conversationId: "",
     provider: String(target.provider),
     providerModel: String(target.provider_model),
+    imageCount: kind === "vision" ? 1 : 0,
     inputUnits: Math.max(0, Math.ceil(Number(inputUnits || 0))),
     outputUnits: Math.max(0, Math.ceil(Number(outputUnits || 0))),
     audioSeconds: Math.max(0, Number(audioSeconds || 0)),
@@ -3352,7 +3353,7 @@ async function reserveMediaUsage(
   const commercial = await mediaCommercialState(env.DB, assistant.customer_id);
   if (!commercial) return null;
   if (commercial.billing_status === "past_due" && commercial.grace_until && unix() > Number(commercial.grace_until)) return null;
-  const multiplierBps = Math.max(10000, Number(commercial.rate_multiplier_bps || 10000));
+  const multiplierBps = Math.max(10000, Number(commercial.media_rate_multiplier_bps || commercial.rate_multiplier_bps || 10000));
   const economics = mediaUsageEconomics(usage, multiplierBps);
   if (commercial.hard_stop_enabled && !(await providerBudgetAllows(
     env.DB,

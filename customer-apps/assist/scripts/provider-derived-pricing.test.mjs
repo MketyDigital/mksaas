@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveCustomerBaseRates } from "../src/billing/provider-derived-pricing.ts";
+import { deriveCustomerBaseRates, deriveCustomerMediaBaseRates } from "../src/billing/provider-derived-pricing.ts";
 
 test("provider micro-dollar costs derive exact MKredit atom rates across token, image, and voice units", () => {
   const result = deriveCustomerBaseRates({
@@ -63,7 +63,7 @@ test("the existing customer percentage is applied to provider-derived rates at s
     },
   }, 12_000);
 
-  assert.deepEqual(vision, { credits: 6_000_000, providerCostMicros: 500_000 });
+  assert.deepEqual(vision, { credits: 6_240_000, providerCostMicros: 500_000 });
   assert.deepEqual(speech, { credits: 5_436, providerCostMicros: 453 });
 });
 
@@ -88,4 +88,19 @@ test("vision ignores legacy image surcharge when image provider cost is unknown"
     image_credits: 3_000,
   });
   assert.equal(result.image_credits, 0);
+});
+
+
+test("unknown image and voice prices use a 20 MKredit per-unit baseline", () => {
+  const image = deriveCustomerMediaBaseRates({ image_credits: 0, provider_image_cost_micros: 0 }, "vision");
+  const voice = deriveCustomerMediaBaseRates({ audio_credits_per_minute: 0, provider_audio_cost_micros_per_minute: 0 }, "speech");
+  assert.equal(image.image_credits, 200_000);
+  assert.equal(voice.audio_credits_per_minute, 200_000);
+});
+
+test("known provider media prices override the fallback baseline", () => {
+  const image = deriveCustomerMediaBaseRates({ provider_image_cost_micros: 2 }, "vision");
+  const voice = deriveCustomerMediaBaseRates({ provider_audio_cost_micros_per_minute: 453 }, "speech");
+  assert.equal(image.image_credits, 20);
+  assert.equal(voice.audio_credits_per_minute, 4_530);
 });

@@ -43,3 +43,31 @@ export function deriveCustomerBaseRates<T extends Record<string, unknown>>(targe
   }
   return derived as T;
 }
+
+/**
+ * Media fallback rates protect provider-priced features when a provider publishes
+ * no image or voice tariff. 20 MKredit = 200,000 internal credit atoms.
+ */
+export const UNKNOWN_IMAGE_CREDITS = 200_000;
+export const UNKNOWN_VOICE_CREDITS_PER_MINUTE = 200_000;
+
+export function deriveCustomerMediaBaseRates<T extends Record<string, unknown>>(
+  target: T,
+  kind: "vision" | "speech",
+): T {
+  const derived = deriveCustomerBaseRates(target) as Record<string, unknown>;
+  if (kind === "vision") {
+    const providerImageCost = Number(derived.providerImageCostMicros ?? derived.provider_image_cost_micros ?? 0);
+    const customerKey = "imageCredits" in derived ? "imageCredits" : "image_credits";
+    derived[customerKey] = providerImageCost > 0
+      ? Math.ceil(providerImageCost * CREDIT_ATOMS_PER_MICRO_USD)
+      : UNKNOWN_IMAGE_CREDITS;
+  } else {
+    const providerAudioCost = Number(derived.providerAudioCostMicrosPerMinute ?? derived.provider_audio_cost_micros_per_minute ?? 0);
+    const customerKey = "audioCreditsPerMinute" in derived ? "audioCreditsPerMinute" : "audio_credits_per_minute";
+    derived[customerKey] = providerAudioCost > 0
+      ? Math.ceil(providerAudioCost * CREDIT_ATOMS_PER_MICRO_USD)
+      : UNKNOWN_VOICE_CREDITS_PER_MINUTE;
+  }
+  return derived as T;
+}

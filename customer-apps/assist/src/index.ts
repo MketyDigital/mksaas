@@ -3,7 +3,7 @@ import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
-import { deriveCustomerBaseRates, withKnownProviderCosts } from "./billing/provider-derived-pricing";
+import { deriveCustomerBaseRates, deriveCustomerMediaBaseRates, withKnownProviderCosts } from "./billing/provider-derived-pricing";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
 import { validateProviderConnection } from "./providers/validation";
@@ -710,6 +710,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const providerEnvelopeBps = parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100);
     const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
     const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
+    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 100, 1000);
     const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
     let includedCredits = creditAtomsFromMkredits(body.includedCredits);
     if (autoIncludedCredits && monthlyPrice > 0) {
@@ -737,8 +738,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         .bind(id("set"), customerId, userId, setupHash, now + 86400, now, setupCiphertext),
       env.DB.prepare("INSERT INTO credit_accounts (customer_id,balance,lifetime_granted,lifetime_consumed,updated_at) VALUES (?,?,?,?,?)")
         .bind(customerId, 0, 0, 0, now),
-      env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,funding_mode,minimum_funding_minor,setup_fee_minor,credit_rollover,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-        .bind(customerId, monthlyPrice, includedCredits, providerEnvelopeBps, operationsReserveBps, rateMultiplierBps, fundingMode, minimumFundingMinor, setupFeeMinor, 1, now),
+      env.DB.prepare("INSERT INTO commercial_policy (customer_id,subscription_amount_minor,included_credits,provider_envelope_bps,operations_reserve_bps,rate_multiplier_bps,media_rate_multiplier_bps,funding_mode,minimum_funding_minor,setup_fee_minor,credit_rollover,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(customerId, monthlyPrice, includedCredits, providerEnvelopeBps, operationsReserveBps, rateMultiplierBps, mediaRateMultiplierBps, fundingMode, minimumFundingMinor, setupFeeMinor, 1, now),
       env.DB.prepare("INSERT INTO feature_policy (customer_id,max_assistants,updated_at) VALUES (?,?,?)")
         .bind(customerId, maxAssistants, now),
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,action,target_type,target_id,customer_id,created_at) VALUES (?,?,?,?,?,?,?)")
@@ -1090,6 +1091,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         provider_envelope_bps=COALESCE(?,provider_envelope_bps),
         operations_reserve_bps=COALESCE(?,operations_reserve_bps),
         rate_multiplier_bps=COALESCE(?,rate_multiplier_bps),
+        media_rate_multiplier_bps=COALESCE(?,media_rate_multiplier_bps),
         funding_mode=COALESCE(?,funding_mode),
         minimum_funding_minor=COALESCE(?,minimum_funding_minor),
         setup_fee_minor=COALESCE(?,setup_fee_minor),
@@ -1102,6 +1104,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
           body.managedCostSharePercent === undefined ? nullableInt(body.providerEnvelopeBps) : parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
           body.operationsReservePercent === undefined ? nullableInt(body.operationsReserveBps) : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
           body.customerRateMultiplierPercent === undefined ? nullableInt(body.rateMultiplierBps) : parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000),
+          body.customerMediaRateMultiplierPercent === undefined ? nullableInt(body.mediaRateMultiplierBps) : parsePercentBpsValue(body.customerMediaRateMultiplierPercent, 100, 100, 1000),
           body.fundingMode === undefined ? null : (String(body.fundingMode) === "prepaid_partial" ? "prepaid_partial" : "full_period"),
           body.minimumFundingUsd === undefined ? null : parseUsdMinorValue(body.minimumFundingUsd, "minimum funding"),
           body.setupFeeUsd === undefined ? null : parseUsdMinorValue(body.setupFeeUsd, "setup fee", true),
@@ -1337,7 +1340,12 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       }));
       if (!sanitizedTargets.length) return json({ error: "model_target_required" }, 400);
       for (const target of sanitizedTargets) {
-        Object.assign(target, deriveCustomerBaseRates(withKnownProviderCosts(target)));
+        const normalizedTarget = deriveCustomerBaseRates(withKnownProviderCosts(target));
+        Object.assign(target, alias === "mkety-media-vision"
+          ? deriveCustomerMediaBaseRates(normalizedTarget, "vision")
+          : alias === "mkety-media-speech"
+            ? deriveCustomerMediaBaseRates(normalizedTarget, "speech")
+            : normalizedTarget);
         const effectiveReasoningCapabilities = reasoningCapabilities(target.provider, target.providerModel, target.reasoningCapabilities);
         if (target.reasoningCapabilities.some((mode: string) => !effectiveReasoningCapabilities.includes(mode as any))) {
           return json({ error: "provider_model_reasoning_capability_unsupported", provider: target.provider, model: target.providerModel }, 400);
@@ -1496,8 +1504,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       const audioCost = positiveInt(body.providerAudioCostMicrosPerMinute, previous?.provider_audio_cost_micros_per_minute || 0);
       const inputCredits = inputCost > 0 ? creditAtomsFromUsdMicros(inputCost) : (body.inputCreditsPerMillion === undefined ? Number(previous?.input_credits_per_million || 0) : creditAtomsFromMkredits(body.inputCreditsPerMillion));
       const outputCredits = outputCost > 0 ? creditAtomsFromUsdMicros(outputCost) : (body.outputCreditsPerMillion === undefined ? Number(previous?.output_credits_per_million || 0) : creditAtomsFromMkredits(body.outputCreditsPerMillion));
-      const imageCredits = imageCost > 0 ? creditAtomsFromUsdMicros(imageCost) : (inputCost > 0 || outputCost > 0 ? 0 : Number(previous?.image_credits || 0));
-      const audioCredits = audioCost > 0 ? creditAtomsFromUsdMicros(audioCost) : (body.audioCreditsPerMinute === undefined ? Number(previous?.audio_credits_per_minute || 0) : creditAtomsFromMkredits(body.audioCreditsPerMinute));
+      const imageCredits = imageCost > 0 ? creditAtomsFromUsdMicros(imageCost) : (alias === "mkety-media-vision" ? 200_000 : (inputCost > 0 || outputCost > 0 ? 0 : Number(previous?.image_credits || 0)));
+      const audioCredits = audioCost > 0 ? creditAtomsFromUsdMicros(audioCost) : (alias === "mkety-media-speech" ? 200_000 : (body.audioCreditsPerMinute === undefined ? Number(previous?.audio_credits_per_minute || 0) : creditAtomsFromMkredits(body.audioCreditsPerMinute)));
 
       await env.DB.prepare(
         `INSERT INTO model_rates

@@ -17,10 +17,10 @@ test("image input and output tokens charge the configured customer rates and tra
     },
   }, 12_000);
 
-  assert.deepEqual(result, { credits: 5_280_000, providerCostMicros: 440_000 });
+  assert.deepEqual(result, { credits: 5_520_000, providerCostMicros: 440_000 });
 });
 
-test("vision token metering removes a legacy flat image amount with no provider image price", () => {
+test("vision token metering adds the configured fallback when provider image pricing is missing", () => {
   const result = mediaUsageEconomics({
     kind: "vision",
     inputUnits: 1_000_000,
@@ -35,7 +35,7 @@ test("vision token metering removes a legacy flat image amount with no provider 
     },
   }, 12_000);
 
-  assert.deepEqual(result, { credits: 1_200_000, providerCostMicros: 100_000 });
+  assert.deepEqual(result, { credits: 1_440_000, providerCostMicros: 100_000 });
 });
 
 test("Whisper provider rate replaces a stale customer rate before the multiplier", () => {
@@ -44,4 +44,21 @@ test("Whisper provider rate replaces a stale customer rate before the multiplier
     rate: { audioCreditsPerMinute: 100_000, providerAudioCostMicrosPerMinute: 453 },
   }, 12_000);
   assert.deepEqual(result, { credits: 5_436, providerCostMicros: 453 });
+});
+
+
+test("two provider-unpriced images use 20 MKredit each with the media multiplier", () => {
+  const result = mediaUsageEconomics({
+    kind: "vision", imageCount: 2, inputUnits: 0, outputUnits: 0,
+    rate: { imageCredits: 0, providerImageCostMicros: 0 },
+  }, 12_000);
+  assert.deepEqual(result, { credits: 480_000, providerCostMicros: 0 });
+});
+
+test("unpriced voice uses 20 MKredit per minute and prorates elapsed audio", () => {
+  const result = mediaUsageEconomics({
+    kind: "speech", audioSeconds: 30,
+    rate: { audioCreditsPerMinute: 0, providerAudioCostMicrosPerMinute: 0 },
+  }, 12_000);
+  assert.deepEqual(result, { credits: 120_000, providerCostMicros: 0 });
 });
