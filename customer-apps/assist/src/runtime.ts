@@ -3266,7 +3266,7 @@ async function mediaRouteTargets(db: D1Database, customerId: string, alias: "mke
       ];
   const usable: any[] = [];
   for (const storedTarget of configured) {
-    const target = deriveCustomerMediaBaseRates(storedTarget, kind);
+    const target = deriveCustomerMediaBaseRates(storedTarget, alias === "mkety-media-vision" ? "vision" : "speech");
     if (!target?.provider || !target?.provider_model || !routeTargetMediaSupported(target, alias) || !routeTargetPricingConfigured(target, alias)) continue;
     if (["workers-ai", "mkety-managed"].includes(String(target.provider))) {
       usable.push(target);
