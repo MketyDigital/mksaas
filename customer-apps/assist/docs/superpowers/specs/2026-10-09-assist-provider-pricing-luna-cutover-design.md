@@ -63,3 +63,10 @@ Follow customer-apps/assist/OPERATIONS.md release gates: npm run check:all, npm 
 1. Keep existing rate fields and add Luna route entries only: rejected because zero/missing display values would continue to obscure fallback billing.
 2. Use a shared normalized rate catalog plus targeted route migration: recommended; ensures runtime and admin display use the same price derivation and confines route changes to affected Assist chains.
 3. Scrape arbitrary pricing pages continuously: rejected because unstable or non-authoritative pages could silently change customer charges.
+## Sol-to-Luna capability parity (approved scope addition)
+
+Before cutover, inventory every user-visible capability and provider constraint exercised through each Sol-backed alias and compare it with Azure Foundry gpt-6-luna-1. Include text input/output, image input and image payload formats, standard/high/maximum reasoning options, streaming, tool/function calls, structured output/JSON behavior, context and output limits, safety/error behavior, usage reporting, and any route-specific settings. Use Azure deployment documentation and controlled tests for the exact deployment.
+
+Make every feature supported by the Sol route available through the Luna-backed Assist experience. Update model capability declarations, request adapters, eligibility checks, reasoning mappings, request limits, and usage normalization as needed. Preserve existing fallback eligibility and order, skipping incompatible targets for a request as current rules require. Do not claim the Luna model itself supports a capability when Azure documentation or invocation tests do not establish it; if a required capability cannot be provided by Luna or an existing non-Sol fallback, block that alias cutover and report the specific gap rather than silently dropping the feature.
+
+Run parity tests for each inventoried capability and request class before changing the production primary. The cutover acceptance condition is zero lost supported Assist capabilities, successful text and image requests through Luna, and unchanged non-Sol fallback availability.
