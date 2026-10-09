@@ -769,7 +769,6 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         monthlyAmountMinor: monthlyPrice,
         providerEnvelopeBps,
         operationsReserveBps,
-        rateMultiplierBps,
       }).includedCredits;
     }
     const maxAssistants = Math.max(1, positiveInt(body.maxAssistants, 5));
@@ -1107,7 +1106,6 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       monthlyAmountMinor: parseUsdMinorValue(body.monthlyPriceUsd, "monthly price"),
       providerEnvelopeBps: parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100),
       operationsReserveBps: parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
-      rateMultiplierBps: parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 1, 1000),
     });
     return json({ ...result, includedCredits: result.includedMkredits, mkreditsPerUsd: MKREDITS_PER_USD, creditUnit: "MKredit" });
   }
@@ -1136,7 +1134,6 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
         operationsReserveBps: body.operationsReservePercent === undefined
           ? (body.operationsReserveBps === undefined ? Number(current.operations_reserve_bps) : positiveInt(body.operationsReserveBps, 0))
           : parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99),
-        rateMultiplierBps: textMultiplierUpdate ?? Number(current.rate_multiplier_bps),
       }).includedCredits;
     }
     await env.DB.batch([
@@ -3500,21 +3497,20 @@ function calculateCommercialPlan(input: {
   monthlyAmountMinor: number;
   providerEnvelopeBps: number;
   operationsReserveBps: number;
-  rateMultiplierBps: number;
 }) {
   if (input.monthlyAmountMinor <= 0) throw new HttpError(400, "monthly_amount_must_be_positive");
   if (input.providerEnvelopeBps < 1 || input.providerEnvelopeBps > 10000) throw new HttpError(400, "provider_envelope_invalid");
   if (input.operationsReserveBps < 0 || input.operationsReserveBps >= 10000) throw new HttpError(400, "operations_reserve_invalid");
-  if (input.rateMultiplierBps < 100 || input.rateMultiplierBps > 100000) throw new HttpError(400, "rate_multiplier_invalid");
   const monthlyUsdMicros = input.monthlyAmountMinor * 10000;
   const providerEnvelopeUsdMicros = Math.floor(monthlyUsdMicros * input.providerEnvelopeBps / 10000);
   const usableProviderUsdMicros = Math.floor(providerEnvelopeUsdMicros * (10000 - input.operationsReserveBps) / 10000);
-  const customerUsageValueUsdMicros = Math.floor(usableProviderUsdMicros * input.rateMultiplierBps / 10000);
-  const includedCredits = creditAtomsFromUsdMicros(customerUsageValueUsdMicros);
+  const includedUsageValueUsdMicros = usableProviderUsdMicros;
+  const includedCredits = creditAtomsFromUsdMicros(includedUsageValueUsdMicros);
   return {
     providerEnvelopeUsdMicros,
     usableProviderUsdMicros,
-    customerUsageValueUsdMicros,
+    includedUsageValueUsdMicros,
+    customerUsageValueUsdMicros: includedUsageValueUsdMicros,
     includedCredits,
     includedMkredits: mkreditsFromCreditAtoms(includedCredits),
   };
