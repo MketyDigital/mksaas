@@ -3318,6 +3318,8 @@ function mediaTargetUsage(storedTarget: any, kind: "vision" | "speech", inputUni
     outputUnits: Math.max(0, Math.ceil(Number(outputUnits || 0))),
     audioSeconds: Math.max(0, Number(audioSeconds || 0)),
     rate: {
+      provider: String(target.provider || ""),
+      providerModel: String(target.provider_model || ""),
       inputCreditsPerMillion: Number(target.input_credits_per_million || 0),
       outputCreditsPerMillion: Number(target.output_credits_per_million || 0),
       imageCredits: Number(target.image_credits || 0),

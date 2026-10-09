@@ -1,5 +1,7 @@
+import { deriveCustomerBaseRates } from "./provider-derived-pricing.ts";
+
 export function mediaUsageEconomics(usage: any, multiplierBps: number) {
-  const rate = usage?.rate || {};
+  const rate = deriveCustomerBaseRates(usage?.rate || {});
   if (usage?.kind === "speech") {
     const customerRate = Math.ceil(Number(rate.audioCreditsPerMinute || 0) * multiplierBps / 10000);
     const credits = Math.max(1, Math.ceil((Number(usage.audioSeconds || 0) / 60) * customerRate));

@@ -66,3 +66,26 @@ test("the existing customer percentage is applied to provider-derived rates at s
   assert.deepEqual(vision, { credits: 6_000_000, providerCostMicros: 500_000 });
   assert.deepEqual(speech, { credits: 5_436, providerCostMicros: 453 });
 });
+
+
+test("known Luna public price is ready for OpenAI and Azure Foundry routes", () => {
+  for (const provider of ["openai", "azure-foundry"]) {
+    const result = deriveCustomerBaseRates({ provider, provider_model: "gpt-5.6-luna" });
+    assert.deepEqual({
+      inputCost: result.provider_input_cost_micros_per_million,
+      outputCost: result.provider_output_cost_micros_per_million,
+      input: result.input_credits_per_million,
+      output: result.output_credits_per_million,
+    }, { inputCost: 200_000, outputCost: 1_200_000, input: 2_000_000, output: 12_000_000 });
+  }
+});
+
+test("vision ignores legacy image surcharge when image provider cost is unknown", () => {
+  const result = deriveCustomerBaseRates({
+    provider_input_cost_micros_per_million: 5_000_000,
+    provider_output_cost_micros_per_million: 30_000_000,
+    provider_image_cost_micros: 0,
+    image_credits: 3_000,
+  });
+  assert.equal(result.image_credits, 0);
+});
