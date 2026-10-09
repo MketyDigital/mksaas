@@ -10,6 +10,8 @@
 
 **Execution method:** Implement on a dedicated GitHub PR branch with tests first; merge only after exact-head checks and review; deploy the exact merged SHA through the established Mail Production workflow. Do not write directly to production tables or use payment simulation.
 
+**Address split amendment — 2026-10-09:** create `info@mkety.com`, `support@mkety.com`, and other active first-party root mailboxes in Mkety Mail. Keep `hello@mkety.com` in Zoho. Preserve root Zoho MX and DMARC, permit root Email Sending only after SPF/DKIM checks, and use exact Zoho forwarding targets on `mail.mkety.com` for inbound aliases. Never enable apex Email Routing or a catch-all route.
+
 ## Global constraints
 
 - Never target a tenant ID or profile submitted by the browser. Resolve the reserved tenant from server configuration and verify the tenant slug.
@@ -87,8 +89,8 @@ Run action and UI tests, then review the diff for every write path and tenant gu
 
 - Deploy the exact merged main SHA using the established Mail Production workflow. Verify migration/deployment and Mail smoke results for that exact SHA.
 - Confirm the reserved workspace and explicit entitlement exist using approved read-only operational diagnostics; confirm no billing artifacts were created and external clients remain disabled.
-- Through permitted Mail setup controls, create or confirm the `mkety.com` domain and `info@mkety.com` mailbox. Preserve any existing `hello@` or `support@` state.
-- Inspect current Cloudflare DNS before changes. Add only the Mail-generated records that are missing and non-conflicting; do not disrupt current MX routing. Re-run domain verification and enable sending only when SPF, DKIM, DMARC, MX and domain readiness all pass.
+- Through permitted Mail setup controls, create or confirm the root `mkety.com` sending domain and `info@mkety.com` plus `support@mkety.com` mailboxes. Keep `hello@mkety.com` in Zoho.
+- Inspect current Cloudflare DNS before changes. Add only non-conflicting root sending-authentication records and `mail.mkety.com` ingress records; keep root Zoho MX and DMARC unchanged and never enable apex Email Routing. Re-run domain verification and enable sending only when SPF, DKIM, and a valid DMARC record are publicly verified. Confirm Zoho forwards each non-hello root mailbox to its exact subdomain ingress alias.
 - Issue the first-party SMTP credential only after the workspace, entitlement, active mailbox and verified/enabled domain checks pass. Do not expose or log the generated secret; report where it must be stored if the authorized secret-control path is unavailable.
 - Keep external customer Mail clients disabled. Record final readiness as complete only when workspace, domain, mailbox, DNS verification and sending checks have evidence. If an authorized UI/control is inaccessible or a DNS conflict blocks safe setup, stop at that boundary and report the exact remaining operator action.
 

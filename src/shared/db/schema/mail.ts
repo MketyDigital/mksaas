@@ -67,6 +67,23 @@ export const mailMailboxes = appSchema.table('mail_mailboxes', {
   index('mail_mailboxes_tenant_idx').on(table.tenantId),
 ]);
 
+// A first-party Mail mailbox can accept messages through an isolated Cloudflare
+// ingress subdomain while the public root domain keeps Zoho as its MX provider.
+export const mailMailboxIngressAliases = appSchema.table('mail_mailbox_ingress_aliases', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  mailboxId: uuid('mailbox_id').notNull().references(() => mailMailboxes.id, { onDelete: 'cascade' }),
+  domainId: uuid('domain_id').notNull().references(() => mailDomains.id, { onDelete: 'cascade' }),
+  localPart: varchar('local_part', { length: 128 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull().default('pending'),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('mail_mailbox_ingress_aliases_domain_local_uidx').on(table.domainId, table.localPart),
+  index('mail_mailbox_ingress_aliases_tenant_mailbox_idx').on(table.tenantId, table.mailboxId),
+]);
+
 export const mailMailboxMembers = appSchema.table('mail_mailbox_members', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),

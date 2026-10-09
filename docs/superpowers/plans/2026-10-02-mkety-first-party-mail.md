@@ -1,8 +1,10 @@
 # Mkety First-Party Mail Implementation Plan
 
+> **Address topology superseded (2026-10-09):** use the approved full-domain plan in `docs/superpowers/plans/2026-10-09-mkety-full-domain-mail.md`. Do not execute this document's historical instructions to keep `hello@mkety.com` in Zoho, preserve apex MX indefinitely, or forward non-hello mailboxes from Zoho. The earlier app sender/ZITADEL work and evidence remain historical context; they do not prove full-domain migration acceptance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Route Mkety account, invitation, transactional and support email through Mkety Mail using `info@mail.mkety.com` with `hello@mkety.com` as Reply-To, with tenant isolation and existing delivery safeguards intact.
+**Goal:** Route Mkety account, invitation and transactional mail through Mkety Mail using `info@mkety.com`; keep `hello@mkety.com` in Zoho and route `support@mkety.com` plus other configured root mailboxes into Mkety Mail.
 
 **Architecture:** Keep ZITADEL responsible for identity flows and point its SMTP provider at the existing Mkety SMTP gateway. Add a server-only application sender contract that records and queues through Mkety Mail, plus a platform-owned workspace and SMTP-only credential path that does not enable external Mail clients for customer tenants.
 
@@ -17,7 +19,7 @@
 - Use the existing Mail message, queue, delivery-event and suppression path; do not add a provider bypass.
 - Keep the current ZITADEL provider available for rollback until Mail-backed auth acceptance passes on the exact candidate SHA.
 - Do not log SMTP credentials, passwords, reset tokens, invitation tokens or message bodies containing secrets.
-- Inspect current `mkety.com` mail DNS and routing state before any DNS mutation; keep the root Zoho MX and DMARC unchanged; never enable Cloudflare Email Routing or Email Sending on the `mkety.com` apex; reserve `mail.mkety.com` for the configured first-party tenant.
+- Inspect current `mkety.com` mail DNS and routing state before any DNS mutation. Preserve root Zoho MX and DMARC unchanged and never enable Email Routing on the apex. Allow Email Sending on the apex only for the reserved first-party tenant after SPF/DKIM checks; use `mail.mkety.com` for exact inbound Worker routes and preserve the first-party tenant reservation.
 - Do not treat Cloudflare Email Sending's `enabled` flag as SPF/DKIM/DMARC verification. Require exact public DNS matches for all three before marking first-party sender authentication verified; the Ops status update must repeat that live check.
 - Do not modify files under `customer-apps/assist` or rewrite the standalone Assist branch.
 
@@ -40,7 +42,7 @@
 - Read: `docs/handoffs/2026-09-29-mail-production-gateway-next.md`
 
 **Interfaces:**
-- Produces: recorded, non-secret readiness facts for the reserved tenant, workspace, `mail.mkety.com` sending domain and `info@mail.mkety.com` mailbox, SMTP gateway and current ZITADEL provider; DNS inventory for MX, SPF, DKIM, DMARC and Cloudflare Email Routing; a producer inventory with any explicit exceptions.
+- Produces: recorded, non-secret readiness facts for the reserved tenant, workspace, root sending domain and `info@mkety.com` mailbox, `mail.mkety.com` ingress domain, SMTP gateway and current ZITADEL provider; DNS inventory for Zoho MX, SPF, DKIM, DMARC and Cloudflare Email Routing; a producer inventory with any explicit exceptions.
 
 - [x] **Step 1: Capture read-only DNS and provider state**
 
@@ -90,7 +92,7 @@ Review the evidence against the spec's open preflight facts. Expected: no DNS ch
 
 - [x] **Step 1: Write failing protocol and provisioning tests**
 
-Assert default/customer credentials remain all-protocol, customer authentication is denied while `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` is false, first-party provisioning requires Platform Control access plus `platform:plans`, the configured reserved tenant, active `info@mail.mkety.com` mailbox and `workspace.mail` entitlement, and SMTP-scoped credentials are rejected on IMAP but accepted on SMTP. Missing `MKETY_FIRST_PARTY_MAIL_TENANT_ID` must fail closed.
+Assert default/customer credentials remain all-protocol, customer authentication is denied while `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED` is false, first-party provisioning requires Platform Control access plus `platform:plans`, the configured `/mkety-ops` tenant, active `info@mkety.com` mailbox and `workspace.mail` entitlement, and SMTP-scoped credentials are rejected on IMAP but accepted on SMTP. Missing or wrong-slug configuration must fail closed.
 
 - [x] **Step 2: Run focused tests to verify failures**
 
@@ -107,7 +109,7 @@ Pass requested protocol into credential verification and refuse IMAP for SMTP-on
 
 - [x] **Step 5: Add guarded first-party credential provisioning**
 
-Provide `createFirstPartySmtpCredential(opsTenantSlug, state, formData)` in `src/features/mail/server/admin-actions.ts`. Require existing `requireMailOps` (Platform Control access plus `platform:plans`), resolve the tenant only from `MKETY_FIRST_PARTY_MAIL_TENANT_ID`, require its active workspace and `workspace.mail` entitlement, and select only its active `info@mail.mkety.com` mailbox. Associate the authenticated operator's user ID, audit the issuance, and show the secret once through `FirstPartySmtpCredentialForm` on the `mail-operations` Platform Control page. The action must not accept a target tenant ID, switch on external-client access or grant IMAP. Pass the configured tenant ID through `.github/workflows/mkety-mail-production.yml` without echoing it.
+Provide `createFirstPartySmtpCredential(opsTenantSlug, state, formData)` in `src/features/mail/server/admin-actions.ts`. Require existing `requireMailOps` (Platform Control access plus `platform:plans`), resolve the tenant only from `MKETY_FIRST_PARTY_MAIL_TENANT_ID` and verify slug `mkety-ops`, require its active workspace and `workspace.mail` entitlement, and select only its active `info@mkety.com` mailbox on the root send-only domain. Associate the authenticated operator's user ID, audit the issuance, and show the secret once. Never enable root Email Routing or change root MX/DMARC. Do not accept a target tenant ID, switch on external-client access or grant IMAP.
 
 - [x] **Step 6: Run tests and migration checks**
 
@@ -129,7 +131,7 @@ Expected: protocol scope tests pass and migration baseline passes.
 
 - [x] **Step 1: Write sender contract tests**
 
-Cover recipient validation, allowed categories, fixed sender `info@mail.mkety.com` and Reply-To `hello@mkety.com`, bounded message fields, idempotent replay, missing reserved workspace/mailbox, suppression, capacity limits and queue failure.
+Cover recipient validation, allowed categories, fixed sender `info@mkety.com` and Reply-To `support@mkety.com`, bounded message fields, idempotent replay, missing reserved workspace/mailbox, suppression, capacity limits and queue failure.
 
 - [x] **Step 2: Run focused tests to verify failures**
 
@@ -178,7 +180,7 @@ Call `sendPlatformMail` after durable invitation creation. Use the sender's idem
 Run the invite-service test by path.
 Expected: invite URL expiry, idempotency and safe failure tests pass.
 
-### Task 5: Keep reserved Mail inbox access operator-only (inbound Zoho remains separate)
+### Task 5: Keep reserved Mail inbox access operator-only and resolve Zoho forwards
 
 **Files:**
 - Modify: `src/features/mail/server/workspace.ts`
@@ -187,7 +189,7 @@ Expected: invite URL expiry, idempotency and safe failure tests pass.
 - Create or modify focused authorization tests beside the touched server modules
 
 **Interfaces:**
-- Produces: a platform-operator-only access predicate for the reserved first-party Mail tenant; ordinary tenant membership and Mail entitlement checks remain unchanged for all customer workspaces.
+- Produces: a platform-operator-only access predicate for the reserved first-party Mail tenant; exact `mail.mkety.com` ingress aliases map Zoho-forwarded `info@mkety.com`, `support@mkety.com`, and other active root mailboxes to their canonical Mail inbox. `hello@mkety.com` is never aliased. Ordinary tenant membership and Mail entitlement checks remain unchanged.
 
 - [x] **Step 1: Write failing cross-tenant and non-operator access tests**
 
@@ -243,7 +245,7 @@ Expected: every inventoried first-party transactional producer maps to one suppo
 - Create or modify: workflow validation tests/scripts if the repository has a suitable workflow-contract test; otherwise validate the YAML and safe output locally
 
 **Interfaces:**
-- Consumes: existing SMTP gateway host `smtp.mkety.com:465`, SMTP-only platform credential and operator-controlled sender `info@mail.mkety.com` with Reply-To `hello@mkety.com`.
+- Consumes: existing SMTP gateway host `smtp.mkety.com:465`, SMTP-only platform credential and operator-controlled sender `info@mkety.com` with Reply-To `support@mkety.com`.
 - Produces: workflow configuration that can test and activate Mkety SMTP while retaining the current Brevo provider values and an explicit rollback operation.
 
 - [x] **Step 1: Write workflow contract checks**
@@ -272,7 +274,7 @@ Expected: selected provider behavior, masking, test-before-activation and rollba
 - Read: Mail and ZITADEL workflows used for acceptance
 
 **Interfaces:**
-- Produces: evidence for SMTP provider test, actual controlled delivery, signup verification, password reset, invitation, account/billing notification, and support notification/reply through the Zoho `hello@mkety.com` inbox; exact SHA, workflow IDs, feature flag state and rollback provider recorded.
+- Produces: evidence for SMTP provider test, actual controlled delivery, signup verification, password reset, invitation, account/billing notification, and support notification/reply in the Mkety Mail inbox; separately prove `hello@mkety.com` remains in Zoho; exact SHA, workflow IDs, feature flag state and rollback provider recorded.
 
 - [x] **Step 1: Run non-mutating readiness and workflow checks**
 
@@ -283,11 +285,13 @@ Local evidence on 2026-10-02: 11 focused suites / 52 tests passed, migration bas
 
 - [ ] **Step 2: Verify DNS and reserved sender readiness**
 
-Repeat read-only DNS and Mail provider diagnostics. Never alter root Zoho MX/DMARC. Stop if the isolated sending domain records do not verify.
+Repeat read-only DNS and Mail provider diagnostics. Never alter root Zoho MX/DMARC and never enable apex Email Routing. Verify Cloudflare Email Sending authentication on the root domain plus exact Cloudflare Email Routing rules on `mail.mkety.com`. Verify Zoho forwards only non-`hello` root mailboxes to those exact routes.
 
 Evidence updated 2026-10-08: Cloudflare Email Sending setup run `37742125709` enabled only `mail.mkety.com`, creating Cloudflare bounce MX/SPF/DKIM and `_dmarc.mail.mkety.com` (`p=reject`). The workflow verified apex Zoho MX and apex DMARC unchanged. Controlled send run `37742278847` passed Cloudflare's SPF/DKIM/DMARC gate, and the user confirmed receipt at `hello@mkety.com` in Zoho. This proves one direct controlled delivery to the Zoho inbox; it does not prove the Mkety Mail application queue/gateway or ZITADEL delivery path. Production Mail workflow `37750898634` deployed successfully, but its internal first-party readiness report found the reserved workspace, domain, sending state, SPF, DKIM, DMARC and `info` mailbox missing/disabled. Therefore this step remains open until the reserved sender/workspace/mailbox is provisioned and the internal readiness diagnostic passes. Do not require apex MX for outbound sender readiness: root MX remains the inbound Zoho requirement only.
 
 Code safeguard added in PR #355: public SPF, DKIM, and DMARC answers must match Cloudflare's expected records before the platform domain enters `sending_ready`; the Ops update path performs the same check. The `mkety.com` apex is rejected before Cloudflare provisioning, and `mail.mkety.com` is reserved for the configured platform tenant. These safeguards do not substitute for reserved mailbox, credential, or actual recipient-delivery evidence.
+
+Historical address-split amendment — 2026-10-09 (superseded by the full-domain decision): this former proposal kept apex Email Routing prohibited, preserved Zoho MX, and selectively forwarded non-hello addresses to `mail.mkety.com`. Do not treat it as the current target or continue its selective Zoho forwarding setup.
 
 - [ ] **Step 3: Test actual controlled recipient delivery**
 
@@ -295,7 +299,7 @@ Use the configured platform-operator email only. Test ZITADEL SMTP and the gatew
 
 - [ ] **Step 4: Exercise complete auth and support paths**
 
-On the candidate release SHA, execute controlled signup verification, recovery, invitation, transactional notification and a controlled support notification/reply to the Zoho inbox. Confirm rollback can restore the prior ZITADEL provider.
+On the candidate release SHA, execute controlled signup verification, recovery, invitation, transactional notification and a support receive/reply round trip in the Mkety Mail inbox. Separately confirm `hello@mkety.com` remains in Zoho. Confirm rollback can restore the prior ZITADEL provider.
 
 - [ ] **Step 5: Record exact evidence**
 

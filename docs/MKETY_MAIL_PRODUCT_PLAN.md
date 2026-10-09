@@ -27,6 +27,10 @@ A nontechnical business owner should be able to:
 
 Only Marketing Campaigns remain “Coming Soon”.
 
+## Mkety's first-party full-domain mail
+
+The approved target is one Mkety Mail home for selected `@mkety.com` addresses, with independent `hello@`, `cloudflare@`, `billing@`, `info@`, and `support@` mailboxes. Zoho has one source mailbox, `hello@mkety.com`; import its history once because the other current addresses are aliases forwarding into it. Keep Zoho accessible during migration and change root MX only after the guarded acceptance and rollback checks pass. See `docs/superpowers/specs/2026-10-09-mkety-full-domain-mail-cutover-design.md` and its implementation plan.
+
 ---
 
 ## Product scope

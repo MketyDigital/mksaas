@@ -8,9 +8,11 @@ import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMailboxMembers, mailThreads, mailWorkspaces } from '@/shared/db/schema';
 
 import { createCloudflareEmailWorkerRule, setCloudflareEmailCatchAll } from './cloudflare';
-import { requireMailWorkspaceAccess } from './workspace';
 import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
+import { shouldCreatePerMailboxWorkerRule } from './domain-provisioning-policy';
 import { canAssignMailTeamSeat } from './mail-team-seats';
+import { getFirstPartyMailTenantId } from './runtime-config';
+import { requireMailWorkspaceAccess } from './workspace';
 
 function cleanLocalPart(value:string){
   return value.trim().toLowerCase().replace(/[^a-z0-9._+-]/g,'').slice(0,128);
@@ -43,6 +45,9 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     where:and(eq(mailDomains.id,domainId),eq(mailDomains.tenantId,tenant.id)),
   });
   if(!domain) redirect(`/app/${tenantSlug}/mail/mailboxes?error=domain`);
+  if(domain.domain==='mail.mkety.com'&&tenant.id===getFirstPartyMailTenantId().trim()&&tenant.slug==='mkety-ops'&&catchAll){
+    redirect(`/app/${tenantSlug}/mail/mailboxes?error=first-party-ingress-catch-all`);
+  }
 
   const planKey=await resolveTenantMailPlanKey(tenant.id,workspace.planKey,tenant.slug);
   const limits=await resolveTenantMailPlanLimits(tenant.id,planKey);
@@ -112,7 +117,8 @@ export async function createMailbox(tenantSlug:string,formData:FormData){
     return [created];
   });
 
-  if(mailbox && domain.routingEnabled&&domain.cloudflareZoneId){
+  const isFirstPartyTenant = tenant.id === getFirstPartyMailTenantId().trim() && tenant.slug === 'mkety-ops';
+  if(mailbox && domain.routingEnabled&&domain.cloudflareZoneId&&shouldCreatePerMailboxWorkerRule(domain.domain,isFirstPartyTenant)){
     try{
       if(catchAll) await setCloudflareEmailCatchAll(domain.cloudflareZoneId);
       else await createCloudflareEmailWorkerRule(domain.cloudflareZoneId,`${localPart}@${domain.domain}`);
