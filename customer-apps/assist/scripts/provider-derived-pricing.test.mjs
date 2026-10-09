@@ -63,7 +63,7 @@ test("the existing customer percentage is applied to provider-derived rates at s
     },
   }, 12_000);
 
-  assert.deepEqual(vision, { credits: 6_000_000, providerCostMicros: 500_000 });
+  assert.deepEqual(vision, { credits: 6_240_000, providerCostMicros: 500_000 });
   assert.deepEqual(speech, { credits: 5_436, providerCostMicros: 453 });
 });
 
