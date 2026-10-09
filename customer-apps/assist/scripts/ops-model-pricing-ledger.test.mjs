@@ -71,6 +71,17 @@ test("model rates UI shows provider-derived base rates and separate text/media m
   assert.match(ui, /Effective target/);
 });
 
+test("media multiplier accepts deliberate discounts with a provider-cost warning", () => {
+  assert.ok(ui.includes('id="nMediaMultiplier" type="number" min="1"'));
+  assert.ok(ui.includes('id="pMediaMultiplier" type="number" min="1"'));
+  assert.ok(ui.includes("At 20%, that charges 4 MKredit"));
+  assert.ok(ui.includes("Below 100% may be less than provider cost."));
+  const start = api.indexOf('if (url.pathname === "/api/ops/policy" && request.method === "PATCH")');
+  const end = api.indexOf('if (url.pathname === "/api/ops/models" && request.method === "GET")', start);
+  const handler = api.slice(start, end);
+  assert.match(handler, /parsePercentBpsValue\(body\.customerMediaRateMultiplierPercent, 100, 1, 1000\)/);
+});
+
 test("operator deductions add to the customer's lifetime used total", () => {
   const start = api.indexOf('if (url.pathname === "/api/ops/credits"');
   const end = api.indexOf('if (url.pathname === "/api/ops/ledger"', start);
