@@ -709,7 +709,8 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const setupFeeMinor = parseUsdMinorValue(body.setupFeeUsd ?? "0", "setup fee", true);
     const providerEnvelopeBps = parsePercentBpsValue(body.managedCostSharePercent, 15, 0.01, 100);
     const operationsReserveBps = parsePercentBpsValue(body.operationsReservePercent, 10, 0, 99.99);
-    const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);\n    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 100, 1000);
+    const rateMultiplierBps = parsePercentBpsValue(body.customerRateMultiplierPercent, 100, 100, 1000);
+    const mediaRateMultiplierBps = parsePercentBpsValue(body.customerMediaRateMultiplierPercent, rateMultiplierBps / 100, 100, 1000);
     const autoIncludedCredits = String(body.autoIncludedCredits ?? "yes") !== "no";
     let includedCredits = creditAtomsFromMkredits(body.includedCredits);
     if (autoIncludedCredits && monthlyPrice > 0) {
