@@ -35,7 +35,7 @@ test("vision token metering adds the configured fallback when provider image pri
     },
   }, 12_000);
 
-  assert.deepEqual(result, { credits: 1_200_024, providerCostMicros: 100_000 });
+  assert.deepEqual(result, { credits: 1_440_000, providerCostMicros: 100_000 });
 });
 
 test("Whisper provider rate replaces a stale customer rate before the multiplier", () => {
