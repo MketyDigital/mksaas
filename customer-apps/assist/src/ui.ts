@@ -719,7 +719,8 @@ function newCustomerDialog(){
     '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary>'+
       '<div class="two" style="margin-top:10px">'+
         '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="nReserve" type="number" min="0" max="99.99" step="0.01" value="10"></div>'+
-        '<div class="field"><label>Customer rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="100" max="1000" step="0.01" value="100"></div>'+
+        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="100" max="1000" step="0.01" value="100"></div>
+        <div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="nMediaMultiplier" type="number" min="100" max="1000" step="0.01" value="100"><small class="muted">Missing image/voice provider prices use 20 MKredit per image/minute before this multiplier.</small></div></div>'+
       '</div>'+
       '<p class="muted">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion stay internal. Customers see only price/top-ups, credits, usage and enabled features.</p>'+
     '</details>'+
@@ -727,7 +728,7 @@ function newCustomerDialog(){
   const nName=byId('nName'),nSlug=byId('nSlug'),nEmail=byId('nEmail'),nDomain=byId('nDomain'),
     nPrice=byId('nPrice'),nCredits=byId('nCredits'),nAutoCredits=byId('nAutoCredits'),nFundingMode=byId('nFundingMode'),
     nMinimumFunding=byId('nMinimumFunding'),nSetupFee=byId('nSetupFee'),nEnvelope=byId('nEnvelope'),
-    nReserve=byId('nReserve'),nMultiplier=byId('nMultiplier'),nMax=byId('nMax'),nCalc=byId('nCalc'),nCreate=byId('nCreate');
+    nReserve=byId('nReserve'),nMultiplier=byId('nMultiplier'),nMediaMultiplier=byId('nMediaMultiplier'),nMax=byId('nMax'),nCalc=byId('nCalc'),nCreate=byId('nCreate');
   nFundingMode.onchange=()=>{nMinimumFunding.disabled=nFundingMode.value!=='prepaid_partial'};
   nFundingMode.onchange();
   nAutoCredits.onchange=()=>{nCredits.disabled=nAutoCredits.value==='yes'};
@@ -744,7 +745,7 @@ function newCustomerDialog(){
       name:nName.value,slug:nSlug.value,adminEmail:nEmail.value,customHostname:nDomain.value||null,
       monthlyPriceUsd:nPrice.value,includedCredits:Number(nCredits.value||0),autoIncludedCredits:nAutoCredits.value,
       fundingMode:nFundingMode.value,minimumFundingUsd:nMinimumFunding.value||nPrice.value,setupFeeUsd:nSetupFee.value||'0',
-      managedCostSharePercent:nEnvelope.value,operationsReservePercent:nReserve.value,customerRateMultiplierPercent:nMultiplier.value,
+      managedCostSharePercent:nEnvelope.value,operationsReservePercent:nReserve.value,customerRateMultiplierPercent:nMultiplier.value,customerMediaRateMultiplierPercent:nMediaMultiplier.value,
       maxAssistants:Number(nMax.value||5)
     })});
     closeModal();await loadCustomers();await manageCustomer(x.customerId);
@@ -771,7 +772,8 @@ async function manageCustomer(id){
       '</div>'+
       '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary><div class="two" style="margin-top:10px">'+
         '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="pReserve" type="number" min="0" max="99.99" step="0.01" value="'+(Number(p.operations_reserve_bps||1000)/100).toFixed(2)+'"></div>'+
-        '<div class="field"><label>Customer rate multiplier %</label><input class="input" id="pMultiplier" type="number" min="100" max="1000" step="0.01" value="'+(Number(p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">100% is provider-cost pass-through; 120% adds 20%. This applies to token, image, and voice charges.</small></div>'+
+        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="pMultiplier" type="number" min="100" max="1000" step="0.01" value="'+(Number(p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">Applies to text and token charges.</small></div>
+      <div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="pMediaMultiplier" type="number" min="100" max="1000" step="0.01" value="'+(Number(p.media_rate_multiplier_bps||p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">Applies to image and voice charges. When provider pricing is missing, the base is 20 MKredit per image or minute.</small></div></div>'+
       '</div></details>'+
       '<div class="row" style="margin-top:10px"><button class="btn" id="calcCredits">Recalculate included credits</button></div>'+
       '<h3>Features</h3><div class="two"><label><input id="fTelegram" type="checkbox" '+(f.telegram_enabled?'checked':'')+'> Telegram</label><label><input id="fVision" type="checkbox" '+(f.vision_enabled?'checked':'')+'> Vision</label><label><input id="fVoice" type="checkbox" '+(f.voice_enabled?'checked':'')+'> Voice</label><label><input id="fKnowledge" type="checkbox" '+(f.knowledge_enabled?'checked':'')+'> Knowledge</label><label><input id="fReminders" type="checkbox" '+(f.reminders_enabled?'checked':'')+'> Reminders</label><label><input id="fHandoff" type="checkbox" '+(f.human_handoff_enabled?'checked':'')+'> Human handoff</label><label><input id="fTools" type="checkbox" '+(f.tools_enabled?'checked':'')+'> Tools</label></div>'+
@@ -781,7 +783,7 @@ async function manageCustomer(id){
       '<div class="row" style="margin-top:16px"><button class="btn primary" id="savePolicy">Save amended commercial policy</button><button class="btn" id="closeCustomer">Close</button></div>');
     const closeCustomer=byId('closeCustomer'),calcCredits=byId('calcCredits'),pPrice=byId('pPrice'),pCredits=byId('pCredits'),
       pAutoCredits=byId('pAutoCredits'),pFundingMode=byId('pFundingMode'),pMinimumFunding=byId('pMinimumFunding'),pSetupFee=byId('pSetupFee'),
-      pEnvelope=byId('pEnvelope'),pReserve=byId('pReserve'),pMultiplier=byId('pMultiplier'),pMax=byId('pMax'),
+      pEnvelope=byId('pEnvelope'),pReserve=byId('pReserve'),pMultiplier=byId('pMultiplier'),pMediaMultiplier=byId('pMediaMultiplier'),pMax=byId('pMax'),
       fTelegram=byId('fTelegram'),fVision=byId('fVision'),fVoice=byId('fVoice'),fKnowledge=byId('fKnowledge'),
       fReminders=byId('fReminders'),fHandoff=byId('fHandoff'),fTools=byId('fTools'),
       creditDelta=byId('creditDelta'),creditReason=byId('creditReason'),adjustCredits=byId('adjustCredits'),
@@ -826,7 +828,7 @@ async function manageCustomer(id){
       await api('/api/ops/policy',{method:'PATCH',body:JSON.stringify({
         customerId:id,monthlyPriceUsd:pPrice.value,includedCredits:Number(pCredits.value),autoCalculateCredits:pAutoCredits.value==='yes',
         fundingMode:pFundingMode.value,minimumFundingUsd:pMinimumFunding.value||pPrice.value,setupFeeUsd:pSetupFee.value||'0',
-        managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value,customerRateMultiplierPercent:pMultiplier.value,
+        managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value,customerRateMultiplierPercent:pMultiplier.value,customerMediaRateMultiplierPercent:pMediaMultiplier.value,
         creditRollover:true,maxAssistants:Number(pMax.value),telegramEnabled:fTelegram.checked,visionEnabled:fVision.checked,voiceEnabled:fVoice.checked,
         knowledgeEnabled:fKnowledge.checked,remindersEnabled:fReminders.checked,humanHandoffEnabled:fHandoff.checked,toolsEnabled:fTools.checked
       })});
