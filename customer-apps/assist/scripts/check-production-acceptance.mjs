@@ -118,6 +118,7 @@ assert.match(runtime,/max_completion_tokens: 768/);
 assert.match(index,/max_completion_tokens: 256/);
 assert.match(index,/reasoning_effort: "low"/);
 assert.match(index,/function acceptanceText/);
+assert.match(index,/targetRows\\.results \\?\\? \\[\\]\\)\\.map\\(\\(target: any\\) => deriveCustomerBaseRates\\(target\\)\\)/);
 assert.match(index,/workers-ai-image-reply/);
 assert.match(index,/workersImageReplyOk/);
 assert.match(index,/runConversationQualityProbe/);
