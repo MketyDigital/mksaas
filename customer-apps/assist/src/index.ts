@@ -551,9 +551,9 @@ async function handleInferenceAcceptance(request: Request, env: Env) {
   } catch (error) {
     results.push({ provider: "azure-foundry-luna-vision", model: "gpt-6-luna-1", ok: false, error: error instanceof Error ? error.message.slice(0,300) : String(error).slice(0,300) });
   }
-  const qualityTarget = (targetRows.results ?? []).find((target: any) =>
+  const qualityTarget = routeTargets.find((target: any) =>
     target.scope_key === "global:mkety-smart" && Number(target.position) === 0 && Number(target.enabled) === 1
-  ) ?? (targetRows.results ?? []).find((target: any) =>
+  ) ?? routeTargets.find((target: any) =>
     ["mkety-smart","mkety-fast","mkety-reasoning"].includes(String(target.alias)) && Number(target.enabled) === 1
   );
   const qualityModel = String(qualityTarget?.provider_model || workerModels[0].model);
