@@ -1,4 +1,4 @@
-import { deriveCustomerBaseRates } from "./provider-derived-pricing";
+import { deriveCustomerBaseRates } from "./provider-derived-pricing.ts";
 
 export function mediaUsageEconomics(usage: any, multiplierBps: number) {
   const rate = deriveCustomerBaseRates(usage?.rate || {});
