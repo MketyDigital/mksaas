@@ -3,7 +3,7 @@ import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
-import { deriveCustomerBaseRates } from "./billing/provider-derived-pricing";
+import { deriveCustomerBaseRates, withKnownProviderCosts } from "./billing/provider-derived-pricing";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
 import { validateProviderConnection } from "./providers/validation";
@@ -1337,6 +1337,7 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       }));
       if (!sanitizedTargets.length) return json({ error: "model_target_required" }, 400);
       for (const target of sanitizedTargets) {
+        Object.assign(target, deriveCustomerBaseRates(withKnownProviderCosts(target)));
         const effectiveReasoningCapabilities = reasoningCapabilities(target.provider, target.providerModel, target.reasoningCapabilities);
         if (target.reasoningCapabilities.some((mode: string) => !effectiveReasoningCapabilities.includes(mode as any))) {
           return json({ error: "provider_model_reasoning_capability_unsupported", provider: target.provider, model: target.providerModel }, 400);
@@ -1488,15 +1489,15 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       ).bind(alias).first<any>();
       const latest = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM model_rates WHERE alias=?")
         .bind(alias).first<any>();
-      const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || 0);
-      const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || 0);
+      const known = withKnownProviderCosts({ provider, providerModel });
+      const inputCost = positiveInt(body.providerInputCostMicrosPerMillion, previous?.provider_input_cost_micros_per_million || Number(known.providerInputCostMicrosPerMillion || 0));
+      const outputCost = positiveInt(body.providerOutputCostMicrosPerMillion, previous?.provider_output_cost_micros_per_million || Number(known.providerOutputCostMicrosPerMillion || 0));
       const imageCost = positiveInt(body.providerImageCostMicros, previous?.provider_image_cost_micros || 0);
       const audioCost = positiveInt(body.providerAudioCostMicrosPerMinute, previous?.provider_audio_cost_micros_per_minute || 0);
-      const generated = body.generateRate === true;
-      const inputCredits = generated ? creditAtomsFromUsdMicros(inputCost) : (body.inputCreditsPerMillion === undefined ? Number(previous?.input_credits_per_million || 0) : creditAtomsFromMkredits(body.inputCreditsPerMillion));
-      const outputCredits = generated ? creditAtomsFromUsdMicros(outputCost) : (body.outputCreditsPerMillion === undefined ? Number(previous?.output_credits_per_million || 0) : creditAtomsFromMkredits(body.outputCreditsPerMillion));
-      const imageCredits = generated ? creditAtomsFromUsdMicros(imageCost) : (body.imageCredits === undefined ? Number(previous?.image_credits || 0) : creditAtomsFromMkredits(body.imageCredits));
-      const audioCredits = generated ? creditAtomsFromUsdMicros(audioCost) : (body.audioCreditsPerMinute === undefined ? Number(previous?.audio_credits_per_minute || 0) : creditAtomsFromMkredits(body.audioCreditsPerMinute));
+      const inputCredits = inputCost > 0 ? creditAtomsFromUsdMicros(inputCost) : (body.inputCreditsPerMillion === undefined ? Number(previous?.input_credits_per_million || 0) : creditAtomsFromMkredits(body.inputCreditsPerMillion));
+      const outputCredits = outputCost > 0 ? creditAtomsFromUsdMicros(outputCost) : (body.outputCreditsPerMillion === undefined ? Number(previous?.output_credits_per_million || 0) : creditAtomsFromMkredits(body.outputCreditsPerMillion));
+      const imageCredits = imageCost > 0 ? creditAtomsFromUsdMicros(imageCost) : (inputCost > 0 || outputCost > 0 ? 0 : Number(previous?.image_credits || 0));
+      const audioCredits = audioCost > 0 ? creditAtomsFromUsdMicros(audioCost) : (body.audioCreditsPerMinute === undefined ? Number(previous?.audio_credits_per_minute || 0) : creditAtomsFromMkredits(body.audioCreditsPerMinute));
 
       await env.DB.prepare(
         `INSERT INTO model_rates
