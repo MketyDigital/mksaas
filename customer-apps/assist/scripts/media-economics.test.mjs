@@ -20,7 +20,7 @@ test("image input and output tokens charge the configured customer rates and tra
   assert.deepEqual(result, { credits: 5_280_000, providerCostMicros: 440_000 });
 });
 
-test("vision flat fees add to token charges and known per-image provider cost", () => {
+test("vision token metering removes a legacy flat image amount with no provider image price", () => {
   const result = mediaUsageEconomics({
     kind: "vision",
     inputUnits: 1_000_000,
@@ -28,12 +28,20 @@ test("vision flat fees add to token charges and known per-image provider cost", 
     rate: {
       inputCreditsPerMillion: 1_000_000,
       outputCreditsPerMillion: 0,
-      imageCredits: 20,
+      imageCredits: 300,
       providerInputCostMicrosPerMillion: 100_000,
       providerOutputCostMicrosPerMillion: 0,
-      providerImageCostMicros: 2,
+      providerImageCostMicros: 0,
     },
   }, 12_000);
 
-  assert.deepEqual(result, { credits: 1_200_024, providerCostMicros: 100_002 });
+  assert.deepEqual(result, { credits: 1_200_000, providerCostMicros: 100_000 });
+});
+
+test("Whisper provider rate replaces a stale customer rate before the multiplier", () => {
+  const result = mediaUsageEconomics({
+    kind: "speech", audioSeconds: 60,
+    rate: { audioCreditsPerMinute: 100_000, providerAudioCostMicrosPerMinute: 453 },
+  }, 12_000);
+  assert.deepEqual(result, { credits: 5_436, providerCostMicros: 453 });
 });
