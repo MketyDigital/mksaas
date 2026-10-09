@@ -41,7 +41,10 @@ export function routeTargetPricingConfigured(target: Record<string, unknown>, al
       && imageCostCovered;
     const flatImageRate = !hasTokenCosts && imageCredits > 0 && providerImageCost > 0
       && imageCredits >= providerImageCost * 10;
-    return tokenMetered || flatImageRate;
+    const fallbackImageRate = providerImageCost === 0 && imageCredits >= 200_000
+      && (!hasTokenCosts || (providerInput > 0 && providerOutput > 0
+        && input >= providerInput * 10 && output >= providerOutput * 10));
+    return tokenMetered || flatImageRate || fallbackImageRate;
   }
   if (alias === "mkety-media-speech") {
     return Number(target.audio_credits_per_minute || 0) > 0;
