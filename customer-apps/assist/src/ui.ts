@@ -709,7 +709,7 @@ function newCustomerDialog(){
       '<div class="field"><label>Custom domain (optional)</label><input class="input" id="nDomain" placeholder="ai.customer.com"></div>'+
       '<div class="field"><label>Monthly price (USD)</label><input class="input" id="nPrice" inputmode="decimal" placeholder="100.00"></div>'+
       '<div class="field"><label>Included MKredit per billing period</label><input class="input" id="nCredits" type="number" min="0" placeholder="Manual override only"></div>'+
-      '<div class="field"><label>Credit allocation mode</label><select class="input" id="nAutoCredits"><option value="yes">Automatic — recommended</option><option value="no">Manual override</option></select></div>'+
+      '<div class="field"><label>Credit allocation mode</label><select class="input" id="nAutoCredits"><option value="yes">Automatic — recommended</option><option value="no">Manual override</option></select><small class="muted">Automatic allocation uses the plan price, cost envelope and reserve. Rate multipliers affect charges only.</small></div>'+
       '<div class="field"><label>Funding mode</label><select class="input" id="nFundingMode"><option value="full_period">Full monthly payment</option><option value="prepaid_partial">Prepaid partial funding / top-ups</option></select></div>'+
       '<div class="field"><label>Minimum funding / top-up (USD)</label><input class="input" id="nMinimumFunding" inputmode="decimal" placeholder="25.00"></div>'+
       '<div class="field"><label>Setup fee (USD, optional)</label><input class="input" id="nSetupFee" inputmode="decimal" value="0"></div>'+
@@ -719,8 +719,8 @@ function newCustomerDialog(){
     '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary>'+
       '<div class="two" style="margin-top:10px">'+
         '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="nReserve" type="number" min="0" max="99.99" step="0.01" value="10"></div>'+
-        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="1" max="1000" step="0.01" value="100"></div>'+
-        '<div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="nMediaMultiplier" type="number" min="1" max="1000" step="0.01" value="100"><small class="muted">Missing image/voice provider prices use 20 MKredit per image/minute before this multiplier.</small></div>'+
+        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="nMultiplier" type="number" min="1" max="1000" step="0.01" value="100"><small class="muted">Changes text usage rates only. Automatic included MKredit is calculated from plan price, cost envelope and reserve.</small></div>'+
+        '<div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="nMediaMultiplier" type="number" min="1" max="1000" step="0.01" value="100"><small class="muted">Changes image and voice charges only. Missing provider prices use a 20 MKredit base.</small></div>'+
       '</div>'+
       '<p class="muted">Provider cost envelope, reserve, provider pricing, rate multiplier and credit-unit conversion stay internal. Customers see only price/top-ups, credits, usage and enabled features.</p>'+
     '</details>'+
@@ -735,7 +735,7 @@ function newCustomerDialog(){
   nAutoCredits.onchange();
   nCalc.onclick=async()=>{try{
     const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({
-      monthlyPriceUsd:nPrice.value,managedCostSharePercent:nEnvelope.value,operationsReservePercent:nReserve.value,customerRateMultiplierPercent:nMultiplier.value
+      monthlyPriceUsd:nPrice.value,managedCostSharePercent:nEnvelope.value,operationsReservePercent:nReserve.value
     })});
     nCredits.value=x.includedCredits;
     alert('Managed provider-cost ceiling: $'+(x.providerEnvelopeUsdMicros/1000000).toFixed(2)+'\\nUsable provider capacity after reserve: $'+(x.usableProviderUsdMicros/1000000).toFixed(2)+'\\nIncluded MKredit: '+x.includedCredits);
@@ -763,7 +763,7 @@ async function manageCustomer(id){
       '<h3>Commercial agreement</h3><div class="two">'+
         '<div class="field"><label>Monthly price (USD)</label><input class="input" id="pPrice" inputmode="decimal" value="'+(Number(p.subscription_amount_minor||0)/100).toFixed(2)+'"></div>'+
         '<div class="field"><label>Included MKredit per billing period</label><input class="input" id="pCredits" type="number" value="'+esc(p.included_credits||0)+'"></div>'+
-        '<div class="field"><label>Credit allocation mode</label><select class="input" id="pAutoCredits"><option value="yes">Automatic — recommended</option><option value="no">Manual override</option></select></div>'+
+        '<div class="field"><label>Credit allocation mode</label><select class="input" id="pAutoCredits"><option value="yes">Automatic — recommended</option><option value="no">Manual override</option></select><small class="muted">Automatic allocation uses the plan price, cost envelope and reserve. Rate multipliers affect charges only.</small></div>'+
         '<div class="field"><label>Funding mode</label><select class="input" id="pFundingMode"><option value="full_period">Full monthly payment</option><option value="prepaid_partial">Prepaid partial funding / top-ups</option></select></div>'+
         '<div class="field"><label>Minimum funding / top-up (USD)</label><input class="input" id="pMinimumFunding" inputmode="decimal" value="'+(Number(p.minimum_funding_minor||p.subscription_amount_minor||0)/100).toFixed(2)+'"></div>'+
         '<div class="field"><label>Setup fee (USD)</label><input class="input" id="pSetupFee" inputmode="decimal" value="'+(Number(p.setup_fee_minor||0)/100).toFixed(2)+'"></div>'+
@@ -772,8 +772,8 @@ async function manageCustomer(id){
       '</div>'+
       '<details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">Internal pricing policy — never customer-visible</summary><div class="two" style="margin-top:10px">'+
         '<div class="field"><label>Operations / safety reserve %</label><input class="input" id="pReserve" type="number" min="0" max="99.99" step="0.01" value="'+(Number(p.operations_reserve_bps||1000)/100).toFixed(2)+'"></div>'+
-        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="pMultiplier" type="number" min="1" max="1000" step="0.01" value="'+(Number(p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">Applies to text and token charges.</small></div>'+
-      '<div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="pMediaMultiplier" type="number" min="1" max="1000" step="0.01" value="'+(Number(p.media_rate_multiplier_bps||p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">Applies to image and voice charges. When provider pricing is missing, the base is 20 MKredit per image or minute.</small></div>'+
+        '<div class="field"><label>Text rate multiplier %</label><input class="input" id="pMultiplier" type="number" min="1" max="1000" step="0.01" value="'+(Number(p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">Changes text usage charges only. Automatic included MKredit uses the plan price, cost envelope and reserve.</small></div>'+
+      '<div class="field"><label>Media/voice rate multiplier %</label><input class="input" id="pMediaMultiplier" type="number" min="1" max="1000" step="0.01" value="'+(Number(p.media_rate_multiplier_bps||p.rate_multiplier_bps||10000)/100).toFixed(2)+'"><small class="muted">Changes image and voice charges only. Missing provider prices use a 20 MKredit base.</small></div>'+
       '</div></details>'+
       '<div class="row" style="margin-top:10px"><button class="btn" id="calcCredits">Recalculate included credits</button></div>'+
       '<h3>Features</h3><div class="two"><label><input id="fTelegram" type="checkbox" '+(f.telegram_enabled?'checked':'')+'> Telegram</label><label><input id="fVision" type="checkbox" '+(f.vision_enabled?'checked':'')+'> Vision</label><label><input id="fVoice" type="checkbox" '+(f.voice_enabled?'checked':'')+'> Voice</label><label><input id="fKnowledge" type="checkbox" '+(f.knowledge_enabled?'checked':'')+'> Knowledge</label><label><input id="fReminders" type="checkbox" '+(f.reminders_enabled?'checked':'')+'> Reminders</label><label><input id="fHandoff" type="checkbox" '+(f.human_handoff_enabled?'checked':'')+'> Human handoff</label><label><input id="fTools" type="checkbox" '+(f.tools_enabled?'checked':'')+'> Tools</label></div>'+
@@ -819,7 +819,7 @@ async function manageCustomer(id){
     }catch(e){alert(e.message)}};
     calcCredits.onclick=async()=>{try{
       const x=await api('/api/ops/pricing/calculate',{method:'POST',body:JSON.stringify({
-        monthlyPriceUsd:pPrice.value,managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value,customerRateMultiplierPercent:pMultiplier.value
+        monthlyPriceUsd:pPrice.value,managedCostSharePercent:pEnvelope.value,operationsReservePercent:pReserve.value
       })});
       pCredits.value=x.includedCredits;
       alert('Managed provider-cost ceiling: $'+(x.providerEnvelopeUsdMicros/1000000).toFixed(2)+'\\nUsable provider capacity after reserve: $'+(x.usableProviderUsdMicros/1000000).toFixed(2)+'\\nIncluded MKredit: '+x.includedCredits);
