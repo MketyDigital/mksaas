@@ -47,6 +47,7 @@ permissions:
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
   APP_HOST_WORKER_NAME: mkety-app-host
+  # app.mkety.com admin server actions run on APP_HOST_WORKER_NAME.
   MAIL_INGRESS_WORKER: mkety-mail-ingress
   MAIL_DISPATCH_WORKER: mkety-mail-dispatch
   MAIL_BUCKET: mkety-mail-storage
