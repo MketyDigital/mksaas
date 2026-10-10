@@ -350,7 +350,7 @@ jobs:
           config.vars={...(config.vars||{}),NEXT_PUBLIC_APP_URL:'https://app.mkety.com'};
           delete config.route;
           delete config.routes;
-          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\\n');
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
           NODE
           pnpm build
           pnpm run deploy --dry-run
