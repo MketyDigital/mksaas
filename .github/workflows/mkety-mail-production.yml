@@ -416,7 +416,7 @@ jobs:
 
           put() {
             worker="$1"; name="$2"; value="$3"
-            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$worker" >/dev/null
+            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name "$worker" --env="" >/dev/null
           }
 
           put "$MAIL_INGRESS_WORKER" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"
@@ -444,6 +444,27 @@ jobs:
           # External IMAP/SMTP remains fail-closed until the dedicated TCP gateway
           # passes TLS, app-password, mailbox and send acceptance.
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED 'false'
+
+          pnpm exec wrangler secret list --name "$PRODUCTION_WORKER_NAME" --env="" --format json >/tmp/mkety-mail-runtime-secrets.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/mkety-mail-runtime-secrets.json','utf8');
+          const start=raw.indexOf('[');
+          const rows=start>=0?JSON.parse(raw.slice(start)):[];
+          const names=new Set(rows.map((row)=>row.name));
+          const required=[
+            'MKETY_FIRST_PARTY_MAIL_TENANT_ID',
+            'MKETY_MAIL_INTERNAL_SECRET',
+            'MKETY_MAIL_QUEUE_ID',
+            'MKETY_MAIL_EVENT_QUEUE_ID',
+            'MKETY_MAIL_MIGRATION_QUEUE_ID',
+            'MKETY_MAIL_HOST',
+            'MKETY_MAIL_CONTENT_URL',
+            'MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED',
+          ];
+          const missing=required.filter((name)=>!names.has(name));
+          if(missing.length) throw new Error('Missing top-level Mail runtime secrets: '+missing.join(', '));
+          NODE
 
       - name: Attach Mkety Mail application domains
         shell: bash
@@ -533,20 +554,20 @@ jobs:
           SEND_QUEUE_ID: ${{ steps.infra.outputs.send_queue_id }}
           MIGRATION_QUEUE_ID: ${{ steps.infra.outputs.migration_queue_id }}
         run: |
-          {
-            echo '## Mkety Mail production'
-            echo "- SHA: `$VERIFIED_SHA`"
-            echo "- R2: `$MAIL_BUCKET`"
-            echo "- send queue: `$MAIL_SEND_QUEUE`"
-            echo "- DLQ: `$MAIL_DEAD_QUEUE`"
-            echo "- migration queue: `$MAIL_MIGRATION_QUEUE`"
-            echo "- ingress worker: `$MAIL_INGRESS_WORKER`"
-            echo "- dispatch worker: `$MAIL_DISPATCH_WORKER`"
-            echo "- event worker: `$MAIL_EVENT_WORKER`"
-            echo "- content worker: `$MAIL_CONTENT_WORKER`"
-            echo "- event queue: `$MAIL_EVENT_QUEUE`"
-            echo '- Mail app/API/content smoke: PASS'
-            echo '- External IMAP/SMTP clients: DISABLED pending dedicated TCP-gateway acceptance'
-            echo '- Public mkety.com/mail availability is tracked separately by the public-site release boundary.'
-            echo '- Internal Mail secret generated during deployment and never printed.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Mkety Mail production
+          - SHA: `$VERIFIED_SHA`
+          - R2: `$MAIL_BUCKET`
+          - send queue: `$MAIL_SEND_QUEUE`
+          - DLQ: `$MAIL_DEAD_QUEUE`
+          - migration queue: `$MAIL_MIGRATION_QUEUE`
+          - ingress worker: `$MAIL_INGRESS_WORKER`
+          - dispatch worker: `$MAIL_DISPATCH_WORKER`
+          - event worker: `$MAIL_EVENT_WORKER`
+          - content worker: `$MAIL_CONTENT_WORKER`
+          - event queue: `$MAIL_EVENT_QUEUE`
+          - Mail app/API/content smoke: PASS
+          - External IMAP/SMTP clients: DISABLED pending dedicated TCP-gateway acceptance
+          - Public mkety.com/mail availability is tracked separately by the public-site release boundary.
+          - Internal Mail secret generated during deployment and never printed.
+          EOF
