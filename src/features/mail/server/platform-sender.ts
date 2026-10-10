@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db/cloudflare';
-import { mailDomains, mailMailboxes, mailMessages, mailSuppressions, mailWorkspaces } from '@/shared/db/schema';
+import { mailDomains, mailMailboxes, mailMessages, mailSuppressions, mailWorkspaces, tenants } from '@/shared/db/schema';
 
 import { pushMailQueueBatch } from './cloudflare';
 import { isFirstPartyMailSendingDomainReady, type PlatformMailInput, sendPlatformMailWithDependencies } from './platform-sender-core';
@@ -21,12 +21,13 @@ export async function sendPlatformMail(input: PlatformMailInput) {
     resolve: async () => {
       const tenantId = getFirstPartyMailTenantId().trim();
       if (!tenantId) return null;
-      const [workspace, entitled, domain] = await Promise.all([
+      const [tenant, workspace, entitled, domain] = await Promise.all([
+        db.query.tenants.findFirst({ where: eq(tenants.id, tenantId), columns: { slug: true } }),
         db.query.mailWorkspaces.findFirst({ where: and(eq(mailWorkspaces.tenantId, tenantId), eq(mailWorkspaces.status, 'active')) }),
         hasEntitlement({ tenantId, entitlement: 'workspace.mail' }),
-        db.query.mailDomains.findFirst({ where: and(eq(mailDomains.tenantId, tenantId), eq(mailDomains.domain, 'mail.mkety.com')) }),
+        db.query.mailDomains.findFirst({ where: and(eq(mailDomains.tenantId, tenantId), eq(mailDomains.domain, 'mkety.com')) }),
       ]);
-      if (!workspace || !domain) return null;
+      if (!tenant || tenant.slug !== 'mkety-ops' || !workspace || !domain) return null;
       const mailbox = await db.query.mailMailboxes.findFirst({
         where: and(
           eq(mailMailboxes.tenantId, tenantId),

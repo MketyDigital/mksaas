@@ -37,13 +37,13 @@ jobs:
       ZITADEL_PROJECT_ID: ${{ secrets.ZITADEL_PROJECT_ID }}
       EMAIL_PROVIDER: ${{ inputs.email_provider || 'brevo' }}
       SMTP_HOST: ${{ inputs.email_provider == 'mkety' && 'smtp.mkety.com:465' || secrets.BREVO_SMTP_HOST || secrets.BREVO_SMTP_SERVER || secrets.SMTP_HOST || secrets.SMTP_SERVER || 'smtp-relay.brevo.com:587' }}
-      SMTP_USER: ${{ inputs.email_provider == 'mkety' && 'info@mail.mkety.com' || secrets.BREVO_SMTP_LOGIN || secrets.BREVO_SMTP_USER || secrets.BREVO_SMTP_USERNAME || secrets.SMTP_USER || secrets.SMTP_USERNAME }}
+      SMTP_USER: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_SMTP_LOGIN || secrets.BREVO_SMTP_USER || secrets.BREVO_SMTP_USERNAME || secrets.SMTP_USER || secrets.SMTP_USERNAME }}
       MKETY_SMTP_PASSWORD: ${{ secrets.MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD }}
       BREVO_SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY || secrets.BREVO_SMTP_PASSWORD || secrets.SMTP_PASSWORD || secrets.SMTP_KEY }}
-      SMTP_SENDER_EMAIL: ${{ inputs.email_provider == 'mkety' && 'info@mail.mkety.com' || secrets.BREVO_SENDER_EMAIL || secrets.BREVO_FROM_EMAIL || secrets.SMTP_SENDER_EMAIL || secrets.SMTP_FROM_EMAIL || secrets.EMAIL_FROM }}
+      SMTP_SENDER_EMAIL: ${{ inputs.email_provider == 'mkety' && 'info@mkety.com' || secrets.BREVO_SENDER_EMAIL || secrets.BREVO_FROM_EMAIL || secrets.SMTP_SENDER_EMAIL || secrets.SMTP_FROM_EMAIL || secrets.EMAIL_FROM }}
       SMTP_DESCRIPTION: ${{ inputs.email_provider == 'mkety' && 'Mkety First-Party Mail SMTP' || 'Mkety Brevo SMTP' }}
       SMTP_SENDER_NAME: ${{ inputs.email_provider == 'mkety' && 'Mkety' || secrets.BREVO_SENDER_NAME || secrets.SMTP_SENDER_NAME || secrets.EMAIL_FROM_NAME || 'Mkety' }}
-      SMTP_REPLY_TO: ${{ inputs.email_provider == 'mkety' && 'hello@mkety.com' || secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}
+      SMTP_REPLY_TO: ${{ inputs.email_provider == 'mkety' && 'support@mkety.com' || secrets.BREVO_REPLY_TO_EMAIL || secrets.SMTP_REPLY_TO || secrets.SUPPORT_EMAIL }}
       PLATFORM_ADMIN_EMAILS: ${{ secrets.MKETY_PLATFORM_ADMIN_EMAILS }}
 
     steps:

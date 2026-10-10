@@ -55,6 +55,9 @@ env:
   MAIL_CONTENT_WORKER: mkety-mail-content
   MAIL_EVENT_QUEUE: mkety-mail-events
   MAIL_EVENT_DEAD_QUEUE: mkety-mail-events-dead
+  MAIL_MIGRATION_WORKER: mkety-mail-migration
+  MAIL_MIGRATION_QUEUE: mkety-mail-migrations
+  MAIL_MIGRATION_DEAD_QUEUE: mkety-mail-migrations-dead
   MKETY_HYPERDRIVE_NAME: mkety-production-db-v2
 
 jobs:
@@ -374,10 +377,14 @@ jobs:
           dead_id="$(ensure_queue "$MAIL_DEAD_QUEUE")"
           event_id="$(ensure_queue "$MAIL_EVENT_QUEUE")"
           event_dead_id="$(ensure_queue "$MAIL_EVENT_DEAD_QUEUE")"
+          migration_id="$(ensure_queue "$MAIL_MIGRATION_QUEUE")"
+          migration_dead_id="$(ensure_queue "$MAIL_MIGRATION_DEAD_QUEUE")"
           echo "send_queue_id=$send_id" >> "$GITHUB_OUTPUT"
           echo "dead_queue_id=$dead_id" >> "$GITHUB_OUTPUT"
           echo "event_queue_id=$event_id" >> "$GITHUB_OUTPUT"
           echo "event_dead_queue_id=$event_dead_id" >> "$GITHUB_OUTPUT"
+          echo "migration_queue_id=$migration_id" >> "$GITHUB_OUTPUT"
+          echo "migration_dead_queue_id=$migration_dead_id" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Mail workers
         shell: bash
@@ -387,12 +394,14 @@ jobs:
           pnpm exec wrangler deploy -c workers/mail-dispatch/wrangler.jsonc
           pnpm exec wrangler deploy -c workers/mail-events/wrangler.jsonc
           pnpm exec wrangler deploy -c workers/mail-content/wrangler.jsonc
+          pnpm exec wrangler deploy -c workers/mail-migration/wrangler.jsonc
 
       - name: Attach Mail runtime secrets
         shell: bash
         env:
           SEND_QUEUE_ID: ${{ steps.infra.outputs.send_queue_id }}
           EVENT_QUEUE_ID: ${{ steps.infra.outputs.event_queue_id }}
+          MIGRATION_QUEUE_ID: ${{ steps.infra.outputs.migration_queue_id }}
           MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ needs.production-db.outputs.first_party_mail_tenant_id }}
         run: |
           set -euo pipefail
@@ -422,9 +431,13 @@ jobs:
 
           put "$MAIL_CONTENT_WORKER" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"
 
+          put "$MAIL_MIGRATION_WORKER" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"
+          put "$MAIL_MIGRATION_WORKER" MKETY_MAIL_INTERNAL_API_URL 'https://api.mkety.com'
+
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_QUEUE_ID "$SEND_QUEUE_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_EVENT_QUEUE_ID "$EVENT_QUEUE_ID"
+          put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_MIGRATION_QUEUE_ID "$MIGRATION_QUEUE_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_HOST 'mail.mkety.com'
           put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_CONTENT_URL 'https://mail-content.mkety.com'
@@ -518,6 +531,7 @@ jobs:
         shell: bash
         env:
           SEND_QUEUE_ID: ${{ steps.infra.outputs.send_queue_id }}
+          MIGRATION_QUEUE_ID: ${{ steps.infra.outputs.migration_queue_id }}
         run: |
           {
             echo '## Mkety Mail production'
@@ -525,6 +539,7 @@ jobs:
             echo "- R2: `$MAIL_BUCKET`"
             echo "- send queue: `$MAIL_SEND_QUEUE`"
             echo "- DLQ: `$MAIL_DEAD_QUEUE`"
+            echo "- migration queue: `$MAIL_MIGRATION_QUEUE`"
             echo "- ingress worker: `$MAIL_INGRESS_WORKER`"
             echo "- dispatch worker: `$MAIL_DISPATCH_WORKER`"
             echo "- event worker: `$MAIL_EVENT_WORKER`"

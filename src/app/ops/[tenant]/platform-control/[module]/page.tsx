@@ -12,6 +12,7 @@ import { DeploymentApprovalQueue } from '@/features/deploy/components/Deployment
 import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-queries';
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
+import { FirstPartyMailCutoverPanel } from '@/features/mail/components/FirstPartyMailCutoverPanel';
 import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
 import { MailEnterpriseOffersPanel } from '@/features/mail/components/MailEnterpriseOffersPanel';
 import { bootstrapFirstPartyMailWorkspace, createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
@@ -596,9 +597,16 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>
               <CardTitle>Platform Mail identity</CardTitle>
-              <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services.</CardDescription>
+              <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services. Zoho remains the root MX provider; Cloudflare sending is authenticated separately.</CardDescription>
             </CardHeader>
             <CardContent><FirstPartySmtpCredentialForm tenant={tenant} /></CardContent>
+          </Card>
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>First-party mail migration and cutover</CardTitle>
+              <CardDescription>Move the single Zoho hello mailbox into Mkety Mail, then cut over the full @mkety.com domain after acceptance checks pass.</CardDescription>
+            </CardHeader>
+            <CardContent><FirstPartyMailCutoverPanel tenant={tenant} /></CardContent>
           </Card>
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>

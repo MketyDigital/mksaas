@@ -36,6 +36,7 @@ type Resolution={
   accepted?:boolean;
   tenantId?:string;
   mailboxId?:string;
+  mailboxAddress?:string;
   forwardingAddress?:string|null;
 };
 
@@ -106,7 +107,7 @@ export default {
       tenantId:resolved.tenantId,
       mailboxId:resolved.mailboxId,
       from:message.from,
-      to:message.to,
+      to:resolved.mailboxAddress||message.to,
       subject:message.headers.get('subject')||'',
       internetMessageId:message.headers.get('message-id')||'',
       rawR2Key:rawKey,

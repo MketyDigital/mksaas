@@ -18,6 +18,7 @@ Authoritative records live in Mkety's existing PostgreSQL database:
 - Mail workspace
 - domains
 - mailboxes
+- Mailbox ingress aliases that map exact Cloudflare subdomain recipients to canonical tenant mailboxes
 - mailbox members
 - threads
 - message metadata
@@ -80,6 +81,18 @@ Cloudflare Email Routing is the inbound transport.
 Cloudflare Email Sending is the transactional/operational outbound transport.
 
 Customers never receive Mkety's Cloudflare credentials.
+
+#### Mkety first-party full-domain mail
+
+- The approved target is to host every selected `@mkety.com` mailbox in the reserved Mkety Mail workspace, including independent `hello@`, `cloudflare@`, `billing@`, `info@`, and `support@` mailboxes.
+- Zoho currently contains one mailbox, `hello@mkety.com`; its forwarded aliases are already in that mailbox history. Import that source once into Mkety `hello@`. Do not make duplicate imports for aliases.
+- At the guarded cutover, Cloudflare Email Routing sends root-domain inbound messages to one `mkety-mail-ingress` catch-all Worker rule. The Worker resolves each recipient to its own active Mail mailbox and rejects unknown root recipients.
+- Root MX stays on Zoho until mailbox inventory, initial import, per-address inbound/outbound acceptance, sending authentication, and rollback evidence pass. The Ops cutover action snapshots root MX/TXT, sets and verifies the Worker catch-all, then enables Email Routing and verifies the public MX before marking routing active.
+- The Ops panel prepares temporary exact test routes on `mail.mkety.com`; these route test messages directly to canonical root mailboxes without Zoho forwarding. The final `hello@` delta and live inbound checks are required before the cutover is marked complete.
+- Transactional platform mail continues to use the verified first-party sending domain. The migration does not change ZITADEL or its SMTP provider automatically.
+- The guarded rollback action disables Cloudflare Email Routing, restores the saved root MX/TXT records, and verifies public MX before clearing the Mkety root-routing state.
+
+Implementation plan: `docs/superpowers/plans/2026-10-09-mkety-full-domain-mail.md`. Do not use the superseded Zoho-forwarding split as the target architecture.
 
 ## Runtime components
 
@@ -261,6 +274,7 @@ The production workflow fails before application deployment if R2/Queues/Event S
 - [ ] mail.mkety.com attached and smoke tested
 - [ ] autoconfig/autodiscover hosts attached and smoke tested
 - [ ] inbound domain routing smoke test
+- [ ] Zoho-to-Cloudflare exact alias routing test with `hello@` excluded
 - [ ] outbound transactional smoke test
 - [ ] Customer Update queue smoke test
 - [ ] suppression smoke test

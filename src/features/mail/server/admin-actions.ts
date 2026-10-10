@@ -2,22 +2,14 @@
 
 import { and, desc, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
+import { revalidatePath } from 'next/cache';
 import { seedSelfServiceBillingCatalog } from '@/features/billing/server/catalog-seed';
-import { enterpriseCheckoutService } from '@/features/enterprise-checkout/server/service';
 import { formatUsdMinorUnits, parseUsdAmountToMinorUnits } from '@/features/enterprise-checkout/domain';
+import { enterpriseCheckoutService } from '@/features/enterprise-checkout/server/service';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { createFirstPartySmtpCredentialRecord } from '@/features/mail/server/first-party-smtp-credential';
 import { sendPlatformMail } from '@/features/mail/server/platform-sender';
-import {
-  findCloudflareZone,
-  getCloudflareEmailSending,
-  getCloudflareEmailSendingDns,
-  getPublicCloudflareSendingDns,
-} from './cloudflare';
-import { areCloudflareEmailAuthRecordsPublished, isFirstPartyMailDomain } from './domain-provisioning-policy';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
-import { withServerActionDatabase } from '@/shared/db/server-action';
-import { revalidatePath } from 'next/cache';
 import { db } from '@/shared/db';
 import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import {
@@ -34,13 +26,21 @@ import {
   tenants,
   users,
 } from '@/shared/db/schema';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
+import {
+  findCloudflareZone,
+  getCloudflareEmailSending,
+  getCloudflareEmailSendingDns,
+  getPublicCloudflareSendingDns,
+} from './cloudflare';
 
 import { MAIL_INTERNAL_CUSTOM_PROFILE_KEY, resolveTenantMailPlanKey } from './commercial';
+import { areCloudflareEmailAuthRecordsPublished, isFirstPartyMailDomain } from './domain-provisioning-policy';
 import { getFirstPartyMailTenantId } from './runtime-config';
-import { isMailPlanKey } from '../commercial/plans';
 import { parseMailEnterpriseOfferInput } from '../commercial/enterprise-offers';
+import { isMailPlanKey } from '../commercial/plans';
 
 async function requireMailOps(opsTenantSlug: string) {
   const actor = await requirePlatformControlAccess(opsTenantSlug);
@@ -194,7 +194,7 @@ export async function createFirstPartySmtpCredential(
   if (!configuredTenantId) return { error: 'First-party Mail tenant is not configured.' };
 
   const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, configuredTenantId) });
-  if (!tenant) return { error: 'Configured first-party Mail tenant was not found.' };
+  if (!tenant || tenant.slug !== 'mkety-ops') return { error: 'Configured first-party Mail tenant was not found.' };
   const workspace = await db.query.mailWorkspaces.findFirst({ where: eq(mailWorkspaces.tenantId, configuredTenantId) });
   if (!workspace || workspace.status !== 'active') {
     return { error: 'The first-party Mail workspace is not active and entitled.' };
@@ -208,7 +208,7 @@ export async function createFirstPartySmtpCredential(
       eq(mailMailboxes.tenantId, configuredTenantId),
       eq(mailMailboxes.workspaceId, workspace.id),
       eq(mailMailboxes.localPart, 'info'),
-      eq(mailDomains.domain, 'mail.mkety.com'),
+      eq(mailDomains.domain, 'mkety.com'),
     ))
     .limit(1);
   const { mailbox, domain } = mailboxRows[0] ?? { mailbox: null, domain: null };
@@ -219,7 +219,7 @@ export async function createFirstPartySmtpCredential(
     domain.dkimStatus !== 'verified' ||
     domain.dmarcStatus !== 'verified'
   ) {
-    return { error: 'The info@mail.mkety.com sending domain is not fully verified and enabled.' };
+    return { error: 'The info@mkety.com sending domain is not fully verified and enabled.' };
   }
 
   const secret = `mkmail-${hex(randomBytes(12))}`;
@@ -229,7 +229,7 @@ export async function createFirstPartySmtpCredential(
     requestedTenantId: configuredTenantId,
     actorUserId: actor.userId,
     workspace: workspace ? { tenantId: workspace.tenantId, status: workspace.status, hasMailEntitlement: entitled } : null,
-    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mail.mkety.com', status: mailbox.status } : null,
+    mailbox: mailbox ? { id: mailbox.id, tenantId: mailbox.tenantId, address: 'info@mkety.com', status: mailbox.status } : null,
     secret,
     passwordHash,
   }, {
@@ -255,6 +255,15 @@ export async function createFirstPartySmtpCredential(
     await db.update(mailAppPasswords).set({ revokedAt: new Date() }).where(eq(mailAppPasswords.id, credential.id));
     return { error: 'Could not create the first-party SMTP credential. Check workspace readiness and try again.' };
   }
+}
+
+export async function configureFirstPartyMailIngressAliases(
+  opsTenantSlug: string,
+  _state: { configuredAddresses?: string[]; error?: string },
+  _formData: FormData,
+): Promise<{ configuredAddresses?: string[]; error?: string }> {
+  await requireMailOps(opsTenantSlug);
+  return { error: 'The forwarding-alias plan is retired. Use the full-domain Mail cutover checklist.' };
 }
 
 export interface MailEnterpriseOfferPaymentLink {
@@ -646,13 +655,14 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
   const sendingEnabled = bool(formData.get('sendingEnabled'));
   const routingEnabled = bool(formData.get('routingEnabled'));
   const [domain] = await db
-    .select({ domain: mailDomains.domain, tenantId: mailDomains.tenantId })
+    .select({ domain: mailDomains.domain, tenantId: mailDomains.tenantId, tenantSlug: tenants.slug })
     .from(mailDomains)
+    .innerJoin(tenants, eq(tenants.id, mailDomains.tenantId))
     .where(and(eq(mailDomains.id, domainId), eq(mailDomains.tenantId, targetTenantId)))
     .limit(1);
   if (!domain) throw new Error('Mail domain not found.');
 
-  const firstPartyDomain = isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId());
+  const firstPartyDomain = domain.tenantSlug === 'mkety-ops' && isFirstPartyMailDomain(domain.domain, domain.tenantId, getFirstPartyMailTenantId());
   if (firstPartyDomain && status === 'verified') {
     throw new Error('First-party outbound Mail must use sending_ready after live DNS verification.');
   }
@@ -665,7 +675,7 @@ async function updateMailDomainOperationsImpl(opsTenantSlug: string, formData: F
     const expectedRecords = zone && typeof sending?.tag === 'string'
       ? await getCloudflareEmailSendingDns(zone.id, sending.tag)
       : [];
-    const publicRecords = await getPublicCloudflareSendingDns(expectedRecords);
+    const publicRecords = await getPublicCloudflareSendingDns(expectedRecords, domain.domain);
     if (!areCloudflareEmailAuthRecordsPublished(domain.domain, Boolean(sending?.enabled), expectedRecords, publicRecords)) {
       throw new Error('Public SPF, DKIM, and DMARC records do not match Cloudflare Email Sending.');
     }

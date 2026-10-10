@@ -10,3 +10,4 @@
 db314b4034ea9084d5f0bc4161eb9e2fe1647998:src/features/ai-runtime/server/byok-secrets.test.ts:generic-api-key:5
 a862630b9fd1469259d0f8798c9d15b84a7e1220:.github/workflows/mkety-public-production-cutover.yml:generic-api-key:975
 da40832c4983b75851d02c65ad2b1b6d16102ee4:.github/workflows/mkety-public-production-cutover.yml:generic-api-key:965
+50b85a5ca409c5ee089d8ae4cabf14f22e540e2b:src/features/mail/server/migration-credentials.test.ts:generic-api-key:7

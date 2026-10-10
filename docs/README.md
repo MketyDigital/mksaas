@@ -32,6 +32,14 @@ When an older document conflicts with `AGENTS.md` or fresher verified handoff ev
 
 ## Current implementation plans and specs
 
+The active Mkety Mail address migration uses:
+
+- `docs/superpowers/specs/2026-10-09-mkety-full-domain-mail-cutover-design.md`
+- `docs/superpowers/plans/2026-10-09-mkety-full-domain-mail.md`
+- `docs/MKETY_MAIL_PRODUCTION_ARCHITECTURE.md`
+
+The prior Zoho-forwarding split is historical and superseded for inbound `@mkety.com` hosting.
+
 The production public-site baseline is rooted in:
 
 - `docs/superpowers/plans/2026-09-08-mkety-public-site-production.md`
