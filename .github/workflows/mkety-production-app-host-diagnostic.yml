@@ -91,7 +91,7 @@ jobs:
           const http=JSON.parse(fs.readFileSync('/tmp/app-host-http.json','utf8'));
           const rootOk=/^30[1278]$/.test(http.rootCode)&&(()=>{try{const u=new URL(http.rootLocation,'https://app.mkety.com/');return u.origin==='https://app.mkety.com'&&u.pathname==='/app'}catch{return false}})();
           const entryOk=/^30[1278]$/.test(http.appEntryCode)&&(()=>{try{const u=new URL(http.appEntryLocation,'https://app.mkety.com/app');return u.origin==='https://app.mkety.com'&&u.pathname==='/login'}catch{return false}})();
-          const mailOpsOk=/^[23]\\d\\d$/.test(http.mailOperationsCode);
+          const mailOpsCode=Number(http.mailOperationsCode); const mailOpsOk=mailOpsCode>=200&&mailOpsCode<400;
           const rows=['## app.mkety.com production diagnostic','',
             '- Worker Custom Domain present: '+cf.customDomainPresent,
             '- Attached to mkety-platform: '+cf.attachedToProductionWorker,
