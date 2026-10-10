@@ -61,7 +61,7 @@
 - [x] **Step 2: Run the focused schema tests** and confirm they fail for the missing tables/invariants.
 - [x] **Step 3: Add Drizzle schema and an additive SQL migration plus matching journal/snapshot entries.** Use cascade behavior only for tenant-owned migration data; retain imported mail under the existing mailbox lifecycle. If `drizzle-kit generate` proposes unrelated baseline/schema drift, exclude those unrelated changes from this Mail migration.
 - [x] **Step 4: Run schema tests and migration baseline checks.** Verify migration SQL does not alter existing mailbox/message rows or provider configuration.
-- [ ] **Step 5: Commit** `feat(mail): add mailbox migration state records`.
+- [x] **Step 5: Commit** mailbox migration state records as part of PR #368.
 
 ### Task 2: Build safe, idempotent message import primitives
 
@@ -82,7 +82,7 @@
 - [x] **Step 3: Implement the shared parser/import primitive** and source identity transaction; never change the source mailbox or mark messages read.
 - [x] **Step 4: Add EML and MBOX parsing tests**, including malformed archive entries and decompressed-size/file-count limits. Add ZIP support only for EML/MBOX entries; leave PST on the documented conversion fallback until a safe parser is separately accepted. Tests cover EML/MBOX, stored/deflated ZIP, path traversal, expanded-size, and entry-count limits.
 - [x] **Step 5: Run focused migration tests** and verify legacy EML import retains its current success path and size limits. The server-action integration test confirms the existing EML upload path still parses, stores, and completes, and unsupported uploads are rejected before a run is created.
-- [ ] **Step 6: Commit** `feat(mail): add safe idempotent migration imports`.
+- [x] **Step 6: Commit** safe idempotent migration imports as part of PR #368.
 
 ### Task 3: Add provider-neutral IMAP migration jobs
 
@@ -113,7 +113,7 @@
 - [x] **Step 5: Implement internal claim/message/progress routes** with the Mail internal secret, tenant/run checks, request size limits, and sanitized errors.
 - [x] **Step 6: Add Queue producer/consumer bindings and worker deployment** to the Mail production workflow; worker deployment must not enable apex routing or mutate root DNS.
 - [x] **Step 7: Run worker tests and existing Mail gateway/ingress tests**; verify no read/delete/store flags are sent to the source. The full suite passed all Mail tests; focused IMAP tests confirm EXAMINE and BODY.PEEK[] only.
-- [ ] **Step 8: Commit** `feat(mail): add provider neutral IMAP migration worker`.
+- [x] **Step 8: Commit** the provider-neutral IMAP migration worker as part of PR #368.
 
 ### Task 4: Add migration controls and progress UI
 
@@ -136,7 +136,7 @@
 - [x] **Step 3: Implement start/cancel actions** and read-only run queries; apply per-tenant storage and job concurrency limits.
 - [x] **Step 4: Implement migration UI** while retaining the existing export links and EML batch flow.
 - [x] **Step 5: Run migration UI/action tests**, `pnpm type-check`, and focused lint for changed files. TypeScript and focused lint pass; action tests cover tenant-scoped destination selection and credential encryption/queue payload.
-- [ ] **Step 6: Commit** `feat(mail): expose provider neutral mailbox migration`.
+- [x] **Step 6: Commit** provider-neutral mailbox migration as part of PR #368.
 
 ### Task 5: Route first-party root mail through one Worker catch-all
 
@@ -163,7 +163,7 @@
 - [x] **Step 3: Implement isolated first-party routing policy and guarded Ops action**; leave subdomain and customer-domain routing behavior unchanged.
 - [ ] **Step 4: Add resolver and mailbox tests** for `hello`, `cloudflare`, `billing`, `info`, `support`, future provisioned addresses, and rejection of unknown recipients.
 - [x] **Step 5: Run focused routing tests plus migration baseline.** Focused routing tests and the migration baseline pass. No live Cloudflare call or DNS mutation was made.
-- [ ] **Step 6: Commit** `feat(mail): gate first party apex mail routing`.
+- [x] **Step 6: Commit** first-party apex mail routing gates as part of PR #368.
 
 ### Task 6: Reconcile architecture docs, plan, and current workstream state
 
@@ -180,7 +180,7 @@
 - [x] **Step 2: Update current status** with exact branch/head, changed paths, test evidence, no production mutations, blockers, and the next guarded acceptance step.
 - [x] **Step 3: Run exact changed Mail suites, `pnpm type-check`, `pnpm lint`, `pnpm build`, `pnpm db:check:migrations`, Cloudflare worker tests, and `git diff --check`.** Direct local binaries were used where the pnpm wrapper attempted an unavailable install. TypeScript, lint (0 errors), build, migration baseline, Wrangler dry-run, and diff check pass. Full Jest has 2 environment-blocked unrelated subprocess suites; all Mail tests pass.
 - [x] **Step 4: Review full diff** for `customer-apps/assist`, standalone Assist history, secrets, DNS side effects, disabled feature-flag changes, and unrelated behavior; expected: no Assist files and no live settings changed. No Assist paths are changed, no secrets are added, and no live DNS/provider mutation was performed.
-- [ ] **Step 5: Commit** `docs(mail): record full domain migration cutover gates`.
+- [x] **Step 5: Commit** the full-domain migration plan and cutover gates as part of PR #368.
 
 ## Execution Notes
 
@@ -188,3 +188,4 @@
 - The first import is one Zoho mailbox: `hello@mkety.com` into the Mkety `hello@` inbox. Existing aliases are not source mailboxes; messages they forwarded are already in the same Zoho history.
 - Spaceship Spacemail and other IMAP providers use the same generic IMAP connector; no provider-specific source adapter is required. PST remains a conversion-to-EML/MBOX fallback until a safe native parser is separately verified.
 - The current customer external-client flag remains off.
+- Implementation changes are grouped in PR #368 commits rather than split into the originally suggested per-task commits. Test and live-acceptance checkboxes above remain open where their specific evidence is still missing; the final acceptance gates are not satisfied until the Zoho import and real mailbox round trips are recorded.
