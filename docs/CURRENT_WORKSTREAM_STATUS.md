@@ -1,3 +1,15 @@
+# 2026-10-10 Mkety Mail production follow-up
+
+The Mail production secret-targeting fix is merged as `66d7d4d67bde875b9547a688afcbade95ca14567` (PR #369). Guarded Mail Production run #75 completed successfully for that exact SHA, including production DB migration, app build/deploy, Mail Worker deploy, top-level secret attachment and name verification, custom-domain reconciliation, and smoke checks: https://github.com/MketyDigital/mksaas/actions/runs/38071466955
+
+The release fix explicitly targets Wrangler's top-level environment for secret writes and checks that required Mail secret names exist. This resolved the deployment warning path; it does not establish mailbox readiness. The live Mail Ops panel after deployment still showed state `inventory`, root routing inactive, root sending authentication not ready, and no active root mailboxes. The workspace-bootstrap button produced no visible success or error result, so bootstrap completion is unconfirmed. No test routes were prepared.
+
+No root MX or Zoho settings were changed, no test message was sent, and no Zoho import was started. The importer remains provider-neutral; the only current source mailbox to import is Zoho `hello@mkety.com`, once, into Mkety `hello@`. Current aliases are not separate imports. Assist and standalone Assist paths remain out of scope.
+
+**Next required work:** confirm the reserved internal Mail workspace bootstrap in Ops; create distinct active `hello@`, `cloudflare@`, `billing@`, `info@`, and `support@` mailboxes; verify root sending authentication; import and reconcile the single Zoho `hello@` mailbox (the user will perform the import); then test send/receive for every mailbox through the temporary `mail.mkety.com` routes and rehearse rollback. Keep root MX on Zoho until all cutover gates are evidenced.
+
+---
+
 # 2026-10-09 Mkety full-domain mail move — design review
 
 The user has selected a simpler target: host all `@mkety.com` mailboxes in Mkety Mail, including separate `hello@mkety.com`, `cloudflare@mkety.com`, and `billing@mkety.com` mailboxes, with `info@` and `support@` included. Zoho currently has only one mailbox, `hello@`; all other addresses are aliases forwarding into it, so its history is imported once into `hello@` and not duplicated. A provider-neutral history importer must support generic IMAP sources (including Zoho when available and Spaceship Spacemail) plus portable archives. The root MX cutover is gated on mailbox setup, reconciled imports, real inbound/outbound delivery checks, and rollback readiness.
