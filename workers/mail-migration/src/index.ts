@@ -1,7 +1,7 @@
 // Cloudflare Workers provides this runtime module at deploy time.
 // eslint-disable-next-line import/no-unresolved
 import { connect } from 'cloudflare:sockets';
-import { ImapSession, validateImapEndpoint } from './imap-session';
+import { assertPublicImapSocketPeer, ImapSession, validateImapEndpoint } from './imap-session';
 
 type MigrationCursor = Record<string, { uidValidity: string; lastUid: string }>;
 type QueueBody = { runId: string };
@@ -21,6 +21,13 @@ type Env = {
 };
 
 const MAX_MESSAGES_PER_INVOCATION = 100;
+
+async function openImapSession(host: string) {
+  const socket = connect({ hostname: host, port: 993 }, { secureTransport: 'on', allowHalfOpen: false });
+  await assertPublicImapSocketPeer(socket);
+  return new ImapSession(socket);
+}
+
 async function internalRequest(env: Env, path: string, init: RequestInit) {
   const base = env.MKETY_MAIL_INTERNAL_API_URL.replace(/\/$/, '');
   return fetch(`${base}${path}`, {
@@ -90,8 +97,7 @@ async function importMessage(
 async function processRun(env: Env, runId: string) {
   const run = await claimRun(env, runId);
   if (!run) return;
-  const socket = connect({ hostname: run.host, port: 993 }, { secureTransport: 'on', allowHalfOpen: false });
-  const session = new ImapSession(socket);
+  const session = await openImapSession(run.host);
   let finished = false;
   let imported = 0;
   const cursor: MigrationCursor = { ...run.sourceCursor };

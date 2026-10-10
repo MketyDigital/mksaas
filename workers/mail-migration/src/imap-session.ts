@@ -1,8 +1,84 @@
+import { isIP } from 'node:net';
+
 export type ImapSocket = {
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
   close(): Promise<void> | void;
 };
+
+function parseIpv4(address: string) {
+  const parts = address.split('.').map(Number);
+  return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
+    ? parts
+    : null;
+}
+
+function isPublicIpv4(address: string) {
+  const parts = parseIpv4(address);
+  if (!parts) return false;
+  const [first, second, third] = parts;
+  if (first === 0 || first === 10 || first === 127 || first >= 224) return false;
+  if (first === 100 && second >= 64 && second <= 127) return false;
+  if (first === 169 && second === 254) return false;
+  if (first === 172 && second >= 16 && second <= 31) return false;
+  if (first === 192 && second === 168) return false;
+  if (first === 192 && second === 0 && (third === 0 || third === 2)) return false;
+  if (first === 192 && second === 88 && third === 99) return false;
+  if (first === 198 && (second === 18 || second === 19 || (second === 51 && third === 100))) return false;
+  if (first === 203 && second === 0 && third === 113) return false;
+  return true;
+}
+
+function ipv6Words(address: string) {
+  let normalized = address.toLowerCase();
+  const dottedTail = normalized.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if (dottedTail) {
+    const ipv4 = parseIpv4(dottedTail[1]);
+    if (!ipv4) return null;
+    const [a, b, c, d] = ipv4;
+    normalized = normalized.replace(dottedTail[1], `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`);
+  }
+  const halves = normalized.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - left.length - right.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return null;
+  const words = [...left, ...Array(Math.max(0, missing)).fill('0'), ...right].map((word) => Number.parseInt(word, 16));
+  return words.length === 8 && words.every((word) => Number.isInteger(word) && word >= 0 && word <= 0xffff)
+    ? words
+    : null;
+}
+
+/** Checks the connected peer address after the runtime resolves and opens the TLS socket. */
+export function isPublicImapRemoteAddress(address: string | null | undefined) {
+  if (!address) return false;
+  const family = isIP(address);
+  if (family === 4) return isPublicIpv4(address);
+  if (family !== 6) return false;
+
+  const words = ipv6Words(address);
+  if (!words) return false;
+  if (words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff) {
+    return isPublicIpv4(`${words[6] >> 8}.${words[6] & 0xff}.${words[7] >> 8}.${words[7] & 0xff}`);
+  }
+  if (words[0] < 0x2000 || words[0] > 0x3fff) return false;
+  if (words[0] === 0x2001 && (words[1] <= 0x01ff || words[1] === 0x0db8)) return false;
+  if (words[0] === 0x2002) return false;
+  return true;
+}
+
+export async function assertPublicImapSocketPeer(
+  socket: ImapSocket & { opened: Promise<{ remoteAddress: string | null }> },
+) {
+  try {
+    const peer = await socket.opened;
+    if (!isPublicImapRemoteAddress(peer.remoteAddress)) throw new Error('imap_endpoint_disallowed');
+  } catch (error) {
+    await socket.close();
+    throw error;
+  }
+}
 
 export type ImapFetchedMessage = {
   folderPath: string;
@@ -54,9 +130,50 @@ function quote(value: string) {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
-function parseQuoted(value: string) {
-  if (!value.startsWith('"') || !value.endsWith('"')) return value;
-  return value.slice(1, -1).replace(/\\([\\"])/g, '$1');
+function readListValue(line: string, start: number) {
+  let index = start;
+  while (line[index] === ' ') index += 1;
+  if (line[index] === '"') {
+    index += 1;
+    let value = '';
+    while (index < line.length) {
+      if (line[index] === '"') return { value, next: index + 1 };
+      if (line[index] === '\\') {
+        index += 1;
+        if (index >= line.length) return null;
+      }
+      value += line[index];
+      index += 1;
+    }
+    return null;
+  }
+  const end = line.indexOf(' ', index);
+  return { value: line.slice(index, end < 0 ? line.length : end), next: end < 0 ? line.length : end };
+}
+
+function parseListEntry(chunk: ImapChunk) {
+  const prefix = '* LIST ';
+  if (chunk.line.slice(0, prefix.length).toUpperCase() !== prefix || chunk.line[prefix.length] !== '(') return null;
+  const flagsEnd = chunk.line.indexOf(')', prefix.length + 1);
+  if (flagsEnd < 0) return null;
+  const flags = chunk.line.slice(prefix.length + 1, flagsEnd).split(' ').filter(Boolean);
+  const delimiter = readListValue(chunk.line, flagsEnd + 1);
+  if (!delimiter) return null;
+  const mailbox = readListValue(chunk.line, delimiter.next);
+  if (!mailbox) return null;
+  if (flags.some((flag) => flag.toLowerCase() === '\\noselect')) return null;
+  if (delimiter.value.toUpperCase() === 'NIL' || mailbox.value.toUpperCase() === 'NIL') return null;
+  const specialUse = flags
+    .filter((flag) => flag.startsWith('\\') && [...flag.slice(1)].every((char) => /[a-z0-9-]/i.test(char)))
+    .map((flag) => flag.toLowerCase());
+  const literalMarker = mailbox.value;
+  const literalSize = literalMarker.startsWith('{') && literalMarker.endsWith('}')
+    ? Number(literalMarker.slice(1, -1).replace(/\+$/, ''))
+    : null;
+  const path = literalSize !== null && chunk.literal?.byteLength === literalSize
+    ? decoder.decode(chunk.literal)
+    : mailbox.value;
+  return { path, specialUse };
 }
 
 export class ImapSession {
@@ -93,12 +210,9 @@ export class ImapSession {
     this.assertOk(response, 'imap_list_failed');
     const folders: Array<{ path: string; specialUse: string[] }> = [];
     for (const chunk of response) {
-      const match = chunk.line.match(/^\* LIST \(([^)]*)\) ("(?:\\.|[^"])*"|NIL) ("(?:\\.|[^"])*"|[^ ]+)$/i);
-      if (!match || /\\noselect/i.test(match[1])) continue;
-      const path = match[3].toUpperCase() === 'NIL' ? '' : parseQuoted(match[3]);
-      if (!path) continue;
-      const specialUse = [...match[1].matchAll(/\\([a-z]+)/gi)].map((item) => `\\${item[1].toLowerCase()}`);
-      folders.push({ path: path.slice(0, 1024), specialUse });
+      const entry = parseListEntry(chunk);
+      if (!entry?.path) continue;
+      folders.push({ path: entry.path.slice(0, 1024), specialUse: entry.specialUse });
       if (folders.length > MAX_FOLDERS) throw new Error('imap_folder_limit');
     }
     return folders;

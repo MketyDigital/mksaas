@@ -39,6 +39,7 @@ import {
   evaluateMailCutoverCompletion,
   evaluateMailCutoverReadiness,
   type MailCutoverCheck,
+  normalizeCloudflareMxTarget,
 } from './mail-cutover-readiness';
 import { getFirstPartyMailTenantId } from './runtime-config';
 
@@ -346,24 +347,17 @@ export async function activateFirstPartyMailRootRouting(opsTenantSlug: string, f
     const routing = await getCloudflareEmailRouting(root.domain.cloudflareZoneId!);
     if (routing?.enabled !== true) throw new Error('mail_root_routing_unverified');
     const routingDns = await getCloudflareEmailRoutingDns(root.domain.cloudflareZoneId!);
-    const mxTarget = (value: string) =>
-      value
-        .trim()
-        .split(/\s+/)
-        .find((part) => part.toLowerCase().includes('mx.cloudflare.net'))
-        ?.toLowerCase()
-        .replace(/\.$/, '') || '';
     const expectedMx = routingDns
       .filter(
         (record) =>
           record.type?.toUpperCase() === 'MX' && record.name?.toLowerCase().replace(/\.$/, '') === 'mkety.com',
       )
-      .map((record) => mxTarget(String(record.content || '')))
+      .map((record) => normalizeCloudflareMxTarget(String(record.content || '')))
       .filter(Boolean)
       .sort();
     const publicMx = await getPublicCloudflareDnsRecords('mkety.com', 'MX');
     const actualMx = publicMx
-      .map((record) => mxTarget(record.content))
+      .map((record) => normalizeCloudflareMxTarget(record.content))
       .filter(Boolean)
       .sort();
     if (

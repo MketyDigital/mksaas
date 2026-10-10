@@ -2,6 +2,7 @@ import {
   evaluateMailCutoverCompletion,
   evaluateMailCutoverReadiness,
   type MailCutoverCheck,
+  normalizeCloudflareMxTarget,
   REQUIRED_ROOT_MAILBOXES,
 } from './mail-cutover-readiness';
 
@@ -40,6 +41,12 @@ const readyInput = {
 };
 
 describe('first-party Mail root cutover gates', () => {
+  test('accepts only an MX target under the exact Cloudflare mail domain', () => {
+    expect(normalizeCloudflareMxTarget('10 route1.mx.cloudflare.net.')).toBe('route1.mx.cloudflare.net');
+    expect(normalizeCloudflareMxTarget('attacker.example route1.mx.cloudflare.net.attacker.example')).toBe('');
+    expect(normalizeCloudflareMxTarget('https://route1.mx.cloudflare.net.attacker.example')).toBe('');
+  });
+
   test('requires the complete mailbox inventory, hello import, send/receive tests, auth and rollback evidence', () => {
     expect(evaluateMailCutoverReadiness(readyInput).ready).toBe(true);
     expect(

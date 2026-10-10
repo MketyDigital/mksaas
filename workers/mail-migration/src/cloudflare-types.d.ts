@@ -1,9 +1,10 @@
 declare module 'cloudflare:sockets' {
   export type SocketAddress = { hostname: string; port: number };
+  export type SocketInfo = { remoteAddress: string | null; localAddress: string | null };
   export type Socket = {
     readable: ReadableStream<Uint8Array>;
     writable: WritableStream<Uint8Array>;
-    opened: Promise<unknown>;
+    opened: Promise<SocketInfo>;
     closed: Promise<void>;
     close(): Promise<void>;
   };

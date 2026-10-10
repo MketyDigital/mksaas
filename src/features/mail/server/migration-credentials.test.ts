@@ -4,7 +4,7 @@ import { decryptImapCredential, encryptImapCredential, normalizeImapEndpoint } f
 describe('IMAP migration credentials', () => {
   const previous = process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY;
   beforeAll(() => {
-    process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY = 'test-encryption-key-with-at-least-32-characters';
+    process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('hex');
   });
   afterAll(() => {
     if (previous === undefined) delete process.env.MKETY_CONNECTION_SECRET_ENCRYPTION_KEY;

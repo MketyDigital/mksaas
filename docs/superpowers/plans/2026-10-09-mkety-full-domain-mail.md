@@ -109,7 +109,7 @@
 - [ ] **Step 1: Write failing tests** for credential encryption/decryption and deletion, host/port validation (993 only), TLS-only connection, private/loopback/link-local address rejection, IMAP UID resume, UIDVALIDITY reset, and retry-safe progress.
 - [ ] **Step 2: Run tests and confirm failures** for missing validation and worker protocol handling.
 - [x] **Step 3: Implement encrypted credential lifecycle** using the existing AES-GCM connection-secret pattern and the existing connection encryption secret; do not store source passwords in Queue messages or logs.
-- [x] **Step 4: Implement bounded IMAP client flow**: greeting, TLS, capability, login, LIST, SELECT read-only, UID search/fetch, folder mapping, UIDVALIDITY resume, logout. Permit only port 993 and reject unsafe destinations.
+- [x] **Step 4: Implement bounded IMAP client flow**: greeting, TLS, capability, login, LIST, SELECT read-only, UID search/fetch, folder mapping, UIDVALIDITY resume, logout. Permit only port 993, verify the connected TLS peer IP is publicly routable before sending credentials, and rely on Cloudflare's socket guard to reject Cloudflare-owned and private-network destinations.
 - [x] **Step 5: Implement internal claim/message/progress routes** with the Mail internal secret, tenant/run checks, request size limits, and sanitized errors.
 - [x] **Step 6: Add Queue producer/consumer bindings and worker deployment** to the Mail production workflow; worker deployment must not enable apex routing or mutate root DNS.
 - [x] **Step 7: Run worker tests and existing Mail gateway/ingress tests**; verify no read/delete/store flags are sent to the source. The full suite passed all Mail tests; focused IMAP tests confirm EXAMINE and BODY.PEEK[] only.

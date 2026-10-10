@@ -31,6 +31,20 @@ export const REQUIRED_ROOT_MAILBOXES = [
   'support@mkety.com',
 ];
 
+export function normalizeCloudflareMxTarget(value: string) {
+  const parts = value.trim().split(/\s+/);
+  const target = (parts.at(-1) || '').toLowerCase().replace(/\.$/, '');
+  const suffix = '.mx.cloudflare.net';
+  if (!target.endsWith(suffix)) return '';
+  const labels = target.slice(0, -suffix.length).split('.');
+  if (!labels.length || labels.some((label) => {
+    if (label.length < 1 || label.length > 63) return true;
+    if (!/[a-z0-9]/.test(label[0]) || !/[a-z0-9]/.test(label[label.length - 1])) return true;
+    return [...label].some((character) => !(/[a-z0-9-]/.test(character)));
+  })) return '';
+  return target;
+}
+
 function checkPassed(checks: MailCutoverCheck[], name: string) {
   const check = checks.find((item) => item.checkName === name);
   return Boolean(check?.passed && check.evidenceRef?.trim());
