@@ -51,7 +51,11 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(migrationRunner).toContain('scripts/report-first-party-mail-readiness.ts');
     expect(dbWorkflow).toContain('MKETY_FIRST_PARTY_MAIL_TENANT_ID=');
     expect(dbWorkflow).toContain('::add-mask::$CONTROL_TENANT_SLUG');
+    expect(mailWorkflow).toContain('APP_HOST_WORKER_NAME: mkety-app-host');
     expect(mailWorkflow).toContain('put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
+    expect(mailWorkflow).toContain('put "$APP_HOST_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
+    expect(mailWorkflow).toContain('wrangler secret list --name "$APP_HOST_WORKER_NAME" --env="" --format json');
+    expect(mailWorkflow).toContain('Missing top-level first-party Mail tenant binding on app-host Worker');
     expect(mailWorkflow).toContain('Validate tenant binding before deployment');
     expect(mailWorkflow.indexOf('Validate tenant binding before deployment')).toBeLessThan(
       mailWorkflow.indexOf('Verify Cloudflare credentials'),
