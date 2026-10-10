@@ -24,13 +24,13 @@
 - No changes to `customer-apps/assist`, Assist history, standalone branches, or unrelated customer projects.
 - No production DNS/provider changes are part of code implementation or CI.
 
-## Implementation status — 2026-10-09
+## Implementation status — 2026-10-10
 
-- Schema, import parsing/storage, the generic IMAP queue worker and internal APIs, provider-neutral migration UI, temporary subdomain test routes, first-party cutover checks, root catch-all activation, DNS snapshot restoration, recipient rejection, and docs updates are implemented in the worktree.
+- The schema, import parsing/storage, generic IMAP queue worker and internal APIs, provider-neutral migration UI, temporary subdomain test routes, first-party cutover checks, root catch-all activation, DNS snapshot restoration, recipient rejection, and documentation are implemented in PR #368 on `feat/mkety-full-domain-mail-migration`, based on `main` at `82008e3a28fea6593fc0548336bc769aa8719155`.
 - Zoho's single `hello@mkety.com` mailbox is the sole initial source. Its aliases remain headers/history in the same import; the source identity remains stable across the initial pass and final delta.
-- Local focused tests, type-check, migration-baseline validation, and Wrangler dry-run cover the new pieces. They do not establish live provider acceptance.
-- Still required before production activation: read-only current Cloudflare/Zoho inventory, a successful Zoho IMAP/archive import and reconciliation, live send/receive tests for every active root mailbox, source final delta, and rollback rehearsal/evidence. The guarded Ops activation and rollback actions have not been run. No live provider or DNS changes were made.
-- Work is limited to Mkety Mail and its documentation. Assist and standalone Assist history are not part of this branch's changes.
+- Code commit `e6205b7b85577293f2f0aad13f6ad9b11bcb6524` passed 153 Mail and internal API tests across 30 suites, TypeScript, ESLint, build, MegaLinter, migration baseline, Cloudflare/vinext and Platform Core smoke, Mail live-readiness diagnostics, PR validation, staging content DB migration/seed/smoke, and isolated Workers.dev candidate deployment. These checks do not establish real provider send/receive acceptance.
+- Before production activation: record the read-only Cloudflare/Zoho inventory, provision every active mailbox, import and reconcile the one Zoho `hello@` source, pass live send/receive tests for every active root mailbox, run the source final delta, and rehearse rollback with evidence. The guarded Ops activation and rollback actions have not been run. No production provider or DNS changes were made.
+- Work is limited to Mkety Mail and its documentation. The PR changes no `customer-apps/assist` paths; Assist and standalone Assist history are not part of this branch's changes.
 
 ## Review Focus
 
