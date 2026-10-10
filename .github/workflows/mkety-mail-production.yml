@@ -46,6 +46,7 @@ permissions:
 
 env:
   PRODUCTION_WORKER_NAME: mkety-platform
+  APP_HOST_WORKER_NAME: mkety-app-host
   MAIL_INGRESS_WORKER: mkety-mail-ingress
   MAIL_DISPATCH_WORKER: mkety-mail-dispatch
   MAIL_BUCKET: mkety-mail-storage
@@ -440,6 +441,8 @@ jobs:
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_MIGRATION_QUEUE_ID "$MIGRATION_QUEUE_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_HOST 'mail.mkety.com'
           put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
+          # The authenticated admin UI and its server actions run on this separate Worker.
+          put "$APP_HOST_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_CONTENT_URL 'https://mail-content.mkety.com'
           # External IMAP/SMTP remains fail-closed until the dedicated TCP gateway
           # passes TLS, app-password, mailbox and send acceptance.
@@ -464,6 +467,19 @@ jobs:
           ];
           const missing=required.filter((name)=>!names.has(name));
           if(missing.length) throw new Error('Missing top-level Mail runtime secrets: '+missing.join(', '));
+          NODE
+
+          pnpm exec wrangler secret list --name "$APP_HOST_WORKER_NAME" --env="" --format json >/tmp/mkety-app-host-mail-secrets.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=fs.readFileSync('/tmp/mkety-app-host-mail-secrets.json','utf8');
+          const start=raw.indexOf('[');
+          const rows=start>=0?JSON.parse(raw.slice(start)):[];
+          const names=new Set(rows.map((row)=>row.name));
+          if(!names.has('MKETY_FIRST_PARTY_MAIL_TENANT_ID')) {
+            throw new Error('Missing top-level first-party Mail tenant binding on app-host Worker');
+          }
+          console.log('First-party Mail tenant binding verified on authenticated app-host Worker.');
           NODE
 
       - name: Attach Mkety Mail application domains
