@@ -81,6 +81,67 @@ jobs:
           process.stdout.write(JSON.stringify(result,null,2));
           NODE
 
+      - name: Inspect sanitized app-host 5xx telemetry
+        id: telemetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          now_ms="$(date +%s%3N)"
+          from_ms="$((now_ms - 86400000))"
+          node - "$from_ms" "$now_ms" <<'NODE' >/tmp/app-host-telemetry-query.json
+          const [from,to]=process.argv.slice(2).map(Number);
+          process.stdout.write(JSON.stringify({
+            queryId:'mkety-app-host-mail-operations-500-diagnostic',
+            timeframe:{from,to},
+            dry:true,
+            limit:100,
+            view:'events',
+            parameters:{
+              datasets:['cloudflare-workers'],
+              filterCombination:'and',
+              filters:[
+                {key:'$metadata.service',operation:'eq',type:'string',value:'mkety-app-host'},
+                {key:'$metadata.url',operation:'includes',type:'string',value:'/ops/mkety-ops/platform-control/mail-operations'},
+                {key:'$metadata.statusCode',operation:'gte',type:'number',value:500}
+              ]
+            }
+          }));
+          NODE
+          http_code="$(curl -sS --connect-timeout 8 --max-time 30 -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/app-host-telemetry-query.json \
+            -o /tmp/app-host-telemetry-response.json \
+            -w '%{http_code}' \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/observability/telemetry/query" || true)"
+          if [ "$http_code" != '200' ]; then
+            echo "query_http=$http_code" >> "$GITHUB_OUTPUT"
+            echo "Sanitized telemetry query unavailable (HTTP $http_code); no response body was published."
+            exit 0
+          fi
+          RESPONSE=/tmp/app-host-telemetry-response.json node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8'));
+          const raw=p?.result?.events?.events;
+          const events=Array.isArray(raw)?raw:[];
+          const categories={database_schema:0,database_connectivity:0,auth_runtime:0,worker_resource:0,unclassified:0};
+          for(const event of events){
+            const m=event?.['$metadata']||{};
+            const err=String(m.error||event.error||'');
+            let category='unclassified';
+            if(/(?:column|relation|table).*(?:does not exist|undefined)|undefined column/i.test(err)) category='database_schema';
+            else if(/(?:connection|timeout|ECONN|database.{0,20}(?:unavailable|closed|refused))/i.test(err)) category='database_connectivity';
+            else if(/(?:auth|session|cookie|jwt|token)/i.test(err)) category='auth_runtime';
+            else if(/(?:memory|cpu|resource limit|exceeded resources)/i.test(err)) category='worker_resource';
+            categories[category]++;
+          }
+          const result={query_http:200,event_count:events.length,categories};
+          for(const [key,value] of Object.entries(result)) console.log(key+'='+JSON.stringify(value));
+          NODE
+          cat "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Raw telemetry response and error messages were not published.'
+          
       - name: Publish current production readiness evidence
         shell: bash
         run: |
