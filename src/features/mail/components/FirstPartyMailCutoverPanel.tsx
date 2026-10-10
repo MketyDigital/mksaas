@@ -11,7 +11,7 @@ import {
 import { REQUIRED_ROOT_MAILBOXES } from '@/features/mail/server/mail-cutover-readiness';
 import { getFirstPartyMailTenantId } from '@/features/mail/server/runtime-config';
 import { Button } from '@/shared/components/ui';
-import { db } from '@/shared/db';
+import { db } from '@/shared/db/cloudflare';
 import {
   mailDomainCutoverChecks,
   mailDomainCutovers,
