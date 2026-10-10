@@ -20,6 +20,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PRODUCTION_WORKER_NAME: mkety-platform
+      APP_WORKER_NAME: mkety-app-host
     steps:
       - name: Validate read-only diagnostic credentials
         shell: bash
@@ -40,15 +41,23 @@ jobs:
           zone_id="$(ZONES="$zones" node -e "const p=JSON.parse(process.env.ZONES||'{}');if(!p.success||!Array.isArray(p.result)||p.result.length!==1)process.exit(1);process.stdout.write(p.result[0].id)")"
           domains="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
           dns="$(curl -fsS "${auth[@]}" "$api/zones/$zone_id/dns_records?name=app.mkety.com")"
-          DOMAINS="$domains" DNS="$dns" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE' >/tmp/app-host-cloudflare.json
+          worker_settings="$(curl -fsS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$APP_WORKER_NAME/settings")"
+          DOMAINS="$domains" DNS="$dns" WORKER_SETTINGS="$worker_settings" WORKER="$PRODUCTION_WORKER_NAME" node <<'NODE' >/tmp/app-host-cloudflare.json
           const domains=JSON.parse(process.env.DOMAINS||'{}');
           const dns=JSON.parse(process.env.DNS||'{}');
-          if(!domains.success||!Array.isArray(domains.result)||!dns.success||!Array.isArray(dns.result)) throw new Error('Cloudflare diagnostic lookup failed.');
+          const settings=JSON.parse(process.env.WORKER_SETTINGS||'{}');
+          if(!domains.success||!Array.isArray(domains.result)||!dns.success||!Array.isArray(dns.result)||!settings.success||!Array.isArray(settings.result?.bindings)) throw new Error('Cloudflare diagnostic lookup failed.');
           const appDomain=domains.result.find((item)=>item.hostname==='app.mkety.com')||null;
+          const bindings=settings.result.bindings;
           const result={
             customDomainPresent:Boolean(appDomain),
             customDomainService:appDomain?.service||null,
             attachedToProductionWorker:appDomain?.service===process.env.WORKER,
+            hasHyperdriveBinding:bindings.some((b)=>b.name==='MKETY_DB'&&b.type==='hyperdrive'),
+            observabilityEnabled:settings.result.observability?.enabled===true,
+            logsEnabled:settings.result.observability?.logs?.enabled===true,
+            invocationLogsEnabled:settings.result.observability?.logs?.invocation_logs===true,
+            issuesEnabled:settings.result.observability?.issues?.enabled===true,
             dnsRecords:dns.result.map((r)=>({type:r.type,name:r.name,content:r.content,proxied:r.proxied}))
           };
           process.stdout.write(JSON.stringify(result,null,2));
@@ -64,16 +73,79 @@ jobs:
           entry_headers=/tmp/app-entry.headers
           entry_code="$(curl -sS --connect-timeout 8 --max-time 20 -D "$entry_headers" -o /tmp/app-entry.body -w '%{http_code}' 'https://app.mkety.com/app' || true)"
           entry_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$entry_headers")"
-          ROOT_CODE="$root_code" ROOT_LOCATION="$root_location" ENTRY_CODE="$entry_code" ENTRY_LOCATION="$entry_location" node <<'NODE' >/tmp/app-host-http.json
+          ops_code="$(curl -sS --connect-timeout 8 --max-time 20 -o /tmp/app-ops-mail.body -w '%{http_code}' 'https://app.mkety.com/ops/mkety-ops/platform-control/mail-operations' || true)"
+          ROOT_CODE="$root_code" ROOT_LOCATION="$root_location" ENTRY_CODE="$entry_code" ENTRY_LOCATION="$entry_location" OPS_CODE="$ops_code" node <<'NODE' >/tmp/app-host-http.json
           const result={
             rootCode:process.env.ROOT_CODE||'000',
             rootLocation:process.env.ROOT_LOCATION||null,
             appEntryCode:process.env.ENTRY_CODE||'000',
             appEntryLocation:process.env.ENTRY_LOCATION||null,
+            mailOperationsCode:process.env.OPS_CODE||'000',
           };
           process.stdout.write(JSON.stringify(result,null,2));
           NODE
 
+      - name: Inspect sanitized app-host 5xx telemetry
+        id: telemetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          now_ms="$(date +%s%3N)"
+          from_ms="$((now_ms - 86400000))"
+          node - "$from_ms" "$now_ms" <<'NODE' >/tmp/app-host-telemetry-query.json
+          const [from,to]=process.argv.slice(2).map(Number);
+          process.stdout.write(JSON.stringify({
+            queryId:'mkety-app-host-mail-operations-500-diagnostic',
+            timeframe:{from,to},
+            dry:true,
+            limit:100,
+            view:'events',
+            parameters:{
+              datasets:['cloudflare-workers'],
+              filterCombination:'and',
+              filters:[
+                {key:'$metadata.service',operation:'eq',type:'string',value:'mkety-app-host'},
+                {key:'$metadata.url',operation:'includes',type:'string',value:'/ops/mkety-ops/platform-control/mail-operations'},
+                {key:'$metadata.statusCode',operation:'gte',type:'number',value:500}
+              ]
+            }
+          }));
+          NODE
+          http_code="$(curl -sS --connect-timeout 8 --max-time 30 -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/app-host-telemetry-query.json \
+            -o /tmp/app-host-telemetry-response.json \
+            -w '%{http_code}' \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/observability/telemetry/query" || true)"
+          if [ "$http_code" != '200' ]; then
+            echo "query_http=$http_code" >> "$GITHUB_OUTPUT"
+            echo "Sanitized telemetry query unavailable (HTTP $http_code); no response body was published."
+            exit 0
+          fi
+          RESPONSE=/tmp/app-host-telemetry-response.json node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync(process.env.RESPONSE,'utf8'));
+          const raw=p?.result?.events?.events;
+          const events=Array.isArray(raw)?raw:[];
+          const categories={database_schema:0,database_connectivity:0,auth_runtime:0,worker_resource:0,unclassified:0};
+          for(const event of events){
+            const m=event?.['$metadata']||{};
+            const err=String(m.error||event.error||'');
+            let category='unclassified';
+            if(/(?:column|relation|table).*(?:does not exist|undefined)|undefined column/i.test(err)) category='database_schema';
+            else if(/(?:connection|timeout|ECONN|database.{0,20}(?:unavailable|closed|refused))/i.test(err)) category='database_connectivity';
+            else if(/(?:auth|session|cookie|jwt|token)/i.test(err)) category='auth_runtime';
+            else if(/(?:memory|cpu|resource limit|exceeded resources)/i.test(err)) category='worker_resource';
+            categories[category]++;
+          }
+          const result={query_http:200,event_count:events.length,categories};
+          for(const [key,value] of Object.entries(result)) console.log(key+'='+JSON.stringify(value));
+          NODE
+          cat "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Raw telemetry response and error messages were not published.'
+          
       - name: Publish current production readiness evidence
         shell: bash
         run: |
@@ -84,10 +156,14 @@ jobs:
           const http=JSON.parse(fs.readFileSync('/tmp/app-host-http.json','utf8'));
           const rootOk=/^30[1278]$/.test(http.rootCode)&&(()=>{try{const u=new URL(http.rootLocation,'https://app.mkety.com/');return u.origin==='https://app.mkety.com'&&u.pathname==='/app'}catch{return false}})();
           const entryOk=/^30[1278]$/.test(http.appEntryCode)&&(()=>{try{const u=new URL(http.appEntryLocation,'https://app.mkety.com/app');return u.origin==='https://app.mkety.com'&&u.pathname==='/login'}catch{return false}})();
+          const mailOpsCode=Number(http.mailOperationsCode); const mailOpsOk=mailOpsCode>=200&&mailOpsCode<400;
           const rows=['## app.mkety.com production diagnostic','',
             '- Worker Custom Domain present: '+cf.customDomainPresent,
             '- Attached to mkety-platform: '+cf.attachedToProductionWorker,
             '- DNS records: `'+JSON.stringify(cf.dnsRecords)+'`',
+            '- App-host Hyperdrive binding present: '+cf.hasHyperdriveBinding,
+            '- GET Mail Operations page: HTTP '+http.mailOperationsCode,
+            '- Mail Operations route handled without server error: '+mailOpsOk,
             '- GET /: HTTP '+http.rootCode+(http.rootLocation?' → '+http.rootLocation:''),
             '- GET /app: HTTP '+http.appEntryCode+(http.appEntryLocation?' → '+http.appEntryLocation:''),
             '- Desired root → /app behavior currently live: '+rootOk,
@@ -96,8 +172,8 @@ jobs:
             'This workflow is diagnostic only and performs no mutation.'
           ];
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rows.join('\n')+'\n');
-          console.log(JSON.stringify({cf,http,rootOk,entryOk},null,2));
-          if(!cf.customDomainPresent || cf.attachedToProductionWorker || cf.customDomainService!=='mkety-app-host' || !rootOk || !entryOk) {
+          console.log(JSON.stringify({cf,http,rootOk,entryOk,mailOpsOk},null,2));
+          if(!cf.customDomainPresent || cf.attachedToProductionWorker || cf.customDomainService!=='mkety-app-host' || !cf.hasHyperdriveBinding || !rootOk || !entryOk || !mailOpsOk) {
             console.error('app.mkety.com production health contract is not satisfied.');
             process.exit(1);
           }
