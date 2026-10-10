@@ -54,6 +54,10 @@ jobs:
             customDomainService:appDomain?.service||null,
             attachedToProductionWorker:appDomain?.service===process.env.WORKER,
             hasHyperdriveBinding:bindings.some((b)=>b.name==='MKETY_DB'&&b.type==='hyperdrive'),
+            observabilityEnabled:settings.result.observability?.enabled===true,
+            logsEnabled:settings.result.observability?.logs?.enabled===true,
+            invocationLogsEnabled:settings.result.observability?.logs?.invocation_logs===true,
+            issuesEnabled:settings.result.observability?.issues?.enabled===true,
             dnsRecords:dns.result.map((r)=>({type:r.type,name:r.name,content:r.content,proxied:r.proxied}))
           };
           process.stdout.write(JSON.stringify(result,null,2));
