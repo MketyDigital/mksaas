@@ -189,3 +189,10 @@
 - Spaceship Spacemail and other IMAP providers use the same generic IMAP connector; no provider-specific source adapter is required. PST remains a conversion-to-EML/MBOX fallback until a safe native parser is separately verified.
 - The current customer external-client flag remains off.
 - Implementation changes are grouped in PR #368 commits rather than split into the originally suggested per-task commits. Test and live-acceptance checkboxes above remain open where their specific evidence is still missing; the final acceptance gates are not satisfied until the Zoho import and real mailbox round trips are recorded.
+
+### 2026-10-11 production archive-upload follow-up
+
+- The production archive form was observed failing with `Failed to fetch` before any migration run was recorded, including with a one-message ZIP. The failure is in the browser Server Action upload transport, not the archive parser or documented size limit.
+- The follow-up replaces that form submission with a same-origin multipart `POST /api/mail/migration/archive`, retaining the existing manager authorization, active destination checks, 20-file/10-MB-per-file/25-MB-total/2,000-message bounds, message parser, idempotent storage, and safe result redirect. Cross-origin uploads are rejected and request length is checked before multipart parsing.
+- Local parser, compatibility, and route tests pass. TypeScript and focused lint pass. Production verification remains open until the uploaded Zoho archive is visible as completed and all 354 messages reconcile in the `hello@` mailbox.
+- Root DNS, Cloudflare routing/sending, and Zoho remain unchanged. Do not mark cutover readiness complete from this code fix alone.

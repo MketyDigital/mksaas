@@ -8,7 +8,6 @@ import {
   resumeMailMigration,
   startImapMailMigration,
 } from '@/features/mail/server/mail-migration-actions';
-import { importMailEmlFiles } from '@/features/mail/server/migration-actions';
 import { getMailWorkspace, requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { db } from '@/shared/db/cloudflare';
@@ -121,7 +120,12 @@ export default async function MailMigrationPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={importMailEmlFiles.bind(null, tenantSlug)} className="grid gap-3">
+            <form
+              action={`/api/mail/migration/archive?tenant=${encodeURIComponent(tenantSlug)}`}
+              className="grid gap-3"
+              encType="multipart/form-data"
+              method="post"
+            >
               <label className="grid gap-2 text-sm font-medium">
                 Destination mailbox
                 <select className="rounded-xl border bg-background px-3 py-2.5" name="mailboxId" required>
