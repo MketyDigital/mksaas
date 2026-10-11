@@ -215,8 +215,6 @@ describe('first-party Mail workspace bootstrap', () => {
     expect(insertedWorkspaces).toHaveLength(0);
     expect(mockAudit).not.toHaveBeenCalled();
   });
-});
-
 
   it('repairs a missing audit event on retry after the workspace already exists', async () => {
     grantExists = true;
@@ -241,3 +239,5 @@ describe('first-party Mail workspace bootstrap', () => {
       }),
     ]);
   });
+
+});
