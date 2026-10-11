@@ -13,6 +13,7 @@ import { requirePlatformControlAccess } from '@/features/platform-content/server
 import { db } from '@/shared/db';
 import { runPlatformControlMutation } from '@/shared/db/platform-control-mutation';
 import {
+  auditEvents,
   billingPlans,
   billingPlanVersionEntitlements,
   billingPlanVersions,
@@ -53,7 +54,7 @@ async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
   const configuredTenantId = getFirstPartyMailTenantId().trim();
   if (!configuredTenantId) throw new Error('First-party Mail tenant is not configured.');
 
-  const result = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     let changed = false;
     const [tenant] = await tx
       .select({ id: tenants.id, slug: tenants.slug })
@@ -140,19 +141,38 @@ async function bootstrapFirstPartyMailWorkspaceImpl(opsTenantSlug: string) {
     }
 
     if (!workspace) throw new Error('Could not provision the first-party Mail workspace.');
-    return { workspace, changed };
-  });
 
-  if (result.changed) {
-    await logAuditEvent({
-      actorId: actor.userId,
-      action: 'mail.first_party_workspace.bootstrapped',
-      entityType: 'mail_workspace',
-      entityId: result.workspace.id,
-      changes: { profile: MAIL_INTERNAL_CUSTOM_PROFILE_KEY },
-      metadata: { tenantId: configuredTenantId, tenantSlug: 'mkety-ops' },
-    });
-  }
+    const auditAction = 'mail.first_party_workspace.bootstrapped';
+    const [existingAudit] = await tx
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(and(
+        eq(auditEvents.action, auditAction),
+        eq(auditEvents.entityType, 'mail_workspace'),
+        eq(auditEvents.entityId, workspace.id),
+      ))
+      .limit(1);
+
+    // Keep the audit write in the same transaction as provisioning. The old
+    // post-transaction audit path could fail its persons.id FK after the
+    // workspace had already committed. On retry, write the missing event once.
+    if (changed || !existingAudit) {
+      await tx.insert(auditEvents).values({
+        tenantId: tenant.id,
+        actorId: null,
+        action: auditAction,
+        entityType: 'mail_workspace',
+        entityId: workspace.id,
+        changes: { profile: MAIL_INTERNAL_CUSTOM_PROFILE_KEY },
+        metadata: {
+          actorUserId: actor.userId,
+          tenantSlug: 'mkety-ops',
+          source: 'platform-control',
+          reconciled: !changed,
+        },
+      });
+    }
+  });
 }
 
 function bool(value: FormDataEntryValue | null) {
