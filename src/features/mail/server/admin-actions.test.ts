@@ -40,6 +40,7 @@ jest.mock('@/shared/db/schema', () => ({
     expiresAt: 'overrides.expiresAt',
   },
   mailWorkspaces: { id: 'workspaces.id', tenantId: 'workspaces.tenantId', status: 'workspaces.status' },
+  auditEvents: { id: 'audit.id', action: 'audit.action', entityType: 'audit.entityType', entityId: 'audit.entityId' },
 }));
 jest.mock('@/shared/lib/permissions', () => ({ requirePermission: jest.fn() }));
 jest.mock('@/shared/services/audit-service', () => ({ logAuditEvent: jest.fn() }));
@@ -50,7 +51,7 @@ jest.mock('../commercial/enterprise-offers', () => ({ parseMailEnterpriseOfferIn
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import { db } from '@/shared/db';
-import { mailWorkspaces, tenantEntitlementOverrides, tenants } from '@/shared/db/schema';
+import { auditEvents, mailWorkspaces, tenantEntitlementOverrides, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
@@ -69,6 +70,8 @@ describe('first-party Mail workspace bootstrap', () => {
   let insertedWorkspaces: Array<Record<string, unknown>>;
   let workspaceUpdates: Array<Record<string, unknown>>;
   let overrideReads: number;
+  let auditExists: boolean;
+  let insertedAudits: Array<Record<string, unknown>>;
   let tx: Record<string, unknown>;
 
   beforeEach(() => {
@@ -80,6 +83,8 @@ describe('first-party Mail workspace bootstrap', () => {
     insertedWorkspaces = [];
     workspaceUpdates = [];
     overrideReads = 0;
+    auditExists = false;
+    insertedAudits = [];
     mockRequireAccess.mockResolvedValue({ userId: 'operator-1', email: 'operator@mkety.com' } as never);
     mockRequirePermission.mockResolvedValue(undefined as never);
 
@@ -101,6 +106,7 @@ describe('first-party Mail workspace bootstrap', () => {
             return [];
           }
           if (table === mailWorkspaces) return workspace ? [workspace] : [];
+          if (table === auditEvents) return auditExists ? [{ id: 'audit-1' }] : [];
           return [];
         },
       };
@@ -114,6 +120,11 @@ describe('first-party Mail workspace bootstrap', () => {
           if (table === tenantEntitlementOverrides) {
             insertedGrants.push(values);
             grantExists = true;
+            return Promise.resolve();
+          }
+          if (table === auditEvents) {
+            insertedAudits.push(values);
+            auditExists = true;
             return Promise.resolve();
           }
           if (table === mailWorkspaces) {
@@ -161,16 +172,22 @@ describe('first-party Mail workspace bootstrap', () => {
         enabledByUserId: 'operator-1',
       }),
     ]);
-    expect(mockAudit).toHaveBeenCalledTimes(1);
-    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
-      actorId: 'operator-1',
-      action: 'mail.first_party_workspace.bootstrapped',
-      metadata: expect.objectContaining({ tenantId: 'reserved-tenant', tenantSlug: 'mkety-ops' }),
-    }));
+    expect(insertedAudits).toEqual([
+      expect.objectContaining({
+        tenantId: 'reserved-tenant',
+        actorId: null,
+        action: 'mail.first_party_workspace.bootstrapped',
+        entityType: 'mail_workspace',
+        entityId: 'workspace-1',
+        metadata: expect.objectContaining({ actorUserId: 'operator-1', tenantSlug: 'mkety-ops' }),
+      }),
+    ]);
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   it('does not write or re-audit when the internal workspace is provisioned already', async () => {
     grantExists = true;
+    auditExists = true;
     workspace = {
       id: 'workspace-1',
       tenantId: 'reserved-tenant',
@@ -183,6 +200,7 @@ describe('first-party Mail workspace bootstrap', () => {
     expect(insertedGrants).toHaveLength(0);
     expect(insertedWorkspaces).toHaveLength(0);
     expect(workspaceUpdates).toHaveLength(0);
+    expect(insertedAudits).toHaveLength(0);
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
@@ -198,3 +216,28 @@ describe('first-party Mail workspace bootstrap', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 });
+
+
+  it('repairs a missing audit event on retry after the workspace already exists', async () => {
+    grantExists = true;
+    workspace = {
+      id: 'workspace-1',
+      tenantId: 'reserved-tenant',
+      status: 'active',
+      planKey: 'mail-internal-custom',
+    };
+
+    await bootstrapFirstPartyMailWorkspace('mkety');
+
+    expect(insertedGrants).toHaveLength(0);
+    expect(insertedWorkspaces).toHaveLength(0);
+    expect(insertedAudits).toEqual([
+      expect.objectContaining({
+        tenantId: 'reserved-tenant',
+        actorId: null,
+        action: 'mail.first_party_workspace.bootstrapped',
+        entityId: 'workspace-1',
+        metadata: expect.objectContaining({ actorUserId: 'operator-1', reconciled: true }),
+      }),
+    ]);
+  });
