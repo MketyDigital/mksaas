@@ -10,12 +10,6 @@ const runtimeConnectionCloudflarePath = fileURLToPath(
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Keep compatibility with cached legacy migration forms while allowing the bounded archive upload.
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '12mb',
-    },
-  },
   // Exclude pdf-parse from bundling to avoid issues with worker threads
   serverExternalPackages: ['pdf-parse'],
   webpack(config) {
