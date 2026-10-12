@@ -204,3 +204,10 @@
 - The live migration page displayed all five destination inboxes. The Zoho archive was selected for `hello@`, but the browser blocked the import action and navigated to an error page. Import completion and counts remain unverified; inspect Recent import runs before retrying.
 - No apex cutover was performed. Keep Zoho MX in place and keep apex Email Routing inactive. All real mailbox send/receive checks, final delta, DNS authentication checks, and rollback rehearsal remain open.
 
+
+
+## Import status confirmation — 2026-10-12
+
+- The user checked **Recent import runs** at `/app/mkety-ops/mail/migration` and confirmed `No migration runs yet`. No archive messages have been imported.
+- The deployed multipart route accepts the supplied 8.7 MB archive within its 10 MB per-file and 25 MB total declared limits. The previous browser-tool URL-policy rejection occurred before a migration run could be created; it is separate from the application route.
+- Safest next action: submit the ZIP from the user's normal browser to the active `hello@mkety.com` mailbox, then reconcile the run's total/imported/skipped/failed counts against 354 messages. Do not cut over DNS until all five mailboxes pass real send/receive checks, the final `hello@` delta completes, DNS authentication is verified, and rollback is rehearsed.
