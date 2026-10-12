@@ -46,7 +46,7 @@ jobs:
           const fs=require('node:fs');
           let raw='';try{raw=String(JSON.parse(fs.readFileSync('/tmp/proxy-v2-logs.json','utf8')).logs||'')}catch{}
           const safe=raw.split(/\r?\n/).filter(Boolean)
-            .filter(line=>/error|warn|fatal|tls|ssl|postgres|pgbouncer|connect|auth|6432|5432/i.test(line))
+            .filter(line=>/error|warn|fatal|tls|ssl|postgres|pgbouncer|connect|auth|6432|5432|MKETY_PGBOUNCER_V2/i.test(line))
             .slice(-100)
             .map(line=>line
               .replace(/postgres(?:ql)?:\/\/[^\s]+/gi,'postgresql://***')
