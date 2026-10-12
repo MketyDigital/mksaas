@@ -196,3 +196,11 @@
 - The follow-up replaces that form submission with a same-origin multipart `POST /api/mail/migration/archive`, retaining the existing manager authorization, active destination checks, 20-file/10-MB-per-file/25-MB-total/2,000-message bounds, message parser, idempotent storage, and safe result redirect. Cross-origin uploads are rejected and request length is checked before multipart parsing.
 - Local parser, compatibility, and route tests pass. TypeScript and focused lint pass. Production verification remains open until the uploaded Zoho archive is visible as completed and all 354 messages reconcile in the `hello@` mailbox.
 - Root DNS, Cloudflare routing/sending, and Zoho remain unchanged. Do not mark cutover readiness complete from this code fix alone.
+
+
+## Production release checkpoint — 2026-10-12
+
+- PR #378 deployed as exact main SHA `1ff183a959b59bba794e59dfe3e76426b71782d9`; Mail Production run [38284483246](https://github.com/MketyDigital/mksaas/actions/runs/38284483246) succeeded through migration, app/app-host deployment, Mail worker deployment, runtime-secret attachment, domain reconciliation, and smoke.
+- The live migration page displayed all five destination inboxes. The Zoho archive was selected for `hello@`, but the browser blocked the import action and navigated to an error page. Import completion and counts remain unverified; inspect Recent import runs before retrying.
+- No apex cutover was performed. Keep Zoho MX in place and keep apex Email Routing inactive. All real mailbox send/receive checks, final delta, DNS authentication checks, and rollback rehearsal remain open.
+
