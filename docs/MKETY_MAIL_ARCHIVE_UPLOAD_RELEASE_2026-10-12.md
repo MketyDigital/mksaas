@@ -16,7 +16,7 @@ This release does not authorize root MX changes, apex Email Routing activation, 
 
 - Exact main SHA and Mail Production workflow run URL/status.
 - Confirm the archive migration page loads and accepts the uploaded ZIP.
-- Confirm one migration run completes with the expected parsed/imported/skipped/failed counts.
+- Confirm one or more migration runs complete with reconciled totals of 354 messages and expected imported/skipped/failed counts.
 - Confirm imported messages are visible under `hello@` and retries do not duplicate them.
 - Confirm source MIME/recipient headers remain intact.
 - Leave root DNS, Cloudflare apex routing, and Zoho unchanged during this release.
@@ -26,5 +26,5 @@ This release does not authorize root MX changes, apex Email Routing activation, 
 
 - Mail Production run [38284483246](https://github.com/MketyDigital/mksaas/actions/runs/38284483246) succeeded for main SHA `1ff183a959b59bba794e59dfe3e76426b71782d9`.
 - Production DB migration, both app Workers, Mail workers, runtime-secret attachment, domain reconciliation, and production smoke passed.
-- The archive was selected for `hello@mkety.com`, but the browser import action was blocked by its URL protocol policy and the page became unavailable. Whether the server accepted the request is unknown; no import totals or completion are claimed. Check the app's Recent import runs before retrying.
+- The user checked **Recent import runs** and confirmed `No migration runs yet`; no archive messages were imported. The earlier browser-tool import click was blocked by its URL policy before a migration run was created. The supplied 8.7 MB ZIP fits the deployed route's declared 10 MB per-file / 25 MB total limits; retry from the user's normal browser to `hello@mkety.com`.
 - Root MX and Zoho cutover settings were not changed. Do not activate apex routing until all remaining readiness checks and rollback evidence pass.
