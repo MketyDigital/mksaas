@@ -3,12 +3,12 @@
 This section supersedes the 2026-10-11 import continuation below for release state.
 
 - PR #378's same-origin archive upload fix is deployed on main SHA `1ff183a959b59bba794e59dfe3e76426b71782d9`. Guarded Mail Production run [38284483246](https://github.com/MketyDigital/mksaas/actions/runs/38284483246) succeeded, including production database migration, app and app-host deployment, Mail workers, runtime secrets, Mail domain reconciliation, and production smoke.
-- The live migration page showed the five active destination mailboxes. The Zoho ZIP was selected with `hello@mkety.com` as destination. The browser blocked the import-button action with a URL protocol policy error and navigated to an error page; the post-submit import result and run counts could not be verified. Do not mark the archive imported based on the attempted click. Check Recent import runs before any retry; the importer is designed to be idempotent.
+- The user checked the live migration page and confirmed **Recent import runs** says `No migration runs yet`; the Zoho archive has not been imported. The earlier browser-tool click was blocked by its own URL policy and did not create a run. The importer uses a same-origin multipart POST route with declared limits of 10 MB per file and 25 MB total; the 8.7 MB ZIP fits those limits. The user can safely retry the ZIP to `hello@mkety.com` in their normal browser; the import service is idempotent.
 - This release did not invoke the guarded apex cutover action. Keep root MX on Zoho and leave Cloudflare apex Email Routing inactive until archive reconciliation, per-mailbox inbound/outbound acceptance, DNS authentication checks, and rollback rehearsal are evidenced.
 - The only current archive source remains the single Zoho `hello@` mailbox; all 354 archive messages belong in Mkety `hello@`. Existing aliases are not separate import jobs. Spaceship Spacemail and other IMAP providers remain supported by the provider-neutral importer.
 - No Assist, standalone Assist, or unrelated customer project is in scope.
 
-**Next:** verify the import-run state in the Mail UI, complete or safely retry the archive import, reconcile message totals, then finish root sending-authentication and temporary-subdomain send/receive checks for all five mailboxes. Run the final `hello@` delta and rehearse rollback before considering root DNS cutover.
+**Next:** retry the archive import from the normal browser, reconcile message totals, then finish root sending-authentication and temporary-subdomain send/receive checks for all five mailboxes. Run the final `hello@` delta and rehearse rollback before considering root DNS cutover.
 
 ---
 
