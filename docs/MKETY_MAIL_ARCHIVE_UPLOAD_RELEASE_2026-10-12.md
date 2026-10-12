@@ -20,3 +20,11 @@ This release does not authorize root MX changes, apex Email Routing activation, 
 - Confirm imported messages are visible under `hello@` and retries do not duplicate them.
 - Confirm source MIME/recipient headers remain intact.
 - Leave root DNS, Cloudflare apex routing, and Zoho unchanged during this release.
+
+
+## Deployment result — 2026-10-12
+
+- Mail Production run [38284483246](https://github.com/MketyDigital/mksaas/actions/runs/38284483246) succeeded for main SHA `1ff183a959b59bba794e59dfe3e76426b71782d9`.
+- Production DB migration, both app Workers, Mail workers, runtime-secret attachment, domain reconciliation, and production smoke passed.
+- The archive was selected for `hello@mkety.com`, but the browser import action was blocked by its URL protocol policy and the page became unavailable. Whether the server accepted the request is unknown; no import totals or completion are claimed. Check the app's Recent import runs before retrying.
+- Root MX and Zoho cutover settings were not changed. Do not activate apex routing until all remaining readiness checks and rollback evidence pass.
