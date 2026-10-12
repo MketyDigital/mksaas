@@ -2,6 +2,9 @@ name: Mkety Production PgBouncer Diagnostic
 # Hyperdrive auth bridge inspection 2026-09-20
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/mkety-production-pgbouncer-diagnostic.yml'
   push:
     branches: [main]
     paths:
