@@ -1,3 +1,18 @@
+# 2026-10-11 Mkety Mail import continuation
+
+This section supersedes the 2026-10-10 follow-up below for current first-party mailbox and import state. The active source is `main` at `7b51c79b2551bf0ae74f020fee642c82b61d034e`; the isolated follow-up branch is `feat/mkety-archive-upload-fix`.
+
+- The reserved internal Mail workspace bootstrap completed successfully. The root `mkety.com` Mail domain is present but remains pending, with Cloudflare routing and sending off. Root MX and Zoho configuration remain unchanged.
+- The five distinct active personal inbox records now exist: `hello@`, `cloudflare@`, `billing@`, `info@`, and `support@mkety.com`.
+- The uploaded Zoho export contains 354 EML messages (24.8 MB expanded, 8.7 MB zipped). Header-only inspection found 283 that mention `hello@`, 30 that mention `cloudflare@`, 9 that mention another Mkety address, and 32 without an Mkety recipient header. Per the approved design, all 354 belong in `hello@` once; original recipient headers stay intact. No duplicate Message-ID groups or unsafe ZIP paths were found.
+- Production archive upload through the existing Server Action failed with `Failed to fetch` for both the full ZIP and a 1-message ZIP. Reloading showed no migration runs, so no archive message import was recorded. The existing form is being changed to a same-origin multipart POST route that calls the same bounded, idempotent importer. This change does not alter mailbox routing or DNS.
+- The focused import parser, action-compatibility, and upload-route tests pass (18 tests); TypeScript and focused ESLint pass. Local migration-baseline/build checks are blocked by the workspace's `tsx` IPC `EPERM`, missing SWC native binary, and read-only Wrangler log path; exact-head CI is required for those gates.
+- No root MX cutover, Cloudflare Email Routing activation, Zoho setting change, outbound test, temporary inbound route, or rollback evidence has been performed. Cutover remains blocked until the import reconciles and every live acceptance check passes.
+
+Next: certify and deploy the multipart upload fix, import and reconcile all 354 messages into `hello@`, verify root sending authentication, prepare the temporary `mail.mkety.com` routes, complete real send/receive checks for all five mailboxes, and rehearse rollback. Keep root MX on Zoho through those gates. No `customer-apps/assist` or standalone Assist paths are in scope.
+
+---
+
 # 2026-10-10 Mkety Mail production follow-up
 
 The Mail production secret-targeting fix is merged as `66d7d4d67bde875b9547a688afcbade95ca14567` (PR #369). Guarded Mail Production run #75 completed successfully for that exact SHA, including production DB migration, app build/deploy, Mail Worker deploy, top-level secret attachment and name verification, custom-domain reconciliation, and smoke checks: https://github.com/MketyDigital/mksaas/actions/runs/38071466955
