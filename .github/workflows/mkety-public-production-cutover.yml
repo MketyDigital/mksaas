@@ -1,3 +1,4 @@
+# Temporary incident diagnostic trigger; no cutover behavior change.
 name: Mkety Public Production Cutover
 
 on:
