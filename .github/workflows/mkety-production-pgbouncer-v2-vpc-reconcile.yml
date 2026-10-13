@@ -217,6 +217,7 @@ jobs:
             --data-binary @/tmp/service-update.json \
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
           [ "$code" = 200 ] || { echo "VPC Service target update failed (HTTP $code)."; exit 1; }
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
           curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services" -o /tmp/services-after.json
@@ -226,7 +227,6 @@ jobs:
           const m=a.filter(x=>String(x.service_id||'')===String(process.env.SERVICE_ID||''));
           if(m.length!==1||String(m[0]?.host?.ipv4||'')!==process.env.EXPECTED_IP) throw new Error('VPC Service did not persist the current private PgBouncer IP.');
           NODE
-          echo 'changed=true' >> "$GITHUB_OUTPUT"
           echo 'Updated the VPC Service to the current private PgBouncer IP.'
 
       - name: Verify Hyperdrive v2 with a fresh SELECT 1
