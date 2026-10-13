@@ -7,6 +7,13 @@ This is the current production checkpoint after the PgBouncer v2 recovery.
 - The user confirmed the site is now working. In this signed-in browser, the Mail app migration page and the admin dashboard both loaded. The earlier authorization-blocker and outage findings below are superseded by this checkpoint.
 - This recovery did not change the Mail acceptance state, public DNS, root MX, or the standalone Assist application.
 
+## 2026-10-13 Archive import regression — investigation in progress
+
+- The user tested the supplied archive splits after the deployed multipart route: part 06 submitted and reported 0 skipped / 5 failed; part 01 returned HTTP 413; part 02 returned HTTP 500. The full 354-message archive is not reconciled.
+- The split files and representative EML headers are structurally readable. Their sizes fit the route's declared 10 MB per-file and 25 MB batch bounds; the 413 and 500 still require production-layer verification.
+- Production workflow review found that archive handlers run on `mkety-app-host`, while `MKETY_MAIL_INTERNAL_SECRET` and `MKETY_MAIL_CONTENT_URL` were attached only to `mkety-platform`. The handler could not store message bodies. PR #401 adds and verifies both bindings on app-host and surfaces only safe per-message failure codes.
+- Do not retry the remaining parts until the fix is deployed. Keep root MX on Zoho, apex Email Routing off, and external Mail clients disabled. No DNS or Zoho setting changed during this investigation.
+
 ## 2026-10-13 Mkety Mail acceptance — still in progress
 
 - The deployed Mail release remains PR #378 / production run [38284483246](https://github.com/MketyDigital/mksaas/actions/runs/38284483246). The authenticated migration page loads and offers the five provisioned mailboxes, including `hello@mkety.com`.
