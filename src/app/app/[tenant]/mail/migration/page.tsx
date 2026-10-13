@@ -300,6 +300,7 @@ export default async function MailMigrationPage({
                 </span>
                 <span className="flex items-center gap-3 text-muted-foreground">
                   {run.importedMessages} imported · {run.skippedMessages} skipped · {run.failedMessages} failed
+                  {run.safeErrorCode ? <span className="text-destructive"> · first failure: {run.safeErrorCode}</span> : null}
                   {['queued', 'running'].includes(run.status) ? (
                     <form action={cancelMailMigration.bind(null, tenantSlug)}>
                       <input name="runId" type="hidden" value={run.id} />
