@@ -20,8 +20,9 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      HYPERDRIVE_NAME: mkety-production-db
-      EXPECTED_PROXY: mkety-production-pgbouncer-tls-proxy-v2
+      HYPERDRIVE_NAME: mkety-production-db-v2
+      EXPECTED_SERVICE_NAME: mkety-production-pgbouncer-v2
+      TUNNEL_NAME: mkety-production-vpc
 
     steps:
       - name: Inspect Hyperdrive and VPC Service wiring
@@ -78,8 +79,8 @@ jobs:
             type:x.type||'',
             tcp_port:Number(x.tcp_port||0),
             app_protocol:x.app_protocol||'',
-            hostname:h.hostname||'',
-            hasTunnel:!!h?.resolver_network?.tunnel_id,
+            privateIPv4Present:!!h.ipv4,
+            tunnelId:h?.network?.tunnel_id||h?.resolver_network?.tunnel_id||'',
             certMode:tls.cert_verification_mode||''
           }));
           NODE
@@ -92,21 +93,44 @@ jobs:
           type="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.type)")"
           port="$(node -e "const x=require('/tmp/service.json');process.stdout.write(String(x.tcp_port))")"
           proto="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.app_protocol)")"
-          host="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.hostname)")"
+          private_ip="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.privateIPv4Present?'yes':'no')")"
+          service_tunnel_id="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.tunnelId||'')")"
           tunnel="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.hasTunnel?'yes':'no')")"
           cert="$(node -e "const x=require('/tmp/service.json');process.stdout.write(x.certMode)")"
 
-          publish mkety/vpc-service-details success "VPC service=$name host=$host port=$port protocol=$proto tunnel=$tunnel tls=$cert."
-          if [ "$type" = tcp ] && [ "$port" = 6432 ] && [ "$proto" = postgresql ] && [ "$tunnel" = yes ]; then
+          publish mkety/vpc-service-details success "VPC service=$name private_ipv4=$private_ip port=$port protocol=$proto tunnel_id_present=$([ -n "$service_tunnel_id" ] && echo yes || echo no) tls=$cert."
+          if [ "$type" = tcp ] && [ "$port" = 6432 ] && [ "$proto" = postgresql ] && [ "$private_ip" = yes ] && [ -n "$service_tunnel_id" ]; then
             publish mkety/vpc-service-shape success 'VPC Service protocol/port/tunnel shape is PostgreSQL TCP/6432 through a tunnel.'
           else
             publish mkety/vpc-service-shape failure "Unexpected VPC Service shape: type=$type port=$port protocol=$proto tunnel=$tunnel."
             exit 1
           fi
 
-          if [ "$host" = "$EXPECTED_PROXY" ]; then
-            publish mkety/vpc-service-target success 'VPC Service directly targets PgBouncer v2.'
+          if [ "$name" = "$EXPECTED_SERVICE_NAME" ]; then
+            publish mkety/vpc-service-target success 'VPC Service name matches the production PgBouncer v2 service.'
           else
-            publish mkety/vpc-service-target failure "VPC Service target is $host, not the expected PgBouncer v2 host."
+            publish mkety/vpc-service-target failure "VPC Service name $name does not match the expected production v2 service."
+            exit 1
+          fi
+
+          tunnels="$(curl --connect-timeout 5 --max-time 12 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100")"
+          if ! TUNNELS="$tunnels" node <<'NODE' >/tmp/tunnel.json
+          const p=JSON.parse(process.env.TUNNELS||'{}'),a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>x.name===process.env.TUNNEL_NAME);
+          if(m.length!==1||!m[0]?.id) process.exit(1);
+          const x=m[0];
+          process.stdout.write(JSON.stringify({id:String(x.id),status:String(x.status||'unknown'),activeConnections:Number(x.conns_active||0)}));
+          NODE
+          then
+            publish mkety/vpc-tunnel failure 'Expected production Cloudflare tunnel could not be uniquely resolved.'
+            exit 1
+          fi
+          expected_tunnel_id="$(node -e "process.stdout.write(require('/tmp/tunnel.json').id)")"
+          tunnel_status="$(node -e "process.stdout.write(require('/tmp/tunnel.json').status)")"
+          tunnel_connections="$(node -e "process.stdout.write(String(require('/tmp/tunnel.json').activeConnections))")"
+          if [ "$service_tunnel_id" = "$expected_tunnel_id" ]; then
+            publish mkety/vpc-tunnel-target success "VPC Service uses the expected production tunnel (status=$tunnel_status active_connections=$tunnel_connections)."
+          else
+            publish mkety/vpc-tunnel-target failure 'VPC Service does not use the expected production tunnel.'
             exit 1
           fi
