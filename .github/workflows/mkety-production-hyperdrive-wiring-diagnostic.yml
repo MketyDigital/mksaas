@@ -1,3 +1,4 @@
+# Re-run diagnostic after PgBouncer v2 TLS/query recovery (2026-10-13).
 name: Mkety Production Hyperdrive Wiring Diagnostic
 
 on:
