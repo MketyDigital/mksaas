@@ -38,7 +38,7 @@ jobs:
           }
 
           list="$(curl --connect-timeout 5 --max-time 12 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100")"
-          HD="$list" node <<'NODE' >/tmp/hd.json
+          if ! HD="$list" node <<'NODE' >/tmp/hd.json
           const p=JSON.parse(process.env.HD||'{}'),a=Array.isArray(p.result)?p.result:[];
           const m=a.filter(x=>x.name===process.env.HYPERDRIVE_NAME);
           if(m.length!==1||!m[0]?.id) process.exit(1);
@@ -52,7 +52,7 @@ jobs:
             user:!!o.user
           }));
           NODE
-          if [ "$?" -ne 0 ]; then
+          then
             publish mkety/hyperdrive-wiring failure 'Production Hyperdrive could not be uniquely resolved.'
             exit 1
           fi
@@ -68,7 +68,7 @@ jobs:
           publish mkety/hyperdrive-wiring success 'Production Hyperdrive is VPC-Service-backed.'
 
           services="$(curl --connect-timeout 5 --max-time 12 -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services")"
-          SERVICE_ID="$service_id" SERVICES="$services" node <<'NODE' >/tmp/service.json
+          if ! SERVICE_ID="$service_id" SERVICES="$services" node <<'NODE' >/tmp/service.json
           const p=JSON.parse(process.env.SERVICES||'{}'),a=Array.isArray(p.result)?p.result:[];
           const m=a.filter(x=>String(x.service_id||'')===String(process.env.SERVICE_ID||''));
           if(m.length!==1) process.exit(1);
@@ -83,7 +83,7 @@ jobs:
             certMode:tls.cert_verification_mode||''
           }));
           NODE
-          if [ "$?" -ne 0 ]; then
+          then
             publish mkety/vpc-service-wiring failure 'Hyperdrive VPC Service could not be resolved.'
             exit 1
           fi
