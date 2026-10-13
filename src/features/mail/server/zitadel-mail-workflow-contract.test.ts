@@ -54,8 +54,14 @@ describe('ZITADEL first-party Mail rollout workflow', () => {
     expect(mailWorkflow).toContain('APP_HOST_WORKER_NAME: mkety-app-host');
     expect(mailWorkflow).toContain('put "$PRODUCTION_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
     expect(mailWorkflow).toContain('put "$APP_HOST_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"');
+    expect(mailWorkflow).toContain('put "$APP_HOST_WORKER_NAME" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"');
+    expect(mailWorkflow).toContain('put "$APP_HOST_WORKER_NAME" MKETY_MAIL_CONTENT_URL \'https://mail-content.mkety.com\'');
+    expect(mailWorkflow).toContain("required=['MKETY_FIRST_PARTY_MAIL_TENANT_ID','MKETY_MAIL_INTERNAL_SECRET','MKETY_MAIL_CONTENT_URL'];");
+    expect(mailWorkflow.indexOf('Attach Mail runtime secrets')).toBeLessThan(
+      mailWorkflow.indexOf("required=['MKETY_FIRST_PARTY_MAIL_TENANT_ID','MKETY_MAIL_INTERNAL_SECRET','MKETY_MAIL_CONTENT_URL'];"),
+    );
     expect(mailWorkflow).toContain('wrangler secret list --name "$APP_HOST_WORKER_NAME" --env="" --format json');
-    expect(mailWorkflow).toContain('Missing top-level first-party Mail tenant binding on app-host Worker');
+    expect(mailWorkflow).toContain('Missing required Mail runtime bindings on app-host Worker:');
     expect(mailWorkflow).toContain('Validate tenant binding before deployment');
     expect(mailWorkflow.indexOf('Validate tenant binding before deployment')).toBeLessThan(
       mailWorkflow.indexOf('Verify Cloudflare credentials'),

@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMigrationRuns } from '@/shared/db/schema';
 
+import { safeArchiveMessageErrorCode } from './archive-import-errors';
 import { extractZipArchive, parseImportedMessage, parseMbox } from './migration-import-core';
 import { importMessageOnce } from './migration-import-store';
 import { getMailWorkspace, requireMailWorkspaceAccess } from './workspace';
@@ -87,6 +88,7 @@ export async function importMailArchive(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  let firstMessageErrorCode: string | null = null;
   let total = 0;
   const importRaw = async (raw: Uint8Array, folderPath: string) => {
     total += 1;
@@ -101,8 +103,9 @@ export async function importMailArchive(
       });
       if (result.imported) imported += 1;
       else skipped += 1;
-    } catch {
+    } catch (error) {
       failed += 1;
+      firstMessageErrorCode ??= safeArchiveMessageErrorCode(error);
     }
   };
 
@@ -132,6 +135,7 @@ export async function importMailArchive(
         importedMessages: imported,
         skippedMessages: skipped,
         failedMessages: failed,
+        safeErrorCode: firstMessageErrorCode,
         completedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -146,7 +150,8 @@ export async function importMailArchive(
         skippedMessages: skipped,
         failedMessages: failed + 1,
         safeErrorCode:
-          error instanceof Error && /^archive_[a-z_]+$/.test(error.message) ? error.message : 'archive_import_failed',
+          firstMessageErrorCode ??
+          (error instanceof Error && /^archive_[a-z_]+$/.test(error.message) ? error.message : 'archive_import_failed'),
         completedAt: new Date(),
         updatedAt: new Date(),
       })
