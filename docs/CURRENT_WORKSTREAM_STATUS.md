@@ -1,3 +1,20 @@
+# 2026-10-13 PgBouncer v2 production recovery — authorization blocker
+
+This section supersedes the earlier outage next step while the production repair is blocked.
+
+- The last successful full production app deployment remains [Mkety Mail Production run 38312835989](https://github.com/MketyDigital/mksaas/actions/runs/38312835989) on `30191e5440c95b08fc2040758ad7d6e6da22856c`. It deployed the platform and app-host Workers and passed its production smoke. Later read-only diagnostics found public/app dynamic routes timing out and PgBouncer v2 upstream TLS login failures.
+- PR #385 merged the PgBouncer CA staging/preflight fix as `6ff2df6647dbdfe428b598fa4f1fd4f3ff41ca9d`. Its exact-head CI passed; this change is preserved on main.
+- PR #386 added a guarded exact-SHA deploy workflow. Run [38352519172](https://github.com/MketyDigital/mksaas/actions/runs/38352519172) stopped before mutation: the app inventory read succeeded, then Coolify returned HTTP 401 for the individual application details request.
+- PR #387 changed the workflow to use the application inventory for target validation. Run [38353033450](https://github.com/MketyDigital/mksaas/actions/runs/38353033450) and its single retry stopped with HTTP 401 on the inventory read. Neither attempt changed the application pin, deployment, database, VPC, Hyperdrive, DNS or Worker bindings.
+- The checked-in guarded workflow is `.github/workflows/mkety-production-pgbouncer-v2-redeploy.yml`. It still requires exact application identity/configuration, exact main SHA, a running deployment, timestamped readiness markers emitted after that deployment, and public/app route smoke. It does not touch standalone Assist.
+- Production recovery is **not complete**. No post-fix PgBouncer readiness or public-route smoke has passed.
+
+**Next:** restore valid GitHub production `COOLIFY_TOKEN` access for application inventory, app configuration update, deployment, and runtime logs; Coolify's official logs endpoint requires a `read:sensitive` or root token ([API docs](https://coolify.io/docs/api/endpoints/applications/get-application-logs-by-uuid)). Then run the guarded workflow and verify its exact SHA, four PgBouncer readiness markers, and five production routes. Keep the active `mkety-production-db-v2` Hyperdrive and VPC path unchanged.
+
+After recovery, resume the existing plan in order: import and reconcile the 354-message Zoho archive through the user's normal browser; verify sender authentication and real inbound/outbound Mail checks for all five mailboxes; rehearse rollback before any apex DNS decision. External Mail-client enablement and Enterprise AI customer inference remain closed until their real customer acceptance gates pass. Standalone Assist remains outside scope.
+
+---
+
 # 2026-10-13 Production site outage investigation
 
 This section records the current outage work and supersedes earlier assumptions that the app-host Worker alone caused the site failure.
