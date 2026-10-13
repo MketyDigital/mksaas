@@ -1,32 +1,21 @@
-# 2026-10-13 PgBouncer v2 production recovery — authorization blocker
+# 2026-10-13 Production database connectivity recovery — verified
 
-This section supersedes the earlier outage next step while the production repair is blocked.
+This is the current production checkpoint after the PgBouncer v2 recovery.
 
-- The last successful full production app deployment remains [Mkety Mail Production run 38312835989](https://github.com/MketyDigital/mksaas/actions/runs/38312835989) on `30191e5440c95b08fc2040758ad7d6e6da22856c`. It deployed the platform and app-host Workers and passed its production smoke. Later read-only diagnostics found public/app dynamic routes timing out and PgBouncer v2 upstream TLS login failures.
-- PR #385 merged the PgBouncer CA staging/preflight fix as `6ff2df6647dbdfe428b598fa4f1fd4f3ff41ca9d`. Its exact-head CI passed; this change is preserved on main.
-- PR #386 added a guarded exact-SHA deploy workflow. Run [38352519172](https://github.com/MketyDigital/mksaas/actions/runs/38352519172) stopped before mutation: the app inventory read succeeded, then Coolify returned HTTP 401 for the individual application details request.
-- PR #387 changed the workflow to use the application inventory for target validation. Run [38353033450](https://github.com/MketyDigital/mksaas/actions/runs/38353033450) and its single retry stopped with HTTP 401 on the inventory read. Neither attempt changed the application pin, deployment, database, VPC, Hyperdrive, DNS or Worker bindings.
-- The checked-in guarded workflow is `.github/workflows/mkety-production-pgbouncer-v2-redeploy.yml`. It still requires exact application identity/configuration, exact main SHA, a running deployment, timestamped readiness markers emitted after that deployment, and public/app route smoke. It does not touch standalone Assist.
-- Production recovery is **not complete**. No post-fix PgBouncer readiness or public-route smoke has passed.
+- PR #397 merged on main as `8d8bc63aa1bd6eff3b8c4df2a8f1db81b2f07db3`. Production recovery run [38391052432](https://github.com/MketyDigital/mksaas/actions/runs/38391052432) succeeded for that exact SHA.
+- The guarded run verified the existing PgBouncer v2 app, Hyperdrive v2, VPC service and healthy tunnel; reconciled the current private target; passed a fresh Hyperdrive `SELECT 1`; smoke-checked the public site and app routes; and removed its temporary resolver and probe resources.
+- The user confirmed the site is now working. In this signed-in browser, the Mail app migration page and the admin dashboard both loaded. The earlier authorization-blocker and outage findings below are superseded by this checkpoint.
+- This recovery did not change the Mail acceptance state, public DNS, root MX, or the standalone Assist application.
 
-**Next:** restore valid GitHub production `COOLIFY_TOKEN` access for application inventory, app configuration update, deployment, and runtime logs; Coolify's official logs endpoint requires a `read:sensitive` or root token ([API docs](https://coolify.io/docs/api/endpoints/applications/get-application-logs-by-uuid)). Then run the guarded workflow and verify its exact SHA, four PgBouncer readiness markers, and five production routes. Keep the active `mkety-production-db-v2` Hyperdrive and VPC path unchanged.
+## 2026-10-13 Mkety Mail acceptance — still in progress
 
-After recovery, resume the existing plan in order: import and reconcile the 354-message Zoho archive through the user's normal browser; verify sender authentication and real inbound/outbound Mail checks for all five mailboxes; rehearse rollback before any apex DNS decision. External Mail-client enablement and Enterprise AI customer inference remain closed until their real customer acceptance gates pass. Standalone Assist remains outside scope.
+- The deployed Mail release remains PR #378 / production run [38284483246](https://github.com/MketyDigital/mksaas/actions/runs/38284483246). The authenticated migration page loads and offers the five provisioned mailboxes, including `hello@mkety.com`.
+- The exact Zoho export `1791631819986159200_1.zip` is 8,736,331 bytes and fits the UI's 10 MB per-file and 25 MB batch limits. The recorded archive audit found 354 messages; the approved destination is `hello@mkety.com` once, preserving original recipient headers.
+- **No import has been submitted:** Recent import runs still showed no migration run. This browser interface did not expose a file-selection API, so the archive was not transmitted and no import job was started.
+- Keep root MX on Zoho and apex Email Routing off. The remaining Mail production gates are archive reconciliation, sender authentication, real inbound/outbound acceptance for all five mailboxes, final `hello@` delta, and rollback rehearsal. External Mail clients remain disabled until their separate TCP gateway acceptance.
+- Starpips remains the required first paid Mail customer. The current plan and repository audit contain no approved offer/agreement with exact terms, so checkout and entitlement must remain stopped until those terms are located. Mkety's internal Enterprise AI test remains downstream of Starpips Mail acceptance.
 
----
-
-# 2026-10-13 Production site outage investigation
-
-This section records the current outage work and supersedes earlier assumptions that the app-host Worker alone caused the site failure.
-
-- The Oct 12 read-only diagnostics found `app.mkety.com` redirects to `/app`, while `/app`, `/login`, `/api/health`, `mkety.com/`, and `mkety.com/mail` time out. DNS/custom-domain attachment and the root redirect work, so the failure occurs on dynamic requests affecting both the public site and app.
-- The production Postgres service was reported `running:healthy`, while the production PgBouncer v2 service had repeated `server login has been failing ... sslreq processing failed` messages. This points to the shared upstream database TLS path. A mounted-CA permission mismatch is a plausible cause, not yet confirmed from the live mount metadata.
-- An isolated `fix/pgbouncer-v2-ca-readability` candidate stages the mounted CA into `/run/mkety` with mode `0644`, configures PgBouncer and its `psql` preflight to use that copy, and runs the preflight as the same unprivileged account as the daemon. A container regression check for a root-only mounted CA was added to CI.
-- Local shell syntax, staging-mode, and whitespace checks passed. Exact code head `302573c6bed10cdf252ae6d2dfc3e357e65d729b` passed CI run [38334843227](https://github.com/MketyDigital/mksaas/actions/runs/38334843227), including all audited operations-image builds and the root-only CA container regression. No production service, DNS, database, or Worker was changed. No Assist or standalone Assist files are part of this change.
-
-**Next:** verify the live PgBouncer v2 configuration and CA mount through the available read-only production diagnostic, then follow the production promotion gate in `docs/DEPLOYMENT.md`. Confirm health for both the public site and app-host before returning to the Mail archive import.
-
----
+**Next Mail steps:** upload the archive through the signed-in Mail migration page to `hello@mkety.com`; reconcile the 354-message source against the import result; finish per-mailbox authentication and real send/receive checks; run the final source delta; rehearse rollback; then evaluate apex cutover only under the existing explicit authorization gate.
 
 # 2026-10-12 Mkety Mail archive release and import continuation
 
