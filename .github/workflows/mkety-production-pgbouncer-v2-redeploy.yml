@@ -74,7 +74,7 @@ jobs:
           const configKeys=['git_repository','git_branch','build_pack','dockerfile_location','ports_exposes','git_commit_sha'];
           const missing=configKeys.filter(key=>app[key]===undefined||app[key]===null||app[key]==='');
           if(missing.length) throw new Error(`Application inventory omits required configuration metadata (${missing.join(', ')}); available keys: ${Object.keys(app).sort().join(', ')}.`);
-          if(repo!==expected||app.git_branch!=='main') throw new Error('Existing app is not attached to the expected mksaas main repository.');
+          if(repo!==expected||app.git_branch!=='main') throw new Error(`Existing app identity mismatch: git_repository=${JSON.stringify(app.git_repository)}, git_branch=${JSON.stringify(app.git_branch)}.`);
           if(app.build_pack!=='dockerfile'||app.dockerfile_location!==process.env.EXPECTED_DOCKERFILE) throw new Error('Existing app Docker build target is unexpected.');
           if(!ports.includes('6432')) throw new Error('Existing app does not expose the expected PgBouncer port.');
           const sha=String(app.git_commit_sha);
