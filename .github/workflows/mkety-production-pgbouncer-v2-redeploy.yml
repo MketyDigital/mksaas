@@ -28,7 +28,7 @@ jobs:
     environment: production
     env:
       COOLIFY_URL: https://deploy.mkety.com
-      COOLIFY_API_TOKEN: ${{ secrets.OCI_COOLIFY_TOKEN }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
       EXPECTED_REPOSITORY: https://github.com/MketyDigital/mksaas
       EXPECTED_DOCKERFILE: /ops/pgbouncer-v2/Dockerfile.final
