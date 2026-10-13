@@ -122,6 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
+          deploy_requested_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/deploy.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
           [ "$code" = 200 ] || { echo "PgBouncer deploy request failed (HTTP $code)."; exit 1; }
@@ -140,21 +141,39 @@ jobs:
           done
           [ "$complete" = 1 ] || { echo 'Timed out waiting for PgBouncer deployment.'; exit 1; }
 
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/deployed-app.json
+          DEPLOYED_SHA="$(node -e "process.stdout.write(String(require('/tmp/deployed-app.json').git_commit_sha||''))")"
+          APP_STATUS="$(node -e "process.stdout.write(String(require('/tmp/deployed-app.json').status||''))")"
+          [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] || { echo 'Running PgBouncer app metadata does not show the target SHA.'; exit 1; }
+          case "${APP_STATUS,,}" in
+            *running*|*healthy*|*started*) ;;
+            *) echo "PgBouncer app is not running after deploy (status: $APP_STATUS)."; exit 1 ;;
+          esac
+
           ready=0
           for i in $(seq 1 80); do
             curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "$base/applications/$APP_UUID/logs?lines=500&show_timestamps=false" -o /tmp/proxy-logs.json || true
-            if node <<'NODE'
+              "$base/applications/$APP_UUID/logs?lines=500&show_timestamps=true" -o /tmp/proxy-logs.json || true
+            if DEPLOY_REQUESTED_AT="$deploy_requested_at" node <<'NODE'
           const fs=require('node:fs');
           let logs='';try{logs=String(JSON.parse(fs.readFileSync('/tmp/proxy-logs.json','utf8')).logs||'')}catch{}
+          const requestedAt=Date.parse(process.env.DEPLOY_REQUESTED_AT||'');
+          if(!Number.isFinite(requestedAt)) process.exit(1);
           const markers=[
             'MKETY_PGBOUNCER_V2_UPSTREAM_VERIFY_OK=true',
             'MKETY_PGBOUNCER_V2_CLIENT_TLS_OK=true',
             'MKETY_PGBOUNCER_V2_QUERY_OK=true',
             'MKETY_PGBOUNCER_V2_READY=true'
           ];
-          process.exit(markers.every(marker=>logs.includes(marker))?0:1);
+          const lines=logs.split(/\r?\n/);
+          const fresh=markers.every(marker=>lines.some(line=>{
+            if(!line.includes(marker)) return false;
+            const timestamp=line.match(/^\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))/);
+            return timestamp && Date.parse(timestamp[1])>=requestedAt;
+          }));
+          process.exit(fresh?0:1);
           NODE
             then ready=1; break; fi
             sleep 3
@@ -185,25 +204,3 @@ jobs:
           probe 'https://app.mkety.com/login' '^(200|302|303|307|308)$'
           probe 'https://mkety.com/api/health' '^(200)$'
 
-      - name: Restore the previous PgBouncer source pin if verification fails
-        if: failure() && steps.pin.outputs.changed == 'true'
-        shell: bash
-        env:
-          APP_UUID: ${{ steps.app.outputs.uuid }}
-          PREVIOUS_SHA: ${{ steps.app.outputs.previous_sha }}
-        run: |
-          set +e
-          base="${COOLIFY_URL%/}/api/v1"
-          PREVIOUS_SHA="$PREVIOUS_SHA" node <<'NODE' > /tmp/restore-pin.json
-          process.stdout.write(JSON.stringify({git_commit_sha:process.env.PREVIOUS_SHA}));
-          NODE
-          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/restore-pin-response.json -w '%{http_code}' \
-            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
-            --data-binary @/tmp/restore-pin.json "$base/applications/$APP_UUID")"
-          if [ "$code" = 200 ]; then
-            curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -X POST \
-              -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true" >/dev/null
-            echo 'Restored the previous PgBouncer app source pin and requested its redeploy.'
-          else
-            echo "::error::Could not restore the previous PgBouncer app source pin (HTTP $code)."
-          fi
