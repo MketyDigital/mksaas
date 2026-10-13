@@ -331,8 +331,96 @@ jobs:
           }
           probe 'https://mkety.com/' '^(200)$'
           probe 'https://mkety.com/mail' '^(200)$'
-          probe 'https://app.mkety.com/app' '^(200|302|303|307|308)$'
-          probe 'https://app.mkety.com/login' '^(200|302|303|307|308)$'
+          probe 'https://app.mkety.com/app' '^(200|302|303|307|308)
+          probe 'https://mkety.com/api/health' '^(200)$'
+          exit "$failed"
+
+      - name: Remove the temporary resolver application
+        if: always() && steps.resolve.outputs.uuid != ''
+        shell: bash
+        env:
+          RESOLVER_UUID: ${{ steps.resolve.outputs.uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 15 -sS -X DELETE \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$COOLIFY_URL/api/v1/applications/$RESOLVER_UUID" >/dev/null
+
+      - name: Remove the temporary Hyperdrive probe Worker
+        if: always()
+        shell: bash
+        env:
+          PROBE_WORKER: mkety-hd-v2-reconcile-${{ github.run_id }}
+        run: |
+          set +e
+          curl -sS --connect-timeout 5 --max-time 15 -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data '{"enabled":false,"previews_enabled":false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER/subdomain" >/dev/null
+          curl -sS --connect-timeout 5 --max-time 15 -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER" >/dev/null
+          echo 'Cleanup attempted for route-free diagnostic Worker.'
+
+          probe 'https://app.mkety.com/admin' '^(200|302|303|307|308)
+          probe 'https://mkety.com/api/health' '^(200)$'
+          exit "$failed"
+
+      - name: Remove the temporary resolver application
+        if: always() && steps.resolve.outputs.uuid != ''
+        shell: bash
+        env:
+          RESOLVER_UUID: ${{ steps.resolve.outputs.uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 15 -sS -X DELETE \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$COOLIFY_URL/api/v1/applications/$RESOLVER_UUID" >/dev/null
+
+      - name: Remove the temporary Hyperdrive probe Worker
+        if: always()
+        shell: bash
+        env:
+          PROBE_WORKER: mkety-hd-v2-reconcile-${{ github.run_id }}
+        run: |
+          set +e
+          curl -sS --connect-timeout 5 --max-time 15 -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data '{"enabled":false,"previews_enabled":false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER/subdomain" >/dev/null
+          curl -sS --connect-timeout 5 --max-time 15 -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER" >/dev/null
+          echo 'Cleanup attempted for route-free diagnostic Worker.'
+
+          probe 'https://app.mkety.com/login' '^(200|302|303|307|308)
+          probe 'https://mkety.com/api/health' '^(200)$'
+          exit "$failed"
+
+      - name: Remove the temporary resolver application
+        if: always() && steps.resolve.outputs.uuid != ''
+        shell: bash
+        env:
+          RESOLVER_UUID: ${{ steps.resolve.outputs.uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 15 -sS -X DELETE \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$COOLIFY_URL/api/v1/applications/$RESOLVER_UUID" >/dev/null
+
+      - name: Remove the temporary Hyperdrive probe Worker
+        if: always()
+        shell: bash
+        env:
+          PROBE_WORKER: mkety-hd-v2-reconcile-${{ github.run_id }}
+        run: |
+          set +e
+          curl -sS --connect-timeout 5 --max-time 15 -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data '{"enabled":false,"previews_enabled":false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER/subdomain" >/dev/null
+          curl -sS --connect-timeout 5 --max-time 15 -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER" >/dev/null
+          echo 'Cleanup attempted for route-free diagnostic Worker.'
+
           probe 'https://mkety.com/api/health' '^(200)$'
           exit "$failed"
 
