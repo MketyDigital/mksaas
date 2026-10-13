@@ -67,27 +67,23 @@ jobs:
           const apps=Array.isArray(payload)?payload:Array.isArray(payload?.data)?payload.data:[];
           const matches=apps.filter(app=>app.name===process.env.PROXY_NAME);
           if(matches.length!==1||!matches[0]?.uuid) throw new Error('Expected exactly one existing PgBouncer v2 application.');
-          process.stdout.write(JSON.stringify({uuid:String(matches[0].uuid)}));
-          NODE
-          uuid="$(node -e "process.stdout.write(require('/tmp/proxy.json').uuid)")"
-          echo "::add-mask::$uuid"
-          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid" -o /tmp/app.json
-          APP_UUID="$uuid" node <<'NODE' > /tmp/validated-app.json
-          const fs=require('node:fs');
-          const app=JSON.parse(fs.readFileSync('/tmp/app.json','utf8'));
+          const app=matches[0];
           const ports=String(app.ports_exposes||'').split(',').map(x=>x.trim());
           const repo=String(app.git_repository||'').replace(/\.git$/,'');
           const expected=String(process.env.EXPECTED_REPOSITORY||'').replace(/\.git$/,'');
-          if(app.name!==process.env.PROXY_NAME) throw new Error('Application name changed during preflight.');
+          const configKeys=['git_repository','git_branch','build_pack','dockerfile_location','ports_exposes','git_commit_sha'];
+          const missing=configKeys.filter(key=>app[key]===undefined||app[key]===null||app[key]==='');
+          if(missing.length) throw new Error(`Application inventory omits required configuration metadata (${missing.join(', ')}); available keys: ${Object.keys(app).sort().join(', ')}.`);
           if(repo!==expected||app.git_branch!=='main') throw new Error('Existing app is not attached to the expected mksaas main repository.');
           if(app.build_pack!=='dockerfile'||app.dockerfile_location!==process.env.EXPECTED_DOCKERFILE) throw new Error('Existing app Docker build target is unexpected.');
           if(!ports.includes('6432')) throw new Error('Existing app does not expose the expected PgBouncer port.');
-          const sha=String(app.git_commit_sha||'');
+          const sha=String(app.git_commit_sha);
           if(!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Existing app has no recoverable full commit SHA.');
-          process.stdout.write(JSON.stringify({uuid:process.env.APP_UUID,previousSha:sha}));
+          process.stdout.write(JSON.stringify({uuid:String(app.uuid),previousSha:sha}));
           NODE
-          previous_sha="$(node -e "process.stdout.write(require('/tmp/validated-app.json').previousSha)")"
+          uuid="$(node -e "process.stdout.write(require('/tmp/proxy.json').uuid)")"
+          echo "::add-mask::$uuid"
+          previous_sha="$(node -e "process.stdout.write(require('/tmp/proxy.json').previousSha)")"
           echo "previous_sha=$previous_sha" >> "$GITHUB_OUTPUT"
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
           echo 'Existing PgBouncer v2 app matches the expected repository, branch, Dockerfile, and port.'
@@ -109,9 +105,14 @@ jobs:
           [ "$code" = 200 ] || { echo "PgBouncer SHA pin failed (HTTP $code)."; exit 1; }
           echo "changed=true" >> "$GITHUB_OUTPUT"
           curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/pinned-app.json
-          pinned_sha="$(node -e "process.stdout.write(String(require('/tmp/pinned-app.json').git_commit_sha||''))")"
-          [ "$pinned_sha" = "$TARGET_SHA" ] || { echo 'Coolify did not persist the exact target SHA.'; exit 1; }
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/pinned-apps.json
+          TARGET_SHA="$TARGET_SHA" PROXY_NAME="$PROXY_NAME" node <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/pinned-apps.json','utf8'));
+          const apps=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=apps.filter(x=>x.name===process.env.PROXY_NAME);
+          if(m.length!==1||String(m[0]?.git_commit_sha||'')!==process.env.TARGET_SHA) throw new Error('Coolify inventory did not persist the exact target SHA.');
+          NODE
           echo 'PgBouncer v2 source pin verified.'
 
       - name: Redeploy PgBouncer and require verified TLS/query readiness
@@ -142,10 +143,16 @@ jobs:
           [ "$complete" = 1 ] || { echo 'Timed out waiting for PgBouncer deployment.'; exit 1; }
 
           curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/deployed-app.json
-          DEPLOYED_SHA="$(node -e "process.stdout.write(String(require('/tmp/deployed-app.json').git_commit_sha||''))")"
-          APP_STATUS="$(node -e "process.stdout.write(String(require('/tmp/deployed-app.json').status||''))")"
-          [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] || { echo 'Running PgBouncer app metadata does not show the target SHA.'; exit 1; }
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/deployed-apps.json
+          APP_STATUS="$(TARGET_SHA="$TARGET_SHA" PROXY_NAME="$PROXY_NAME" node <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/deployed-apps.json','utf8'));
+          const apps=Array.isArray(p)?p:Array.isArray(p?.data)?p.data:[];
+          const m=apps.filter(x=>x.name===process.env.PROXY_NAME);
+          if(m.length!==1||String(m[0]?.git_commit_sha||'')!==process.env.TARGET_SHA) throw new Error('Running PgBouncer app metadata does not show the target SHA.');
+          process.stdout.write(String(m[0]?.status||''));
+          NODE
+          )"
           case "${APP_STATUS,,}" in
             *running*|*healthy*|*started*) ;;
             *) echo "PgBouncer app is not running after deploy (status: $APP_STATUS)."; exit 1 ;;
