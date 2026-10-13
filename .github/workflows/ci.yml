@@ -155,6 +155,7 @@ jobs:
           docker build -f ops/pgbouncer-v2/Dockerfile -t mkety-pgbouncer-test .
           docker build -f ops/pgbouncer-v2/Dockerfile.prod -t mkety-pgbouncer-prod-test .
           docker build -f ops/pgbouncer-v2/Dockerfile.final -t mkety-pgbouncer-final-test .
+          sh ops/pgbouncer-v2/test-ca-staging.sh mkety-pgbouncer-final-test
           docker build -f ops/network-resolver-diagnostic/Dockerfile -t mkety-resolver-test .
           docker build -f ops/mail-gateway/Dockerfile -t mkety-mail-gateway-test .
 

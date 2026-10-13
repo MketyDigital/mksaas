@@ -8,6 +8,7 @@ for name in $required; do
 done
 
 mkdir -p /run/mkety
+/stage-upstream-ca.sh /etc/mkety/coolify-ca.crt /run/mkety/coolify-ca.crt
 printf '%s' "$ORIGIN_CERT_B64" | base64 -d > /run/mkety/server.crt
 printf '%s' "$ORIGIN_KEY_B64" | base64 -d > /run/mkety/server.key
 printf '%s' "$ORIGIN_ROOT_B64" | base64 -d > /run/mkety/origin-root.pem
@@ -28,7 +29,7 @@ pool_mode = transaction
 max_client_conn = 200
 default_pool_size = 20
 server_tls_sslmode = verify-ca
-server_tls_ca_file = /etc/mkety/coolify-ca.crt
+server_tls_ca_file = /run/mkety/coolify-ca.crt
 client_tls_sslmode = require
 client_tls_cert_file = /run/mkety/server.crt
 client_tls_key_file = /run/mkety/server.key
@@ -42,7 +43,7 @@ openssl verify -CAfile /run/mkety/origin-root.pem /run/mkety/server.crt >/dev/nu
 openssl x509 -in /run/mkety/server.crt -noout -checkhost "$DB_HOSTNAME" >/dev/null
 echo MKETY_PGBOUNCER_V2_CLIENT_CERT_OK=true
 
-PGPASSWORD="$DB_PASSWORD" psql "host=$DB_INTERNAL_HOST port=$DB_INTERNAL_PORT dbname=$DB_NAME user=$DB_USER sslmode=verify-ca sslrootcert=/etc/mkety/coolify-ca.crt connect_timeout=10" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' | grep -qx 1
+PGPASSWORD="$DB_PASSWORD" su-exec pgbouncer psql "host=$DB_INTERNAL_HOST port=$DB_INTERNAL_PORT dbname=$DB_NAME user=$DB_USER sslmode=verify-ca sslrootcert=/run/mkety/coolify-ca.crt connect_timeout=10" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' | grep -qx 1
 echo MKETY_PGBOUNCER_V2_UPSTREAM_VERIFY_OK=true
 
 su-exec pgbouncer /opt/pgbouncer/pgbouncer /run/mkety/pgbouncer.ini &
