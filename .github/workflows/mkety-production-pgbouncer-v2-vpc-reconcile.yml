@@ -1,0 +1,364 @@
+name: Mkety Production PgBouncer V2 VPC Target Reconcile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-pgbouncer-v2-vpc-reconcile.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-production-pgbouncer-v2-vpc-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
+      VPC_SERVICE_NAME: mkety-production-pgbouncer-v2
+      HYPERDRIVE_NAME: mkety-production-db-v2
+      TUNNEL_NAME: mkety-production-vpc
+      EXPECTED_REPOSITORY: MketyDigital/mksaas
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate credentials and snapshot exact production targets
+        id: snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in COOLIFY_API_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing production credential: $name"; exit 1; }
+          done
+          echo "::add-mask::$COOLIFY_API_TOKEN"
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$COOLIFY_URL/api/v1/applications" -o /tmp/apps.json
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" -o /tmp/hyperdrives.json
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services" -o /tmp/services.json
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel?is_deleted=false&per_page=100" -o /tmp/tunnels.json
+
+          node <<'NODE' >/tmp/target-snapshot.json
+          const fs=require('node:fs');
+          const parse=p=>JSON.parse(fs.readFileSync(p,'utf8'));
+          const rows=x=>Array.isArray(x)?x:Array.isArray(x?.data)?x.data:[];
+          const normalize=s=>String(s||'').trim().replace(/^https?:\/\/github\.com\//i,'').replace(/\.git$/i,'').replace(/\/+$/,'').toLowerCase();
+          const apps=rows(parse('/tmp/apps.json')).filter(x=>x.name===process.env.PROXY_NAME);
+          const hds=rows(parse('/tmp/hyperdrives.json')?.result).filter(x=>x.name===process.env.HYPERDRIVE_NAME);
+          const services=rows(parse('/tmp/services.json')?.result);
+          const tunnels=rows(parse('/tmp/tunnels.json')?.result).filter(x=>x.name===process.env.TUNNEL_NAME);
+          if(apps.length!==1||!apps[0]?.uuid) throw new Error('Expected exactly one existing PgBouncer v2 app.');
+          const app=apps[0];
+          if(normalize(app.git_repository)!==normalize(process.env.EXPECTED_REPOSITORY)||app.git_branch!=='main') throw new Error('PgBouncer v2 app identity does not match mksaas/main.');
+          if(app.build_pack!=='dockerfile'||app.dockerfile_location!=='/ops/pgbouncer-v2/Dockerfile.final') throw new Error('PgBouncer v2 app build target is unexpected.');
+          if(hds.length!==1||!hds[0]?.id||!hds[0]?.origin?.service_id) throw new Error('Expected exactly one VPC-backed production Hyperdrive v2.');
+          const service=services.filter(x=>String(x.service_id||'')===String(hds[0].origin.service_id));
+          if(service.length!==1) throw new Error('Hyperdrive v2 does not resolve to exactly one VPC Service.');
+          const s=service[0], host=s.host||{}, tunnelId=host?.network?.tunnel_id||host?.resolver_network?.tunnel_id||'';
+          if(s.name!==process.env.VPC_SERVICE_NAME||s.type!=='tcp'||Number(s.tcp_port)!==6432||s.app_protocol!=='postgresql'||!host.ipv4||!tunnelId) throw new Error('Existing VPC Service does not match the expected PgBouncer v2 shape.');
+          if(tunnels.length!==1||String(tunnels[0].id)!==String(tunnelId)||tunnels[0].status!=='healthy') throw new Error('Expected production tunnel is not healthy or does not match the VPC Service.');
+          fs.writeFileSync('/tmp/service-before.json',JSON.stringify(s));
+          process.stdout.write(JSON.stringify({
+            serviceId:String(s.service_id),
+            hyperdriveId:String(hds[0].id),
+            tunnelId:String(tunnelId),
+            previousIp:String(host.ipv4)
+          }));
+          NODE
+          service_id="$(node -e "process.stdout.write(require('/tmp/target-snapshot.json').serviceId)")"
+          hyperdrive_id="$(node -e "process.stdout.write(require('/tmp/target-snapshot.json').hyperdriveId)")"
+          tunnel_id="$(node -e "process.stdout.write(require('/tmp/target-snapshot.json').tunnelId)")"
+          previous_ip="$(node -e "process.stdout.write(require('/tmp/target-snapshot.json').previousIp)")"
+          echo "::add-mask::$service_id"
+          echo "::add-mask::$hyperdrive_id"
+          echo "::add-mask::$tunnel_id"
+          echo "::add-mask::$previous_ip"
+          echo "service_id=$service_id" >> "$GITHUB_OUTPUT"
+          echo "hyperdrive_id=$hyperdrive_id" >> "$GITHUB_OUTPUT"
+          echo "tunnel_id=$tunnel_id" >> "$GITHUB_OUTPUT"
+          echo "previous_ip=$previous_ip" >> "$GITHUB_OUTPUT"
+          echo "PASS: verified the existing PgBouncer app, v2 Hyperdrive, VPC service, and healthy tunnel."
+
+      - name: Create a temporary Coolify network resolver and resolve current PgBouncer IP
+        id: resolve
+        shell: bash
+        env:
+          TARGET_HOST: ${{ env.PROXY_NAME }}
+        run: |
+          set -euo pipefail
+          base="$COOLIFY_URL/api/v1"
+          node <<'NODE' >/tmp/resolver-create.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.GITHUB_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/network-resolver-diagnostic/Dockerfile',
+            name:'mkety-vpc-ip-resolver-'+process.env.GITHUB_RUN_ID,
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/resolver-create-response.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/resolver-create.json "$base/applications/public")"
+          [ "$code" = 201 ] || { echo "Temporary resolver creation failed (HTTP $code)."; exit 1; }
+          uuid="$(node -e "const x=require('/tmp/resolver-create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+          echo "::add-mask::$uuid"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
+          TARGET_HOST="$TARGET_HOST" node <<'NODE' >/tmp/resolver-env.json
+          process.stdout.write(JSON.stringify({key:'TARGET_HOST',value:process.env.TARGET_HOST,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/resolver-env-response.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/resolver-env.json "$base/applications/$uuid/envs")"
+          [ "$code" = 201 ] || { echo "Temporary resolver configuration failed (HTTP $code)."; exit 1; }
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/resolver-deploy.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$uuid&force=true")"
+          [ "$code" = 200 ] || { echo "Temporary resolver deployment request failed (HTTP $code)."; exit 1; }
+          deployment_uuid="$(node -e "const x=require('/tmp/resolver-deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          echo "::add-mask::$deployment_uuid"
+          complete=0
+          for i in $(seq 1 90); do
+            curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 15 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/resolver-deployment.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/resolver-deployment.json').status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) complete=1; break ;;
+              failed|failure|error|cancelled|canceled) echo "Temporary resolver deployment ended with status $status."; exit 1 ;;
+            esac
+            sleep 2
+          done
+          [ "$complete" = 1 ] || { echo 'Timed out waiting for temporary resolver deployment.'; exit 1; }
+
+          current_ip=''
+          for i in $(seq 1 30); do
+            curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 15 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/applications/$uuid/logs?lines=100&show_timestamps=false" -o /tmp/resolver-logs.json || true
+            current_ip="$(node -e "const x=require('/tmp/resolver-logs.json');const m=String(x.logs||'').match(/MKETY_TARGET_IPV4=([0-9.]+)/);process.stdout.write(m?.[1]||'')")"
+            if [ -n "$current_ip" ]; then break; fi
+            sleep 2
+          done
+          CURRENT_IP="$current_ip" node -e "const p=process.env.CURRENT_IP.split('.').map(Number);if(p.length!==4||p.some(n=>!Number.isInteger(n)||n<0||n>255))process.exit(1)"
+          echo "::add-mask::$current_ip"
+          echo "ipv4=$current_ip" >> "$GITHUB_OUTPUT"
+          echo 'Resolved the current private PgBouncer address without logging it.'
+
+      - name: Update the existing VPC Service only when its target IP is stale
+        id: patch
+        shell: bash
+        env:
+          CURRENT_IP: ${{ steps.resolve.outputs.ipv4 }}
+          SERVICE_ID: ${{ steps.snapshot.outputs.service_id }}
+          TUNNEL_ID: ${{ steps.snapshot.outputs.tunnel_id }}
+        run: |
+          set -euo pipefail
+          old_ip="$(node -e "process.stdout.write(require('/tmp/service-before.json').host.ipv4)")"
+          echo "::add-mask::$old_ip"
+          echo "::add-mask::$CURRENT_IP"
+          if [ "$old_ip" = "$CURRENT_IP" ]; then
+            echo 'The existing VPC Service already targets the current PgBouncer IP.'
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT_IP="$CURRENT_IP" TUNNEL_ID="$TUNNEL_ID" node <<'NODE' >/tmp/service-update.json
+          const fs=require('node:fs'),x=JSON.parse(fs.readFileSync('/tmp/service-before.json','utf8'));
+          process.stdout.write(JSON.stringify({
+            name:x.name,
+            type:x.type,
+            tcp_port:Number(x.tcp_port),
+            app_protocol:x.app_protocol,
+            host:{ipv4:process.env.CURRENT_IP,network:{tunnel_id:process.env.TUNNEL_ID}},
+            tls_settings:x.tls_settings
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/service-update-response.json -w '%{http_code}' \
+            -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/service-update.json \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
+          [ "$code" = 200 ] || { echo "VPC Service target update failed (HTTP $code)."; exit 1; }
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services" -o /tmp/services-after.json
+          EXPECTED_IP="$CURRENT_IP" SERVICE_ID="$SERVICE_ID" node <<'NODE'
+          const p=JSON.parse(require('node:fs').readFileSync('/tmp/services-after.json','utf8'));
+          const a=Array.isArray(p.result)?p.result:[];
+          const m=a.filter(x=>String(x.service_id||'')===String(process.env.SERVICE_ID||''));
+          if(m.length!==1||String(m[0]?.host?.ipv4||'')!==process.env.EXPECTED_IP) throw new Error('VPC Service did not persist the current private PgBouncer IP.');
+          NODE
+          echo 'Updated the VPC Service to the current private PgBouncer IP.'
+
+      - name: Verify Hyperdrive v2 with a fresh SELECT 1
+        id: probe
+        shell: bash
+        env:
+          HYPERDRIVE_ID: ${{ steps.snapshot.outputs.hyperdrive_id }}
+          PROBE_WORKER: mkety-hd-v2-reconcile-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .diag
+          cat >.diag/hyperdrive-probe.mjs <<'JS'
+          import postgres from 'postgres';
+          export default {
+            async fetch(_request, env) {
+              let sql;
+              try {
+                sql=postgres(env.MKETY_DB.connectionString,{max:1,prepare:false});
+                const rows=await sql`select 1::int as ok`;
+                return Response.json({ok:rows?.[0]?.ok===1});
+              } catch (error) {
+                return Response.json({
+                  ok:false,
+                  stage:'query',
+                  name:typeof error?.name==='string'?error.name:'Error',
+                  code:typeof error?.code==='string'?error.code:null
+                },{status:500});
+              } finally {
+                if(sql) await sql.end({timeout:1}).catch(()=>{});
+              }
+            }
+          };
+          JS
+          cat >.diag/wrangler-probe.jsonc <<JSON
+          {"name":"$PROBE_WORKER","main":"./hyperdrive-probe.mjs","compatibility_date":"2026-09-06","compatibility_flags":["nodejs_compat"],"workers_dev":true,"preview_urls":true,"hyperdrive":[{"binding":"MKETY_DB","id":"$HYPERDRIVE_ID"}]}
+          JSON
+          pnpm exec wrangler deploy --config .diag/wrangler-probe.jsonc >/tmp/probe-deploy.log 2>&1 || { tail -n 40 /tmp/probe-deploy.log; exit 1; }
+          url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/probe-deploy.log | tail -n 1 || true)"
+          if [ -z "$url" ]; then
+            account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+            sub="$(ACCOUNT="$account" node -e "const x=JSON.parse(process.env.ACCOUNT||'{}');if(!x.success||!x.result?.subdomain)process.exit(1);process.stdout.write(x.result.subdomain)")"
+            url="https://$PROBE_WORKER.$sub.workers.dev"
+          fi
+          echo "Probe URL resolved on workers.dev; no custom domain or route was created."
+          ready=0
+          for i in $(seq 1 20); do
+            code="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/probe-result.json -w '%{http_code}' "$url/" || true)"
+            if [ "$code" = 200 ] && node -e "const x=JSON.parse(require('node:fs').readFileSync('/tmp/probe-result.json','utf8'));if(x.ok!==true)process.exit(1)"; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$ready" != 1 ]; then
+            node <<'NODE'
+          const fs=require('node:fs');let body='';try{body=fs.readFileSync('/tmp/probe-result.json','utf8')}catch{}
+          let x={};try{x=JSON.parse(body)}catch{}
+          console.log('Hyperdrive v2 probe failed safely: '+JSON.stringify({httpCode:process.env.PROBE_CODE||'',stage:x.stage||null,name:x.name||null,code:x.code||null,edgeBody:body.startsWith('error code:')?body.slice(0,32):null}));
+          NODE
+            echo "Last HTTP result: ${code:-none}"
+            exit 1
+          fi
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+          echo 'PASS: a fresh Worker query through Hyperdrive v2 returned SELECT 1.'
+
+      - name: Restore the original VPC target if Hyperdrive query verification fails
+        if: always() && steps.patch.outputs.changed == 'true' && steps.probe.outputs.ready != 'true'
+        shell: bash
+        env:
+          SERVICE_ID: ${{ steps.snapshot.outputs.service_id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE' >/tmp/service-restore.json
+          const fs=require('node:fs'),x=JSON.parse(fs.readFileSync('/tmp/service-before.json','utf8'));
+          process.stdout.write(JSON.stringify({name:x.name,type:x.type,tcp_port:Number(x.tcp_port),app_protocol:x.app_protocol,host:x.host,tls_settings:x.tls_settings}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/service-restore-response.json -w '%{http_code}' \
+            -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/service-restore.json \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/connectivity/directory/services/$SERVICE_ID")"
+          [ "$code" = 200 ] || { echo 'CRITICAL: failed to restore the previous VPC Service target.'; exit 1; }
+          echo 'Restored the previous VPC Service target because the fresh Hyperdrive query did not pass.'
+
+      - name: Smoke public website and app routes
+        if: steps.probe.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -u
+          failed=0
+          probe() {
+            url="$1"; expected="$2"; code=''
+            for i in $(seq 1 5); do
+              code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 25 -sS -o /tmp/site-smoke.body -w '%{http_code}' "$url" || true)"
+              if [[ "$code" =~ $expected ]]; then
+                echo "PASS $url HTTP $code"
+                return 0
+              fi
+              sleep 3
+            done
+            echo "FAIL $url HTTP ${code:-none}"
+            failed=1
+          }
+          probe 'https://mkety.com/' '^(200)$'
+          probe 'https://mkety.com/mail' '^(200)$'
+          probe 'https://app.mkety.com/app' '^(200|302|303|307|308)$'
+          probe 'https://app.mkety.com/admin' '^(200|302|303|307|308)$'
+          probe 'https://app.mkety.com/login' '^(200|302|303|307|308)$'
+          probe 'https://mkety.com/api/health' '^(200)$'
+          exit "$failed"
+
+      - name: Remove the temporary resolver application
+        if: always() && steps.resolve.outputs.uuid != ''
+        shell: bash
+        env:
+          RESOLVER_UUID: ${{ steps.resolve.outputs.uuid }}
+        run: |
+          set +e
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 15 -sS -X DELETE \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$COOLIFY_URL/api/v1/applications/$RESOLVER_UUID" >/dev/null
+
+      - name: Remove the temporary Hyperdrive probe Worker
+        if: always()
+        shell: bash
+        env:
+          PROBE_WORKER: mkety-hd-v2-reconcile-${{ github.run_id }}
+        run: |
+          set +e
+          curl -sS --connect-timeout 5 --max-time 15 -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data '{"enabled":false,"previews_enabled":false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER/subdomain" >/dev/null
+          curl -sS --connect-timeout 5 --max-time 15 -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER" >/dev/null
+          echo 'Cleanup attempted for route-free diagnostic Worker.'
