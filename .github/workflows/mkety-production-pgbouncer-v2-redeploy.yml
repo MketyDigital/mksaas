@@ -1,0 +1,209 @@
+name: Mkety Production PgBouncer V2 Redeploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-production-pgbouncer-v2-redeploy.yml
+      - ops/pgbouncer-v2/**
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type REDEPLOY_EXISTING_PGBOUNCER_V2 to redeploy the existing production app
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-production-pgbouncer-v2-redeploy
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[pgbouncer-v2-redeploy]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
+      EXPECTED_REPOSITORY: https://github.com/MketyDigital/mksaas
+      EXPECTED_DOCKERFILE: /ops/pgbouncer-v2/Dockerfile.final
+      TARGET_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Require exact manual confirmation when dispatched
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo 'Production redeploys must target main.'; exit 1; }
+          [ "$CONFIRMATION" = 'REDEPLOY_EXISTING_PGBOUNCER_V2' ] || { echo 'Exact confirmation string is required.'; exit 1; }
+
+      - name: Require production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$COOLIFY_API_TOKEN" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full commit SHA.'; exit 1; }
+
+      - name: Resolve and validate the existing PgBouncer v2 app
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps.json
+          node <<'NODE' > /tmp/proxy.json
+          const fs=require('node:fs');
+          const payload=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const apps=Array.isArray(payload)?payload:Array.isArray(payload?.data)?payload.data:[];
+          const matches=apps.filter(app=>app.name===process.env.PROXY_NAME);
+          if(matches.length!==1||!matches[0]?.uuid) throw new Error('Expected exactly one existing PgBouncer v2 application.');
+          process.stdout.write(JSON.stringify({uuid:String(matches[0].uuid)}));
+          NODE
+          uuid="$(node -e "process.stdout.write(require('/tmp/proxy.json').uuid)")"
+          echo "::add-mask::$uuid"
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$uuid" -o /tmp/app.json
+          APP_UUID="$uuid" node <<'NODE' > /tmp/validated-app.json
+          const fs=require('node:fs');
+          const app=JSON.parse(fs.readFileSync('/tmp/app.json','utf8'));
+          const ports=String(app.ports_exposes||'').split(',').map(x=>x.trim());
+          const repo=String(app.git_repository||'').replace(/\.git$/,'');
+          const expected=String(process.env.EXPECTED_REPOSITORY||'').replace(/\.git$/,'');
+          if(app.name!==process.env.PROXY_NAME) throw new Error('Application name changed during preflight.');
+          if(repo!==expected||app.git_branch!=='main') throw new Error('Existing app is not attached to the expected mksaas main repository.');
+          if(app.build_pack!=='dockerfile'||app.dockerfile_location!==process.env.EXPECTED_DOCKERFILE) throw new Error('Existing app Docker build target is unexpected.');
+          if(!ports.includes('6432')) throw new Error('Existing app does not expose the expected PgBouncer port.');
+          const sha=String(app.git_commit_sha||'');
+          if(!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Existing app has no recoverable full commit SHA.');
+          process.stdout.write(JSON.stringify({uuid:process.env.APP_UUID,previousSha:sha}));
+          NODE
+          previous_sha="$(node -e "process.stdout.write(require('/tmp/validated-app.json').previousSha)")"
+          echo "previous_sha=$previous_sha" >> "$GITHUB_OUTPUT"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo 'Existing PgBouncer v2 app matches the expected repository, branch, Dockerfile, and port.'
+
+      - name: Pin only the PgBouncer v2 app to this exact main SHA
+        id: pin
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          TARGET_SHA="$TARGET_SHA" node <<'NODE' > /tmp/pin.json
+          process.stdout.write(JSON.stringify({git_commit_sha:process.env.TARGET_SHA}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/pin-response.json -w '%{http_code}' \
+            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/pin.json "$base/applications/$APP_UUID")"
+          [ "$code" = 200 ] || { echo "PgBouncer SHA pin failed (HTTP $code)."; exit 1; }
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" -o /tmp/pinned-app.json
+          pinned_sha="$(node -e "process.stdout.write(String(require('/tmp/pinned-app.json').git_commit_sha||''))")"
+          [ "$pinned_sha" = "$TARGET_SHA" ] || { echo 'Coolify did not persist the exact target SHA.'; exit 1; }
+          echo 'PgBouncer v2 source pin verified.'
+
+      - name: Redeploy PgBouncer and require verified TLS/query readiness
+        id: deployed
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/deploy.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+          [ "$code" = 200 ] || { echo "PgBouncer deploy request failed (HTTP $code)."; exit 1; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+          echo "::add-mask::$deployment_uuid"
+          complete=0
+          for i in $(seq 1 240); do
+            curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deployments/$deployment_uuid" -o /tmp/deployment.json
+            status="$(node -e "process.stdout.write(String(require('/tmp/deployment.json').status||''))")"
+            case "${status,,}" in
+              finished|success|successful|succeeded|completed) complete=1; break ;;
+              failed|failure|error|cancelled|canceled) echo "PgBouncer deployment ended with status $status."; exit 1 ;;
+            esac
+            sleep 3
+          done
+          [ "$complete" = 1 ] || { echo 'Timed out waiting for PgBouncer deployment.'; exit 1; }
+
+          ready=0
+          for i in $(seq 1 80); do
+            curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/applications/$APP_UUID/logs?lines=500&show_timestamps=false" -o /tmp/proxy-logs.json || true
+            if node <<'NODE'
+          const fs=require('node:fs');
+          let logs='';try{logs=String(JSON.parse(fs.readFileSync('/tmp/proxy-logs.json','utf8')).logs||'')}catch{}
+          const markers=[
+            'MKETY_PGBOUNCER_V2_UPSTREAM_VERIFY_OK=true',
+            'MKETY_PGBOUNCER_V2_CLIENT_TLS_OK=true',
+            'MKETY_PGBOUNCER_V2_QUERY_OK=true',
+            'MKETY_PGBOUNCER_V2_READY=true'
+          ];
+          process.exit(markers.every(marker=>logs.includes(marker))?0:1);
+          NODE
+            then ready=1; break; fi
+            sleep 3
+          done
+          [ "$ready" = 1 ] || { echo 'PgBouncer did not prove upstream TLS, client TLS, and query readiness.'; exit 1; }
+          echo 'PgBouncer v2 passed direct upstream TLS, client TLS, and SELECT readiness.'
+
+      - name: Smoke the production public site and app routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            local url="$1" expected="$2" code=''
+            for i in $(seq 1 15); do
+              code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 25 -sS -o /tmp/site-smoke.body -w '%{http_code}' "$url" || true)"
+              if [[ "$code" =~ $expected ]]; then
+                echo "PASS $url returned HTTP $code"
+                return 0
+              fi
+              sleep 4
+            done
+            echo "FAIL $url returned HTTP ${code:-none} after retries."
+            return 1
+          }
+          probe 'https://mkety.com/' '^(200)$'
+          probe 'https://mkety.com/mail' '^(200)$'
+          probe 'https://app.mkety.com/app' '^(200|302|303|307|308)$'
+          probe 'https://app.mkety.com/login' '^(200|302|303|307|308)$'
+          probe 'https://mkety.com/api/health' '^(200)$'
+
+      - name: Restore the previous PgBouncer source pin if verification fails
+        if: failure() && steps.pin.outputs.changed == 'true'
+        shell: bash
+        env:
+          APP_UUID: ${{ steps.app.outputs.uuid }}
+          PREVIOUS_SHA: ${{ steps.app.outputs.previous_sha }}
+        run: |
+          set +e
+          base="${COOLIFY_URL%/}/api/v1"
+          PREVIOUS_SHA="$PREVIOUS_SHA" node <<'NODE' > /tmp/restore-pin.json
+          process.stdout.write(JSON.stringify({git_commit_sha:process.env.PREVIOUS_SHA}));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -o /tmp/restore-pin-response.json -w '%{http_code}' \
+            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/restore-pin.json "$base/applications/$APP_UUID")"
+          if [ "$code" = 200 ]; then
+            curl --proto '=https' --tlsv1.2 --connect-timeout 5 --max-time 20 -sS -X POST \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true" >/dev/null
+            echo 'Restored the previous PgBouncer app source pin and requested its redeploy.'
+          else
+            echo "::error::Could not restore the previous PgBouncer app source pin (HTTP $code)."
+          fi
