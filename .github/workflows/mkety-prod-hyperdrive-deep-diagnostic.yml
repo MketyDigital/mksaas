@@ -1,5 +1,6 @@
 name: Mkety Production Hyperdrive Deep Diagnostic
 # public-recovery diagnostic rerun: 2026-09-19
+# Route-free production runtime check after PgBouncer v2 readiness with public site still returning HTTP 500 (2026-10-13).
 
 on:
   push:
