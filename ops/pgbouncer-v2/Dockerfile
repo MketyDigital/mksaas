@@ -5,6 +5,8 @@ USER root
 RUN apk add --no-cache openssl postgresql-client su-exec
 COPY ops/pgbouncer-v2/entrypoint.sh /mkety-entrypoint.sh
 RUN chmod 755 /mkety-entrypoint.sh
+COPY ops/pgbouncer-v2/stage-upstream-ca.sh /stage-upstream-ca.sh
+RUN chmod 755 /stage-upstream-ca.sh
 
 COPY ops/pgbouncer-v2/healthcheck.sh /mkety-healthcheck.sh
 RUN chmod 755 /mkety-healthcheck.sh

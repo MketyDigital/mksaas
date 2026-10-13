@@ -1,3 +1,16 @@
+# 2026-10-13 Production site outage investigation
+
+This section records the current outage work and supersedes earlier assumptions that the app-host Worker alone caused the site failure.
+
+- The Oct 12 read-only diagnostics found `app.mkety.com` redirects to `/app`, while `/app`, `/login`, `/api/health`, `mkety.com/`, and `mkety.com/mail` time out. DNS/custom-domain attachment and the root redirect work, so the failure occurs on dynamic requests affecting both the public site and app.
+- The production Postgres service was reported `running:healthy`, while the production PgBouncer v2 service had repeated `server login has been failing ... sslreq processing failed` messages. This points to the shared upstream database TLS path. A mounted-CA permission mismatch is a plausible cause, not yet confirmed from the live mount metadata.
+- An isolated `fix/pgbouncer-v2-ca-readability` candidate stages the mounted CA into `/run/mkety` with mode `0644`, configures PgBouncer and its `psql` preflight to use that copy, and runs the preflight as the same unprivileged account as the daemon. A container regression check for a root-only mounted CA was added to CI.
+- Local shell syntax, staging-mode, and whitespace checks passed. Exact code head `302573c6bed10cdf252ae6d2dfc3e357e65d729b` passed CI run [38334843227](https://github.com/MketyDigital/mksaas/actions/runs/38334843227), including all audited operations-image builds and the root-only CA container regression. No production service, DNS, database, or Worker was changed. No Assist or standalone Assist files are part of this change.
+
+**Next:** verify the live PgBouncer v2 configuration and CA mount through the available read-only production diagnostic, then follow the production promotion gate in `docs/DEPLOYMENT.md`. Confirm health for both the public site and app-host before returning to the Mail archive import.
+
+---
+
 # 2026-10-12 Mkety Mail archive release and import continuation
 
 This section supersedes the 2026-10-11 import continuation below for release state.
