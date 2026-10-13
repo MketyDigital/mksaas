@@ -28,7 +28,7 @@ jobs:
     environment: production
     env:
       COOLIFY_URL: https://deploy.mkety.com
-      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_API_TOKEN: ${{ secrets.OCI_COOLIFY_TOKEN || secrets.COOLIFY_TOKEN }}
       PROXY_NAME: mkety-production-pgbouncer-tls-proxy-v2
       EXPECTED_REPOSITORY: https://github.com/MketyDigital/mksaas
       EXPECTED_DOCKERFILE: /ops/pgbouncer-v2/Dockerfile.final
@@ -50,7 +50,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "$COOLIFY_API_TOKEN" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+          [ -n "$COOLIFY_API_TOKEN" ] || { echo 'OCI_COOLIFY_TOKEN or COOLIFY_TOKEN is required.'; exit 1; }
+          echo "::add-mask::$COOLIFY_API_TOKEN"
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full commit SHA.'; exit 1; }
 
       - name: Resolve and validate the existing PgBouncer v2 app
