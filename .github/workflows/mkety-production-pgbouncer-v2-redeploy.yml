@@ -69,8 +69,9 @@ jobs:
           if(matches.length!==1||!matches[0]?.uuid) throw new Error('Expected exactly one existing PgBouncer v2 application.');
           const app=matches[0];
           const ports=String(app.ports_exposes||'').split(',').map(x=>x.trim());
-          const repo=String(app.git_repository||'').replace(/\.git$/,'');
-          const expected=String(process.env.EXPECTED_REPOSITORY||'').replace(/\.git$/,'');
+          const normalizeRepo=value=>String(value||'').trim().replace(/^https?:\/\/github\.com\//i,'').replace(/\.git$/i,'').replace(/\/+$/,'').toLowerCase();
+          const repo=normalizeRepo(app.git_repository);
+          const expected=normalizeRepo(process.env.EXPECTED_REPOSITORY);
           const configKeys=['git_repository','git_branch','build_pack','dockerfile_location','ports_exposes','git_commit_sha'];
           const missing=configKeys.filter(key=>app[key]===undefined||app[key]===null||app[key]==='');
           if(missing.length) throw new Error(`Application inventory omits required configuration metadata (${missing.join(', ')}); available keys: ${Object.keys(app).sort().join(', ')}.`);
