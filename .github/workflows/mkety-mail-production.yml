@@ -366,8 +366,8 @@ jobs:
           const names=new Set(rows.map((row)=>row.name));
           const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_SESSION_SECRET','MKETY_AUTH_REDIRECT_URI','MKETY_PLATFORM_CONTROL_TENANT_SLUG','MKETY_PLATFORM_ADMIN_EMAILS','MKETY_MAIL_INTERNAL_SECRET','MKETY_MAIL_CONTENT_URL'];
           const missing=required.filter((name)=>!names.has(name));
-          if(missing.length) throw new Error('App-host deploy lacks required Auth bindings: '+missing.join(', '));
-          console.log('Verified required auth bindings remain on the dedicated app-host Worker.');
+          if(missing.length) throw new Error('App-host deploy lacks required Auth/Mail bindings: '+missing.join(', '));
+          console.log('Verified required Auth and Mail bindings on the dedicated app-host Worker.');
           NODE
 
       - name: Verify central Mkety auth bindings survived app deploy
