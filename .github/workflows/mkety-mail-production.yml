@@ -364,7 +364,7 @@ jobs:
           const start=raw.indexOf('[');
           const rows=start>=0?JSON.parse(raw.slice(start)):[];
           const names=new Set(rows.map((row)=>row.name));
-          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_SESSION_SECRET','MKETY_AUTH_REDIRECT_URI','MKETY_PLATFORM_CONTROL_TENANT_SLUG','MKETY_PLATFORM_ADMIN_EMAILS'];
+          const required=['MKETY_AUTH_PROVIDER','MKETY_AUTH_ISSUER','MKETY_AUTH_CLIENT_ID','MKETY_AUTH_SESSION_SECRET','MKETY_AUTH_REDIRECT_URI','MKETY_PLATFORM_CONTROL_TENANT_SLUG','MKETY_PLATFORM_ADMIN_EMAILS','MKETY_MAIL_INTERNAL_SECRET','MKETY_MAIL_CONTENT_URL'];
           const missing=required.filter((name)=>!names.has(name));
           if(missing.length) throw new Error('App-host deploy lacks required Auth bindings: '+missing.join(', '));
           console.log('Verified required auth bindings remain on the dedicated app-host Worker.');
@@ -483,6 +483,10 @@ jobs:
           # The authenticated admin UI and its server actions run on this separate Worker.
           put "$APP_HOST_WORKER_NAME" MKETY_FIRST_PARTY_MAIL_TENANT_ID "$MKETY_FIRST_PARTY_MAIL_TENANT_ID"
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_CONTENT_URL 'https://mail-content.mkety.com'
+          # Authenticated app routes run on a separate Worker and need the same
+          # internal content-store credentials to persist imported message bodies.
+          put "$APP_HOST_WORKER_NAME" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"
+          put "$APP_HOST_WORKER_NAME" MKETY_MAIL_CONTENT_URL 'https://mail-content.mkety.com'
           # External IMAP/SMTP remains fail-closed until the dedicated TCP gateway
           # passes TLS, app-password, mailbox and send acceptance.
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED 'false'
