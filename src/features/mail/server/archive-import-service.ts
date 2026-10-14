@@ -49,14 +49,18 @@ export async function completeMailArchiveUpload(
   input: { mailboxId: string; uploadId: string; files: ArchiveUploadFile[] },
   access?: MailArchiveImportAccess,
 ) {
-  const authorized = access ?? (await requireMailArchiveImportAccess(tenantSlug));
-  const activeRuns = await db.query.mailMigrationRuns.findMany({
-    where: and(
-      eq(mailMigrationRuns.tenantId, authorized.tenant.id),
-      eq(mailMigrationRuns.sourceType, 'archive'),
-      inArray(mailMigrationRuns.status, ['queued', 'running']),
-    ),
-  });
+  const authorized = await withArchiveStage('authorize_import', () =>
+    access ? Promise.resolve(access) : requireMailArchiveImportAccess(tenantSlug),
+  );
+  const activeRuns = await withArchiveStage('find_active_runs', () =>
+    db.query.mailMigrationRuns.findMany({
+      where: and(
+        eq(mailMigrationRuns.tenantId, authorized.tenant.id),
+        eq(mailMigrationRuns.sourceType, 'archive'),
+        inArray(mailMigrationRuns.status, ['queued', 'running']),
+      ),
+    }),
+  );
   const staleBefore = Date.now() - 2 * 60 * 1000;
   for (const activeRun of activeRuns) {
     const cursor = activeRun.sourceCursor as { packKey?: unknown; messages?: unknown };
@@ -104,20 +108,24 @@ export async function completeMailArchiveUpload(
     throw new MailArchiveImportError('size');
   }
 
-  const [workspace, mailbox] = await Promise.all([
-    getMailWorkspace(tenantSlug),
-    db.query.mailMailboxes.findFirst({
-      where: and(
-        eq(mailMailboxes.id, input.mailboxId),
-        eq(mailMailboxes.tenantId, authorized.tenant.id),
-        eq(mailMailboxes.status, 'active'),
-      ),
-    }),
-  ]);
+  const [workspace, mailbox] = await withArchiveStage('load_workspace_and_mailbox', () =>
+    Promise.all([
+      getMailWorkspace(tenantSlug),
+      db.query.mailMailboxes.findFirst({
+        where: and(
+          eq(mailMailboxes.id, input.mailboxId),
+          eq(mailMailboxes.tenantId, authorized.tenant.id),
+          eq(mailMailboxes.status, 'active'),
+        ),
+      }),
+    ]),
+  );
   if (!workspace || !mailbox) throw new MailArchiveImportError('mailbox');
-  const domain = await db.query.mailDomains.findFirst({
-    where: and(eq(mailDomains.id, mailbox.domainId), eq(mailDomains.tenantId, authorized.tenant.id)),
-  });
+  const domain = await withArchiveStage('load_mailbox_domain', () =>
+    db.query.mailDomains.findFirst({
+      where: and(eq(mailDomains.id, mailbox.domainId), eq(mailDomains.tenantId, authorized.tenant.id)),
+    }),
+  );
   if (!domain) throw new MailArchiveImportError('mailbox');
 
   const objectFiles: Array<{ key: string }> = [];
@@ -234,6 +242,19 @@ export async function completeMailArchiveUpload(
   } finally {
     await Promise.allSettled(temporaryKeys.map((key) => deleteMailContent(key)));
     if (!queued) await Promise.allSettled(objectFiles.map((file) => deleteMailContent(file.key)));
+  }
+}
+
+async function withArchiveStage<T>(stage: string, action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    console.error('[mail-archive] finalization preflight failed', {
+      stage,
+      errorName: error instanceof Error ? error.name : 'unknown',
+      safeErrorCode: safeArchiveMessageErrorCode(error),
+    });
+    throw error;
   }
 }
 
