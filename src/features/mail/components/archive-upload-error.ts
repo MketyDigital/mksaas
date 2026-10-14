@@ -19,7 +19,7 @@ const ARCHIVE_FINALIZE_ERRORS: Record<string, string> = {
   mailbox: 'The selected destination mailbox could not be validated.',
   workspace: 'The Mail workspace could not be validated.',
   active: 'An archive import is already running. Wait for it to finish before starting another.',
-  archive_queue_unavailable: 'The archive was validated, but the background import queue is unavailable.',
+  queue_unavailable: 'The archive was validated, but the background import queue is unavailable.',
 };
 
 export function formatArchiveCompleteFailure(input: { status: number; rayId?: string | null; errorCode?: string }) {
