@@ -126,6 +126,7 @@ export async function completeMailArchiveUpload(
   let totalMessages = 0;
   let totalExpandedBytes = 0;
   let queued = false;
+  let stage = 'read_and_parse_archive';
   try {
     for (const [fileIndex, file] of files.entries()) {
       const chunks: Uint8Array[] = [];
@@ -185,9 +186,11 @@ export async function completeMailArchiveUpload(
       packOffset += message.raw.byteLength;
     }
     const packKey = `mail/archive-staging/${authorized.tenant.id}/${input.uploadId}/message-pack`;
+    stage = 'store_message_pack';
     await storeMailContent(packKey, messagePack, 'application/octet-stream');
     objectFiles.push({ key: packKey });
 
+    stage = 'create_migration_run';
     const [run] = await db
       .insert(mailMigrationRuns)
       .values({
@@ -205,6 +208,7 @@ export async function completeMailArchiveUpload(
       .returning({ id: mailMigrationRuns.id });
     if (!run) throw new Error('Could not start the Mail archive import.');
     try {
+      stage = 'enqueue_migration';
       await pushMailMigrationQueue(run.id, 'archive');
       queued = true;
     } catch {
@@ -221,6 +225,12 @@ export async function completeMailArchiveUpload(
       throw new Error('archive_queue_unavailable');
     }
     return { runId: run.id, total: totalMessages };
+  } catch (error) {
+    console.error('[mail-archive] finalization failed', {
+      stage,
+      safeErrorCode: safeArchiveMessageErrorCode(error),
+    });
+    throw error;
   } finally {
     await Promise.allSettled(temporaryKeys.map((key) => deleteMailContent(key)));
     if (!queued) await Promise.allSettled(objectFiles.map((file) => deleteMailContent(file.key)));
