@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMigrationRuns } from '@/shared/db/schema';
 
+import { getArchiveImportCursor, isLegacySynchronousArchiveCursor } from './archive-import-cursor';
 import { safeArchiveMessageErrorCode } from './archive-import-errors';
 import { pushMailMigrationQueue } from './cloudflare';
 import { deleteMailContent, fetchMailContent, storeMailContent } from './content';
@@ -61,24 +62,26 @@ export async function completeMailArchiveUpload(
       ),
     }),
   );
-  const staleBefore = Date.now() - 2 * 60 * 1000;
-  for (const activeRun of activeRuns) {
-    const cursor = activeRun.sourceCursor as { packKey?: unknown; messages?: unknown };
-    const legacySynchronousRun = activeRun.status === 'running' && (!cursor.packKey || !Array.isArray(cursor.messages));
-    if (legacySynchronousRun && activeRun.updatedAt.getTime() < staleBefore) {
-      await db
-        .update(mailMigrationRuns)
-        .set({
-          status: 'failed',
-          safeErrorCode: 'archive_run_interrupted',
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(mailMigrationRuns.id, activeRun.id), inArray(mailMigrationRuns.status, ['queued', 'running'])));
-    } else {
-      throw new MailArchiveImportError('active');
+  await withArchiveStage('reconcile_active_runs', async () => {
+    const staleBefore = Date.now() - 2 * 60 * 1000;
+    for (const activeRun of activeRuns) {
+      const legacySynchronousRun =
+        activeRun.status === 'running' && isLegacySynchronousArchiveCursor(activeRun.sourceCursor);
+      if (legacySynchronousRun && activeRun.updatedAt.getTime() < staleBefore) {
+        await db
+          .update(mailMigrationRuns)
+          .set({
+            status: 'failed',
+            safeErrorCode: 'archive_run_interrupted',
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(mailMigrationRuns.id, activeRun.id), inArray(mailMigrationRuns.status, ['queued', 'running'])));
+      } else {
+        throw new MailArchiveImportError('active');
+      }
     }
-  }
+  });
   if (!/^[0-9a-f-]{36}$/i.test(input.uploadId)) throw new MailArchiveImportError('files');
   if (!Array.isArray(input.files) || !input.files.length || input.files.length > MAX_ARCHIVE_UPLOAD_FILES)
     throw new MailArchiveImportError('files');
@@ -266,7 +269,7 @@ function isSupportedName(name: string) {
 export async function processMailArchiveBatch(runId: string) {
   const run = await db.query.mailMigrationRuns.findFirst({ where: eq(mailMigrationRuns.id, runId) });
   if (!run || run.sourceType !== 'archive' || !['queued', 'running'].includes(run.status)) return { done: true };
-  const cursor = run.sourceCursor as {
+  const cursor = getArchiveImportCursor(run.sourceCursor) as {
     packKey?: string;
     messages?: Array<{ offset?: number; size?: number; folderPath?: string }>;
     nextMessageIndex?: number;
