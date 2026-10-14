@@ -36,4 +36,13 @@ describe('formatArchiveCompleteFailure', () => {
       }),
     ).toBe('Archive finalization failed (HTTP 500).');
   });
+
+  it('does not treat inherited object properties as allowlisted error codes', () => {
+    expect(
+      formatArchiveCompleteFailure({
+        status: 500,
+        errorCode: '__proto__',
+      }),
+    ).toBe('Archive finalization failed (HTTP 500).');
+  });
 });

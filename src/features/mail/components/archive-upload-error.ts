@@ -23,7 +23,10 @@ const ARCHIVE_FINALIZE_ERRORS: Record<string, string> = {
 };
 
 export function formatArchiveCompleteFailure(input: { status: number; rayId?: string | null; errorCode?: string }) {
-  const message = input.errorCode ? ARCHIVE_FINALIZE_ERRORS[input.errorCode] : undefined;
+  const message =
+    input.errorCode && Object.hasOwn(ARCHIVE_FINALIZE_ERRORS, input.errorCode)
+      ? ARCHIVE_FINALIZE_ERRORS[input.errorCode]
+      : undefined;
   const code = message && input.errorCode ? ` (${input.errorCode})` : '';
   const ray = input.rayId ? `; Cloudflare Ray ID ${input.rayId}` : '';
   const description = message || 'Archive finalization failed';
