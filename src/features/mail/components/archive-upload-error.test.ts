@@ -45,4 +45,13 @@ describe('formatArchiveCompleteFailure', () => {
       }),
     ).toBe('Archive finalization failed (HTTP 500).');
   });
+
+  it('shows the queue recovery guidance for the code returned by the completion route', () => {
+    expect(
+      formatArchiveCompleteFailure({
+        status: 503,
+        errorCode: 'queue_unavailable',
+      }),
+    ).toBe('The archive was validated, but the background import queue is unavailable. (queue_unavailable) (HTTP 503).');
+  });
 });
