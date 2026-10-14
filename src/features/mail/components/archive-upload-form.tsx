@@ -5,6 +5,8 @@ import { type FormEvent, useState } from 'react';
 
 import { Button } from '@/shared/components/ui';
 
+import { formatArchiveChunkFailure } from './archive-upload-error';
+
 const CHUNK_BYTES = 256_000;
 
 export function ArchiveUploadForm({
@@ -48,15 +50,30 @@ export function ArchiveUploadForm({
         manifest.push({ name: file.name, size: file.size, chunks });
         for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex += 1) {
           const start = chunkIndex * CHUNK_BYTES;
-          const response = await fetch(
-            `/api/mail/migration/archive/chunk?tenant=${encodeURIComponent(tenantSlug)}&uploadId=${uploadId}&fileIndex=${fileIndex}&chunkIndex=${chunkIndex}`,
-            {
-              method: 'POST',
-              headers: { 'content-type': 'application/octet-stream' },
-              body: file.slice(start, start + CHUNK_BYTES),
-            },
-          );
-          if (!response.ok) throw new Error('The upload was interrupted before all file pieces arrived.');
+          let response: Response;
+          try {
+            response = await fetch(
+              `/api/mail/migration/archive/chunk?tenant=${encodeURIComponent(tenantSlug)}&uploadId=${uploadId}&fileIndex=${fileIndex}&chunkIndex=${chunkIndex}`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/octet-stream' },
+                body: file.slice(start, start + CHUNK_BYTES),
+              },
+            );
+          } catch {
+            throw new Error(formatArchiveChunkFailure({ fileName: file.name, chunkIndex, chunkCount: chunks }));
+          }
+          if (!response.ok) {
+            throw new Error(
+              formatArchiveChunkFailure({
+                fileName: file.name,
+                chunkIndex,
+                chunkCount: chunks,
+                status: response.status,
+                rayId: response.headers.get('cf-ray'),
+              }),
+            );
+          }
           completedChunks += 1;
           setProgress(`Uploading ${completedChunks} of ${totalChunks} pieces`);
         }
